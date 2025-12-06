@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _DEPS = [
     "//max:internal_utils",
     "//max:linalg",
@@ -11,6 +13,7 @@ _FP8_FP4_TESTS = [
     "test_scaled_matmul.mojo",
     "test_scaled_fp8_quantization.mojo",
     "test_scaled_nvfp4_quantization.mojo",
+    "test_nvfp4_block_scales_interleave.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -25,6 +28,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_scaled_nvfp4_quantization.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_nvfp4_block_scales_interleave.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

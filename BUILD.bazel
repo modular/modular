@@ -4,7 +4,19 @@ load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
 load("//bazel:api.bzl", "mojo_binary", "requirement")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY", "MODULAR_CONFIGS", "TOP_LEVEL_TAG")
 
-package(default_visibility = ["//visibility:public"])
+# gazelle:default_visibility :see_docs_and_update_this_for_your_package
+
+package(default_visibility = [":see_docs_and_update_this_for_your_package"])
+
+package_group(
+    name = "see_docs_and_update_this_for_your_package",
+    packages = ["public"],
+)
+
+exports_files([
+    "mypy.ini",
+    "pyproject.toml",
+])
 
 mojo_binary(
     name = "repro",

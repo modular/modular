@@ -56,10 +56,9 @@ struct FastDiv[dtype: DType](Stringable, Writable):
             divisor: The divisor to use for fast division.
                 Defaults to 1.
         """
-        constrained[
-            bit_width_of[Self.dtype]() <= 32,
-            "larger types are not currently supported",
-        ]()
+        __comptime_assert (
+            bit_width_of[Self.dtype]() <= 32
+        ), "larger types are not currently supported"
         self._div = divisor
 
         self._is_pow2 = divisor.is_power_of_two()

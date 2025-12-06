@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from gridv3 import Grid
-from testing import *
+from testing import assert_equal, TestSuite
 
-alias data4x4: List[List[Int8]] = [
+comptime data4x4: List[List[Int8]] = [
     [0, 1, 1, 0],
     [1, 1, 0, 0],
     [0, 0, 1, 1],
@@ -85,7 +85,4 @@ def test_gridv3_evolve():
 
 
 def main():
-    test_gridv3_init()
-    test_gridv3_index()
-    test_gridv3_str()
-    test_gridv3_evolve()
+    TestSuite.discover_tests[__functions_in_module()]().run()

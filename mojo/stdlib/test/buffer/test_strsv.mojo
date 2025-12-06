@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 comptime simd_width = 8
@@ -22,11 +21,11 @@ fn strsv[
     size: Int
 ](
     L: NDBuffer[DType.float32, 1, _, size * size],
-    x: NDBuffer[DType.float32, 1, _, size],
+    x: NDBuffer[mut=True, DType.float32, 1, _, size],
 ):
     # assuming size is a multiple of simd_width
-    var x_ptr = UnsafePointer[Float32](x.data)
-    var L_ptr = UnsafePointer[Float32](L.data)
+    var x_ptr = x.data
+    var L_ptr = L.data
     var n: Int = size
     var x_solved = NDBuffer[
         DType.float32, 1, MutAnyOrigin, simd_width * simd_width
@@ -44,7 +43,7 @@ fn strsv[
 
         # Save the solution of the triangular tile in stack, while
         # packing them as simd vectors.
-        var x_vec: SIMD[DType.float32, simd_width] = 0.0
+        var x_vec: SIMD[DType.float32, simd_width]
         for i in range(simd_width):
             # Broadcast one solution value to a simd vector.
             x_vec = x_ptr[i]

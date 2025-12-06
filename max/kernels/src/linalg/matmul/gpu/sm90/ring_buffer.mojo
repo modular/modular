@@ -304,7 +304,7 @@ struct RingBuffer[
 
     fn __enter__(mut self) -> Self:
         """Context manager entry."""
-        return self^
+        return self
 
     @always_inline
     @staticmethod

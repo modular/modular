@@ -11,44 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer.dimlist import DimList
-from internal_utils import TestTensor, assert_equal
+from layout import Layout, LayoutTensor
 from nn.gather_scatter import gather_elements
-
-
-fn test_case[
-    dtype: DType
-](
-    axis: Int,
-    data: TestTensor[dtype, 2],
-    indices: TestTensor[DType.int32, 2],
-    output: TestTensor[dtype, 2],
-) raises:
-    var output_ref = output
-
-    gather_elements(
-        data.to_managed_tensor_slice().to_layout_tensor(),
-        indices.to_managed_tensor_slice().to_layout_tensor(),
-        axis,
-        output.to_managed_tensor_slice().to_layout_tensor(),
-    )
-
-    assert_equal(output, output_ref)
+from testing import assert_equal
 
 
 def main():
     fn test_gather_ax1() raises:
         print("== test_gather_ax1")
 
-        comptime shape = DimList(2, 2)
-
-        var data = TestTensor[DType.float32, 2](shape, [Float32(1), 2, 3, 4])
-        var indices = TestTensor[DType.int32, 2](shape, [Int32(0), 0, 1, 0])
-        var output_ref = TestTensor[DType.float32, 2](
-            shape, [Float32(1), 1, 4, 3]
+        var data_stack = InlineArray[Float32, 4](Float32(1), 2, 3, 4)
+        var data = LayoutTensor[DType.float32, Layout.row_major(2, 2)](
+            data_stack
         )
 
-        test_case[DType.float32](1, data, indices, output_ref)
+        var indices_stack = InlineArray[Int32, 4](Int32(0), 0, 1, 0)
+        var indices = LayoutTensor[DType.int32, Layout.row_major(2, 2)](
+            indices_stack
+        )
+
+        var output_stack = InlineArray[Float32, 4](uninitialized=True)
+        var output = LayoutTensor[DType.float32, Layout.row_major(2, 2)](
+            output_stack
+        )
+
+        gather_elements(data, indices, 1, output)
+
+        assert_equal(output[0, 0], Float32(1))
+        assert_equal(output[0, 1], Float32(1))
+        assert_equal(output[1, 0], Float32(4))
+        assert_equal(output[1, 1], Float32(3))
 
     # CHECK-LABEL: test_gather_ax1
     # CHECK-NOT: FAIL
@@ -57,17 +49,31 @@ def main():
     fn test_gather_ax0() raises:
         print("== test_gather_ax0")
 
-        var data = TestTensor[DType.float32, 2](
-            DimList(3, 3), [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9]
+        var data_stack = InlineArray[Float32, 9](
+            Float32(1), 2, 3, 4, 5, 6, 7, 8, 9
         )
-        var indices = TestTensor[DType.int32, 2](
-            DimList(2, 3), [Int32(1), 2, 0, 2, 0, 0]
-        )
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(2, 3), [Float32(4), 8, 3, 7, 2, 3]
+        var data = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
+            data_stack
         )
 
-        test_case[DType.float32](0, data, indices, output_ref)
+        var indices_stack = InlineArray[Int32, 6](Int32(1), 2, 0, 2, 0, 0)
+        var indices = LayoutTensor[DType.int32, Layout.row_major(2, 3)](
+            indices_stack
+        )
+
+        var output_stack = InlineArray[Float32, 6](uninitialized=True)
+        var output = LayoutTensor[DType.float32, Layout.row_major(2, 3)](
+            output_stack
+        )
+
+        gather_elements(data, indices, 0, output)
+
+        assert_equal(output[0, 0], Float32(4))
+        assert_equal(output[0, 1], Float32(8))
+        assert_equal(output[0, 2], Float32(3))
+        assert_equal(output[1, 0], Float32(7))
+        assert_equal(output[1, 1], Float32(2))
+        assert_equal(output[1, 2], Float32(3))
 
     # CHECK-LABEL: test_gather_ax0
     # CHECK-NOT: FAIL
@@ -76,17 +82,31 @@ def main():
     fn test_gather_neg_indices() raises:
         print("== test_gather_neg_indices")
 
-        var data = TestTensor[DType.float32, 2](
-            DimList(3, 3), [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9]
+        var data_stack = InlineArray[Float32, 9](
+            Float32(1), 2, 3, 4, 5, 6, 7, 8, 9
         )
-        var indices = TestTensor[DType.int32, 2](
-            DimList(2, 3), [Int32(-1), -2, 0, -2, 0, 0]
-        )
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(2, 3), [Float32(7), 5, 3, 4, 2, 3]
+        var data = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
+            data_stack
         )
 
-        test_case[DType.float32](0, data, indices, output_ref)
+        var indices_stack = InlineArray[Int32, 6](Int32(-1), -2, 0, -2, 0, 0)
+        var indices = LayoutTensor[DType.int32, Layout.row_major(2, 3)](
+            indices_stack
+        )
+
+        var output_stack = InlineArray[Float32, 6](uninitialized=True)
+        var output = LayoutTensor[DType.float32, Layout.row_major(2, 3)](
+            output_stack
+        )
+
+        gather_elements(data, indices, 0, output)
+
+        assert_equal(output[0, 0], Float32(7))
+        assert_equal(output[0, 1], Float32(5))
+        assert_equal(output[0, 2], Float32(3))
+        assert_equal(output[1, 0], Float32(4))
+        assert_equal(output[1, 1], Float32(2))
+        assert_equal(output[1, 2], Float32(3))
 
     # CHECK-LABEL: test_gather_neg_indices
     # CHECK-NOT: FAIL

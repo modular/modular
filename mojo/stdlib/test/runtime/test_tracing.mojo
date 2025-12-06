@@ -32,7 +32,7 @@ def test_tracing[level: TraceLevel, enabled: Bool]():
             with Trace[level](s1, s2):
                 return lhs + rhs
         except e:
-            return abort[Int](String(e))
+            abort(String(e))
 
     @parameter
     async fn test_tracing_add_two_of_them[enabled: Bool](a: Int, b: Int) -> Int:

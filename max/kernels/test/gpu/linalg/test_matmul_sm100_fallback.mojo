@@ -16,18 +16,14 @@ from hashlib import default_comp_time_hasher
 from sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
+from memory import LegacyUnsafePointer as UnsafePointer
 
 # Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu.sm100.matmul import matmul_sm100_fallback
@@ -61,25 +57,47 @@ def test_matmul_sm100_fallback[
     )
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[b_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
+    var a_size = m.value * k.value
+    var b_size = n.value * k.value
+    var c_size = m.value * n.value
 
-    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+
+    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+        a_host_ptr, dynamic_a_shape
     )
-    var b_device = DeviceNDBuffer[b_type, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
+    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+        b_host_ptr, dynamic_b_shape
     )
-    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_ptr, dynamic_c_shape
     )
-    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_ref_ptr, dynamic_c_shape
     )
 
-    var c_tensor = c_device.tensor
+    var a_device = ctx.enqueue_create_buffer[a_type](a_size)
+    var b_device = ctx.enqueue_create_buffer[b_type](b_size)
+    var c_device = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
+
+    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+        a_device.unsafe_ptr(), dynamic_a_shape
+    )
+    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
+        b_device.unsafe_ptr(), dynamic_b_shape
+    )
+    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+        c_device.unsafe_ptr(), dynamic_c_shape
+    )
+    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+        c_device_ref.unsafe_ptr(), dynamic_c_shape
+    )
+
+    var c_tensor = c_device_nd
 
     print(
         "umma_shape",
@@ -123,20 +141,20 @@ def test_matmul_sm100_fallback[
         )
 
     # Initialize matmul operands
-    random(a_host.tensor)
-    random(b_host.tensor)
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    random(a_host)
+    random(b_host)
+    zero(c_host)
+    zero(c_host_ref)
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    var a = from_ndbuffer_row_major(a_device.tensor)
-    var b = from_ndbuffer_row_major(b_device.tensor)
-    var c = from_ndbuffer_row_major(c_device.tensor)
+    var a = from_ndbuffer_row_major(a_device_nd)
+    var b = from_ndbuffer_row_major(b_device_nd)
+    var c = from_ndbuffer_row_major(c_device_nd)
 
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
@@ -163,34 +181,34 @@ def test_matmul_sm100_fallback[
 
     vendor_blas.matmul(
         ctx,
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device_ref_nd,
+        a_device_nd,
+        b_device_nd,
         c_row_major=True,
         transpose_b=transpose_b,
     )
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
+        c_host,
+        c_host_ref,
         atol=0.0001,
         rtol=rtol,
     )
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
 
     _ = a
     _ = b

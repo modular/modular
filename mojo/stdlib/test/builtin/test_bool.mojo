@@ -39,17 +39,12 @@ def test_bool_none():
 
 
 @fieldwise_init
-struct MyTrue(ImplicitlyBoolable):
+struct MyTrue(Boolable):
     fn __bool__(self) -> Bool:
         return True
 
 
-fn takes_bool(cond: Bool) -> Bool:
-    return cond
-
-
-def test_convert_from_implicitly_boolable():
-    assert_true(takes_bool(MyTrue()))
+def test_convert_from_boolable():
     assert_true(Bool(MyTrue()))
 
 

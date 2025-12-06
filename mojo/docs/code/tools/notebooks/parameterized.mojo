@@ -11,23 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
-# Simple python program to test interop with Mojo.
-# This file is imported from hello_interop.mojo.
-
-import check_mod
-
-check_mod.install_if_missing("numpy")
-import numpy as np
+# DOC: mojo/tools/notebooks.mdx
 
 
-def test_interop_func() -> None:
-    print("Hello from Python!")
-    a = np.array([1, 2, 3])
-    print("I can even print a numpy array: ", a)
+# Compiler-parameterized function
+fn repeat[count: Int](msg: String):
+    @parameter
+    for i in range(count):
+        print(msg)
 
 
-if __name__ == "__main__":
-    from timeit import timeit
+# Compiler-argumented function
+fn threehello():
+    repeat[3]("Hello 🔥!")
 
-    print(timeit(lambda: test_interop_func(), number=1))
+
+# Run
+def main():
+    threehello()

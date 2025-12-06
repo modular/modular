@@ -16,11 +16,12 @@ from sys import has_nvidia_gpu_accelerator, simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
-from buffer import DimList, NDBuffer
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext, get_gpu_target
-from internal_utils import HostNDBuffer, random, zero
-from internal_utils._utils import ValOrDim, dynamic, static
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._fillers import random
 from linalg.bmm import _batched_matmul_gpu
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
@@ -28,6 +29,8 @@ from utils import Index, IndexList
 comptime epilogue_func_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
 ] (SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+
+comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
 @always_inline
@@ -47,71 +50,103 @@ fn test[
     *,
     transpose_b: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
+    Batch: Optional[Int] = None,
+    M: Optional[Int] = None,
+    N: Optional[Int] = None,
+    K: Optional[Int] = None,
 ](
     ctx: DeviceContext,
-    b: ValOrDim,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    b: Int,
+    m: Int,
+    n: Int,
+    k: Int,
     rtol: Float64 = 1e-3 if dtype is DType.float32 else 1e-2,
 ) raises:
-    var M = m.value
-    var N = n.value
-    var K = k.value
-    var B = b.value
-    print(B, "x", M, "x", N, "x", K, "transpose_b", transpose_b)
+    print(b, "x", m, "x", n, "x", k, "transpose_b", transpose_b)
 
-    comptime batch_static_a_shape = DimList(b.dim, m.dim, k.dim)
+    comptime batch_static_a_shape = DimList(to_dim[Batch], to_dim[M], to_dim[K])
     comptime batch_static_b_shape = DimList(
-        b.dim, n.dim, k.dim
-    ) if transpose_b else DimList(b.dim, k.dim, n.dim)
-    comptime batch_static_c_shape = DimList(b.dim, m.dim, n.dim)
+        to_dim[Batch], to_dim[N], to_dim[K]
+    ) if transpose_b else DimList(to_dim[Batch], to_dim[K], to_dim[N])
+    comptime batch_static_c_shape = DimList(to_dim[Batch], to_dim[M], to_dim[N])
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
+    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
+    comptime static_b_shape = DimList(
+        to_dim[N], to_dim[K]
+    ) if transpose_b else DimList(to_dim[K], to_dim[N])
+    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
+
+    var batch_dynamic_a_shape = IndexList[3](
+        Batch.or_else(b), M.or_else(m), K.or_else(k)
     )
-    comptime static_c_shape = DimList(m.dim, n.dim)
-
-    var batch_dynamic_a_shape = IndexList[3](b.value, m.value, k.value)
     var batch_dynamic_b_shape = IndexList[3](
-        b.value, n.value, k.value
-    ) if transpose_b else IndexList[3](b.value, k.value, n.value)
+        Batch.or_else(b), N.or_else(n), K.or_else(k)
+    ) if transpose_b else IndexList[3](
+        Batch.or_else(b), K.or_else(k), N.or_else(n)
+    )
 
-    var batch_dynamic_c_shape = IndexList[3](b.value, m.value, n.value)
+    var batch_dynamic_c_shape = IndexList[3](
+        Batch.or_else(b), M.or_else(m), N.or_else(n)
+    )
 
-    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
     var dynamic_b_shape = IndexList[2](
-        n.value, k.value
-    ) if transpose_b else IndexList[2](k.value, n.value)
+        N.or_else(n), K.or_else(k)
+    ) if transpose_b else IndexList[2](K.or_else(k), N.or_else(n))
 
-    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_c_shape = IndexList[2](M.or_else(m), N.or_else(n))
 
-    var a_host = HostNDBuffer[dtype, 3, batch_static_a_shape](
-        batch_dynamic_a_shape
+    var a_size = b * m * k
+    var b_size = b * n * k if transpose_b else b * k * n
+    var c_size = b * m * n
+
+    comptime a_layout = Layout.row_major(
+        Batch.or_else(UNKNOWN_VALUE),
+        M.or_else(UNKNOWN_VALUE),
+        K.or_else(UNKNOWN_VALUE),
     )
-    var b_host = HostNDBuffer[dtype, 3, batch_static_b_shape](
-        batch_dynamic_b_shape
+    comptime b_layout = Layout.row_major(
+        Batch.or_else(UNKNOWN_VALUE),
+        N.or_else(UNKNOWN_VALUE),
+        K.or_else(UNKNOWN_VALUE),
+    ) if transpose_b else Layout.row_major(
+        Batch.or_else(UNKNOWN_VALUE),
+        K.or_else(UNKNOWN_VALUE),
+        N.or_else(UNKNOWN_VALUE),
     )
-    var c_host = HostNDBuffer[dtype, 3, batch_static_c_shape](
-        batch_dynamic_c_shape
-    )
-    var c_host_ref = HostNDBuffer[dtype, 3, batch_static_c_shape](
-        batch_dynamic_c_shape
+    comptime c_layout = Layout.row_major(
+        Batch.or_else(UNKNOWN_VALUE),
+        M.or_else(UNKNOWN_VALUE),
+        N.or_else(UNKNOWN_VALUE),
     )
 
-    var a_device_buffer = ctx.enqueue_create_buffer[dtype](
-        a_host.tensor.num_elements()
+    # Host allocations
+    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
+    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
+    var c_host_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
+    var c_host_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
+
+    var a_host = LayoutTensor[dtype, a_layout](
+        a_host_ptr,
+        RuntimeLayout[a_layout].row_major(batch_dynamic_a_shape),
     )
-    var b_device_buffer = ctx.enqueue_create_buffer[dtype](
-        b_host.tensor.num_elements()
+    var b_host = LayoutTensor[dtype, b_layout](
+        b_host_ptr,
+        RuntimeLayout[b_layout].row_major(batch_dynamic_b_shape),
     )
-    var c_device_buffer = ctx.enqueue_create_buffer[dtype](
-        c_host.tensor.num_elements()
+    var c_host = LayoutTensor[dtype, c_layout](
+        c_host_ptr,
+        RuntimeLayout[c_layout].row_major(batch_dynamic_c_shape),
     )
-    var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](
-        c_host_ref.tensor.num_elements()
+    var c_host_ref = LayoutTensor[dtype, c_layout](
+        c_host_ref_ptr,
+        RuntimeLayout[c_layout].row_major(batch_dynamic_c_shape),
     )
+
+    var a_device_buffer = ctx.enqueue_create_buffer[dtype](a_size)
+    var b_device_buffer = ctx.enqueue_create_buffer[dtype](b_size)
+    var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
+    var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
     var a_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_a_shape, _](
         a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape
@@ -126,17 +161,17 @@ fn test[
         dtype, 3, MutAnyOrigin, batch_static_c_shape, _
     ](c_device_ref_buffer.unsafe_ptr(), batch_dynamic_c_shape)
 
-    random(a_host.tensor)
-    random(b_host.tensor)
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    random(a_host)
+    random(b_host)
+    _ = c_host.fill(0)
+    _ = c_host_ref.fill(0)
 
     # Move operands to the Device
 
-    ctx.enqueue_copy(a_device_buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device_buffer, b_host.tensor.data)
-    ctx.enqueue_copy(c_device_buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref_buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(a_device_buffer, a_host_ptr)
+    ctx.enqueue_copy(b_device_buffer, b_host_ptr)
+    ctx.enqueue_copy(c_device_buffer, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
 
     @parameter
     @always_inline
@@ -168,16 +203,16 @@ fn test[
     ctx.synchronize()
 
     # Skip equality check if N or K are 0 (causes error in vendor_blas).
-    if N == 0 or K == 0:
+    if n == 0 or k == 0:
         return
-    if not has_nvidia_gpu_accelerator() and M == 0:
+    if not has_nvidia_gpu_accelerator() and m == 0:
         # AMD doesn't support matmul with M=0
         return
 
-    for i in range(B):
-        var c_ptr = c_device_ref.data + (i * M * N)
-        var a_ptr = a_device.data + (i * M * K)
-        var b_ptr = b_device.data + (i * K * N)
+    for i in range(b):
+        var c_ptr = c_device_ref.data + (i * m * n)
+        var a_ptr = a_device.data + (i * m * k)
+        var b_ptr = b_device.data + (i * k * n)
 
         var c_buffer = NDBuffer[dtype, 2, _, static_c_shape](
             c_ptr, dynamic_c_shape
@@ -203,7 +238,7 @@ fn test[
     comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device_ref, B, M, N)
+    @__copy_capture(c_device_ref, b, m, n)
     @parameter
     fn func[
         simd_width: Int, rank: Int, alignment: Int = 1
@@ -221,33 +256,31 @@ fn test[
     @parameter
     if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
-            IndexList[3](B, M, Int(N)),
+            IndexList[3](b, m, Int(n)),
             ctx,
         )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device_buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref_buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device_buffer)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref_buffer)
     ctx.synchronize()
 
-    c_host_tensor = c_host.tensor
-    c_host_ref_tensor = c_host_ref.tensor
-
-    for b in range(B):
-        for m in range(M):
-            for n in range(N):
-                var expect = c_host_ref_tensor[b, m, n]
-                var actual = c_host_tensor[b, m, n]
+    for batch_idx in range(b):
+        for m_idx in range(m):
+            for n_idx in range(n):
+                var expect = c_host_ref[batch_idx, m_idx, n_idx][0]
+                var actual = c_host[batch_idx, m_idx, n_idx][0]
 
                 assert_almost_equal(actual, expect, rtol=rtol)
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device_buffer^
+    _ = b_device_buffer^
+    _ = c_device_buffer^
+    _ = c_device_ref_buffer^
 
 
 def main():
@@ -256,40 +289,68 @@ def main():
         test[
             DType.bfloat16,
             transpose_b=False,
-        ](ctx, dynamic(0), dynamic(2), dynamic(2), dynamic(2))
+            Batch=None,
+            M=None,
+            N=None,
+            K=None,
+        ](ctx, 0, 2, 2, 2)
 
         test[
             DType.bfloat16,
             transpose_b=False,
-        ](ctx, dynamic(2), dynamic(0), dynamic(2), dynamic(2))
+            Batch=None,
+            M=None,
+            N=None,
+            K=None,
+        ](ctx, 2, 0, 2, 2)
 
         test[
             DType.bfloat16,
             transpose_b=False,
-        ](ctx, dynamic(2), dynamic(2), dynamic(0), dynamic(2))
+            Batch=None,
+            M=None,
+            N=None,
+            K=None,
+        ](ctx, 2, 2, 0, 2)
 
         test[
             DType.bfloat16,
             transpose_b=False,
-        ](ctx, dynamic(2), dynamic(2), dynamic(2), dynamic(0))
+            Batch=None,
+            M=None,
+            N=None,
+            K=None,
+        ](ctx, 2, 2, 2, 0)
 
         # tests naive kernels
         test[
             DType.bfloat16,
             transpose_b=False,
-        ](ctx, dynamic(2), dynamic(2), dynamic(2), dynamic(2))
+            Batch=None,
+            M=None,
+            N=None,
+            K=None,
+        ](ctx, 2, 2, 2, 2)
 
         test[
             DType.float32,
             transpose_b=False,
             lambda_fn=elementwise_epilogue_fn,
-        ](ctx, dynamic(2), dynamic(2), dynamic(2), dynamic(2))
+            Batch=None,
+            M=None,
+            N=None,
+            K=None,
+        ](ctx, 2, 2, 2, 2)
 
         test[
             DType.float32,
             transpose_b=False,
             lambda_fn=elementwise_epilogue_fn,
-        ](ctx, dynamic(64), dynamic(256), dynamic(512), dynamic(128))
+            Batch=None,
+            M=None,
+            N=None,
+            K=None,
+        ](ctx, 64, 256, 512, 128)
 
         @parameter
         if has_nvidia_gpu_accelerator():
@@ -300,44 +361,50 @@ def main():
                 DType.bfloat16,
                 transpose_b=True,
                 lambda_fn=elementwise_epilogue_fn,
-            ](ctx, dynamic(2), dynamic(600), static[128256](), static[4096]())
+                Batch=None,
+                M=None,
+                N = Int(128256),
+                K = Int(4096),
+            ](ctx, 2, 600, 128256, 4096)
 
             # tests kernels.ampere_256x64_4
             test[
                 DType.bfloat16,
                 transpose_b=True,
                 lambda_fn=elementwise_epilogue_fn,
-            ](
-                ctx,
-                dynamic(4),
-                dynamic(14),
-                static[3072](),
-                static[12288](),
-                rtol=2e-2,
-            )
+                Batch=None,
+                M=None,
+                N = Int(3072),
+                K = Int(12288),
+            ](ctx, 4, 14, 3072, 12288, rtol=2e-2)
 
             # tests DeepSeek Case
             test[
                 DType.bfloat16,
                 transpose_b=True,
                 lambda_fn=elementwise_epilogue_fn,
-            ](ctx, dynamic(128), dynamic(256), static[128](), static[512]())
+                Batch=None,
+                M=None,
+                N = Int(128),
+                K = Int(512),
+            ](ctx, 128, 256, 128, 512)
 
             test[
                 DType.bfloat16,
                 transpose_b=True,
                 lambda_fn=elementwise_epilogue_fn,
-            ](ctx, dynamic(128), dynamic(256), static[512](), static[128]())
+                Batch=None,
+                M=None,
+                N = Int(512),
+                K = Int(128),
+            ](ctx, 128, 256, 512, 128)
 
             test[
                 DType.bfloat16,
                 transpose_b=False,
                 lambda_fn=elementwise_epilogue_fn,
-            ](
-                ctx,
-                dynamic(4),
-                dynamic(14),
-                static[3072](),
-                static[12288](),
-                rtol=2e-2,
-            )
+                Batch=None,
+                M=None,
+                N = Int(3072),
+                K = Int(12288),
+            ](ctx, 4, 14, 3072, 12288, rtol=2e-2)

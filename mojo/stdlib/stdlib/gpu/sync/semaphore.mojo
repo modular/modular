@@ -37,12 +37,11 @@ from sys import is_nvidia_gpu, llvm_intrinsic
 
 from ..intrinsics import Scope, load_acquire, store_release
 from .sync import MaxHardwareBarriers, barrier, named_barrier
-from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @always_inline
 fn _barrier_and(state: Int32) -> Int32:
-    constrained[is_nvidia_gpu(), "target must be an nvidia GPU"]()
+    __comptime_assert is_nvidia_gpu(), "target must be an nvidia GPU"
     return llvm_intrinsic["llvm.nvvm.barrier0.and", Int32](state)
 
 
@@ -54,7 +53,7 @@ struct Semaphore:
     It uses a single thread per CTA to perform atomic operations on a shared lock variable.
     """
 
-    var _lock: UnsafePointer[Int32]
+    var _lock: UnsafePointer[Int32, MutAnyOrigin]
     """Pointer to the shared lock variable in global memory that all CTAs synchronize on"""
 
     var _wait_thread: Bool
@@ -64,7 +63,9 @@ struct Semaphore:
     """Current state of the semaphore, used to track synchronization status"""
 
     @always_inline
-    fn __init__(out self, lock: UnsafePointer[Int32], thread_id: Int):
+    fn __init__(
+        out self, lock: UnsafePointer[Int32, MutAnyOrigin], thread_id: Int
+    ):
         """Initialize a new Semaphore instance.
 
         Args:
@@ -72,7 +73,7 @@ struct Semaphore:
             thread_id: Thread ID within the CTA, used to determine if this thread
                       should perform atomic operations.
         """
-        constrained[is_nvidia_gpu(), "target must be cuda"]()
+        __comptime_assert is_nvidia_gpu(), "target must be cuda"
         self._lock = lock
         self._wait_thread = thread_id <= 0
         self._state = -1
@@ -142,7 +143,7 @@ struct NamedBarrierSemaphore[
         max_num_barriers: Maximum number of named barriers to use.
     """
 
-    var _lock: UnsafePointer[Int32]
+    var _lock: UnsafePointer[Int32, MutAnyOrigin]
     """Pointer to the shared lock variable in global memory that all CTAs synchronize on"""
 
     var _wait_thread: Bool
@@ -152,7 +153,9 @@ struct NamedBarrierSemaphore[
     """Current state of the semaphore, used to track synchronization status"""
 
     @always_inline
-    fn __init__(out self, lock: UnsafePointer[Int32], thread_id: Int):
+    fn __init__(
+        out self, lock: UnsafePointer[Int32, MutAnyOrigin], thread_id: Int
+    ):
         """Initialize a new Semaphore instance.
 
         Args:
@@ -160,11 +163,10 @@ struct NamedBarrierSemaphore[
             thread_id: Thread ID within the CTA, used to determine if this thread
                       should perform atomic operations.
         """
-        constrained[is_nvidia_gpu(), "target must be cuda"]()
-        constrained[
-            Self.id_offset + Self.max_num_barriers < MaxHardwareBarriers,
-            "max number of barriers is " + String(MaxHardwareBarriers),
-        ]()
+        __comptime_assert is_nvidia_gpu(), "target must be cuda"
+        __comptime_assert (
+            Self.id_offset + Self.max_num_barriers < MaxHardwareBarriers
+        ), "max number of barriers is " + String(MaxHardwareBarriers)
         self._lock = lock
         self._wait_thread = thread_id <= 0
         self._state = -1

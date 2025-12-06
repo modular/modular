@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
     name = "entrypoints",
@@ -13,7 +13,6 @@ modular_py_library(
         ],
     ),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/diagnostics",
         "//max/python/max/pipelines",
@@ -98,6 +97,5 @@ modular_py_library(
     name = "gpu-query",
     srcs = ["gpu_query.py"],
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = ["@mojo//:python"],
 )

@@ -25,7 +25,7 @@ from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
 
 @fieldwise_init
-struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
     """Defines a benchmark throughput metric."""
 
     var code: Int
@@ -136,7 +136,7 @@ struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
 
 
 @fieldwise_init
-struct ThroughputMeasure(ImplicitlyCopyable, Movable):
+struct ThroughputMeasure(ImplicitlyCopyable):
     """Records a throughput metric of metric BenchMetric and value."""
 
     var metric: BenchMetric
@@ -201,7 +201,7 @@ struct ThroughputMeasure(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct Format(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct Format(ImplicitlyCopyable, Stringable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -269,7 +269,7 @@ struct Format(ImplicitlyCopyable, Movable, Stringable, Writable):
 
 
 @fieldwise_init
-struct BenchConfig(Copyable, Movable):
+struct BenchConfig(Copyable):
     """Defines a benchmark configuration struct to control
     execution times and frequency.
     """
@@ -442,7 +442,7 @@ struct BenchId:
         self.input_id = None
 
 
-struct BenchmarkInfo(Copyable, Movable):
+struct BenchmarkInfo(Copyable):
     """Defines a Benchmark Info struct to record execution Statistics."""
 
     var name: String
@@ -479,7 +479,7 @@ struct BenchmarkInfo(Copyable, Movable):
 
 
 @fieldwise_init
-struct Mode(ImplicitlyCopyable, Movable):
+struct Mode(ImplicitlyCopyable):
     """Defines a Benchmark Mode to distinguish between test runs and actual benchmarks.
     """
 
@@ -649,7 +649,7 @@ struct Bench(Stringable, Writable):
                 current_suffix = String(split[-1])
 
             self.config.out_file = Path(
-                ".".join(List[String](stem + suffix, current_suffix))
+                ".".join(Span[String]([stem + suffix, current_suffix]))
             )
 
     fn bench_with_input[
@@ -799,37 +799,6 @@ struct Bench(Stringable, Writable):
         self.bench_function[bench_iter](bench_id, measures=measures)
 
     fn bench_function[
-        bench_fn: fn (mut Bencher) capturing [_] -> None
-    ](
-        mut self,
-        bench_id: BenchId,
-        measures: List[ThroughputMeasure] = {},
-        fixed_iterations: Optional[Int] = None,
-    ) raises:
-        """Benchmarks or Tests an input function.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-            fixed_iterations: Just run a fixed number of iterations.
-
-        Raises:
-            If the operation fails.
-        """
-
-        if self.mode == Mode.Benchmark:
-            for _ in range(self.config.num_repetitions):
-                self._bench[bench_fn](
-                    bench_id, measures.copy(), fixed_iterations
-                )
-        elif self.mode == Mode.Test:
-            self._test[bench_fn]()
-
-    # TODO (#31795): overload should not be needed
-    fn bench_function[
         bench_fn: fn (mut Bencher) raises capturing [_] -> None
     ](
         mut self,
@@ -852,21 +821,27 @@ struct Bench(Stringable, Writable):
         """
 
         @parameter
-        fn abort_on_err(mut b: Bencher):
+        fn bench_with_abort_on_err(mut b: Bencher):
             """Aborts benchmark in case of an error.
 
             Args:
                 b: The bencher object to facilitate benchmark execution.
             """
 
-            # TODO (#31795): if we don't catch the exception here we have to overload
+            # TODO: if we don't catch the exception here we have to overload
             # almost every function in stdlib benchmark and stdlib time
             try:
                 bench_fn(b)
             except e:
                 abort(String(e))
 
-        self.bench_function[abort_on_err](bench_id, measures)
+        if self.mode == Mode.Benchmark:
+            for _ in range(self.config.num_repetitions):
+                self._bench[bench_with_abort_on_err](
+                    bench_id, measures.copy(), fixed_iterations
+                )
+        elif self.mode == Mode.Test:
+            self._test[bench_with_abort_on_err]()
 
     fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
         """Tests an input function by executing it only once.
@@ -989,7 +964,7 @@ struct Bench(Stringable, Writable):
         Returns:
             A string padded to the given width.
         """
-        constrained[len(pad_str) == 1, "pad_str must be length 1."]()
+        __comptime_assert len(pad_str) == 1, "pad_str must be length 1."
 
         if self.config.format == Format.csv:
             return ""
@@ -1219,7 +1194,7 @@ struct Bench(Stringable, Writable):
 
 
 @fieldwise_init
-struct _Metric(Copyable, Movable):
+struct _Metric(Copyable):
     var max_width: Int
     var rates: Dict[Int, Float64]
 
@@ -1279,14 +1254,17 @@ struct Bencher:
             var stop = time.perf_counter_ns()
             self.elapsed += Int(stop - start)
 
-    fn iter_custom[iter_fn: fn (Int) capturing [_] -> Int](mut self):
+    fn iter_custom[iter_fn: fn (Int) raises capturing [_] -> Int](mut self):
         """Times a target function with custom number of iterations.
 
         Parameters:
             iter_fn: The target function to benchmark.
         """
 
-        self.elapsed = iter_fn(self.num_iters)
+        try:
+            self.elapsed = iter_fn(self.num_iters)
+        except e:
+            abort(String(e))
 
     fn iter_custom[
         kernel_launch_fn: fn (DeviceContext) raises capturing [_] -> None
@@ -1360,16 +1338,3 @@ struct Bencher:
             iter_fn()
         var stop = time.perf_counter_ns()
         self.elapsed = Int(stop - start)
-
-    # TODO (#31795):  overload should not be needed
-    fn iter_custom[iter_fn: fn (Int) capturing raises -> Int](mut self):
-        """Times a target function with custom number of iterations.
-
-        Parameters:
-            iter_fn: The target function to benchmark.
-        """
-
-        try:
-            self.elapsed = iter_fn(self.num_iters)
-        except e:
-            abort(String(e))

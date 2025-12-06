@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _FILECHECK_TESTS = [
     "test_trap.mojo",
 ]
@@ -44,6 +46,14 @@ _EXPECT_CRASH = [
         ],
         data = [src],  # NOTE: some tests attempt to read their source files
         env = _ENV.get(src, {}),
+        target_compatible_with = select({
+            # FIXME: MSTDL-2081
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) if src in [
+            "test_link.mojo",
+            "test_symlink.mojo",
+        ] else [],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

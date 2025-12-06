@@ -321,7 +321,6 @@ struct IntTuple(
     ImplicitlyCopyable,
     Intable,
     Iterable,
-    Movable,
     Sized,
     Stringable,
     Writable,
@@ -2246,7 +2245,7 @@ fn prefix_product(a: IntTuple, init: Int) -> IntTuple:
     if len(a) == 0:
         return IntTuple()
     # Short-circuit for single integer
-    if is_int(a) == 1:
+    if is_int(a):
         return init
 
     var init_tuple = IntTuple(init)
@@ -2448,7 +2447,7 @@ fn idx2crd2(
 
             return apply_zip[idx2crd2](idx, shape, stride)
         else:  # tuple "int" "int"
-            return abort[IntTuple]("Illegal inputs")  # Error
+            abort("Illegal inputs")  # Error
     else:
         if is_tuple(shape):  # "int" tuple tuple
 

@@ -98,17 +98,72 @@ def _run_cmdline(
         raise SystemExit(f"Unable to run command {list2cmdline(cmd)}") from exc
 
 
+@dataclass(frozen=True)
+class Lang:
+    name: str
+    extensions: list[str]
+    path: str
+    needs_compilation: bool
+
+
+# TODO: enabled cached property option
+# @functools.cached_property
+# @staticmethod
+def mojo_binary() -> str:
+    """Find mojo binary in PATH."""
+    # Check for Bazel-provided mojo binary first
+    if mojo_path := os.environ.get("MODULAR_MOJO_MAX_DRIVER_PATH"):
+        if os.path.exists(mojo_path):
+            return mojo_path
+        else:
+            raise FileNotFoundError(
+                f"MODULAR_MOJO_MAX_DRIVER_PATH '{mojo_path}' does not exist."
+            )
+    # Fall back to searching in PATH
+    if mojo := shutil.which("mojo"):
+        return mojo
+    raise FileNotFoundError("Could not find the `mojo` binary.")
+
+
+def python_binary() -> str:
+    """Find python binary in PATH."""
+    # Fall back to searching in PATH
+    if python := shutil.which("python3"):
+        return python
+    raise FileNotFoundError("Could not find the `python` binary.")
+
+
+class SupportedLangs:
+    MOJO = Lang("mojo", [".mojo"], mojo_binary(), needs_compilation=True)
+    PYTHON = Lang("python", [".py"], python_binary(), needs_compilation=False)
+
+    @staticmethod
+    def which_executor(file: Path) -> Lang:
+        if file.suffix in SupportedLangs.PYTHON.extensions:
+            return SupportedLangs.PYTHON
+        elif file.suffix in SupportedLangs.MOJO.extensions:
+            return SupportedLangs.MOJO
+        else:
+            raise ValueError(f"Extension {file.suffix} is not supported!")
+
+
 @dataclass
 class Param:
     name: str
     value: Any
 
-    def define(self) -> list[str]:
+    def define(self, lang: Lang) -> list[str]:
         """Generate command line arguments for this parameter."""
-        if self.name.startswith("$"):
+
+        if lang == SupportedLangs.MOJO:
+            if self.name.startswith("$"):
+                var_name = self.name.removeprefix("$")
+                return [f"--{var_name}={self.value}"]
+            return ["-D", f"{self.name}={self.value}"]
+        if lang == SupportedLangs.PYTHON:
             var_name = self.name.removeprefix("$")
             return [f"--{var_name}={self.value}"]
-        return ["-D", f"{self.name}={self.value}"]
+        return [""]
 
 
 @dataclass
@@ -206,38 +261,18 @@ class KbenchCache:
 class SpecInstance:
     name: str
     file: Path
-    executor: str | None = None
+    executor: Lang
     params: list[Param] = field(default_factory=list)
 
     def __bool__(self) -> bool:
         return bool(self.params)
 
     @functools.cached_property
-    def mojo_binary(self) -> str:
-        """Find mojo binary in PATH."""
-        # Check for Bazel-provided mojo binary first
-        if mojo_path := os.environ.get("MODULAR_MOJO_MAX_DRIVER_PATH"):
-            if os.path.exists(mojo_path):
-                return mojo_path
-            else:
-                raise FileNotFoundError(
-                    f"MODULAR_MOJO_MAX_DRIVER_PATH '{mojo_path}' does not exist."
-                )
-        # Fall back to searching in PATH
-        if mojo := shutil.which("mojo"):
-            return mojo
-        raise FileNotFoundError("Could not find the `mojo` binary.")
-
-    def get_executor(self) -> list[str]:
-        """Get executor command."""
-        return self.executor.split() if self.executor else [self.mojo_binary]
-
-    @functools.cached_property
     def _get_defines(self) -> list[str]:
         defines = []
         for param in self.params:
             if not param.name.startswith("$"):
-                defines.append(param.define())
+                defines.append(param.define(self.executor))
 
         return [item for sublist in defines for item in sublist]
 
@@ -246,7 +281,7 @@ class SpecInstance:
         vars = []
         for param in self.params:
             if param.name.startswith("$"):
-                vars.append(param.define())
+                vars.append(param.define(self.executor))
 
         return [item for sublist in vars for item in sublist]
 
@@ -275,25 +310,32 @@ class SpecInstance:
                 + f"vars   : {self._get_vars}"
             )
 
-        # TODO: add mojo-specific functions and allow for further expansion to other executors.
-        cmd = self.get_executor()
-        cmd.extend(["build"])
-        if build_opts:
-            cmd.extend(build_opts)
-        cmd.extend(
-            [
-                *self._get_defines,
-                str(self.file),
-                "-o",
-                str(bin_path),
-            ]
-        )
-        out = _run_cmdline(cmd, dryrun)
-        if out.return_code == os.EX_OK:
-            out.path = bin_path
-        else:
-            out.path = None
-        return out
+        executor = self.executor
+
+        if not executor.needs_compilation:
+            return ProcessOutput(return_code=os.EX_OK, path=self.file)
+
+        if executor == SupportedLangs.MOJO:
+            cmd = [executor.path]
+            cmd.extend(["build"])
+            if build_opts:
+                cmd.extend(build_opts)
+            cmd.extend(
+                [
+                    *self._get_defines,
+                    str(self.file),
+                    "-o",
+                    str(bin_path),
+                ]
+            )
+            out = _run_cmdline(cmd, dryrun)
+            if out.return_code == os.EX_OK:
+                out.path = bin_path
+            else:
+                out.path = None
+            return out
+
+        return ProcessOutput()
 
     def execute(
         self,
@@ -305,7 +347,12 @@ class SpecInstance:
         env: dict[str, str] = {},  # noqa: B006
         timeout_secs: int | None = None,
     ) -> ProcessOutput:
-        vars = self._get_vars
+        if self.executor == SupportedLangs.PYTHON:
+            exec_prefix = [self.executor.path] + exec_prefix
+            vars = self._get_defines + self._get_vars
+        else:
+            vars = self._get_vars
+
         cmd = []
         if exec_prefix:
             logging.debug(f"exec-prefix: {exec_prefix}")
@@ -314,6 +361,7 @@ class SpecInstance:
         if exec_suffix:
             cmd.extend(exec_suffix)
             logging.debug(f"exec-suffix: {exec_suffix}")
+
         out = _run_cmdline(cmd, dryrun, timeout=timeout_secs, env=env)
         return out
 
@@ -371,6 +419,7 @@ class GridSearchStrategy:
                         Param(name=name_list[i], value=param_mesh[idx][i])
                         for i in range(num_params)
                     ],
+                    executor=SupportedLangs.which_executor(file),
                 )
                 self.instances.append(s)
 
@@ -578,7 +627,9 @@ class Spec:
             self.setup_mesh()
         else:
             # default values for empty mesh
-            self.mesh = [SpecInstance("", Path("./"))]
+            self.mesh = [
+                SpecInstance("", Path("./"), executor=SupportedLangs.MOJO)
+            ]
 
     def setup_mesh(self):  # noqa: ANN201
         """
@@ -1153,6 +1204,9 @@ class Scheduler:
                     )
                     valid_specs.extend(current_valid_specs)
                     valid = len(current_valid_specs) > 0
+
+                # TODO: is this case still needed? why should successful
+                # build without output.csv be considered as valid result?
 
                 if not valid:
                     df = pd.DataFrame().from_dict(

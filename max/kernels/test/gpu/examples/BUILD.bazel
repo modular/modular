@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _FILECHECK_TESTS = [
     "test_stencil1d.mojo",
     "test_stencil2d.mojo",
@@ -23,6 +25,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2435
+    "test_stencil_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2941
 }
 
 [

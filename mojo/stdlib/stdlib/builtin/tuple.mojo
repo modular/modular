@@ -15,14 +15,10 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from builtin.constrained import _constrained_conforms_to
 from sys.intrinsics import _type_is_eq
 
-from builtin.variadics import (
-    variadic_size,
-    VariadicOf,
-    Reversed,
-    Concatenated,
-)
+from builtin.variadics import Variadic
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -32,9 +28,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Copyable & Movable](
-    ImplicitlyCopyable, Movable, Sized
-):
+struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     """The type of a literal tuple expression.
 
     A tuple consists of zero or more values, separated by commas.
@@ -45,7 +39,7 @@ struct Tuple[*element_types: Copyable & Movable](
 
     comptime _mlir_type = __mlir_type[
         `!kgen.pack<:`,
-        VariadicOf[Copyable & Movable],
+        Variadic.TypesOfTrait[Movable],
         Self.element_types,
         `>`,
     ]
@@ -74,9 +68,7 @@ struct Tuple[*element_types: Copyable & Movable](
     fn __init__(
         out self,
         *,
-        var storage: VariadicPack[
-            _, _, Copyable & Movable, *Self.element_types
-        ],
+        var storage: VariadicPack[_, _, Movable, *Self.element_types],
     ):
         """Construct the tuple from a low-level internal representation.
 
@@ -119,7 +111,19 @@ struct Tuple[*element_types: Copyable & Movable](
 
         @parameter
         for i in range(Self.__len__()):
-            UnsafePointer(to=self[i]).init_pointee_copy(existing[i])
+            comptime element_type = Self.element_types[i]
+            _constrained_conforms_to[
+                conforms_to(element_type, Copyable),
+                Parent=Self,
+                Element=element_type,
+                ParentConformsTo="Copyable",
+            ]()
+
+            # TODO: We should not use self[i] as this returns a reference to
+            # uninitialized memory.
+            UnsafePointer(
+                to=trait_downcast[Copyable](self[i])
+            ).init_pointee_copy(trait_downcast[Copyable](existing[i]))
 
     @always_inline("nodebug")
     fn __moveinit__(out self, deinit existing: Self):
@@ -135,6 +139,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
         @parameter
         for i in range(Self.__len__()):
+            # TODO: We should not use self[i] as this returns a reference to
+            # uninitialized memory.
             UnsafePointer(to=self[i]).init_pointee_move_from(
                 UnsafePointer(to=existing[i])
             )
@@ -149,7 +155,7 @@ struct Tuple[*element_types: Copyable & Movable](
             The tuple length.
         """
 
-        comptime result = stdlib.builtin.variadic_size(Self.element_types)
+        comptime result = Variadic.size(Self.element_types)
         return result
 
     @always_inline("nodebug")
@@ -214,9 +220,7 @@ struct Tuple[*element_types: Copyable & Movable](
         return False
 
     @always_inline("nodebug")
-    fn __init__[
-        *elt_types: Copyable & Movable & Defaultable
-    ](out self: Tuple[*elt_types]):
+    fn __init__[*elt_types: Movable & Defaultable](out self: Tuple[*elt_types]):
         """Construct a tuple with default-initialized elements.
 
         Parameters:
@@ -234,8 +238,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __eq__[
-        self_elt_types: VariadicOf[Copyable & Movable & Equatable],
-        other_elt_types: VariadicOf[Copyable & Movable & Equatable],
+        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using equality comparison.
 
@@ -263,18 +267,17 @@ struct Tuple[*element_types: Copyable & Movable](
         for i in range(type_of(self).__len__()):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            constrained[
-                _type_is_eq[self_type, other_type](),
-                "Tuple elements must be of the same type to compare.",
-            ]()
+            __comptime_assert _type_is_eq[
+                self_type, other_type
+            ](), "Tuple elements must be of the same type to compare."
             if self[i] != rebind[self_type](other[i]):
                 return False
         return True
 
     @always_inline
     fn __ne__[
-        self_elt_types: VariadicOf[Copyable & Movable & Equatable],
-        other_elt_types: VariadicOf[Copyable & Movable & Equatable],
+        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using inequality comparison.
 
@@ -293,8 +296,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn _compare[
-        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
-        other_elt_types: VariadicOf[Copyable & Movable & Comparable],
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Int:
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
@@ -309,14 +312,11 @@ struct Tuple[*element_types: Copyable & Movable](
         for i in range(min_length):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            constrained[
-                _type_is_eq[self_type, other_type](),
-                String(
-                    "Mismatch between tuple elements at index ",
-                    i,
-                    " must be of the same type to compare.",
-                ),
-            ]()
+            __comptime_assert _type_is_eq[self_type, other_type](), String(
+                "Mismatch between tuple elements at index ",
+                i,
+                " must be of the same type to compare.",
+            )
             if self[i] < rebind[self_type](other[i]):
                 return -1
             if rebind[self_type](other[i]) < self[i]:
@@ -332,8 +332,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __lt__[
-        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
-        other_elt_types: VariadicOf[Copyable & Movable & Comparable], //,
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than comparison.
 
@@ -351,8 +351,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __le__[
-        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
-        other_elt_types: VariadicOf[Copyable & Movable & Comparable], //,
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than or equal to comparison.
 
@@ -370,8 +370,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __gt__[
-        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
-        other_elt_types: VariadicOf[Copyable & Movable & Comparable], //,
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than comparison.
 
@@ -391,8 +391,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __ge__[
-        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
-        other_elt_types: VariadicOf[Copyable & Movable & Comparable], //,
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than or equal to comparison.
 
@@ -410,7 +410,9 @@ struct Tuple[*element_types: Copyable & Movable](
         return self._compare(other) >= 0
 
     @always_inline("nodebug")
-    fn reverse(deinit self, out result: Tuple[*Reversed[*Self.element_types]]):
+    fn reverse(
+        deinit self, out result: Tuple[*Variadic.reverse[*Self.element_types]]
+    ):
         """Return a new tuple with the elements in reverse order.
 
         Returns:
@@ -426,19 +428,19 @@ struct Tuple[*element_types: Copyable & Movable](
             UnsafePointer(to=result[i]).init_pointee_move_from(
                 rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
                     UnsafePointer(
-                        to=self[variadic_size(Self.element_types) - 1 - i]
+                        to=self[Variadic.size(Self.element_types) - 1 - i]
                     )
                 )
             )
 
     @always_inline("nodebug")
     fn concat[
-        *other_element_types: Copyable & Movable
+        *other_element_types: Movable
     ](
         deinit self,
         deinit other: Tuple[*other_element_types],
         out result: Tuple[
-            *Concatenated[Self.element_types, other_element_types]
+            *Variadic.concat[Self.element_types, other_element_types]
         ],
     ):
         """Return a new tuple that concatenates this tuple with another.

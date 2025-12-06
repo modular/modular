@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _NO_ASAN = [
     "test_string.mojo",
     "test_string_slice.mojo",  # TODO(MOCO-2316): Takes too long to compile

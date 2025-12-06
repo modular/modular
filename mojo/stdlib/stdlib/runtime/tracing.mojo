@@ -30,6 +30,7 @@ from gpu.host._tracing import _start_range as _start_gpu_range
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList, Variant
+from os import abort
 
 comptime log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
 
@@ -144,7 +145,7 @@ struct TraceCategory(Equatable, Identifiable, Intable):
 
 
 @register_passable("trivial")
-struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable, Movable):
+struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
@@ -383,7 +384,7 @@ struct Trace[
     *,
     category: TraceCategory = TraceCategory.MAX,
     target: Optional[StaticString] = None,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """An object representing a specific trace.
 
     This struct provides functionality for creating and managing trace events
@@ -667,13 +668,10 @@ struct Trace[
         ](self.event_id)
 
     @always_inline
-    fn __exit__(self) raises:
+    fn __exit__(self):
         """Exits the trace context.
 
         This finishes recording of the trace event.
-
-        Raises:
-            If the operation fails.
         """
 
         @parameter
@@ -683,7 +681,10 @@ struct Trace[
 
         @parameter
         if _is_gpu_profiler_enabled[Self.category, Self.level]():
-            _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+            try:
+                _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+            except:
+                abort("GPU tracing failure")
             return
 
         @parameter

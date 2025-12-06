@@ -13,16 +13,11 @@
 
 from math import ceildiv
 
-from buffer import Dim, DimList
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    fill,
-    random,
-    zero,
-)
+from memory import LegacyUnsafePointer as UnsafePointer
+
+from internal_utils import assert_almost_equal, fill, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 
@@ -90,44 +85,79 @@ fn test_naive_blockwise_fp8_matmul[
         ceildiv(k.value, BLOCK_SCALE_K), ceildiv(n.value, BLOCK_SCALE_N)
     )
 
-    var a_host = HostNDBuffer[input_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[input_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[DType.float32, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[DType.float32, 2, static_c_shape](
-        dynamic_c_shape
+    var a_size = m.value * k.value
+    var b_size = n.value * k.value
+    var c_size = m.value * n.value
+    var a_scale_size = ceildiv(k.value, BLOCK_SCALE_K) * ceildiv(
+        m.value, BLOCK_SCALE_M
+    )
+    var b_scale_size = ceildiv(n.value, BLOCK_SCALE_N) * ceildiv(
+        k.value, BLOCK_SCALE_K
     )
 
-    random(a_host.tensor)
-    random(b_host.tensor)
+    var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(a_size)
+    var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
+    var c_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
+    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
 
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
-
-    var a_device = DeviceNDBuffer[input_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+    var a_host = NDBuffer[input_type, 2, _, static_a_shape](
+        a_host_ptr, dynamic_a_shape
     )
-    var b_device = DeviceNDBuffer[input_type, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
+    var b_host = NDBuffer[input_type, 2, _, static_b_shape](
+        b_host_ptr, dynamic_b_shape
     )
-    var c_device = DeviceNDBuffer[DType.float32, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_host = NDBuffer[DType.float32, 2, _, static_c_shape](
+        c_host_ptr, dynamic_c_shape
     )
-
-    var a_scale_host = HostNDBuffer[DType.float32, 2, static_a_scale_shape](
-        dynamic_a_scale_shape
-    )
-    var b_scale_host = HostNDBuffer[DType.float32, 2, static_b_scale_shape](
-        dynamic_b_scale_shape
+    var c_host_ref = NDBuffer[DType.float32, 2, _, static_c_shape](
+        c_host_ref_ptr, dynamic_c_shape
     )
 
-    random(a_scale_host.tensor)
-    random(b_scale_host.tensor)
+    random(a_host)
+    random(b_host)
 
-    var a_scale_device = DeviceNDBuffer[DType.float32, 2, static_a_scale_shape](
-        dynamic_a_scale_shape, ctx=ctx
+    zero(c_host)
+    zero(c_host_ref)
+
+    var a_device = ctx.enqueue_create_buffer[input_type](a_size)
+    var b_device = ctx.enqueue_create_buffer[input_type](b_size)
+    var c_device = ctx.enqueue_create_buffer[DType.float32](c_size)
+
+    var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](
+        a_device.unsafe_ptr(), dynamic_a_shape
     )
-    var b_scale_device = DeviceNDBuffer[DType.float32, 2, static_b_scale_shape](
-        dynamic_b_scale_shape, ctx=ctx
+    var b_device_nd = NDBuffer[input_type, 2, _, static_b_shape](
+        b_device.unsafe_ptr(), dynamic_b_shape
+    )
+    var c_device_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
+        c_device.unsafe_ptr(), dynamic_c_shape
+    )
+
+    var a_scale_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+        a_scale_size
+    )
+    var b_scale_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+        b_scale_size
+    )
+
+    var a_scale_host = NDBuffer[DType.float32, 2, _, static_a_scale_shape](
+        a_scale_host_ptr, dynamic_a_scale_shape
+    )
+    var b_scale_host = NDBuffer[DType.float32, 2, _, static_b_scale_shape](
+        b_scale_host_ptr, dynamic_b_scale_shape
+    )
+
+    random(a_scale_host)
+    random(b_scale_host)
+
+    var a_scale_device = ctx.enqueue_create_buffer[DType.float32](a_scale_size)
+    var b_scale_device = ctx.enqueue_create_buffer[DType.float32](b_scale_size)
+
+    var a_scale_device_nd = NDBuffer[DType.float32, 2, _, static_a_scale_shape](
+        a_scale_device.unsafe_ptr(), dynamic_a_scale_shape
+    )
+    var b_scale_device_nd = NDBuffer[DType.float32, 2, _, static_b_scale_shape](
+        b_scale_device.unsafe_ptr(), dynamic_b_scale_shape
     )
 
     # run blockwise CPU as the reference output
@@ -135,31 +165,29 @@ fn test_naive_blockwise_fp8_matmul[
         for _n in range(N):
             var res: Float32 = 0.0
             for _k in range(K):
-                var a_scale = a_scale_host.tensor[
+                var a_scale = a_scale_host[
                     _k // BLOCK_SCALE_K, _m // BLOCK_SCALE_M
                 ]
-                var b_scale = b_scale_host.tensor[
+                var b_scale = b_scale_host[
                     _n // BLOCK_SCALE_N, _k // BLOCK_SCALE_K
-                ] if transpose_b else b_scale_host.tensor[
+                ] if transpose_b else b_scale_host[
                     _k // BLOCK_SCALE_K, _n // BLOCK_SCALE_N
                 ]
-                var b_elem = b_host.tensor[
-                    _n, _k
-                ] if transpose_b else b_host.tensor[_k, _n]
+                var b_elem = b_host[_n, _k] if transpose_b else b_host[_k, _n]
                 res += (
-                    a_host.tensor[_m, _k].cast[DType.float32]()
+                    a_host[_m, _k].cast[DType.float32]()
                     * b_elem.cast[DType.float32]()
                     * a_scale
                     * b_scale
                 )
 
-            c_host_ref.tensor[_m, _n] = res
+            c_host_ref[_m, _n] = res
 
-    ctx.enqueue_copy(a_scale_device.buffer, a_scale_host.tensor.data)
-    ctx.enqueue_copy(b_scale_device.buffer, b_scale_host.tensor.data)
+    ctx.enqueue_copy(a_scale_device, a_scale_host_ptr)
+    ctx.enqueue_copy(b_scale_device, b_scale_host_ptr)
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
 
     if (
         M % BLOCK_SCALE_M != 0
@@ -173,11 +201,11 @@ fn test_naive_blockwise_fp8_matmul[
                 BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
             ),
         ](
-            c_device.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            a_scale_device.tensor,
-            b_scale_device.tensor,
+            c_device_nd,
+            a_device_nd,
+            b_device_nd,
+            a_scale_device_nd,
+            b_scale_device_nd,
             ctx,
         )
     else:
@@ -185,38 +213,36 @@ fn test_naive_blockwise_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
         ](
-            c_device.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            a_scale_device.tensor,
-            b_scale_device.tensor,
+            c_device_nd,
+            a_device_nd,
+            b_device_nd,
+            a_scale_device_nd,
+            b_scale_device_nd,
             ctx,
         )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device)
 
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
+        c_host,
+        c_host_ref,
         atol=0.0001,
         rtol=0.0001,
     )
 
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    a_scale_host_ptr.free()
+    b_scale_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
-
-    _ = a_host^
-    _ = b_host^
-    _ = c_host^
-    _ = c_host_ref^
-
     _ = a_scale_device^
     _ = b_scale_device^
-    _ = a_scale_host^
-    _ = b_scale_host^
 
 
 def main():
@@ -227,35 +253,35 @@ def main():
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(128), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 128),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(128), static[256](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 16),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(128), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(120), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(120), static[129](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(32, 128, 64),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(120), static[129](), static[129]())

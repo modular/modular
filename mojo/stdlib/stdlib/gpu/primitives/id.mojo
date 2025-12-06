@@ -31,7 +31,7 @@ from sys.info import (
     is_gpu,
     is_nvidia_gpu,
 )
-from memory import AddressSpace, LegacyUnsafePointer as UnsafePointer
+from memory import AddressSpace
 
 from ..globals import WARP_SIZE
 from .warp import broadcast
@@ -47,17 +47,20 @@ from .warp import broadcast
 #       enforce this at the type system level.
 # https://github.com/modular/modular/issues/1278
 fn _verify_xyz[dim: StaticString]():
-    constrained[
-        dim == "x" or dim == "y" or dim == "z",
-        "the dimension must be x, y, or z",
-    ]()
+    __comptime_assert (
+        dim == "x" or dim == "y" or dim == "z"
+    ), "the dimension must be x, y, or z"
 
 
 @always_inline
 fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[Scalar[dtype], address_space = AddressSpace.CONSTANT],
+        UnsafePointer[
+            Scalar[dtype],
+            MutOrigin.external,
+            address_space = AddressSpace.CONSTANT,
+        ],
         has_side_effect=False,
     ]()
     return UInt(ptr.load[alignment=4](offset))
@@ -79,7 +82,7 @@ fn lane_id() -> UInt:
     Returns:
         The lane ID (0 to WARP_SIZE-1) of the current thread.
     """
-    constrained[is_gpu(), "This function only applies to GPUs."]()
+    __comptime_assert is_gpu(), "This function only applies to GPUs."
 
     @parameter
     if is_nvidia_gpu():
@@ -121,7 +124,7 @@ fn lane_id() -> UInt:
     else:
         return CompilationTarget.unsupported_target_error[
             UInt,
-            operation="lane_id",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -180,7 +183,7 @@ fn sm_id() -> UInt:
     else:
         return CompilationTarget.unsupported_target_error[
             UInt,
-            operation="sm_id",
+            operation = __get_current_function_name(),
             note="sm_id() is only supported when targeting NVIDIA GPUs.",
         ]()
 
@@ -212,7 +215,7 @@ struct _ThreadIdx(Defaultable):
         else:
             return CompilationTarget.unsupported_target_error[
                 StaticString,
-                operation="thread_idx field access",
+                operation = __get_current_function_name(),
             ]()
 
     @always_inline("nodebug")
@@ -260,7 +263,7 @@ struct _BlockIdx(Defaultable):
         else:
             return CompilationTarget.unsupported_target_error[
                 StaticString,
-                operation="block_idx field access",
+                operation = __get_current_function_name(),
             ]()
 
     @always_inline("nodebug")
@@ -334,7 +337,7 @@ struct _BlockDim(Defaultable):
                 elif dim == "y":
                     return 7
                 else:
-                    constrained[dim == "z"]()
+                    __comptime_assert dim == "z"
                     return 8
 
             return _get_gcn_idx[_get_offset(), DType.uint16]()
@@ -342,7 +345,7 @@ struct _BlockDim(Defaultable):
         else:
             return CompilationTarget.unsupported_target_error[
                 UInt,
-                operation="block_dim field access",
+                operation = __get_current_function_name(),
             ]()
 
 
@@ -394,7 +397,7 @@ struct _GridDim(Defaultable):
                 elif dim == "y":
                     return 1
                 else:
-                    constrained[dim == "z"]()
+                    __comptime_assert dim == "z"
                     return 2
 
             return _get_gcn_idx[_get_offset(), DType.uint32]()
@@ -414,7 +417,7 @@ struct _GridDim(Defaultable):
         else:
             return CompilationTarget.unsupported_target_error[
                 UInt,
-                operation="grid_dim field access",
+                operation = __get_current_function_name(),
             ]()
 
 
@@ -478,10 +481,9 @@ struct _ClusterDim(Defaultable):
         Returns:
             The `x`, `y`, or `z` dimension of the cluster.
         """
-        constrained[
-            _is_sm_9x_or_newer(),
-            "cluster_id is only supported on NVIDIA SM90+ GPUs",
-        ]()
+        __comptime_assert (
+            _is_sm_9x_or_newer()
+        ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
 
         comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
@@ -520,10 +522,9 @@ struct _ClusterIdx(Defaultable):
         Returns:
             The `x`, `y`, or `z` coordinates of a cluster within a grid.
         """
-        constrained[
-            _is_sm_9x_or_newer(),
-            "cluster_id is only supported on NVIDIA SM90+ GPUs",
-        ]()
+        __comptime_assert (
+            _is_sm_9x_or_newer()
+        ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
@@ -561,10 +562,9 @@ struct _ClusterBlockIdx(Defaultable):
         Returns:
             The `x`, `y`, or `z` coordinates of a threadblock within a cluster.
         """
-        constrained[
-            _is_sm_9x_or_newer(),
-            "cluster_id is only supported on NVIDIA SM90+ GPUs",
-        ]()
+        __comptime_assert (
+            _is_sm_9x_or_newer()
+        ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(

@@ -28,10 +28,10 @@ Its implementation closely mirrors Python's `dict` implementation:
   [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
 
 Key elements must implement the `KeyElement` trait composition, which includes
-`Movable`, `Hashable`, `Equatable`, and `Copyable`. The `Copyable`
+`Hashable`, `Equatable`, and `Copyable`. The `Copyable`
 requirement will eventually be removed.
 
-Value elements must be `Copyable` and `Movable`. As with `KeyElement`, the
+Value elements must be `Copyable`. As with `KeyElement`, the
 `Copyable` requirement for value elements will eventually be removed.
 
 See the `Dict` docs for more details.
@@ -42,9 +42,9 @@ from sys.intrinsics import likely
 
 from memory import bitcast, memcpy
 
-comptime KeyElement = Copyable & Movable & Hashable & Equatable
+comptime KeyElement = Copyable & Hashable & Equatable
 """A trait composition for types which implement all requirements of
-dictionary keys. Dict keys must minimally be `Copyable`, `Movable`, `Hashable`,
+dictionary keys. Dict keys must minimally be `Copyable`, `Hashable`,
 and `Equatable`."""
 
 
@@ -52,11 +52,11 @@ and `Equatable`."""
 struct _DictEntryIter[
     mut: Bool, //,
     K: KeyElement,
-    V: Copyable & Movable,
+    V: Copyable,
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over immutable DictEntry references.
 
     Parameters:
@@ -123,8 +123,8 @@ struct _DictEntryIter[
 
 @fieldwise_init
 struct _TakeDictEntryIter[
-    K: KeyElement, V: Copyable & Movable, H: Hasher, origin: Origin[True]
-](Copyable, Iterable, Iterator, Movable):
+    K: KeyElement, V: Copyable, H: Hasher, origin: Origin[True]
+](Copyable, Iterable, Iterator):
     """Iterator over mutable DictEntry references that moves entries out of the dictionary.
 
     Parameters:
@@ -177,11 +177,11 @@ struct _TakeDictEntryIter[
 struct _DictKeyIter[
     mut: Bool, //,
     K: KeyElement,
-    V: Copyable & Movable,
+    V: Copyable,
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -230,11 +230,11 @@ struct _DictKeyIter[
 struct _DictValueIter[
     mut: Bool, //,
     K: KeyElement,
-    V: Copyable & Movable,
+    V: Copyable,
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over Dict value references. These are mutable if the dict
     is mutable.
 
@@ -288,9 +288,7 @@ struct _DictValueIter[
 
 
 @fieldwise_init
-struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
-    Copyable, Movable
-):
+struct DictEntry[K: KeyElement, V: Copyable, H: Hasher](Copyable):
     """Store a key-value pair entry inside a dictionary.
 
     Parameters:
@@ -420,8 +418,8 @@ struct _DictIndex(Movable):
         self.data.free()
 
 
-struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
-    Boolable, Copyable, Defaultable, Iterable, Movable, Sized
+struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
+    Boolable, Copyable, Defaultable, Iterable, Sized
 ):
     """A container that stores key-value pairs.
 
@@ -628,11 +626,11 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     #     the beginning to free new space while retaining insertion order.
     #
     # Key elements must implement the `KeyElement` trait composition, which
-    # includes Copyable, Movable, Hashable, and Equatable.
+    # includes Copyable, Hashable, and Equatable.
     # Some of these requirements will be relaxed when we have more robust
     # support for conditional trait conformance.
     #
-    # Value elements must be Movable and Copyable for a similar reason.
+    # Value elements must be Copyable for a similar reason.
     #
     # Invariants:
     #
@@ -898,7 +896,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     @no_inline
     fn __str__[
         T: KeyElement & Representable,
-        U: Copyable & Movable & Representable, //,
+        U: Copyable & Representable, //,
     ](self: Dict[T, U, Self.H]) -> String:
         """Returns a string representation of a `Dict`.
 
@@ -906,7 +904,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             T: The type of the keys in the Dict. Must implement the
                 traits `Representable` and `KeyElement`.
             U: The type of the values in the Dict. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
+                traits `Representable` and `Copyable`.
 
         Returns:
             A string representation of the Dict.
@@ -1005,7 +1003,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         """
         return self.find(key)
 
-    fn get(self, key: Self.K, default: Self.V) -> Self.V:
+    fn get(self, key: Self.K, var default: Self.V) -> Self.V:
         """Get a value from the dictionary by key.
 
         Args:
@@ -1015,7 +1013,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         Returns:
             A copy of the value if it was present, otherwise default.
         """
-        return self.find(key).or_else(default)
+        return self.find(key).or_else(default^)
 
     fn pop(mut self, key: Self.K, var default: Self.V) -> Self.V:
         """Remove a value from the dictionary by key.
@@ -1032,7 +1030,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         try:
             return self.pop(key)
         except:
-            return default.copy()
+            return default^
 
     fn pop(mut self, key: Self.K) raises -> Self.V:
         """Remove a value from the dictionary by key.
@@ -1312,13 +1310,11 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         self._n_entries = self._len
 
 
-struct OwnedKwargsDict[V: Copyable & Movable](
-    Copyable, Defaultable, Iterable, Movable, Sized
-):
+struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
     """Container used to pass owned variadic keyword arguments to functions.
 
     Parameters:
-        V: The value type of the dictionary. Currently must be Copyable & Movable.
+        V: The value type of the dictionary. Currently must be Copyable.
 
     This type mimics the interface of a dictionary with `String` keys, and
     should be usable more-or-less like a dictionary. Notably, however, this type

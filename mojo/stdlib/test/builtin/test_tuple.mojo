@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, assert_false, assert_true, TestSuite
-from test_utils import CopyCounter
+from test_utils import CopyCounter, MoveOnly
 
 
 def test_tuple_contains():
@@ -231,6 +231,20 @@ def test_tuple_size_parse_time():
         pass
 
     func_with_where_clause((1, 3, 2))
+
+
+def test_tuple_conforms_copyable():
+    assert_true(conforms_to(Tuple[], Copyable))
+    assert_true(conforms_to(Tuple[Int], Copyable))
+    assert_true(conforms_to(Tuple[Int, String], Copyable))
+    assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Copyable))
+
+
+def test_tuple_works_with_non_copyable_types():
+    var tuple = (MoveOnly[Int](42), 55)
+    var moved = tuple^
+    assert_equal(moved[0].data, 42)
+    assert_equal(moved[1], 55)
 
 
 def main():

@@ -31,7 +31,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Defaultable,
     Equatable,
     Iterable,
-    Movable,
     Sized,
 ):
     """A container for counting hashable items.
@@ -636,7 +635,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self[item.key] = self.get(item.key, 0) - item.value
 
 
-struct CountTuple[V: KeyElement](Comparable, Copyable, Movable):
+struct CountTuple[V: KeyElement](Comparable, Copyable):
     """A tuple representing a value and its count in a `Counter`.
 
     Parameters:

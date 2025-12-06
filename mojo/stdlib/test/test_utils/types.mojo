@@ -28,7 +28,6 @@
 * `AbortOnCopy`
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 # ===----------------------------------------------------------------------=== #
@@ -68,9 +67,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         actions_origin: Origin of the actions list for tracking operations.
     """
 
-    comptime _U = UnsafePointer[
-        List[String], mut=False, origin = Self.actions_origin
-    ]
+    comptime _U = UnsafePointer[List[String], Self.actions_origin]
     var actions: Self._U
     """Pointer to list tracking lifecycle operations."""
     var value: Int
@@ -173,9 +170,9 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter[
-    T: ImplicitlyCopyable & Movable & Writable & Defaultable = NoneType
-](ImplicitlyCopyable, Movable, Writable):
+struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
+    ImplicitlyCopyable, Writable
+):
     """Counts the number of copies performed on a value.
 
     Parameters:
@@ -224,8 +221,8 @@ struct CopyCounter[
 
 
 # TODO: This type should not be Copyable, but has to be to satisfy
-#       Copyable & Movable at the moment.
-struct MoveCounter[T: Copyable & Movable](Copyable, Movable):
+#       Copyable at the moment.
+struct MoveCounter[T: Copyable](Copyable):
     """Counts the number of moves performed on a value.
 
     Parameters:
@@ -262,7 +259,7 @@ struct MoveCounter[T: Copyable & Movable](Copyable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveCopyCounter(ImplicitlyCopyable, Movable):
+struct MoveCopyCounter(ImplicitlyCopyable):
     """Counts both copy and move operations for testing."""
 
     var copied: Int
@@ -300,7 +297,7 @@ struct MoveCopyCounter(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct TriviallyCopyableMoveCounter(Copyable, Movable):
+struct TriviallyCopyableMoveCounter(Copyable):
     """Type used for testing that collections still perform moves and not copies
     when a type has a custom __moveinit__() but is also trivially copyable.
 
@@ -329,7 +326,7 @@ struct TriviallyCopyableMoveCounter(Copyable, Movable):
 
 
 @fieldwise_init
-struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable, Movable):
+struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
     """Records destructor calls for testing.
 
     Parameters:
@@ -338,9 +335,7 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable, Movable):
 
     var value: Int
     """Value to record when destroyed."""
-    var destructor_recorder: UnsafePointer[
-        List[Int], mut=False, origin = Self.recorder_origin
-    ]
+    var destructor_recorder: UnsafePointer[List[Int], Self.recorder_origin]
     """Pointer to list for recording destructor calls."""
 
     fn __del__(deinit self):
@@ -362,16 +357,14 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct ObservableDel[origin: MutOrigin = MutAnyOrigin](
-    ImplicitlyCopyable, Movable
-):
+struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
     """Sets a boolean flag when destroyed.
 
     Parameters:
         origin: Origin of the target pointer.
     """
 
-    var target: UnsafePointer[Bool, origin = Self.origin]
+    var target: UnsafePointer[Bool, Self.origin]
     """Pointer to boolean flag set on destruction."""
 
     fn __del__(deinit self):
@@ -386,7 +379,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](
 
 @fieldwise_init
 struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
-    ImplicitlyCopyable, Movable, Writable
+    ImplicitlyCopyable, Writable
 ):
     """Counts the number of times instances are destroyed.
 
@@ -397,7 +390,7 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
 
     comptime __del__is_trivial = Self.trivial_del
 
-    var counter: UnsafePointer[Int, mut=False, origin = Self.counter_origin]
+    var counter: UnsafePointer[Int, Self.counter_origin]
     """Pointer to counter incremented on destruction."""
 
     fn __del__(deinit self):
@@ -419,7 +412,7 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
 
 
 @fieldwise_init
-struct AbortOnDel(ImplicitlyCopyable, Movable):
+struct AbortOnDel(ImplicitlyCopyable):
     """Type that aborts if its destructor is called.
 
     Used to test that destructors are not called in certain scenarios.
@@ -439,7 +432,7 @@ struct AbortOnDel(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct CopyCountedStruct(ImplicitlyCopyable, Movable):
+struct CopyCountedStruct(ImplicitlyCopyable):
     """Struct that tracks the number of times it has been copied."""
 
     var counter: CopyCounter
@@ -477,3 +470,74 @@ struct AbortOnCopy(ImplicitlyCopyable):
             other: The instance being copied from.
         """
         abort("We should never implicitly copy AbortOnCopy")
+
+
+# ===----------------------------------------------------------------------=== #
+# Observable
+# ===----------------------------------------------------------------------=== #
+
+
+struct Observable[
+    *,
+    CopyOrigin: MutOrigin = MutOrigin.external,
+    MoveOrigin: MutOrigin = MutOrigin.external,
+    DelOrigin: MutOrigin = MutOrigin.external,
+](Copyable):
+    """A type that tracks the number of times it has been copied, moved, and destroyed.
+
+    Parameters:
+        CopyOrigin: Origin of the copies pointer.
+        MoveOrigin: Origin of the moves pointer.
+        DelOrigin: Origin of the dels pointer.
+    """
+
+    var _copies: Optional[Pointer[Int, Self.CopyOrigin]]
+    var _moves: Optional[Pointer[Int, Self.MoveOrigin]]
+    var _dels: Optional[Pointer[Int, Self.DelOrigin]]
+
+    fn __init__(
+        out self,
+        *,
+        var copies: Optional[Pointer[Int, Self.CopyOrigin]] = {},
+        var moves: Optional[Pointer[Int, Self.MoveOrigin]] = {},
+        var dels: Optional[Pointer[Int, Self.DelOrigin]] = {},
+    ):
+        """Constructs a new Observable with the given pointers.
+
+        Args:
+            copies: Optional pointer to an Int to count copies.
+            moves: Optional pointer to an Int to count moves.
+            dels: Optional pointer to an Int to count dels.
+        """
+        self._copies = copies^
+        self._moves = moves^
+        self._dels = dels^
+
+    fn __copyinit__(out self, other: Self):
+        """Copy initialize the Observable and increment the copy count.
+
+        Args:
+            other: The instance being copied from.
+        """
+        self._copies = other._copies.copy()
+        self._moves = other._moves.copy()
+        self._dels = other._dels.copy()
+        if self._copies:
+            self._copies.value()[] += 1
+
+    fn __moveinit__(out self, deinit other: Self):
+        """Move initialize the Observable and increment the move count.
+
+        Args:
+            other: The instance being moved from.
+        """
+        self._copies = other._copies^
+        self._moves = other._moves^
+        self._dels = other._dels^
+        if self._moves:
+            self._moves.value()[] += 1
+
+    fn __del__(deinit self):
+        """Destroy the Observable and increment the del count."""
+        if self._dels:
+            self._dels.value()[] += 1

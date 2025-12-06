@@ -107,7 +107,7 @@ from .pipeline import ProducerConsumerPipeline
 
 @fieldwise_init
 @register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable, Movable):
+struct WarpRole(ImplicitlyCopyable):
     var _role: Int32
 
     comptime Mma = Self(6)

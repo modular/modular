@@ -11,6 +11,7 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
+# Example of kbench yaml config for running mojo benchmarks.
 
 name: multistage_gemm
 file: $KERNEL_BENCHMARKS_ROOT/autotune/sample.mojo

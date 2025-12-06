@@ -19,10 +19,6 @@ from sys import external_call
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import DeviceContext
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
@@ -35,13 +31,13 @@ struct _Chain(Boolable, Defaultable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: UnsafePointer[Int]
+    var storage: UnsafePointer[Int, MutOrigin.external]
 
     fn __init__(out self):
-        self.storage = UnsafePointer[Int]()
+        self.storage = {}
 
     fn __bool__(self) -> Bool:
-        return self.storage != UnsafePointer[Int]()
+        return Bool(self.storage)
 
 
 @register_passable("trivial")
@@ -63,7 +59,9 @@ struct _AsyncContext:
     var chain: _Chain
 
     @staticmethod
-    fn get_chain(ctx: UnsafePointer[_AsyncContext]) -> UnsafePointer[_Chain]:
+    fn get_chain(
+        ctx: UnsafePointer[mut=True, _AsyncContext]
+    ) -> UnsafePointer[_Chain, origin_of(ctx[].chain)]:
         return UnsafePointer(to=ctx[].chain)
 
     @staticmethod
@@ -77,19 +75,19 @@ struct _AsyncContext:
 # ===-----------------------------------------------------------------------===#
 
 
-fn _init_asyncrt_chain(chain: UnsafePointer[_Chain]):
+fn _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         chain.address
     )
 
 
-fn _del_asyncrt_chain(chain: UnsafePointer[_Chain]):
+fn _del_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
         chain.address
     )
 
 
-fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[_Chain]):
+fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[mut=True, _Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
         _coro_resume_fn, chain.address, hdl
     )
@@ -101,15 +99,17 @@ fn _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
     )
 
 
-fn _async_wait(chain: UnsafePointer[_Chain]):
+fn _async_wait(chain: UnsafePointer[mut=True, _Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
 
 
-fn _async_complete(chain: UnsafePointer[_Chain]):
+fn _async_complete(chain: UnsafePointer[mut=True, _Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
 
 
-fn _async_wait_timeout(chain: UnsafePointer[_Chain], timeout: Int) -> Bool:
+fn _async_wait_timeout(
+    chain: UnsafePointer[mut=True, _Chain], timeout: Int
+) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
         chain.address, timeout
     )
@@ -279,7 +279,7 @@ struct Task[type: AnyType, origins: OriginSet]:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TaskGroupContext(ImplicitlyCopyable, Movable):
+struct TaskGroupContext(ImplicitlyCopyable):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
@@ -293,12 +293,12 @@ struct TaskGroupContext(ImplicitlyCopyable, Movable):
     var callback: Self.tg_callback_fn_type
     """Callback function to be invoked on the TaskGroup when an operation completes."""
 
-    var task_group: UnsafePointer[TaskGroup]
+    var task_group: UnsafePointer[TaskGroup, MutOrigin.external]
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
 @register_passable
-struct _TaskGroupBox(ImplicitlyCopyable, Movable):
+struct _TaskGroupBox(Copyable):
     """This struct is a type-erased owning box for an opaque coroutine."""
 
     var handle: AnyCoroutine
@@ -312,7 +312,7 @@ struct _TaskGroupBox(ImplicitlyCopyable, Movable):
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
     # should never get called.
     fn __copyinit__(out self, existing: Self):
-        self = abort[Self]("_TaskGroupBox.__copyinit__ should never get called")
+        abort("_TaskGroupBox.__copyinit__ should never get called")
 
 
 struct TaskGroup(Defaultable):
@@ -335,14 +335,14 @@ struct TaskGroup(Defaultable):
         """Initialize a new TaskGroup with an empty task list and initialized chain.
         """
         var chain = _Chain()
-        _init_asyncrt_chain(UnsafePointer[_Chain](to=chain))
+        _init_asyncrt_chain(UnsafePointer(to=chain))
         self.counter = Atomic[DType.int](1)
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
     fn __del__(deinit self):
         """Clean up resources associated with the TaskGroup."""
-        _del_asyncrt_chain(UnsafePointer[_Chain](to=self.chain))
+        _del_asyncrt_chain(UnsafePointer(to=self.chain))
 
     @always_inline
     fn _counter_decr(mut self) -> Int:
@@ -355,7 +355,7 @@ struct TaskGroup(Defaultable):
 
     fn _task_complete(mut self):
         if self._counter_decr() == 0:
-            _async_complete(UnsafePointer[_Chain](to=self.chain))
+            _async_complete(UnsafePointer(to=self.chain))
 
     fn create_task(
         mut self,
@@ -382,7 +382,7 @@ struct TaskGroup(Defaultable):
         self.counter += 1
         task._get_ctx[TaskGroupContext]()[] = TaskGroupContext(
             Self._task_complete_callback,
-            UnsafePointer[Self](to=self),
+            UnsafePointer(to=self).unsafe_origin_cast[MutOrigin.external](),
         )
         _async_execute[task.type](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
@@ -395,7 +395,7 @@ struct TaskGroup(Defaultable):
             hdl: The coroutine handle to be awaited.
             task_group: The TaskGroup to be awaited.
         """
-        _async_and_then(hdl, UnsafePointer[_Chain](to=task_group.chain))
+        _async_and_then(hdl, UnsafePointer(to=task_group.chain))
         task_group._task_complete()
 
     @always_inline
@@ -421,7 +421,7 @@ struct TaskGroup(Defaultable):
             origins: The origin set for the wait operation.
         """
         self._task_complete()
-        _async_wait(UnsafePointer[_Chain](to=self.chain))
+        _async_wait(UnsafePointer(to=self.chain))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -439,7 +439,7 @@ struct DeviceContextPtr(Defaultable):
     by the graph compiler.
     """
 
-    var _handle: OpaquePointer
+    var _handle: OpaquePointer[MutOrigin.external]
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
@@ -448,9 +448,9 @@ struct DeviceContextPtr(Defaultable):
 
         This creates a `DeviceContextPtr` that doesn't point to any device context.
         """
-        self._handle = OpaquePointer()
+        self._handle = {}
 
-    fn __init__(out self, handle: OpaquePointer):
+    fn __init__(out self, handle: OpaquePointer[MutOrigin.external]):
         """Initialize a `DeviceContextPtr` from a raw pointer.
 
         Args:
@@ -467,7 +467,7 @@ struct DeviceContextPtr(Defaultable):
         Args:
             device: The `DeviceContext` to wrap in this pointer.
         """
-        self._handle = rebind[OpaquePointer](device._handle)
+        self._handle = {device._handle.bitcast[NoneType]().address}
 
     fn __getitem__(self) -> DeviceContext:
         """Dereference the pointer to get the `DeviceContext`.

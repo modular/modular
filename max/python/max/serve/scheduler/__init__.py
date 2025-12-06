@@ -90,8 +90,8 @@ def load_scheduler(
             offload_queue_draining=pipeline_config.experimental_background_queue,
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
-        assert hasattr(pipeline, "speech_lm_pipeline")
-        paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager
+        assert hasattr(pipeline, "kv_manager")
+        paged_manager = pipeline.kv_manager
         assert isinstance(paged_manager, PagedKVCacheManager)
 
         assert pipeline_config.ce_delay_ms is not None

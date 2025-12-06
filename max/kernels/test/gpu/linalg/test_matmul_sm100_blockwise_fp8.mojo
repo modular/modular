@@ -15,14 +15,14 @@ from collections import OptionalReg
 from hashlib import default_comp_time_hasher
 from sys import align_of, size_of
 from math import ceildiv
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
+from memory import LegacyUnsafePointer as UnsafePointer
 
 # Additional imports for testing
 from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
     assert_almost_equal,
     assert_with_measure,
     random,
@@ -114,39 +114,75 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         ceildiv(n.value, BLOCK_SCALE_K), ceildiv(k.value, BLOCK_SCALE_K)
     )
 
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[b_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-
-    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
-    )
-    var b_device = DeviceNDBuffer[b_type, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
-    )
-    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
-    )
-    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var a_size = m.value * k.value
+    var b_size = n.value * k.value if transpose_b else k.value * n.value
+    var c_size = m.value * n.value
+    var a_scales_size = ceildiv(k.value, BLOCK_SCALE_K) * m.value
+    var b_scales_size = ceildiv(n.value, BLOCK_SCALE_K) * ceildiv(
+        k.value, BLOCK_SCALE_K
     )
 
-    var a_scales_host = HostNDBuffer[DType.float32, 2, static_a_scales_shape](
-        dynamic_a_scales_shape
+    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+        a_host_ptr, dynamic_a_shape
     )
-    var b_scales_host = HostNDBuffer[DType.float32, 2, static_b_scales_shape](
-        dynamic_b_scales_shape
+    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+        b_host_ptr, dynamic_b_shape
+    )
+    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_ptr, dynamic_c_shape
+    )
+    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_ref_ptr, dynamic_c_shape
     )
 
-    var a_scales_device = DeviceNDBuffer[
-        DType.float32, 2, static_a_scales_shape
-    ](dynamic_a_scales_shape, ctx=ctx)
-    var b_scales_device = DeviceNDBuffer[
-        DType.float32, 2, static_b_scales_shape
-    ](dynamic_b_scales_shape, ctx=ctx)
+    var a_device = ctx.enqueue_create_buffer[a_type](a_size)
+    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+        a_device.unsafe_ptr(), dynamic_a_shape
+    )
+    var b_device = ctx.enqueue_create_buffer[b_type](b_size)
+    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
+        b_device.unsafe_ptr(), dynamic_b_shape
+    )
+    var c_device = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+        c_device.unsafe_ptr(), dynamic_c_shape
+    )
+    var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+        c_device_ref.unsafe_ptr(), dynamic_c_shape
+    )
 
-    var c_tensor = c_device.tensor
+    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+        a_scales_size
+    )
+    var a_scales_host = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
+        a_scales_host_ptr, dynamic_a_scales_shape
+    )
+    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+        b_scales_size
+    )
+    var b_scales_host = NDBuffer[DType.float32, 2, _, static_b_scales_shape](
+        b_scales_host_ptr, dynamic_b_scales_shape
+    )
+
+    var a_scales_device = ctx.enqueue_create_buffer[DType.float32](
+        a_scales_size
+    )
+    var a_scales_device_nd = NDBuffer[
+        DType.float32, 2, _, static_a_scales_shape
+    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
+    var b_scales_device = ctx.enqueue_create_buffer[DType.float32](
+        b_scales_size
+    )
+    var b_scales_device_nd = NDBuffer[
+        DType.float32, 2, _, static_b_scales_shape
+    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
+
+    var c_tensor = c_device_nd
 
     @parameter
     @always_inline
@@ -161,28 +197,28 @@ def test_matmul_sm100_blockwise_scaled_fp8[
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    random(a_host.tensor)
-    random(b_host.tensor)
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    random(a_host)
+    random(b_host)
+    zero(c_host)
+    zero(c_host_ref)
 
-    random(a_scales_host.tensor)
-    random(b_scales_host.tensor)
+    random(a_scales_host)
+    random(b_scales_host)
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    ctx.enqueue_copy(a_scales_device.buffer, a_scales_host.tensor.data)
-    ctx.enqueue_copy(b_scales_device.buffer, b_scales_host.tensor.data)
+    ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
+    ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = from_ndbuffer_row_major(a_device.tensor)
-    var b = from_ndbuffer_row_major(b_device.tensor)
-    var c = from_ndbuffer_row_major(c_device.tensor)
-    var a_scales = from_ndbuffer_row_major(a_scales_device.tensor)
-    var b_scales = from_ndbuffer_row_major(b_scales_device.tensor)
+    var a = from_ndbuffer_row_major(a_device_nd)
+    var b = from_ndbuffer_row_major(b_device_nd)
+    var c = from_ndbuffer_row_major(c_device_nd)
+    var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
+    var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
 
     matmul_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,
@@ -202,47 +238,44 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
-        a_scales_device.tensor,
-        b_scales_device.tensor,
+        c_device_ref_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales_device_nd,
+        b_scales_device_nd,
         ctx,
     )
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.tensor, c_host_ref.tensor, threshold=0.001
+        c_host, c_host_ref, threshold=0.001
     )
 
     assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
+        c_host,
+        c_host_ref,
         atol=1e-2,
         rtol=1e-2,
     )
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
-    _ = a_scales_host
-    _ = b_scales_host
-    _ = a_scales_device
-    _ = b_scales_device
-
-    _ = a
-    _ = b
-    _ = c
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    a_scales_host_ptr.free()
+    b_scales_host_ptr.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
+    _ = a_scales_device^
+    _ = b_scales_device^
 
 
 def main():

@@ -72,6 +72,7 @@ fn apply_rope[
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
 ):
+    __comptime_assert rank - 1 != UNKNOWN_VALUE
     var indices = get_safetensors_idx(idx[rank - 1], x.shape[rank - 1]())
     var pos_re = idx
     var pos_im = idx

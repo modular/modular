@@ -15,7 +15,7 @@
 
 import numpy as np
 from max import engine
-from max.driver import CPU, Tensor
+from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
@@ -44,7 +44,6 @@ def add_tensors(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
     # 3. Execute the graph
     output = model.execute(a, b)[0]
-    assert isinstance(output, Tensor)  # We don't want MojoValue
     result = output.to_numpy()
     return result
 

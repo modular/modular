@@ -31,7 +31,13 @@ from sys import (
     is_gpu,
     is_nvidia_gpu,
 )
-from sys.ffi import c_ssize_t, c_int, external_call, _external_call_const
+from sys.ffi import (
+    c_ssize_t,
+    c_int,
+    external_call,
+    _external_call_const,
+    get_errno,
+)
 
 from memory import Span
 
@@ -92,9 +98,9 @@ struct FileDescriptor(Writer):
             If the operation fails.
         """
 
-        constrained[
-            not is_gpu(), "`read_bytes()` is not yet implemented for GPUs."
-        ]()
+        __comptime_assert (
+            not is_gpu()
+        ), "`read_bytes()` is not yet implemented for GPUs."
 
         @parameter
         if CompilationTarget.is_macos() or CompilationTarget.is_linux():
@@ -109,7 +115,7 @@ struct FileDescriptor(Writer):
                 False,
                 "`read_bytes()` is not yet implemented for unknown platform.",
             ]()
-            return abort[UInt]()
+            abort()
 
     @always_inline
     fn write[*Ts: Writable](mut self, *args: *Ts):

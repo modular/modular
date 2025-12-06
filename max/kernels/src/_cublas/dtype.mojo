@@ -38,7 +38,7 @@ struct Property:
             return "MINOR_VERSION"
         if self == Self.PATCH_LEVEL:
             return "PATCH_LEVEL"
-        return abort[String]("invalid Property entry")
+        abort("invalid Property entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -165,7 +165,7 @@ struct DataType:
         if self == Self.R_4F_E2M1:
             return "R_4F_E2M1"
 
-        return abort[String]("invalid DataType entry")
+        abort("invalid DataType entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)

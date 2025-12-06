@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _EXTRA_CONSTRAINTS = {
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
@@ -108,6 +110,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2673
+    "test_concat.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2941
 }
 
 _FILECHECK_TESTS = [

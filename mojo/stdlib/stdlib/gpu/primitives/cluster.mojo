@@ -21,7 +21,6 @@ Note: These are low-level primitives that correspond directly to PTX/NVVM instru
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import _RegisterPackType, llvm_intrinsic
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
@@ -47,10 +46,9 @@ fn block_rank_in_cluster() -> UInt32:
         - Maps directly to the `%cluster_ctarank` special register in CUDA PTX.
     """
 
-    constrained[
-        _is_sm_9x_or_newer(),
-        "block rank identifier is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "block rank identifier is only supported by NVIDIA SM90+ GPUs"
 
     return llvm_intrinsic[
         "llvm.nvvm.read.ptx.sreg.cluster.ctarank",
@@ -72,10 +70,9 @@ fn elect_one_sync() -> Bool:
         - Useful for having a single thread perform an operation while
           maintaining warp synchronization.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "elect one sync is only implemented for NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "elect one sync is only implemented for NVIDIA SM90+ GPUs"
     return Bool(__mlir_op.`nvvm.elect.sync`[_type = __mlir_type.`i1`]())
 
 
@@ -95,10 +92,9 @@ fn elect_one_sync_with_mask(mask: UInt32 = 0xFFFFFFFF) -> Bool:
         - Useful for having a single thread perform an operation while
           maintaining warp synchronization.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "elect one sync is only implemented for NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "elect one sync is only implemented for NVIDIA SM90+ GPUs"
 
     comptime asm = """{
         .reg .pred P1;
@@ -119,10 +115,9 @@ fn cluster_arrive_relaxed():
     guarantees. It should be used when memory ordering is not required between thread blocks
     in the cluster. Only supported on NVIDIA SM90+ GPUs.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster arrive relaxed is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster arrive relaxed is only supported by NVIDIA SM90+ GPUs"
     __mlir_op.`nvvm.cluster.arrive.relaxed`[
         _type=None,
         aligned = __mlir_attr.unit,
@@ -136,10 +131,9 @@ fn cluster_arrive():
     This function ensures all prior memory operations from this thread block are visible to
     other thread blocks in the cluster before proceeding. Only supported on NVIDIA SM90+ GPUs.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster arrive is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster arrive is only supported by NVIDIA SM90+ GPUs"
     __mlir_op.`nvvm.cluster.arrive`[
         _type=None,
         aligned = __mlir_attr.unit,
@@ -153,10 +147,9 @@ fn cluster_wait():
     This function blocks until all thread blocks in the cluster have called cluster_arrive()
     or cluster_arrive_relaxed(). Only supported on NVIDIA SM90+ GPUs.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster wait is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster wait is only supported by NVIDIA SM90+ GPUs"
     __mlir_op.`nvvm.cluster.wait`[
         _type=None,
         aligned = __mlir_attr.unit,
@@ -193,10 +186,9 @@ fn cluster_sync_acquire():
 
     Only supported on NVIDIA SM90+ GPUs.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster sync acquire is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster sync acquire is only supported by NVIDIA SM90+ GPUs"
     inlined_assembly[
         "fence.proxy.async::generic.acquire.sync_restrict::shared::cluster.cluster;",
         NoneType,
@@ -210,10 +202,9 @@ fn cluster_sync_release():
     """Release the cluster sync proxy.
 
     Only supported on NVIDIA SM90+ GPUs."""
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster sync release is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster sync release is only supported by NVIDIA SM90+ GPUs"
     inlined_assembly[
         "fence.proxy.async::generic.release.sync_restrict::shared::cta.cluster;",
         NoneType,
@@ -224,7 +215,9 @@ fn cluster_sync_release():
 
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_is_canceled(
-    result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED]
+    result: UnsafePointer[
+        mut=True, UInt128, address_space = AddressSpace.SHARED
+    ]
 ) -> UInt32:
     """Decodes the cancellation request.
 
@@ -235,13 +228,10 @@ fn clusterlaunchcontrol_query_cancel_is_canceled(
         True if the cancellation request is canceled, False otherwise.
 
     Only supported on NVIDIA SM100+ GPUs."""
-    constrained[
-        _is_sm_100x_or_newer(),
-        (
-            "clusterlaunchcontrol_query_cancel_is_canceled is only supported by"
-            "  NVIDIA SM100+ GPUs"
-        ),
-    ]()
+    __comptime_assert _is_sm_100x_or_newer(), (
+        "clusterlaunchcontrol_query_cancel_is_canceled is only supported by"
+        " NVIDIA SM100+ GPUs"
+    )
 
     var ret_val = inlined_assembly[
         """
@@ -264,7 +254,9 @@ fn clusterlaunchcontrol_query_cancel_is_canceled(
 fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
     id: String
 ](
-    result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED]
+    result: UnsafePointer[
+        mut=True, UInt128, address_space = AddressSpace.SHARED
+    ]
 ) -> UInt32:
     """Decodes the cancellation request.
 
@@ -278,17 +270,13 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
         The coordinate of the first CTAID in the canceled cluster.
 
     Only supported on NVIDIA SM100+ GPUs."""
-    constrained[
-        _is_sm_100x_or_newer(),
-        (
-            "clusterlaunchcontrol_query_cancel_get_first_ctaid is only"
-            " supported by NVIDIA SM100+ GPUs"
-        ),
-    ]()
-    constrained[
-        id == "x" or id == "y" or id == "z",
-        "id must be one of `x`, `y`, `z`",
-    ]()
+    __comptime_assert _is_sm_100x_or_newer(), (
+        "clusterlaunchcontrol_query_cancel_get_first_ctaid is only"
+        " supported by NVIDIA SM100+ GPUs"
+    )
+    __comptime_assert (
+        id == "x" or id == "y" or id == "z"
+    ), "id must be one of `x`, `y`, `z`"
 
     comptime asm = (
         """
@@ -313,7 +301,9 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
 
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
-    result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
+    result: UnsafePointer[
+        mut=True, UInt128, address_space = AddressSpace.SHARED
+    ],
 ) -> Tuple[UInt32, UInt32, UInt32]:
     """Decodes the cancellation request.
 
@@ -324,13 +314,10 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
         A tuple of three `UInt32` values representing the first CTA ID coordinates (x, y, z).
 
     Only supported on NVIDIA SM100+ GPUs."""
-    constrained[
-        _is_sm_100x_or_newer(),
-        (
-            "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
-            " supported by NVIDIA SM100+ GPUs"
-        ),
-    ]()
+    __comptime_assert _is_sm_100x_or_newer(), (
+        "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
+        " supported by NVIDIA SM100+ GPUs"
+    )
 
     comptime asm = """{
         .reg .b128 result;
@@ -356,8 +343,10 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
 fn clusterlaunchcontrol_try_cancel[
     multicast: Bool = False
 ](
-    result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
-    mbar: UnsafePointer[Int64, address_space = AddressSpace.SHARED],
+    result: UnsafePointer[
+        mut=True, UInt128, address_space = AddressSpace.SHARED
+    ],
+    mbar: UnsafePointer[mut=True, Int64, address_space = AddressSpace.SHARED],
 ):
     """Requests to atomically cancel the cluster launch if it has not started running yet.
 
@@ -369,13 +358,10 @@ fn clusterlaunchcontrol_try_cancel[
         mbar: A pointer to an `Int64` (8B aligned) memory barrier state.
 
     Only supported on NVIDIA SM100+ GPUs."""
-    constrained[
-        _is_sm_100x_or_newer(),
-        (
-            "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
-            " supported by NVIDIA SM100+ GPUs"
-        ),
-    ]()
+    __comptime_assert _is_sm_100x_or_newer(), (
+        "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
+        " supported by NVIDIA SM100+ GPUs"
+    )
 
     comptime asm = (
         """
@@ -417,15 +403,11 @@ fn cluster_mask_base[
         The base mask for the cluster.
 
     """
-    constrained[
-        axis in (0, 1),
-        "axis must be one of 0, 1",
-    ]()
+    __comptime_assert axis in (0, 1), "axis must be one of 0, 1"
 
-    constrained[
-        product(cluster_shape) <= 16,
-        "cluster size must be less than or equal to 16",
-    ]()
+    __comptime_assert (
+        product(cluster_shape) <= 16
+    ), "cluster size must be less than or equal to 16"
 
     @parameter
     if axis == 0:

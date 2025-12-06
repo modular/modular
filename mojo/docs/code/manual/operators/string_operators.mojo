@@ -14,7 +14,7 @@
 
 def main():
     message = "Hello"  # type = String
-    alias name = " Pat"  # type = StringLiteral
+    comptime name = " Pat"  # type = StringLiteral
     greeting = " good Day!"  # type = String
 
     # Mutate the original `message` String
@@ -22,10 +22,10 @@ def main():
     message += greeting
     print(message)
 
-    alias last_name = "Curie"
+    comptime last_name = "Curie"
 
-    # Compile-time StringLiteral alias
-    alias marie = "Marie " + last_name
+    # Compile-time StringLiteral value
+    comptime marie = "Marie " + last_name
     print(marie)
 
     # Compile-time concatenation before materializing to a run-time `String`
@@ -42,16 +42,16 @@ def main():
     str2 = str1 * 5
     print(str2)
 
-    alias divider1 = "=" * 40
-    alias symbol = "#"
-    alias divider2 = symbol * 40
+    comptime divider1 = "=" * 40
+    comptime symbol = "#"
+    comptime divider2 = symbol * 40
 
-    # You must define the following function using `fn` because an alias
+    # You must define the following function using `fn` because a comptime
     # initializer cannot call a function that can potentially raise an error.
     fn generate_divider(char: String, repeat: Int) -> String:
         return char * repeat
 
-    alias divider3 = generate_divider("~", 40)  # Evaluated at compile-time
+    comptime divider3 = generate_divider("~", 40)  # Evaluated at compile-time
 
     print(divider1)
     print(divider2)

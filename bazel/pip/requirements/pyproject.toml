@@ -12,6 +12,8 @@ dependencies = [
   "boto3",
   "click>=8.1",
   "codeowners",
+  "compressed-tensors",
+  "cyclopts",
   "datasets",
   "device-smi",
   "docutils",
@@ -106,6 +108,10 @@ dependencies = [
   # benchmarks
   "schema==0.7.5",
 
+  # Blackwell external baseline benchmarks (flashinfer runtime deps)
+  "apache-tvm-ffi>=0.1,<0.2",
+  "ninja",  # JIT compilation at runtime
+
   # nsight-sql-tool
   "sqlalchemy>=2.0.29",
 
@@ -193,6 +199,9 @@ nvidia = [
   "timm",
   "torchmetrics",
   "qwen-vl-utils",
+
+  "nvidia-cudnn-frontend>=1.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "nvidia-cutlass-dsl>=4.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [tool.uv]

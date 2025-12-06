@@ -21,8 +21,8 @@ Related types:
 
 - [`StringSlice`](/mojo/stdlib/collections/string/string_slice/). A non-owning
   view of string data, which can be either mutable or immutable.
-- [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases). An
-  comptime for an immutable constant `StringSlice`.
+- [`StaticString`](/mojo/stdlib/collections/string/string_slice/#comptime-values).
+  A `comptime` type alias for an immutable constant `StringSlice`.
 - [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/). A
   string literal. String literals are compile-time values. For use at runtime,
   you usually want wrap a `StringLiteral` in a `String` (for a mutable string)
@@ -1018,26 +1018,7 @@ struct String(
             Span(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
 
-    fn join[*Ts: Writable](self, *elems: *Ts) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            Ts: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
-            StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
-        )
-        return String(elems, sep=sep)
-
-    fn join[
-        T: Copyable & Movable & Writable
-    ](self, elems: Span[T, *_]) -> String:
+    fn join[T: Copyable & Writable](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write
@@ -1046,7 +1027,7 @@ struct String(
 
         Parameters:
             T: The type of the elements. Must implement the `Copyable`,
-                `Movable` and `Writable` traits.
+                and `Writable` traits.
 
         Args:
             elems: The input values.
@@ -1992,9 +1973,7 @@ fn chr(c: Int) -> String:
     var char_opt = Codepoint.from_u32(c)
     if not char_opt:
         # TODO: Raise ValueError instead.
-        return abort[String](
-            String("chr(", c, ") is not a valid Unicode codepoint")
-        )
+        abort(String("chr(", c, ") is not a valid Unicode codepoint"))
 
     # SAFETY: We just checked that `char` is present.
     return String(char_opt.unsafe_value())

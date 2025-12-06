@@ -23,7 +23,8 @@ and "parameter expression" refer to compile-time values, and "argument" and
 "expression" refer to runtime values.
 
 In Mojo, you can add parameters to a struct or function. You can also define
-named parameter expressions—aliases—that you can use as runtime constants.
+named parameter expressions—`comptime` values—that you can use as runtime
+constants.
 
 ## Parameterized functions
 
@@ -180,7 +181,7 @@ build generic collections. For example, a generic array type might include code
 like this:
 
 ```mojo
-struct GenericArray[ElementType: Copyable & Movable]:
+struct GenericArray[ElementType: Copyable]:
     var data: UnsafePointer[Self.ElementType, MutOrigin.external]
     var size: Int
 
@@ -205,8 +206,8 @@ struct GenericArray[ElementType: Copyable & Movable]:
 This struct has a single parameter, `ElementType`, which is a placeholder for
 the data type you want to store in the array, sometimes called a *type
 parameter*. `ElementType` conforms to the
-[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
-[`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait and therefore to the 
+[`Movable`](/mojo/stdlib/builtin/value/Movable) trait.
 
 As with parameterized functions, you need to pass in parameter values when you
 use a parameterized struct. In this case, when you create an instance of
@@ -238,7 +239,7 @@ could add a static factory method to `GenericArray` with the following
 signature:
 
 ```mojo
-struct GenericArray[ElementType: Copyable & Movable]:
+struct GenericArray[ElementType: Copyable]:
     ...
 
     @staticmethod
@@ -260,8 +261,8 @@ The method returns an instance of `GenericArray[Float64]`.
 When creating a generic struct, you might want to define some methods that
 require extra features. For example, consider a collection like `GenericArray`
 that holds instances of a type that conforms to the
-[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
-[`Movable`](/mojo/stdlib/builtin/value/Movable) traits. This imposes a lot
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait and therefore to the 
+[`Movable`](/mojo/stdlib/builtin/value/Movable) trait. This imposes a lot
 of limitations: you can't implement a `sort()` method because you can't
 guarantee that the stored type supports the comparison operators; you can't
 write a useful `__str__()` or `__repr__()` dunder method because you can't
@@ -517,7 +518,7 @@ a constructor or static method.
 For example, consider the following struct:
 
 ```mojo
-struct One[Type: Writable & Copyable & Movable]:
+struct One[Type: Writable & Copyable]:
     var value: Self.Type
 
     fn __init__(out self, value: Self.Type):
@@ -536,7 +537,7 @@ You can also infer parameters from a parameterized type passed to a constructor
 or static method:
 
 ```mojo
-struct Two[Type: Writable & Copyable & Movable]:
+struct Two[Type: Writable & Copyable]:
     var val1: Self.Type
     var val2: Self.Type
 
@@ -684,7 +685,7 @@ inferred from context or specified by keyword. Infer-only parameters are placed 
 **beginning** of the parameter list, set off from other parameters by the `//` sigil:
 
 ```mojo
-fn example[type: Copyable & Movable, //, list: List[type]]()
+fn example[type: Copyable, //, list: List[type]]()
 ```
 
 Transforming `dtype` into an infer-only parameter solves this problem:
@@ -712,7 +713,7 @@ by keyword. For example, the
 is parametric on [origin](/mojo/manual/values/lifetimes):
 
 ```mojo
-struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut], ...]:
+struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut], ...]:
     ...
 ```
 
@@ -752,7 +753,7 @@ Variadic parameters currently have some limitations that variadic arguments don'
 
 ```mojo
 fn sum_params[*values: Int]() -> Int:
-    alias list = VariadicList(values)
+    comptime list = VariadicList(values)
     var sum = 0
     for v in list:
         sum += v
@@ -811,7 +812,7 @@ elements of a vector recursively into a scalar:
 fn slice[
     dtype: DType, size: Int, //
 ](x: SIMD[dtype, size], offset: Int) -> SIMD[dtype, size // 2]:
-    alias new_size = size // 2
+    comptime new_size = size // 2
     var result = SIMD[dtype, new_size]()
     for i in range(new_size):
         result[i] = SIMD[dtype, 1](x[i + offset])
@@ -826,7 +827,7 @@ fn reduce_add(x: SIMD) -> Int:
         return Int(x[0]) + Int(x[1])
 
     # Extract the top/bottom halves, add them, sum the elements.
-    alias half_size = x.size // 2
+    comptime half_size = x.size // 2
     var lhs = slice(x, 0)
     var rhs = slice(x, half_size)
     return reduce_add(lhs + rhs)
@@ -849,29 +850,163 @@ It requires that its condition be a valid parameter expression, and ensures that
 the live branch of the `if` statement is compiled into the program. (This is similar to
 use of the `@parameter` decorator with a `for` loop shown earlier.)
 
-## `alias`: named parameter expressions
+## `comptime`: named parameter expressions
 
 It is very common to want to *name* compile-time values. Whereas `var` defines a
 runtime value, we need a way to define a
-compile-time temporary value. For this, Mojo uses an `alias` declaration. At its
-simplest, `alias` can be used to define a constant value:
+compile-time temporary value. For this, Mojo uses a `comptime` declaration. At its
+simplest, `comptime` can be used to define a constant value:
 
 ```mojo
-alias rows = 512
+comptime rows = 512
 ```
 
-Some Mojo types use aliases to express enumerations. For example, the following
-code defines a `Sentiment` type that defines aliases for different sentiment
-values:
+A `comptime` value is always evaluated at compile time, so you can use
+`comptime` to force a function to run at compile time. You can use this to
+calculate constant values based on information available at compile time, such
+as hardware parameters.
+
+```mojo
+comptime block_size = _calculate_block_size()
+```
+
+Types are another common use for `comptime` values. Because types are
+compile-time expressions, you can use a `comptime` value as a shorthand (a type
+alias or "typedef") for a parameterized type:
+
+```mojo
+comptime Float16 = SIMD[DType.float16, 1]
+comptime UInt8 = SIMD[DType.uint8, 1]
+
+var x: Float16 = 0  # Float16 works like a "typedef"
+```
+
+(These aliases and others are actually defined in the
+[`simd` module](/mojo/stdlib/builtin/simd/#comptime-values).)
+
+Like `var` variables, `comptime` values obey scope, and you can use local
+`comptime` values within functions as you'd expect.
+
+### Parametric `comptime` values
+
+A *parametric `comptime` value* is a compile-time expression that takes a
+list of parameters and returns a compile-time constant value:
+
+```mojo
+comptime AddOne[a: Int] : Int = a + 1
+
+comptime nine = AddOne[8]
+```
+
+As you can see in the previous example, a parametric `comptime` value is a
+little like a *compile-time-only function*. A regular function or method can
+also be invoked at compile time:
+
+```mojo
+fn add_one(a: Int) -> Int:
+    return a + 1
+
+comptime ten = add_one(9)
+```
+
+A major difference between a function and a parametric `comptime` value is that
+the value of a `comptime` expression can be a type, while a function can't
+return a type as a value.
+
+```mojo
+# Does not work—-dynamic type values not permitted
+fn int_type() -> AnyType:
+    return Int
+
+# Works
+comptime IntType = Int
+```
+
+Because a `comptime` value can be a type, you can use parametric `comptime`
+values to express new types:
+
+```mojo
+comptime TwoOfAKind[dt: DType] = SIMD[dt, 2]
+twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
+
+comptime StringKeyDict[ValueType: Copyable] = Dict[String, ValueType]
+var b: StringKeyDict[UInt8] = {"answer": 42}
+```
+
+Parametric `comptime` declarations support the same features as parameterized
+structs or functions: infer-only parameters, keyword-only and optional
+parameters, [automatic parameterization](#automatic-parameterization), and so
+on.
+
+```mojo
+    comptime Floats[size: Int, half_width: Bool = False] = SIMD[
+        (DType.float16 if half_width else DType.float32), size
+    ]
+    var floats = Floats[2](6.0, 8.0)
+    var half_floats = Floats[2, True](10.0, 12.0)
+```
+
+### Comptime members
+
+You can also define `comptime` values as members of a `struct` definition.
+These `comptime` members have a number of uses:
+
+- Constant values specific to the type.
+- Constant values calculated based on the struct's parameters.
+- Derived types based on the struct's parameters.
+
+Derived types are a common use for `comptime` members. For example, a `List[T]`
+struct holds values of type `T`. The list's `__iter__()` method returns a list
+iterator that returns values of type `T`. `List` uses a `comptime` member,
+`IteratorType`, to define the type of the returned iterator.
+
+The following code excerpt shows a simplified version of some of the `List`
+code, showing the `List` and its derived `IteratorType`:
+
+```mojo
+@fieldwise_init
+struct _ListIter[
+    mut: Bool, //,
+    T: Copyable,
+    origin: Origin[mut],
+](ImplicitlyCopyable, Iterable, Iterator):
+
+    comptime Element = Self.T  # Required by the Iterator trait
+
+    var index: Int
+    var src: Pointer[List[Self.Element], Self.origin]
+
+    ...
+
+struct List[T: Copyable](
+    Boolable, Copyable, Defaultable, Iterable, Sized
+):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _ListIter[Self.T, iterable_origin]
+
+    ...
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return {0, Pointer(to=self)}
+    ...
+```
+
+The `IteratorType` `comptime` member is parameterized on an origin, so it can
+represent both mutable and immutable iterators.
+
+Some Mojo types use `comptime` members to express enumerations. For example, the
+following code defines a `Sentiment` type that defines `comptime` constants
+for different sentiment values:
 
 ```mojo
 @fieldwise_init
 struct Sentiment(Equatable, ImplicitlyCopyable):
     var _value: Int
 
-    alias NEGATIVE = Sentiment(0)
-    alias NEUTRAL = Sentiment(1)
-    alias POSITIVE = Sentiment(2)
+    comptime NEGATIVE = Sentiment(0)
+    comptime NEUTRAL = Sentiment(1)
+    comptime POSITIVE = Sentiment(2)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -889,82 +1024,8 @@ fn is_happy(s: Sentiment):
 This pattern provides a type-safe enumeration.
 
 The [`DType`](/mojo/stdlib/builtin/dtype/DType) struct implements a simple enum
-using aliases like this. This allows clients to use values like `DType.float32`
-in parameter expressions or runtime expressions.
-
-Types are another common use for aliases. Because types are compile-time
-expressions, you can use an alias as a shorthand (or "typedef") for a
-parameterized type:
-
-```mojo
-alias Float16 = SIMD[DType.float16, 1]
-alias UInt8 = SIMD[DType.uint8, 1]
-
-var x: Float16 = 0  # Float16 works like a "typedef"
-```
-
-(These aliases and others are actually defined in the
-[`simd` module](/mojo/stdlib/builtin/simd/#aliases).)
-
-Like `var` variables, aliases obey scope, and you can use local aliases within
-functions as you'd expect.
-
-### Parametric aliases
-
-A *parametric alias* is a compile-time expression that takes a list of
-parameters and returns a compile-time constant value:
-
-```mojo
-alias AddOne[a: Int] : Int = a + 1
-
-alias nine = AddOne(8)
-```
-
-As you can see in the previous example, a parametric alias is a little like a
-*compile-time-only function*. A regular function or method can also be invoked
-at compile time:
-
-```mojo
-fn add_one(a: Int) -> Int:
-    return a + 1
-
-alias ten = add_one(9)
-```
-
-A major difference between a function and a parametric alias is that the value
-of an alias can be a type, while a function can't return a type as a value.
-
-```mojo
-# Does not work—-dynamic type values not permitted
-fn int_type() -> AnyType:
-    return Int
-
-# Works
-alias IntType = Int
-```
-
-Because the value of an alias can be a type, you can use parametric aliases to
-express new types:
-
-```mojo
-alias TwoOfAKind[dt: DType] = SIMD[dt, 2]
-twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
-
-alias StringKeyDict[ValueType: Copyable & Movable] = Dict[String, ValueType]
-var b: StringKeyDict[UInt8] = {"answer": 42}
-```
-
-Parametric alias signatures support the same features as parameterized structs
-or functions: infer-only parameters, keyword-only and optional parameters,
-[automatic parameterization](#automatic-parameterization), and so on.
-
-```mojo
-    alias Floats[size: Int, half_width: Bool = False] = SIMD[
-        (DType.float16 if half_width else DType.float32), size
-    ]
-    var floats = Floats[2](6.0, 8.0)
-    var half_floats = Floats[2, True](10.0, 12.0)
-```
+using `comptime` members like this. This allows clients to use values like
+`DType.float32` in parameter expressions or runtime expressions.
 
 ## Fully-bound, partially-bound, and unbound types
 
@@ -973,11 +1034,11 @@ That is, all of its parameters are bound to values. As mentioned before, you can
 only instantiate a fully-bound type (sometimes called a *concrete type*).
 
 However, parametric types can be *unbound* or *partially bound* in some
-contexts. For example, you can alias a partially-bound type to create a new type
-that requires fewer parameters:
+contexts. For example, you can use `comptime` to create a type alias to a
+partially-bound type to create a new type that requires fewer parameters:
 
 ```mojo
-alias StringKeyDict = Dict[String, _]
+comptime StringKeyDict = Dict[String, _]
 var b: StringKeyDict[UInt8] = {"answer": 42}
 ```
 
@@ -986,16 +1047,17 @@ underscore `_` in the parameter list indicates that the second parameter,
 `V` (the value type), is unbound.
 You specify the `V` parameter later, when you use `StringKeyDict`.
 
-:::note Partially-bound types versus parametric aliases
+:::note Partially-bound types versus parametric `comptime` values
 
-You may notice that this example is very similar to an example in the section
-on [parametric aliases](#parametric-aliases). For simple type aliases like this,
-you can use either a partially-bound type or a parametric alias.
-Parametric aliases provide a more flexible way to define type aliases, since
-you can define the order of the parameters, add default values, and so on.
+You may notice that this example is very similar to an example in the section on
+[parametric `comptime` values](#parametric-comptime-values). For simple type
+aliases like this, you can use either a partially-bound type or a parametric
+`comptime` value. Parametric `comptime` values provide a more flexible way to
+define type aliases, since you can define the order of the parameters, add
+default values, and so on.
 
 Partially-bound and unbound types can provide a handy shortcut when defining
-parametric functions and aliases, called
+parametric functions and `comptime` values, called
 [automatic parameterization](#automatic-parameterization).
 
 :::
@@ -1066,7 +1128,7 @@ The default values of explicitly unbound parameters are ignored.
 
 Partially-bound and unbound parametric types can be used in some contexts where
 the missing (unbound) parameters will be supplied later—such as in
-[aliases](#alias-named-parameter-expressions) and
+[`comptime` values](#comptime-named-parameter-expressions) and
 [automatically parameterized functions](#automatic-parameterization).
 
 ### Omitted parameters
@@ -1108,10 +1170,10 @@ explicitly unbound parameters in the future.
 
 ## Automatic parameterization
 
-Mojo supports "automatic" parameterization of functions and parametric aliases.
-If a function argument type or parameter type is
+Mojo supports "automatic" parameterization of functions and parametric
+`comptime` values. If a function argument type or parameter type is
 [partially-bound or unbound](#fully-bound-partially-bound-and-unbound-types),
-the unbound parameters are automatically added as input parameters on the
+the unbound parameters are automatically added as parameters on the
 function. This is easier to understand with an example:
 
 ```mojo
@@ -1147,14 +1209,14 @@ When you call `print_params()` you must pass it a concrete instance of the
 `SIMD[DType.float64, 4]`. The Mojo compiler *infers* the parameter
 values from the input argument.
 
-With a manually parameterized function, you can access the input parameters by
+With a manually parameterized function, you can access the parameters by
 name (for example, `t` and `s` in the previous example). For an
 automatically parameterized function, you can access the parameters as
 attributes on the argument (for example, `vec.type`).
 
-This ability to access a type's input parameters is not specific to
+This ability to access a type's parameters is not specific to
 automatically parameterized functions, you can use it anywhere. You can access
-the input parameters of a parameterized type as attributes on the type itself:
+the parameters of a parameterized type as attributes on the type itself:
 
 ```mojo
 fn on_type():
@@ -1199,7 +1261,7 @@ writing the equivalent `SIMD[v1.type, v1.size]`.
 ### Automatic parameterization of parameters
 
 You can also take advantage of automatic parameterization in the parameter list
-of a function or parametric alias. For example:
+of a function or parametric `comptime` value. For example:
 
 ```mojo
 fn foo[value: SIMD]():
@@ -1210,13 +1272,13 @@ fn foo[dtype: DType, size: Int, //, value: SIMD[dtype, size]]():
     pass
 ```
 
-Here's another example using a parametric alias:
+Here's another example using a parametric `comptime` value:
 
 ```mojo
-alias Foo[S: SIMD] = Bar[S]
+comptime Foo[S: SIMD] = Bar[S]
 
 # Equivalent to:
-alias Foo[dtype: DType, size: Int, //, S: SIMD[dtype, size]] = Bar[S]
+comptime Foo[dtype: DType, size: Int, //, S: SIMD[dtype, size]] = Bar[S]
 ```
 
 ### Automatic parameterization with partially-bound types
@@ -1248,7 +1310,7 @@ The `eat()` function takes a `Fudge` struct with the first parameter (`sugar`)
 bound to the value 5. The second and third parameters, `cream` and `chocolate`
 are unbound.
 
-The unbound `cream` and `chocolate` parameters become implicit input parameters
+The unbound `cream` and `chocolate` parameters become implicit parameters
 on the `eat` function. In practice, this is roughly equivalent to writing:
 
 ```mojo
@@ -1290,7 +1352,7 @@ fn devour(f: Fudge[_, 6, _]):
 ```
 
 Again, the unbound parameters (`sugar` and `chocolate`) are added as implicit
-input parameters on the function. This version is roughly equivalent to the
+parameters on the function. This version is roughly equivalent to the
 following code, where these two values are explicitly bound to the input
 parameters, `su` and `ch`:
 

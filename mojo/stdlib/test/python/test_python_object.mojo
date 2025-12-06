@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from python import Python, PythonObject
 from python._cpython import Py_ssize_t, PyObjectPtr
 from python.bindings import PythonModuleBuilder
@@ -164,7 +163,7 @@ def test_num_conversion():
 
 def test_boolean_operations():
     # Test boolean conversion and context
-    var x: PythonObject = 1
+    var x: PythonObject = PythonObject(1)
     assert_true(x == 1)
     assert_false(x == 0)
     assert_true(x == 0 or x == 1)
@@ -274,7 +273,7 @@ fn test_iter() raises:
     for _ in list2:
         raise Error("This should not be reachable as the list is empty.")
 
-    var not_iterable: PythonObject = 3
+    var not_iterable = PythonObject(3)
     with assert_raises():
         for _ in not_iterable:
             assert_false(
@@ -302,19 +301,26 @@ fn test_iter() raises:
 fn test_setitem() raises:
     var ll: PythonObject = [1, 2, 3, "food"]
     assert_equal(String(ll), "[1, 2, 3, 'food']")
-    ll[1] = "nomnomnom"
+    # PRECOMMIT: This case should work?
+    ll[1] = PythonObject("nomnomnom")
     assert_equal(String(ll), "[1, 'nomnomnom', 3, 'food']")
 
 
 fn test_dict() raises:
     # Test Python.dict from keyword arguments.
-    var dd = Python.dict(food=123, fries="yes")
+    # PRECOMMIT: Don't include this case
+    var dd = Python.dict(food=PythonObject(123), fries=PythonObject("yes"))
     assert_equal(String(dd), "{'food': 123, 'fries': 'yes'}")
 
-    var dd2: PythonObject = {"food": 123, "fries": "yes"}
+    # PRECOMMIT: Don't include this case
+    var dd2: PythonObject = {
+        PythonObject("food"): PythonObject(123),
+        PythonObject("fries"): PythonObject("yes"),
+    }
     assert_equal(String(dd2), "{'food': 123, 'fries': 'yes'}")
 
-    dd["food"] = "salad"
+    # PRECOMMIT: Don't include this case
+    dd[PythonObject("food")] = PythonObject("salad")
     dd[42] = Python.list(4, 2)
     assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
@@ -434,27 +440,27 @@ def test_setitem_raises():
     with assert_raises(
         contains="'tuple' object does not support item assignment"
     ):
-        t[0] = 0
+        t[0] = PythonObject(0)
 
     lst = Python.evaluate("[1, 2, 3]")
     with assert_raises(contains="list assignment index out of range"):
-        lst[10] = 4
+        lst[10] = PythonObject(4)
 
     s = Python.evaluate('"hello"')
     with assert_raises(
         contains="'str' object does not support item assignment"
     ):
-        s[3] = "xy"
+        s[3] = PythonObject("xy")
 
     with_out = custom_indexable.Simple()
     with assert_raises(
         contains="'Simple' object does not support item assignment"
     ):
-        with_out[0] = 0
+        with_out[0] = PythonObject(0)
 
     d = Python.evaluate("{}")
     with assert_raises(contains="unhashable type: 'list'"):
-        d[[1, 2, 3]] = 5
+        d[Python.list(1, 2, 3)] = 5
 
 
 fn test_py_slice() raises:
@@ -552,7 +558,8 @@ def test_contains_dunder():
     assert_true(1.5 in x)
     assert_false(3.5 in x)
 
-    var y = Python.dict(A="A", B=5)
+    # PRECOMMIT: Don't include this case
+    var y = Python.dict(A=PythonObject("A"), B=PythonObject(5))
     assert_true("A" in y)
     assert_false("C" in y)
     assert_true("B" in y)
@@ -648,7 +655,8 @@ def test_call_with_kwargs():
 
 def test_attribute_access():
     # Test __getattr__ and __setattr__
-    var test_dict: PythonObject = {"attr": "value"}
+    # PRECOMMIT: Don't include this case
+    var test_dict: PythonObject = {PythonObject("attr"): PythonObject("value")}
 
     # Test getting attributes that exist
     var attr_value = test_dict.__getattr__("get")

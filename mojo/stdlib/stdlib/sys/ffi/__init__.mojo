@@ -20,7 +20,7 @@ from sys._libc_errno import ErrNo, get_errno, set_errno
 
 from memory import OwnedPointer
 
-from ..info import CompilationTarget, is_64bit
+from ..info import CompilationTarget, is_32bit, is_64bit
 from ..intrinsics import _mlirtype_is_eq
 from .cstring import CStringSlice
 
@@ -108,26 +108,26 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
     if is_64bit() and (
         CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
-        # LP64
+        # LP64: long is 64-bit on 64-bit systems (e.g. x86_64 or aarch64)
         return DType.uint64 if unsigned else DType.int64
+    elif is_32bit():
+        # ILP32: long is 32-bit on 32-bit systems (e.g. x86 or RISC-V 32bit)
+        return DType.uint32 if unsigned else DType.int32
     else:
         constrained[False, "size of C `long` is unknown on this target"]()
-        return abort[DType]()
+        abort()
 
 
 fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
+    # `long long` is 64 bits on all common platforms (LP64, LLP64, ILP32).
 
     @parameter
-    if is_64bit() and (
-        CompilationTarget.is_macos() or CompilationTarget.is_linux()
-    ):
-        # On a 64-bit CPU, `long long` is *always* 64 bits in every OS's data
-        # model.
+    if is_64bit() or is_32bit():
         return DType.uint64 if unsigned else DType.int64
     else:
         constrained[False, "size of C `long long` is unknown on this target"]()
-        return abort[DType]()
+        abort()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -312,7 +312,7 @@ struct OwnedDLHandle(Movable):
 
     fn get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type, ImmutAnyOrigin]:
+    ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -330,7 +330,7 @@ struct OwnedDLHandle(Movable):
     fn get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
-        result_type, ImmutAnyOrigin
+        result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
@@ -387,7 +387,7 @@ struct OwnedDLHandle(Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _DLHandle(Boolable, Copyable, Movable):
+struct _DLHandle(Boolable, Copyable):
     """Represents a non-owning reference to a dynamically linked library.
 
     `_DLHandle` is a lightweight, trivially copyable reference to a dynamic
@@ -555,7 +555,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
 
     fn get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type, ImmutAnyOrigin]:
+    ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -576,7 +576,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
     fn get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
-        result_type, ImmutAnyOrigin
+        result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
@@ -591,7 +591,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
             A pointer to the symbol.
         """
         debug_assert(
-            self.handle,
+            Bool(self.handle),
             "Dylib handle is null when loading symbol: ",
             StringSlice(unsafe_from_utf8_ptr=cstr_name),
         )
@@ -782,7 +782,7 @@ fn _find_dylib[
 
         @parameter
         if abort_on_failure:
-            return abort[OwnedDLHandle](String(e))
+            abort(String(e))
         else:
             return OwnedDLHandle(unsafe_uninitialized=True)
 
@@ -814,7 +814,7 @@ fn _find_dylib[
 
         @parameter
         if abort_on_failure:
-            return abort[OwnedDLHandle, prefix="ERROR:"](msg())
+            abort[prefix="ERROR:"](msg())
         else:
             return OwnedDLHandle(unsafe_uninitialized=True)
 

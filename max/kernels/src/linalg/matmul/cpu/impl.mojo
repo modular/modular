@@ -17,7 +17,9 @@ from sys.info import align_of, simd_width_of
 
 from algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor
 from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
@@ -60,14 +62,15 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
         simd_size: Int,
     ](
         self,
-        c: NDBuffer,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        c: LayoutTensor[mut=True, **_],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
+        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
         ...
 
 
@@ -179,7 +182,7 @@ struct TiledMatmul[
     c_shape: DimList,
     c_origin: MutOrigin,
     algorithm: InnerMatmulKernel,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
 
@@ -259,14 +262,19 @@ struct TiledMatmul[
         @always_inline
         fn row_iteration[tile_kernel_rows: Int](row_offset: Int):
             var skip_boundary_check = knm_bounds[1] > sub_tile_n
+            # TODO(jtodd): bubble up from here
+            # Convert NDBuffers to LayoutTensors for the inner matmul call
+            var c_tensor = from_ndbuffer_row_major(self.c)
+            var a_tensor = from_ndbuffer_row_major(self.a)
+            var b_tensor = from_ndbuffer_row_major(b_packed_tile)
             self.alg.__inner_matmul__[
                 tile_kernel_rows,
                 tile_kernel_cols,
                 Self.config.simd_size,
             ](
-                self.c,
-                self.a,
-                b_packed_tile,
+                c_tensor,
+                a_tensor,
+                b_tensor,
                 global_offset + GemmShape(row_offset, 0, 0),
                 self.global_tile_offset + self.global_tile_shape,
                 sub_tile_n_k,

@@ -88,7 +88,9 @@ fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
 
 fn randint[
     dtype: DType
-](ptr: UnsafePointer[mut=True, Scalar[dtype]], size: Int, low: Int, high: Int):
+](
+    ptr: UnsafePointer[mut=True, Scalar[dtype]], size: Int, low: Int, high: Int
+) where dtype.is_integral():
     """Fills memory with uniform random in range [low, high].
 
     Constraints:
@@ -103,7 +105,6 @@ fn randint[
         low: The minimal value for random.
         high: The maximal value for random.
     """
-    constrained[dtype.is_integral(), "dtype must be integral"]()
 
     @parameter
     if dtype.is_signed():
@@ -221,7 +222,7 @@ fn randn[
     return
 
 
-fn shuffle[T: Copyable & Movable, //](mut list: List[T]):
+fn shuffle[T: Copyable, //](mut list: List[T]):
     """Shuffles the elements of the list randomly.
 
     Performs an in-place Fisher-Yates shuffle on the provided list.

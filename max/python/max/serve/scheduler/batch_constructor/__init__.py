@@ -11,11 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# This sample demonstrates some basic Mojo
-# Range and print functions available as builtins
+from .text_batch_constructor import TextBatchConstructor
 
-
-def main():
-    print("Hello Mojo 🔥!")
-    for x in range(9, 0, -3):
-        print(x)
+__all__ = ["TextBatchConstructor"]

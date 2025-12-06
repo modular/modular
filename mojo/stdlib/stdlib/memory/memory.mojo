@@ -112,8 +112,7 @@ fn _memcmp_impl[
     s1: UnsafePointer[mut=False, Scalar[dtype], **_],
     s2: UnsafePointer[mut=False, Scalar[dtype], **_],
     count: Int,
-) -> Int:
-    constrained[dtype.is_integral(), "the input dtype must be integral"]()
+) -> Int where dtype.is_integral():
     if is_compile_time():
         return _memcmp_impl_unconstrained(s1, s2, count)
     else:

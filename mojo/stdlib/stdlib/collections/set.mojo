@@ -24,7 +24,6 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     Hashable,
     Iterable,
     KeyElement,
-    Movable,
     Sized,
 ):
     """A set data type.

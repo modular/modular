@@ -21,7 +21,7 @@ from memory import LegacyOpaquePointer as OpaquePointer
 
 @fieldwise_init
 @register_passable("trivial")
-struct ConstantMemoryMapping(ImplicitlyCopyable, Movable):
+struct ConstantMemoryMapping(ImplicitlyCopyable):
     """Represents a mapping of constant memory between host and device.
 
     This struct encapsulates the information needed to manage constant memory

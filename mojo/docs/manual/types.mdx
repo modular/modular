@@ -253,16 +253,17 @@ print(product)
 
 ### Scalar values
 
-The `SIMD` module defines several *type aliases* that are shorthand for
-different types of `SIMD` vectors. In particular, the `Scalar` type is just a
-`SIMD` vector with a single element. The numeric types listed in
-[Table 1](#table-1), like `Int8` and `Float32` are actually type aliases for
-different types of scalar values:
+The `SIMD` module defines several
+[`comptime` values](/mojo/manual/parameters/#comptime-named-parameter-expressions)
+that function as *type aliases*—shorthand names for different types of `SIMD`
+vectors. In particular, the `Scalar` type is just a `SIMD` vector with a single
+element. The numeric types listed in [Table 1](#table-1), like `Int8` and
+`Float32` are actually type aliases for different types of scalar values:
 
 ```mojo
-alias Scalar = SIMD[size=1]
-alias Int8 = Scalar[DType.int8]
-alias Float32 = Scalar[DType.float32]
+comptime Scalar = SIMD[size=1]
+comptime Int8 = Scalar[DType.int8]
+comptime Float32 = Scalar[DType.float32]
 ```
 
 This may seem a little confusing at first, but it means that whether you're
@@ -273,9 +274,10 @@ the math operations go through exactly the same code path.
 
 The `DType` struct describes the different data types that a `SIMD` vector can
 hold, and defines a number of utility functions for operating on those data
-types. The `DType` struct defines a set of aliases that act as identifiers for
-the different data types, like `DType.int8` and `DType.float32`. You use
-these aliases when declaring a `SIMD` vector:
+types. The `DType` struct defines a set of
+[`comptime` members](/mojo/manual/parameters/#comptime-members) that act as
+identifiers for the different data types, like `DType.int8` and `DType.float32`.
+You use these `comptime` members when declaring a `SIMD` vector:
 
 ```mojo
 var v: SIMD[DType.float64, 16]
@@ -411,7 +413,7 @@ Adjacent literals are concatenated together, so you can define a long string
 using a series of literals broken up over several lines:
 
 ```
-alias s = "A very long string which is "
+comptime s = "A very long string which is "
         "broken into two literals for legibility."
 ```
 
@@ -419,7 +421,7 @@ To define a multi-line string, enclose the literal in three single or double
 quotes:
 
 ```
-alias s = """
+comptime s = """
 Multi-line string literals let you
 enter long blocks of text, including
 newlines."""
@@ -431,7 +433,7 @@ strings.
 A `StringLiteral` will materialize to a `String` when used at run-time:
 
 ```mojo
-alias param = "foo"        # type = StringLiteral
+comptime param = "foo"        # type = StringLiteral
 var runtime_value = "bar"  # type = String
 var runtime_value2 = param # type = String
 ```
@@ -551,8 +553,7 @@ The following sections give brief introduction to the main collection types.
 
 [`List`](/mojo/stdlib/collections/list/List) is a dynamically-sized array of
 elements. List elements need to conform to the
-[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
-[`Movable`](/mojo/stdlib/builtin/value/Movable) traits. Most of the common
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait. Most of the common
 standard library primitives, like `Int`, `String`, and `SIMD` conform to this
 trait. You can create a `List` by passing the element type as a parameter,  like
 this:
@@ -667,8 +668,7 @@ var values = Dict[String, Float64]()
 
 The dictionary's key type must conform to the
 [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait, and value
-elements must conform to the [`Copyable`](/mojo/stdlib/builtin/value/Copyable)
-and [`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
+elements must conform to the [`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
@@ -730,8 +730,7 @@ We both like:
 An [`Optional`](/mojo/stdlib/collections/optional/Optional)  represents a
 value that may or may not be present. Like the other collection types, it is
 generic, and can hold any type that conforms to the
-[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
-[`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait.
 
 ```mojo
 # Two ways to initialize an Optional with a value

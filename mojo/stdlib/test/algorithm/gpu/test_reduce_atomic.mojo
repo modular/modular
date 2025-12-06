@@ -17,12 +17,11 @@ from os.atomic import Atomic
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, TestSuite
 
 
 @fieldwise_init
-struct FillStrategy(ImplicitlyCopyable, Movable):
+struct FillStrategy(ImplicitlyCopyable):
     var value: Int
 
     comptime LINSPACE = Self(0)
@@ -36,10 +35,10 @@ struct FillStrategy(ImplicitlyCopyable, Movable):
 
 
 fn reduce(
-    res_add: UnsafePointer[Float32],
-    res_min: UnsafePointer[Float32],
-    res_max: UnsafePointer[Float32],
-    vec: UnsafePointer[Float32],
+    res_add: UnsafePointer[Float32, MutAnyOrigin],
+    res_min: UnsafePointer[Float32, MutAnyOrigin],
+    res_max: UnsafePointer[Float32, MutAnyOrigin],
+    vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x

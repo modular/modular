@@ -32,46 +32,134 @@ with open("my_file.txt", "r") as f:
 """
 
 from io.write import _WriteBufferStack
-from os import PathLike, abort
+from os import PathLike, abort, makedirs, remove
+from os import SEEK_END
+from os.path import dirname
 from sys import external_call, size_of
 from sys._libc_errno import ErrNo, get_errno
-from sys.ffi import c_ssize_t
+from sys.ffi import c_int, c_ssize_t
+from sys.info import platform_map
 
 from memory import Span
 
+# ===----------------------------------------------------------------------=== #
+# open() syscall flags
+# ===----------------------------------------------------------------------=== #
 
-# This type is used to pass into CompilerRT functions.  It is an owning
-# pointer+length that is tightly coupled to the llvm::StringRef memory layout.
-@register_passable
-struct _OwnedStringRef(Boolable, Defaultable):
-    var data: UnsafePointer[UInt8, MutOrigin.external]
-    var length: Int
+# File access modes
+alias O_RDONLY = 0x0000  # Open for reading only
+alias O_WRONLY = 0x0001  # Open for writing only
+alias O_RDWR = 0x0002  # Open for reading and writing
 
-    fn __init__(out self):
-        self.data = {}
-        self.length = 0
+# File creation flags
+alias O_CREAT = platform_map["O_CREAT", linux=0x0040, macos=0x0200]()
+"""Create file if it doesn't exist"""
 
-    fn __del__(deinit self):
-        if self.data:
-            self.data.free()
+alias O_TRUNC = platform_map["O_TRUNC", linux=0x0200, macos=0x0400]()
+"""Truncate file to zero length"""
 
-    fn get_as_error(self) -> Error:
-        byte_span = Span(ptr=self.data.bitcast[Byte](), length=self.length)
-        return Error(String(bytes=byte_span))
+alias O_APPEND = platform_map["O_APPEND", linux=0x0400, macos=0x0008]()
+"""Append mode: writes always go to end of file"""
 
-    fn __bool__(self) -> Bool:
-        return self.length != 0
+alias O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
+"""Close file descriptor on exec"""
+
+# ===----------------------------------------------------------------------=== #
+# Helper functions
+# ===----------------------------------------------------------------------=== #
+
+
+fn _open_file(path: String, mode: String) raises -> Int:
+    """Open a file and return its file descriptor.
+
+    This function implements the complex logic for opening files with proper
+    handling of modes, directory creation, and special files.
+
+    Args:
+        path: The file path to open.
+        mode: The file access mode ("r", "w", "rw", or "a").
+
+    Returns:
+        The file descriptor of the opened file.
+
+    Raises:
+        Error if the file cannot be opened or if the mode is invalid.
+    """
+    # Parse mode
+    var flags: Int
+    var create_dirs = False
+
+    if mode == "r":
+        flags = O_RDONLY | O_CLOEXEC
+    elif mode == "w":
+        flags = O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC
+        create_dirs = True
+    elif mode == "rw":
+        flags = O_RDWR | O_CREAT | O_CLOEXEC
+        create_dirs = True
+    elif mode == "a":
+        flags = O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC
+        create_dirs = True
+    else:
+        raise Error(
+            'invalid mode: "'
+            + mode
+            + '". Can only be one of: {"r", "w", "rw", "a"}'
+        )
+
+    # Create parent directories if needed
+    if create_dirs:
+        var parent = dirname(path)
+        if parent:
+            try:
+                makedirs(parent, exist_ok=True)
+            except e:
+                raise Error(
+                    "unable to create directories '"
+                    + parent
+                    + "': "
+                    + String(e)
+                )
+
+    # Open the file with libc open() syscall
+    # Mode 0o666 allows read/write for owner, group, and others (modified by umask)
+    var path_str = path
+    var fd = external_call["open", c_int](
+        path_str.as_c_string_slice().unsafe_ptr(), c_int(flags), c_int(0o666)
+    )
+
+    if fd < 0:
+        var err = get_errno()
+        raise Error("Failed to open file '" + path + "': " + String(err))
+
+    # For append mode, seek to end (though O_APPEND should handle this)
+    if mode == "a":
+        var pos = external_call["lseek", Int64](
+            Int(fd), Int64(0), Int(SEEK_END)
+        )
+        if pos < 0:
+            # Clean up: close the file descriptor before raising
+            _ = external_call["close", c_int](fd)
+            var err = get_errno()
+            raise Error("Failed to seek to end in append mode: " + String(err))
+
+    return Int(fd)
+
+
+# ===----------------------------------------------------------------------=== #
+# FileHandle
+# ===----------------------------------------------------------------------=== #
 
 
 struct FileHandle(Defaultable, Movable, Writer):
     """File handle to an opened file."""
 
-    var handle: OpaquePointer[MutOrigin.external]
-    """The underlying pointer to the file handle."""
+    var handle: Int
+    """The underlying file descriptor (Unix fd)."""
 
     fn __init__(out self):
         """Default constructor."""
-        self.handle = {}
+        self.handle = -1
 
     fn __init__(out self, path: StringSlice, mode: StringSlice) raises:
         """Construct the FileHandle using the file path and mode.
@@ -84,22 +172,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             If file open mode is not one of the supported modes.
             If there is an error when opening the file.
         """
-        if not (mode == "r" or mode == "w" or mode == "rw" or mode == "a"):
-            raise Error(
-                'ValueError: invalid mode: "',
-                mode,
-                '". Can only be one of: {"r", "w", "rw", "a"}',
-            )
-        var err_msg = _OwnedStringRef()
-        var handle = external_call[
-            "KGEN_CompilerRT_IO_FileOpen", type_of(self.handle)
-        ](path, mode, Pointer(to=err_msg))
-
-        if err_msg:
-            self.handle = {}
-            raise err_msg.get_as_error()
-
-        self.handle = handle
+        self.handle = _open_file(String(path), String(mode))
 
     fn __del__(deinit self):
         """Closes the file handle."""
@@ -114,18 +187,18 @@ struct FileHandle(Defaultable, Movable, Writer):
         Raises:
             If the operation fails.
         """
-        if not self.handle:
+        if self.handle < 0:
             return
 
-        var err_msg = _OwnedStringRef()
-        external_call["KGEN_CompilerRT_IO_FileClose", NoneType](
-            self.handle, Pointer(to=err_msg)
-        )
+        var result = external_call["close", c_int](c_int(self.handle))
 
-        if err_msg:
-            raise err_msg.get_as_error()
+        if result < 0:
+            var err = get_errno()
+            # Still mark as closed even on error
+            self.handle = -1
+            raise Error("Failed to close file: " + String(err))
 
-        self.handle = {}
+        self.handle = -1
 
     fn read(self, size: Int = -1) raises -> String:
         """Reads data from a file and sets the file handle seek position. If
@@ -234,7 +307,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         ```
         """
 
-        if not self.handle:
+        if self.handle < 0:
             raise Error("invalid file handle")
 
         var fd = self._get_raw_fd()
@@ -297,7 +370,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var first_data = file.read(8)
         ```
         """
-        if not self.handle:
+        if self.handle < 0:
             raise Error("invalid file handle")
 
         # Start out with the correct size if we know it, otherwise use 256.
@@ -371,7 +444,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         _ = f.seek(-32, os.SEEK_END)
         ```
         """
-        if not self.handle:
+        if self.handle < 0:
             raise "invalid file handle"
 
         debug_assert(
@@ -389,27 +462,146 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return UInt64(pos)
 
-    @always_inline
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
-        """
-        Write a span of bytes to the file.
+    fn write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
+        """Attempt to write bytes to the file, returning the number of bytes written.
+
+        This is a low-level method that performs a single write syscall. It may
+        write fewer bytes than requested (partial write), which is not an error.
+        Most users should use `write_bytes()` instead, which handles partial
+        writes automatically.
 
         Args:
             bytes: The byte span to write to this file.
 
+        Returns:
+            The number of bytes actually written. This may be less than `len(bytes)`.
+
+        Raises:
+            If the file handle is invalid or the write syscall fails.
+
         Notes:
-            Passing an invalid file handle (e.g., after calling `close()`) is
-            undefined behavior. In debug builds, this will trigger an assertion.
+            Similar to Rust's `Write::write()`, this method represents one attempt
+            to write data and may not write all bytes. Use `write_bytes()` for
+            guaranteed complete writes (equivalent to Rust's `write_all()`).
+
+        Examples:
+
+        ```mojo
+        var file = open("/tmp/example.txt", "w")
+        var data = String("Hello, World!").as_bytes()
+
+        # May write fewer bytes than requested
+        var bytes_written = file.write_once(data)
+        print("Wrote", bytes_written, "of", len(data), "bytes")
+        ```
         """
-        debug_assert(self.handle, "invalid file handle in write_bytes()")
+        if self.handle < 0:
+            raise Error("invalid file handle")
 
         var fd = self._get_raw_fd()
         var bytes_written = external_call["write", c_ssize_t](
             fd, bytes.unsafe_ptr(), len(bytes)
         )
 
-        debug_assert(bytes_written >= 0, "write() syscall failed")
-        debug_assert(bytes_written == len(bytes), "incomplete write to file")
+        if bytes_written < 0:
+            var err = get_errno()
+            raise Error("Failed to write to file: " + String(err))
+
+        return Int(bytes_written)
+
+    fn write_all(mut self, bytes: Span[Byte, _]) raises:
+        """Write all bytes to the file, handling partial writes automatically.
+
+        This method guarantees that all bytes are written by looping until
+        complete or an error occurs. This is equivalent to Rust's `write_all()`.
+
+        Args:
+            bytes: The byte span to write to this file.
+
+        Raises:
+            If the file handle is invalid or the write operation fails.
+
+        Notes:
+            Unlike `write_once()`, this method will not return until all bytes
+            are written or an unrecoverable error occurs. Use this method when
+            you need proper error handling for write operations.
+
+        Examples:
+
+        ```mojo
+        var file = open("/tmp/example.txt", "w")
+        var data = String("Hello, World!").as_bytes()
+
+        # Writes all bytes, handling partial writes automatically
+        file.write_all(data)
+        ```
+        """
+        if self.handle < 0:
+            raise Error("invalid file handle")
+
+        var total_written = 0
+        while total_written < len(bytes):
+            var chunk_written = self.write_once(bytes[total_written:])
+
+            # write() returning 0 typically means the object cannot accept more bytes
+            if chunk_written == 0:
+                raise Error(
+                    "Write returned 0 bytes (file may be full or closed)"
+                )
+
+            total_written += chunk_written
+
+    @always_inline
+    fn write_bytes(mut self, bytes: Span[Byte, _]):
+        """Write a span of bytes to the file.
+
+        This method is required by the Writer trait and handles partial writes
+        automatically by looping until all bytes are written. On write failure,
+        the program will abort. For better error handling, use `write_all()`.
+
+        Args:
+            bytes: The byte span to write to this file.
+
+        Notes:
+            This method satisfies the Writer trait requirement. On write failure,
+            the program will abort. Use `write_all()` for proper error handling.
+
+            We use abort() instead of raising errors because the Writer trait
+            currently requires write_bytes() to be non-raising. This allows
+            the trait to work with both infallible writers (String) and fallible
+            writers (files). A future improvement would be to make the Writer
+            trait allow raises, enabling proper error handling here.
+
+        Examples:
+
+        ```mojo
+        var file = open("/tmp/example.txt", "w")
+        var data = String("Hello, World!").as_bytes()
+        file.write_bytes(data)  # Aborts on error - use write_all() instead
+        ```
+        """
+        # NOTE: We cannot raise here because Writer trait requires non-raising.
+        # This is a design limitation that should be addressed by updating the
+        # trait to allow raises in the future.
+        if self.handle < 0:
+            abort("invalid file handle in write_bytes()")
+
+        var total_written = 0
+        while total_written < len(bytes):
+            var fd = self._get_raw_fd()
+            var bytes_written = external_call["write", c_ssize_t](
+                fd,
+                bytes.unsafe_ptr().offset(total_written),
+                len(bytes) - total_written,
+            )
+
+            if bytes_written < 0:
+                abort("write() syscall failed")
+
+            if bytes_written == 0:
+                abort("write() returned 0 bytes (file may be full or closed)")
+
+            total_written += Int(bytes_written)
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
@@ -424,7 +616,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             Passing an invalid file handle (e.g., after calling `close()`) is
             undefined behavior. In debug builds, this will trigger an assertion.
         """
-        debug_assert(self.handle, "invalid file handle in write()")
+        debug_assert(self.handle >= 0, "invalid file handle in write()")
 
         var file = FileDescriptor(self._get_raw_fd())
         var buffer = _WriteBufferStack(file)
@@ -440,28 +632,38 @@ struct FileHandle(Defaultable, Movable, Writer):
         ptr: UnsafePointer[mut=False, UInt8, address_space=_],
         len: Int,
     ) raises:
-        """Write the data to the file.
+        """Write the data to the file, handling partial writes automatically.
 
         Args:
           ptr: The pointer to the data to write.
           len: The length of the data buffer (in bytes).
+
         Raises:
-            If the file handle is invalid, the write fails, or the write is incomplete.
+            If the file handle is invalid or the write operation fails.
         """
-        if not self.handle:
+        if self.handle < 0:
             raise Error("invalid file handle")
 
         var fd = self._get_raw_fd()
-        var bytes_written = external_call["write", c_ssize_t](
-            fd, ptr.address, len
-        )
+        var total_written = 0
 
-        if bytes_written < 0:
-            var err = get_errno()
-            raise Error("Failed to write to file: " + String(err))
+        while total_written < len:
+            var current_ptr = ptr.offset(total_written)
+            var bytes_written = external_call["write", c_ssize_t](
+                fd, current_ptr.address, len - total_written
+            )
 
-        if bytes_written != len:
-            raise Error("Incomplete write to file")
+            if bytes_written < 0:
+                var err = get_errno()
+                raise Error("Failed to write to file: " + String(err))
+
+            # write() returning 0 typically means the object cannot accept more bytes
+            if bytes_written == 0:
+                raise Error(
+                    "Write returned 0 bytes (file may be full or closed)"
+                )
+
+            total_written += Int(bytes_written)
 
     fn __enter__(var self) -> Self:
         """The function to call when entering the context.
@@ -472,12 +674,12 @@ struct FileHandle(Defaultable, Movable, Writer):
         return self^
 
     fn _get_raw_fd(self) -> Int:
-        return Int(
-            external_call[
-                "KGEN_CompilerRT_IO_GetFD",
-                Int64,
-            ](self.handle)
-        )
+        """Get the raw Unix file descriptor.
+
+        Returns:
+            The file descriptor as an Int.
+        """
+        return self.handle
 
 
 fn open[

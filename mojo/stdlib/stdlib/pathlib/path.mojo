@@ -70,7 +70,6 @@ struct Path(
     Hashable,
     ImplicitlyCopyable,
     KeyElement,
-    Movable,
     PathLike,
     Stringable,
     Writable,

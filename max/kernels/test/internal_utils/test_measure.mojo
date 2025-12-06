@@ -11,16 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import DimList
-from internal_utils import TestTensor, assert_with_measure, correlation, kl_div
+from internal_utils import correlation, kl_div
+from internal_utils._testing import _assert_with_measure_impl
 from itertools import product
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 
-def test_assert_with_custom_measure():
-    var t0 = TestTensor[DType.float32, 1](DimList(100), [Float32(1)])
-    var t1 = TestTensor[DType.float32, 1](DimList(100), [Float32(1)])
+fn test_assert_with_custom_measure() raises:
+    var t0 = UnsafePointer[Float32].alloc(100)
+    var t1 = UnsafePointer[Float32].alloc(100)
+    for i in range(100):
+        t0[i] = 1.0
+        t1[i] = 1.0
 
     fn always_zero[
         dtype: DType
@@ -31,10 +34,10 @@ def test_assert_with_custom_measure():
     ) -> Float64:
         return 0
 
-    assert_with_measure[always_zero](t0, t1)
+    _assert_with_measure_impl[always_zero](t0, t1, 100)
 
-    _ = t0^
-    _ = t1^
+    t0.free()
+    t1.free()
 
 
 fn test_correlation() raises:

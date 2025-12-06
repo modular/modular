@@ -36,12 +36,14 @@ fn _static_tuple_construction_checks[size: Int]():
     Parameters:
       size: The number of elements.
     """
-    constrained[size >= 0, "number of elements in `StaticTuple` must be >= 0"]()
+    __comptime_assert (
+        size >= 0
+    ), "number of elements in `StaticTuple` must be >= 0"
 
 
 @register_passable("trivial")
 struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
-    Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized
+    Defaultable, DevicePassable, ImplicitlyCopyable, Sized
 ):
     """A statically sized tuple type which contains elements of homogeneous types.
 
@@ -169,7 +171,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Returns:
             The value at the specified position.
         """
-        constrained[index < Self.size]()
+        __comptime_assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
             _type = Self.element_type,
             index = index._mlir_value,
@@ -216,7 +218,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Args:
             val: The value to store.
         """
-        constrained[idx < Self.size]()
+        __comptime_assert idx < Self.size
 
         self._unsafe_ref(idx) = val
 
@@ -240,7 +242,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Returns:
             A new tuple with the specified element value replaced.
         """
-        constrained[idx < Self.size]()
+        __comptime_assert idx < Self.size
 
         var array = __mlir_op.`pop.array.replace`[
             _type = __mlir_type[

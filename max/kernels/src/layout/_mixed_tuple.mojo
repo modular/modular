@@ -16,23 +16,18 @@ from os import abort
 from sys.intrinsics import _type_is_eq
 
 from builtin.variadics import (
-    VariadicOf,
+    Variadic,
     VariadicPack,
-    Concatenated,
-    Reversed,
-    MakeVariadic,
-    EmptyVariadic,
     _ReduceVariadicAndIdxToVariadic,
-    variadic_size,
 )
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys.intrinsics import _type_is_eq_parse_time
 
 
-trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):
+trait MixedTupleLike(ImplicitlyCopyable, Representable):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
-    comptime VariadicType: VariadicOf[MixedTupleLike]
+    comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike]
     comptime STATIC_VALUE: Int
     comptime IS_TUPLE = False
     comptime IS_VALUE = not Self.IS_TUPLE
@@ -89,7 +84,7 @@ struct ComptimeInt[val: Int](MixedTupleLike):
         val: The compile-time integer value.
     """
 
-    comptime VariadicType: VariadicOf[MixedTupleLike] = Tuple[
+    comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike] = Tuple[
         Self
     ].element_types
     comptime STATIC_VALUE: Int = Self.val
@@ -133,7 +128,7 @@ struct RuntimeInt[dtype: DType = DType.int](MixedTupleLike):
         dtype: The data type for the runtime integer value. Defaults to `DType.int`.
     """
 
-    comptime VariadicType: VariadicOf[MixedTupleLike] = Tuple[
+    comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike] = Tuple[
         Self
     ].element_types
     comptime STATIC_VALUE: Int = -1
@@ -213,7 +208,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         element_types: The variadic pack of element types that implement `MixedTupleLike`.
     """
 
-    comptime VariadicType: VariadicOf[MixedTupleLike] = Self.element_types
+    comptime VariadicType: Variadic.TypesOfTrait[
+        MixedTupleLike
+    ] = Self.element_types
     comptime STATIC_VALUE: Int = -1
     comptime IS_TUPLE = True
     comptime ALL_DIMS_KNOWN = _AllStatic[*Self.element_types]
@@ -246,7 +243,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
             The number of elements in the tuple.
         """
 
-        comptime result = stdlib.builtin.variadic_size(Self.element_types)
+        comptime result = Variadic.size(Self.element_types)
         return result
 
     @always_inline("nodebug")
@@ -293,7 +290,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
                 VariadicPack[
                     type_of(storage).is_owned,
                     type_of(storage).origin,
-                    Copyable & Movable,
+                    Movable,
                     *Self.element_types,
                 ]
             ](storage^)
@@ -345,7 +342,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     @always_inline("nodebug")
     fn value(self) -> Int:
         constrained[False, "MixedTuple is not a value type"]()
-        return abort[Int]()
+        abort()
 
     @always_inline("nodebug")
     fn inner_product(self, t: IntTuple) -> Int:
@@ -496,9 +493,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         return rebind[MixedTuple[*Self.VariadicType]](self)
 
     @always_inline("nodebug")
-    fn reverse(var self) -> MixedTuple[*Reversed[*Self.element_types]]:
-        return MixedTuple[*Reversed[*Self.element_types]](
-            rebind[Tuple[*Reversed[*Self.element_types]]](
+    fn reverse(var self) -> MixedTuple[*Variadic.reverse[*Self.element_types]]:
+        return MixedTuple[*Variadic.reverse[*Self.element_types]](
+            rebind[Tuple[*Variadic.reverse[*Self.element_types]]](
                 self._storage.reverse()
             )
         )
@@ -507,13 +504,13 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     fn concat[
         *other_element_types: MixedTupleLike
     ](var self, var other: MixedTuple[*other_element_types]) -> MixedTuple[
-        *Concatenated[Self.element_types, other_element_types]
+        *Variadic.concat[Self.element_types, other_element_types]
     ]:
         return MixedTuple[
-            *Concatenated[Self.element_types, other_element_types]
+            *Variadic.concat[Self.element_types, other_element_types]
         ](
             rebind[
-                Tuple[*Concatenated[Self.element_types, other_element_types]]
+                Tuple[*Variadic.concat[Self.element_types, other_element_types]]
             ](self._storage.concat(other._storage))
         )
 
@@ -537,7 +534,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
             ```
         """
         comptime FlatTypes = _Flattened[*Self.element_types]
-        comptime flat_size = variadic_size(FlatTypes)
+        comptime flat_size = Variadic.size(FlatTypes)
 
         var flat_tuple: Tuple[*FlatTypes]
 
@@ -619,7 +616,7 @@ fn crd2idx[
         @parameter
         if crd_len > 1:
             constrained[False, "crd is a tuple but shape and stride are not"]()
-            return abort[Scalar[out_type]]()
+            abort()
         else:
             return crd.value() * stride.value()
 
@@ -660,22 +657,22 @@ fn mixed_int_tuple_to_int_tuple[
 
 
 comptime _FlattenMapper[
-    Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[MixedTupleLike],
+    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
-] = Concatenated[
+] = Variadic.concat[
     Prev,
     From[idx]
     .VariadicType if From[idx]
-    .IS_TUPLE else MakeVariadic[T=MixedTupleLike, From[idx]],
+    .IS_TUPLE else Variadic.types[T=MixedTupleLike, From[idx]],
 ]
 
 
 comptime _Flattened[
     *element_types: MixedTupleLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = EmptyVariadic[MixedTupleLike],
-    Variadic=element_types,
+    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    VariadicType=element_types,
     Reducer=_FlattenMapper,
 ]
 
@@ -683,24 +680,24 @@ comptime _NextOffset[
     prev_offset: Int,
     element_type: MixedTupleLike,
 ] = prev_offset + (
-    1 if element_type.IS_VALUE else variadic_size(
+    1 if element_type.IS_VALUE else Variadic.size(
         _Flattened[*element_type.VariadicType]
     )
 )
 
 
 comptime _FlattenOffsetMapper[
-    Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[MixedTupleLike],
+    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
-] = Concatenated[
+] = Variadic.concat[
     Prev,
-    MakeVariadic[
+    Variadic.types[
         T=MixedTupleLike,
         ComptimeInt[
             0 if idx
             == 0 else _NextOffset[
-                Prev[variadic_size(Prev) - 1].STATIC_VALUE,
+                Prev[Variadic.size(Prev) - 1].STATIC_VALUE,
                 From[idx - 1],
             ]
         ],
@@ -711,8 +708,8 @@ comptime _FlattenOffsetMapper[
 comptime _FlattenedOffsets[
     *element_types: MixedTupleLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = EmptyVariadic[MixedTupleLike],
-    Variadic=element_types,
+    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    VariadicType=element_types,
     Reducer=_FlattenOffsetMapper,
 ]
 
@@ -728,13 +725,13 @@ fn _get_flattened_helper[
     @parameter
     if i >= MixedTuple[*element_types].__len__():
         constrained[False, "flat_idx out of bounds"]()
-        return abort[Int]()
+        abort()
 
     comptime T = element_types[i]
 
     @parameter
     if T.IS_TUPLE:
-        comptime count = variadic_size(_Flattened[*T.VariadicType])
+        comptime count = Variadic.size(_Flattened[*T.VariadicType])
 
         @parameter
         if flat_idx >= current_offset and flat_idx < current_offset + count:
@@ -780,44 +777,44 @@ fn _get_flattened[
 
 
 comptime _AllStaticMapper[
-    Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[MixedTupleLike],
+    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
 ] = (
-    MakeVariadic[T=MixedTupleLike, ComptimeInt[1]] if (
+    Variadic.types[T=MixedTupleLike, ComptimeInt[1]] if (
         From[idx].STATIC_VALUE != -1 and Prev[0].STATIC_VALUE == 1
-    ) else MakeVariadic[T=MixedTupleLike, ComptimeInt[0]]
+    ) else Variadic.types[T=MixedTupleLike, ComptimeInt[0]]
 )
 
 
 comptime _AllStatic[
     *element_types: MixedTupleLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = MakeVariadic[T=MixedTupleLike, ComptimeInt[1]],
-    Variadic = _Flattened[*element_types],
+    BaseVal = Variadic.types[T=MixedTupleLike, ComptimeInt[1]],
+    VariadicType = _Flattened[*element_types],
     Reducer=_AllStaticMapper,
 ][
     0
 ].STATIC_VALUE == 1
 
 comptime _AllEqualMapper[
-    T: Copyable & Movable,
-    Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[Copyable & Movable],
+    T: AnyType,
+    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[AnyType],
     idx: Int,
 ] = (
-    MakeVariadic[T=MixedTupleLike, ComptimeInt[1]] if (
+    Variadic.types[T=MixedTupleLike, ComptimeInt[1]] if (
         _type_is_eq_parse_time[From[idx], T]()
         and (Prev[0].STATIC_VALUE == 1 or idx == 0)
-    ) else MakeVariadic[T=MixedTupleLike, ComptimeInt[0]]
+    ) else Variadic.types[T=MixedTupleLike, ComptimeInt[0]]
 )
 
 
 comptime _AllEqual[
-    T: Copyable & Movable, *element_types: Copyable & Movable
+    T: AnyType, *element_types: AnyType
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = MakeVariadic[T=MixedTupleLike, ComptimeInt[0]],
-    Variadic=element_types,
+    BaseVal = Variadic.types[T=MixedTupleLike, ComptimeInt[0]],
+    VariadicType=element_types,
     Reducer = _AllEqualMapper[T],
 ][
     0

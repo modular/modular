@@ -32,8 +32,8 @@ from max.pipelines.lib import PipelineConfig, get_paged_manager
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
+from .batch_constructor import TextBatchConstructor
 from .config import TokenGenerationSchedulerConfig
-from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -176,11 +176,11 @@ class TokenGenerationScheduler(Scheduler):
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
-        for req_id in get_cancelled_reqs(self.cancel_queue):
-            is_cancelled = self.batch_constructor.cancel_request(req_id)
-            if is_cancelled:
+        for cancelled_id in get_cancelled_reqs(self.cancel_queue):
+            if self.batch_constructor.contains(cancelled_id):
+                self.batch_constructor.release_request(cancelled_id)
                 self.response_queue.put_nowait(
-                    {req_id: SchedulerResult.cancelled()}
+                    {cancelled_id: SchedulerResult.cancelled()}
                 )
 
         return SchedulerProgress.MADE_PROGRESS
@@ -196,18 +196,22 @@ class TokenGenerationScheduler(Scheduler):
         else:
             responses = self.pipeline.execute(inputs)
 
-        # If there is a chunked request, we put it back into the request queue
-        self.batch_constructor.move_completed_ce_requests_to_tg(
-            inputs.batches,
-            responses,
-        )
+        # Advance the requests and collect the invalid request IDs
+        for (
+            request_id
+        ) in self.batch_constructor.advance_requests_and_collect_invalid_ids(
+            inputs.batches
+        ):
+            # The only scenario where the request ID should not be in the responses dictionary, is if the pipeline
+            # errored out, this should not happen.
+            del responses[request_id]
 
-        # remove terminated requests from the batch
-        num_terminated_reqs = (
-            self.batch_constructor.release_terminated_requests(
-                responses,
-            )
-        )
+        # Release terminated requests from the batch
+        num_terminated_requests = 0
+        for request_id, response in responses.items():
+            if response.is_done:
+                self.batch_constructor.release_request(request_id)
+                num_terminated_requests += 1
 
         # send the responses to the API process
         if responses:
@@ -218,7 +222,7 @@ class TokenGenerationScheduler(Scheduler):
                 }
             )
 
-        return num_terminated_reqs
+        return num_terminated_requests
 
 
 def load_text_generation_scheduler(

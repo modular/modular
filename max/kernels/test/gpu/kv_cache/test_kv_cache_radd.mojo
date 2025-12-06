@@ -15,16 +15,13 @@ from collections import Set
 from math import ceildiv
 from random import random_ui64
 
-from buffer import Dim, DimList
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    InitializationType,
-    initialize,
-)
+from internal_utils import InitializationType
+from internal_utils._utils import initialize
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
 
 from utils import IndexList
@@ -47,15 +44,24 @@ fn test_kv_cache_radd[
         num_active_loras <= batch_size,
         "num_active_loras must be less than or equal to batch_size",
     )
-    var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size + 1)
+    var input_row_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
+        batch_size + 1
     )
-    var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size)
+    var input_row_offsets_host = NDBuffer[DType.uint32, 1](
+        input_row_offsets_host_ptr, batch_size + 1
+    )
+    var cache_lengths_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
+        batch_size
+    )
+    var cache_lengths_host = NDBuffer[DType.uint32, 1](
+        cache_lengths_host_ptr, batch_size
     )
 
-    var input_row_offsets_slice_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](num_active_loras + 1)
+    var input_row_offsets_slice_host_ptr = UnsafePointer[
+        Scalar[DType.uint32]
+    ].alloc(num_active_loras + 1)
+    var input_row_offsets_slice_host = NDBuffer[DType.uint32, 1](
+        input_row_offsets_slice_host_ptr, num_active_loras + 1
     )
     var num_active_loras_slice_start = batch_size - num_active_loras
     var total_length = 0
@@ -63,46 +69,68 @@ fn test_kv_cache_radd[
     var max_full_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
-        input_row_offsets_host.tensor[i] = total_length
-        cache_lengths_host.tensor[i] = cache_lens[i]
+        input_row_offsets_host[i] = total_length
+        cache_lengths_host[i] = cache_lens[i]
         max_full_context_length = max(
             max_full_context_length, cache_lens[i] + prompt_lens[i]
         )
         max_prompt_length = max(max_prompt_length, prompt_lens[i])
 
         if i >= num_active_loras_slice_start:
-            input_row_offsets_slice_host.tensor[
+            input_row_offsets_slice_host[
                 i - num_active_loras_slice_start
             ] = total_length
             total_slice_length += prompt_lens[i]
 
         total_length += prompt_lens[i]
 
-    input_row_offsets_host.tensor[batch_size] = total_length
-    input_row_offsets_slice_host.tensor[num_active_loras] = total_length
+    input_row_offsets_host[batch_size] = total_length
+    input_row_offsets_slice_host[num_active_loras] = total_length
 
     num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
     )
 
-    var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
-    var input_row_offsets_slice_device = (
-        input_row_offsets_slice_host.copy_to_device(ctx)
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
+    var input_row_offsets_slice_device = ctx.enqueue_create_buffer[
+        DType.uint32
+    ](num_active_loras + 1)
+    ctx.enqueue_copy(
+        input_row_offsets_slice_device, input_row_offsets_slice_host_ptr
     )
 
-    kv_block_paged_host = HostNDBuffer[dtype, 6](
-        IndexList[6](
-            num_paged_blocks,
-            2,
-            num_layers,
-            page_size,
-            num_heads,
-            head_dim,
-        )
+    var kv_block_paged_shape = IndexList[6](
+        num_paged_blocks,
+        2,
+        num_layers,
+        page_size,
+        num_heads,
+        head_dim,
     )
-    initialize(kv_block_paged_host.tensor, InitializationType.one)
-    paged_lut_host = HostNDBuffer[DType.uint32, 2](
-        IndexList[2](batch_size, ceildiv(max_full_context_length, page_size))
+    var kv_block_paged_size = (
+        num_paged_blocks * 2 * num_layers * page_size * num_heads * head_dim
+    )
+    var kv_block_paged_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        kv_block_paged_size
+    )
+    var kv_block_paged_host = NDBuffer[dtype, 6](
+        kv_block_paged_host_ptr, kv_block_paged_shape
+    )
+    initialize(kv_block_paged_host, InitializationType.one)
+    var paged_lut_shape = IndexList[2](
+        batch_size, ceildiv(max_full_context_length, page_size)
+    )
+    var paged_lut_size = batch_size * ceildiv(
+        max_full_context_length, page_size
+    )
+    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
+        paged_lut_size
+    )
+    var paged_lut_host = NDBuffer[DType.uint32, 2](
+        paged_lut_host_ptr, paged_lut_shape
     )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
@@ -114,10 +142,29 @@ fn test_kv_cache_radd[
                 randval = Int(random_ui64(0, num_paged_blocks - 1))
 
             paged_lut_set.add(randval)
-            paged_lut_host.tensor[bs, block_idx] = randval
+            paged_lut_host[bs, block_idx] = randval
 
-    kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
-    paged_lut_device = paged_lut_host.copy_to_device(ctx)
+    var kv_block_paged_device = ctx.enqueue_create_buffer[dtype](
+        kv_block_paged_size
+    )
+    ctx.enqueue_copy(kv_block_paged_device, kv_block_paged_host_ptr)
+    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+        paged_lut_size
+    )
+    ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
+
+    var kv_block_paged_device_nd = NDBuffer[dtype, 6](
+        kv_block_paged_device.unsafe_ptr(), kv_block_paged_shape
+    )
+    var cache_lengths_device_nd = NDBuffer[DType.uint32, 1](
+        cache_lengths_device.unsafe_ptr(), batch_size
+    )
+    var paged_lut_device_nd = NDBuffer[DType.uint32, 2](
+        paged_lut_device.unsafe_ptr(), paged_lut_shape
+    )
+    var input_row_offsets_slice_device_nd = NDBuffer[DType.uint32, 1](
+        input_row_offsets_slice_device.unsafe_ptr(), num_active_loras + 1
+    )
 
     var kv_collection_device = PagedKVCacheCollection[
         dtype,
@@ -126,57 +173,74 @@ fn test_kv_cache_radd[
         ),
         page_size,
     ](
-        LayoutTensor[
-            kv_block_paged_device.dtype, Layout.row_major[6](), MutAnyOrigin
-        ](
-            kv_block_paged_device.to_layout_tensor().ptr,
+        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_paged_device_nd.data,
             RuntimeLayout[Layout.row_major[6]()](
-                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+                kv_block_paged_device_nd.dynamic_shape.canonicalize(),
+                kv_block_paged_device_nd.dynamic_stride.canonicalize(),
             ),
         ),
-        LayoutTensor[
-            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths_device.to_layout_tensor().ptr,
+        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            cache_lengths_device_nd.data,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+                cache_lengths_device_nd.dynamic_shape.canonicalize(),
+                cache_lengths_device_nd.dynamic_stride.canonicalize(),
             ),
         ),
-        LayoutTensor[
-            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
-        ](
-            paged_lut_device.to_layout_tensor().ptr,
+        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+            paged_lut_device_nd.data,
             RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
-                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+                paged_lut_device_nd.dynamic_shape.canonicalize(),
+                paged_lut_device_nd.dynamic_stride.canonicalize(),
             ),
         ),
         max_prompt_length,
         max_full_context_length,
     )
 
-    var a_host = HostNDBuffer[
-        dtype, 2, DimList(Dim(), num_heads * head_dim * 2)
-    ](IndexList[2](total_slice_length, num_heads * head_dim * 2))
-    initialize(a_host.tensor, InitializationType.arange)
-    var a_device = a_host.copy_to_device(ctx)
+    var a_shape = IndexList[2](total_slice_length, num_heads * head_dim * 2)
+    var a_size = total_slice_length * num_heads * head_dim * 2
+    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
+    var a_host = NDBuffer[
+        dtype, 2, _, DimList(Dim(), num_heads * head_dim * 2)
+    ](a_host_ptr, a_shape)
+    initialize(a_host, InitializationType.arange)
+    var a_device = ctx.enqueue_create_buffer[dtype](a_size)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    var a_device_nd = NDBuffer[
+        dtype, 2, _, DimList(Dim(), num_heads * head_dim * 2)
+    ](a_device.unsafe_ptr(), a_shape)
 
     var layer_idx = 1
     generic_kv_cache_radd_dispatch[target="gpu"](
-        a_device.to_layout_tensor(),
+        LayoutTensor[
+            dtype,
+            Layout.row_major(UNKNOWN_VALUE, num_heads * head_dim * 2),
+            MutAnyOrigin,
+        ](
+            a_device_nd.data,
+            RuntimeLayout[
+                Layout.row_major(UNKNOWN_VALUE, num_heads * head_dim * 2)
+            ](
+                a_device_nd.dynamic_shape.canonicalize(),
+                a_device_nd.dynamic_stride.canonicalize(),
+            ),
+        ),
         kv_collection_device,
-        input_row_offsets_slice_device.to_layout_tensor(),
+        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            input_row_offsets_slice_device_nd.data,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                input_row_offsets_slice_device_nd.dynamic_shape.canonicalize(),
+                input_row_offsets_slice_device_nd.dynamic_stride.canonicalize(),
+            ),
+        ),
         num_active_loras_slice_start,
         layer_idx,
         ctx,
     )
     ctx.synchronize()
-    ctx.enqueue_copy(
-        kv_block_paged_host.tensor.data, kv_block_paged_device.buffer
-    )
-    ctx.enqueue_copy(a_host.tensor.data, a_device.buffer)
+    ctx.enqueue_copy(kv_block_paged_host_ptr, kv_block_paged_device)
+    ctx.enqueue_copy(a_host_ptr, a_device)
 
     ctx.synchronize()
 
@@ -187,31 +251,25 @@ fn test_kv_cache_radd[
         ),
         page_size,
     ](
-        LayoutTensor[
-            kv_block_paged_host.dtype, Layout.row_major[6](), MutAnyOrigin
-        ](
-            kv_block_paged_host.to_layout_tensor().ptr,
+        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_paged_host.data,
             RuntimeLayout[Layout.row_major[6]()](
-                kv_block_paged_host.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_paged_host.to_layout_tensor().runtime_layout.stride.value,
+                kv_block_paged_host.dynamic_shape.canonicalize(),
+                kv_block_paged_host.dynamic_stride.canonicalize(),
             ),
         ),
-        LayoutTensor[
-            cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths_host.to_layout_tensor().ptr,
+        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            cache_lengths_host.data,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
-                cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+                cache_lengths_host.dynamic_shape.canonicalize(),
+                cache_lengths_host.dynamic_stride.canonicalize(),
             ),
         ),
-        LayoutTensor[
-            paged_lut_host.dtype, Layout.row_major[2](), ImmutAnyOrigin
-        ](
-            paged_lut_host.to_layout_tensor().ptr,
+        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+            paged_lut_host.data,
             RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_host.to_layout_tensor().runtime_layout.shape.value,
-                paged_lut_host.to_layout_tensor().runtime_layout.stride.value,
+                paged_lut_host.dynamic_shape.canonicalize(),
+                paged_lut_host.dynamic_stride.canonicalize(),
             ),
         ),
         max_prompt_length,
@@ -301,8 +359,18 @@ fn test_kv_cache_radd[
                         )
                     arange_counter += 1
 
-    # TODO(MAXPLAT-362) fix this and remove it.
-    _ = paged_lut_host
+    # Cleanup
+    input_row_offsets_host_ptr.free()
+    cache_lengths_host_ptr.free()
+    input_row_offsets_slice_host_ptr.free()
+    kv_block_paged_host_ptr.free()
+    paged_lut_host_ptr.free()
+    a_host_ptr.free()
+    _ = cache_lengths_device^
+    _ = input_row_offsets_slice_device^
+    _ = kv_block_paged_device^
+    _ = paged_lut_device^
+    _ = a_device^
 
 
 def main():

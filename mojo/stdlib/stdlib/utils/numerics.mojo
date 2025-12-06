@@ -33,9 +33,9 @@ from memory import bitcast
 
 
 fn _constrain_fp_type[dtype: DType]():
-    constrained[
-        dtype.is_floating_point(), "dtype must be a floating point type"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "dtype must be a floating point type"
 
 
 struct FPUtils[
@@ -480,10 +480,9 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The NaN value of the given dtype.
     """
-    constrained[
-        dtype.is_floating_point(),
-        "Only floating point dtypes support NaN.",
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "Only floating point dtypes support NaN."
 
     @parameter
     if dtype is DType.float8_e4m3fn:
@@ -594,10 +593,9 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The +inf value of the given dtype.
     """
-    constrained[
-        dtype.is_floating_point(),
-        "Only floating point dtypes support +inf.",
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "Only floating point dtypes support +inf."
 
     @parameter
     if dtype is DType.float8_e4m3fnuz:
@@ -651,10 +649,9 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The -inf value of the given dtype.
     """
-    constrained[
-        dtype.is_floating_point(),
-        "Only floating point dtypes support -inf.",
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "Only floating point dtypes support -inf."
 
     @parameter
     if dtype is DType.float8_e4m3fn:
@@ -976,10 +973,10 @@ fn nextafter[
     Returns:
         The `nextafter` of the inputs.
     """
-    constrained[
-        dtype in (DType.float32, DType.float64),
-        "nextafter only supports float32 and float64 types",
-    ]()
+    __comptime_assert dtype in (
+        DType.float32,
+        DType.float64,
+    ), "nextafter only supports float32 and float64 types"
 
     @always_inline("nodebug")
     @parameter
@@ -999,9 +996,9 @@ fn nextafter[
             arg0, arg1
         )
 
-    constrained[
-        dtype.is_floating_point(), "input dtype must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input dtype must be floating point"
 
     @parameter
     if dtype is DType.float64:

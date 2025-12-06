@@ -141,6 +141,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](Self.simd_width, 1)](0, K)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = ak_ptr
+        _ = bk_ptr
 
     @staticmethod
     @always_inline
@@ -185,6 +188,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](2, 1)](0, K)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = ak_ptr
+        _ = bk_ptr
 
     @no_inline
     @staticmethod
@@ -241,6 +247,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             cm_ptr += tile_m * c_stride
 
         tile[process_rows, Self._matmul_config.row_sizes](0, M)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = am_ptr
+        _ = cm_ptr
 
     @no_inline
     @staticmethod
@@ -343,7 +352,6 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         c_ptr: UnsafePointer[Scalar[Self.dtype]],
     ):
         var K = static_k if static_k != UNKNOWN_VALUE else dynamic_k
-
         var cn_ptr = c_ptr
 
         @parameter
@@ -405,6 +413,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             cn_ptr += tile_n
 
         tile[process_cols, VariadicList[Int](4, 1)](0, N)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = K
+        _ = cn_ptr
 
     @no_inline
     @staticmethod
@@ -435,6 +446,8 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             cn_ptr += _simd_width
 
         tile[process_cols, Self._matmul_config.gemv_sizes](0, N)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = cn_ptr
 
     @no_inline
     @staticmethod
@@ -1116,12 +1129,16 @@ fn flash_attention_split_kv[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k_shape),
-            trace_arg("v", v_shape),
-            trace_arg("k_cache", k_cache_shape),
-            trace_arg("v_cache", v_cache_shape),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k_shape),
+                    trace_arg("v", v_shape),
+                    trace_arg("k_cache", k_cache_shape),
+                    trace_arg("v_cache", v_cache_shape),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](

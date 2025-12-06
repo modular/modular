@@ -77,10 +77,9 @@ fn _shuffle[
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
-    constrained[
-        dtype.is_half_float() or simd_width == 1,
-        "Unsupported simd_width",
-    ]()
+    __comptime_assert (
+        dtype.is_half_float() or simd_width == 1
+    ), "Unsupported simd_width"
 
     @parameter
     if dtype is DType.float32:
@@ -120,7 +119,7 @@ fn _shuffle[
             )
             return bitcast[dtype, simd_width](result_packed)
     elif dtype is DType.bool:
-        constrained[simd_width == 1, "unhandled simd width"]()
+        __comptime_assert simd_width == 1, "unhandled simd width"
         return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val.cast[DType.int32](), offset
         ).cast[dtype]()
@@ -142,7 +141,7 @@ fn _shuffle_amd_helper[
         )
         return bitcast[dtype, simd_width](result_packed)
     else:
-        constrained[simd_width == 1, "Unsupported simd width"]()
+        __comptime_assert simd_width == 1, "Unsupported simd width"
 
         @parameter
         if dtype is DType.bool:
@@ -182,10 +181,9 @@ fn _shuffle_apple_helper[
       simd_shuffle_xor              → llvm.air.simd_shuffle_xor
     """
 
-    constrained[
-        dtype.is_half_float() or simd_width == 1,
-        "Unsupported simd_width",
-    ]()
+    __comptime_assert (
+        dtype.is_half_float() or simd_width == 1
+    ), "Unsupported simd_width"
 
     var arg = UInt16(offset)  # AIR intrinsics use 16-bit offsets
 
@@ -284,7 +282,7 @@ fn _shuffle_idx_amd[
     dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
-    var lane: Int32 = lane_id()
+    var lane = Int32(lane_id())
     # Godbolt uses 0x3fffffc0. It is masking out the lower 64-bits
     # But it's also masking out the upper two bits. Why?
     # The lane should not be > 64 so the upper 2 bits should always be zero.
@@ -346,7 +344,7 @@ fn shuffle_idx[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation="shuffle_idx",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -391,7 +389,7 @@ fn _shuffle_up_amd[
     dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
-    var lane: Int32 = lane_id()
+    var lane = Int32(lane_id())
     var t0 = lane - offset.cast[DType.int32]()
     var t1 = lane & -WARP_SIZE
     var dst_lane = t0.lt(t1).select(lane, t0)
@@ -443,7 +441,7 @@ fn shuffle_up[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation="shuffle_up",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -489,7 +487,7 @@ fn _shuffle_down_amd[
     dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
-    var lane = lane_id()
+    var lane = UInt32(lane_id())
     # set the offset to 0 if lane + offset >= WARP_SIZE
     var dst_lane = (lane + offset).gt(_WIDTH_MASK).select(0, offset) + lane
     return _shuffle_amd_helper(dst_lane, val)
@@ -541,7 +539,7 @@ fn shuffle_down[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation="shuffle_down",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -582,7 +580,7 @@ fn _shuffle_xor_amd[
     dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
-    var lane: UInt32 = lane_id()
+    var lane = UInt32(lane_id())
     var t0 = lane ^ offset
     var t1 = lane & -WARP_SIZE
     # This needs to be "add nsw" = add no sign wrap
@@ -642,7 +640,7 @@ fn shuffle_xor[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation="shuffle_xor",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -1211,10 +1209,10 @@ fn _vote_nvidia_helper(vote: Bool) -> UInt32:
 
 @always_inline
 fn _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
-    constrained[
-        ret_type in (DType.uint32, DType.uint64),
-        "Unsupported return type",
-    ]()
+    __comptime_assert ret_type in (
+        DType.uint32,
+        DType.uint64,
+    ), "Unsupported return type"
 
     comptime instruction = String(
         "llvm.amdgcn.ballot.i", bit_width_of[ret_type]()
@@ -1247,11 +1245,11 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
 
     @parameter
     if is_nvidia_gpu():
-        constrained[ret_type is DType.uint32, "Unsupported return type"]()
+        __comptime_assert ret_type is DType.uint32, "Unsupported return type"
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():
         return _vote_amd_helper[ret_type](val)
     else:
         return CompilationTarget.unsupported_target_error[
-            Scalar[ret_type], operation="vote"
+            Scalar[ret_type], operation = __get_current_function_name()
         ]()

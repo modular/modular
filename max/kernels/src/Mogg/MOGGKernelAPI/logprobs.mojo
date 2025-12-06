@@ -20,7 +20,6 @@ from gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
 from runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
-from tensor.transitional import managed_tensor_slice_to_ndbuffer
 
 from utils.index import IndexList
 

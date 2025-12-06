@@ -13,24 +13,15 @@
 
 from math import ceildiv
 
-from buffer import DimList
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-    fill,
-)
+from memory import LegacyUnsafePointer as UnsafePointer
+from internal_utils import assert_almost_equal, random, zero, fill
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
-from buffer import Dim
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
 from collections import OptionalReg
-from buffer import NDBuffer
-from builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import Layout, LayoutTensor, IntTuple
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from sys import argv
@@ -41,65 +32,8 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     MXFP8_SF_VECTOR_SIZE,
     MXFP8_SF_DTYPE,
+    convert_ref_scales_to_mxfp8_format,
 )
-
-
-fn _convert_ref_scales_to_mxfp8_format[
-    ref_scales_type: DType,
-    scales_type: DType,
-    *,
-    REF_BLOCK_SIZE: Int,
-    SF_VECTOR_SIZE: Int,
-](
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-    ref_a_scales: NDBuffer[ref_scales_type, 2, *_],
-    ref_b_scales: NDBuffer[ref_scales_type, 2, *_],
-    a_scales: NDBuffer[mut=True, scales_type, 5, *_],
-    b_scales: NDBuffer[mut=True, scales_type, 5, *_],
-):
-    constrained[
-        ref_scales_type == DType.float32,
-        "Only support float32 reference scales",
-    ]()
-    constrained[
-        scales_type == DType.float8_e8m0fnu,
-        "Only support float8_e8m0fnu scales",
-    ]()
-
-    var M = m.value
-    var N = n.value
-    var K = k.value
-
-    # initialize a_scales_tensor and b_scales_tensor based on reference scales
-    for m in range(M):
-        for k in range(K):
-            a_scales[
-                m // SF_MN_GROUP_SIZE,
-                k // (SF_VECTOR_SIZE * SF_ATOM_K),
-                m % SF_ATOM_M[0],
-                (m % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                k % SF_ATOM_K,
-            ] = rebind[Scalar[scales_type]](
-                _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_a_scales[k // REF_BLOCK_SIZE, m]
-                )
-            )
-
-    for n in range(N):
-        for k in range(K):
-            b_scales[
-                n // SF_MN_GROUP_SIZE,
-                k // (SF_VECTOR_SIZE * SF_ATOM_K),
-                n % SF_ATOM_M[0],
-                (n % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                k % SF_ATOM_K,
-            ] = rebind[Scalar[scales_type]](
-                _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_b_scales[n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE]
-                )
-            )
 
 
 fn test_scaled_mxfp8_cublaslt[
@@ -145,32 +79,49 @@ fn test_scaled_mxfp8_cublaslt[
         ceildiv(n.value, REF_BLOCK_SIZE), ceildiv(k.value, REF_BLOCK_SIZE)
     )
 
-    var a_scales_host_ref = HostNDBuffer[
-        ref_scales_type, 2, static_ref_a_scales_shape
-    ](dynamic_ref_a_scales_shape)
-    var b_scales_host_ref = HostNDBuffer[
-        ref_scales_type, 2, static_ref_b_scales_shape
-    ](dynamic_ref_b_scales_shape)
+    var a_scales_ref_size = ceildiv(k.value, REF_BLOCK_SIZE) * m.value
+    var b_scales_ref_size = ceildiv(n.value, REF_BLOCK_SIZE) * ceildiv(
+        k.value, REF_BLOCK_SIZE
+    )
 
-    var a_scales_device_ref = DeviceNDBuffer[
-        ref_scales_type, 2, static_ref_a_scales_shape
-    ](dynamic_ref_a_scales_shape, ctx=ctx)
-    var b_scales_device_ref = DeviceNDBuffer[
-        ref_scales_type, 2, static_ref_b_scales_shape
-    ](dynamic_ref_b_scales_shape, ctx=ctx)
+    var a_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+        a_scales_ref_size
+    )
+    var a_scales_host_ref = NDBuffer[
+        ref_scales_type, 2, _, static_ref_a_scales_shape
+    ](a_scales_host_ref_ptr, dynamic_ref_a_scales_shape)
+    var b_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+        b_scales_ref_size
+    )
+    var b_scales_host_ref = NDBuffer[
+        ref_scales_type, 2, _, static_ref_b_scales_shape
+    ](b_scales_host_ref_ptr, dynamic_ref_b_scales_shape)
 
-    fill(a_scales_host_ref.tensor, Scalar[ref_scales_type](1.0))
-    fill(b_scales_host_ref.tensor, Scalar[ref_scales_type](1.0))
+    var a_scales_device_ref = ctx.enqueue_create_buffer[ref_scales_type](
+        a_scales_ref_size
+    )
+    var a_scales_device_ref_nd = NDBuffer[
+        ref_scales_type, 2, _, static_ref_a_scales_shape
+    ](a_scales_device_ref.unsafe_ptr(), dynamic_ref_a_scales_shape)
+    var b_scales_device_ref = ctx.enqueue_create_buffer[ref_scales_type](
+        b_scales_ref_size
+    )
+    var b_scales_device_ref_nd = NDBuffer[
+        ref_scales_type, 2, _, static_ref_b_scales_shape
+    ](b_scales_device_ref.unsafe_ptr(), dynamic_ref_b_scales_shape)
+
+    fill(a_scales_host_ref, Scalar[ref_scales_type](1.0))
+    fill(b_scales_host_ref, Scalar[ref_scales_type](1.0))
 
     # NOTE: We can't initialize this scales randomly as our naive kernel cannot handle mxfp8 style scaling.
-    for i in range(a_scales_host_ref.tensor.dim(0)):
-        for j in range(a_scales_host_ref.tensor.dim(1) // 32):
+    for i in range(a_scales_host_ref.dim(0)):
+        for j in range(a_scales_host_ref.dim(1) // 32):
             for k in range(32):
-                a_scales_host_ref.tensor[i, j * 32 + k] = 1 << (j % 4)
+                a_scales_host_ref[i, j * 32 + k] = 1 << (j % 4)
 
-    for i in range(b_scales_host_ref.tensor.dim(0)):
-        for j in range(b_scales_host_ref.tensor.dim(1)):
-            b_scales_host_ref.tensor[i, j] = 1 << j
+    for i in range(b_scales_host_ref.dim(0)):
+        for j in range(b_scales_host_ref.dim(1)):
+            b_scales_host_ref[i, j] = 1 << j
 
     comptime static_a_shape = DimList(m.dim, k.dim)
     comptime static_b_shape = DimList(n.dim, k.dim)
@@ -209,68 +160,109 @@ fn test_scaled_mxfp8_cublaslt[
         Dim(SF_ATOM_K),
     )
 
-    var a_scales_host = HostNDBuffer[scales_type, 5, static_a_scales_shape](
-        dynamic_a_scales_shape
+    var a_scales_size = (
+        ceildiv(m.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)
+        * SF_ATOM_M[0]
+        * SF_ATOM_M[1]
+        * SF_ATOM_K
     )
-    var b_scales_host = HostNDBuffer[scales_type, 5, static_b_scales_shape](
-        dynamic_b_scales_shape
-    )
-
-    var a_scales_device = DeviceNDBuffer[scales_type, 5, static_a_scales_shape](
-        dynamic_a_scales_shape, ctx=ctx
-    )
-    var b_scales_device = DeviceNDBuffer[scales_type, 5, static_b_scales_shape](
-        dynamic_b_scales_shape, ctx=ctx
-    )
-
-    var a_host = HostNDBuffer[input_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[input_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[output_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[output_type, 2, static_c_shape](
-        dynamic_c_shape
+    var b_scales_size = (
+        ceildiv(n.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)
+        * SF_ATOM_M[0]
+        * SF_ATOM_M[1]
+        * SF_ATOM_K
     )
 
-    var a_device = DeviceNDBuffer[input_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
+        a_scales_size
     )
-    var b_device = DeviceNDBuffer[input_type, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
+    var a_scales_host = NDBuffer[scales_type, 5, _, static_a_scales_shape](
+        a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var c_device = DeviceNDBuffer[output_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
+        b_scales_size
     )
-    var c_device_ref = DeviceNDBuffer[output_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var b_scales_host = NDBuffer[scales_type, 5, _, static_b_scales_shape](
+        b_scales_host_ptr, dynamic_b_scales_shape
     )
 
-    _convert_ref_scales_to_mxfp8_format[
+    var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
+    var a_scales_device_nd = NDBuffer[scales_type, 5, _, static_a_scales_shape](
+        a_scales_device.unsafe_ptr(), dynamic_a_scales_shape
+    )
+    var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
+    var b_scales_device_nd = NDBuffer[scales_type, 5, _, static_b_scales_shape](
+        b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
+    )
+
+    var a_size = m.value * k.value
+    var b_size = n.value * k.value
+    var c_size = m.value * n.value
+
+    var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(a_size)
+    var a_host = NDBuffer[input_type, 2, _, static_a_shape](
+        a_host_ptr, dynamic_a_shape
+    )
+    var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
+    var b_host = NDBuffer[input_type, 2, _, static_b_shape](
+        b_host_ptr, dynamic_b_shape
+    )
+    var c_host_ptr = UnsafePointer[Scalar[output_type]].alloc(c_size)
+    var c_host = NDBuffer[output_type, 2, _, static_c_shape](
+        c_host_ptr, dynamic_c_shape
+    )
+    var c_host_ref_ptr = UnsafePointer[Scalar[output_type]].alloc(c_size)
+    var c_host_ref = NDBuffer[output_type, 2, _, static_c_shape](
+        c_host_ref_ptr, dynamic_c_shape
+    )
+
+    var a_device = ctx.enqueue_create_buffer[input_type](a_size)
+    var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](
+        a_device.unsafe_ptr(), dynamic_a_shape
+    )
+    var b_device = ctx.enqueue_create_buffer[input_type](b_size)
+    var b_device_nd = NDBuffer[input_type, 2, _, static_b_shape](
+        b_device.unsafe_ptr(), dynamic_b_shape
+    )
+    var c_device = ctx.enqueue_create_buffer[output_type](c_size)
+    var c_device_nd = NDBuffer[output_type, 2, _, static_c_shape](
+        c_device.unsafe_ptr(), dynamic_c_shape
+    )
+    var c_device_ref = ctx.enqueue_create_buffer[output_type](c_size)
+    var c_device_ref_nd = NDBuffer[output_type, 2, _, static_c_shape](
+        c_device_ref.unsafe_ptr(), dynamic_c_shape
+    )
+
+    convert_ref_scales_to_mxfp8_format[
         REF_BLOCK_SIZE=REF_BLOCK_SIZE, SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE
     ](
         m,
         n,
         k,
-        a_scales_host_ref.tensor,
-        b_scales_host_ref.tensor,
-        a_scales_host.tensor,
-        b_scales_host.tensor,
+        a_scales_host_ref,
+        b_scales_host_ref,
+        a_scales_host,
+        b_scales_host,
     )
 
-    random(a_host.tensor)
-    random(b_host.tensor)
+    random(a_host)
+    random(b_host)
 
     # Move operands to the Device
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
-    ctx.enqueue_copy(a_scales_device_ref.buffer, a_scales_host_ref.tensor.data)
-    ctx.enqueue_copy(b_scales_device_ref.buffer, b_scales_host_ref.tensor.data)
-    ctx.enqueue_copy(a_scales_device.buffer, a_scales_host.tensor.data)
-    ctx.enqueue_copy(b_scales_device.buffer, b_scales_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
+    ctx.enqueue_copy(a_scales_device_ref, a_scales_host_ref_ptr)
+    ctx.enqueue_copy(b_scales_device_ref, b_scales_host_ref_ptr)
+    ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
+    ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = from_ndbuffer_row_major(a_device.tensor)
-    var b = from_ndbuffer_row_major(b_device.tensor)
-    var c = from_ndbuffer_row_major(c_device.tensor)
-    var a_scales = from_ndbuffer_row_major(a_scales_device.tensor)
-    var b_scales = from_ndbuffer_row_major(b_scales_device.tensor)
+    var a = from_ndbuffer_row_major(a_device_nd)
+    var b = from_ndbuffer_row_major(b_device_nd)
+    var c = from_ndbuffer_row_major(c_device_nd)
+    var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
+    var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
 
     matmul[scales_type=scales_type](
         ctx,
@@ -283,49 +275,53 @@ fn test_scaled_mxfp8_cublaslt[
         c_row_major=True,
     )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device)
 
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
         scales_granularity_mnk = Index(1, REF_BLOCK_SIZE, REF_BLOCK_SIZE),
     ](
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
-        a_scales_device_ref.tensor,
-        b_scales_device_ref.tensor,
+        c_device_ref_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales_device_ref_nd,
+        b_scales_device_ref_nd,
         ctx,
     )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
 
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
+        c_host,
+        c_host_ref,
         atol=0.01,
         rtol=0.01,
     )
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    a_scales_host_ptr.free()
+    b_scales_host_ptr.free()
+    a_scales_host_ref_ptr.free()
+    b_scales_host_ref_ptr.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
+    _ = a_scales_device^
+    _ = b_scales_device^
+    _ = a_scales_device_ref^
+    _ = b_scales_device_ref^
+
     _ = a_scales
     _ = b_scales
-    _ = a_scales_host
-    _ = b_scales_host
-    _ = a_scales_device
-    _ = b_scales_device
-    _ = a_scales_host_ref
-    _ = b_scales_host_ref
 
 
 fn main() raises:

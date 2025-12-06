@@ -60,45 +60,6 @@ trait Boolable:
 
 
 # ===----------------------------------------------------------------------=== #
-#  ImplicitlyBoolable
-# ===----------------------------------------------------------------------=== #
-
-
-trait ImplicitlyBoolable(Boolable):
-    """The `ImplicitlyBoolable` trait describes a type that can be implicitly
-    converted to a `Bool`.
-
-    Types conforming to this trait can be passed to a function that expects a
-    `Bool` without explicitly converting to it. Accordingly, most types should
-    conform to `Boolable` instead, since implicit conversions to `Bool` can have
-    unintuitive consequences.
-
-    This trait requires the type to implement the `__as_bool__()` method. For
-    example:
-
-    ```mojo
-    struct Foo(ImplicitlyBoolable):
-        var val: Bool
-
-        fn __as_bool__(self) -> Bool:
-            return self.val
-
-        fn __bool__(self) -> Bool:
-            return self.__as_bool__()
-    ```
-    """
-
-    @always_inline
-    fn __as_bool__(self) -> Bool:
-        """Get the boolean representation of the value.
-
-        Returns:
-            The boolean representation of the value.
-        """
-        return self.__bool__()
-
-
-# ===----------------------------------------------------------------------=== #
 #  Bool
 # ===----------------------------------------------------------------------=== #
 
@@ -106,17 +67,16 @@ trait ImplicitlyBoolable(Boolable):
 @lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct Bool(
+    Boolable,
     Comparable,
     ConvertibleFromPython,
     ConvertibleToPython,
     Defaultable,
     Floatable,
     Hashable,
-    ImplicitlyBoolable,
     ImplicitlyCopyable,
     Indexer,
     Intable,
-    Movable,
     Representable,
     Stringable,
     Writable,
@@ -181,19 +141,6 @@ struct Bool(
         ](mlir_value)
 
     @always_inline("nodebug")
-    @implicit
-    fn __init__[T: ImplicitlyBoolable, //](out self, value: T):
-        """Convert an ImplicitlyBoolable value to a Bool.
-
-        Parameters:
-            T: The ImplicitlyBoolable type.
-
-        Args:
-            value: The boolable value.
-        """
-        self = value.__bool__()
-
-    @always_inline("nodebug")
     fn __init__[T: Boolable, //](out self, value: T):
         """Set the bool representation of the object.
 
@@ -232,15 +179,6 @@ struct Bool(
             This value.
         """
         return self
-
-    @always_inline("builtin")
-    fn __as_bool__(self) -> Bool:
-        """Convert to Bool.
-
-        Returns:
-            This value.
-        """
-        return self.__bool__()
 
     @always_inline("builtin")
     fn __mlir_i1__(self) -> __mlir_type.i1:

@@ -194,6 +194,9 @@ class TokenGeneratorPipeline(
         tool_use = request.tools is not None
         skip_special_tokens = tool_use
 
+        # Track whether we've yielded the first token (for TTFT metric)
+        first_token_yielded = False
+
         try:
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
@@ -273,8 +276,9 @@ class TokenGeneratorPipeline(
                             status=status,
                         )
 
-                        if i == 0:
+                        if not first_token_yielded:
                             METRICS.ttft(itl.elapsed_ms)
+                            first_token_yielded = True
                         else:
                             METRICS.itl(itl.elapsed_ms)
                         itl.reset()

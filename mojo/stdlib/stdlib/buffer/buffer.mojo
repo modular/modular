@@ -201,7 +201,7 @@ fn _compute_ndbuffer_stride[
     Returns:
         The default strides of the NDBuffer.
     """
-    constrained[rank > 0]()
+    __comptime_assert rank > 0
 
     @parameter
     if rank == 1:
@@ -240,7 +240,6 @@ struct NDBuffer[
     Defaultable,
     DevicePassable,
     ImplicitlyCopyable,
-    Movable,
     Sized,
     Stringable,
     Writable,
@@ -309,10 +308,9 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
         """
-        constrained[
-            Self.shape.all_known[Self.rank](),
-            "dimensions must all be known",
-        ]()
+        __comptime_assert Self.shape.all_known[
+            Self.rank
+        ](), "dimensions must all be known"
 
         self.data = ptr
         self.dynamic_shape = _make_tuple[
@@ -342,40 +340,35 @@ struct NDBuffer[
             other: The other NDBuffer type.
         """
         # It is probably unsafe to convert between address spaces
-        constrained[
-            other.address_space == Self.address_space,
-            "cannot convert between buffer types with different address spaces",
-        ]()
+        __comptime_assert (
+            other.address_space == Self.address_space
+        ), "cannot convert between buffer types with different address spaces"
 
         # We can only downgrade our alignment
-        constrained[
+        __comptime_assert (
             other.alignment2 >= Self.alignment2
-            and other.alignment2 % Self.alignment2 == 0,
-            "cannot convert between buffers with incompatible alignments",
-        ]()
+            and other.alignment2 % Self.alignment2 == 0
+        ), "cannot convert between buffers with incompatible alignments"
 
         # Exclusivity can only be lost
-        constrained[
-            other.exclusive == Self.exclusive or not Self.exclusive,
-            (
-                "Cannot convert a non-exclusive buffer to an exclusive buffer."
-                " This is caused by passing a non-exclusive NDBuffer to a"
-                " function which requires an exclusive NDBuffer. Consider"
-                " unbinding the exclusive parameter for the function if it does"
-                " not require an exclusive buffer for correctness."
-            ),
-        ]()
+        __comptime_assert (
+            other.exclusive == Self.exclusive or not Self.exclusive
+        ), (
+            "Cannot convert a non-exclusive buffer to an exclusive buffer."
+            " This is caused by passing a non-exclusive NDBuffer to a"
+            " function which requires an exclusive NDBuffer. Consider"
+            " unbinding the exclusive parameter for the function if it does"
+            " not require an exclusive buffer for correctness."
+        )
 
         # We can lose information about shape/stride, but not gain information
         comptime unknown_dim_list = DimList.create_unknown[Self.rank]()
-        constrained[
-            other.shape == Self.shape or Self.shape == unknown_dim_list,
-            "cannot convert between buffers with incompatible shapes",
-        ]()
-        constrained[
-            other.strides == Self.strides or Self.strides == unknown_dim_list,
-            "cannot convert between buffers with incompatible strides",
-        ]()
+        __comptime_assert (
+            other.shape == Self.shape or Self.shape == unknown_dim_list
+        ), "cannot convert between buffers with incompatible shapes"
+        __comptime_assert (
+            other.strides == Self.strides or Self.strides == unknown_dim_list
+        ), "cannot convert between buffers with incompatible strides"
 
         self.data = rebind[type_of(self.data)](other.data)
         self.dynamic_shape = other.dynamic_shape
@@ -734,7 +727,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        constrained[Self.rank <= _MAX_RANK]()
+        __comptime_assert Self.rank <= _MAX_RANK
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
@@ -746,7 +739,7 @@ struct NDBuffer[
         mut = Self.mut,
         origin = Self.origin, **_,
     ]:
-        constrained[Self.rank <= _MAX_RANK]()
+        __comptime_assert Self.rank <= _MAX_RANK
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
@@ -766,7 +759,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        constrained[Self.rank <= _MAX_RANK]()
+        __comptime_assert Self.rank <= _MAX_RANK
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
@@ -816,17 +809,15 @@ struct NDBuffer[
             The tiled buffer at tile_coords.
         """
 
-        comptime num_tile_sizes = stdlib.builtin.variadic_size(tile_sizes)
+        comptime num_tile_sizes = stdlib.builtin.Variadic.size(tile_sizes)
 
-        constrained[
-            num_tile_sizes == Self.rank,
-            "The tile should have the same rank as the buffer",
-        ]()
+        __comptime_assert (
+            num_tile_sizes == Self.rank
+        ), "The tile should have the same rank as the buffer"
 
-        constrained[
-            DimList(tile_sizes).all_known[Self.rank](),
-            "Static tile sizes are only supported",
-        ]()
+        __comptime_assert DimList(tile_sizes).all_known[
+            Self.rank
+        ](), "Static tile sizes are only supported"
 
         var offset = 0
         var dyn_shape = IndexList[Self.rank]()
@@ -927,7 +918,7 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        constrained[idx.size == Self.rank, "invalid index size"]()
+        __comptime_assert idx.size == Self.rank, "invalid index size"
         return self.load[width=width, alignment=alignment](
             rebind[IndexList[Self.rank, element_type = idx.element_type]](
                 idx
@@ -1156,7 +1147,7 @@ struct NDBuffer[
             True if the buffer is contiguous in memory and False otherwise.
         """
 
-        constrained[Self.rank > 0, "rank must be positive"]()
+        __comptime_assert Self.rank > 0, "rank must be positive"
         return self.stride[Self.rank - 1]() == 1
 
     @always_inline
@@ -1323,13 +1314,10 @@ struct NDBuffer[
         Returns:
             Constructed NDBuffer with the allocated space.
         """
-        constrained[
-            Self.shape.all_known[Self.rank](),
-            (
-                "the shape of the NDBuffer must be known to allow for stack"
-                " allocation"
-            ),
-        ]()
+        __comptime_assert Self.shape.all_known[Self.rank](), (
+            "the shape of the NDBuffer must be known to allow for stack"
+            " allocation"
+        )
         var data_pointer = (
             stack_allocation[
                 Self.shape.product[Self.rank]().get(),

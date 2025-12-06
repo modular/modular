@@ -18,7 +18,7 @@ from sys.info import simd_width_of
 import algorithm.reduction
 from algorithm import vectorize
 from builtin.math import max as b_max
-from layout import LayoutTensor
+from layout import LayoutTensor, UNKNOWN_VALUE
 
 from utils.index import IndexList
 
@@ -97,6 +97,7 @@ fn _reduce[
 
         @parameter
         if dim != axis:
+            __comptime_assert dim != UNKNOWN_VALUE
             constrained[
                 inp.shape[dim]() == outp.shape[dim](),
                 "_reduce expects none reduction dims to be the same",
@@ -107,6 +108,8 @@ fn _reduce[
 
         @parameter
         if dim != axis:
+            __comptime_assert dim != UNKNOWN_VALUE
+            __comptime_assert (dim - 1) != UNKNOWN_VALUE
             constrained[
                 inp.shape[dim]() == outp.shape[dim - 1](),
                 "_reduce expects none reduction dims to be the same",

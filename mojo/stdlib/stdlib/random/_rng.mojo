@@ -32,7 +32,7 @@ from utils.numerics import isnan, max_finite, FPUtils
 from .philox import Random as PhiloxRandom
 
 
-struct _PhiloxWrapper(Copyable, Movable):
+struct _PhiloxWrapper(Copyable):
     """Wrapper around Philox RNG to provide a simpler interface.
 
     This struct wraps the Philox RNG and caches generated values to provide
@@ -108,7 +108,7 @@ struct _PhiloxWrapper(Copyable, Movable):
         return Float64(value) * (1.0 / Float64(1 << float64_mantissa_bits))
 
 
-struct _RandomState(Copyable, Movable):
+struct _RandomState(Copyable):
     """Global random state manager.
 
     This struct manages a global _PhiloxWrapper instance for the random module.
@@ -269,9 +269,7 @@ fn _get_global_random_state(
     try:
         result = _global_random_state.get_or_create_ptr()
     except:
-        return abort[type_of(result)](
-            "Failed to initialize global random state"
-        )
+        abort("Failed to initialize global random state")
 
 
 # Global random state (using _Global for proper global storage)

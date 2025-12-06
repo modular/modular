@@ -15,7 +15,7 @@ from memory import LegacyOpaquePointer as OpaquePointer
 
 
 @fieldwise_init
-struct WeightsRegistry(ImplicitlyCopyable, Movable):
+struct WeightsRegistry(ImplicitlyCopyable):
     """Bag of weights where names[i] names a weight with data weights[i]."""
 
     var names: List[String]

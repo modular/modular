@@ -203,7 +203,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
 
 @fieldwise_init
-struct ConvSpecStatic(ImplicitlyCopyable, Movable):
+struct ConvSpecStatic(ImplicitlyCopyable):
     # Conv rank, 1d, 2d, or 3d. The input rank is rank + 2.
     var rank: Int
     var input_type: DType
@@ -212,9 +212,7 @@ struct ConvSpecStatic(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct ConvSpec[static_info: ConvSpecStatic](
-    ImplicitlyCopyable, Movable, Stringable
-):
+struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
     var n: Int
     var input_dims: IndexList[Self.static_info.rank]
     var c: Int

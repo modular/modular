@@ -427,9 +427,8 @@ There are currently a few limitations:
   is `**kwargs: Float64` then the argument dictionary will be a
   `OwnedKwargsDict[Float64]`.
 
-* The argument type must conform to both the
-  [`Movable`](/mojo/stdlib/builtin/value/Movable) and
-  [`Copyable`](/mojo/stdlib/builtin/value/Copyable) traits.
+* The argument type must conform to the
+  [`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait.
 
 * Dictionary unpacking is not supported yet:
 
@@ -578,7 +577,7 @@ fn foo(name: MyString):
     print("MyString")
 
 fn call_foo():
-    alias string = "Hello"
+    comptime string = "Hello"
     # foo(string) # error: ambiguous call to 'foo' ... This call is ambiguous because two `foo` functions match it
     foo(MyString(string))
 ```

@@ -15,7 +15,7 @@
 fn slice[
     dtype: DType, size: Int, //
 ](x: SIMD[dtype, size], offset: Int) -> SIMD[dtype, size // 2]:
-    alias new_size = size // 2
+    comptime new_size = size // 2
     var result = SIMD[dtype, new_size]()
     for i in range(new_size):
         result[i] = Scalar[dtype](x[i + offset])
@@ -30,7 +30,7 @@ fn reduce_add(x: SIMD) -> Int:
         return Int(x[0]) + Int(x[1])
 
     # Extract the top/bottom halves, add them, sum the elements.
-    alias half_size = x.size // 2
+    comptime half_size = x.size // 2
     var lhs = slice(x, 0)
     var rhs = slice(x, half_size)
     return reduce_add(lhs + rhs)

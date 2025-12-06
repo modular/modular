@@ -87,6 +87,7 @@ from nn.mha_fa3_utils import (
     _get_position,
     produce,
     q_out_tma,
+    get_q_head_idx,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -277,7 +278,7 @@ fn local_tensor_type[
 
 
 @register_passable("trivial")
-trait AccumulatorTile(ImplicitlyCopyable, Movable):
+trait AccumulatorTile(ImplicitlyCopyable):
     comptime dtype: DType
     comptime element_layout: Layout
     comptime vec_output_layout: Layout
@@ -2793,15 +2794,25 @@ fn _mha_sm100[
         wait_for_q_mul_k(read_idx_q)
         apply_mask(position, mask_status, kv_tile_start_row)
 
-        # Include sink_weights in rowmax computation if present
         @parameter
         if not SinkType.is_null:
-            var head_idx = position.head_idx
-            var sink_weight = sink_weights_ptr[head_idx] * log2e
+            # Include sink_weights in rowmax computation if present
+            var q_head_indices = get_q_head_idx(position, lane)
 
             @parameter
-            for i in range(num_rows_per_warp):
-                rowmax[i] = sink_weight.cast[accum_type]()
+            if decoding:
+
+                @parameter
+                for i in range(q_head_indices.size):
+                    var head_idx = q_head_indices[i]
+                    var sink_weight = sink_weights_ptr[head_idx] * log2e
+                    rowmax[i] = sink_weight.cast[accum_type]()
+            else:
+                var sink_weight = sink_weights_ptr[q_head_indices[0]] * log2e
+
+                @parameter
+                for i in range(num_rows_per_warp):
+                    rowmax[i] = sink_weight.cast[accum_type]()
 
         # Compute initial rowmax
         var attention_rowmax = _rowmax_online_softmax[
@@ -2823,16 +2834,30 @@ fn _mha_sm100[
         # Add sink weight contribution to rowsum
         @parameter
         if not SinkType.is_null:
-            var head_idx = position.head_idx
-            var sink_weight = (
-                sink_weights_ptr[head_idx].cast[accum_type]() * log2e
-            )
+            var q_head_indices = get_q_head_idx(position, lane)
 
             @parameter
-            for i in range(num_rows_per_warp):
-                # Compute exp2((sink_weight - rowmax[i]) * log2e)
-                var sink_contribution = exp2(sink_weight - rowmax[i])
-                attention_rowsum[i] = attention_rowsum[i] + sink_contribution[0]
+            if decoding:
+
+                @parameter
+                for i in range(q_head_indices.size):
+                    var head_idx = q_head_indices[i]
+                    var sink_weight = (
+                        sink_weights_ptr[head_idx].cast[accum_type]() * log2e
+                    )
+                    var sink_contribution = exp2(sink_weight - rowmax[i])
+                    attention_rowsum[i] += sink_contribution[0]
+            else:
+                var sink_weight = (
+                    sink_weights_ptr[q_head_indices[0]].cast[accum_type]()
+                    * log2e
+                )
+
+                @parameter
+                for i in range(num_rows_per_warp):
+                    # Compute exp2((sink_weight - rowmax[j]) * log2e)
+                    var sink_contribution = exp2(sink_weight - rowmax[i])
+                    attention_rowsum[i] += sink_contribution[0]
 
         rowsum.copy_from(attention_rowsum)
 

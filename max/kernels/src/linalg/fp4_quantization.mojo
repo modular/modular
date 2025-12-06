@@ -50,7 +50,6 @@ from utils.index import Index, IndexList
 ########################################################
 
 comptime logger = Logger()
-comptime BLOCK_SIZE = 512
 
 
 @always_inline
@@ -63,6 +62,7 @@ fn quantize_dynamic_scaled_fp4[
     input_layout: Layout, //,
     *,
     SF_VECTOR_SIZE: Int = 16,
+    num_max_threads: Int = 512,
 ](
     ctx: DeviceContext,
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
@@ -95,7 +95,11 @@ fn quantize_dynamic_scaled_fp4[
     var num_rows = input.dim(0)
     var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
 
-    var block_dim = (min(num_cols // ELEMENTS_PER_THREAD, BLOCK_SIZE), 1, 1)
+    var block_dim = (
+        min(num_cols // ELEMENTS_PER_THREAD, num_max_threads),
+        1,
+        1,
+    )
     var num_blocks_per_SM = max(
         1, B200.threads_per_multiprocessor // block_dim[0]
     )
@@ -110,6 +114,7 @@ fn quantize_dynamic_scaled_fp4[
         input_layout,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
+        num_max_threads=num_max_threads,
     ]
 
     ctx.enqueue_function_checked[kernel, kernel](
@@ -125,7 +130,7 @@ fn quantize_dynamic_scaled_fp4[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_max_threads)
 )
 fn quantize_dynamic_scaled_fp4_kernel[
     out_dtype: DType,
@@ -137,6 +142,7 @@ fn quantize_dynamic_scaled_fp4_kernel[
     *,
     SF_VECTOR_SIZE: Int = 16,
     ELEMENTS_PER_THREAD: Int = 8,
+    num_max_threads: Int = 512,
 ](
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
     scales: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
@@ -253,6 +259,97 @@ fn quantize_dynamic_scaled_fp4_kernel[
                     output[global_row_idx, col_idx] = rebind[Scalar[out_dtype]](
                         e2m1_vector
                     )
+
+
+@always_inline
+fn block_scales_interleave_fp4[
+    scales_dtype: DType,
+    input_scales_layout: Layout,
+    output_scales_layout: Layout, //,
+    *,
+    SF_VECTOR_SIZE: Int = 16,
+    num_max_threads: Int = 1024,
+](
+    ctx: DeviceContext,
+    input_scales: LayoutTensor[scales_dtype, input_scales_layout, MutAnyOrigin],
+    output_scales: LayoutTensor[
+        scales_dtype, output_scales_layout, MutAnyOrigin
+    ],
+) raises:
+    constrained[
+        ctx.default_device_info.compute == B200.compute,
+        "This kernel is only supported on SM100",
+    ]()
+    constrained[
+        scales_dtype in (NVFP4_SF_DTYPE,),
+        "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)",
+    ]()
+
+    comptime num_SMs = B200.sm_count
+
+    var num_rows = input_scales.dim(0)
+    var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
+    var num_cols = input_scales.dim(1)
+    var num_col_padded = align_up(num_cols, SF_ATOM_K)
+
+    # each thread handle just one scale factor for SF_VECTOR_SIZE of elements
+    var block_dim = (min(num_col_padded, num_max_threads), 1, 1)
+    var num_blocks_per_SM = max(
+        1, 2 * B200.threads_per_multiprocessor // block_dim[0]
+    )
+    var grid_dim = (min(num_rows_padded, num_SMs * num_blocks_per_SM), 1, 1)
+
+    comptime kernel = block_scales_interleave_fp4_kernel[
+        scales_dtype,
+        input_scales_layout,
+        output_scales_layout,
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        num_max_threads=num_max_threads,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        input_scales,
+        output_scales,
+        block_dim=block_dim,
+        grid_dim=grid_dim,
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_max_threads)
+)
+fn block_scales_interleave_fp4_kernel[
+    scales_dtype: DType,
+    input_scales_layout: Layout,
+    output_scales_layout: Layout,
+    *,
+    SF_VECTOR_SIZE: Int = 16,
+    num_max_threads: Int = 1024,
+](
+    input_scales: LayoutTensor[scales_dtype, input_scales_layout, MutAnyOrigin],
+    output_scales: LayoutTensor[
+        scales_dtype, output_scales_layout, MutAnyOrigin
+    ],
+):
+    var num_rows = input_scales.dim(0)
+    var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
+    var num_cols = input_scales.dim(1)
+    var num_col_padded = align_up(num_cols, SF_ATOM_K)
+
+    for row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
+        for col_idx in range(thread_idx.x, num_col_padded, block_dim.x):
+            var scale_factor = Scalar[scales_dtype](0.0)
+            if row_idx < num_rows and col_idx < num_cols:
+                scale_factor = rebind[Scalar[scales_dtype]](
+                    input_scales[row_idx, col_idx]
+                )
+
+            _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                output_scales,
+                row_idx,
+                col_idx * SF_VECTOR_SIZE,
+                scale_factor,
+            )
 
 
 fn naive_block_scaled_nvfp4_matmul[

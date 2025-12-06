@@ -71,7 +71,7 @@ fn alloc[
     """
     comptime size_of_t = size_of[type]()
     comptime type_name = get_type_name[type]()
-    constrained[size_of_t > 0, "size must be greater than zero"]()
+    __comptime_assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
         "alloc[",
@@ -134,12 +134,11 @@ struct UnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](
+    Boolable,
     Comparable,
     Defaultable,
-    ImplicitlyBoolable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):
@@ -314,10 +313,9 @@ struct UnsafePointer[
             must also ensure the pointer's origin and mutability is valid for
             the address, failure to to do may result in undefined behavior.
         """
-        constrained[
-            size_of[type_of(self)]() == size_of[Int](),
-            "Pointer/Int size mismatch",
-        ]()
+        __comptime_assert (
+            size_of[type_of(self)]() == size_of[Int]()
+        ), "Pointer/Int size mismatch"
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
 
     @always_inline("nodebug")
@@ -393,15 +391,12 @@ struct UnsafePointer[
     @doc_private
     @implicit
     fn __init__(
-        other: UnsafePointer[mut=False, Self.type, **_],
-        out self: UnsafePointer[
-            other.type, MutOrigin.cast_from[MutAnyOrigin], **_
-        ],
-    ):
+        other: UnsafePointer[mut=False, Self.type, **_]
+    ) -> UnsafePointer[other.type, MutOrigin.cast_from[MutAnyOrigin], **_]:
         constrained[
             False, "Invalid UnsafePointer conversion from immutable to mutable"
         ]()
-        self = abort[type_of(self)]()
+        abort()
 
     fn __init__(
         out self: UnsafePointer[Self.type, Self.origin],

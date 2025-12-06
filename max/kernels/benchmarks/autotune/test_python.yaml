@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 ##===----------------------------------------------------------------------===##
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
@@ -12,9 +11,22 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-set -euo pipefail
+# Example of kbench yaml config for running Python benchmarks.
 
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-REPO_ROOT="${SCRIPT_DIR}"/../..
+name: multistage_gemm
+file: $KERNEL_BENCHMARKS_ROOT/autotune/sample.py
 
-exec "$REPO_ROOT"/bazelw test //examples/mojo/...
+rules:
+  - stages<=4 and $x<2
+  - stages>1
+
+params:
+
+- dtype: DType.float16
+  shape: [1024x512x256, 32x32x32]
+  stages: [4,8]
+  $x: "[i for i in range(4)]"
+
+- dtype: DType.float32
+  shape: 64x64x64
+  stages: 2

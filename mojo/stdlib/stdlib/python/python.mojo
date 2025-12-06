@@ -80,9 +80,6 @@ struct Python(Defaultable, ImplicitlyCopyable):
             self._impl = _get_python_interface()
         except e:
             abort[prefix="ERROR:"](String(e))
-            __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(self)
-            )
 
     fn __init__(out self, ref [StaticConstantOrigin]cpython: CPython):
         """Construct a `Python` instance from an existing reference
@@ -357,7 +354,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @doc_private
     @staticmethod
     fn _dict[
-        V: ConvertibleToPython & Copyable & Movable = PythonObject
+        V: ConvertibleToPython & Copyable = PythonObject
     ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
         """Construct a Python dictionary from keyword arguments.
 
@@ -379,13 +376,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     fn dict[
-        V: ConvertibleToPython & Copyable & Movable = PythonObject
+        V: ConvertibleToPython & Copyable = PythonObject
     ](**kwargs: V) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
 
         Parameters:
             V: The type of the values in the dictionary. Must implement the
-                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
+                `ConvertibleToPython`, and `Copyable` traits.
 
         Args:
             kwargs: The keyword arguments to construct the dictionary with.
@@ -401,16 +398,16 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     fn dict[
-        K: ConvertibleToPython & Copyable & Movable = PythonObject,
-        V: ConvertibleToPython & Copyable & Movable = PythonObject,
+        K: ConvertibleToPython & Copyable = PythonObject,
+        V: ConvertibleToPython & Copyable = PythonObject,
     ](tuples: Span[Tuple[K, V]]) raises -> PythonObject:
         """Construct an Python dictionary from a list of key-value tuples.
 
         Parameters:
             K: The type of the keys in the dictionary. Must implement the
-                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
+                `ConvertibleToPython`, and `Copyable` traits.
             V: The type of the values in the dictionary. Must implement the
-                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
+                `ConvertibleToPython`, and `Copyable` traits.
 
         Args:
             tuples: The list of key-value tuples to construct the dictionary
@@ -437,7 +434,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     fn list[
-        T: ConvertibleToPython & Copyable & Movable
+        T: ConvertibleToPython & Copyable
     ](values: Span[T]) raises -> PythonObject:
         """Initialize the object from a list of values.
 
@@ -564,7 +561,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             Mojo string representing the given Python object.
         """
-        ref cpy = Self().cpython()
+        ref cpy = self.cpython()
         return cpy.PyUnicode_AsUTF8AndSize(obj._obj_ptr)
 
     @staticmethod

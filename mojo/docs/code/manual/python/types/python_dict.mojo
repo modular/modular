@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-dict-example
-from python import Python
+from python import Python, PythonObject
 
 
 def main():
     py_dict = Python.dict()
-    py_dict["item_name"] = "whizbang"
-    py_dict["price"] = 11.75
-    py_dict["inventory"] = 100
+    py_dict[PythonObject("item_name")] = PythonObject("whizbang")
+    py_dict[PythonObject("price")] = PythonObject(11.75)
+    py_dict[PythonObject("inventory")] = PythonObject(100)
     print(py_dict)
     # end-python-dict-example

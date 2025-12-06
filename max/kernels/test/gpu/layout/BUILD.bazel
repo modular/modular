@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _EXTRA_COPTS = {
     "test_layout_tensor_copy.mojo": [
         "--debug-level",

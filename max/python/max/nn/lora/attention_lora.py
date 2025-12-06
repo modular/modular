@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import cast
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
@@ -25,7 +24,6 @@ from ..kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
-    sgmv_qkv_lora_kernel,
 )
 from ..kv_cache import (
     KVCacheParams,
@@ -33,7 +31,7 @@ from ..kv_cache import (
 )
 from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
-from .linear_lora import LinearLoRA
+from .linear_lora import LinearLoRA, QKVLinearLoRA
 
 
 class AttentionWithRopeAndLoRA(AttentionWithRope):
@@ -50,9 +48,11 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         num_key_value_heads: int,
         hidden_size: int,
         kv_params: KVCacheParams,
+        max_lora_rank: int,
+        max_num_loras: int,
         devices: list[DeviceRef] | None = None,
         dtype: DType = DType.float32,
-        linear_cls: Callable[..., Linear] = LinearLoRA,
+        linear_cls: Callable[..., Linear] = Linear,
         stacked_qkv: bool = False,
         scale: float | None = None,
         has_bias: bool = False,
@@ -104,18 +104,24 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
-    @property
-    def qkv_loras(self) -> list[LinearLoRA]:
-        # MyPy isn't intelligent enough to know we have checks elsewhere.
-        #  Even if we put the check in the __init__ function...
-        if (
-            not isinstance(self.q_proj, LinearLoRA)
-            or not isinstance(self.k_proj, LinearLoRA)
-            or not isinstance(self.v_proj, LinearLoRA)
-        ):
-            raise ValueError("Attention projections must be LinearLoRAs.")
+        self.qkv_lora = QKVLinearLoRA(
+            in_dim=hidden_size,
+            q_dim=self.q_weight_dim,
+            kv_dim=self.kv_weight_dim,
+            max_lora_rank=max_lora_rank,
+            max_num_loras=max_num_loras,
+            dtype=dtype,
+            device=self.devices[0],
+        )
 
-        return [self.q_proj, self.k_proj, self.v_proj]
+        self.o_proj_lora = LinearLoRA(
+            in_dim=self.q_weight_dim,
+            out_dim=hidden_size,
+            max_lora_rank=max_lora_rank,
+            max_num_loras=max_num_loras,
+            dtype=dtype,
+            device=self.devices[0],
+        )
 
     def __call__(
         self,
@@ -129,7 +135,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         total_seq_len = x.shape[0]
 
         # Check that LoRA batch info has been set
-        if self.qkv_loras[0].lora_input_slice_idx is None:
+        if self.qkv_lora.num_active_loras is None:
             raise ValueError(
                 "'set_lora_batch_info' not called before executing forward pass."
             )
@@ -169,19 +175,23 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
                 scale=self.scale,
             )
 
-            attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+            attn_out = ops.reshape(
+                attn_out, shape=[total_seq_len, self.q_weight_dim]
+            )
 
             out = self.o_proj(attn_out)
 
             return out
 
         def else_fn() -> TensorValue:
-            xq = self.fused_qkv_lora(
+            xq = self.qkv_lora(
                 x,
                 xq_matmul,
                 kv_collection,
+                self.kv_params,
                 input_row_offsets,
                 layer_idx,
+                self.rope.max_seq_len,
             )
             xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
@@ -205,12 +215,15 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
                 scale=self.scale,
             )
 
-            attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+            attn_out = ops.reshape(
+                attn_out, shape=[total_seq_len, self.q_weight_dim]
+            )
 
-            return cast(LinearLoRA, self.o_proj).apply_lora(attn_out)
+            out = self.o_proj(attn_out)
+            return self.o_proj_lora(attn_out, out)
 
         return ops.cond(
-            self.qkv_loras[0].lora_input_slice_idx.tensor[0] == 0,
+            self.qkv_lora.num_active_loras.tensor[0] == 0,
             [
                 TensorType(
                     dtype=self.o_proj.weight.dtype,
@@ -221,76 +234,3 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             then_fn,
             else_fn,
         )[0].tensor
-
-    def fused_qkv_lora(  # noqa: ANN201
-        self,
-        x: TensorValue,
-        xq: TensorValue,
-        kv_collection: PagedCacheValues,
-        input_row_offsets: TensorValue,
-        layer_idx: TensorValue,
-    ):
-        """
-        Computes fused query, key, and value LoRAs with ragged input.
-
-        Args:
-            x (TensorValue): The input tensor of shape [total_tokens, hidden_dim].
-            qkv_loras (list[LinearLoRA]): List of 3 LinearLoRA modules for Q, K, and V projections.
-            input_row_offsets (TensorValue): 1D tensor indicating the start index of each sequence in `x`.
-            kv_collection (PagedCacheValues):
-                The key/value cache collection structure.
-            layer_idx (TensorValue): Index of the current transformer layer (used for caching).
-
-        Returns:
-            TensorValue: The query projections.
-
-        Raises:
-            ValueError: If 'set_lora_batch_info' has not been called on the LoRAs.
-        """
-        lora_ids = self.qkv_loras[0].lora_ids
-        lora_ranks = self.qkv_loras[0].lora_ranks
-        max_rank = self.qkv_loras[0].max_lora_rank
-        lora_grouped_offsets = self.qkv_loras[0].lora_grouped_offsets
-        lora_input_slice_idx = self.qkv_loras[0].lora_input_slice_idx
-
-        if (
-            lora_ids is None
-            or lora_ranks is None
-            or lora_grouped_offsets is None
-            or lora_input_slice_idx is None
-        ):
-            raise ValueError(
-                "'set_lora_batch_info' not called before executing forward pass."
-            )
-
-        if len(self.qkv_loras) == 3:
-            lora_a = ops.concat(
-                [lora.lora_A for lora in self.qkv_loras], axis=1
-            )
-            lora_b = ops.concat(
-                [lora.lora_B for lora in self.qkv_loras], axis=1
-            )
-            lora_bias = None
-        else:
-            lora_a = self.qkv_loras[0].lora_A
-            lora_b = self.qkv_loras[0].lora_B
-            lora_bias = None
-
-        return xq + sgmv_qkv_lora_kernel(
-            input=x,
-            lora_a=lora_a,
-            lora_b=lora_b,
-            lora_ids=lora_ids,
-            lora_ranks=lora_ranks,
-            input_row_offsets=input_row_offsets,
-            lora_grouped_offsets=lora_grouped_offsets,
-            lora_input_slice_idx=lora_input_slice_idx,
-            kv_collection=kv_collection,
-            kv_params=self.kv_params,
-            layer_idx=layer_idx,
-            max_lora_seq_len=self.rope.max_seq_len,
-            max_rank=max_rank,
-            q_dim=self.q_weight_dim,
-            kv_dim=self.kv_weight_dim,
-            bias=lora_bias,
-        )

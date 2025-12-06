@@ -1,6 +1,25 @@
 load("@mojo//:mojo.bzl", "max_aliases")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
+# gazelle:default_visibility //max:consumers
+
+package(default_visibility = ["//max:consumers"])
+
+package_group(
+    name = "consumers",
+    packages = [
+        "//GenericML/...",
+        "//Kernels/...",
+        "//SDK/...",
+        "//bazel/...",
+        "//docs/...",
+        "//examples/...",  # OSS only
+        "//max/...",
+        "//open-source/...",
+        "//utils/...",
+    ],
+)
+
 max_aliases()
 
 alias(

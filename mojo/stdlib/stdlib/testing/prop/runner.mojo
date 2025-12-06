@@ -15,7 +15,7 @@ from .strategy import Strategy
 from time import perf_counter_ns
 
 
-struct PropTestConfig(Copyable, Movable):
+struct PropTestConfig(Copyable):
     """A configuration for a property test."""
 
     var runs: Int
@@ -83,7 +83,7 @@ struct PropTest(Movable):
                 )
 
 
-struct _PropTestError(Copyable, Movable, Writable):
+struct _PropTestError(Copyable, Writable):
     var runs: Int
     var seed: Int
     var error: Error

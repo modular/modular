@@ -18,7 +18,7 @@ binary_root=$PWD/..
 
 cd "$BUILD_WORKSPACE_DIRECTORY"
 
-binary=$(find $binary_root -name ruff | head -n 1)
+binary=$(find "$binary_root" -name ruff | head -n 1)
 
 result=0
 if [[ $1 == "check" ]]; then

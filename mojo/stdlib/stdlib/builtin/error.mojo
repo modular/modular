@@ -118,7 +118,6 @@ struct Error(
     Boolable,
     Defaultable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
     Writable,

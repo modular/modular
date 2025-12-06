@@ -15,7 +15,6 @@ from math import sqrt
 
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -23,6 +22,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
+from layout._fillers import random
 from nn.normalization import *
 from testing import assert_almost_equal
 
@@ -36,60 +36,86 @@ fn run_rms_norm_fused_residual_add_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    # Allocate host memory
-    var data_h = HostNDBuffer[dtype, rank](shape)
-    var unfused_intermediate_h = HostNDBuffer[dtype, rank](shape)
-    var result_unfused_h = HostNDBuffer[dtype, rank](shape)
-    var result_fused_h = HostNDBuffer[dtype, rank](shape)
-    var residual_fused_output_h = HostNDBuffer[dtype, rank](shape)
-    var gamma1_h = HostNDBuffer[dtype, 1](Index(cols))
-    var gamma2_h = HostNDBuffer[dtype, 1](Index(cols))
-
-    # Initialize input data
-    random(data_h.tensor)
-    random(gamma1_h.tensor)
-    random(gamma2_h.tensor)
-
-    # Allocate device memory
-    var data_d = data_h.copy_to_device(ctx)
-    var gamma1_d = gamma1_h.copy_to_device(ctx)
-    var gamma2_d = gamma2_h.copy_to_device(ctx)
-    var unfused_intermediate_d = unfused_intermediate_h.copy_to_device(ctx)
-    var result_fused_d = result_fused_h.copy_to_device(ctx)
-    var result_unfused_d = result_unfused_h.copy_to_device(ctx)
-    var residual_fused_output_d = residual_fused_output_h.copy_to_device(ctx)
-
+    alias layout = Layout.row_major[rank]()
+    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    var runtime_layout = RuntimeLayout[layout].row_major(shape)
     var param_shape = Index(cols)
+    var param_runtime_layout = RuntimeLayout[layout_1d].row_major(param_shape)
 
-    comptime layout = Layout.row_major[rank]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var data_buf = LayoutTensor[dtype, layout](
-        data_d.buffer, RuntimeLayout[layout].row_major(shape)
+    # Allocate device buffers
+    var data_device = ctx.enqueue_create_buffer[dtype](shape.flattened_length())
+    var unfused_intermediate_device = ctx.enqueue_create_buffer[dtype](
+        shape.flattened_length()
     )
+    var result_unfused_device = ctx.enqueue_create_buffer[dtype](
+        shape.flattened_length()
+    )
+    var result_fused_device = ctx.enqueue_create_buffer[dtype](
+        shape.flattened_length()
+    )
+    var residual_fused_output_device = ctx.enqueue_create_buffer[dtype](
+        shape.flattened_length()
+    )
+    var gamma1_device = ctx.enqueue_create_buffer[dtype](cols)
+    var gamma2_device = ctx.enqueue_create_buffer[dtype](cols)
+
+    # Initialize input data on host
+    with data_device.map_to_host() as data_host:
+        var data_host_tensor = LayoutTensor[dtype, layout](
+            data_host, runtime_layout
+        )
+        random(data_host_tensor)
+
+    with gamma1_device.map_to_host() as gamma1_host:
+        var gamma1_host_tensor = LayoutTensor[dtype, layout_1d](
+            gamma1_host, param_runtime_layout
+        )
+        random(gamma1_host_tensor)
+
+    with gamma2_device.map_to_host() as gamma2_host:
+        var gamma2_host_tensor = LayoutTensor[dtype, layout_1d](
+            gamma2_host, param_runtime_layout
+        )
+        random(gamma2_host_tensor)
+
+    # Initialize output buffers with zeros
+    with unfused_intermediate_device.map_to_host() as host:
+        for i in range(len(host)):
+            host[i] = 0
+
+    with result_unfused_device.map_to_host() as host:
+        for i in range(len(host)):
+            host[i] = 0
+
+    with result_fused_device.map_to_host() as host:
+        for i in range(len(host)):
+            host[i] = 0
+
+    with residual_fused_output_device.map_to_host() as host:
+        for i in range(len(host)):
+            host[i] = 0
+
+    # Create device layout tensors
+    var data_buf = LayoutTensor[dtype, layout](data_device, runtime_layout)
     var gamma1 = LayoutTensor[dtype, layout_1d](
-        gamma1_d.buffer,
-        RuntimeLayout[layout_1d].row_major(param_shape),
+        gamma1_device, param_runtime_layout
     )
     var gamma2 = LayoutTensor[dtype, layout_1d](
-        gamma2_d.buffer,
-        RuntimeLayout[layout_1d].row_major(param_shape),
+        gamma2_device, param_runtime_layout
     )
     var result_fused_buf = LayoutTensor[dtype, layout](
-        result_fused_d.buffer,
-        RuntimeLayout[layout].row_major(shape),
+        result_fused_device, runtime_layout
     )
     var result_unfused_buf = LayoutTensor[dtype, layout](
-        result_unfused_d.buffer,
-        RuntimeLayout[layout].row_major(shape),
+        result_unfused_device, runtime_layout
     )
     var unfused_intermediate_buf = LayoutTensor[dtype, layout](
-        unfused_intermediate_d.buffer,
-        RuntimeLayout[layout].row_major(shape),
+        unfused_intermediate_device, runtime_layout
     )
     var residual_fused_output_buf = LayoutTensor[dtype, layout](
-        residual_fused_output_d.buffer,
-        RuntimeLayout[layout].row_major(shape),
+        residual_fused_output_device, runtime_layout
     )
+
     var epsilon1 = Scalar[dtype](0.001)
     var epsilon2 = Scalar[dtype](0.002)
     var weight_offset1 = Scalar[dtype](0.0)
@@ -252,28 +278,25 @@ fn run_rms_norm_fused_residual_add_gpu[
         multiply_before_cast=True,
     ](shape, gamma2, epsilon2, weight_offset2, ctx)
 
-    ctx.enqueue_copy(result_fused_h.tensor.data, result_fused_d.buffer)
-    ctx.enqueue_copy(result_unfused_h.tensor.data, result_unfused_d.buffer)
-    ctx.enqueue_copy(
-        residual_fused_output_h.tensor.data, residual_fused_output_d.buffer
-    )
-    ctx.enqueue_copy(
-        unfused_intermediate_h.tensor.data, unfused_intermediate_d.buffer
-    )
     ctx.synchronize()
 
+    # Verify results
     var flattened_size = rows * cols
-    for i in range(flattened_size):
-        assert_almost_equal(
-            result_fused_h.tensor.data[i],
-            result_unfused_h.tensor.data[i],
-            rtol=rtol,
-        )
-        assert_almost_equal(
-            residual_fused_output_h.tensor.data[i],
-            unfused_intermediate_h.tensor.data[i],
-            rtol=rtol,
-        )
+    with result_fused_device.map_to_host() as result_fused_host:
+        with result_unfused_device.map_to_host() as result_unfused_host:
+            with residual_fused_output_device.map_to_host() as residual_fused_host:
+                with unfused_intermediate_device.map_to_host() as unfused_intermediate_host:
+                    for i in range(flattened_size):
+                        assert_almost_equal(
+                            result_fused_host[i],
+                            result_unfused_host[i],
+                            rtol=rtol,
+                        )
+                        assert_almost_equal(
+                            residual_fused_host[i],
+                            unfused_intermediate_host[i],
+                            rtol=rtol,
+                        )
 
 
 def main():

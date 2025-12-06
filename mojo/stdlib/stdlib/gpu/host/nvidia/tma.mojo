@@ -29,11 +29,7 @@ from gpu.host.device_context import (
     _checked,
     _DeviceBufferPtr,
 )
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    stack_allocation,
-)
+from memory import stack_allocation
 
 from utils import IndexList, StaticTuple
 from builtin.device_passable import DevicePassable
@@ -91,15 +87,17 @@ struct TensorMapDataType:
         Returns:
             The corresponding `TensorMapDataType` value.
         """
-        constrained[
-            dtype in (DType.float32, DType.bfloat16, DType.float8_e4m3fn),
-            "Unsupported dtype",
-        ]()
+        __comptime_assert dtype in (
+            DType.float32,
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+            DType.float8_e8m0fnu,
+        ), "Unsupported dtype"
 
         @parameter
         if dtype is DType.float32:
             return Self.FLOAT32
-        elif dtype is DType.float8_e4m3fn:
+        elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
             return Self.UINT8
         else:
             return Self.BFLOAT16
@@ -130,7 +128,6 @@ struct TensorMapSwizzle(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):
@@ -263,7 +260,7 @@ struct TensorMapFloatOOBFill:
 
 # The TMA descriptor is a 128-byte opaque object filled by the driver API.
 # It should be 64-byte aligned both on the host and the device (if passed to constant memory).
-struct TMADescriptor(DevicePassable, ImplicitlyCopyable, Movable):
+struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
     """TMA tensor map descriptor.
 
     An opaque 128-byte descriptor that encodes all parameters for a TMA operation,
@@ -279,7 +276,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable, Movable):
 
     comptime device_type: AnyType = TMADescriptor
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -319,7 +316,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable, Movable):
         self.data = other.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: UnsafePointer[NoneType, mut=False]):
+fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False]):
     """Prefetches a TMA descriptor into the constant cache.
 
     Issues a hardware prefetch instruction to bring the TMA descriptor into
@@ -407,14 +404,14 @@ fn create_tma_descriptor[
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
             _ConstCharPtr,
-            OpaquePointer,  # tensorMap
+            OpaquePointer[MutAnyOrigin],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
             _DeviceBufferPtr,  #  globalAddress
-            UnsafePointer[Int64],  # globalDim
-            UnsafePointer[Int64],  # globalStrides
-            UnsafePointer[Int32],  # boxDim
-            UnsafePointer[Int32],  # elementStrides
+            UnsafePointer[Int64, MutAnyOrigin],  # globalDim
+            UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
+            UnsafePointer[Int32, MutAnyOrigin],  # boxDim
+            UnsafePointer[Int32, MutAnyOrigin],  # elementStrides
             Int32,  # interleave
             Int32,  # swizzle
             Int32,  # l2Promotion

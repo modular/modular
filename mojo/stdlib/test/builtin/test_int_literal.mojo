@@ -81,8 +81,6 @@ def test_indexer():
 def test_bool():
     assert_true(IntLiteral.__bool__(5))
     assert_false(IntLiteral.__bool__(0))
-    assert_true(IntLiteral.__as_bool__(5))
-    assert_false(IntLiteral.__as_bool__(0))
 
 
 def test_comparison():

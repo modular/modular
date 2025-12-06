@@ -41,7 +41,7 @@ comptime amd_signal_kind64_t = Int64
 # Must match the ABI of:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/inc/amd_hsa_signal.h#L61
 @fieldwise_init
-struct amd_signal_t(Copyable, Movable):
+struct amd_signal_t(Copyable):
     var kind: amd_signal_kind64_t
     var value: UInt64
     var event_mailbox_ptr: UInt64
@@ -521,7 +521,7 @@ fn printf_append_string_n(
 
 @fieldwise_init
 @register_passable("trivial")
-struct Header(ImplicitlyCopyable, Movable):
+struct Header(ImplicitlyCopyable):
     var _handle: UnsafePointer[
         header_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
     ]
@@ -610,7 +610,7 @@ struct Header(ImplicitlyCopyable, Movable):
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L104
 @fieldwise_init
 @register_passable("trivial")
-struct header_t(ImplicitlyCopyable, Movable):
+struct header_t(ImplicitlyCopyable):
     var next: UInt64
     var activemask: UInt64
     var service: UInt32
@@ -619,7 +619,7 @@ struct header_t(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Payload(ImplicitlyCopyable, Movable):
+struct Payload(ImplicitlyCopyable):
     var _handle: UnsafePointer[payload_t, MutOrigin.external]
 
     @always_inline
@@ -632,13 +632,13 @@ struct Payload(ImplicitlyCopyable, Movable):
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L99
 @fieldwise_init
-struct payload_t(Copyable, Movable):
+struct payload_t(Copyable):
     var slots: InlineArray[InlineArray[UInt64, 8], 64]
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct Buffer(ImplicitlyCopyable, Movable):
+struct Buffer(ImplicitlyCopyable):
     var _handle: UnsafePointer[
         buffer_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
     ]
@@ -731,7 +731,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
 # this code tries to access.
 @fieldwise_init
 @register_passable("trivial")
-struct buffer_t(Copyable, Movable):
+struct buffer_t(Copyable):
     var headers: UnsafePointer[
         header_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
     ]
@@ -744,7 +744,7 @@ struct buffer_t(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ControlOffset(ImplicitlyCopyable, Movable):
+struct ControlOffset(ImplicitlyCopyable):
     var value: UInt32
     comptime ready_flag = Self(0)
     comptime reserved0 = Self(1)
@@ -760,7 +760,7 @@ struct ControlOffset(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ControlWidth(ImplicitlyCopyable, Movable):
+struct ControlWidth(ImplicitlyCopyable):
     var value: UInt32
     comptime ready_flag = Self(1)
     comptime reserved0 = Self(31)
@@ -884,7 +884,7 @@ fn hostcall(
         .offset(10)[]
     )
 
-    var me = lane_id()
+    var me = UInt32(lane_id())
     var low = readfirstlane(Int32(me)).cast[DType.uint32]()
 
     var packet_ptr = buffer.pop_free_stack(me, low)

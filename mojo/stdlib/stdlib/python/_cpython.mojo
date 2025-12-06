@@ -129,7 +129,6 @@ struct PyObjectPtr(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):
@@ -231,7 +230,7 @@ struct PyObjectPtr(
 
 @fieldwise_init
 @register_passable
-struct PythonVersion(ImplicitlyCopyable, Movable):
+struct PythonVersion(ImplicitlyCopyable):
     """Represents a Python version with major, minor, and patch numbers."""
 
     var major: Int
@@ -279,7 +278,7 @@ fn _py_get_version(lib: _DLHandle) -> StaticString:
 
 
 @fieldwise_init
-struct PyMethodDef(Defaultable, ImplicitlyCopyable, Movable):
+struct PyMethodDef(Defaultable, ImplicitlyCopyable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -436,7 +435,7 @@ comptime Typed_newfunc = fn (
 
 @fieldwise_init
 @register_passable("trivial")
-struct PyType_Slot(ImplicitlyCopyable, Movable):
+struct PyType_Slot(ImplicitlyCopyable):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
@@ -487,7 +486,6 @@ struct PyType_Slot(ImplicitlyCopyable, Movable):
 struct PyObject(
     Defaultable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
     Writable,
@@ -1214,15 +1212,11 @@ comptime Py_Is = ExternalFunction[
 
 
 fn _PyErr_GetRaisedException_dummy() -> PyObjectPtr:
-    return abort[PyObjectPtr](
-        "PyErr_GetRaisedException is not available in this Python version"
-    )
+    abort("PyErr_GetRaisedException is not available in this Python version")
 
 
 fn _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
-    return abort[PyObjectPtr](
-        "PyType_GetName is not available in this Python version"
-    )
+    abort("PyType_GetName is not available in this Python version")
 
 
 # ===-------------------------------------------------------------------===#
@@ -1483,9 +1477,7 @@ struct CPython(Defaultable, Movable):
                 # If the library is not present in the current process, try to load it from the environment variable.
                 self.lib = OwnedDLHandle(python_lib)
         except e:
-            self.lib = abort[OwnedDLHandle](
-                String("Failed to load libpython from", python_lib, ":\n", e)
-            )
+            abort(String("Failed to load libpython from", python_lib, ":\n", e))
 
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):
@@ -1580,35 +1572,21 @@ struct CPython(Defaultable, Movable):
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
-                upcast_from=self.lib.get_symbol[PyObject](
-                    "_Py_NoneStruct"
-                ).unsafe_mut_cast[True]()
+                upcast_from=self.lib.get_symbol[PyObject]("_Py_NoneStruct")
             )
         # Integer Objects
-        self._PyLong_Type = (
-            # PyTypeObject PyLong_Type
-            self.lib.get_symbol[PyTypeObject]("PyLong_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyLong_Type
+        self._PyLong_Type = self.lib.get_symbol[PyTypeObject]("PyLong_Type")
         self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib.borrow())
         self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib.borrow())
         self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib.borrow())
         # Boolean Objects
-        self._PyBool_Type = (
-            # PyTypeObject PyBool_Type
-            self.lib.get_symbol[PyTypeObject]("PyBool_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyBool_Type
+        self._PyBool_Type = self.lib.get_symbol[PyTypeObject]("PyBool_Type")
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
-        self._PyFloat_Type = (
-            # PyTypeObject PyFloat_Type
-            self.lib.get_symbol[PyTypeObject]("PyFloat_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyFloat_Type
+        self._PyFloat_Type = self.lib.get_symbol[PyTypeObject]("PyFloat_Type")
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib.borrow())
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib.borrow())
         # Unicode Objects and Codecs
@@ -1627,12 +1605,8 @@ struct CPython(Defaultable, Movable):
         self._PyList_GetItem = PyList_GetItem.load(self.lib.borrow())
         self._PyList_SetItem = PyList_SetItem.load(self.lib.borrow())
         # Dictionary Objects
-        self._PyDict_Type = (
-            # PyTypeObject PyDict_Type
-            self.lib.get_symbol[PyTypeObject]("PyDict_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyDict_Type
+        self._PyDict_Type = self.lib.get_symbol[PyTypeObject]("PyDict_Type")
         self._PyDict_New = PyDict_New.load(self.lib.borrow())
         self._PyDict_SetItem = PyDict_SetItem.load(self.lib.borrow())
         self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(
@@ -1730,7 +1704,7 @@ struct CPython(Defaultable, Movable):
         try:
             error = String(PythonObject(from_owned=err_ptr))
         except e:
-            return abort[Error](
+            abort(
                 "internal error: Python exception occurred but cannot be"
                 " converted to String"
             )

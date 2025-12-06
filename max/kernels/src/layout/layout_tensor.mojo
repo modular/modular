@@ -949,9 +949,8 @@ struct LayoutTensor[
 
     @doc_private
     fn as_any_origin(
-        self: LayoutTensor[*_, **_],
-        out result: type_of(self).OriginCastType[False, ImmutAnyOrigin],
-    ):
+        self: LayoutTensor[*_, **_]
+    ) -> type_of(self).OriginCastType[False, ImmutAnyOrigin]:
         constrained[
             False,
             (
@@ -960,7 +959,7 @@ struct LayoutTensor[
                 " mutability explicitly before calling this function."
             ),
         ]()
-        result = abort[type_of(result)]()
+        abort()
 
     comptime AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -1151,6 +1150,7 @@ struct LayoutTensor[
 
             @parameter
             for axis in range(Self.rank):
+                __comptime_assert axis != UNKNOWN_VALUE
                 constrained[
                     other.shape[axis]() == self.shape[axis](),
                     (
@@ -2535,7 +2535,38 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
-    fn shape[idx: Int]() -> Int:
+    fn is_static_shape[idx: Int]() -> Bool where idx != UNKNOWN_VALUE:
+        """Returns the whether the specified dimension is statically known.
+
+        Parameters:
+            idx: The dimension index to query (0-based).
+                    For example, in a 3D tensor with shape [10, UNKNOWN_VALUE, 30]:
+                    - `shape[0]()` returns True (first dimension).
+                    - `shape[1]()` returns False (second dimension).
+                    - `shape[2]()` returns True (third dimension).
+
+        Returns:
+            The True if the dimension is statically known, False otherwise.
+
+        Performance:
+
+        - This is a compile-time operation with no runtime cost when used
+            with static dimensions.
+
+        Notes:
+
+        - This is a static method that operates on the tensor's type information,
+            not on a specific tensor instance.
+        """
+
+        comptime shape = Self._to_static[
+            Self.layout.shape, Self.layout_int_type
+        ]()
+        return shape[idx] != UNKNOWN_VALUE
+
+    @always_inline
+    @staticmethod
+    fn shape[idx: Int]() -> Int where idx != UNKNOWN_VALUE:
         """Returns the size of the tensor along the specified dimension.
 
         Provides static access to the tensor's shape information. This method
@@ -2564,7 +2595,6 @@ struct LayoutTensor[
             not on a specific tensor instance.
         """
 
-        # FIXME: having to specify the origin is kind of weird
         comptime shape = Self._to_static[
             Self.layout.shape, Self.layout_int_type
         ]()
@@ -2572,7 +2602,7 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
-    fn stride[idx: Int]() -> Int:
+    fn stride[idx: Int where idx != UNKNOWN_VALUE]() -> Int:
         """Returns the memory stride of the tensor along the specified
         dimension.
 
@@ -2610,7 +2640,6 @@ struct LayoutTensor[
             follow a simple pattern.
         """
 
-        # FIXME: having to specify the origin is kind of weird
         comptime stride = Self._to_static[
             Self.layout.stride, Self.linear_idx_type
         ]()
@@ -2946,7 +2975,7 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        comptime num_tiles = stdlib.builtin.variadic_size(tile_sizes)
+        comptime num_tiles = stdlib.builtin.Variadic.size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3064,7 +3093,7 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        comptime num_tiles = stdlib.builtin.variadic_size(tile_sizes)
+        comptime num_tiles = stdlib.builtin.Variadic.size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3218,7 +3247,7 @@ struct LayoutTensor[
         ```
         """
 
-        comptime tiles_rank = stdlib.builtin.variadic_size(tile_sizes)
+        comptime tiles_rank = stdlib.builtin.Variadic.size(tile_sizes)
         comptime __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         constrained[
             __tiled_layout[1].rank() == tiles_rank,
@@ -3254,6 +3283,7 @@ struct LayoutTensor[
             comptime bound = Self.layout.shape[axis].value() * Self.layout.stride[axis].value() \
                 if is_axis_val \
                 else Self.layout.shape[axis][-1].value() * Self.layout.stride[axis][-1].value()
+            __comptime_assert axis != UNKNOWN_VALUE
             comptime dim_bound = Self.shape[axis]() \
                 if is_axis_val \
                 else product(Self.layout.shape[axis])
@@ -4553,7 +4583,7 @@ struct LayoutTensor[
         dimension 0, with dimensions 1 and 2 fixed at indices 1 and 2:
 
         ```mojo
-        t.slice_1d[Slice(1, 3), IndexList[1](0)](1, 2)`
+        t.slice_1d[Slice(1, 3), IndexList[1](0)](1, 2)
         ```
 
         Performance:
@@ -5453,6 +5483,7 @@ struct LayoutTensor[
             _pretty_print_2d_tensor(self.coalesce(), writer)
             return
 
+        comptime layout_size = Self.layout.size()
         for i in range(self.runtime_layout.size()):
             var vec_offset = self.runtime_layout(i)
             var vec = SIMD[Self.dtype, Self.element_size]()
@@ -5463,7 +5494,7 @@ struct LayoutTensor[
                 vec[idx] = self.ptr.load(vec_offset + element_offset)
 
             writer.write(vec)
-            if i != Self.layout.size() - 1:
+            if i != layout_size - 1:
                 writer.write(" ")
 
 
@@ -5562,7 +5593,7 @@ fn stack_allocation_like[
 
 
 @register_passable("trivial")
-struct ThreadScope(ImplicitlyCopyable, Movable):
+struct ThreadScope(ImplicitlyCopyable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -5656,7 +5687,7 @@ struct ThreadScope(ImplicitlyCopyable, Movable):
             return "BLOCK"
         if self == Self.WARP:
             return "WARP"
-        return abort[String]("invalid ThreadScope entry")
+        abort("invalid ThreadScope entry")
 
     fn __int__(self) -> Int:
         """Convert the `ThreadScope` to an integer value.

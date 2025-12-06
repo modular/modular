@@ -246,9 +246,7 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
 
 
 @fieldwise_init
-struct _LayoutIter[origin: ImmutOrigin](
-    ImplicitlyCopyable, Iterable, Iterator, Movable
-):
+struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for traversing Layout dimensions.
 
     This internal iterator allows traversing the dimensions of a Layout object,
@@ -320,7 +318,6 @@ struct Layout(
     ImplicitlyCopyable,
     Iterable,
     LayoutTrait,
-    Movable,
     Sized,
     Stringable,
     Writable,
@@ -1079,7 +1076,7 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
         A LayoutList containing layouts for each tile size.
     """
 
-    comptime num_tiles = stdlib.builtin.variadic_size(tile_sizes)
+    comptime num_tiles = stdlib.builtin.Variadic.size(tile_sizes)
 
     var layout_list = LayoutList(capacity=num_tiles)
 

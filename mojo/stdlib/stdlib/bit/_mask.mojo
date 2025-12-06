@@ -50,10 +50,9 @@ fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
         A bitmask filled with `1` if the value is negative, filled with `0`
         otherwise.
     """
-    constrained[
-        dtype.is_integral() and dtype.is_signed(),
-        "This function is for signed integral types.",
-    ]()
+    __comptime_assert (
+        dtype.is_integral() and dtype.is_signed()
+    ), "This function is for signed integral types."
 
     # HACK(#5003): remove this workaround
     comptime d = dtype if dtype is not DType.int else (

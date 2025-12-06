@@ -63,9 +63,7 @@ fn _init_dylib() -> OwnedDLHandle:
         )
         return dylib^
     except e:
-        return abort[OwnedDLHandle](
-            String("CUDA NVML library initialization failed: ", e)
-        )
+        abort(String("CUDA NVML library initialization failed: ", e))
 
 
 @always_inline
@@ -84,7 +82,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
+struct DriverVersion(ImplicitlyCopyable, StringableRaising):
     var _value: List[String]
 
     fn __init__(out self, var value: List[String]):
@@ -113,7 +111,7 @@ struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Result(Equatable, ImplicitlyCopyable, Movable, Stringable, Writable):
+struct Result(Equatable, ImplicitlyCopyable, Stringable, Writable):
     var code: Int32
 
     comptime SUCCESS = Self(0)
@@ -291,7 +289,7 @@ fn _check_error(err: Result) raises:
 
 @fieldwise_init
 @register_passable("trivial")
-struct EnableState(Equatable, ImplicitlyCopyable, Movable):
+struct EnableState(Equatable, ImplicitlyCopyable):
     var code: Int32
 
     comptime DISABLED = Self(0)
@@ -312,7 +310,7 @@ struct EnableState(Equatable, ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ClockType(Equatable, ImplicitlyCopyable, Movable):
+struct ClockType(Equatable, ImplicitlyCopyable):
     var code: Int32
 
     comptime GRAPHICS = Self(0)
@@ -339,7 +337,7 @@ struct ClockType(Equatable, ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl(Defaultable, ImplicitlyCopyable, Movable):
+struct _DeviceImpl(Defaultable, ImplicitlyCopyable):
     var handle: OpaquePointer
 
     @always_inline
@@ -586,7 +584,7 @@ struct Device(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _EnableState(ImplicitlyCopyable, Movable):
+struct _EnableState(ImplicitlyCopyable):
     var state: Int32
 
     comptime DISABLED = _EnableState(0)  # Feature disabled

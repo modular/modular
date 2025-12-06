@@ -28,7 +28,7 @@ comptime PRINT_OUTPUT = False
 
 
 struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
-    ImplicitlyCopyable, Movable
+    ImplicitlyCopyable
 ):
     comptime is_top_p = Self._is_top_p
     comptime dtype = Self._dtype

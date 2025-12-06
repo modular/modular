@@ -143,7 +143,7 @@ fn debug_assert[
         cpu_only: If true, only run the assert on CPU.
 
     Args:
-        messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
+        messages: A set of [`Writable`](/mojo/stdlib/io/write/Writable/)
             arguments to convert to a `String` message.
     """
 
@@ -252,7 +252,7 @@ fn debug_assert[
 
     Args:
         cond: The bool value to assert.
-        messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
+        messages: A set of [`Writable`](/mojo/stdlib/io/write/Writable/)
             arguments to convert to a `String` message.
     """
 
@@ -451,4 +451,10 @@ fn _debug_assert_msg(
 
     @parameter
     if ASSERT_MODE != "warn":
-        abort()
+        # TODO(MSTDL-2072): Work around PTXAS bug where abort() causes a compile
+        # error.
+        @parameter
+        if is_nvidia_gpu():
+            __mlir_op.`llvm.intr.trap`()
+        else:
+            abort()

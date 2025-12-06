@@ -32,16 +32,10 @@ from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 
 # Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
-from layout._fillers import arange
+from layout._fillers import arange, random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple

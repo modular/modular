@@ -22,7 +22,10 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import TextAndVisionTokenizer
+from max.pipelines.lib import (
+    TextAndVisionTokenizer,
+    float32_to_bfloat16_as_uint16,
+)
 from PIL import Image
 from transformers import (
     AutoConfig,
@@ -64,44 +67,6 @@ def _get_image_context_token_id(huggingface_config: Any) -> int:
         return 151671  # InternVL3.5+ (Qwen3)
     else:
         return 151667  # InternVL3 and earlier (Qwen2)
-
-
-def float32_to_bfloat16_as_uint16(
-    arr: npt.NDArray[np.float32],
-) -> npt.NDArray[np.uint16]:
-    """Convert float32 array to bfloat16 representation stored as uint16.
-
-    BFloat16 is the upper 16 bits of float32 with proper rounding.
-    This allows us to halve memory usage while maintaining the exponent range.
-
-    Args:
-        arr: Float32 numpy array
-
-    Returns:
-        Uint16 array containing bfloat16 bit representation with same shape
-    """
-    assert arr.dtype == np.float32, f"Expected float32, got {arr.dtype}"
-
-    # Flatten for processing.
-    original_shape = arr.shape
-    flat = arr.ravel()
-
-    # View as uint32 for bit manipulation.
-    uint32_view = flat.view(np.uint32)
-
-    # Round to nearest even.
-    round_bit = (uint32_view >> 16) & 1
-    lower_half = uint32_view & 0xFFFF
-    round_up = (lower_half > 0x8000) | (
-        (lower_half == 0x8000) & (round_bit == 1)
-    )
-    uint32_rounded = uint32_view + (round_up.astype(np.uint32) * 0x8000)
-
-    # Extract upper 16 bits as bfloat16.
-    bfloat16_bits = (uint32_rounded >> 16).astype(np.uint16)
-
-    # Restore original shape.
-    return bfloat16_bits.reshape(original_shape)
 
 
 class InternVLImageConfig:
@@ -418,17 +383,24 @@ class InternVLProcessor:
             if isinstance(content, str):
                 text_message["content"] = content
             elif isinstance(content, list):
-                # Extract text from multimodal content
-                text_parts = []
+                # Process multimodal content in order, placing <image> placeholders
+                # where image content appears to match VLMEvalKit behavior.
+                content_parts = []
                 for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        # Handle both "content" and "text" keys
-                        text_content = item.get("content") or item.get(
-                            "text", ""
-                        )
-                        if text_content:
-                            text_parts.append(text_content)
-                text_message["content"] = " ".join(text_parts)
+                    if isinstance(item, dict):
+                        if item.get("type") == "text":
+                            # Handle both "content" and "text" keys.
+                            text_content = item.get("content") or item.get(
+                                "text", ""
+                            )
+                            if text_content:
+                                content_parts.append(text_content)
+                        elif item.get("type") == "image":
+                            # Insert image placeholder where image content appears.
+                            content_parts.append("<image>")
+
+                # Join content parts preserving order.
+                text_message["content"] = " ".join(content_parts)
             else:
                 text_message["content"] = ""
 

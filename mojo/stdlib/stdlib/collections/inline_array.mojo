@@ -52,23 +52,25 @@ fn _inline_array_construction_checks[size: Int]():
     Parameters:
         size: The number of elements.
     """
-    constrained[size >= 0, "number of elements in `InlineArray` must be >= 0"]()
+    __comptime_assert (
+        size >= 0
+    ), "number of elements in `InlineArray` must be >= 0"
 
 
 struct InlineArray[
-    ElementType: Copyable & Movable,
+    ElementType: Copyable,
     size: Int,
-](Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized):
+](Defaultable, DevicePassable, ImplicitlyCopyable, Sized):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
     InlineArray provides a fixed-size array implementation with compile-time
     size checking. The array size is determined at compile time and cannot be
-    changed. Elements must implement the `Copyable` and `Movable` traits.
+    changed. Elements must implement the `Copyable` trait.
 
     Parameters:
         ElementType: The type of the elements in the array. Must implement
-            `Copyable` and `Movable`.
+            `Copyable` trait.
         size: The size of the array. Must be a positive integer constant.
 
     Examples:
@@ -365,15 +367,7 @@ struct InlineArray[
             (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
     fn __del__(deinit self):
-        """Deallocates the array and destroys its elements.
-
-        Examples:
-
-        ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
-        # arr's destructor is called automatically when it goes out of scope
-        ```
-        """
+        """Deallocates the array and destroys its elements."""
 
         @parameter
         if not Bool(Self.ElementType.__del__is_trivial):
@@ -451,9 +445,9 @@ struct InlineArray[
             supports both positive indices starting from 0 and negative indices
             counting backwards from the end of the array.
         """
-        constrained[
-            -Self.size <= index(idx) < Self.size, "Index must be within bounds."
-        ]()
+        __comptime_assert (
+            -Self.size <= index(idx) < Self.size
+        ), "Index must be within bounds."
         comptime normalized_index = normalize_index["InlineArray"](
             idx, Self.size
         )
@@ -578,13 +572,13 @@ struct InlineArray[
 
     @always_inline
     fn __contains__[
-        T: Equatable & Copyable & Movable, //
+        T: Equatable & Copyable, //
     ](self: InlineArray[T, Self.size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 
         Parameters:
             T: The element type, must implement both `Equatable` and
-                `Copyable` and `Movable`.
+                `Copyable`.
 
         Args:
             value: The value to search for.
@@ -605,7 +599,7 @@ struct InlineArray[
             This method enables using the `in` operator to check if a value
             exists in the array. It performs a linear search comparing each
             element for equality with the given value. The element type must
-            implement the `Equatable`, `Copyable` and `Movable` traits
+            implement the `Equatable` and `Copyable` traits
             to support equality comparison.
         """
 

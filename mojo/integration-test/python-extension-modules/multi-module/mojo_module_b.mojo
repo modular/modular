@@ -26,9 +26,7 @@ fn PyInit_mojo_module_b() -> PythonObject:
         m.def_function[add]("add")
         return m.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 fn print_test_struct(s: PythonObject) -> None:

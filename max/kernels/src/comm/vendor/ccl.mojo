@@ -127,12 +127,23 @@ comptime CCLAllGatherFn = fn (
 
 
 # Paired wrappers grouped RCCl/NCCL for comparison
-fn ncclGroupStart() raises -> ncclResult_t:
-    return _get_ccl_function["ncclGroupStart", fn () -> ncclResult_t]()()
+struct _Group:
+    fn __init__(out self):
+        pass
+
+    fn __enter__(self) raises:
+        _check_ccl_ok(
+            _get_ccl_function["ncclGroupStart", fn () -> ncclResult_t]()()
+        )
+
+    fn __exit__(self) raises:
+        _check_ccl_ok(
+            _get_ccl_function["ncclGroupEnd", fn () -> ncclResult_t]()()
+        )
 
 
-fn ncclGroupEnd() raises -> ncclResult_t:
-    return _get_ccl_function["ncclGroupEnd", fn () -> ncclResult_t]()()
+fn group() -> _Group:
+    return _Group()
 
 
 fn ncclCommInitAll(
@@ -188,7 +199,7 @@ fn _ccl_stream_ptr(ctx: DeviceContext) raises -> OpaquePointer:
 
 
 @fieldwise_init
-struct Communicators(ImplicitlyCopyable, Movable):
+struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
 
@@ -237,6 +248,16 @@ fn _get_global_comms(ngpus: Int) raises -> Communicators:
     return ptr[]
 
 
+fn init_comms(ngpus: Int) raises:
+    """Pre-initialize NCCL/RCCL communicators.
+
+    Must be called from a single thread before using allreduce
+    from multiple threads. This ensures thread-safe initialization since
+    ncclCommInitAll is not designed for concurrent calls.
+    """
+    _ = _get_global_comms(ngpus)
+
+
 @parameter
 fn allreduce[
     dtype: DType,
@@ -244,43 +265,36 @@ fn allreduce[
     ngpus: Int,
     output_lambda: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    inputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
-    outputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
-    list_of_ctx: List[DeviceContext],
+    input: NDBuffer[dtype, rank, MutAnyOrigin],
+    output: NDBuffer[dtype, rank, MutAnyOrigin],
+    gpu_rank: Int,
+    ctx: DeviceContext,
 ) raises:
+    """Per-GPU allreduce for use in multi-threaded contexts.
+
+    Currently requires prior single-threaded call to init_comms, as thread-safe
+    version not yet implemented.
+    """
     constrained[
         not output_lambda,
         "vendor_ccl allreduce does not support output epilogue lambdas yet",
     ]()
-    if ngpus < 1:
-        raise Error("ngpus must be >= 1")
-    if ngpus > MAX_GPUS:
-        raise Error("too many GPUs")
-    if len(list_of_ctx) != ngpus:
-        raise Error("ctx count must match ngpus")
-
-    var count = inputs[0].num_elements()
-    var dtype_rccl = _dtype_to_ccl[dtype]()
+    var count = input.num_elements()
+    var dtype_ccl = _dtype_to_ccl[dtype]()
     var op = ncclRedOp_t.ncclSum
     var comms = _get_global_comms(ngpus)
 
-    _check_ccl_ok(ncclGroupStart())
-
-    for i in range(ngpus):
-        with list_of_ctx[i].push_context():
-            _check_ccl_ok(
-                _ccl_allreduce(
-                    inputs[i].data.bitcast[NoneType](),
-                    outputs[i].data.bitcast[NoneType](),
-                    count,
-                    dtype_rccl,
-                    op,
-                    comms.comms[i],
-                    list_of_ctx[i],
-                )
-            )
-
-    _check_ccl_ok(ncclGroupEnd())
+    _check_ccl_ok(
+        _ccl_allreduce(
+            input.data.bitcast[NoneType](),
+            output.data.bitcast[NoneType](),
+            count,
+            dtype_ccl,
+            op,
+            comms.comms[gpu_rank],
+            ctx,
+        )
+    )
 
 
 @parameter
@@ -333,22 +347,19 @@ fn allgather[
             list_of_ctx[i].enqueue_create_buffer[dtype](ngpus * count)
         )
 
-    _check_ccl_ok(ncclGroupStart())
-
-    for i in range(ngpus):
-        with list_of_ctx[i].push_context():
-            _check_ccl_ok(
-                _ccl_allgather(
-                    inputs[i].data.bitcast[NoneType](),
-                    recv_tmp[i].unsafe_ptr().bitcast[NoneType](),
-                    count,
-                    dtype_nccl,
-                    comms.comms[i],
-                    list_of_ctx[i],
+    with group():
+        for i in range(ngpus):
+            with list_of_ctx[i].push_context():
+                _check_ccl_ok(
+                    _ccl_allgather(
+                        inputs[i].data.bitcast[NoneType](),
+                        recv_tmp[i].unsafe_ptr().bitcast[NoneType](),
+                        count,
+                        dtype_nccl,
+                        comms.comms[i],
+                        list_of_ctx[i],
+                    )
                 )
-            )
-
-    _check_ccl_ok(ncclGroupEnd())
 
     for dev in range(ngpus):
         var ctx = list_of_ctx[dev]

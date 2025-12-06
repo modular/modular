@@ -46,7 +46,7 @@ struct Tensor[
     rank: Int, //,
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank],
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     alias size = Int(Self.static_spec.shape.product())
 
     var slice: ManagedTensorSlice[

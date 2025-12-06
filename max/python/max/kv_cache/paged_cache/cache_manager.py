@@ -157,29 +157,6 @@ class PagedKVCacheManager:
         )
         return replica_idx
 
-    def get_data_parallel_splits(
-        self, context_batch: Sequence[TextGenerationContext]
-    ) -> Tensor:
-        """Constructs splits for the data parallel execution.
-
-        Args:
-            context_batch: Sequence of requests. This must already be ordered
-                by replica index (so contexts that are on the same replica
-                are adjacent in the batch, and the replica must be in order).
-
-        Returns:
-            Tensor: An int64 tensor with shape (self.num_replicas + 1) that
-            contains the number of requests on each device:
-            [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
-        """
-        splits = np.zeros(self.num_replicas + 1, dtype=np.int64)
-        for ctx in context_batch:
-            replica_index = self._request_to_replica_idx[ctx.request_id]
-            splits[replica_index + 1] += 1
-        splits = np.cumsum(splits)  # type: ignore
-
-        return Tensor.from_numpy(splits)
-
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, num_steps: int = 1
     ) -> float:
@@ -379,8 +356,6 @@ class PagedKVCacheManager:
     ) -> Sequence[RaggedKVCacheInputs]:
         """Prepares cache inputs for the next token in multistep execution.
 
-        **Updated to handle replicas**
-
         Updates the cache lengths for the next inference step without requiring device
         synchronization or memory copies. This is crucial for maintaining performance
         during multi-token generation.
@@ -392,14 +367,6 @@ class PagedKVCacheManager:
         Returns:
             Updated cache input tuples with incremented lengths.
         """
-        # TODO E2EOPT-640: Instead of having a separate graph for incrementing
-        # cache lengths when DP=1 and DP>1, we should try to consolidate them.
-        # This will eliminate a fair amount of code.
-        if self.num_replicas == 1:
-            return self._replica_managers[0].increment_cache_lengths(
-                kv_cache_inputs, prev_model_inputs
-            )
-
         blocks = [kv_cache_inputs[i].blocks for i in range(len(self.devices))]
         cache_lengths = [
             kv_cache_inputs[i].cache_lengths for i in range(len(self.devices))
@@ -408,7 +375,13 @@ class PagedKVCacheManager:
             kv_cache_inputs[i].lookup_table for i in range(len(self.devices))
         ]
 
-        assert hasattr(prev_model_inputs, "data_parallel_splits")
+        if self.params.data_parallel_degree > 1:
+            data_parallel_splits = prev_model_inputs.data_parallel_splits
+        else:
+            batch_size = cache_lengths[0].shape[0]
+            data_parallel_splits = Tensor.from_numpy(
+                np.array([0, batch_size], dtype=np.int64)
+            )
 
         # Update the cache_lengths of our batch by the previous sequence length.
         # Handle both single tensor and list of tensors for compatibility
@@ -421,7 +394,7 @@ class PagedKVCacheManager:
         row_offsets = row_offsets.to(self.devices[0])
 
         updated_cache_lengths = self.increment_cache_lengths_model.execute(
-            row_offsets, prev_model_inputs.data_parallel_splits, *cache_lengths
+            row_offsets, data_parallel_splits, *cache_lengths
         )
 
         start_idx = 0

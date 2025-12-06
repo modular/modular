@@ -39,14 +39,14 @@ def _test_tuple(mut python: Python):
 def _test_call_ownership(mut python: Python):
     var obj: PythonObject = [1, "5"]
     var py_string = String(obj)
-    var string = python.as_string_slice(py_string)
+    var string = python.as_string_slice(PythonObject(py_string))
     assert_true(string == "[1, '5']")
 
 
 def _test_getitem_ownership(mut python: Python):
     var obj: PythonObject = [1, "5"]
     var py_string = String(obj[1])
-    var string = python.as_string_slice(py_string)
+    var string = python.as_string_slice(PythonObject(py_string))
     assert_true(string == "5")
 
 
@@ -54,7 +54,7 @@ def _test_getattr_ownership(mut python: Python):
     var my_module: PythonObject = Python.import_module("my_module")
     var obj = my_module.Foo(4)
     var py_string = String(obj.bar)
-    var string = python.as_string_slice(py_string)
+    var string = python.as_string_slice(PythonObject(py_string))
     assert_true(string == "4")
 
 

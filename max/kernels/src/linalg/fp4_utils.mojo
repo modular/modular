@@ -16,6 +16,10 @@ from sys.info import _is_sm_100x_or_newer
 from utils.numerics import FPUtils
 from memory import bitcast
 from layout import Layout, LayoutTensor
+from internal_utils._utils import ValOrDim, dynamic, static
+from buffer import NDBuffer
+from builtin.simd import _convert_f32_to_float8_ue8m0
+
 
 comptime SF_ATOM_M = (32, 4)
 comptime SF_ATOM_K = 4
@@ -210,3 +214,61 @@ fn _get_scale_factor[
             (global_col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
         ]
     )
+
+
+fn convert_ref_scales_to_mxfp8_format[
+    ref_scales_type: DType,
+    scales_type: DType,
+    *,
+    REF_BLOCK_SIZE: Int,
+    SF_VECTOR_SIZE: Int,
+](
+    m: ValOrDim,
+    n: ValOrDim,
+    k: ValOrDim,
+    ref_a_scales: NDBuffer[ref_scales_type, 2, *_],
+    ref_b_scales: NDBuffer[ref_scales_type, 2, *_],
+    a_scales: NDBuffer[mut=True, scales_type, 5, *_],
+    b_scales: NDBuffer[mut=True, scales_type, 5, *_],
+):
+    constrained[
+        ref_scales_type == DType.float32,
+        "Only support float32 reference scales",
+    ]()
+    constrained[
+        scales_type == DType.float8_e8m0fnu,
+        "Only support float8_e8m0fnu scales",
+    ]()
+
+    var M = m.value
+    var N = n.value
+    var K = k.value
+
+    # initialize a_scales_tensor and b_scales_tensor based on reference scales
+    for m in range(M):
+        for k in range(K):
+            a_scales[
+                m // SF_MN_GROUP_SIZE,
+                k // (SF_VECTOR_SIZE * SF_ATOM_K),
+                m % SF_ATOM_M[0],
+                (m % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+                k % SF_ATOM_K,
+            ] = rebind[Scalar[scales_type]](
+                _convert_f32_to_float8_ue8m0[scales_type](
+                    ref_a_scales[k // REF_BLOCK_SIZE, m]
+                )
+            )
+
+    for n in range(N):
+        for k in range(K):
+            b_scales[
+                n // SF_MN_GROUP_SIZE,
+                k // (SF_VECTOR_SIZE * SF_ATOM_K),
+                n % SF_ATOM_M[0],
+                (n % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+                k % SF_ATOM_K,
+            ] = rebind[Scalar[scales_type]](
+                _convert_f32_to_float8_ue8m0[scales_type](
+                    ref_b_scales[n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE]
+                )
+            )

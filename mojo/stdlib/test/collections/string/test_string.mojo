@@ -168,10 +168,10 @@ def test_add():
     assert_equal("123abc", s3)
 
     var s4 = "x"
-    var s5 = s4.join(1, 2, 3)
+    var s5 = s4.join(Span([1, 2, 3]))
     assert_equal("1x2x3", s5)
 
-    var s6 = s4.join(s1, s2)
+    var s6 = s4.join(Span([s1, s2]))
     assert_equal("123xabc", s6)
 
     var s7 = String()
@@ -201,26 +201,28 @@ def test_add_string_slice():
 def test_string_join():
     var sep = ","
     var s0 = "abc"
-    var s1 = sep.join(s0, s0, s0, s0)
+    var s1 = sep.join(Span([s0, s0, s0, s0]))
     assert_equal("abc,abc,abc,abc", s1)
 
-    assert_equal(sep.join(1, 2, 3), "1,2,3")
+    assert_equal(sep.join(Span([1, 2, 3])), "1,2,3")
 
-    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
+    # TODO(MSTDL-2078): Continue supporting heterogenous String.join
+    #   arguments, somehow?
+    # assert_equal(sep.join(1, "abc", 3), "1,abc,3")
 
-    var s2 = ",".join(List[UInt8](1, 2, 3))
+    var s2 = ",".join(Span[UInt8]([1, 2, 3]))
     assert_equal(s2, "1,2,3")
 
-    var s3 = ",".join(List[UInt8](1, 2, 3, 4, 5, 6, 7, 8, 9))
+    var s3 = ",".join(Span[UInt8]([1, 2, 3, 4, 5, 6, 7, 8, 9]))
     assert_equal(s3, "1,2,3,4,5,6,7,8,9")
 
     var s4 = ",".join(List[UInt8]())
     assert_equal(s4, "")
 
-    var s5 = ",".join(List[UInt8](1))
+    var s5 = ",".join(Span[UInt8]([1]))
     assert_equal(s5, "1")
 
-    var s6 = ",".join(List[String]("1", "2", "3"))
+    var s6 = ",".join(Span[String](["1", "2", "3"]))
     assert_equal(s6, "1,2,3")
 
 
@@ -797,13 +799,13 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(bytes=List[UInt8](0xC2, 0x85))
-    var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
-    var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
+    var next_line = String(bytes=Span[Byte]([0xC2, 0x85]))
+    var unicode_line_sep = String(bytes=Span[Byte]([0xE2, 0x80, 0xA8]))
+    var unicode_paragraph_sep = String(bytes=Span[Byte]([0xE2, 0x80, 0xA9]))
 
     for u in [next_line^, unicode_line_sep^, unicode_paragraph_sep^]:
         item = StaticString("").join(
-            "hello", u, "world", u, "mojo", u, "language", u
+            Span(["hello", u, "world", u, "mojo", u, "language", u])
         )
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -1061,7 +1063,6 @@ def test_removesuffix():
 
 def test_intable():
     assert_equal(Int("123"), 123)
-    assert_equal(Int("10", base=8), 8)
 
     with assert_raises():
         _ = Int("hi")

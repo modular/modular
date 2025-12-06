@@ -36,7 +36,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     FloatableRaising,
     ImplicitlyCopyable,
     IntableRaising,
-    Movable,
     PathLike,
     Representable,
     Sized,
@@ -729,23 +728,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return _FormatCurlyEntry.format(self, args)
 
-    fn join[*Ts: Writable](self, *elems: *Ts) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            Ts: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        return String(elems, sep=self)
-
-    fn join[
-        T: Copyable & Movable & Writable
-    ](self, elems: Span[T, *_]) -> String:
+    fn join[T: Copyable & Writable, //](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write
@@ -754,7 +737,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         Parameters:
             T: The type of the elements. Must implement the `Copyable`,
-                `Movable` and `Writable` traits.
+                and `Writable` traits.
 
         Args:
             elems: The input values.

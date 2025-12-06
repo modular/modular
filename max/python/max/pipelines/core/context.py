@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import llguidance
@@ -194,9 +196,18 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         Args:
             n (int): The number of tokens to skip.
         """
-        self.bump_token_indices(start_idx=n)
+        self._bump_token_indices(start_idx=n)
 
-    def maybe_chunk(self, chunk_size: int) -> int:
+    def rewind_processing(self, n: int) -> None:
+        """Rewind the processing window start by n.
+
+        Use after rejecting a draft so future steps reprocess those tokens.
+        Args:
+            n (int): The number of tokens to rewind.
+        """
+        self._bump_token_indices(start_idx=-n)
+
+    def chunk(self, chunk_size: int) -> None:
         """Optionally chunk the active token window to enforce a maximum size.
 
         This is used by the text-generation scheduler when performing chunked
@@ -208,24 +219,21 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             chunk_size: The desired maximum number of active tokens to keep
                 in this context.
 
-        Returns:
-            The actual number of tokens kept active after chunking. This value
-            will never exceed ``self.active_length``.
+        Raises:
+            ValueError: If `chunk_size` is negative or equal to/greater than the
+                current number of active tokens (``active_length``).
+
         """
 
-        if chunk_size < 0:
+        if chunk_size < 0 or chunk_size >= self.active_length:
             raise ValueError(
-                f"chunk size must be non-negative: got {chunk_size}"
+                f"chunk size must be non-negative and less than active_length: got {chunk_size}"
             )
-
-        if chunk_size > self.active_length:
-            return self.active_length
 
         # Calculate how much to bump the token indices by
         # If chunk_size = 10, and available_active_tokens = 30, we have to move back the active_idx
         # by 20.
-        self.bump_token_indices(active_idx=chunk_size - self.active_length)
-        return chunk_size
+        self._bump_token_indices(active_idx=chunk_size - self.active_length)
 
     @property
     def min_tokens(self) -> int:
@@ -321,7 +329,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             final_status=self.status,
         )
 
-    def bump_token_indices(
+    def _bump_token_indices(
         self,
         start_idx: int = 0,
         active_idx: int = 0,
@@ -450,7 +458,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         # This is required for chunked prefill.
-        # The scheduler will update the active_idx via bump_token_indices and pass through the model
+        # The scheduler will update the active_idx via _bump_token_indices and pass through the model
         # To accommodate this, if we identify that the active_idx is not at the end of the completed
         # token array, we only update the start_idx and active_idx, leaving the token array alone.
         if self._active_idx < self._end_idx:
@@ -581,7 +589,7 @@ class TextAndVisionContext(
 
     Currently we restrict start_idx and active_idx from being in the middle of an image!
     This is verified in `_validate_state` methods that are called before and after
-    mutating methods like `bump_token_indices`.
+    mutating methods like `_bump_token_indices`.
 
     Note that for Llama Vision, the number of token ids for the image is 1 due to
     that models specific implementation.
@@ -680,14 +688,14 @@ class TextAndVisionContext(
                 f"It is invalid for the active_idx ({self.active_idx}) to not be equal to the end_idx ({self._end_idx}) for VLM as chunked prefill is not supported."
             )
 
-    def bump_token_indices(
+    def _bump_token_indices(
         self,
         start_idx: int = 0,
         active_idx: int = 0,
         end_idx: int = 0,
     ) -> None:
         self._validate_state()
-        super().bump_token_indices(
+        super()._bump_token_indices(
             start_idx=start_idx, active_idx=active_idx, end_idx=end_idx
         )
         self._validate_state()
@@ -878,3 +886,33 @@ if TYPE_CHECKING:
             vision_token_ids=[],
             images=[],
         )
+
+
+@contextmanager
+def reserve_token_space_for_batch(
+    batch: list[TextContext],
+    num_tokens: int,
+) -> Iterator[None]:
+    """
+    Temporarily reserves token space for each context in a batch by incrementing
+    the `_active_idx` and `_end_idx` attributes by `num_tokens` for the duration
+    of the context. These indices are restored to their original values upon exit.
+    Args:
+        batch: List of TextContext objects to reserve space for.
+        num_tokens: Number of tokens to reserve for each context.
+    Yields:
+        None
+    """
+    saved_indices: dict[RequestID, tuple[int, int]] = {
+        ctx.request_id: (ctx._active_idx, ctx._end_idx) for ctx in batch
+    }
+    try:
+        for ctx in batch:
+            ctx._active_idx += num_tokens
+            ctx._end_idx += num_tokens
+        yield
+
+    finally:
+        for ctx in batch:
+            ctx._active_idx = saved_indices[ctx.request_id][0]
+            ctx._end_idx = saved_indices[ctx.request_id][1]

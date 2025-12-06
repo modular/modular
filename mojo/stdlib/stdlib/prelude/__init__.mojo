@@ -33,7 +33,7 @@ from io.file_descriptor import FileDescriptor
 from io.io import input, print
 
 from builtin.anytype import AnyType, Some, UnknownDestructibility
-from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any
+from builtin.bool import Bool, Boolable, all, any
 from builtin.breakpoint import breakpoint
 from builtin.builtin_slice import Slice, slice
 from builtin.comparable import Comparable, Equatable
@@ -111,6 +111,7 @@ from builtin.type_aliases import (
     MutableAnyOrigin,
     MutableOrigin,
     MutOrigin,
+    Never,
     Origin,
     OriginSet,
     StaticConstantOrigin,

@@ -73,9 +73,9 @@ from python import Python
 
 def main():
     py_dict = Python.dict()
-    py_dict["item_name"] = "whizbang"
-    py_dict["price"] = 11.75
-    py_dict["inventory"] = 100
+    py_dict[PythonObject("item_name")] = PythonObject("whizbang")
+    py_dict[PythonObject("price")] = PythonObject(11.75)
+    py_dict[PythonObject("inventory")] = PythonObject(100)
     print(py_dict)
 ```
 
@@ -94,7 +94,7 @@ def main():
     n = py_list[2]
     print("n =", n)
     py_list.append(5)
-    py_list[0] = "aardvark"
+    py_list[0] = PythonObject("aardvark")
     print(py_list)
 ```
 
@@ -142,7 +142,7 @@ def main():
 Is 7 in the set: True
 ```
 
-`PythonObject` implements the [`Writable`](/mojo/stdlib/utils/write/Writable)
+`PythonObject` implements the [`Writable`](/mojo/stdlib/io/write/Writable)
 trait. This allows you to print Python values using the built-in
 [`print()`](/mojo/stdlib/builtin/io/print) function, as shown in several of the
 previous examples.
@@ -185,7 +185,7 @@ from python import Python
 from python import PythonObject
 
 def main():
-    var value1: PythonObject = 3.7
+    var value1 = PythonObject(3.7)
     value2 = Python.evaluate("10/3")
 
     # Compare values

@@ -35,7 +35,7 @@ from math import isclose
 
 from builtin._location import __call_location, _SourceLocation
 from memory import memcmp
-from python import PythonObject
+from python import PythonObject, ConvertibleToPython
 from utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #
@@ -138,39 +138,6 @@ fn assert_equal[
 # more powerful traits.
 
 
-@always_inline
-fn assert_equal[
-    T: Copyable & Movable & Equatable & Representable, //
-](
-    lhs: List[T],
-    rhs: List[T],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that two lists are equal.
-
-    Parameters:
-        T: The type of the elements in the lists.
-
-    Args:
-        lhs: The left-hand side list.
-        rhs: The right-hand side list.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs != rhs:
-        raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
-            msg=msg,
-            loc=location.or_else(__call_location()),
-        )
-
-
 # TODO(MSTDL-1071):
 #   Once Mojo supports parametric traits, implement Equatable for
 #   StringSlice such that string slices with different origin types can be
@@ -243,15 +210,21 @@ fn assert_equal(
 
 
 @always_inline
-fn assert_equal_pyobj(
-    lhs: PythonObject,
-    rhs: PythonObject,
+fn assert_equal_pyobj[
+    LHS: ConvertibleToPython & Copyable, RHS: ConvertibleToPython & Copyable
+](
+    lhs: LHS,
+    rhs: RHS,
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
     """Asserts that the `PythonObject`s are equal. If it is not then an Error
     is raised.
+
+    Parameters:
+        LHS: Argument type that can be converted to `PythonObject`.
+        RHS: Argument type that can be converted to `PythonObject`.
 
     Args:
         lhs: The lhs of the equality.
@@ -262,10 +235,13 @@ fn assert_equal_pyobj(
     Raises:
         An Error with the provided message if assert fails.
     """
-    if lhs != rhs:
+    var lhs_obj = lhs.copy().to_python_object()
+    var rhs_obj = rhs.copy().to_python_object()
+
+    if lhs_obj != rhs_obj:
         raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs),
-            String(rhs),
+            String(lhs_obj),
+            String(rhs_obj),
             msg=msg,
             loc=location.or_else(__call_location()),
         )
@@ -332,39 +308,6 @@ fn assert_not_equal(
 
 
 @always_inline
-fn assert_not_equal[
-    T: Copyable & Movable & Equatable & Representable, //
-](
-    lhs: List[T],
-    rhs: List[T],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that two lists are not equal.
-
-    Parameters:
-        T: The type of the elements in the lists.
-
-    Args:
-        lhs: The left-hand side list.
-        rhs: The right-hand side list.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs == rhs:
-        raise _assert_cmp_error["`left != right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
-            msg=msg,
-            loc=location.or_else(__call_location()),
-        )
-
-
-@always_inline
 fn assert_almost_equal[
     dtype: DType, size: Int
 ](
@@ -404,10 +347,9 @@ fn assert_almost_equal[
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    constrained[
-        dtype is DType.bool or dtype.is_integral() or dtype.is_floating_point(),
-        "type must be boolean, integral, or floating-point",
-    ]()
+    __comptime_assert (
+        dtype is DType.bool or dtype.is_integral() or dtype.is_floating_point()
+    ), "type must be boolean, integral, or floating-point"
 
     var almost_equal = isclose(
         lhs, rhs, atol=atol, rtol=rtol, equal_nan=equal_nan

@@ -58,9 +58,7 @@ fn PyInit_mojo_module() -> PythonObject:
         ).def_init_defaultable[FailToInitialize]()
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -129,7 +127,7 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Representable):
     var name: String
     var age: Int
 

@@ -52,7 +52,7 @@ fn _human_memory(size: Int) -> String:
 
 
 @fieldwise_init
-struct Config(ImplicitlyCopyable, Movable, Writable):
+struct Config(ImplicitlyCopyable, Writable):
     var direction: Int
     var pinned_memory: Bool
     # Definitions for direction field.

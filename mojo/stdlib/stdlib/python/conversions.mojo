@@ -36,7 +36,7 @@ trait ConvertibleToPython:
         ...
 
 
-trait ConvertibleFromPython(Copyable, Movable):
+trait ConvertibleFromPython(Copyable):
     """Denotes a type that can attempt construction from a read-only Python
     object.
     """
@@ -61,5 +61,5 @@ __extension SIMD(ConvertibleToPython):
         Returns:
             A PythonObject representing the value.
         """
-        constrained[size == 1, "only works with scalar values"]()
+        __comptime_assert size == 1, "only works with scalar values"
         return PythonObject(self._refine[new_size=1]())

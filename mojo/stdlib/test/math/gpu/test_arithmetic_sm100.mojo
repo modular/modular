@@ -16,16 +16,15 @@ from random import random_float64
 
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext, HostBuffer
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, TestSuite
 
 
 fn simd_add_kernel[
     width: Int
 ](
-    a_span: UnsafePointer[Float32],
-    b_span: UnsafePointer[Float32],
-    c_span: UnsafePointer[Float32],
+    a_span: UnsafePointer[Float32, MutAnyOrigin],
+    b_span: UnsafePointer[Float32, MutAnyOrigin],
+    c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
@@ -39,9 +38,9 @@ fn simd_add_kernel[
 fn simd_mult_kernel[
     width: Int
 ](
-    a_span: UnsafePointer[Float32],
-    b_span: UnsafePointer[Float32],
-    c_span: UnsafePointer[Float32],
+    a_span: UnsafePointer[Float32, MutAnyOrigin],
+    b_span: UnsafePointer[Float32, MutAnyOrigin],
+    c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
@@ -55,9 +54,9 @@ fn simd_mult_kernel[
 fn simd_fma_kernel[
     width: Int
 ](
-    a_span: UnsafePointer[Float32],
-    b_span: UnsafePointer[Float32],
-    c_span: UnsafePointer[Float32],
+    a_span: UnsafePointer[Float32, MutAnyOrigin],
+    b_span: UnsafePointer[Float32, MutAnyOrigin],
+    c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)

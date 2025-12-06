@@ -565,11 +565,6 @@ class SpeculativeDecodingPipelineBase(
             context = context_batch[idx]
             rejected_token_idx = rejected_token_idx.item()
 
-            context.bump_token_indices(
-                active_idx=-num_draft_tokens_generated,
-                end_idx=-num_draft_tokens_generated,
-            )
-
             for token_idx in range(rejected_token_idx):
                 token = int(draft_tokens[idx, token_idx])
                 context.update(token)
@@ -590,7 +585,7 @@ class SpeculativeDecodingPipelineBase(
             # If all draft tokens are accepted, then the draft model has not
             # processed the bonus token. In this case only the draft needs to
             # go one step back. At the moment we do this for all cases.
-            context.bump_token_indices(start_idx=-1)
+            context.rewind_processing(1)
 
         # Update metrics
         self._metrics.update(

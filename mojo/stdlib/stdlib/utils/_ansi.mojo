@@ -11,9 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys.ffi import _Global
+from sys._io import stdout
+
+
+fn _is_stdout_tty() -> Bool:
+    return stdout.isatty()
+
+
+comptime _USE_COLOR = _Global["IS_STDOUT_TTY", _is_stdout_tty]
+
+
+fn _use_color() -> Bool:
+    try:
+        return _USE_COLOR.get_or_create_ptr()[]
+    except:
+        return False
+
 
 @fieldwise_init
-struct Color(ImplicitlyCopyable, Movable, Writable):
+struct Color(ImplicitlyCopyable, Writable):
     """ANSI colors for terminal output."""
 
     var color: StaticString
@@ -29,7 +46,8 @@ struct Color(ImplicitlyCopyable, Movable, Writable):
     comptime END = Self("\033[0m")
 
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write(self.color)
+        if _use_color():
+            writer.write(self.color)
 
 
 @fieldwise_init

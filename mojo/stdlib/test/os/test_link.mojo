@@ -11,16 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# This sample demonstrates some basic Mojo
-# range() and print() functions available in the standard library.
-# It also demonstrates Python interop by importing the simple_interop.py file.
+import os
+from pathlib import Path
 
-from python import Python
+
+from testing import TestSuite, assert_equal
+
+
+def test_create_hardlink():
+    with open("test_create_link", "w") as f:
+        f.write("test_create_link")
+    os.link("test_create_link", "test_create_link_link")
+    with open("test_create_link_link", "r") as f:
+        assert_equal(f.read(), "test_create_link")
+    var oldstat = os.stat("test_create_link")
+    var newstat = os.stat("test_create_link_link")
+    assert_equal(oldstat.st_ino, newstat.st_ino)
+    assert_equal(oldstat.st_nlink, 2)
+    assert_equal(newstat.st_nlink, 2)
 
 
 def main():
-    print("Hello Mojo 🔥!")
-    for x in range(9, 0, -3):
-        print(x)
-    var test_module = Python.import_module("simple_interop")
-    test_module.test_interop_func()
+    TestSuite.discover_tests[__functions_in_module()]().run()

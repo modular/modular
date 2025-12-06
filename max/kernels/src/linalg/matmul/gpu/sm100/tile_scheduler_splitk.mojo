@@ -29,7 +29,7 @@ from stdlib.bit import prev_power_of_two
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32

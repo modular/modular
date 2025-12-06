@@ -90,10 +90,6 @@ from gpu.host._nvidia_cuda import CUDA
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from runtime.tracing import Trace, TraceLevel
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-)
 from buffer import DimList, NDBuffer
 from utils import IndexList
 from utils.variant import Variant
@@ -115,7 +111,7 @@ from linalg.fp4_utils import (
 
 
 @register_passable("trivial")
-struct Backend(Equatable, ImplicitlyCopyable, Movable, Writable):
+struct Backend(Equatable, ImplicitlyCopyable, Writable):
     var _value: Int32
 
     comptime AUTOMATIC = Self(0)
@@ -178,7 +174,7 @@ fn _resolve_backend[
 
 
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
-    ImplicitlyCopyable, Movable
+    ImplicitlyCopyable
 ):
     comptime resolved_backend = _resolve_backend[Self.backend]()
     comptime _cublas_type = UnsafePointer[cublasContext]
@@ -661,7 +657,7 @@ fn _cublas_matmul[
                 K if transpose_b else N,
                 UnsafePointer(a.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[a_type](),
-                K,
+                M if transpose_a else K,
                 UnsafePointer(to=beta).bitcast[NoneType](),
                 UnsafePointer(c.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[c_type](),

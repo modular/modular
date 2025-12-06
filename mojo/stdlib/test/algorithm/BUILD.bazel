@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _FILECHECK_TESTS = [
     "test_parallelize.mojo",
     "test_reductions.mojo",

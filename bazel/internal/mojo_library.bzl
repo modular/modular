@@ -13,7 +13,7 @@ def mojo_library(
         validate_missing_docs = True,
         docs_base_path = "",
         testonly = False,
-        visibility = ["//visibility:public"],
+        visibility = None,
         additional_compiler_inputs = [],
         copts = [],
         tags = []):

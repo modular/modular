@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary", "mojo_test")
 
+package(default_visibility = ["//docs:__subpackages__"])
+
 mojo_binary(
     name = "stacktrace_error",
     srcs = [

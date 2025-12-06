@@ -20,6 +20,11 @@ driver's attribute enumeration.
 These attributes allow applications to query specific hardware capabilities and limitations
 of GPU devices, such as maximum thread counts, memory sizes, compute capabilities, and
 supported features.
+
+:::note
+See the [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext/) page
+for examples that retrieve `DeviceAttribute` values.
+:::
 """
 
 
@@ -104,6 +109,9 @@ struct DeviceAttribute:
     """
     comptime COOPERATIVE_LAUNCH = Self(95)
     """Device supports launching cooperative kernels
+    """
+    comptime MAX_SHARED_MEMORY_PER_BLOCK_OPTIN = Self(97)
+    """Maximum shared memory per block that can be opted into via cudaFuncSetAttribute
     """
     comptime MAX_BLOCKS_PER_MULTIPROCESSOR = Self(106)
     """Maximum resident blocks per multiprocessor

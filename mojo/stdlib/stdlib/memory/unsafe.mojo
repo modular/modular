@@ -68,52 +68,39 @@ fn bitcast[
         A new SIMD value with the specified type and width with a bitcopy of the
         source SIMD value.
     """
-    constrained[
-        bit_width_of[SIMD[dtype, width]]() == bit_width_of[type_of(val)](),
-        "the source and destination types must have the same bitwidth",
-    ]()
+    __comptime_assert (
+        bit_width_of[SIMD[dtype, width]]() == bit_width_of[type_of(val)]()
+    ), "the source and destination types must have the same bitwidth"
 
     # TODO(MOCO-2179): Change this to be more precise check for Arm devices, or
     # generate different ops on Arm.
     @parameter
     if not is_nvidia_gpu() and not is_amd_gpu():
         # Arm doesnt support casting between float16 and two ints.
-        constrained[
-            not (
-                src_dtype == DType.float16
-                and src_width == 1
-                and dtype == DType.int8
-                and width == 2
-            ),
-            "Can't cast a float16 directly to a 2 x i8",
-        ]()
-        constrained[
-            not (
-                src_dtype == DType.float16
-                and src_width == 1
-                and dtype == DType.uint8
-                and width == 2
-            ),
-            "Can't cast a float16 directly to a 2 x ui8",
-        ]()
-        constrained[
-            not (
-                src_dtype == DType.int8
-                and src_width == 2
-                and dtype == DType.float16
-                and width == 1
-            ),
-            "Can't cast a 2 x i8 directly to a float16",
-        ]()
-        constrained[
-            not (
-                src_dtype == DType.uint8
-                and src_width == 2
-                and dtype == DType.float16
-                and width == 1
-            ),
-            "Can't cast a 2 x ui8 directly to a float16",
-        ]()
+        __comptime_assert not (
+            src_dtype == DType.float16
+            and src_width == 1
+            and dtype == DType.int8
+            and width == 2
+        ), "Can't cast a float16 directly to a 2 x i8"
+        __comptime_assert not (
+            src_dtype == DType.float16
+            and src_width == 1
+            and dtype == DType.uint8
+            and width == 2
+        ), "Can't cast a float16 directly to a 2 x ui8"
+        __comptime_assert not (
+            src_dtype == DType.int8
+            and src_width == 2
+            and dtype == DType.float16
+            and width == 1
+        ), "Can't cast a 2 x i8 directly to a float16"
+        __comptime_assert not (
+            src_dtype == DType.uint8
+            and src_width == 2
+            and dtype == DType.float16
+            and width == 1
+        ), "Can't cast a 2 x ui8 directly to a float16"
 
     @parameter
     if dtype == src_dtype:
@@ -194,13 +181,12 @@ fn pack_bits[
     Returns:
         A new integer scalar which has the same bitwidth as the bool vector.
     """
-    constrained[
-        dtype.is_unsigned() and _llvm_bitwidth(dtype) * width == src_width,
-        (
-            "the logical bitwidth of the bool vector must be the same as the"
-            " target type"
-        ),
-    ]()
+    __comptime_assert (
+        dtype.is_unsigned() and _llvm_bitwidth(dtype) * width == src_width
+    ), (
+        "the logical bitwidth of the bool vector must be the same as the"
+        " target type"
+    )
 
     var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
         val._mlir_value

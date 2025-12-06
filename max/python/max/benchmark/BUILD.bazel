@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "benchmark_serving_lib",
     srcs = glob(
@@ -13,7 +15,6 @@ modular_py_library(
         ":benchmark_config_yaml_files",
     ],
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/diagnostics",
@@ -35,7 +36,6 @@ modular_py_binary(
     name = "benchmark_serving",
     srcs = ["benchmark_serving.py"],
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/diagnostics",
@@ -56,7 +56,6 @@ modular_py_binary(
         ":yaml_files",
     ],
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/engine",
@@ -87,7 +86,6 @@ modular_py_binary(
 pkg_files(
     name = "benchmark_config_yaml_files",
     srcs = glob(["configs/*.yaml"]),
-    visibility = ["//visibility:public"],
 )
 
 pkg_files(
@@ -95,7 +93,6 @@ pkg_files(
     srcs = glob(["**/*.py"]) + ["//max/python/max/benchmark/benchmark_shared:python_files"],
     prefix = "benchmark",
     strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )
 
 pkg_files(
@@ -105,5 +102,4 @@ pkg_files(
         exclude = ["serving-benchmarking/**"],
     ),
     prefix = "benchmark",
-    visibility = ["//visibility:public"],
 )

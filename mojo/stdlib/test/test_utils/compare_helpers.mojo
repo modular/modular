@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
-
 # ===----------------------------------------------------------------------=== #
 # utils
 # ===----------------------------------------------------------------------=== #
@@ -57,8 +55,8 @@ fn compare[
     Returns:
         A SIMD vector containing [atol_min, atol_max, rtol_min, rtol_max].
     """
-    var atol = UnsafePointer[Scalar[dtype]].alloc(num_elements)
-    var rtol = UnsafePointer[Scalar[dtype]].alloc(num_elements)
+    var atol = alloc[Scalar[dtype]](num_elements)
+    var rtol = alloc[Scalar[dtype]](num_elements)
 
     for i in range(num_elements):
         var d = abs(x[i] - y[i])

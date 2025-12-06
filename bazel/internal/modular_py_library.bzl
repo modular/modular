@@ -4,7 +4,7 @@ load("@rules_python//python:defs.bzl", "py_library")
 
 def modular_py_library(
         name,
-        visibility = ["//visibility:public"],
+        visibility = None,
         **kwargs):
     """Creates a py_library target
 

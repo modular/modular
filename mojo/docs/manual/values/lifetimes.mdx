@@ -71,9 +71,9 @@ values, so values aren't destroyed prematurely.
 
 ### Origin types
 
-Mojo supplies a struct and a set of aliases that you can use to specify
-origin types. As the names suggest, the `ImmutOrigin` and
-`MutOrigin` aliases represent immutable and mutable origins,
+Mojo supplies a struct and a set of type aliases (`comptime` values) that you
+can use to specify origin types. As the names suggest, the `ImmutOrigin` and
+`MutOrigin` `comptime` values represent immutable and mutable origins,
 respectively:
 
 ```mojo
@@ -122,8 +122,8 @@ sets are used for tracking the lifetimes of values captured in closures.
 Most origin values are created by the compiler. As a developer, there are a
 few ways to specify origin values:
 
-* Static origin. The `StaticConstantOrigin` alias is an origin value
-  representing immutable values that last for the duration of the program.
+* Static origin. The `StaticConstantOrigin` `comptime` value
+  represents immutable values that last for the duration of the program.
   String literal values have a `StaticConstantOrigin`.
 * Derived origin. The `origin_of()` magic function returns the origin
   associated with the value (or values) passed in.
@@ -132,8 +132,8 @@ few ways to specify origin values:
 * External origins. The external origins, `MutOrigin.external` and
   `ImmutOrigin.external` represent values that are not tracked by the lifetime
   checker, such as dynamically-allocated memory.
-* Wildcard origins. The `ImmutAnyOrigin` and `MutAnyOrigin` aliases are
-  special cases indicating a reference that might access any live value.
+* Wildcard origins. The `ImmutAnyOrigin` and `MutAnyOrigin` `comptime` values
+  are special cases indicating a reference that might access any live value.
 
 #### Static origins
 

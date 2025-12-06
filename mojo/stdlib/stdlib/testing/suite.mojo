@@ -77,7 +77,7 @@ fn _writeln[
 
 
 @fieldwise_init
-struct TestResult(Equatable, ImplicitlyCopyable, Movable, Writable):
+struct TestResult(Equatable, ImplicitlyCopyable, Writable):
     """A test result code."""
 
     var _value: Int
@@ -116,12 +116,12 @@ struct TestResult(Equatable, ImplicitlyCopyable, Movable, Writable):
             writer.write(Text[Color.YELLOW]("SKIP"))
 
 
-struct TestReport(Copyable, Movable, Writable):
+struct TestReport(Copyable, Writable):
     """A report for a single unit test."""
 
     comptime _ErrorIndent = 3
 
-    var name: StaticString
+    var name: String
     """The name of the test."""
 
     var duration_ns: UInt
@@ -134,7 +134,7 @@ struct TestReport(Copyable, Movable, Writable):
     """The error associated with a failing test."""
 
     @staticmethod
-    fn passed(*, name: StaticString, duration_ns: UInt) -> Self:
+    fn passed(*, var name: String, duration_ns: UInt) -> Self:
         """Create a passing test report.
 
         Args:
@@ -145,15 +145,13 @@ struct TestReport(Copyable, Movable, Writable):
             A new passing test report.
         """
         return {
-            name = name,
+            name = name^,
             duration_ns = duration_ns,
             result = TestResult.PASS,
         }
 
     @staticmethod
-    fn failed(
-        *, name: StaticString, duration_ns: UInt, var error: Error
-    ) -> Self:
+    fn failed(*, var name: String, duration_ns: UInt, var error: Error) -> Self:
         """Create a failing test report.
 
         Args:
@@ -165,14 +163,14 @@ struct TestReport(Copyable, Movable, Writable):
             A new failing test report.
         """
         return {
-            name = name,
+            name = name^,
             duration_ns = duration_ns,
             result = TestResult.FAIL,
             error = error^,
         }
 
     @staticmethod
-    fn skipped(*, name: StaticString) -> Self:
+    fn skipped(*, var name: String) -> Self:
         """Create a skipped test report.
 
         Args:
@@ -181,18 +179,18 @@ struct TestReport(Copyable, Movable, Writable):
         Returns:
             A new skipped test report.
         """
-        return {name = name, duration_ns = 0, result = TestResult.SKIP}
+        return {name = name^, duration_ns = 0, result = TestResult.SKIP}
 
     @doc_private
     fn __init__(
         out self,
         *,
-        name: StaticString,
+        var name: String,
         duration_ns: UInt,
         result: TestResult,
         var error: Error = {},
     ):
-        self.name = name
+        self.name = name^
         self.duration_ns = duration_ns
         self.result = result
         self.error = error^
@@ -224,7 +222,7 @@ struct TestReport(Copyable, Movable, Writable):
             )
 
 
-struct TestSuiteReport(Copyable, Movable, Writable):
+struct TestSuiteReport(Copyable, Writable):
     """A report for an entire test suite."""
 
     var reports: List[TestReport]
@@ -319,7 +317,7 @@ struct TestSuiteReport(Copyable, Movable, Writable):
 
 
 @fieldwise_init
-struct _Test(Copyable & Movable):
+struct _Test(Copyable):
     """A single test to run."""
 
     comptime fn_type = fn () raises
@@ -371,10 +369,10 @@ struct TestSuite(Movable):
     var location: _SourceLocation
     """The source location where the test suite was created."""
 
-    var skip_list: Set[StaticString]
+    var skip_list: Set[String]
     """The list of tests to skip in this suite."""
 
-    var allow_list: Optional[Set[StaticString]]
+    var allow_list: Optional[Set[String]]
     """The list of tests to allow in this suite."""
 
     var cli_args: List[StaticString]
@@ -397,7 +395,7 @@ struct TestSuite(Movable):
         """
         self.tests = List[_Test]()
         self.location = location.or_else(__call_location())
-        self.skip_list = Set[StaticString]()
+        self.skip_list = {}
         self.allow_list = None  # None means no allow list specified.
         self.cli_args = cli_args.or_else(List[StaticString](argv()))
 
@@ -489,12 +487,12 @@ struct TestSuite(Movable):
             return
 
         if args[1] == "--only":
-            self.allow_list = Set[StaticString]()
+            self.allow_list = Set[String]()
         elif args[1] == "--skip-all":
             if num_args > 2:
                 raise Error("'--skip-all' does not take any arguments")
             # --skip-all implies an empty allow list.
-            self.allow_list = Set[StaticString]()
+            self.allow_list = Set[String]()
             return
         elif args[1] != "--skip":
             raise Error(
@@ -506,8 +504,7 @@ struct TestSuite(Movable):
         if num_args == 2:
             raise Error("expected test name(s) after '--only' or '--skip'")
 
-        # TODO: would be better if this was StaticString
-        var discovered_tests = Set[StaticString]()
+        var discovered_tests = Set[String]()
         for test in self.tests:
             discovered_tests.add(test.name)
 
@@ -573,7 +570,7 @@ struct TestSuite(Movable):
         # when we have a proper argument parsing library.
         self._parse_filter_lists()
         if skip_all:
-            self.allow_list = Set[StaticString]()
+            self.allow_list = Set[String]()
 
         var reports = List[TestReport](capacity=len(self.tests))
         for test in self.tests:

@@ -56,14 +56,55 @@ from utils.static_tuple import StaticTuple
 fn map[
     origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
 ](size: Int):
-    """Maps a function over a range from 0 to size.
+    """Maps a function over the integer range [0, size).
+    This lets you apply an integer index-based operation across data
+    captured by the mapped function (for example, an indexed buffer).
 
     Parameters:
-        origins: The capture origins.
-        func: Function to map.
+        origins: Capture origins for mapped function.
+        func: Parameterized function applied at each index.
 
     Args:
-        size: The number of elements.
+        size: Number of elements in the index range.
+
+    For example:
+
+    ```mojo
+    from algorithm import map
+
+    def main():
+        # Create list with initial values to act on
+        var list = List[Float32](1.0, 2.0, 3.0, 4.0, 5.0)
+
+        # Function applied to the value at each index
+        @parameter
+        fn exponent_2(idx: Int):
+            list[idx] = 2.0 ** list[idx]
+
+        # Apply the mapped function across the index range
+        map[exponent_2](len(list))
+
+        # Show results
+        for idx in range(len(list)):
+            print(list[idx])
+    ```
+
+    Example output:
+
+    ```output
+    2.0
+    4.0
+    8.0
+    16.0
+    32.0
+    ```
+
+    :::note
+    Don't confuse `algorithm.map` (this eager, index-based helper) with
+    [`iter.map`](https://docs.modular.com/mojo/stdlib/iter/map/),
+    which returns a lazy iterator that applies a function to each element.
+    :::
+
     """
     for i in range(size):
         func(i)
@@ -157,8 +198,8 @@ fn vectorize[
     exponent of 2 (2, 4, 8, 16, ...). The remainder loop will still unroll for
     performance improvements if not an exponent of 2.
     """
-    constrained[simd_width > 0, "simd width must be > 0"]()
-    constrained[unroll_factor > 0, "unroll factor must be > 0"]()
+    __comptime_assert simd_width > 0, "simd width must be > 0"
+    __comptime_assert unroll_factor > 0, "unroll factor must be > 0"
     debug_assert(size >= 0, "size must be >= 0")
 
     comptime unrolled_simd_width = simd_width * unroll_factor
@@ -261,9 +302,9 @@ fn vectorize[
     closure[2](8)
     ```
     """
-    constrained[simd_width > 0, "simd width must be > 0"]()
-    constrained[unroll_factor > 0, "unroll factor must be > 0"]()
-    constrained[size >= 0, "size must be >= 0"]()
+    __comptime_assert simd_width > 0, "simd width must be > 0"
+    __comptime_assert unroll_factor > 0, "unroll factor must be > 0"
+    __comptime_assert size >= 0, "size must be >= 0"
 
     comptime unrolled_simd_width = simd_width * unroll_factor
     comptime simd_end = align_down(size, simd_width)
@@ -297,30 +338,6 @@ fn vectorize[
 # ===-----------------------------------------------------------------------===#
 # Parallelize
 # ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn sync_parallelize[
-    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
-](num_work_items: Int):
-    """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
-    and returns when all are complete.
-
-    Parameters:
-        origins: The capture origins.
-        func: The function to invoke.
-
-    Args:
-        num_work_items: Number of parallel tasks.
-    """
-
-    @always_inline
-    @parameter
-    fn func_wrapper(i: Int) raises:
-        func(i)
-
-    # Defer to the raising overload.
-    sync_parallelize[func_wrapper](num_work_items)
 
 
 @always_inline
@@ -1098,11 +1115,10 @@ fn _get_start_indices_of_nth_subvolume[
         Constructed ND-index.
     """
 
-    constrained[
-        subvolume_rank <= rank,
-        "subvolume rank cannot be greater than indices rank",
-    ]()
-    constrained[subvolume_rank >= 0, "subvolume rank must be non-negative"]()
+    __comptime_assert (
+        subvolume_rank <= rank
+    ), "subvolume rank cannot be greater than indices rank"
+    __comptime_assert subvolume_rank >= 0, "subvolume rank must be non-negative"
 
     # fast impls for common cases
     @parameter
@@ -1244,13 +1260,10 @@ fn elementwise[
         If the operation fails.
     """
 
-    constrained[
-        is_cpu[target](),
-        (
-            "the target must be CPU use the elementwise which takes the"
-            " DeviceContext to be able to use the GPU version"
-        ),
-    ]()
+    __comptime_assert is_cpu[target](), (
+        "the target must be CPU use the elementwise which takes the"
+        " DeviceContext to be able to use the GPU version"
+    )
 
     _elementwise_impl_cpu[
         func, simd_width, use_blocking_impl=use_blocking_impl
@@ -1370,10 +1383,7 @@ fn elementwise[
         var shape_str = trace_arg("shape", shape)
         var vector_width_str = String("vector_width=", simd_width)
 
-        return ";".join(
-            shape_str,
-            vector_width_str,
-        )
+        return ";".join(Span([shape_str, vector_width_str]))
 
     # Intern the kind string as a static string so we don't allocate.
     comptime d = _trace_description
@@ -1459,7 +1469,7 @@ fn _elementwise_impl_cpu_1d[
     Args:
         shape: The shape of the buffer.
     """
-    constrained[rank == 1, "Specialization for 1D"]()
+    __comptime_assert rank == 1, "Specialization for 1D"
 
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1520,7 +1530,7 @@ fn _elementwise_impl_cpu_nd[
     Args:
         shape: The shape of the buffer.
     """
-    constrained[rank > 1, "Specialization for ND where N > 1"]()
+    __comptime_assert rank > 1, "Specialization for ND where N > 1"
 
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1625,10 +1635,9 @@ fn _elementwise_impl_gpu[
         hw_info.threads_per_multiprocessor
     )
 
-    constrained[
-        sm_count > 0 and threads_per_multiprocessor > 0,
-        "the sm_count and thread_count must be known",
-    ]()
+    __comptime_assert (
+        sm_count > 0 and threads_per_multiprocessor > 0
+    ), "the sm_count and thread_count must be known"
 
     # split between packed and tail regions of input
     var length = UInt(shape.flattened_length())
@@ -1836,11 +1845,10 @@ fn _stencil_impl_cpu[
         shape: The shape of the output buffer.
         input_shape: The shape of the input buffer.
     """
-    constrained[rank == 4, "Only stencil of rank-4 supported"]()
-    constrained[
-        stencil_axis[0] == 1 and stencil_axis[1] == 2,
-        "Only stencil spatial axes [1, 2] are supported",
-    ]()
+    __comptime_assert rank == 4, "Only stencil of rank-4 supported"
+    __comptime_assert (
+        stencil_axis[0] == 1 and stencil_axis[1] == 2
+    ), "Only stencil spatial axes [1, 2] are supported"
 
     var total_size = shape.flattened_length()
 
@@ -2001,11 +2009,10 @@ fn _stencil_impl_gpu[
         shape: The shape of the output buffer.
         input_shape: The shape of the input buffer.
     """
-    constrained[rank == 4, "Only stencil of rank-4 supported"]()
-    constrained[
-        stencil_axis[0] == 1 and stencil_axis[1] == 2,
-        "Only stencil spatial axes [1, 2] are supported",
-    ]()
+    __comptime_assert rank == 4, "Only stencil of rank-4 supported"
+    __comptime_assert (
+        stencil_axis[0] == 1 and stencil_axis[1] == 2
+    ), "Only stencil spatial axes [1, 2] are supported"
 
     # GPU kernel implementation
     @always_inline

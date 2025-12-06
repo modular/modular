@@ -8,6 +8,8 @@ load(
     "strip_prefix",
 )
 
+package(default_visibility = ["//max:consumers"])
+
 _RUN_BENCHMARKS = [
     "algorithm/parallelize_overhead.mojo",
     "nn/bench_gather_reduce.mojo",
@@ -162,7 +164,6 @@ pkg_files(
     ),
     prefix = "kernel-benchmark",
     strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )
 
 pkg_filegroup(
@@ -171,5 +172,4 @@ pkg_filegroup(
         ":kernel_benchmark_input_files",
         "//max/kernels/benchmarks/autotune:autotune_files",
     ],
-    visibility = ["//visibility:public"],
 )

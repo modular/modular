@@ -23,7 +23,7 @@ from layout import Layout, LayoutTensor
 
 @fieldwise_init
 @register_passable("trivial")
-struct RasterOrder(ImplicitlyCopyable, Movable):
+struct RasterOrder(ImplicitlyCopyable):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -40,7 +40,7 @@ struct RasterOrder(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32

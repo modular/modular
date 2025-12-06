@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _LIT_TESTS = [
     "test_neon_dotprod_intrinsics.mojo",
     "test_neon_matmul_intrinsics.mojo",

@@ -22,6 +22,6 @@ fn main():
     # CHECK: test_debug_assert_warning.mojo:23:17: Assert Error: failed, but we don't terminate
     debug_assert(False, "failed, but we don't terminate")
     # CHECK: test_debug_assert_warning.mojo:25:17: Assert Error: also failed, but in a Boolable
-    debug_assert(0, Error("also failed, but in a Boolable"))
+    debug_assert(Bool(0), Error("also failed, but in a Boolable"))
     # CHECK: is reached
     print("is reached")

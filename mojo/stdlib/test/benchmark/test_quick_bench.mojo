@@ -16,13 +16,12 @@ from random import randint
 from time import sleep
 
 from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
 fn vec_reduce[
     N: Int, dtype: DType
-](x: UnsafePointer[Scalar[dtype]]) -> Scalar[dtype]:
+](x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]) -> Scalar[dtype]:
     var total: Scalar[dtype] = 0
     for i in range(N):
         total += x[i]
@@ -32,8 +31,9 @@ fn vec_reduce[
 fn vec_add[
     N: Int, dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype]], y: UnsafePointer[Scalar[dtype]]
-) -> UnsafePointer[Scalar[dtype]]:
+    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    y: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
     for i in range(N):
         x[i] += y[i]
     return x
@@ -289,8 +289,8 @@ def test_custom():
     comptime N = 1024
     comptime alignment = 64
     comptime dtype = DType.int32
-    var x = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
-    var y = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
+    var x = alloc[Scalar[dtype]](N, alignment=alignment)
+    var y = alloc[Scalar[dtype]](N, alignment=alignment)
     randint[dtype](x, N, 0, 255)
     randint[dtype](y, N, 0, 255)
 

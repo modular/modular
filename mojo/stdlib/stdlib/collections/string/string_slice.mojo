@@ -47,7 +47,7 @@ var format_string = StaticString("{}: {}")
 print(format_string.format("bats", 6)) # bats: 6
 ```
 """
-
+from builtin.builtin_slice import ContiguousSlice
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -78,7 +78,6 @@ from memory import (
     memcpy,
     pack_bits,
 )
-from memory.memory import _memcmp_impl_unconstrained
 from python import ConvertibleToPython, Python, PythonObject
 
 comptime StaticString = StringSlice[StaticConstantOrigin]
@@ -89,7 +88,7 @@ struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, Movable, Sized):
+](ImplicitlyCopyable, Iterable, Iterator, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
     Unicode codepoint.
 
@@ -318,7 +317,7 @@ struct CodepointSliceIter[
 
 
 struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
-    ImplicitlyCopyable, Iterable, Iterator, Movable, Sized
+    ImplicitlyCopyable, Iterable, Iterator, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
@@ -473,7 +472,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     ImplicitlyCopyable,
     IntableRaising,
     KeyElement,
-    Movable,
     PathLike,
     Representable,
     Sized,
@@ -841,7 +839,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return self.__str__()
 
     @always_inline
-    fn __getitem__(self, span: Slice) -> Self:
+    fn __getitem__(self, span: ContiguousSlice) -> Self:
         """Gets the sequence of characters at the specified positions.
 
         Args:
@@ -850,10 +848,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A new StringSlice containing the substring at the specified positions.
         """
-        # TODO: Introduce a new slice type that just has a start+end but no
-        # step.  Mojo supports slice type inference that can express this in the
-        # static type system instead of debug_assert.
-        debug_assert(span.step.or_else(1) == 1, "Slice step must be 1")
         return Self(unsafe_from_utf8=self._slice[span])
 
     fn to_python_object(var self) raises -> PythonObject:
@@ -987,7 +981,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var len1 = len(self)
         var len2 = len(rhs)
-        return Int(len1 < len2) > _memcmp_impl_unconstrained(
+        return Int(len1 < len2) > memcmp(
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
 
@@ -2416,13 +2410,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return result
 
     fn join[
-        T: Copyable & Movable & Writable, //,
+        T: Copyable & Writable, //,
     ](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
             T: The type of the elements, must implement the `Copyable`,
-                `Movable` and `Writable` traits.
+                and `Writable` traits.
 
         Args:
             elems: The input values.
@@ -2455,23 +2449,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             buffer.write(self, elems[i])
         buffer.flush()
         return result^
-
-    # TODO(MOCO-1791): The corresponding String.__init__ is limited to
-    # StaticString. This is because default arguments and param inference aren't
-    # powerful enough to declare sep/end as StringSlice.
-    fn join[*Ts: Writable](self: StaticString, *elems: *Ts) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            Ts: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        return String(elems, sep=self)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2538,7 +2515,7 @@ fn get_static_string[
 
 fn _to_string_list[
     O: Origin, //,
-    T: Copyable & Movable,  # TODO(MOCO-1446): Make `T` parameter inferred
+    T: Copyable,  # TODO(MOCO-1446): Make `T` parameter inferred
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
