@@ -223,6 +223,7 @@ public:
 
   /// Set the relative input depth.
   void setInputDepth(size_t depth) { inputDepth = depth; }
+  size_t getInputDepth() const { return inputDepth; }
 
   void clearCache() { rewritten.clear(); }
 

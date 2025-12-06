@@ -844,16 +844,8 @@ static bool canZeroCostConvertParamTypes(ParamType fromParamType,
   return false;
 }
 
-/// Returns if a value of the specified type can be coerced to the other type
-/// with a zero-cost conversion like a rebind.  This means that values of the
-/// two types have exactly the same representation post-elaboration.
-bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
-                                   SharedState &shared) {
-  if (fromType.isEqualCanon(toType))
-    return true; // No rebind needed!
-  toType = getCanonicalType(toType);
-  fromType = getCanonicalType(fromType);
-
+static FailureOr<bool>
+isValidUpCastToTypeType(SharedState &shared, ASTType fromType, ASTType toType) {
   // Trait metatypes/struct MetaMetaType are allowed to upcast to trivial types.
   if (sugarIsa<TypeType>(toType)) {
     if (sugarIsa<AnyTraitType, StructMetaMetaType>(fromType))
@@ -876,6 +868,25 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       return traitOp.getConvention() == TypeConvention::RegisterPassableTrivial;
     }
   }
+
+  // Not applicable.
+  return failure();
+}
+
+/// Returns if a value of the specified type can be coerced to the other type
+/// with a zero-cost conversion like a rebind.  This means that values of the
+/// two types have exactly the same representation post-elaboration.
+bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
+                                   SharedState &shared) {
+  if (fromType.isEqualCanon(toType))
+    return true; // No rebind needed!
+  toType = getCanonicalType(toType);
+  fromType = getCanonicalType(fromType);
+
+  FailureOr<bool> upCastable =
+      isValidUpCastToTypeType(shared, fromType, toType);
+  if (succeeded(upCastable))
+    return upCastable.value();
 
   // Check for param type conversions.
   if (auto fromParamType = sugarDynCast<ParamType>(fromType))
@@ -1395,10 +1406,19 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
 // trait.
 // Returns failure when it is an non-applicable cases (i.e., `fromType` is not a
 // typetype and/or `toType` is not a trait type).
-static FailureOr<bool> canTypeValueUpCastToTrait(SharedState &shared,
-                                                 ASTExprAnd<CValue> valueExpr,
-                                                 ASTType fromType,
-                                                 ASTType toType) {
+FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
+                                               ASTType fromType,
+                                               ASTType toType) {
+  if (isEqualCanon(fromType, toType))
+    return true;
+
+  // Trait metatypes/struct MetaMetaType are allowed to upcast to trivial
+  // types.
+  FailureOr<bool> upCastable =
+      isValidUpCastToTypeType(shared, fromType, toType);
+  if (succeeded(upCastable))
+    return upCastable;
+
   // Values of known {struct/trait/mlir} type can convert to any trait type
   // they implement.
   if (auto anyTrait =
@@ -1410,31 +1430,24 @@ static FailureOr<bool> canTypeValueUpCastToTrait(SharedState &shared,
       // MLIR types can conform to traits that have limited requirements.
       // AnyTraitType (the type of all traits) conforms to traits with only a
       // destructor (e.g. AnyType) since all traits have that.
-      result =
-          checkMLIRTypeConformance(shared, valueExpr.expr->getLoc(), trait);
+      result = checkMLIRTypeConformance(shared, loc, trait);
     } else if (sugarIsaAndNonNull<StructMetaMetaType>(fromType.getMetaType()) ||
                sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
-      // Only a struct or a trait instance can be converted to a trait.
-      if (auto pval = valueExpr.ir.getIfPValue();
-          pval && LIT::isTypeExpr(pval)) {
-        // Can only convert static types to traits, not existentials.
-        if (ASTDecl *decl = ASTType(fromType).getDecl(shared)) {
-          // Check for closure rebindability.
-          for (const auto &symbol : trait.getSymbols()) {
-            auto &symbolDecl =
-                shared.declResolver->getDeclForTypeSymbol(symbol);
-            if (auto traitDeclOp = dyn_cast_if_present<TraitDeclOp>(
-                    symbolDecl.getIfOperation());
-                traitDeclOp && traitDeclOp.getDefinesClosure()) {
-              if (succeeded(shared.closureEmitter->isCompatibleWith(
-                      fromType, &symbolDecl))) {
-                return true;
-              }
+      if (ASTDecl *decl = ASTType(fromType).getDecl(shared)) {
+        // Check for closure rebindability.
+        for (const auto &symbol : trait.getSymbols()) {
+          auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+          if (auto traitDeclOp =
+                  dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
+              traitDeclOp && traitDeclOp.getDefinesClosure()) {
+            if (succeeded(shared.closureEmitter->isCompatibleWith(
+                    fromType, &symbolDecl))) {
+              return true;
             }
           }
-
-          return decl->doesNominalTypeConformTo(trait);
         }
+
+        return decl->doesNominalTypeConformTo(trait);
       }
     }
     return result;
@@ -1455,6 +1468,18 @@ static FailureOr<bool> canTypeValueUpCastToTrait(SharedState &shared,
   }
 
   // Not applicable.
+  return failure();
+}
+
+FailureOr<bool>
+IREmitter::canTypeValueUpCastToTrait(SharedState &shared,
+                                     ASTExprAnd<CValue> valueExpr,
+                                     ASTType fromType, ASTType toType) {
+  // Can only convert static types to traits, not existentials (The check is
+  // probably redundant since we don't allow materializing type value anyway?).
+  if (auto pval = valueExpr.ir.getIfPValue(); pval && LIT::isTypeExpr(pval))
+    return canMetaTypeUpCastTo(shared, valueExpr.expr->getLoc(), fromType,
+                               toType);
   return failure();
 }
 

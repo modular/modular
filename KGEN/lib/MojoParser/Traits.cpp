@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Traits.h"
+
 #include "CallEmission.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
