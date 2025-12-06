@@ -193,3 +193,36 @@ struct Dim(Stringable, Writable):
             The value of the x dimension.
         """
         return self[0]
+
+    fn set_z[T: Indexer](mut self, z: T):
+        """Sets the z dimension.
+
+        Parameters:
+            T: An indexer type infered from the argument.
+
+        Args:
+            z: The value for the z dimension.
+        """
+        self._value[2] = index(z)
+
+    fn set_y[T: Indexer](mut self, y: T):
+        """Sets the y dimension.
+
+        Parameters:
+            T: An indexer type infered from the argument.
+
+        Args:
+            y: The value for the y dimension.
+        """
+        self._value[1] = index(y)
+
+    fn set_x[T: Indexer](mut self, x: T):
+        """Sets the x dimension.
+
+        Parameters:
+            T: An indexer type infered from the argument.
+
+        Args:
+            x: The value for the x dimension.
+        """
+        self._value[0] = index(x)
