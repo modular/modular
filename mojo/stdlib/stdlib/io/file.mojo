@@ -47,21 +47,21 @@ from memory import Span
 # ===----------------------------------------------------------------------=== #
 
 # File access modes
-alias O_RDONLY = 0x0000  # Open for reading only
-alias O_WRONLY = 0x0001  # Open for writing only
-alias O_RDWR = 0x0002  # Open for reading and writing
+comptime O_RDONLY = 0x0000  # Open for reading only
+comptime O_WRONLY = 0x0001  # Open for writing only
+comptime O_RDWR = 0x0002  # Open for reading and writing
 
 # File creation flags
-alias O_CREAT = platform_map["O_CREAT", linux=0x0040, macos=0x0200]()
+comptime O_CREAT = platform_map["O_CREAT", linux=0x0040, macos=0x0200]()
 """Create file if it doesn't exist"""
 
-alias O_TRUNC = platform_map["O_TRUNC", linux=0x0200, macos=0x0400]()
+comptime O_TRUNC = platform_map["O_TRUNC", linux=0x0200, macos=0x0400]()
 """Truncate file to zero length"""
 
-alias O_APPEND = platform_map["O_APPEND", linux=0x0400, macos=0x0008]()
+comptime O_APPEND = platform_map["O_APPEND", linux=0x0400, macos=0x0008]()
 """Append mode: writes always go to end of file"""
 
-alias O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
+comptime O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
 """Close file descriptor on exec"""
 
 # ===----------------------------------------------------------------------=== #

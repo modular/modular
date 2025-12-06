@@ -49,7 +49,7 @@ struct UMMAKind(Stringable, Writable):
     comptime KIND_I8 = Self(4)
     """i8 type"""
 
-    alias KIND_MXF8F6F4 = Self(5)
+    comptime KIND_MXF8F6F4 = Self(5)
     """mxf8f6f4 type"""
 
     @always_inline("nodebug")
@@ -452,8 +452,8 @@ fn _get_mxf8f6f4_mma_shape[
     This function returns the shape of the MMA instruction for MXF8F6F4 MMA kind.
     """
 
-    alias mma_m = output_shape[0]
-    alias mma_n = output_shape[1]
+    comptime mma_m = output_shape[0]
+    comptime mma_n = output_shape[1]
 
     @parameter
     if not use_pair_cta:
@@ -741,12 +741,12 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        alias available_d_types = (DType.float32,)
-        alias available_operand_types = (
+        comptime available_d_types = (DType.float32,)
+        comptime available_operand_types = (
             DType.float8_e4m3fn,
             DType.float8_e5m2,
         )
-        alias available_scale_types = (DType.float8_e8m0fnu,)
+        comptime available_scale_types = (DType.float8_e8m0fnu,)
 
         constrained[
             d_type in available_d_types,
@@ -769,15 +769,15 @@ struct UMMAInsDescriptor[
             ),
         ]()
 
-        alias a_type_bit = Self._insert_bit[7](
+        comptime a_type_bit = Self._insert_bit[7](
             0x0, 1 if a_type == DType.float8_e5m2 else 0
         )
 
-        alias b_type_bit = Self._insert_bit[10](
+        comptime b_type_bit = Self._insert_bit[10](
             a_type_bit, 1 if b_type == DType.float8_e5m2 else 0
         )
 
-        alias desc = Self._insert_bit[23](b_type_bit, 1)
+        comptime desc = Self._insert_bit[23](b_type_bit, 1)
 
         return desc
 
@@ -874,13 +874,13 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the complete descriptor bit layout.
         """
 
-        alias M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
-        alias desc = Self._insert_bit[27](M_bit, output_shape[0] >> 7)
+        comptime M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
+        comptime desc = Self._insert_bit[27](M_bit, output_shape[0] >> 7)
 
-        alias transpose_a_bit = Self._insert_bit[15](
+        comptime transpose_a_bit = Self._insert_bit[15](
             0x0, 1 if transpose_a else 0
         )
-        alias transpose_bit = Self._insert_bit[16](
+        comptime transpose_bit = Self._insert_bit[16](
             transpose_a_bit, 0 if transpose_b else 1
         )
 
@@ -915,8 +915,8 @@ struct UMMAInsDescriptor[
             The updated descriptor.
         """
 
-        alias sfa_bit = Self._insert_bit[4](0x0, sf_id)
-        alias sfb_bit = Self._insert_bit[29](sfa_bit, sf_id)
+        comptime sfa_bit = Self._insert_bit[4](0x0, sf_id)
+        comptime sfb_bit = Self._insert_bit[29](sfa_bit, sf_id)
 
         return Self(inst_desc.desc | sfb_bit)
 

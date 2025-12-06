@@ -3570,7 +3570,7 @@ struct DeviceContext(ImplicitlyCopyable):
             Maximum dynamic shared memory bytes to set, or 0 if not needed.
         """
         # NVIDIA GPUs have a 48KB default limit for dynamic shared memory
-        alias NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT = 48 * 1024
+        comptime NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT = 48 * 1024
 
         # Only set the attribute if we need more than the default limit
         if requested_bytes <= NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT:
@@ -5863,7 +5863,7 @@ struct DeviceContext(ImplicitlyCopyable):
         """
         # Not directly implemented on DeviceContext, wrap in buffers first
         # Cast to the DeviceBuffer's expected pointer type via address
-        alias _BufPtr = UnsafePointer[Scalar[dtype], MutAnyOrigin]
+        comptime _BufPtr = UnsafePointer[Scalar[dtype], MutAnyOrigin]
         var dst_buf = DeviceBuffer[dtype](
             self,
             _BufPtr(unsafe_from_address=Int(dst_ptr)),
@@ -6878,7 +6878,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr()
-        alias _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        comptime _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
         var buf_ptr: _BufPtr = {}
 
         _checked(
@@ -6905,7 +6905,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr()
-        alias _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        comptime _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
         var buf_ptr: _BufPtr = {}
 
         _checked(
