@@ -41,36 +41,36 @@ from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 
 # Data type selection: float32 provides good balance of precision and performance
-alias float_dtype = DType.float32
+comptime float_dtype = DType.float32
 
 # Matrix dimensions: chosen to be small enough for easy understanding
 # while still demonstrating tiling concepts effectively
-alias MATRIX_SIZE = 64  # 64x64 matrices
-alias MATRIX_M = MATRIX_SIZE  # Number of rows in matrices A and C
-alias MATRIX_N = MATRIX_SIZE  # Number of columns in matrices B and C
-alias MATRIX_K = MATRIX_SIZE  # Shared dimension (A cols = B rows)
+comptime MATRIX_SIZE = 64  # 64x64 matrices
+comptime MATRIX_M = MATRIX_SIZE  # Number of rows in matrices A and C
+comptime MATRIX_N = MATRIX_SIZE  # Number of columns in matrices B and C
+comptime MATRIX_K = MATRIX_SIZE  # Shared dimension (A cols = B rows)
 
 # Tile dimensions: chosen to fit comfortably in GPU shared memory
 # and demonstrate clear blocking behavior
-alias TILE_SIZE = 16  # 16x16 tiles balance memory usage and parallelism
-alias TILE_M = TILE_SIZE  # Tile height for matrix A and C
-alias TILE_N = TILE_SIZE  # Tile width for matrix B and C
-alias TILE_K = TILE_SIZE  # Tile depth for the K dimension
+comptime TILE_SIZE = 16  # 16x16 tiles balance memory usage and parallelism
+comptime TILE_M = TILE_SIZE  # Tile height for matrix A and C
+comptime TILE_N = TILE_SIZE  # Tile width for matrix B and C
+comptime TILE_K = TILE_SIZE  # Tile depth for the K dimension
 
 # Derived constants
-alias NUM_TILES_PER_SIDE = MATRIX_SIZE // TILE_SIZE  # Number of tiles per matrix side (4)
-alias THREADS_PER_TILE = TILE_SIZE * TILE_SIZE  # Threads needed per tile (256)
-alias TOTAL_TILES_TO_PROCESS = NUM_TILES_PER_SIDE  # Tiles to process in K dimension
+comptime NUM_TILES_PER_SIDE = MATRIX_SIZE // TILE_SIZE  # Number of tiles per matrix side (4)
+comptime THREADS_PER_TILE = TILE_SIZE * TILE_SIZE  # Threads needed per tile (256)
+comptime TOTAL_TILES_TO_PROCESS = NUM_TILES_PER_SIDE  # Tiles to process in K dimension
 
 # LayoutTensor provides type-safe multi-dimensional data access with automatic memory layout handling
 # Layout definitions using example matrix dimensions
-alias matrix_a_layout = Layout.row_major(MATRIX_M, MATRIX_K)  # A: M x K
-alias matrix_b_layout = Layout.row_major(MATRIX_K, MATRIX_N)  # B: K x N
-alias matrix_c_layout = Layout.row_major(MATRIX_M, MATRIX_N)  # C: M x N
+comptime matrix_a_layout = Layout.row_major(MATRIX_M, MATRIX_K)  # A: M x K
+comptime matrix_b_layout = Layout.row_major(MATRIX_K, MATRIX_N)  # B: K x N
+comptime matrix_c_layout = Layout.row_major(MATRIX_M, MATRIX_N)  # C: M x N
 
 # Layout definitions for tile access
-alias tile_a_layout = Layout.row_major(TILE_M, TILE_K)
-alias tile_b_layout = Layout.row_major(TILE_K, TILE_N)
+comptime tile_a_layout = Layout.row_major(TILE_M, TILE_K)
+comptime tile_b_layout = Layout.row_major(TILE_K, TILE_N)
 
 
 fn tiled_matmul_kernel(
@@ -238,10 +238,10 @@ def main():
         )
 
         # Calculate grid and block dimensions
-        alias num_blocks_x = ceildiv(MATRIX_N, TILE_N)
-        alias num_blocks_y = ceildiv(MATRIX_M, TILE_M)
-        alias block_dim_x = TILE_N
-        alias block_dim_y = TILE_M
+        comptime num_blocks_x = ceildiv(MATRIX_N, TILE_N)
+        comptime num_blocks_y = ceildiv(MATRIX_M, TILE_M)
+        comptime block_dim_x = TILE_N
+        comptime block_dim_y = TILE_M
 
         print(
             String(
@@ -312,7 +312,7 @@ def main():
         print("Performing pattern-based validation...")
 
         var validation_errors = 0
-        alias TOLERANCE: Float32 = 1e-5
+        comptime TOLERANCE: Float32 = 1e-5
 
         # Check a few key positions manually for validation
         var test_coords_i: List[Int] = [0, 0, 1, 1, 3]

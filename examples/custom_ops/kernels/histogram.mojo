@@ -24,7 +24,7 @@ from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils import StaticTuple
 
-alias bin_width = Int(UInt8.MAX)
+comptime bin_width = Int(UInt8.MAX)
 
 
 fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
@@ -40,8 +40,8 @@ fn _histogram_gpu(
     input: ManagedTensorSlice,
     ctx_ptr: DeviceContextPtr,
 ) raises:
-    alias bin_width = Int(UInt8.MAX) + 1
-    alias block_dim = bin_width
+    comptime bin_width = Int(UInt8.MAX) + 1
+    comptime block_dim = bin_width
 
     # Set the maximum number of threads per block to the block dimension.
     # This is equivalent to the `__launch_bounds__` attribute in CUDA.

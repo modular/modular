@@ -47,7 +47,7 @@ fn _vector_addition_gpu(
     # Note: The following has not been tuned for any GPU hardware, and is an
     # instructional example for how a simple GPU function can be constructed
     # and dispatched.
-    alias BLOCK_SIZE = 16
+    comptime BLOCK_SIZE = 16
     var gpu_ctx = ctx.get_device_context()
     var vector_length = output.dim_size(0)
 

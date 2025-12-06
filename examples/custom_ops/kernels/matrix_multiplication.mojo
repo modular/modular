@@ -41,10 +41,10 @@ from utils.index import Index
 # Used only in llvm_metadata for MAX_THREADS_PER_BLOCK_METADATA
 # Not the most performant for all kernels, used sparingly on nvidia accelerators
 
-alias OPTIMIZED_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 1024
+comptime OPTIMIZED_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 1024
 
 # The block size to use for the optimized kernels
-alias OPTIMIZED_BLOCK_SIZE = 16 if has_amd_gpu_accelerator() else 32
+comptime OPTIMIZED_BLOCK_SIZE = 16 if has_amd_gpu_accelerator() else 32
 
 # ===-----------------------------------------------------------------------=== #
 
@@ -280,8 +280,8 @@ fn tiled_matrix_multiplication[
     # Iterate over tiles of input matrices A and B
     for block in range(b.dim[0]() // BK):
         # Define the layout for loading tiles of A and B into shared memory
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
         # Get the tiles of A and B for the current iteration
         var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
@@ -398,8 +398,8 @@ fn tiled_register_matrix_multiplication[
     for block in range(b.dim[0]() // BK):
         # Define the layout for loading tiles of A and B into shared
         # memory.
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
         # Get the tiles of A and B for the current block.
         var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
@@ -532,8 +532,8 @@ fn block_tiled_matrix_multiplication[
     var ntiles = b.dim[0]() // BK
 
     for block in range(ntiles):
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
         var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
         var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
@@ -613,7 +613,7 @@ fn block_tiled_vectorized_matrix_multiplication[
     of rows in B.
     """
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var partition_col = Int(thread_idx.x % UInt(BN // TN))
     var partition_row = Int(thread_idx.x // UInt(BN // TN))
 
@@ -666,8 +666,8 @@ fn block_tiled_vectorized_matrix_multiplication[
 
     # Iterate over the tiles of A and B in the K dimension.
     for block in range(ntiles):
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
         var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
         var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
 
@@ -759,9 +759,9 @@ fn tensor_core_matrix_multiplication[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    alias M = C.shape[0]()  # Number of rows in matrix C
-    alias N = C.shape[1]()  # Number of columns in matrix C
-    alias K = A.shape[1]()  # Number of columns in matrix A
+    comptime M = C.shape[0]()  # Number of rows in matrix C
+    comptime N = C.shape[1]()  # Number of columns in matrix C
+    comptime K = A.shape[1]()  # Number of columns in matrix A
 
     # Calculate warp tile coordinates within the block
     warp_y = warp_id() // UInt(BN // WN)
@@ -939,9 +939,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
             # compiled and enqueued to run on the GPU.
             @parameter
             if Self.algorithm == "naive":
-                alias BM = 16
-                alias BN = 16
-                alias matmul_kernel = naive_matrix_multiplication[
+                comptime BM = 16
+                comptime BN = 16
+                comptime matmul_kernel = naive_matrix_multiplication[
                     output.dtype,
                     a_layout.layout,
                     b_layout.layout,
@@ -957,9 +957,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(BN, BM),
                 )
             elif Self.algorithm == "coalescing":
-                alias BM = OPTIMIZED_BLOCK_SIZE
-                alias BN = OPTIMIZED_BLOCK_SIZE
-                alias coalescing_matmul_kernel = coalescing_matrix_multiplication[
+                comptime BM = OPTIMIZED_BLOCK_SIZE
+                comptime BN = OPTIMIZED_BLOCK_SIZE
+                comptime coalescing_matmul_kernel = coalescing_matrix_multiplication[
                     output.dtype,
                     a_layout.layout,
                     b_layout.layout,
@@ -977,11 +977,11 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(BN, BM),
                 )
             elif Self.algorithm == "tiled":
-                alias BM = OPTIMIZED_BLOCK_SIZE
-                alias BN = OPTIMIZED_BLOCK_SIZE
-                alias BK = OPTIMIZED_BLOCK_SIZE
-                alias NUM_THREADS = BM * BN
-                alias tiled_matmul_kernel = tiled_matrix_multiplication[
+                comptime BM = OPTIMIZED_BLOCK_SIZE
+                comptime BN = OPTIMIZED_BLOCK_SIZE
+                comptime BK = OPTIMIZED_BLOCK_SIZE
+                comptime NUM_THREADS = BM * BN
+                comptime tiled_matmul_kernel = tiled_matrix_multiplication[
                     output.dtype,
                     a_layout.layout,
                     b_layout.layout,
@@ -1001,12 +1001,12 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(BM * BN),
                 )
             elif Self.algorithm == "tiled_register":
-                alias BM = 64
-                alias BN = 64
-                alias BK = 8
-                alias TM = 16
-                alias NUM_THREADS = (BM * BN) // TM
-                alias tiled_register_matmul_kernel = tiled_register_matrix_multiplication[
+                comptime BM = 64
+                comptime BN = 64
+                comptime BK = 8
+                comptime TM = 16
+                comptime NUM_THREADS = (BM * BN) // TM
+                comptime tiled_register_matmul_kernel = tiled_register_matrix_multiplication[
                     output.dtype,
                     a_layout.layout,
                     b_layout.layout,
@@ -1027,13 +1027,13 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(NUM_THREADS),
                 )
             elif Self.algorithm == "block_tiled":
-                alias BM = 128
-                alias BN = 128
-                alias BK = 8
-                alias TM = 8
-                alias TN = 8
-                alias NUM_THREADS = (BM * BN) // (TM * TN)
-                alias block_tiled_matmul_kernel = block_tiled_matrix_multiplication[
+                comptime BM = 128
+                comptime BN = 128
+                comptime BK = 8
+                comptime TM = 8
+                comptime TN = 8
+                comptime NUM_THREADS = (BM * BN) // (TM * TN)
+                comptime block_tiled_matmul_kernel = block_tiled_matrix_multiplication[
                     output.dtype,
                     a_layout.layout,
                     b_layout.layout,
@@ -1055,13 +1055,13 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(NUM_THREADS),
                 )
             elif Self.algorithm == "block_tiled_vectorized":
-                alias BM = 128
-                alias BN = 128
-                alias BK = 8
-                alias TM = 8
-                alias TN = 8
-                alias NUM_THREADS = (BM * BN) // (TM * TN)
-                alias block_tiled_vectorized_matmul_kernel = block_tiled_vectorized_matrix_multiplication[
+                comptime BM = 128
+                comptime BN = 128
+                comptime BK = 8
+                comptime TM = 8
+                comptime TN = 8
+                comptime NUM_THREADS = (BM * BN) // (TM * TN)
+                comptime block_tiled_vectorized_matmul_kernel = block_tiled_vectorized_matrix_multiplication[
                     output.dtype,
                     a_layout.layout,
                     b_layout.layout,
@@ -1087,18 +1087,18 @@ struct MatrixMultiplication[algorithm: StaticString]:
 
                 @parameter
                 if has_accelerator():
-                    alias BM = 64
-                    alias BN = 64
-                    alias BK = OPTIMIZED_BLOCK_SIZE
-                    alias WM = 32
-                    alias WN = WARP_SIZE
+                    comptime BM = 64
+                    comptime BN = 64
+                    comptime BK = OPTIMIZED_BLOCK_SIZE
+                    comptime WM = 32
+                    comptime WN = WARP_SIZE
                     # different MMA shapes for AMD and NVIDIA, see:
                     # https://docs.modular.com/mojo/kernels/layout/tensor_core/TensorCore/
-                    alias MMA_M = 16
-                    alias MMA_N = 16 if has_amd_gpu_accelerator() else 8
-                    alias MMA_K = 4
-                    alias NUM_WARPS = (BM // WM) * (BN // WN)
-                    alias tensor_core_matmul_kernel = tensor_core_matrix_multiplication[
+                    comptime MMA_M = 16
+                    comptime MMA_N = 16 if has_amd_gpu_accelerator() else 8
+                    comptime MMA_K = 4
+                    comptime NUM_WARPS = (BM // WM) * (BN // WN)
+                    comptime tensor_core_matmul_kernel = tensor_core_matrix_multiplication[
                         output.dtype,
                         a_layout.layout,
                         b_layout.layout,
