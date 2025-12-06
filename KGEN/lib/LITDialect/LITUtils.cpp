@@ -38,8 +38,16 @@ bool LIT::isMetaType(Type type) {
     return true;
   return false;
 }
+bool LIT::isVariadicOfMetaType(Type type) {
+  auto va = sugarDynCast<VariadicType>(type);
+  return va && LIT::isMetaType(va.getElementType());
+}
 
 bool LIT::isTypeExpr(TypedAttr attr) { return isMetaType(attr.getType()); }
+bool LIT::isVariadicOfTypeExpr(TypedAttr attr) {
+  auto va = sugarDynCast<VariadicAttr>(attr);
+  return va && llvm::all_of(va.getValues(), LIT::isTypeExpr);
+}
 
 //===----------------------------------------------------------------------===//
 // Parameter Mangling

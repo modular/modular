@@ -43,9 +43,11 @@ enum class PassingKind : uint32_t;
 
 /// Returns whether the given type is a LIT meta type.
 bool isMetaType(Type type);
+bool isVariadicOfMetaType(Type type);
 
-/// Returns whether the given attribute is a LIT type expression.
+/// Returns whether the given attribute is a (variadic of) LIT type expression.
 bool isTypeExpr(TypedAttr attr);
+bool isVariadicOfTypeExpr(TypedAttr attr);
 
 // This is the name of the field of the standard library Origin type.  This
 // needs to be kept in sync with the standard library.

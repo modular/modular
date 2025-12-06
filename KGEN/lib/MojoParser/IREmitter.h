@@ -352,6 +352,17 @@ public:
     return canZeroCostConvert(fromType, toType, shared);
   }
 
+  // Returns true/false to indicate that whether a type value can be upcast to a
+  // trait.
+  // Returns failure when it is an non-applicable cases (i.e., `fromType` is not
+  // a typetype and/or `toType` is not a trait type).
+  static FailureOr<bool> canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
+                                             ASTType fromType, ASTType toType);
+  static FailureOr<bool> canTypeValueUpCastToTrait(SharedState &shared,
+                                                   ASTExprAnd<CValue> valueExpr,
+                                                   ASTType fromType,
+                                                   ASTType toType);
+
   /// Given a value of a type that can be zero cost converted to another type,
   /// emit a rebind or other operation to get it in the right type.
   static PValue emitZeroCostConvert(PValue value, ASTType toType,

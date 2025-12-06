@@ -289,7 +289,7 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
 LogicalResult ParameterInferenceState::matchTypes(Type actualType,
                                                   Type expectedType) {
   // If the types trivially match then there is no inference to do.
-  if (actualType == expectedType)
+  if (isEqualCanon(actualType, expectedType))
     return success();
 
   // If the expected type is a parameter ref, then we're binding the specified
@@ -471,11 +471,15 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
     }
   }
 
-  // TODO: We're not handling a lot of important things, e.g. conversion from
-  // AnyStruct -> TraitType; conversion from AnyStruct -> AnyTrivialRegType;
-  // implicit conversions that cause us to see i1->Bool and similar things here,
-  // etc. as such, we can't treat conversion errors for unknown things as
-  // failures.
+  // Handle meta type upcasting.
+  FailureOr<bool> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
+      shared, declScope.getLoc(), actualType, expectedType);
+  if (succeeded(typeUpCastable) && typeUpCastable.value())
+    return success();
+
+  // TODO: We're not handling a lot of important things, e.g., implicit
+  // conversions that cause us to see i1->Bool and similar things here, etc. as
+  // such, we can't treat conversion errors for unknown things as failures.
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN TYPES:\n"; actualType.dump();
              expectedType.dump(); llvm::errs() << "\n");
   return failure();
@@ -491,13 +495,85 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   actualAttr = UpcastAttr::strip(actualAttr);
   expectedAttr = UpcastAttr::strip(expectedAttr);
 
-  // We can only match up these values if their types match.
-  if (actualAttr.getType() != expectedAttr.getType()) {
-    // FIXME: Enforce attribute type convertibility.
-    // This breaks, e.g.:
-    // TypeParamAttr(T, SomeStruct) <-> TypeParamAttr(Param,
-    // AnyTrivialRegType)
-    (void)matchTypes(actualAttr.getType(), expectedAttr.getType());
+  auto getTargetMetaTypeForTypeValue = [](Type targetMetaTp) -> Type {
+    if (auto vaTp = sugarDynCast<VariadicType>(targetMetaTp))
+      targetMetaTp = vaTp.getElementType();
+
+    if (auto paramTp = sugarDynCast<ParamType>(targetMetaTp)) {
+      // If the expected type is parameterized, we strip the meta type.
+      // E.g.,
+      //
+      // fn foo[
+      //  elt_trait : type_of(AnyType & Foo),
+      //  *elt : elt_trait
+      // ] : ...
+      //
+      // foo() # we infer elt : !kgen.variadic<!AnyType & !Foo>
+      auto metaType = paramTp.getParam().getType();
+      // TODO: should we make AnyTraitType a `MetaType`?.
+      if (auto anyTrait = sugarDynCast<AnyTraitType>(metaType))
+        return anyTrait.getTraitType();
+
+      return sugarCast<MetaType>(metaType).getType();
+    };
+    return targetMetaTp;
+  };
+
+  if (failed(matchTypes(actualAttr.getType(), expectedAttr.getType()))) {
+    // If this is a type expression, try align the type (if possible) before
+    // concluding type inconvertibility. This turns things like:
+    // #kgen.type<!Int> : !lit.trait<!AnyType> to
+    // #kgen.type<!Int> : !lit.trait<!Copyable>
+    // Then we can correctly check type value convertibility between
+    // #kgen.type<!Int> : !lit.trait<!AnyType> and
+    // #param.ref<....> : !lit.trait<!Copyable>
+    bool fixableByUpCast = false;
+    if (LIT::isTypeExpr(actualAttr) || LIT::isVariadicOfTypeExpr(actualAttr)) {
+      auto targetMT = getTargetMetaTypeForTypeValue(expectedAttr.getType());
+      ArrayRef<TypedAttr> toCheck(actualAttr);
+      if (auto va = sugarDynCast<VariadicAttr>(actualAttr))
+        toCheck = va.getValues();
+
+      fixableByUpCast = llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
+        assert(LIT::isTypeExpr(typeExpr));
+        // Try get the tightest possible metatype bound.
+        Type tightestBound = ASTType(typeExpr).getMetaType();
+        if (!tightestBound) {
+          // `struct __MLIRType` is the corner case here :(.
+          tightestBound = typeExpr.getType();
+        }
+        FailureOr<bool> upCastable = IREmitter::canMetaTypeUpCastTo(
+            shared, declScope.getLoc(), tightestBound, targetMT);
+        return succeeded(upCastable) && upCastable.value();
+      });
+
+      if (fixableByUpCast) {
+        SmallVector<TypedAttr> casted =
+            llvm::map_to_vector(toCheck, [targetMT](TypedAttr toMap) {
+              return TypeParamAttr::get(ASTType(toMap), targetMT);
+            });
+
+        if (auto va = sugarDynCast<VariadicAttr>(actualAttr))
+          actualAttr = VariadicAttr::get(casted, VariadicType::get(targetMT));
+        else
+          actualAttr = casted.front();
+
+        LogicalResult matchFixed =
+            matchTypes(actualAttr.getType(), expectedAttr.getType());
+        assert(succeeded(matchFixed));
+        (void)matchFixed;
+      }
+    }
+
+    if (!fixableByUpCast) {
+      if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
+        addFailure(ire.getIndex(),
+                   InferenceFailure::TypeConflictFailure{
+                       evaluator.getReboundType(expectedAttr.getType()),
+                       actualAttr.getType()});
+      }
+      return failure();
+    }
   }
 
   // If the actual value is a ? then we never bind to it.
@@ -559,29 +635,34 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         // between parameters.  The evaluator implicitly keeps track of how many
         // we have inferred.
         ire.getIndex() <= evaluator.getNumIndexBindings()) {
-      // Compare the rebound types to handle dependent types.
-      Type expectedType = evaluator.getReboundType(expectedAttr.getType());
+      // We are at `paramIndexRefDepth`, but all parameters have been inferred
+      // as if at level 0.
+      IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
+      Type expectedType =
+          evaluator.getReboundType(adjuster.replace(expectedAttr.getType()));
+
       size_t parameterIndex = ire.getIndex();
 
       // If the types don't agree, attempt an implicit conversion between the
       // actual value and the expected type.
       if (!isEqualCanon(actualAttr.getType(), expectedType)) {
+        // We can only see subtypes in type values, all other values must be
+        // aligned perfectly.
+        assert(LIT::isMetaType(expectedType) ||
+               LIT::isVariadicOfMetaType(expectedType));
         IREmitter emitter(declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
-        if (IREmitter::canImplicitlyConvertToType(
-                {actualAttr, node}, expectedType, emitter.getDeclScope())) {
-          if (PValue result = emitter.emitPValue(
-                  {actualAttr, node}, EC_TypeParamValue, expectedType))
-            actualAttr = result;
-        }
+        ASTExprAnd<CValue> toConvert = {actualAttr, node};
+        // We should have ensured type convertibility
+        assert(IREmitter::canImplicitlyConvertToType(toConvert, expectedType,
+                                                     emitter.getDeclScope()) &&
+               "Unconvertible parameter should have been detected.");
+        actualAttr =
+            emitter.emitPValue(toConvert, EC_TypeParamValue, expectedType);
+        assert(actualAttr);
       }
-      // If that didn't work, then we fail due to the type mismatch.
-      if (!isEqualCanon(actualAttr.getType(), expectedType)) {
-        // Otherwise, we failed to infer the parameter. Record this failure.
-        addFailure(parameterIndex, InferenceFailure::TypeConflictFailure{
-                                       expectedType, actualAttr.getType()});
-        return failure();
-      }
+      // At this point, type must have been aligned.
+      assert(isEqualCanon(actualAttr.getType(), expectedType));
 
       // If we didn't already have a slot for this, make space.
       if (inferredParams.size() <= parameterIndex)
@@ -660,7 +741,14 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       // any set.
       if (expectedSet.getOperands().empty())
         return success();
-      return failure();
+      if (actualSet.getOperands().size() != expectedSet.getOperands().size())
+        return failure();
+      for (auto [actual, expected] : llvm::zip_equal(
+               actualSet.getOperands(), expectedSet.getOperands())) {
+        if (failed(matchParams(actual, expected)))
+          return failure();
+      }
+      return success();
     }
   }
 
