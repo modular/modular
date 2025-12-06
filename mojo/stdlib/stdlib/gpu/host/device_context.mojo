@@ -56,11 +56,7 @@ from gpu.host.compile import (
     _to_sass,
     get_gpu_target,
 )
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    stack_allocation,
-)
+from memory import stack_allocation
 from memory.unsafe import bitcast
 
 from utils import Variant
@@ -103,16 +99,20 @@ struct _DeviceContextScopeCpp:
     pass
 
 
-comptime _DeviceContextPtr = UnsafePointer[_DeviceContextCpp]
-comptime _DeviceBufferPtr = UnsafePointer[_DeviceBufferCpp]
-comptime _DeviceFunctionPtr = UnsafePointer[_DeviceFunctionCpp]
-comptime _DeviceMulticastBufferPtr = UnsafePointer[_DeviceMulticastBufferCpp]
-comptime _DeviceStreamPtr = UnsafePointer[_DeviceStreamCpp]
-comptime _DeviceEventPtr = UnsafePointer[_DeviceEventCpp]
-comptime _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp]
-comptime _DeviceContextScopePtr = UnsafePointer[_DeviceContextScopeCpp]
-comptime _ConstCharPtr = UnsafePointer[UInt8, mut=False]
-comptime _IntPtr = UnsafePointer[Int32]
+comptime _DeviceContextPtr = UnsafePointer[_DeviceContextCpp, MutAnyOrigin]
+comptime _DeviceBufferPtr = UnsafePointer[_DeviceBufferCpp, MutAnyOrigin]
+comptime _DeviceFunctionPtr = UnsafePointer[_DeviceFunctionCpp, MutAnyOrigin]
+comptime _DeviceMulticastBufferPtr = UnsafePointer[
+    _DeviceMulticastBufferCpp, MutAnyOrigin
+]
+comptime _DeviceStreamPtr = UnsafePointer[_DeviceStreamCpp, MutAnyOrigin]
+comptime _DeviceEventPtr = UnsafePointer[_DeviceEventCpp, MutAnyOrigin]
+comptime _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp, MutAnyOrigin]
+comptime _DeviceContextScopePtr = UnsafePointer[
+    _DeviceContextScopeCpp, MutAnyOrigin
+]
+comptime _ConstCharPtr = UnsafePointer[UInt8, ImmutAnyOrigin]
+comptime _IntPtr = UnsafePointer[Int32, MutAnyOrigin]
 comptime _SizeT = UInt
 
 comptime _DumpPath = Variant[Bool, Path, StaticString, fn () capturing -> Path]
@@ -287,7 +287,7 @@ struct HostBuffer[dtype: DType](
         dtype: Data type to be stored in the buffer.
     """
 
-    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype]]
+    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
 
     # We cache the pointer of the buffer here to provide access to elements.
     var _host_ptr: Self._HostPtr
@@ -304,16 +304,16 @@ struct HostBuffer[dtype: DType](
         """
         __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
-        var cpp_handle = _DeviceBufferPtr()
-        var host_ptr = Self._HostPtr()
+        var cpp_handle: _DeviceBufferPtr = {}
+        var host_ptr: Self._HostPtr = {}
 
         # const char *AsyncRT_DeviceContext_createHostBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_createHostBuffer",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceBufferPtr],
-                UnsafePointer[Self._HostPtr],
+                UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
+                UnsafePointer[Self._HostPtr, origin_of(host_ptr)],
                 _DeviceContextPtr,
                 _SizeT,
                 _SizeT,
@@ -346,14 +346,14 @@ struct HostBuffer[dtype: DType](
     ):
         __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
-        var cpp_handle = _DeviceBufferPtr()
+        var cpp_handle: _DeviceBufferPtr = {}
         # void AsyncRT_DeviceContext_createBuffer_owning(
         #     const DeviceBuffer **result, const DeviceContext *ctx,
         #     void *device_ptr, size_t len, size_t elem_size, bool owning)
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
-            UnsafePointer[_DeviceBufferPtr],
+            UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
             _DeviceContextPtr,
             Self._HostPtr,
             _SizeT,
@@ -450,8 +450,8 @@ struct HostBuffer[dtype: DType](
         """
         __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[view_type]()
-        var new_handle = _DeviceBufferPtr()
-        var new_host_ptr = UnsafePointer[Scalar[view_type]]()
+        var new_handle: _DeviceBufferPtr = {}
+        var new_host_ptr: UnsafePointer[Scalar[view_type], MutAnyOrigin] = {}
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
         #     const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
@@ -459,8 +459,11 @@ struct HostBuffer[dtype: DType](
             external_call[
                 "AsyncRT_DeviceBuffer_createSubBuffer",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceBufferPtr],
-                UnsafePointer[UnsafePointer[Scalar[view_type]]],
+                UnsafePointer[_DeviceBufferPtr, origin_of(new_handle)],
+                UnsafePointer[
+                    UnsafePointer[Scalar[view_type], MutAnyOrigin],
+                    origin_of(new_host_ptr),
+                ],
                 _DeviceBufferPtr,
                 _SizeT,
                 _SizeT,
@@ -507,7 +510,9 @@ struct HostBuffer[dtype: DType](
         __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
         dst.context().enqueue_copy(dst, self)
 
-    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[Self.dtype]]) raises:
+    fn enqueue_copy_to(
+        self, dst_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -631,7 +636,7 @@ struct HostBuffer[dtype: DType](
             "AsyncRT_DeviceBuffer_release_ptr", NoneType, _DeviceBufferPtr
         ](self._handle)
         var result = self._host_ptr
-        self._host_ptr = Self._HostPtr()
+        self._host_ptr = {}
         return result
 
     @always_inline
@@ -778,10 +783,10 @@ struct DeviceBuffer[dtype: DType](
     """
 
     # Implementation of `DevicePassable`
-    comptime device_type: AnyType = UnsafePointer[Scalar[Self.dtype]]
+    comptime device_type: AnyType = LegacyUnsafePointer[Scalar[Self.dtype]]
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
         """
         # TODO: Allow the low-level DeviceContext implementation to intercept
@@ -814,7 +819,7 @@ struct DeviceBuffer[dtype: DType](
         """
         return String("UnsafePointer[Scalar[", Self.dtype, "]]")
 
-    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype]]
+    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
@@ -834,8 +839,8 @@ struct DeviceBuffer[dtype: DType](
         """
         __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
-        var cpp_handle = _DeviceBufferPtr()
-        var device_ptr = Self._DevicePtr()
+        var cpp_handle: _DeviceBufferPtr = {}
+        var device_ptr: Self._DevicePtr = {}
 
         if mode == _DeviceBufferMode._SYNC:
             # const char *AsyncRT_DeviceContext_createBuffer_sync(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
@@ -843,8 +848,8 @@ struct DeviceBuffer[dtype: DType](
                 external_call[
                     "AsyncRT_DeviceContext_createBuffer_sync",
                     _ConstCharPtr,
-                    UnsafePointer[_DeviceBufferPtr],
-                    UnsafePointer[Self._DevicePtr],
+                    UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
+                    UnsafePointer[Self._DevicePtr, origin_of(device_ptr)],
                     _DeviceContextPtr,
                     _SizeT,
                     _SizeT,
@@ -863,8 +868,8 @@ struct DeviceBuffer[dtype: DType](
                 external_call[
                     "AsyncRT_DeviceContext_createBuffer_async",
                     _ConstCharPtr,
-                    UnsafePointer[_DeviceBufferPtr],
-                    UnsafePointer[Self._DevicePtr],
+                    UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
+                    UnsafePointer[Self._DevicePtr, origin_of(device_ptr)],
                     _DeviceContextPtr,
                     _SizeT,
                     _SizeT,
@@ -906,14 +911,14 @@ struct DeviceBuffer[dtype: DType](
     ):
         __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
-        var cpp_handle = _DeviceBufferPtr()
+        var cpp_handle: _DeviceBufferPtr = {}
         # void AsyncRT_DeviceContext_createBuffer_owning(
         #     const DeviceBuffer **result, const DeviceContext *ctx,
         #     void *device_ptr, size_t len, size_t elem_size, bool owning)
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
-            UnsafePointer[_DeviceBufferPtr],
+            UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
             _DeviceContextPtr,
             Self._DevicePtr,
             _SizeT,
@@ -1012,8 +1017,8 @@ struct DeviceBuffer[dtype: DType](
         """
         __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[view_type]()
-        var new_handle = _DeviceBufferPtr()
-        var new_device_ptr = UnsafePointer[Scalar[view_type]]()
+        var new_handle: _DeviceBufferPtr = {}
+        var new_device_ptr: UnsafePointer[Scalar[view_type], MutAnyOrigin] = {}
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
         #     const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
@@ -1021,8 +1026,11 @@ struct DeviceBuffer[dtype: DType](
             external_call[
                 "AsyncRT_DeviceBuffer_createSubBuffer",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceBufferPtr],
-                UnsafePointer[UnsafePointer[Scalar[view_type]]],
+                UnsafePointer[_DeviceBufferPtr, origin_of(new_handle)],
+                UnsafePointer[
+                    UnsafePointer[Scalar[view_type], MutAnyOrigin],
+                    origin_of(new_device_ptr),
+                ],
                 _DeviceBufferPtr,
                 _SizeT,
                 _SizeT,
@@ -1071,7 +1079,9 @@ struct DeviceBuffer[dtype: DType](
         __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         dst.context().enqueue_copy(dst, self)
 
-    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[Self.dtype]]) raises:
+    fn enqueue_copy_to(
+        self, dst_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -1373,13 +1383,13 @@ struct DeviceStream(ImplicitlyCopyable):
         Raises:
             If stream creation fails.
         """
-        var result = _DeviceStreamPtr()
+        var result: _DeviceStreamPtr = {}
         # const char *AsyncRT_DeviceContext_stream(const DeviceStream **result, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stream",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceStreamPtr],
+                UnsafePointer[_DeviceStreamPtr, origin_of(result)],
                 _DeviceContextPtr,
             ](UnsafePointer(to=result), ctx._handle)
         )
@@ -1797,13 +1807,13 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If event creation or recording fails.
         """
-        var result = _DeviceEventPtr()
+        var result: _DeviceEventPtr = {}
         # const char *AsyncRT_DeviceStream_enqueue_event(const DeviceEvent **result, const DeviceStream *stream)
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_eventCreate",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceEventPtr],
+                UnsafePointer[_DeviceEventPtr, origin_of(result)],
                 _DeviceStreamPtr,
             ](UnsafePointer(to=result), stream._handle)
         )
@@ -1820,13 +1830,13 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If event creation or recording fails.
         """
-        var result = _DeviceEventPtr()
+        var result: _DeviceEventPtr = {}
         # const char *AsyncRT_DeviceContext_enqueue_event(const DeviceEvent **result, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueue_event",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceEventPtr],
+                UnsafePointer[_DeviceEventPtr, origin_of(result)],
                 _DeviceContextPtr,
             ](UnsafePointer(to=result), ctx._handle)
         )
@@ -2018,7 +2028,7 @@ struct DeviceFunction[
         #     const char *moduleName, const char *functionName, const char *data,
         #     size_t dataLen, int32_t maxDynamicSharedBytes, const char *debugLevel,
         #     int32_t optimizationLevel)
-        var result = _DeviceFunctionPtr()
+        var result: _DeviceFunctionPtr = {}
         self._func_impl = _compile_code[
             Self.func,
             emission_kind = self._emission_kind,
@@ -2030,7 +2040,7 @@ struct DeviceFunction[
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceFunctionPtr],
+                UnsafePointer[_DeviceFunctionPtr, origin_of(result)],
                 _DeviceContextPtr,
                 _ConstCharPtr,
                 _ConstCharPtr,
@@ -2065,7 +2075,7 @@ struct DeviceFunction[
                 _DeviceFunctionPtr,
                 _ConstCharPtr,
                 _SizeT,
-                OpaquePointer,
+                OpaquePointer[MutAnyOrigin],
                 _SizeT,
             ](
                 self._handle,
@@ -2290,16 +2300,20 @@ struct DeviceFunction[
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
-        var dense_args_addrs: UnsafePointer[OpaquePointer]
-        var dense_args_sizes = UnsafePointer[UInt64]()
+        var dense_args_addrs: UnsafePointer[
+            OpaquePointer[MutAnyOrigin], MutAnyOrigin
+        ]
+        var dense_args_sizes: UnsafePointer[UInt64, MutAnyOrigin]
         if num_captures > num_captures_static:
-            dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
-            dense_args_sizes = dense_args_sizes.alloc(num_captures + num_args)
+            dense_args_addrs = alloc[OpaquePointer[MutAnyOrigin]](
+                num_captures + num_args
+            )
+            dense_args_sizes = alloc[UInt64](num_captures + num_args)
             for i in range(num_captures + num_args):
                 dense_args_sizes[i] = 0
         else:
             dense_args_addrs = stack_allocation[
-                num_captures_static + num_args, OpaquePointer
+                num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
             dense_args_sizes = stack_allocation[
                 num_captures_static + num_args, UInt64
@@ -2369,10 +2383,10 @@ struct DeviceFunction[
                     UInt32,
                     UInt32,
                     UInt32,
-                    UnsafePointer[LaunchAttribute],
+                    UnsafePointer[LaunchAttribute, MutAnyOrigin],
                     UInt32,
-                    UnsafePointer[OpaquePointer],
-                    UnsafePointer[UInt64],
+                    UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                    UnsafePointer[UInt64, MutAnyOrigin],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2405,10 +2419,10 @@ struct DeviceFunction[
                     UInt32,
                     UInt32,
                     UInt32,
-                    UnsafePointer[LaunchAttribute],
+                    UnsafePointer[LaunchAttribute, MutAnyOrigin],
                     UInt32,
-                    UnsafePointer[OpaquePointer],
-                    UnsafePointer[UInt64],
+                    UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                    UnsafePointer[UInt64, MutAnyOrigin],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2457,12 +2471,16 @@ struct DeviceFunction[
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
-        var dense_args_addrs: UnsafePointer[OpaquePointer]
+        var dense_args_addrs: UnsafePointer[
+            OpaquePointer[MutAnyOrigin], MutAnyOrigin
+        ]
         if num_captures > num_captures_static:
-            dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
+            dense_args_addrs = alloc[OpaquePointer[MutAnyOrigin]](
+                num_captures + num_args
+            )
         else:
             dense_args_addrs = stack_allocation[
-                num_captures_static + num_args, OpaquePointer
+                num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
 
         @parameter
@@ -2656,12 +2674,16 @@ struct DeviceFunction[
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
-        var dense_args_addrs: UnsafePointer[OpaquePointer]
+        var dense_args_addrs: UnsafePointer[
+            OpaquePointer[MutAnyOrigin], MutAnyOrigin
+        ]
         if num_captures > num_captures_static:
-            dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
+            dense_args_addrs = alloc[OpaquePointer[MutAnyOrigin]](
+                num_captures + num_args
+            )
         else:
             dense_args_addrs = stack_allocation[
-                num_captures_static + num_args, OpaquePointer
+                num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
 
         @parameter
@@ -2809,20 +2831,21 @@ struct DeviceFunction[
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
-        var dense_args_addrs: UnsafePointer[OpaquePointer]
-        var dense_args_sizes = UnsafePointer[UInt64]()
+        var dense_args_addrs: UnsafePointer[
+            OpaquePointer[MutAnyOrigin], MutAnyOrigin
+        ]
+        var dense_args_sizes: UnsafePointer[UInt64, MutAnyOrigin]
         if num_captures > num_captures_static:
-            dense_args_addrs = dense_args_addrs.alloc(
+            dense_args_addrs = alloc[OpaquePointer[MutAnyOrigin]](
                 num_captures + num_passed_args
             )
-            dense_args_sizes = dense_args_sizes.alloc(
-                num_captures + num_passed_args
-            )
+            dense_args_sizes = alloc[UInt64](num_captures + num_passed_args)
             for i in range(num_captures + num_passed_args):
                 dense_args_sizes[i] = 0
         else:
             dense_args_addrs = stack_allocation[
-                num_captures_static + num_passed_args, OpaquePointer
+                num_captures_static + num_passed_args,
+                OpaquePointer[MutAnyOrigin],
             ]()
             dense_args_sizes = stack_allocation[
                 num_captures_static + num_passed_args, UInt64
@@ -2899,10 +2922,10 @@ struct DeviceFunction[
                 UInt32,
                 UInt32,
                 UInt32,
-                UnsafePointer[LaunchAttribute],
+                UnsafePointer[LaunchAttribute, MutAnyOrigin],
                 UInt32,
-                UnsafePointer[OpaquePointer],
-                UnsafePointer[UInt64],
+                UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                UnsafePointer[UInt64, MutAnyOrigin],
             ](
                 ctx._handle,
                 self._handle,
@@ -2960,7 +2983,7 @@ struct DeviceFunction[
             external_call[
                 "AsyncRT_DeviceFunction_getAttribute",
                 _ConstCharPtr,
-                UnsafePointer[Int32],
+                UnsafePointer[Int32, origin_of(result)],
                 _DeviceFunctionPtr,
                 Int32,
             ](
@@ -2993,7 +3016,7 @@ struct DeviceFunction[
             external_call[
                 "AsyncRT_occupancyMaxActiveBlocksPerMultiprocessor",
                 _ConstCharPtr,
-                UnsafePointer[Int32],
+                UnsafePointer[Int32, origin_of(result)],
                 _DeviceFunctionPtr,
                 Int32,
                 _SizeT,
@@ -3091,13 +3114,13 @@ struct DeviceExternalFunction:
         #     size_t dataLen, int32_t maxDynamicSharedBytes, const char *debugLevel,
         #     int32_t optimizationLevel)
         var module_name: String = ""
-        var result = _DeviceFunctionPtr()
+        var result: _DeviceFunctionPtr = {}
         var debug_level = String(DebugLevel)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceFunctionPtr],
+                UnsafePointer[_DeviceFunctionPtr, origin_of(result)],
                 _DeviceContextPtr,
                 _ConstCharPtr,
                 _ConstCharPtr,
@@ -3141,7 +3164,7 @@ struct DeviceExternalFunction:
                 _DeviceFunctionPtr,
                 _ConstCharPtr,
                 _SizeT,
-                OpaquePointer,
+                OpaquePointer[MutAnyOrigin],
                 _SizeT,
             ](
                 self._handle,
@@ -3189,9 +3212,9 @@ struct DeviceExternalFunction:
         """
         comptime num_args = len(VariadicList(Ts))
 
-        var dense_args_addrs = InlineArray[OpaquePointer, num_args](
-            uninitialized=True
-        )
+        var dense_args_addrs = InlineArray[
+            OpaquePointer[MutAnyOrigin], num_args
+        ](uninitialized=True)
 
         @parameter
         for i in range(num_args):
@@ -3229,9 +3252,9 @@ struct DeviceExternalFunction:
                 UInt32,
                 UInt32,
                 UInt32,
-                UnsafePointer[LaunchAttribute],
+                UnsafePointer[LaunchAttribute, MutAnyOrigin],
                 UInt32,
-                UnsafePointer[OpaquePointer],
+                UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
             ](
                 ctx._handle,
                 self._handle,
@@ -3267,7 +3290,7 @@ struct DeviceExternalFunction:
             external_call[
                 "AsyncRT_DeviceFunction_getAttribute",
                 _ConstCharPtr,
-                UnsafePointer[Int32],
+                UnsafePointer[Int32, origin_of(result)],
                 _DeviceFunctionPtr,
                 Int32,
             ](
@@ -3361,13 +3384,13 @@ struct DeviceContext(ImplicitlyCopyable):
         ```
         """
         # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *api, int id)
-        var result = _DeviceContextPtr()
+        var result: _DeviceContextPtr = {}
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_create",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceContextPtr],
-                UnsafePointer[c_char, mut=False],
+                UnsafePointer[_DeviceContextPtr, origin_of(result)],
+                UnsafePointer[c_char, ImmutAnyOrigin],
                 Int32,
             ](
                 UnsafePointer(to=result),
@@ -3388,7 +3411,7 @@ struct DeviceContext(ImplicitlyCopyable):
         ](self._handle)
 
     @doc_private
-    fn __init__(out self, handle: OpaquePointer):
+    fn __init__(out self, handle: OpaquePointer[mut=True]):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = handle.bitcast[_DeviceContextCpp]()
@@ -5442,13 +5465,13 @@ struct DeviceContext(ImplicitlyCopyable):
             print("Execution time for 10 iterations:", time_ns, "ns")
         ```
         """
-        var timer_ptr = _DeviceTimerPtr()
+        var timer_ptr: _DeviceTimerPtr = {}
         # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceTimerPtr],
+                UnsafePointer[_DeviceTimerPtr, origin_of(timer_ptr)],
                 _DeviceContextPtr,
             ](
                 UnsafePointer(to=timer_ptr),
@@ -5464,7 +5487,7 @@ struct DeviceContext(ImplicitlyCopyable):
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
                 _ConstCharPtr,
-                UnsafePointer[Int],
+                UnsafePointer[Int, origin_of(elapsed_nanos)],
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
             ](
@@ -5563,13 +5586,13 @@ struct DeviceContext(ImplicitlyCopyable):
             print("Execution time:", time_ns, "ns")
         ```
         """
-        var timer_ptr = _DeviceTimerPtr()
+        var timer_ptr: _DeviceTimerPtr = {}
         # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceTimerPtr],
+                UnsafePointer[_DeviceTimerPtr, origin_of(timer_ptr)],
                 _DeviceContextPtr,
             ](
                 UnsafePointer(to=timer_ptr),
@@ -5585,7 +5608,7 @@ struct DeviceContext(ImplicitlyCopyable):
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
                 _ConstCharPtr,
-                UnsafePointer[Int],
+                UnsafePointer[Int, origin_of(elapsed_nanos)],
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
             ](
@@ -5636,13 +5659,13 @@ struct DeviceContext(ImplicitlyCopyable):
             print("Total execution time:", time_ns, "ns")
         ```
         """
-        var timer_ptr = _DeviceTimerPtr()
+        var timer_ptr: _DeviceTimerPtr = {}
         # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceTimerPtr],
+                UnsafePointer[_DeviceTimerPtr, origin_of(timer_ptr)],
                 _DeviceContextPtr,
             ](
                 UnsafePointer(to=timer_ptr),
@@ -5658,7 +5681,7 @@ struct DeviceContext(ImplicitlyCopyable):
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
                 _ConstCharPtr,
-                UnsafePointer[Int],
+                UnsafePointer[Int, origin_of(elapsed_nanos)],
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
             ](
@@ -5675,7 +5698,7 @@ struct DeviceContext(ImplicitlyCopyable):
     ](
         self,
         dst_buf: DeviceBuffer[dtype, **_],
-        src_ptr: UnsafePointer[Scalar[dtype]],
+        src_ptr: UnsafePointer[Scalar[dtype], **_],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -5698,11 +5721,11 @@ struct DeviceContext(ImplicitlyCopyable):
                 _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
-                UnsafePointer[Scalar[dtype]],
+                OpaquePointer[MutAnyOrigin],
             ](
                 self._handle,
                 dst_buf._handle,
-                src_ptr,
+                OpaquePointer[MutAnyOrigin](unsafe_from_address=Int(src_ptr)),
             )
         )
 
@@ -5712,7 +5735,7 @@ struct DeviceContext(ImplicitlyCopyable):
     ](
         self,
         dst_buf: HostBuffer[dtype, **_],
-        src_ptr: UnsafePointer[Scalar[dtype]],
+        src_ptr: UnsafePointer[Scalar[dtype], **_],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -5735,11 +5758,11 @@ struct DeviceContext(ImplicitlyCopyable):
                 _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
-                UnsafePointer[Scalar[dtype]],
+                OpaquePointer[MutAnyOrigin],
             ](
                 self._handle,
                 dst_buf._handle,
-                src_ptr,
+                OpaquePointer[MutAnyOrigin](unsafe_from_address=Int(src_ptr)),
             )
         )
 
@@ -5748,7 +5771,7 @@ struct DeviceContext(ImplicitlyCopyable):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[dtype]],
+        dst_ptr: UnsafePointer[Scalar[dtype], **_],
         src_buf: DeviceBuffer[dtype, **_],
     ) raises:
         """Enqueues an async copy from the device to the host. The
@@ -5770,11 +5793,11 @@ struct DeviceContext(ImplicitlyCopyable):
                 "AsyncRT_DeviceContext_DtoH_async",
                 _ConstCharPtr,
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
+                OpaquePointer[MutAnyOrigin],
                 _DeviceBufferPtr,
             ](
                 self._handle,
-                dst_ptr,
+                OpaquePointer[MutAnyOrigin](unsafe_from_address=Int(dst_ptr)),
                 src_buf._handle,
             )
         )
@@ -5784,7 +5807,7 @@ struct DeviceContext(ImplicitlyCopyable):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[dtype]],
+        dst_ptr: UnsafePointer[Scalar[dtype], **_],
         src_buf: HostBuffer[dtype, **_],
     ) raises:
         """Enqueues an async copy from the device to the host. The
@@ -5806,11 +5829,11 @@ struct DeviceContext(ImplicitlyCopyable):
                 "AsyncRT_DeviceContext_DtoH_async",
                 _ConstCharPtr,
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
+                OpaquePointer[MutAnyOrigin],
                 _DeviceBufferPtr,
             ](
                 self._handle,
-                dst_ptr,
+                OpaquePointer[MutAnyOrigin](unsafe_from_address=Int(dst_ptr)),
                 src_buf._handle,
             )
         )
@@ -5820,8 +5843,8 @@ struct DeviceContext(ImplicitlyCopyable):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[dtype]],
-        src_ptr: UnsafePointer[Scalar[dtype]],
+        dst_ptr: UnsafePointer[Scalar[dtype], **_],
+        src_ptr: UnsafePointer[Scalar[dtype], **_],
         size: Int,
     ) raises:
         """Enqueues an async copy of `size` elements from a device pointer to
@@ -5839,8 +5862,20 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         # Not directly implemented on DeviceContext, wrap in buffers first
-        var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
-        var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
+        # Cast to the DeviceBuffer's expected pointer type via address
+        alias _BufPtr = UnsafePointer[Scalar[dtype], MutAnyOrigin]
+        var dst_buf = DeviceBuffer[dtype](
+            self,
+            _BufPtr(unsafe_from_address=Int(dst_ptr)),
+            size,
+            owning=False,
+        )
+        var src_buf = DeviceBuffer[dtype](
+            self,
+            _BufPtr(unsafe_from_address=Int(src_ptr)),
+            size,
+            owning=False,
+        )
         self.enqueue_copy(dst_buf, src_buf)
 
     @always_inline
@@ -6158,7 +6193,7 @@ struct DeviceContext(ImplicitlyCopyable):
             external_call[
                 "AsyncRT_DeviceContext_eventCreate",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceEventPtr],
+                UnsafePointer[_DeviceEventPtr, origin_of(result)],
                 _DeviceContextPtr,
                 EventFlags,
             ](UnsafePointer(to=result), self._handle, flags)
@@ -6561,8 +6596,8 @@ struct DeviceContext(ImplicitlyCopyable):
                 "AsyncRT_DeviceContext_getMemoryInfo",
                 _ConstCharPtr,
                 _DeviceContextPtr,
-                UnsafePointer[_SizeT],
-                UnsafePointer[_SizeT],
+                UnsafePointer[_SizeT, origin_of(free)],
+                UnsafePointer[_SizeT, origin_of(total)],
             ](
                 self._handle,
                 UnsafePointer(to=free),
@@ -6614,7 +6649,7 @@ struct DeviceContext(ImplicitlyCopyable):
             external_call[
                 "AsyncRT_DeviceContext_canAccess",
                 _ConstCharPtr,
-                UnsafePointer[Bool],
+                UnsafePointer[Bool, origin_of(result)],
                 _DeviceContextPtr,
                 _DeviceContextPtr,
             ](
@@ -6700,7 +6735,7 @@ struct DeviceContext(ImplicitlyCopyable):
             external_call[
                 "AsyncRT_DeviceContext_supportsMulticast",
                 _ConstCharPtr,
-                UnsafePointer[Bool],
+                UnsafePointer[Bool, origin_of(result)],
                 _DeviceContextPtr,
             ](
                 UnsafePointer(to=result),
@@ -6812,7 +6847,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         var handle = _DeviceMulticastBufferPtr()
 
         var ctxs_len = len(contexts)
-        var ctxs = UnsafePointer[_DeviceContextPtr].alloc(ctxs_len)
+        var ctxs = alloc[_DeviceContextPtr](ctxs_len)
         for i in range(ctxs_len):
             ctxs[i] = contexts[i]._handle
 
@@ -6821,9 +6856,9 @@ struct DeviceMulticastBuffer[dtype: DType]:
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_allocate",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceMulticastBufferPtr],
+                UnsafePointer[_DeviceMulticastBufferPtr, origin_of(handle)],
                 _SizeT,
-                UnsafePointer[_DeviceContextPtr],
+                UnsafePointer[_DeviceContextPtr, MutAnyOrigin],
                 _SizeT,
                 _SizeT,
             ](
@@ -6843,14 +6878,15 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr()
-        var buf_ptr = UnsafePointer[Scalar[Self.dtype]]()
+        alias _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        var buf_ptr: _BufPtr = {}
 
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_unicastBufferFor",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceBufferPtr],
-                UnsafePointer[UnsafePointer[Scalar[Self.dtype]]],
+                UnsafePointer[_DeviceBufferPtr, origin_of(buf_handle)],
+                UnsafePointer[_BufPtr, origin_of(buf_ptr)],
                 _DeviceMulticastBufferPtr,
                 _DeviceContextPtr,
             ](
@@ -6869,14 +6905,15 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr()
-        var buf_ptr = UnsafePointer[Scalar[Self.dtype]]()
+        alias _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        var buf_ptr: _BufPtr = {}
 
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_multicastBufferFor",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceBufferPtr],
-                UnsafePointer[UnsafePointer[Scalar[Self.dtype]]],
+                UnsafePointer[_DeviceBufferPtr, origin_of(buf_handle)],
+                UnsafePointer[_BufPtr, origin_of(buf_ptr)],
                 _DeviceMulticastBufferPtr,
                 _DeviceContextPtr,
             ](
@@ -6939,7 +6976,7 @@ struct _DeviceContextScope:
             external_call[
                 "AsyncRT_DeviceContextScope_create",
                 _ConstCharPtr,
-                UnsafePointer[_DeviceContextScopePtr],
+                UnsafePointer[_DeviceContextScopePtr, origin_of(cpp_handle)],
                 _DeviceContextPtr,
             ](
                 UnsafePointer(to=cpp_handle),
