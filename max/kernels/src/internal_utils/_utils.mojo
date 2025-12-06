@@ -59,51 +59,6 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
         self.value = v
 
 
-# TODO: add address_space: AddressSpace = AddressSpace.GENERIC
-@fieldwise_init
-struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable):
-    var ndbuffer: NDBuffer[Self.dtype, Self.rank, MutAnyOrigin]
-    var shape: DimList
-    var num_elements: Int
-
-    fn __init__(
-        out self,
-        shape: DimList,
-        values: List[Scalar[Self.dtype]] = List[Scalar[Self.dtype]](),
-    ):
-        self.num_elements = Int(shape.product[Self.rank]())
-        self.shape = shape
-        self.ndbuffer = NDBuffer[Self.dtype, Self.rank](
-            UnsafePointer[Scalar[Self.dtype]].alloc(self.num_elements), shape
-        )
-        if len(values) == 1:
-            for i in range(self.num_elements):
-                self.ndbuffer.data[i] = values[0]
-            return
-
-        if len(values) == self.num_elements:
-            for i in range(self.num_elements):
-                self.ndbuffer.data[i] = values[i]
-
-    fn __copyinit__(out self, other: Self):
-        self.num_elements = other.num_elements
-        self.shape = other.shape
-        self.ndbuffer = NDBuffer[Self.dtype, Self.rank](
-            UnsafePointer[Scalar[Self.dtype]].alloc(self.num_elements),
-            self.shape,
-        )
-        for i in range(self.num_elements):
-            self.ndbuffer.data[i] = other.ndbuffer.data[i]
-
-    fn __del__(deinit self):
-        self.ndbuffer.data.free()
-
-    fn to_managed_tensor_slice(self) -> DynamicTensor[Self.dtype, Self.rank]:
-        return DynamicTensor[Self.dtype, Self.rank](
-            self.ndbuffer.data, self.ndbuffer.get_shape()
-        )
-
-
 @register_passable("trivial")
 struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
     var _value: Int
