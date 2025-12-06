@@ -15,9 +15,9 @@ from math import ceildiv
 from sys import env_get_int, env_get_string
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import DimList
+from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, arg_parse
+from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
@@ -66,9 +66,25 @@ fn bench_matmul[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) raises:
-    var mat_c = DeviceNDBuffer[out_dtype, 2, shape_c](shape_c_dim, ctx=ctx)
-    var mat_a = DeviceNDBuffer[in_dtype, 2, shape_a](shape_a_dim, ctx=ctx)
-    var mat_b = DeviceNDBuffer[in_dtype, 2, shape_b](shape_b_dim, ctx=ctx)
+    var mat_c_buf = ctx.enqueue_create_buffer[out_dtype](
+        shape_c_dim[0] * shape_c_dim[1]
+    )
+    var mat_a_buf = ctx.enqueue_create_buffer[in_dtype](
+        shape_a_dim[0] * shape_a_dim[1]
+    )
+    var mat_b_buf = ctx.enqueue_create_buffer[in_dtype](
+        shape_b_dim[0] * shape_b_dim[1]
+    )
+
+    var mat_c = NDBuffer[out_dtype, 2, _, shape_c](
+        mat_c_buf.unsafe_ptr(), shape_c_dim
+    )
+    var mat_a = NDBuffer[in_dtype, 2, _, shape_a](
+        mat_a_buf.unsafe_ptr(), shape_a_dim
+    )
+    var mat_b = NDBuffer[in_dtype, 2, _, shape_b](
+        mat_b_buf.unsafe_ptr(), shape_b_dim
+    )
 
     @parameter
     @always_inline
@@ -77,7 +93,7 @@ fn bench_matmul[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu[transpose_b=False, use_tensor_core=True](
-                mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx
+                mat_c, mat_a, mat_b, ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -97,9 +113,9 @@ fn bench_matmul[
     )
 
     # Retain our buffers till the end.
-    _ = mat_c^
-    _ = mat_a^
-    _ = mat_b^
+    _ = mat_c_buf^
+    _ = mat_a_buf^
+    _ = mat_b_buf^
 
 
 fn bench_matmul_transpose[
@@ -115,9 +131,25 @@ fn bench_matmul_transpose[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) raises:
-    var mat_c = DeviceNDBuffer[out_dtype, 2, shape_c](shape_c_dim, ctx=ctx)
-    var mat_a = DeviceNDBuffer[in_dtype, 2, shape_a](shape_a_dim, ctx=ctx)
-    var mat_b = DeviceNDBuffer[in_dtype, 2, shape_b](shape_b_dim, ctx=ctx)
+    var mat_c_buf = ctx.enqueue_create_buffer[out_dtype](
+        shape_c_dim[0] * shape_c_dim[1]
+    )
+    var mat_a_buf = ctx.enqueue_create_buffer[in_dtype](
+        shape_a_dim[0] * shape_a_dim[1]
+    )
+    var mat_b_buf = ctx.enqueue_create_buffer[in_dtype](
+        shape_b_dim[0] * shape_b_dim[1]
+    )
+
+    var mat_c = NDBuffer[out_dtype, 2, _, shape_c](
+        mat_c_buf.unsafe_ptr(), shape_c_dim
+    )
+    var mat_a = NDBuffer[in_dtype, 2, _, shape_a](
+        mat_a_buf.unsafe_ptr(), shape_a_dim
+    )
+    var mat_b = NDBuffer[in_dtype, 2, _, shape_b](
+        mat_b_buf.unsafe_ptr(), shape_b_dim
+    )
 
     @parameter
     @always_inline
@@ -126,7 +158,7 @@ fn bench_matmul_transpose[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu[transpose_b=True, use_tensor_core=True](
-                mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx
+                mat_c, mat_a, mat_b, ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -146,9 +178,9 @@ fn bench_matmul_transpose[
     )
 
     # Retain our buffers till the end.
-    _ = mat_c^
-    _ = mat_a^
-    _ = mat_b^
+    _ = mat_c_buf^
+    _ = mat_a_buf^
+    _ = mat_b_buf^
 
 
 fn bench_matmul_naive[
@@ -164,13 +196,29 @@ fn bench_matmul_naive[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) raises:
-    var mat_c = DeviceNDBuffer[out_type, 2, shape_c](shape_c_dim, ctx=ctx)
-    var mat_a = DeviceNDBuffer[in_type, 2, shape_a](shape_a_dim, ctx=ctx)
-    var mat_b = DeviceNDBuffer[in_type, 2, shape_b](shape_b_dim, ctx=ctx)
+    var mat_c_buf = ctx.enqueue_create_buffer[out_type](
+        shape_c_dim[0] * shape_c_dim[1]
+    )
+    var mat_a_buf = ctx.enqueue_create_buffer[in_type](
+        shape_a_dim[0] * shape_a_dim[1]
+    )
+    var mat_b_buf = ctx.enqueue_create_buffer[in_type](
+        shape_b_dim[0] * shape_b_dim[1]
+    )
 
-    var c_tensor = from_ndbuffer_row_major(mat_c.tensor)
-    var a_tensor = from_ndbuffer_row_major(mat_a.tensor)
-    var b_tensor = from_ndbuffer_row_major(mat_b.tensor)
+    var mat_c = NDBuffer[out_type, 2, _, shape_c](
+        mat_c_buf.unsafe_ptr(), shape_c_dim
+    )
+    var mat_a = NDBuffer[in_type, 2, _, shape_a](
+        mat_a_buf.unsafe_ptr(), shape_a_dim
+    )
+    var mat_b = NDBuffer[in_type, 2, _, shape_b](
+        mat_b_buf.unsafe_ptr(), shape_b_dim
+    )
+
+    var c_tensor = from_ndbuffer_row_major(mat_c)
+    var a_tensor = from_ndbuffer_row_major(mat_a)
+    var b_tensor = from_ndbuffer_row_major(mat_b)
 
     var M = shape_c_dim[0]
     var N = shape_c_dim[1]
@@ -225,9 +273,9 @@ fn bench_matmul_naive[
     ctx.synchronize()
 
     # Retain our buffers till the end.
-    _ = mat_c^
-    _ = mat_a^
-    _ = mat_b^
+    _ = mat_c_buf^
+    _ = mat_a_buf^
+    _ = mat_b_buf^
 
 
 fn create_matmul_bench[
