@@ -107,7 +107,7 @@ def test_tensor_span_constructor():
 
 
 def test_layout_tensor_iterator():
-    alias buf_size = 16
+    comptime buf_size = 16
     var storage = InlineArray[Int16, buf_size](uninitialized=True)
     for i in range(buf_size):
         storage[i] = i

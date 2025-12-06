@@ -120,9 +120,9 @@ fn bench_reduce[
     var temp_buffer_num_bytes = ngpus * num_bytes
     var length = num_bytes // size_of[dtype]()
 
-    alias simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
     var stride = align_up(length, simd_size)
-    alias m512 = 512 * 1024 * 1024
+    comptime m512 = 512 * 1024 * 1024
     var cache_elems = (
         align_up(m512, stride * size_of[dtype]()) // size_of[dtype]()
     )

@@ -147,7 +147,7 @@ fn mha_operand_copy[
     # For `Q @ K'`, `is_k_major` is True.
     # For `P @ V`, `is_k_major` is False.
     # We emulate both, using the appropriate smem layout for the (wg/u)mma instructions.
-    alias head_size = kv_params.head_size
+    comptime head_size = kv_params.head_size
 
     # Create TMA tiles
     src_tma = src.create_tma_tile[
@@ -162,10 +162,10 @@ fn mha_operand_copy[
     # Each of these, as well as `q_num_heads // kv_num_heads` represent multicast
     # opportunities.
     grid_x = 1
-    alias grid_y = kv_params.num_heads
+    comptime grid_y = kv_params.num_heads
     grid_z = batch_size
 
-    alias kernel = mha_operand_tma_copy_kernel[
+    comptime kernel = mha_operand_tma_copy_kernel[
         tile_m,
         Int(head_size),
         kv_t,
@@ -192,7 +192,7 @@ fn test_mha_host_operand[
     kv_params: KVCacheStaticParams,
 ](src: kv_t, dst: kv_t, batch_size: Int) raises:
     """Test function that compares two MHAOperands using block_paged_ptr."""
-    alias kv_row_stride = Int(kv_params.head_size * kv_params.num_heads)
+    comptime kv_row_stride = Int(kv_params.head_size * kv_params.num_heads)
     # Iterate over all batch entries and tokens
     for b in range(batch_size):
         seq_len = src.cache_length(b)
@@ -225,7 +225,7 @@ fn test_continuous_kv_cache[
 ](
     ctx: DeviceContext, batch_size: Int, max_seq_len: Int, num_layers: Int
 ) raises:
-    alias msg = "  Testing ContinuousBatchingKVCache with tile_m=" + String(
+    comptime msg = "  Testing ContinuousBatchingKVCache with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -241,7 +241,7 @@ fn test_continuous_kv_cache[
         Int(kv_params.head_size),
     )
 
-    alias kv_block_layout = Layout.row_major[6]()
+    comptime kv_block_layout = Layout.row_major[6]()
     var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
         dyn_shape
     )
@@ -259,7 +259,7 @@ fn test_continuous_kv_cache[
         random(kv_block_host_tensor)
 
     # Set up lookup table and cache lengths
-    alias lookup_layout = Layout(UNKNOWN_VALUE)
+    comptime lookup_layout = Layout(UNKNOWN_VALUE)
     var lookup_shape = IndexList[1](batch_size)
     var lookup_runtime_layout = RuntimeLayout[lookup_layout].row_major(
         lookup_shape
@@ -401,7 +401,7 @@ fn test_paged_kv_cache[
 ](
     ctx: DeviceContext, batch_size: Int, max_seq_len: Int, num_layers: Int
 ) raises:
-    alias msg = "  Testing PagedKVCache with tile_m=" + String(
+    comptime msg = "  Testing PagedKVCache with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -420,7 +420,7 @@ fn test_paged_kv_cache[
         Int(kv_params.head_size),
     )
 
-    alias kv_block_layout = Layout.row_major[6]()
+    comptime kv_block_layout = Layout.row_major[6]()
     var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
         dyn_shape
     )
@@ -438,7 +438,7 @@ fn test_paged_kv_cache[
         random(kv_block_host_tensor)
 
     # Set up page lookup table
-    alias paged_lut_layout = Layout.row_major[2]()
+    comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
     var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
         paged_lut_shape
@@ -462,7 +462,7 @@ fn test_paged_kv_cache[
                 paged_lut_tensor[bs, page_idx] = block_idx
 
     # Set up cache lengths
-    alias cache_lengths_layout = Layout(UNKNOWN_VALUE)
+    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_shape = IndexList[1](batch_size)
     var cache_lengths_runtime_layout = RuntimeLayout[
         cache_lengths_layout
@@ -593,7 +593,7 @@ fn test_ndbuffer[
     tile_m: Int,
     kv_params: KVCacheStaticParams,
 ](ctx: DeviceContext, batch_size: Int, max_seq_len: Int) raises:
-    alias msg = "  Testing NDBuffer with tile_m=" + String(
+    comptime msg = "  Testing NDBuffer with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -606,7 +606,7 @@ fn test_ndbuffer[
         Int(kv_params.head_size),
     )
 
-    alias tensor_layout = Layout.row_major[4]()
+    comptime tensor_layout = Layout.row_major[4]()
     var tensor_runtime_layout = RuntimeLayout[tensor_layout].row_major(
         dyn_shape
     )
@@ -691,7 +691,7 @@ fn test_ndbuffer[
 fn test_ragged[
     dtype: DType, tile_m: Int, kv_params: KVCacheStaticParams
 ](ctx: DeviceContext, batch_size: Int) raises:
-    alias msg = "  Testing RaggedTensor with tile_m=" + String(
+    comptime msg = "  Testing RaggedTensor with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -701,7 +701,7 @@ fn test_ragged[
     total_tokens = 0
 
     # Create cache row offsets
-    alias offsets_layout = Layout(UNKNOWN_VALUE)
+    comptime offsets_layout = Layout(UNKNOWN_VALUE)
     var offsets_shape = IndexList[1](batch_size + 1)
     var offsets_runtime_layout = RuntimeLayout[offsets_layout].row_major(
         offsets_shape
@@ -730,7 +730,7 @@ fn test_ragged[
         total_tokens, Int(kv_params.num_heads), Int(kv_params.head_size)
     )
 
-    alias tensor_layout = Layout.row_major[3]()
+    comptime tensor_layout = Layout.row_major[3]()
     var tensor_runtime_layout = RuntimeLayout[tensor_layout].row_major(
         dyn_shape
     )
@@ -832,26 +832,26 @@ fn test_ragged[
 def main():
     seed(42)
     with DeviceContext() as ctx:
-        alias batch_size = 4
-        alias max_seq_len = 1024
-        alias num_layers = 2
-        alias page_size = 512
-        alias dtype = DType.bfloat16
+        comptime batch_size = 4
+        comptime max_seq_len = 1024
+        comptime num_layers = 2
+        comptime page_size = 512
+        comptime dtype = DType.bfloat16
 
         print("Testing TMA copy with different tile configurations")
 
         @parameter
         for i in range(6, 9):
-            alias head_size = 1 << i  # 64, 128, 256
-            alias kv_params = KVCacheStaticParams(
+            comptime head_size = 1 << i  # 64, 128, 256
+            comptime kv_params = KVCacheStaticParams(
                 num_heads=8, head_size=UInt(head_size)
             )
 
             @parameter
             for j in range(6, 15 - i):
-                alias block_m = 1 << j  # 64, ..., (64 * 256) // block_m
+                comptime block_m = 1 << j  # 64, ..., (64 * 256) // block_m
 
-                alias msg = "\nTesting block_m=" + String(
+                comptime msg = "\nTesting block_m=" + String(
                     block_m
                 ) + ", head_size=" + String(head_size)
                 print(msg)

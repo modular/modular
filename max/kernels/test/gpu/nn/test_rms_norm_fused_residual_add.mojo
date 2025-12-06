@@ -36,8 +36,8 @@ fn run_rms_norm_fused_residual_add_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var runtime_layout = RuntimeLayout[layout].row_major(shape)
     var param_shape = Index(cols)
     var param_runtime_layout = RuntimeLayout[layout_1d].row_major(param_shape)

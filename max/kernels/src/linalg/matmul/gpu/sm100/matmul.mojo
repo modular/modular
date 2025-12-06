@@ -421,7 +421,7 @@ fn f32_frag_to_smem[
 
         @parameter
         for j in range(dst_frag.layout.shape[1].value()):
-            alias i_vec = i + j * dst_frag.layout.shape[0].value()
+            comptime i_vec = i + j * dst_frag.layout.shape[0].value()
             val = SIMD[dst.dtype, 2](
                 rebind[Scalar[dst.dtype]](vec[2 * i_vec]),
                 rebind[Scalar[dst.dtype]](vec[2 * i_vec + 1]),

@@ -3050,7 +3050,7 @@ struct SM100MHA2Q[
 
             @parameter
             for j in range(iters):
-                alias ofs = i * ST.frag_size + j * (ST.frag_size // iters)
+                comptime ofs = i * ST.frag_size + j * (ST.frag_size // iters)
                 var rows_of_o_frags = LocalTensor[
                     Self.accum_type,
                     layout = Layout.row_major(1, ST.frag_size // iters),

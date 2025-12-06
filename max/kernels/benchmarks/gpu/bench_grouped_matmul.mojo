@@ -163,7 +163,7 @@ fn bench_grouped_matmul[
 
         @parameter
         if in_type == DType.float8_e4m3fn:
-            alias a_scale_alignment = 16 // size_of[DType.float32]()
+            comptime a_scale_alignment = 16 // size_of[DType.float32]()
             if num_tokens % a_scale_alignment != 0:
                 abort(
                     "num_tokens=num_tokens_by_expert["

@@ -378,16 +378,16 @@ fn sliced_add[
     @parameter
     if target == "gpu":
         debug_assert(ctx is not None, "DeviceContext required for GPU target")
-        alias compile_target = get_gpu_target()
-        alias simd_width = simd_width_of[dtype, target=compile_target]()
+        comptime compile_target = get_gpu_target()
+        comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[_sliced_add, simd_width, target=target](
             c.runtime_layout.shape.value.canonicalize(),
             ctx.value(),
         )
     else:
-        alias compile_target = _current_target()
-        alias simd_width = simd_width_of[dtype, target=compile_target]()
+        comptime compile_target = _current_target()
+        comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[_sliced_add, simd_width, target=target](
             c.runtime_layout.shape.value.canonicalize()

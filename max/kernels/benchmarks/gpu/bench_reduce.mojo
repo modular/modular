@@ -94,7 +94,7 @@ fn run_reduce[
     var multi_in_buffer = ctx.enqueue_create_buffer[dtype](in_cache_elems)
     var res_buffer = ctx.enqueue_create_buffer[dtype](in_size)
 
-    alias res_layout = Layout.row_major[rank]()
+    comptime res_layout = Layout.row_major[rank]()
     var res_device = LayoutTensor[dtype, res_layout](
         res_buffer, RuntimeLayout[res_layout].row_major(out_shape)
     )

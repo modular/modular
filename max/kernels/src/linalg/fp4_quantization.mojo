@@ -458,7 +458,7 @@ fn naive_block_scaled_nvfp4_matmul[
         sep="",
     )
 
-    alias kernel = naive_block_scaled_nvfp4_matmul_kernel[
+    comptime kernel = naive_block_scaled_nvfp4_matmul_kernel[
         c_type,
         a_type,
         b_type,
@@ -557,7 +557,7 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
 
     @parameter
     if elementwise_lambda_fn:
-        alias elementwise_lambda = elementwise_lambda_fn.value()
+        comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](
             Index(row_idx, col_idx), accum.cast[c_type]()
         )
