@@ -176,7 +176,7 @@ description: {% if decl.summary
 {% endif %}
 {% if decl.aliases %}
 
-## Aliases
+## `comptime` members
 
 {% for alias in decl.aliases | sort(attribute='name') %}
 

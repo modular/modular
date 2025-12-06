@@ -21,8 +21,8 @@ Related types:
 
 - [`StringSlice`](/mojo/stdlib/collections/string/string_slice/). A non-owning
   view of string data, which can be either mutable or immutable.
-- [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases). An
-  comptime for an immutable constant `StringSlice`.
+- [`StaticString`](/mojo/stdlib/collections/string/string_slice/#comptime-values).
+  A `comptime` type alias for an immutable constant `StringSlice`.
 - [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/). A
   string literal. String literals are compile-time values. For use at runtime,
   you usually want wrap a `StringLiteral` in a `String` (for a mutable string)
