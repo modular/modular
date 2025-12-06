@@ -301,25 +301,25 @@ fn test_iter() raises:
 fn test_setitem() raises:
     var ll: PythonObject = [1, 2, 3, "food"]
     assert_equal(String(ll), "[1, 2, 3, 'food']")
-    # PRECOMMIT: This case should work?
+    # TODO(MOCO-2851): This should work with the RHS being a string literal
     ll[1] = PythonObject("nomnomnom")
     assert_equal(String(ll), "[1, 'nomnomnom', 3, 'food']")
 
 
 fn test_dict() raises:
     # Test Python.dict from keyword arguments.
-    # PRECOMMIT: Don't include this case
+    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
     var dd = Python.dict(food=PythonObject(123), fries=PythonObject("yes"))
     assert_equal(String(dd), "{'food': 123, 'fries': 'yes'}")
 
-    # PRECOMMIT: Don't include this case
+    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
     var dd2: PythonObject = {
         PythonObject("food"): PythonObject(123),
         PythonObject("fries"): PythonObject("yes"),
     }
     assert_equal(String(dd2), "{'food': 123, 'fries': 'yes'}")
 
-    # PRECOMMIT: Don't include this case
+    # TODO(MOCO-2851): This should work w/ keys and value being string literals
     dd[PythonObject("food")] = PythonObject("salad")
     dd[42] = Python.list(4, 2)
     assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
@@ -558,7 +558,7 @@ def test_contains_dunder():
     assert_true(1.5 in x)
     assert_false(3.5 in x)
 
-    # PRECOMMIT: Don't include this case
+    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
     var y = Python.dict(A=PythonObject("A"), B=PythonObject(5))
     assert_true("A" in y)
     assert_false("C" in y)
@@ -655,7 +655,7 @@ def test_call_with_kwargs():
 
 def test_attribute_access():
     # Test __getattr__ and __setattr__
-    # PRECOMMIT: Don't include this case
+    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
     var test_dict: PythonObject = {PythonObject("attr"): PythonObject("value")}
 
     # Test getting attributes that exist
