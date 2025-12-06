@@ -67,6 +67,17 @@ If there is a problem with the Dev Container, please open an issue
 
 ## Building the standard library
 
+The Modular repository uses [Bazel](https://bazel.build/), a fast, scalable
+build and test tool to ensure reproducible builds through dependency tracking
+and caching.
+
+To build and test your changes to the Mojo standard library, run the following
+`./bazelw` commands from the top-level directory of the repository (where the
+`bazel` folder is located).
+
+Be sure that you meet the
+[system requirements](https://docs.modular.com/mojo/manual/install#system-requirements).
+
 To build the standard library, you can run:
 
 ```bash
