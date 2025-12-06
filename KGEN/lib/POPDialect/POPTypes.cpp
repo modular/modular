@@ -460,7 +460,11 @@ LogicalResult IntLiteralType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 std::optional<int64_t>
 IntLiteralType::getTypeSize(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerSize();
+  // We use this size to allocate in the interpreter memory space
+  // to store an opaque pointer which we always assume is of 64bit,
+  // so we should allocate space for 64bit integers instead of
+  // target specific pointer size which can be 32bit.
+  return target.getDefaultPointerSize();
 }
 
 std::optional<int64_t>
@@ -474,7 +478,10 @@ writeSymbolicAttribute(DataLayoutInterface type, TypedAttr value, int64_t addr,
                        InterpreterState &state,
                        RegionMark regionMark = RegionMark::None) {
   unsigned size = *type.getTypeSize(state.getTarget());
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+
+  // Get the default pointer size which is always 8 bytes since we are going to
+  // write a uint64_t to the interpreter memory.
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
   // The ptr to the symbol is written.
   if (size != ptrSize && regionMark == RegionMark::Symbol)
     size = ptrSize;
@@ -501,7 +508,10 @@ static ErrorOr<TypedAttr> readSymbolicAttribute(DataLayoutInterface type,
 
   // Without a concrete runtime representation, just make sure the value can be
   // roundtripped.
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  // Get the default pointer size which is always 8 bytes since we are going to
+  // get a uint64_t from the interpreter memory which was stored by
+  // writeSymbolicAttribute.
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
   APInt opaque(ptrSize * 8, 0);
   llvm::LoadIntFromMemory(opaque, (const uint8_t *)*mem, ptrSize);
   return ::cast<TypedAttr>(
@@ -524,7 +534,11 @@ ErrorOr<TypedAttr> IntLiteralType::readFrom(int64_t addr,
 
 std::optional<int64_t>
 FloatLiteralType::getTypeSize(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerSize();
+  // We use this size to allocate in the interpreter memory space
+  // to store an opaque pointer which we always assume is of 64bit,
+  // so we should allocate space for 64bit integers instead of
+  // target specific pointer size which can be 32bit.
+  return target.getDefaultPointerSize();
 }
 
 std::optional<int64_t>
