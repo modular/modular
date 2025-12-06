@@ -984,6 +984,10 @@ async def benchmark(
                     " collection"
                 )
 
+        # Start nsys trace if enabled (before timing to exclude trace overhead)
+        if trace_path:
+            start_trace(trace_path, trace_session)
+
         benchmark_start_time = time.perf_counter_ns()
         if max_benchmark_duration_s is None:
             benchmark_should_end_time = None
@@ -1026,10 +1030,6 @@ async def benchmark(
             else base_driver
         )
 
-        # Start nsys trace if enabled
-        if trace_path:
-            start_trace(trace_path, trace_session)
-
         try:
             if not num_chat_sessions:
                 # single-turn chat scenario
@@ -1067,18 +1067,18 @@ async def benchmark(
                     warmup_delay_ms=warmup_delay_ms,
                     max_concurrency=max_concurrency,
                 )
+
+            # Close pbar if it was created
+            if pbar is not None:
+                pbar.close()
+
+            benchmark_duration = (
+                time.perf_counter_ns() - benchmark_start_time
+            ) / 1e9
         finally:
-            # Stop nsys trace if enabled
+            # Stop nsys trace if enabled (after timing to exclude trace overhead)
             if trace_path:
                 stop_trace(trace_session)
-
-        # Close pbar if it was created
-        if pbar is not None:
-            pbar.close()
-
-        benchmark_duration = (
-            time.perf_counter_ns() - benchmark_start_time
-        ) / 1e9
 
     if print_inputs_and_outputs:
         print("Generated output text:")
