@@ -387,8 +387,7 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
   ASTType structSelfType = structDecl.getTypeDeclSelf();
 
   IREmitter emitter(structDecl, EC_Trait);
-
-  fn.getBody()->clear();
+  fn.getBody()->clear(); // Remove the lit.end_fn
 
   emitter.builder = OpBuilder::atBlockBegin(fn.getBody());
 
@@ -452,11 +451,23 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
   SmallVector<Value> operands(fn.getArguments().begin(),
                               fn.getArguments().end());
 
+  // Determine the values for all of the implicit origins that need to be passed
+  // to the calls.  These are the origins of any reference argument.
   SmallVector<TypedAttr> implicitOrigins;
   auto argConvs = fnTypeGen.getArgConventions();
-  for (auto [val, conv] : llvm::zip(operands, argConvs))
-    if (KGEN::hasImplicitOrigin(conv))
+  for (auto [idx, val, conv] : llvm::enumerate(operands, argConvs)) {
+    // VariadicPack arguments are passed by reference, but also contain an
+    // implicit origin for the elements within the pack.
+    if (fnTypeGen.isPack(idx)) {
+      ASTType argRVType = RefType::stripRefConvention(val.getType(), conv);
+      // Include the union origin that covers all the values.
+      implicitOrigins.push_back(
+          argRVType.getVariadicPackInfo(shared).getOrigin());
+    }
+
+    if (hasImplicitOrigin(conv))
       implicitOrigins.push_back(cast<LIT::RefType>(val.getType()).getOrigin());
+  }
 
   ArrayRef<Type> resultTypes = specializedGenerator.getBody().getResults();
   auto callOp = LIT::CallOp::create(builder, fn.getLoc(), resultTypes,
