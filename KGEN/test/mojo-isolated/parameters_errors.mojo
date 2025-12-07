@@ -640,8 +640,7 @@ struct TestAutoParamsAndSugar[f1: HasSize]:
         # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
         takes4(HasSize[complex(f3.size*1234)]())
         # expected-error @below {{cannot be converted from 'HasSize[StructWithAlias.size_int]' to 'HasSize[4]'}}
-        # expected-note @below {{.size of left value is 'StructWithAlias.size_int' but the right value is '4'}}
-        # expected-note @below {{'StructWithAlias.size_int' is aka '42'}}
+        # expected-note @below {{.size of left value is '42' but the right value is '4'}}
         takes4(HasSize[StructWithAlias.size_int]())
 
         # TODO(SUGAR): Maintain this sugar too.

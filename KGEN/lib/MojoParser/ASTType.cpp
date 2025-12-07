@@ -109,6 +109,8 @@ struct ParamDiffer {
   /// adds path information to accessPath and recurses on the subcomponents that
   /// disagree.
   void diff(TypedAttr lhs, TypedAttr rhs) {
+    assert(!isEqualCanon(lhs, rhs) && "Cannot diff equal attrs!");
+
     // Look through type<->attr conversions.
     if (auto lhsTypeParam = dyn_cast<TypeParamAttr>(lhs)) {
       if (auto rhsTypeParam = dyn_cast<TypeParamAttr>(rhs))
@@ -117,13 +119,21 @@ struct ParamDiffer {
 
     // Look through sugar to find problems.
     if (auto sugarAttr = dyn_cast<SugarAttr>(lhs)) {
-      diff(sugarAttr.getSugared(), rhs);
+      // Sugar representation of memberalias is weird.
+      if (sugarAttr.getKind() != SugarKind::MemberAlias)
+        diff(sugarAttr.getSugared(), rhs);
+      else
+        diff(sugarAttr.getExpanded(), rhs);
       if (leftNested == sugarAttr.getSugared())
         leftNested = sugarAttr; // Preserve the sugar.
       return;
     }
     if (auto sugarAttr = dyn_cast<SugarAttr>(rhs)) {
-      diff(lhs, sugarAttr.getSugared());
+      // Sugar representation of memberalias is weird.
+      if (sugarAttr.getKind() != SugarKind::MemberAlias)
+        diff(lhs, sugarAttr.getSugared());
+      else
+        diff(lhs, sugarAttr.getExpanded());
       if (rightNested == sugarAttr.getSugared())
         rightNested = sugarAttr; // Preserve the sugar.
       return;
@@ -134,6 +144,8 @@ struct ParamDiffer {
   }
 
   void diff(ASTType lhs, ASTType rhs) {
+    assert(!lhs.isEqualCanon(rhs) && "Cannot diff equal types!");
+
     // Look through type<->attr conversions.
     if (auto lhsParam = dyn_cast<ParamType>(lhs)) {
       if (auto rhsParam = dyn_cast<ParamType>(rhs))
@@ -169,10 +181,6 @@ struct ParamDiffer {
 
     for (auto [idx, lhsParam, rhsParam] :
          llvm::enumerate(lhs.getParamBindings(), rhs.getParamBindings())) {
-      // Hard assert because we're seeing crashes in the field that might be
-      // here.
-      if (!lhsParam || !rhsParam)
-        llvm_unreachable("param bindings should not be null");
       if (isEqualCanon(lhsParam, rhsParam))
         continue;
 
