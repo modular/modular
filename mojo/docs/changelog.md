@@ -371,6 +371,8 @@ or removed in future releases.
 
 ### 🛠️ Fixed
 
+- [Issue #1850](https://github.com/modular/modular/issues/1850): Mojo assumes
+  string literal at start of a function is a doc comment
 - [Issue #5578](https://github.com/modular/modular/issues/5578): ownership
   overloading not working when used with `ref`.
 - [Issue #5137](https://github.com/modular/modular/issues/5137): Tail call
