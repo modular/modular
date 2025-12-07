@@ -3101,10 +3101,13 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
                                            size_t stmtIndent) {
   // Accept either 'alias' or 'comptime' keyword
   SMLoc smLoc;
-  if (getToken().is(Token::kw_comptime))
+  if (getToken().is(Token::kw_comptime)) {
     smLoc = consumeToken(Token::kw_comptime).getLoc();
-  else
+  } else {
     smLoc = consumeToken(Token::kw_alias).getLoc();
+    shared.emitWarning(smLoc, "'alias' is deprecated, use 'comptime' instead")
+        << FixIt::replaceToken(smLoc, "comptime");
+  }
   Location loc = translateLocation(smLoc);
 
   SmartVariant<StringRef, ExprNode *> parseResult;

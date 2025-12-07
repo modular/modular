@@ -70,7 +70,7 @@ from buffer.buffer import (
 
 from runtime.asyncrt import DeviceContextPtr
 
-alias unary_fn_type = __mlir_type[
+comptime unary_fn_type = __mlir_type[
     `(`,
     NDBuffer,
     `, `,
