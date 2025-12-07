@@ -83,8 +83,18 @@ what we publish.
     parametric_raise_example(doesnt_raise)
   ```
 
-  This support should be reliable, but `with` blocks are still hard coded to
-  `Error`.
+  As part of this, context managers have been extended to support typed throws,
+  and can also infer an error type if they need to handle it, e.g.:
+
+  ```mojo
+  struct MyGenericExitCtxtMgr:
+    # Called on entry to the with block.
+    fn __enter__(self): ...
+    # Called on exit from the with block when no error is thrown.
+    fn __exit__(self): ...
+    # Called on exit from the with block if an error is thrown.
+    fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool: ...
+  ```
 
 - Mojo now allows implicit conversions between function types from a non-raising
   function to a raising function.  It also allows implicit conversions between
