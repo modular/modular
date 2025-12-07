@@ -289,6 +289,10 @@ fn test_string_literal1(cond: Bool):
     # String literals should merge.
     var _ss: StaticString = "T" if cond else "F"
 
+# Issue #1850: Mojo assumes string literal at start of a function is a doc comment
+fn test_expr_not_doc_string():
+    # expected-warning @+1 {{'Bool' value is unused}}
+    "a".__eq__("b")
 
 ##===----------------------------------------------------------------------===##
 # MergeWith
