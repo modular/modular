@@ -93,6 +93,7 @@ dependencies = [
   "typing-extensions",
   "uvloop>=0.21.0",
   "uvicorn",
+  "xxhash",
   "wheel",
 
   # modeltool
