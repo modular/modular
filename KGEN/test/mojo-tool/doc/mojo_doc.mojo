@@ -76,6 +76,12 @@ comptime alias_str = ""
 @deprecated("deprecated alias")
 comptime deprecated_alias = 1
 
+# Issue #5361: mojo doc crashes on alias of parametrized function with origin
+
+# CHECK-LABEL: "name": "parametric_ref_origin_alias",
+# CHECK: "value": "parametric_ref_origin[2, ?, origin_of(_)]"
+comptime parametric_ref_origin_alias = parametric_ref_origin[2]
+
 
 # CHECK:  "description": "",
 # CHECK:  "functions": [
@@ -85,8 +91,6 @@ comptime deprecated_alias = 1
 # CHECK:      "signature": "empty_fn()"
 # CHECK:      "summary": "This is a function summary."
 # CHECK:  ]
-
-
 fn empty_fn():
     """This is a function summary.
 
@@ -721,6 +725,12 @@ fn optional_default_arg_13(input: Optional[Int64] = Int64(13)):
 # CHECK-LABEL: "name": "simd_scalar_alias"
 # CHECK: "signature": "simd_scalar_alias[dt: DType](input: Scalar[dt])"
 fn simd_scalar_alias[dt: DType](input: Scalar[dt]):
+    pass
+
+
+# CHECK-LABEL: "name": "parametric_ref_origin",
+# CHECK: "signature": "parametric_ref_origin[b: Int](ref c: Int)",
+fn parametric_ref_origin[b: Int](ref c: Int):
     pass
 
 

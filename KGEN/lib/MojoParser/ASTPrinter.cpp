@@ -1093,6 +1093,11 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
     return printOriginParam(os, param, diagShared);
   }
 
+  if (isa<UnboundAttr>(param)) {
+    os << "_";
+    return;
+  }
+
   param.dump();
   llvm_unreachable("unknown origin parameter");
 }
