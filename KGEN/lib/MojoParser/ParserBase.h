@@ -222,6 +222,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Parse the follow-on doc string for the given decl if it is present.
+  void parseDocString(StringRef &docString);
   void parseDocString(ASTDecl &decl);
 
   /// Parse and return a set of decorators for the specified declaration or

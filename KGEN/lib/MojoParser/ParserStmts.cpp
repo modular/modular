@@ -50,19 +50,36 @@ using namespace M;
 // Doc String support logic
 //===----------------------------------------------------------------------===//
 
+/// Parse the doc string and get its spelling into the specified string if
+/// present, otherwise leave it empty.
+void ParserBase::parseDocString(StringRef &docString) {
+  // We don't want to treat things like "foo".print() as a doc string, so
+  // consume any string toke and check to see if the next token is on a new
+  // line.
+  auto beforeStringCursor = LexerCursor(lexer);
+  StringRef tokSpelling = getTokenSpelling();
+  if (!consumeIf(Token::string))
+    return; // Obviously no doc string.
+
+  if (getToken().isStartOfLine())
+    docString = tokSpelling;
+  else // Start of another expression.
+    beforeStringCursor.restore(lexer);
+}
+
 void ParserBase::parseDocString(ASTDecl &decl) {
   // The doc string is simply a follow-on string literal.
-  Token docToken = getToken();
-  if (!consumeIf(Token::string))
+  StringRef docString;
+  parseDocString(docString);
+  if (docString.empty())
     return;
   if (auto astDeclOp =
           dyn_cast_or_null<ASTDeclInterface>(decl.getIfOperation())) {
-    StringRef docSpelling = docToken.getSpelling();
     Location loc = shared.diags.translateLocation(
-        lexer.getStringLiteralStartLoc(docSpelling));
+        lexer.getStringLiteralStartLoc(docString));
 
     astDeclOp.setDocStringAttr(DocStringAttr::get(
-        StringAttr::get(getContext(), lexer.getStringLiteralValue(docSpelling)),
+        StringAttr::get(getContext(), lexer.getStringLiteralValue(docString)),
         dyn_cast<FileLineColLoc>(loc)));
   }
 }
@@ -2925,7 +2942,8 @@ void StmtParser::maybeMarkDefaultedTraitMethod(FnOp fnOp) {
   skipSignature();
 
   // Consume the doc string if present.
-  consumeIf(Token::string);
+  StringRef docString;
+  parseDocString(docString);
 
   // Mark the function as defaulted unless its body is explicitly empty.
   if (!getToken().is(Token::dot_dot_dot))
