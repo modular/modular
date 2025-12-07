@@ -381,5 +381,7 @@ or removed in future releases.
   overloading not working when used with `ref`.
 - [Issue #5137](https://github.com/modular/modular/issues/5137): Tail call
   optimization doesn't happen for tail recursive functions with raises.
+- [Issue #5361](https://github.com/modular/modular/issues/5361): mojo doc
+  crashes on alias of parametrized function with origin.
 - [Issue #5618](https://github.com/modular/modular/issues/5618): Compiler crash
   when should be implicit conversion error.
