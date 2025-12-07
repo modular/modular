@@ -146,6 +146,10 @@ what we publish.
   struct method, but the argument type still must be of the enclosing struct
   type.
 
+- Context managers (used in `with` statements) can now define consuming exit
+  methods, i.e. `fn __exit__(var self)` which can be useful for linear context
+  managers. This also works with `deinit`.
+
 ### Language changes
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
