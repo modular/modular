@@ -158,6 +158,9 @@ what we publish.
           return my_param
   ```
 
+- The compiler will now warn on the use of `alias` keyword and suggest
+`comptime` instead.
+
 ### Library changes
 
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
