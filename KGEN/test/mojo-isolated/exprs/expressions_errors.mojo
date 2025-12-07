@@ -1058,3 +1058,18 @@ fn sugar_test():
     # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, 4]'}}
     # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, ideal_width]'}}
     b = a+a
+
+
+# PR5618 - Compiler crash when should be implicit conversion error
+@register_passable("trivial")
+struct MemberAliasSugarCrash:
+    alias ValueType = Int
+    var _value: Self.ValueType
+
+    fn __init__(out self, v: Self.ValueType):
+        self._value = v
+
+    fn method(self) -> Self:
+      # expected-error @below {{cannot implicitly convert 'MemberAliasSugarCrash.ValueType' value to 'MemberAliasSugarCrash'}}
+      # expected-note @below {{'MemberAliasSugarCrash.ValueType' is aka 'Int'}}
+        return self._value
