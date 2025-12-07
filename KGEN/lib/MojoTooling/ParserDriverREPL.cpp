@@ -215,7 +215,9 @@ static bool isFromImport(StringRef code) {
   return code.starts_with("from ");
 }
 
-static bool isAlias(StringRef code) { return code.starts_with("alias "); }
+static bool isAlias(StringRef code) {
+  return code.starts_with("alias ") || code.starts_with("comptime");
+}
 
 static bool isOpenParenthesis(char c) { return c == '(' || c == '['; }
 
