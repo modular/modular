@@ -1979,9 +1979,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
           CallSyntax::kMethodCall, enterEmitter)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self 'mut'.
-    if (auto signature =
-            sugarDynCast<FuncTypeGeneratorType>(enterMethod.getType());
-        signature && !signature.getBody().getArgConventions().empty()) {
+    auto signature = sugarDynCast<FuncTypeGeneratorType>(enterMethod.getType());
+    if (signature && !signature.getBody().getArgConventions().empty()) {
       auto firstArgConvention = signature.getBody().getArgConventions()[0];
       if (firstArgConvention != ArgConvention::Mut && !hasExitMethod)
         contextVal = MRValue(contextMgrDecl);
@@ -2174,20 +2173,43 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //   finally:
   //     lit.ownership.use(TARGET)
   auto emitNormalExitLogic = [&]() {
-    if (hasExitMethod) {
-      ValueDest exitDest(EC_WithExitResult);
-      (void)getEmitter().emitNamedMethodCall(
-          "__exit__", CallOperands({{MLValue(contextMgrDecl), contextExp}}),
-          exitDest, CallSyntax::kMethodCall, contextExp);
-    } else if (auto targetBV = getEmitter().emitBValue(
-                   {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
-      // If the target value has no __exit__ method, we need it to be
-      // live all the way across the suite, so add an extra use so it isn't
-      // destroyed early.
+    // If the target value has no __exit__ method, we need it to be
+    // live all the way across the suite, so add an extra use so it isn't
+    // destroyed early.
+    if (!hasExitMethod) {
       // We don't care about extending PValues if one ever happened.
-      if (Value ptrOrScalar = enterResult.getMlirValue())
-        OwnershipUseOp::create(builder, loc, ptrOrScalar);
+      if (auto targetBV = getEmitter().emitBValue(
+              {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
+        if (Value ptrOrScalar = enterResult.getMlirValue())
+          OwnershipUseOp::create(builder, loc, ptrOrScalar);
+      }
+      return;
     }
+
+    // The normal exit logic could be the last use of the context manager.  The
+    // exit method may take any of "ref", "mut", or "var".  If it is "var", we
+    // pass in an RValue for it so it can consume the context manager.
+    AnyValue contextVal = MLValue(contextMgrDecl);
+    auto exitEmitter = getEmitter();
+    CallOperands operands;
+    operands.addSelf({contextVal, contextExp});
+    if (PValue exitMethod = OverloadSet::lookupAndResolve(
+            contextRVType, "__exit__", operands, contextExp,
+            CallSyntax::kMethodCall, exitEmitter)) {
+      // Pass the argument as an RValue so the exit method can consume the
+      // value... unless it takes self 'mut'.
+      auto signature = sugarCast<FuncTypeGeneratorType>(exitMethod.getType());
+      if (signature && !signature.getBody().getArgConventions().empty())
+        if (signature.getBody().getArgConventions()[0] != ArgConvention::Mut) {
+          contextVal = MRValue(contextMgrDecl);
+        }
+    }
+
+    // Ok, emit the call the __exit__.
+    ValueDest exitDest(EC_WithExitResult);
+    (void)getEmitter().emitNamedMethodCall(
+        "__exit__", CallOperands({{contextVal, contextExp}}), exitDest,
+        CallSyntax::kMethodCall, contextExp);
   };
 
   // If the body of this try can throw, then the "except" block in it needs to
