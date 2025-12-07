@@ -1835,7 +1835,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     // VariadicPack also includes the implicit origin for the elements, which
     // is different than the origin for the pack itself (when passed through
     // memory).
-    if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
+    if (calleeSig.isPack(argIdx)) {
       ASTType argRVType =
           RefType::stripRefConvention(arg.getType(), convention);
 

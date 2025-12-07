@@ -1411,7 +1411,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
   }
 
   // Check to see if we can invoke an __init__ method to convert it.
-  auto callee =
+  OverloadSet callee =
       OverloadSet::lookup(getDeclScope(), type, "__init__", expr, syntax);
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
                               callOperands);

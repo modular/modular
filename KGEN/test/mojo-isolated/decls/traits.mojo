@@ -1005,3 +1005,11 @@ fn blah[b_t: B](b: b_t):
 trait TBar:
     fn bar(self) -> None:
         pass
+
+
+# MOCO-2918: Default traits methods don't work if they have variadic packs
+trait TraitWithVariadicPackDefault:
+    fn foo[*Ts: Movable](self, *args: *Ts):
+        pass
+struct StructInheritingVariadicPackDefault(TraitWithVariadicPackDefault):
+    pass

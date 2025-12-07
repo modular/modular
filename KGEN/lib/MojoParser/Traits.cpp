@@ -160,14 +160,13 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
       //
       // while Bar::foo's will be something like:
       //
-      // (self: !lit.ref<Bar> ) -> !lit.struct<Int>
+      // (self: !lit.ref<Bar>) -> !lit.struct<Int>
       //
       // Defer to using filterOverloadSetForValueType since it already handles
       // such differences.
       PValue result = ov.filterOverloadSetForValueType(
           wrapperSignature, emitter.getDeclScope(), nullptr);
-
-      if (!result.isNull()) {
+      if (result) {
         structDefinesMethod = true;
         break;
       }
@@ -231,7 +230,6 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
           // (namely body resolution) and additional spurious errors that would
           // cause.
           decl->setErroneous();
-
           return failure();
         }
       }
@@ -250,15 +248,14 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     ImplicitLocOpBuilder builder(structDeclOp.getLoc(),
                                  firstConformanceOp.getOperation());
 
-    [[maybe_unused]] FnOp newFn =
-        structEmitter.synthesizeDefaultTraitMethodWrapper(
-            *structFnDecl, name.str(), wrapperSignature, traitFn, traitFnDecl,
-            structDefinesMethod, builder,
-            traitDecl.getSymbolRef().getLeafReference().strref());
+    FnOp newFn = structEmitter.synthesizeDefaultTraitMethodWrapper(
+        *structFnDecl, name.str(), wrapperSignature, traitFn, traitFnDecl,
+        structDefinesMethod, builder,
+        traitDecl.getSymbolRef().getLeafReference().strref());
 
     // If newFn is null something went very wrong -- assert
     assert(newFn && "Couldn't synthesize default trait wrapper in body");
-
+    (void)newFn;
     return success();
   };
 
@@ -285,7 +282,6 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
     auto traitFnDecl =
         shared.declResolver->getDeclForFuncSymbol(traitFnSymbolRef);
-
     auto parentTraitRef = traitFnDecl->getParentDecl()->getSymbolRef();
 
     // resolve corresponds to the trait we're currently working on in
@@ -296,7 +292,6 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     // Grab the actual decl corresponding to the trait function we'll be
     // wrapping.
     assert(traitFnDecl && "Couldn't find trait fn decl");
-
     if (failed(signatureResolveStub(traitFnDecl, decl)))
       return failure();
   }
