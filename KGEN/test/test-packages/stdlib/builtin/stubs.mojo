@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# FIXME: "string" and "float" are not part of the standard library - they are
+# ancient relics of Mojo bringup. These should be removed from stubs.mojo and
+# the dependent tests should be migrated off of them.
 comptime string = __mlir_type.`!kgen.string`
 comptime float = __mlir_type.`!pop.scalar<f64>`
 

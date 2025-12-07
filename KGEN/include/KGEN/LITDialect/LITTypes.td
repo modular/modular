@@ -629,6 +629,20 @@ def LIT_REPLResultRefType : LITType<"REPLResultRef", "replresultref"> {
 }
 
 //===----------------------------------------------------------------------===//
+// Type for method filtering / name lookup
+//===----------------------------------------------------------------------===//
+
+def LIT_NameLookupArgWildcardType
+    : LITType<"NameLookupArgWildcard", "name_lookup_arg_wildcard"> {
+  let summary = "Treated as equal to any other type during name lookup";
+  let description = [{
+    This type is used to represent a type that is treated as equal to any other
+    argument type during name lookup by "filterOverloadSet". It has no code
+    generation support, and isn't intended to be used in .mojo files.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // Types for magic declarations.
 //===----------------------------------------------------------------------===//
 

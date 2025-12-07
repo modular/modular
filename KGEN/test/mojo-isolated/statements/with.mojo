@@ -12,12 +12,18 @@
 
 
 # Issue #12358
-# CHECK-LABEL: lit.fn @"raise_string
-fn raise_string() raises:
+# CHECK-LABEL: lit.fn @"raise_error
+fn raise_error() raises:
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "thing">> = <*?>
     # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}([[TMP]], %__error__)
     # CHECK-NEXT: lit.raise
     raise "thing"
+
+fn raise_string() raises String:
+    pass
+
+fn raise_int() raises Int:
+    pass
 
 
 struct ExampleCM(ImplicitlyCopyable):
@@ -131,8 +137,8 @@ fn testWithRaising(a: ExampleCM) raises:
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[VAL]])
         noop(val)
 
-        # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_string{{.*}}(%__inner_error__, %__call_result_tmp__
-        raise_string()
+        # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_error{{.*}}(%__inner_error__, %__call_result_tmp__
+        raise_error()
         # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: } except {
     # CHECK:        lit.ref.store %false, %__with_exc__
@@ -176,8 +182,8 @@ fn testWithInTry(a: ExampleCM):
         with a as cm:
             # CHECK: %__inner_error__ = lit.var.decl
             # CHECK: lit.try %__inner_error__
-            # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_string{{.*}}(%__inner_error__, %__call_result_tmp__
-            raise_string()
+            # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_error{{.*}}(%__inner_error__, %__call_result_tmp__
+            raise_error()
     except e:
         _ = e
 
@@ -416,3 +422,59 @@ fn testExampleCMTuple(cm: ExampleCMTuple):
         # CHECK: [[B2:%.*]] = lit.ref.load [[B]]
         # CHECK: lit.call {{.*}}@Int::@"__add__{{.*}}([[A2]], [[B2]])
         _ = a + b
+
+
+# A context manager that has a generic __exit__ method.
+struct GenericExitCtxtMgr:
+    var handle: Bool
+
+    @implicit
+    fn __init__(out self, handle: Bool = True):
+        self.handle = handle
+
+    fn __enter__(self):
+        pass
+
+    fn __exit__(self):
+        pass
+
+    fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
+        return self.handle
+
+fn with_infer_error() raises:
+    with GenericExitCtxtMgr():
+        raise_error()
+
+fn with_infer_string() raises String:
+    with GenericExitCtxtMgr():
+        raise_string()
+
+fn with_infer_int() raises Int:
+    with GenericExitCtxtMgr():
+        raise_int()
+
+# A context manager that has a Float __exit__ method.
+struct FloatErrorExitCtxtMgr:
+    var handle: Bool
+
+    @implicit
+    fn __init__(out self, handle: Bool = True):
+        self.handle = handle
+
+    fn __enter__(self):
+        pass
+
+    fn __exit__(self):
+        pass
+
+    fn __exit__(self, err: Float32) -> Bool:
+        return self.handle
+
+fn with_impl_convert() raises Float32:
+    with FloatErrorExitCtxtMgr():
+        # This should implicitly convert to Float32, not be a type error.
+        raise_int()
+
+fn with_doesnt_actually_throw():
+    with FloatErrorExitCtxtMgr():
+        noop(42)
