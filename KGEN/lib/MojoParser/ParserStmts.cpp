@@ -2014,14 +2014,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       "__enter__", std::move(enterOperands), enterDest, CallSyntax::kMethodCall,
       contextExp);
 
-  // Create the temporary error decl for any thrown values.
-  // TODO(Typed throws): This should be inferred from whatever the __exit__
-  // method accepts.
-  ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
-  if (!errorType)
-    return failure();
-  VarDeclOp errDecl = getEmitter().emitVarDecl("__with_error__", errorType, loc,
-                                               VarDeclKind::Synthesized);
+  // Create the temporary error decl for any value thrown out of this scope.
+  VarDeclOp errDecl = getEmitter().emitVarDecl(
+      "__with_error__", UnresolvedType::get(shared.getContext()), loc,
+      VarDeclKind::Synthesized);
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
@@ -2037,26 +2033,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   TryYieldOp::create(builder, loc);
   builder.createBlock(&tryOp.getTryRegion());
 
-  // Check if the context manager provides an `__exit__` overload that accepts
-  // an error. If it doesn't, then we know the exit is unconditional.
-  CallOperands exitCallOperands;
-  exitCallOperands.addSelf({contextVal, contextExp});
-  // FIXME: This should theoretically infer the error type from the body of the
-  // try region, or just accept any type.
-  ASTType stdErrorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
-  if (!stdErrorType)
-    return failure();
-  exitCallOperands.add({PValue(UnknownAttr::get(stdErrorType)), contextExp});
-  PValue conditionalExit;
-  if (inExceptRegion && hasExitMethod) {
-    IREmitter exitEmitter = getEmitter();
-    conditionalExit = OverloadSet::lookupAndResolve(
-        contextRVType, "__exit__", exitCallOperands, contextExp,
-        CallSyntax::kMethodCall, exitEmitter);
-  }
-
-  // Otherwise, we have to emit a conditional finally. PEP343 states that the
-  // general 'with' statement corresponds to:
+  // Check to see if we have to emit a conditional finally because there is an
+  // __exit__ method that accepts an error.  PEP343 states that the general
+  // 'with' statement corresponds to:
+  //
   //   contextMgr = EXPRESSION
   //   TARGET = contextMgr.__enter__()
   //   exc = True
@@ -2070,33 +2050,67 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //   finally:
   //     if exc:
   //       contextMgr.__exit__()
+  // If the context manager has no __exit__ taking an error, then we know the
+  // exit is unconditional.
   Value excVar;
   TryOp nestedTryOp;
   VarDeclOp nestedErrDecl;
-  if (conditionalExit) {
-    // Insert the flag and initialize it to 'True'.
-    OpBuilder::InsertPoint ip = builder.saveInsertionPoint();
-    builder.setInsertionPoint(tryOp);
-    excVar = getEmitter().emitVarDecl("__with_exc__", builder.getI1Type(), loc,
-                                      VarDeclKind::Synthesized);
-    RefStoreOp::create(builder, loc,
-                       mlir::index::BoolConstantOp::create(builder, loc, true),
-                       excVar);
-    builder.restoreInsertionPoint(ip);
+  if (inExceptRegion && hasExitMethod) {
+    CallOperands exitCallOperands;
+    exitCallOperands.addSelf({contextVal, contextExp});
+    // We allow any error type for this lookup so we use
+    // NameLookupArgWildcardType.
+    auto wildcardType = NameLookupArgWildcardType::get(shared.getContext());
+    // TODO: We will ultimately pass the Error value in as an MValue, so we
+    // could work harder to work with overloads that expect a ref or mut
+    // argument.
+    exitCallOperands.add({PValue(UnknownAttr::get(wildcardType)), contextExp});
 
-    // Generate the nested try. Stub the 'else' and 'finally' regions.
-    nestedErrDecl = getEmitter().emitVarDecl("__inner_error__", errorType, loc,
-                                             VarDeclKind::Synthesized);
-    nestedTryOp =
-        TryOp::create(builder, loc, nestedErrDecl, /*suppressWarnings=*/true);
-    TryYieldOp::create(builder, loc);
-    builder.createBlock(&nestedTryOp.getElseRegion());
-    TryYieldOp::create(builder, loc);
-    builder.createBlock(&nestedTryOp.getFinallyRegion());
-    TryYieldOp::create(builder, loc);
+    IREmitter exitEmitter = getEmitter();
+    PValue conditionalExit = OverloadSet::lookupAndResolve(
+        contextRVType, "__exit__", exitCallOperands, contextExp,
+        CallSyntax::kMethodCall, exitEmitter);
 
-    // Parse the body into the try region.
-    builder.createBlock(&nestedTryOp.getTryRegion());
+    if (conditionalExit) {
+      // Insert the flag ahead of our try and initialize it to 'True'.
+      OpBuilder::InsertPoint ip = builder.saveInsertionPoint();
+      builder.setInsertionPoint(tryOp);
+      excVar = getEmitter().emitVarDecl("__with_exc__", builder.getI1Type(),
+                                        loc, VarDeclKind::Synthesized);
+      RefStoreOp::create(
+          builder, loc, mlir::index::BoolConstantOp::create(builder, loc, true),
+          excVar);
+      builder.restoreInsertionPoint(ip);
+
+      // If the __exit__ method accepts a concrete error type, impose that on
+      // the error VarDecl so that throws within the region will conform to it.
+      // If it is something generic, then allow the try to resolve it, and the
+      // exit call can conform to it.
+      ASTType errorType = UnresolvedType::get(shared.getContext());
+      auto sigType = sugarCast<FnTypeGeneratorType>(conditionalExit.getType());
+      assert(sigType.getNumArguments() >= 2 &&
+             "expected a receiver and an error");
+      auto argType = RefType::stripRefConvention(sigType.getArgument(1),
+                                                 sigType.getArgConvention(1));
+      // If the method was generic over argument type, then it will get inferred
+      // to the wildcard type.  Just leave it as Unresolved if so.
+      if (!sugarIsa<NameLookupArgWildcardType>(argType))
+        errorType = argType;
+
+      // Generate the nested try. Stub the 'else' and 'finally' regions.
+      nestedErrDecl = getEmitter().emitVarDecl("__inner_error__", errorType,
+                                               loc, VarDeclKind::Synthesized);
+      nestedTryOp =
+          TryOp::create(builder, loc, nestedErrDecl, /*suppressWarnings=*/true);
+      TryYieldOp::create(builder, loc);
+      builder.createBlock(&nestedTryOp.getElseRegion());
+      TryYieldOp::create(builder, loc);
+      builder.createBlock(&nestedTryOp.getFinallyRegion());
+      TryYieldOp::create(builder, loc);
+
+      // Parse the body into the try region.
+      builder.createBlock(&nestedTryOp.getTryRegion());
+    }
   }
 
   if (consumeIf(Token::comma)) {
@@ -2122,6 +2136,15 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // Report the error.
     auto diag = emitError(diagLoc, message);
     return failure();
+  }
+
+  // Now that we emitted the body, we can have inferred the error type. If
+  // nothing threw, then infer to Error.  It won't get used and this will avoid
+  // possibly confusing diagnostics downstream.
+  auto errorVarDecl = nestedErrDecl ? nestedErrDecl : errDecl;
+  if (isa<UnresolvedType>(errorVarDecl.getType().getElementType())) {
+    if (auto errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc))
+      errorVarDecl.changeElementType(errorType);
   }
 
   // This emits the call to the 'contextMgr.__exit__()' methods on the
@@ -2196,7 +2219,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     return success();
   }
 
-  if (conditionalExit) {
+  // Handle the case when we have a nested try due to an __exit__ method that
+  // takes an error.
+  if (nestedTryOp) {
     // Set up the except region for the nested try.  Pseudo code:
     //  except(%__inner_error__ : Error) {
     //    %stop_rethrow = contextMgr.__exit__(%__inner_error__);
@@ -2212,13 +2237,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
                        mlir::index::BoolConstantOp::create(builder, loc, false),
                        excVar);
 
-    // FIXME: Support inferring the error type for conditional exit handlers.
-    // Right now this gets hard coded to Error unnecessarily.
-    if (isa<UnresolvedType>(nestedErrDecl.getType().getElementType())) {
-      if (auto errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc))
-        nestedErrDecl.changeElementType(errorType);
-    }
-
     // Pass the error value to the __exit__ method.
     // TODO: this isn't using the same convention that Python does.  We support
     // overloading though and this is going to be way better for anything real
@@ -2226,8 +2244,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     ValueDest exitResultDest(EC_WithExitResult);
     CallOperands exitOperandList({{MLValue(contextMgrDecl), contextExp},
                                   {MBValue(nestedErrDecl), contextExp}});
-    CValue exitResult = getEmitter().emitIndirectCall(
-        conditionalExit, std::move(exitOperandList), exitResultDest,
+    CValue exitResult = getEmitter().emitNamedMethodCall(
+        "__exit__", std::move(exitOperandList), exitResultDest,
         CallSyntax::kMethodCall, contextExp);
     RValue exitI1RVal =
         getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
@@ -2263,13 +2281,13 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   builder.createBlock(&tryOp.getFinallyRegion());
   (void)handleRaisingFinallyRegion(tryOp, smLoc, [&] {
     HLCF::IfOp excIf;
-    if (conditionalExit) {
+    if (nestedTryOp) {
       excIf = HLCF::IfOp::create(builder, loc,
                                  RefLoadOp::create(builder, loc, excVar));
       builder.createBlock(&excIf.getThenRegion());
     }
     emitNormalExitLogic();
-    if (conditionalExit) {
+    if (nestedTryOp) {
       HLCF::YieldOp::create(builder, loc);
       // Stub the 'else' region.
       builder.createBlock(&excIf.getElseRegion());

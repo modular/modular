@@ -486,6 +486,10 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (!argVal)
       return {kNotLValue, expectedType};
 
+    // If this is a wildcard type, we can match any operand.
+    if (sugarIsa<NameLookupArgWildcardType>(argVal.getRValueType()))
+      return {kValidType, expectedType};
+
     // ByRef argument types must exactly match, no conversions are allowed.
     if (!argVal.getRValueType().isEqualCanon(expectedRVType))
       return {kWrongLVType, expectedType};
@@ -576,6 +580,11 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     }
 
     ASTType argType = argVal.getRValueType();
+
+    // If this is a wildcard type, we can match any operand.
+    if (sugarIsa<NameLookupArgWildcardType>(argType))
+      return {kValidType, expectedRVType};
+
     // Otherwise, we pass as an r-value.  If the argument types match, then
     // they are good.
     if (argType.isEqualCanon(expectedRVType))
