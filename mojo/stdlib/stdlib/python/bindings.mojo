@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import _Global, c_int
+from sys.ffi import _Global, c_int, c_long
 from sys.info import size_of
+from os import abort
 
 from builtin._startup import _ensure_current_or_global_runtime_init
 from compile.reflection import get_type_name
@@ -20,6 +21,7 @@ from memory import OpaquePointer, stack_allocation
 from python import Python, PythonObject
 from python._cpython import (
     GILAcquired,
+    Py_ssize_t,
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
     PyCFunctionWithKeywords,
@@ -213,6 +215,148 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
         repr_str = String("<uninitialized ", get_type_name[T](), ">")
 
     return cpython.PyUnicode_DecodeUTF8(repr_str)
+
+
+fn _mp_length_wrapper[
+    method: fn (PythonObject) raises -> Int
+](py_self: PyObjectPtr) -> Py_ssize_t:
+    """Python-compatible wrapper for mapping length protocol (__len__).
+
+    This function serves as the `mp_length` slot (slot 4) for Python type objects.
+    It adapts user methods to the lenfunc signature required by the mapping protocol.
+
+    Parameters:
+        method: The user's length method that returns an Int.
+
+    Args:
+        py_self: Pointer to the Python object (the container).
+
+    Returns:
+        The length of the container as Py_ssize_t, or -1 if an error occurs
+        (with Python exception set).
+    """
+    ref cpython = Python().cpython()
+
+    try:
+        var result = method(PythonObject(from_borrowed=py_self))
+        return Py_ssize_t(result)
+    except e:
+        var error_type = cpython.get_error_global("PyExc_Exception")
+        cpython.PyErr_SetString(
+            error_type, e.data.as_c_string_slice().unsafe_ptr()
+        )
+        return Py_ssize_t(-1)
+
+
+fn _mp_subscript_wrapper[
+    method: fn (PythonObject, PythonObject) raises -> PythonObject
+](py_self: PyObjectPtr, key: PyObjectPtr) -> PyObjectPtr:
+    """Python-compatible wrapper for mapping subscript protocol (__getitem__).
+
+    This function serves as the `mp_subscript` slot (slot 5) for Python type objects.
+    It adapts user methods to the binaryfunc signature required by the mapping protocol.
+
+    Parameters:
+        method: The user's getitem method that takes self and key.
+
+    Args:
+        py_self: Pointer to the Python object (the container).
+        key: Pointer to the Python object used as the subscript key.
+
+    Returns:
+        A new Python object representing the result of the subscript operation,
+        or null pointer if an error occurs (with Python exception set).
+    """
+    ref cpython = Python().cpython()
+
+    try:
+        var result = method(
+            PythonObject(from_borrowed=py_self),
+            PythonObject(from_borrowed=key),
+        )
+        return result.steal_data()
+    except e:
+        var error_type = cpython.get_error_global("PyExc_Exception")
+        cpython.PyErr_SetString(
+            error_type, e.data.as_c_string_slice().unsafe_ptr()
+        )
+        return PyObjectPtr()
+
+
+fn _mp_ass_subscript_wrapper[
+    method: fn (PythonObject, PythonObject, PythonObject) raises -> None
+](py_self: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr) -> c_int:
+    """Python-compatible wrapper for mapping assignment subscript protocol (__setitem__/__delitem__).
+
+    This function serves as the `mp_ass_subscript` slot (slot 3) for Python type objects.
+    It adapts user methods to the objobjargproc signature required by the mapping protocol.
+
+    When value is NULL, this indicates a deletion (__delitem__). Otherwise, it's an
+    assignment (__setitem__).
+
+    Parameters:
+        method: The user's method that takes self, key, and value.
+
+    Args:
+        py_self: Pointer to the Python object (the container).
+        key: Pointer to the Python object used as the subscript key.
+        value: Pointer to the value to set, or NULL for deletion.
+
+    Returns:
+        0 on success, -1 on failure (with Python exception set).
+    """
+    ref cpython = Python().cpython()
+
+    try:
+        method(
+            PythonObject(from_borrowed=py_self),
+            PythonObject(from_borrowed=key),
+            PythonObject(from_borrowed=value),
+        )
+        return c_int(0)
+    except e:
+        var error_type = cpython.get_error_global("PyExc_Exception")
+        cpython.PyErr_SetString(
+            error_type, e.data.as_c_string_slice().unsafe_ptr()
+        )
+        return c_int(-1)
+
+
+fn _richcompare_wrapper[
+    method: fn (PythonObject, PythonObject, Int) raises -> Bool
+](py_self: PyObjectPtr, py_other: PyObjectPtr, op: c_int) -> PyObjectPtr:
+    """Python-compatible wrapper for rich comparison protocol.
+
+    This function serves as the `tp_richcompare` slot for Python type objects.
+    It adapts user methods to the richcmpfunc signature required by Python.
+
+    Parameters:
+        method: The user's comparison method that returns a Bool.
+
+    Args:
+        py_self: Pointer to the first Python object.
+        py_other: Pointer to the second Python object.
+        op: The comparison operator (Py_LT, Py_LE, Py_EQ, Py_NE, Py_GT, Py_GE).
+
+    Returns:
+        A Python boolean object (Py_True or Py_False), or null pointer if an
+        error occurs (with Python exception set).
+    """
+    ref cpython = Python().cpython()
+
+    try:
+        var result = method(
+            PythonObject(from_borrowed=py_self),
+            PythonObject(from_borrowed=py_other),
+            Int(op),
+        )
+        return cpython.PyBool_FromLong(c_long(Int(result)))
+    except e:
+        var error_type = cpython.get_error_global("PyExc_Exception")
+        cpython.PyErr_SetString(
+            error_type, e.data.as_c_string_slice().unsafe_ptr()
+        )
+        return PyObjectPtr()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -887,6 +1031,105 @@ struct PythonTypeBuilder(Copyable):
         return self._generic_def_py_method[
             _py_function_wrapper[method, is_method=True](), static_method=False
         ](method_name, docstring)
+
+    fn def_rich_compare[
+        method: fn (PythonObject, PythonObject, Int) raises -> Bool
+    ](mut self: Self) -> ref [self] Self:
+        """Sets the rich compare method, see https://peps.python.org/pep-0207.
+
+        Parameters:
+            method: The user method to install as the compare method. The API matches the python richcompare protocol.
+
+        Returns:
+            A refence to self for easier chaining.
+
+        References:
+        - https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare .
+        """
+
+        self._insert_slot(
+            PyType_Slot.tp_richcompare(_richcompare_wrapper[method])
+        )
+
+        return self
+
+    fn def_mapping_length[
+        method: fn (PythonObject) raises -> Int
+    ](mut self: Self) -> ref [self] Self:
+        """Sets the mapping length method (__len__).
+
+        This method is part of the mapping protocol and is called when `len()` is
+        invoked on an instance of the type.
+
+        Parameters:
+            method: The user method to install as the length method. It should
+                take self as a PythonObject and return an Int representing the
+                length of the container.
+
+        Returns:
+            A reference to self for easier chaining.
+
+        References:
+        - https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length .
+        """
+
+        self._insert_slot(PyType_Slot.mp_length(_mp_length_wrapper[method]))
+
+        return self
+
+    fn def_mapping_setitem[
+        method: fn (PythonObject, PythonObject, PythonObject) raises -> None
+    ](mut self: Self) -> ref [self] Self:
+        """Sets the mapping assignment subscript method (__setitem__/__delitem__).
+
+        This method is part of the mapping protocol and is called for item assignment
+        (`obj[key] = value`) and deletion (`del obj[key]`).
+
+        When value is a null pointer (None), this indicates a deletion request.
+        Otherwise, it's an assignment.
+
+        Parameters:
+            method: The user method to install as the setitem method. It should
+                take self, key, and value as PythonObjects. For deletion, value
+                will be None.
+
+        Returns:
+            A reference to self for easier chaining.
+
+        References:
+        - https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript .
+        """
+
+        self._insert_slot(
+            PyType_Slot.mp_ass_subscript(_mp_ass_subscript_wrapper[method])
+        )
+
+        return self
+
+    fn def_mapping_getitem[
+        method: fn (PythonObject, PythonObject) raises -> PythonObject
+    ](mut self: Self) -> ref [self] Self:
+        """Sets the mapping subscript method (__getitem__).
+
+        This method is part of the mapping protocol and is called when accessing
+        items using bracket notation (`obj[key]`).
+
+        Parameters:
+            method: The user method to install as the getitem method. It should
+                take self and key as PythonObjects and return the value.
+
+        Returns:
+            A reference to self for easier chaining.
+
+        References:
+        - https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript .
+        """
+
+        self._insert_slot(
+            PyType_Slot.mp_subscript(_mp_subscript_wrapper[method])
+        )
+
+        return self
 
     fn def_staticmethod[
         method_type: AnyTrivialRegType, //,

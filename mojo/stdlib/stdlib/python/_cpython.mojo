@@ -67,6 +67,28 @@ comptime Py_TPFLAGS_DICT_SUBCLASS = c_ulong(1 << 29)
 comptime Py_TPFLAGS_BASE_EXC_SUBCLASS = c_ulong(1 << 30)
 comptime Py_TPFLAGS_TYPE_SUBCLASS = c_ulong(1 << 31)
 
+# Python constants, for example some operations may want to return Not Implemented.
+# ref: https://github.com/python/cpython/blob/main/Include/object.h#L659
+# ref:  https://docs.python.org/3/c-api/object.html#c.Py_CONSTANT_NONE
+comptime Py_CONSTANT_NONE = 0
+comptime Py_CONSTANT_FALSE = 1
+comptime Py_CONSTANT_TRUE = 2
+comptime Py_CONSTANT_ELLIPSIS = 3
+comptime Py_CONSTANT_NOT_IMPLEMENTED = 4
+comptime Py_CONSTANT_ZERO = 5
+comptime Py_CONSTANT_ONE = 6
+comptime Py_CONSTANT_EMPTY_STR = 7
+comptime Py_CONSTANT_EMPTY_BYTES = 8
+comptime Py_CONSTANT_EMPTY_TUPLE = 9
+
+# These flags are used by the richcompare function.
+# ref: https://github.com/python/cpython/blob/main/Include/object.h#L721
+comptime Py_LT = 0
+comptime Py_LE = 1
+comptime Py_EQ = 2
+comptime Py_NE = 3
+comptime Py_GT = 4
+comptime Py_GE = 5
 
 # TODO(MOCO-1138):
 #   This should be a C ABI function pointer, not a Mojo ABI function.
@@ -412,6 +434,12 @@ comptime Py_tp_init = 60
 comptime Py_tp_methods = 64
 comptime Py_tp_new = 65
 comptime Py_tp_repr = 66
+comptime Py_tp_richcompare = 67
+
+# Mapping protocol slots
+comptime Py_mp_ass_subscript = 3
+comptime Py_mp_length = 4
+comptime Py_mp_subscript = 5
 
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
@@ -431,6 +459,20 @@ comptime Typed_newfunc = fn (
     PyObjectPtr,
 ) -> PyObjectPtr
 """`typedef PyObject *(*newfunc)(PyTypeObject*, PyObject*, PyObject*)`"""
+alias Typed_richcompare = fn (
+    PyObjectPtr,
+    PyObjectPtr,
+    c_int,
+) -> PyObjectPtr
+"""`typedef PyObject *(*richcmpfunc)(PyObject*, PyObject*, int)`"""
+
+# Mapping protocol function types
+alias lenfunc = fn (PyObjectPtr) -> Py_ssize_t
+"""`typedef Py_ssize_t (*lenfunc)(PyObject*)`"""
+alias binaryfunc = fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr
+"""`typedef PyObject *(*binaryfunc)(PyObject*, PyObject*)`"""
+alias objobjargproc = fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int
+"""`typedef int (*objobjargproc)(PyObject*, PyObject*, PyObject*)`"""
 
 
 @fieldwise_init
@@ -475,6 +517,30 @@ struct PyType_Slot(ImplicitlyCopyable):
     fn tp_repr(func: reprfunc) -> Self:
         return PyType_Slot(
             Py_tp_repr, rebind[OpaquePointer[MutAnyOrigin]](func)
+        )
+
+    @staticmethod
+    fn tp_richcompare(func: Typed_richcompare) -> Self:
+        return PyType_Slot(
+            Py_tp_richcompare, rebind[OpaquePointer[MutAnyOrigin]](func)
+        )
+
+    @staticmethod
+    fn mp_length(func: lenfunc) -> Self:
+        return PyType_Slot(
+            Py_mp_length, rebind[OpaquePointer[MutAnyOrigin]](func)
+        )
+
+    @staticmethod
+    fn mp_subscript(func: binaryfunc) -> Self:
+        return PyType_Slot(
+            Py_mp_subscript, rebind[OpaquePointer[MutAnyOrigin]](func)
+        )
+
+    @staticmethod
+    fn mp_ass_subscript(func: objobjargproc) -> Self:
+        return PyType_Slot(
+            Py_mp_ass_subscript, rebind[OpaquePointer[MutAnyOrigin]](func)
         )
 
     @staticmethod
@@ -1568,7 +1634,7 @@ struct CPython(Defaultable, Movable):
             # PyObject *Py_GetConstantBorrowed(unsigned int constant_id)
             self._Py_None = self.lib.call[
                 "Py_GetConstantBorrowed", PyObjectPtr
-            ](0)
+            ](Py_CONSTANT_NONE)
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
