@@ -543,6 +543,13 @@ def bad_assignment1(a: Int, b: Int):
    # expected-error @+1 {{expected ')' in parenthesized expression}}
    a = (b += b)
 
+# MOCO-1936 / Issue #4501: Incorrect parsing of incomplete assignment
+fn bad_assignment2():
+  # expected-error @+1 {{expected expression after assignment statement}}
+  _ =    # should error here
+  a = 1
+
+
 fn bad_walrus_implicit_decl_in_fn():
   # Implicit definition in an 'fn' is ok.
   if a := 4:

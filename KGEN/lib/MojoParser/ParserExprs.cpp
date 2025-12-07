@@ -1398,6 +1398,14 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
   }
   SMLoc assignLoc = p.consumeToken().getLoc();
 
+  // Make sure the next token is in the current statement, not something like
+  //   x =
+  // y.foo()
+  if (!p.isTokenInCurrentStatement()) {
+    emitError(assignLoc, "expected expression after assignment statement");
+    return failure();
+  }
+
   // If we have an = or += operator, parse the rest of the statement pieces;
   // assignments are right associative, so we just recurse to handle this.
   ExprNode *rhsExpr = nullptr;
