@@ -1063,7 +1063,7 @@ fn sugar_test():
 # PR5618 - Compiler crash when should be implicit conversion error
 @register_passable("trivial")
 struct MemberAliasSugarCrash:
-    alias ValueType = Int
+    comptime ValueType = Int
     var _value: Self.ValueType
 
     fn __init__(out self, v: Self.ValueType):

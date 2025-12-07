@@ -478,3 +478,13 @@ fn with_impl_convert() raises Float32:
 fn with_doesnt_actually_throw():
     with FloatErrorExitCtxtMgr():
         noop(42)
+
+
+# Issue #5176: Context manager don't work with consuming __exit__(var self)
+@fieldwise_init
+struct ConsumingExitCM(Movable):
+    fn __enter__(mut self): pass
+    fn __exit__(var self): pass
+fn testConsumingExitCM():
+    with ConsumingExitCM() as a:
+        _ = a
