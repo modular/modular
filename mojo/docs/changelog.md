@@ -376,4 +376,6 @@ or removed in future releases.
 - [Issue #5578](https://github.com/modular/modular/issues/5578): ownership
   overloading not working when used with `ref`.
 - [Issue #5137](https://github.com/modular/modular/issues/5137): Tail call
-  optimization doesn't happen for tail recursive functions with raises
+  optimization doesn't happen for tail recursive functions with raises.
+- [Issue #5618](https://github.com/modular/modular/issues/5618): Compiler crash
+  when should be implicit conversion error.
