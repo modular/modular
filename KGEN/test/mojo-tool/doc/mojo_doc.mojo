@@ -28,18 +28,18 @@ from buffer import NDBuffer
 # CHECK:   "kind": "alias",
 # CHECK:   "name": "alias_Type",
 # CHECK:   "path": "/mojo_doc/#alias_type",
-# CHECK:   "summary": "An example alias of a Type",
+# CHECK:   "summary": "An example alias of a Type.",
 # CHECK:   "value": "Int"
 comptime alias_Type = Int
-"""An example alias of a Type"""
+"""An example alias of a Type."""
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_Value",
 # CHECK:  "path": "/mojo_doc/#alias_value",
-# CHECK:  "summary": "An example alias of a Value",
+# CHECK:  "summary": "An example alias of a Value.",
 # CHECK:  "value": "10"
 comptime alias_Value = 10
-"""An example alias of a Value"""
+"""An example alias of a Value."""
 
 
 # CHECK:  "kind": "alias",

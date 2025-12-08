@@ -112,6 +112,24 @@ static bool requiresDocString(StructFieldOp op) {
          requiresDocString(cast<StructDeclOp>(op->getParentOp()));
 }
 
+/// An alias requires a doc string if it's defined at the top level of a module
+/// (or within a struct that requires a doc string), and its name does not begin
+/// with an underscore.
+static bool requiresDocString(AliasDeclOp op) {
+  StringRef name = op.getParamDecl().getName();
+  if (name.starts_with("_"))
+    return false;
+
+  Operation *parent = op->getParentOp();
+  if (isa<FileModuleOp>(parent))
+    return true;
+
+  if (auto parentStruct = dyn_cast<StructDeclOp>(parent))
+    return requiresDocString(parentStruct);
+
+  return false;
+}
+
 /// Return if the operation is nested in a private module or package.
 static bool isOpInPrivateModule(Operation *declOp) {
   if (!declOp)
@@ -330,6 +348,31 @@ static bool doesFunctionHaveResults(FnOp funcOp) {
          !sugarIsa<KGEN::NeverType>(resultType);
 }
 
+/// Return the names of the parameters to the given alias. Parametric aliases
+/// store their parameters in the GeneratorAttr value's LITGeneratorType.
+static SmallVector<StringAttr> getAliasParameterNames(AliasDeclOp aliasOp) {
+  SmallVector<StringAttr> result;
+  auto maybeValue = aliasOp.getValue();
+  if (!maybeValue)
+    return result;
+
+  auto generator = dyn_cast<GeneratorAttr>(*maybeValue);
+  if (!generator)
+    return result;
+
+  auto generatorType = dyn_cast<LITGeneratorType>(generator.getType());
+  if (!generatorType)
+    return result;
+
+  for (PogMetadataAttr pogAttr : generatorType.getParamListAttrs().getPogs())
+    if (pogAttr.getPassingKind() != PassingKind::Implicit &&
+        // Ignore name mangled parameters, which are autoparams.
+        demangleParameterName(pogAttr.getName()) == pogAttr.getName())
+      result.emplace_back(pogAttr.getName());
+
+  return result;
+}
+
 namespace {
 /// Used to specify the level of validation to perform for doc strings. The idea
 /// is that some doc strings, such as ones added to non-public functions, act as
@@ -375,7 +418,8 @@ public:
     if (!decl.getIfOperation())
       return;
     TypeSwitch<Operation *>(decl.getIfOperation())
-        .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp>([&](auto op) {
+        .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp,
+              AliasDeclOp>([&](auto op) {
           ValidationKind validation = requiresDocString(op)
                                           ? ValidationKind::Strict
                                           : ValidationKind::Normal;
@@ -729,6 +773,38 @@ private:
   }
 
   //===--------------------------------------------------------------------===//
+  // Aliases
+
+  void validateDecl(ASTDecl &decl, AliasDeclOp aliasOp,
+                    ValidationKind validation) {
+    // Grab the parameters to the alias (for parametric aliases).
+    llvm::MapVector<StringRef, const char *> seenParameters;
+    for (StringAttr paramName : getAliasParameterNames(aliasOp))
+      seenParameters.insert({paramName, nullptr});
+
+    // If the alias has no parameters, there's nothing to validate.
+    if (seenParameters.empty())
+      return;
+
+    // Process the sections of the doc string.
+    DenseMap<StringRef, const char *> sections = {
+        {DocString::kSectionParameters, nullptr},
+    };
+    ArrayRef<StringRef> description = docStr->getDescription();
+    auto processFn = [&](StringRef section, const char *loc) mutable {
+      if (section == DocString::kSectionParameters)
+        processParameters(loc, seenParameters, description, validation);
+    };
+    processDocSections(description, sections, processFn);
+
+    if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
+        !isOpInPrivateModule(aliasOp) &&
+        !sections[DocString::kSectionParameters] && !seenParameters.empty())
+      emitDiag(aliasOp.getLoc(),
+               "alias takes parameters, but no 'Parameters' in doc string");
+  }
+
+  //===--------------------------------------------------------------------===//
   // Diagnostics
 
   /// Emit a diagnostic at the given doc string location.
@@ -796,22 +872,22 @@ public:
 
     if (decl.getIfOperation()) {
       TypeSwitch<Operation *>(decl.getIfOperation())
-          .Case<FnOp, FileModuleOp, StructDeclOp, StructFieldOp, TraitDeclOp>(
-              [&](auto op) {
-                StringRef summaryCodeBlock = "[summary].";
-                os << summaryCodeBlock;
+          .Case<FnOp, FileModuleOp, StructDeclOp, StructFieldOp, TraitDeclOp,
+                AliasDeclOp>([&](auto op) {
+            StringRef summaryCodeBlock = "[summary].";
+            os << summaryCodeBlock;
 
-                // Indent and generate the rest of the decl.
-                for (size_t i = 0; i < indent; i += 2)
-                  os.indent();
-                generateDecl(decl, op);
+            // Indent and generate the rest of the decl.
+            for (size_t i = 0; i < indent; i += 2)
+              os.indent();
+            generateDecl(decl, op);
 
-                // If we added anything other than the summary, add a newline.
-                if (rawOS.str().size() > summaryCodeBlock.size()) {
-                  os << "\n";
-                  os.indent(indent);
-                }
-              });
+            // If we added anything other than the summary, add a newline.
+            if (rawOS.str().size() > summaryCodeBlock.size()) {
+              os << "\n";
+              os.indent(indent);
+            }
+          });
     }
 
     // If we actually generated something, return it, otherwise bail.
@@ -881,6 +957,13 @@ private:
 
   void generateDecl(ASTDecl &decl, TraitDeclOp traitDeclOp) {
     // TODO(#21850): Add generation for trait docstrings.
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Aliases
+
+  void generateDecl(ASTDecl &decl, AliasDeclOp aliasOp) {
+    processParameters(getAliasParameterNames(aliasOp));
   }
 
   /// The desired indentation level for the generated doc string.
