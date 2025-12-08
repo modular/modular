@@ -912,17 +912,31 @@ SMLoc Lexer::findEndOfPreviousLine(SMLoc loc) const {
     auto nextNewLine = buffer.find_last_of("\n\r");
     // If we ran out of lines to check, we must be at the start of the buffer.
     // Give up.
-    if (nextNewLine == StringRef::npos)
-      return loc;
+    if (nextNewLine == StringRef::npos) {
+      // Make sure to consider tokens on the first line of the file.
+      if (buffer.empty())
+        return loc;
+      nextNewLine = 0;
+    }
 
     // Scan from the start of the line to the current position.
     auto *lineStart = curBuffer.data() + nextNewLine;
     Lexer tmpLexer(diags, curBuffer, lineStart);
 
     // If the token is on this line, then there was at least one token on this
-    // line.  Report the error at the end of the line.
-    if (tmpLexer.getToken().getLoc().getPointer() < buffer.end())
-      return SMLoc::getFromPointer(buffer.end());
+    // line.  Report the error on the last token of this line.
+    if (tmpLexer.getToken().getLoc().getPointer() < buffer.end()) {
+      // The current line might end with a comment.  Re-lex it to find the last
+      // token and complain right after it.
+      Token lastToken = tmpLexer.getToken();
+      do {
+        lastToken = tmpLexer.getToken();
+        tmpLexer.lexToken();
+      } while (tmpLexer.getToken().getLoc().getPointer() < buffer.end());
+
+      // Error location is at the end of the last token on this line.
+      return lastToken.getEndLoc();
+    }
 
     // Otherwise, drop the newline and anything after it and try again.
     buffer = buffer.take_front(nextNewLine);
