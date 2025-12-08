@@ -79,6 +79,7 @@ comptime words_ar = """
        بضعة, المناسب, المنطقة, قم, بالداخل, البداية, لأجل, زوجتك, مقابل, يحب, هاري, ممتاز, قريبا, سنكون,
         فعلته, بتلك, التفكير, أسفل, للعمل, العجوز, امي, الكلب, انتظري, مازال, إننا, اشعر, الجيش, شرطة
 """
+"""Most common Arabic words."""
 
 # Source: https://github.com/tkaitchuck/ahash/blob/7d5c661a74b12d5bc5448b0b83fdb429190db1a3/tests/map_tests.rs#L9
 comptime words_en: String = """
@@ -179,6 +180,7 @@ comptime words_en: String = """
     wife, will, win, wind, window, wish, with, within, without, woman, wonder, word,
     work, worker, world, worry, would, write, writer, wrong, yard, yeah, year, yes,
     yet, you, young, your, yourself"""
+"""Most common English words."""
 
 # Source: https://www.101languages.net/hebrew/most-common-hebrew-words/
 comptime words_he = """
@@ -251,6 +253,7 @@ comptime words_he = """
    אכן, אהבתי, בשעה, בסוף, שקרה, לכו, אליה, לבחור, תחשוב, ספק, המים, הפנים, לכולם, תדאגי,
    קחי, שתוק, לברוח, מתוק, ארלי, התיק, שים, מישהי, לקרות, לטפל, לחפש, הידיים, ח, במצב, ואל
 """
+"""Most common Hebrew words."""
 
 # Source: https://www.101languages.net/latvian/most-common-latvian-words/
 comptime words_lv = """
@@ -334,6 +337,7 @@ comptime words_lv = """
     bailes, skolas, vārdus, aizmirsti, gaismas, kāp, zēni, darīsim, pašam, beidzies, sauca, māti, akmens,
     grāmatas, diemžēl, tevī, kļūt, endij, patika, nabaga, tuvojas, tēvoci, dienām, plāns
 """
+"""Most common Latvian words."""
 
 # Source: https://www.101languages.net/polish/most-common-polish-words/
 comptime words_pl = """
@@ -409,6 +413,7 @@ włosy, niestety, górze, kochasz, prawdziwy, historii, ulicy, musicie, gotowi, 
 strasznie, mieszka, kocha, rady, tyłu, jakim, obiecuję, tysięcy, pomyślałem, pracuję, jedynie, pozwolić, uwaga,
 proste, zacząć, myśl, wstawaj, rany, prawdziwe, takiej, jakiegoś, umrzeć, złego, okazji
 """
+"""Most common Polish words."""
 
 # Source: https://www.101languages.net/greek/most-common-greek-words/
 comptime words_el = """
@@ -487,6 +492,7 @@ comptime words_el = """
     νωρίς, κάποιοι, άκου, παίζει, φτάνει, δίνω, βγες, υπέροχη, νόημα, έλεγχο, μέτρα, ξερεις, ζει, δείχνει,
     βρες, τού
 """
+"""Most common Greek words."""
 
 # Source: https://www.101languages.net/russian/most-common-russian-words/
 comptime words_ru = """
@@ -563,6 +569,7 @@ comptime words_ru = """
 you, утра, боль, хорошие, пришёл, открой, брось, вставай, находится, поговорим, кино, людьми, полицию, покажу,
 волосы, последние, брата, месяца
 """
+"""Most common Russian words."""
 
 
 fn gen_word_pairs[words: String = words_en]() -> List[String]:

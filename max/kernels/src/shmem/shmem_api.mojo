@@ -130,11 +130,11 @@ struct SHMEMScope(Equatable, ImplicitlyCopyable):
     var value: StaticString
 
     comptime default = Self("")
-    """Execute RMA operation at global scope"""
+    """Execute RMA operation at global scope."""
     comptime block = Self("_block")
-    """Execute RMA operation at thread block scope (NVIDIA extension)"""
+    """Execute RMA operation at thread block scope (NVIDIA extension)."""
     comptime warp = Self("_warp")
-    """Execute RMA operation at warp scope (NVIDIA extension)"""
+    """Execute RMA operation at warp scope (NVIDIA extension)."""
 
     fn __init__(out self, value: StaticString):
         self.value = value

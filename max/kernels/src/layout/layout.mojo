@@ -366,6 +366,12 @@ struct Layout(
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _LayoutIter[ImmutOrigin.cast_from[iterable_origin]]
+    """The iterator type for Layout iteration.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     # ===------------------------------------------------------------------===#
     # Initializers
@@ -1044,6 +1050,7 @@ fn cosize(l: Layout) -> Int:
 
 
 comptime LayoutList = List[Layout]
+"""Type alias for a list of Layout objects."""
 
 
 @always_inline("nodebug")

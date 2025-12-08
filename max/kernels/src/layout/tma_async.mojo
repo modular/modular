@@ -666,6 +666,7 @@ struct TMATensorTile[
     """
 
     comptime device_type: AnyType = Self
+    """The device-side type representation."""
 
     fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping is the identity function."""
@@ -2089,6 +2090,17 @@ comptime RaggedTMALoadTensorTile[
 ] = TMATensorTile[
     dtype,
 ]
+"""TMA tensor tile type for ragged tensor loads.
+
+Parameters:
+    dtype: The data type of the tensor elements.
+    tile_0: Size of tile dimension 0.
+    tile_1: Size of tile dimension 1.
+    tile_2: Size of tile dimension 2.
+    tile_4: Size of tile dimension 4.
+    swizzle_mode: The swizzle pattern for memory access.
+    is_k_major: Whether the layout is K-major.
+"""
 
 comptime TMANestedTensorTile[
     dtype: DType,
@@ -2108,6 +2120,15 @@ comptime TMANestedTensorTile[
     ](),
     is_k_major,
 ]
+"""TMA tensor tile type for nested tensor operations.
+
+Parameters:
+    dtype: The data type of the tensor elements.
+    tile_m: Size of the M dimension tile.
+    tile_n: Size of the N dimension tile.
+    swizzle_mode: The swizzle pattern for memory access.
+    is_k_major: Whether the layout is K-major.
+"""
 
 
 fn create_nested_tma_tile[
@@ -2297,6 +2318,7 @@ struct TMATensorTileArray[
     """
 
     comptime device_type: AnyType = Self
+    """The device-side type representation."""
 
     fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping is the identity function."""
@@ -2447,7 +2469,7 @@ struct RaggedTensorMap[
         return layout
 
     comptime device_type: AnyType = Self
-    """The TensorMapDescriptorArray type"""
+    """The TensorMapDescriptorArray type."""
 
     comptime ragged_descriptor_shape = Self._descriptor_shape()
     """The shape of the descriptor that will tile and load from shared -> global memory."""

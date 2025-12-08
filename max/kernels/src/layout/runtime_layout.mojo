@@ -68,6 +68,7 @@ struct RuntimeLayout[
     comptime ShapeType = RuntimeTuple[
         Self.layout.shape, element_type = Self.element_type
     ]
+    """Type alias for the runtime shape tuple."""
     var shape: Self.ShapeType
     """The shape of the layout as a runtime tuple.
 
@@ -78,6 +79,7 @@ struct RuntimeLayout[
     comptime StrideType = RuntimeTuple[
         Self.layout.stride, element_type = Self.linear_idx_type
     ]
+    """Type alias for the runtime stride tuple."""
     var stride: Self.StrideType
     """The stride of the layout as a runtime tuple.
 

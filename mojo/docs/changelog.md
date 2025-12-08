@@ -327,6 +327,11 @@ what we publish.
    recursion. The default is `std::numeric_limits<unsigned>::max()`.
 - The Mojo Debugger `mojo break-on-raise` feature now works correctly with
   multiple targets in a debugger instance. The setting is per-target.
+- Docstring validation now includes `comptime` aliases. The
+  `--validate-doc-strings` and `--diagnose-missing-doc-strings` flags now check
+  that public aliases have properly formatted docstrings (summary ends with
+  period, starts with capital letter). Parametric aliases are also checked for
+  proper `Parameters:` sections.
 
 ### Experimental changes
 

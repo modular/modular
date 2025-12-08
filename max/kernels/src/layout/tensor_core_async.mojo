@@ -200,6 +200,7 @@ comptime _CM_ROW_BITS = 128
 
 # WGMMA's K dim has 32 bytes.
 comptime WGMMA_K_BYTES = 32
+"""Size of WGMMA K dimension in bytes."""
 
 comptime _CM_LAYOUT_BITS = Layout.row_major(_CM_NUM_ROWS, _CM_ROW_BITS)
 comptime _CM_TILE_STRIDE = IntTuple(1, _CM_ROW_BITS)
