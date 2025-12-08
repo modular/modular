@@ -270,6 +270,8 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         self.vision_model, self.language_model = self.load_model(session)
 
+        self.vision_stacker = _VisionStacker()
+
     @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
@@ -716,7 +718,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if not images:
             return None
 
-        final_images = _VisionStacker().stack(images)
+        final_images = self.vision_stacker.stack(images)
 
         tensor = cast_dlpack_to(
             final_images, DType.float32, DType.bfloat16, self.devices[0]
