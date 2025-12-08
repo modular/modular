@@ -19,7 +19,7 @@ from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, product
 from layout.layout import Layout
 from layout.layout_tensor import *
-from testing import assert_equal
+from testing import assert_equal, assert_true
 
 
 fn print_raw_major_tensor(tensor: LayoutTensor):
@@ -2021,6 +2021,18 @@ fn test_merge():
     print(a)
 
 
+def test_generic_layout_logic():
+    comptime dims = Layout.row_major(4, 4, 4)
+    var _tensor = LayoutTensor[DType.uint8, dims](
+        UnsafePointer[Byte, ImmutAnyOrigin]()
+    )
+
+    @parameter
+    for i in range(len(dims) - 1):
+        assert_true(_tensor.stride[i]() > 1)
+        assert_equal(_tensor.shape[i](), 4)
+
+
 def main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -2054,3 +2066,4 @@ def main():
     test_vectorized_tile()
     test_nested_tile()
     test_tensor_size()
+    test_generic_layout_logic()
