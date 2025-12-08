@@ -3436,15 +3436,15 @@ fn kv_cache_2m_iadd_dispatch[
     ctx: Optional[DeviceContext],
 ) raises:
     """
-    In-place add to paged KV cache with interleaved K/V layout. This kernel is
+    In-place add to paged KV cache with concatenated K/V layout. This kernel is
     only used for LoRA.
 
     Performs an in-place addition of new key-value projections to paged KV cache.
-    The input tensor `a` uses a "2M" layout where keys and values are interleaved:
-    rows [0, M) contain keys and rows [M, 2M) contain values, where M is the number
-    of tokens. We use the `lora_end_idx` as our stop-gap on whether we write the LoRA
-    values to KV-cache. We call this value `m` since this value will be a subset of the
-    total tokens in the batch. We write tokens to K as [0, m) and V as [M, M + m).
+    The input tensor `a` uses a "2m" layout where keys and values are concatenated:
+    rows [0, m) contain keys and rows [m, 2m) contain values, where m is the number
+    of tokens. We use the `lora_end_idx` to index into the K or V tensor.
+    We call this value `m` since this value will be a subset of the
+    total tokens in the batch. We write tokens to K as [0, m) and V as [m, 2m).
     """
     comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
     var kv_shape = kv.runtime_layout.shape.value.canonicalize()
@@ -3479,25 +3479,19 @@ fn kv_cache_2m_iadd_dispatch[
         constrained[rank == 2, "Rank must be 2"]()
 
         var cache: collection_t.CacheType
-        var batch_idx: Int
         var row_idx: Int
         var major_idx: Int
 
         if idx[0] < m:
             cache = k_cache
             row_idx = Int(idx[0])
-            major_idx = row_idx
-            batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
         else:
             cache = v_cache
             row_idx = Int(idx[0] - m)
-            major_idx = Int(row_idx + M)
-            batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
 
+        var batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
         var tok_idx = Int(row_idx - input_row_offsets[batch_idx])
 
-        # For shape [2M, N], idx[1] is the hidden dimension
-        # Decompose it into head index and head dimension index
         var h_idx: UInt
         var hd_idx: UInt
         h_idx, hd_idx = divmod(UInt(idx[1]), collection_t.kv_params.head_size)
@@ -3509,7 +3503,7 @@ fn kv_cache_2m_iadd_dispatch[
             batch_idx, Int(h_idx), cache_token_idx, Int(hd_idx)
         )
         var a_val = rebind[type_of(old_val)](
-            kv.load[width=width](major_idx, idx[1])
+            kv.load[width=width](idx[0], idx[1])
         )
 
         cache.store(

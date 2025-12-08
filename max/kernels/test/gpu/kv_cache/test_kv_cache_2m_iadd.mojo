@@ -89,7 +89,7 @@ fn _verify_kv_cache[
     prompt_lens: IndexList[batch_size],
     cache_lens: IndexList[batch_size],
     num_active_loras: Int,
-    total_length: Int,
+    total_slice_length: Int,
     max_prompt_length: Int,
     max_full_context_length: Int,
     layer_idx: Int,
@@ -172,8 +172,10 @@ fn _verify_kv_cache[
                             + " in k_cache at index "
                             + String(IndexList[4](i, h, actual_len, d))
                         )
+            # V portion is stored in rows [total_slice_length, 2*total_slice_length)
+            # of the input tensor, so the V row base starts at total_slice_length.
             var v_row_base = (
-                (total_length + slice_row_offset) * num_heads * head_dim
+                (total_slice_length + slice_row_offset) * num_heads * head_dim
             )
             for h in range(num_heads):
                 for d in range(head_dim):
@@ -190,9 +192,6 @@ fn _verify_kv_cache[
                             + String(IndexList[4](i, h, actual_len, d))
                         )
             slice_row_offset += 1
-
-    # TODO(MAXPLAT-362) fix this and remove it.
-    _ = paged_lut_host
 
 
 fn test_kv_cache_2m_iadd_gpu[
@@ -371,8 +370,8 @@ fn test_kv_cache_2m_iadd_gpu[
         max_full_context_length,
     )
 
-    var a_shape = IndexList[2](2 * total_length, num_heads * head_dim)
-    var a_size = 2 * total_length * num_heads * head_dim
+    var a_shape = IndexList[2](2 * total_slice_length, num_heads * head_dim)
+    var a_size = 2 * total_slice_length * num_heads * head_dim
     var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
     var a_host = NDBuffer[dtype, 2, _, DimList(Dim(), num_heads * head_dim)](
         a_host_ptr, a_shape
@@ -436,13 +435,12 @@ fn test_kv_cache_2m_iadd_gpu[
         prompt_lens,
         cache_lens,
         num_active_loras,
-        total_length,
+        total_slice_length,
         max_prompt_length,
         max_full_context_length,
         layer_idx,
     )
 
-    # Cleanup
     input_row_offsets_host_ptr.free()
     cache_lengths_host_ptr.free()
     input_row_offsets_slice_host_ptr.free()
@@ -578,8 +576,8 @@ fn test_kv_cache_2m_iadd_cpu[
         max_full_context_length,
     )
 
-    var a_shape = IndexList[2](2 * total_length, num_heads * head_dim)
-    var a_size = 2 * total_length * num_heads * head_dim
+    var a_shape = IndexList[2](2 * total_slice_length, num_heads * head_dim)
+    var a_size = 2 * total_slice_length * num_heads * head_dim
     var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
     var a_host = NDBuffer[dtype, 2, _, DimList(Dim(), num_heads * head_dim)](
         a_host_ptr, a_shape
@@ -634,7 +632,7 @@ fn test_kv_cache_2m_iadd_cpu[
         prompt_lens,
         cache_lens,
         num_active_loras,
-        total_length,
+        total_slice_length,
         max_prompt_length,
         max_full_context_length,
         layer_idx,

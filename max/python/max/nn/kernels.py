@@ -3385,6 +3385,7 @@ def sgmv_lora_qkv_shrink(
     lora_a: TensorValue,
     lora_ids: TensorValue,
     lora_grouped_offsets: TensorValue,
+    lora_end_idx: TensorValue,
     max_lora_seq_len: int,
     max_rank: int,
 ) -> TensorValue:
@@ -3429,7 +3430,7 @@ def sgmv_lora_qkv_shrink(
         out_types=[
             TensorType(
                 dtype=input.dtype,
-                shape=[3, input.shape[0], max_rank],
+                shape=[3, lora_end_idx.shape[0], max_rank],
                 device=input.device,
             ),
         ],
@@ -3491,6 +3492,7 @@ def sgmv_qkv_lora_kernel(
         lora_a=lora_a,
         lora_ids=lora_ids,
         lora_grouped_offsets=lora_grouped_offsets,
+        lora_end_idx=lora_end_idx,
         max_lora_seq_len=max_lora_seq_len,
         max_rank=max_rank,
     )
@@ -3509,7 +3511,7 @@ def sgmv_qkv_lora_kernel(
         bias,
     )
 
-    v_kv = ops.reshape(v_qkv[1:, :, :], [2 * input.shape[0], -1])
+    v_kv = ops.reshape(v_qkv[1:, :, :], [2 * lora_end_idx.shape[0], -1])
 
     # expand GMM-KV:   [2M, N] @ [2G, KVdim, N] // KV stacked in dim 0
     kv_out = sgmv_kernel(
