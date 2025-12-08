@@ -164,7 +164,6 @@ PINS = {
     "uvicorn": "uvicorn@0.30.6",
     "uvloop": "uvloop@0.22.1",
     "wheel": "wheel@0.45.1",
-    "xxhash": "xxhash@3.6.0",
     "zhconv": "zhconv@1.4.3",
     "zhon": "zhon@2.1.1",
 }
