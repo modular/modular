@@ -392,9 +392,9 @@ fn batched_matmul[
     fn description_fn() -> String:
         # fmt: off
         return String(
-            trace_arg("A", a_buf),
-            ";", trace_arg("B", b_buf),
-            ";", trace_arg("C", c_buf),
+            trace_arg("A", a_buf.dynamic_shape, a_buf.dtype),
+            ";", trace_arg("B", b_buf.dynamic_shape, b_buf.dtype),
+            ";", trace_arg("C", c_buf.dynamic_shape, c_buf.dtype),
             ";transpose_a=", transpose_a,
             ";transpose_b=", transpose_b,
         )

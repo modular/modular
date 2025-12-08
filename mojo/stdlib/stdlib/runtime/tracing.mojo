@@ -19,7 +19,6 @@ from sys.param_env import env_get_int, is_defined
 
 import gpu.host._tracing as gpu_tracing
 import logger.logger as logger
-from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.host._tracing import Color
 from gpu.host._tracing import _end_range as _end_gpu_range
@@ -366,20 +365,6 @@ fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
         A string representation of the argument with its shape and data type.
     """
     return String(trace_arg(name, shape), "x", dtype)
-
-
-@always_inline
-fn trace_arg(name: String, buf: NDBuffer) -> String:
-    """Helper to stringify the type and shape of a kernel argument for tracing.
-
-    Args:
-        name: The name of the argument.
-        buf: The NDBuffer to trace.
-
-    Returns:
-        A string representation of the buffer with its shape and data type.
-    """
-    return trace_arg(name, buf.dynamic_shape, buf.type)
 
 
 # ===-----------------------------------------------------------------------===#
