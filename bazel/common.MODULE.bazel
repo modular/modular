@@ -465,3 +465,26 @@ http_archive(
     sha256 = "a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
 )
+
+SHELLCHECK_VERSION = "v0.10.0"
+
+[
+    http_archive(
+        name = "shellcheck-{}".format(arch),
+        build_file_content = """exports_files(glob(["shellcheck"]))""",
+        integrity = sha,
+        strip_prefix = "shellcheck-{}".format(SHELLCHECK_VERSION),
+        urls = [
+            # https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.darwin.aarch64.tar.xz
+            "https://github.com/koalaman/shellcheck/releases/download/{version}/shellcheck-{version}.{arch}.tar.xz".format(
+                arch = arch,
+                version = SHELLCHECK_VERSION,
+            ),
+        ],
+    )
+    for arch, sha in [
+        ("linux.x86_64", "sha256-bIgasGmOTm6iNSRfIoMoYFRPF7o4ZEL+fp1in4y+34c="),
+        ("linux.aarch64", "sha256-Mkp+id6Poq7Q0MKPPatZz4TG10JkAiwAwir2Ze0aCbs="),
+        ("darwin.aarch64", "sha256-u9LxSCYyju52edpyIfK8OvsBH2qSi4SMgMMh9gRt34E="),
+    ]
+]
