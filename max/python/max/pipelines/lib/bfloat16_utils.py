@@ -32,23 +32,16 @@ def float32_to_bfloat16_as_uint16(
     """
     assert arr.dtype == np.float32, f"Expected float32, got {arr.dtype}"
 
-    # Flatten for processing.
-    original_shape = arr.shape
-    flat = arr.ravel()
+    # Flatten and view as uint32 for bit manipulation.
+    uint32_view = arr.ravel().view(np.uint32)
 
-    # View as uint32 for bit manipulation.
-    uint32_view = flat.view(np.uint32)
+    # Round to nearest even: add (0x7FFF + bit16) then shift right 16.
+    # bit16 is the LSB of the upper 16 bits, used for round-to-even on ties.
+    # This is equivalent to: round_up when lower > 0x8000, or when
+    # lower == 0x8000 and bit16 == 1 (round ties to even).
+    rounded = uint32_view + (0x7FFF + ((uint32_view >> 16) & 1))
 
-    # Round to nearest even.
-    round_bit = (uint32_view >> 16) & 1
-    lower_half = uint32_view & 0xFFFF
-    round_up = (lower_half > 0x8000) | (
-        (lower_half == 0x8000) & (round_bit == 1)
-    )
-    uint32_rounded = uint32_view + (round_up.astype(np.uint32) * 0x8000)
-
-    # Extract upper 16 bits as bfloat16.
-    bfloat16_bits = (uint32_rounded >> 16).astype(np.uint16)
-
-    # Restore original shape.
-    return bfloat16_bits.reshape(original_shape)
+    # Extract upper 16 bits by viewing as uint16 and taking every other element.
+    # On little-endian systems, upper 16 bits are at odd indices in uint16 view.
+    # Copy to return a contiguous array that owns its data (slicing creates a view).
+    return rounded.view(np.uint16)[1::2].reshape(arr.shape).copy()
