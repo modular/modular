@@ -21,8 +21,10 @@ class TorchPrintHook(BasePrintHook):
     _handle: torch.utils.hooks.RemovableHandle
     """A handle used to remove the forward hook registered by this class."""
 
-    def __init__(self, export_path: str | None = None) -> None:
-        super().__init__(export_path)
+    def __init__(
+        self, export_path: str | None = None, filter: list[str] | None = None
+    ) -> None:
+        super().__init__(export_path, filter=filter)
         self._handle = torch.nn.modules.module.register_module_forward_hook(
             self._torch_forward_hook
         )

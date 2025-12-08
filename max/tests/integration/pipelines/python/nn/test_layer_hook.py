@@ -9,8 +9,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from max.driver import Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn.hooks.print_hook import PrintHook
 from max.nn.layer import Layer, add_layer_hook, clear_hooks
 from pytest_mock import MockerFixture
 
@@ -231,3 +234,34 @@ def test_hook_many_args_kwargs(mocker: MockerFixture) -> None:
         "kwarg2": "kwarg2 value",
         "kwarg3": "kwarg3 value",
     }
+
+
+def test_print_hook_filter(
+    session: InferenceSession, capfd: pytest.CaptureFixture
+) -> None:
+    # Create a model with two inner layers and name them.
+    print_hook = PrintHook(filter=["model.inner_layer_2"])
+    layer = OuterLayer()
+    print_hook.name_layers(layer)
+
+    g = Graph(
+        "nested",
+        layer,
+        input_types=[
+            TensorType(DType.float32, (2, 4, 6), device=DeviceRef.CPU())
+        ],
+    )
+
+    model = session.load(g)
+    _ = model(Tensor.zeros((2, 4, 6), DType.float32))
+
+    print_hook.remove()
+    del print_hook
+
+    captured = capfd.readouterr()
+    # Only the filtered layer's inputs/outputs should be printed.
+    assert "model.inner_layer_2-input_0" in captured.out
+    assert "model.inner_layer_2-output" in captured.out
+    assert "model.inner_layer_1" not in captured.out
+    assert "model-input" not in captured.out
+    assert "Printed 2 tensors for step 0" in captured.out
