@@ -21,7 +21,6 @@ START_TIME=$(date +%s)
 
 fetch_logs() {
     local instance_id=$1
-    local limit=${2:-50}
     echo "=== GCP Instance Logs ==="
 
     echo "Querying logs for instance_id: ${instance_id}"

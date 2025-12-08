@@ -29,8 +29,8 @@ fetch_logs() {
         aws logs get-log-events \
             --log-group-name "$LOG_GROUP" \
             --log-stream-name "$stream_name" \
-            --limit $limit \
-            --region $REGION \
+            --limit "$limit" \
+            --region "$REGION" \
             --query 'events[*].[timestamp,message]' \
             --output text
     else
@@ -38,7 +38,7 @@ fetch_logs() {
             --log-group-name "$LOG_GROUP" \
             --log-stream-name "$stream_name" \
             --start-time $(($(date +%s) - 60))000 \
-            --region $REGION \
+            --region "$REGION" \
             --query 'events[*].[timestamp,message]' \
             --output text
     fi
@@ -81,7 +81,7 @@ while true; do
     EC2_LOG_STREAM=$(aws logs describe-log-streams \
         --log-group-name "$LOG_GROUP" \
         --log-stream-name-prefix "instance-logs" \
-        --region $REGION \
+        --region "$REGION" \
         --query "logStreams[0].logStreamName" \
         --output text)
 

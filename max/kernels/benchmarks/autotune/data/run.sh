@@ -12,11 +12,10 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-echo $kplot
 shopt -s expand_aliases
 dir="$(pwd)"
-source $MODULAR_PATH/utils/start-modular.sh
-cd $dir
+source "$MODULAR_PATH/utils/start-modular.sh"
+cd "$dir" || exit 1
 
 kplot output_base.csv output_branch.csv -o base_vs_branch
 kplot output_base.csv output_branch.csv -o base_vs_branch -x pdf
