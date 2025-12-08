@@ -936,6 +936,60 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = ptr
         self._handle = cpp_handle
 
+    @doc_private
+    fn __init__[
+        _dtype: DType,
+    ](
+        out self: DeviceBuffer[_dtype],
+        ctx: DeviceContext,
+        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
+        size: Int,
+        *,
+        owning: Bool,
+    ):
+        """Constructs a DeviceBuffer from any pointer.
+
+        This constructor accepts pointers with any origin and converts them
+        internally to MutAnyOrigin. This is a stepping stone API that allows
+        existing code using specific origins to work while the codebase
+        transitions to proper origin tracking.
+
+        Parameters:
+            _dtype: The element type of the buffer.
+
+        Args:
+            ctx: The device context.
+            ptr: Pointer to device memory with any origin.
+            size: Number of elements.
+            owning: Whether this buffer owns the memory.
+        """
+        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime elem_size = size_of[_dtype]()
+        var cpp_handle: _DeviceBufferPtr = {}
+        var device_ptr = rebind[UnsafePointer[Scalar[_dtype], MutAnyOrigin]](
+            ptr
+        )
+        external_call[
+            "AsyncRT_DeviceContext_createBuffer_owning",
+            NoneType,
+            UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
+            _DeviceContextPtr,
+            UnsafePointer[Scalar[_dtype], MutAnyOrigin],
+            _SizeT,
+            _SizeT,
+            Bool,
+        ](
+            UnsafePointer(to=cpp_handle),
+            ctx._handle,
+            device_ptr,
+            UInt(size),
+            UInt(elem_size),
+            owning,
+        )
+
+        self._device_ptr = device_ptr
+        self._handle = cpp_handle
+
     fn __copyinit__(out self, existing: Self):
         """Creates a copy of an existing device buffer by incrementing its reference count.
 
