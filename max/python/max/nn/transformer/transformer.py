@@ -123,20 +123,13 @@ class Transformer(Module):
         self.return_hidden_states = return_hidden_states
         self.logits_scaling = logits_scaling
 
-    def __call__(
+    def _process_hidden_states(
         self,
-        tokens: TensorValueLike,
+        h: TensorValue,
         kv_collection: PagedCacheValues,
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
-        h = self.embed_tokens(tokens)
-
-        if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
-
         freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
             h = layer(
@@ -202,3 +195,22 @@ class Transformer(Module):
             ret_val += (self.norm(last_h),)
 
         return ret_val
+
+    def __call__(
+        self,
+        tokens: TensorValueLike,
+        kv_collection: PagedCacheValues,
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
+        hidden_states: TensorValue | None = None,
+    ) -> tuple[TensorValue, ...]:
+        h = self.embed_tokens(tokens)
+
+        if self.embedding_multiplier != 1.0:
+            h = h * ops.constant(
+                self.embedding_multiplier, h.dtype, device=h.device
+            )
+
+        return self._process_hidden_states(
+            h, kv_collection, return_n_logits, input_row_offsets
+        )
