@@ -80,6 +80,14 @@ class ReturnLogits(str, Enum):
     ALL = "all"
 
 
+class ReturnHiddenStates(str, Enum):
+    NONE = "none"
+    LAST = "last"
+    ALL = "all"
+    LAST_NORMALIZED = "last_normalized"
+    ALL_NORMALIZED = "all_normalized"
+
+
 Block = TypeVar("Block", bound=Module, covariant=True)
 
 
@@ -97,6 +105,7 @@ class Transformer(Module):
         kv_params: KVCacheParams,
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         embedding_multiplier: float = 1.0,
         logits_scaling: float = 1.0,
     ) -> None:
@@ -111,6 +120,7 @@ class Transformer(Module):
         self.embedding_multiplier = embedding_multiplier
         self.rope = rope
         self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states
         self.logits_scaling = logits_scaling
 
     def __call__(
@@ -127,7 +137,6 @@ class Transformer(Module):
                 self.embedding_multiplier, h.dtype, device=h.device
             )
 
-        # Create position embeddings shared across the decoder layers.
         freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
             h = layer(
@@ -178,8 +187,18 @@ class Transformer(Module):
             if logits is not None:
                 logits = logits / self.logits_scaling
 
+        ret_val: tuple[TensorValue, ...] = (last_logits,)
         if offsets is not None:
             assert logits is not None
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)
+            ret_val += (logits, offsets)
+
+        if self.return_hidden_states == ReturnHiddenStates.ALL:
+            ret_val += (h,)
+        elif self.return_hidden_states == ReturnHiddenStates.LAST:
+            ret_val += (last_h,)
+        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+            ret_val += (self.norm(h),)
+        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
+            ret_val += (self.norm(last_h),)
+
+        return ret_val

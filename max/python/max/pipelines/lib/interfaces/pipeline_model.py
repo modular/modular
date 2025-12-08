@@ -27,7 +27,7 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
 from max.kv_cache import infer_optimal_batch_size
 from max.nn.kv_cache import KVCacheInputs
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
@@ -87,6 +87,9 @@ class ModelOutputs:
 
     logit_offsets: Tensor | None = None
     """Offsets to access variable length logits for each sequence."""
+
+    hidden_states: Tensor | None = None
+    """Hidden states for a variable number of tokens per sequence."""
 
 
 class ModelInputs:
@@ -154,6 +157,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         weights: Weights,
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
@@ -163,6 +167,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self.weights = weights
         self.adapter = adapter
         self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states
 
         # Initialize `max_seq_len` here to avoid repeated HF config access.
         self.max_seq_len = self.calculate_max_seq_len(

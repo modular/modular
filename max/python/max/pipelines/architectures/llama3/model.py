@@ -31,7 +31,7 @@ from max.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.nn import ReturnLogits
+from max.nn import ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -148,6 +148,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         """
         Args:
@@ -164,6 +165,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             weights,
             adapter,
             return_logits,
+            return_hidden_states,
         )
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
@@ -239,8 +241,26 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
                 *curr_kv_cache_inputs,
             )
 
-        if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Tensor)
+        has_offsets = self.return_logits in (
+            ReturnLogits.VARIABLE,
+            ReturnLogits.ALL,
+        )
+        has_hidden_states = self.return_hidden_states != ReturnHiddenStates.NONE
+
+        assert isinstance(model_outputs[0], Tensor)
+        if has_offsets and has_hidden_states:
+            assert len(model_outputs) == 4
+            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[2], Tensor)
+            assert isinstance(model_outputs[3], Tensor)
+            return ModelOutputs(
+                logits=model_outputs[1],
+                next_token_logits=model_outputs[0],
+                logit_offsets=model_outputs[2],
+                hidden_states=model_outputs[3],
+            )
+        elif has_offsets:
+            assert len(model_outputs) == 3
             assert isinstance(model_outputs[1], Tensor)
             assert isinstance(model_outputs[2], Tensor)
             return ModelOutputs(
@@ -248,10 +268,19 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
                 next_token_logits=model_outputs[0],
                 logit_offsets=model_outputs[2],
             )
-        else:
-            assert isinstance(model_outputs[0], Tensor)
+        elif has_hidden_states:
+            assert len(model_outputs) == 2
+            assert isinstance(model_outputs[1], Tensor)
             return ModelOutputs(
-                logits=model_outputs[0], next_token_logits=model_outputs[0]
+                logits=model_outputs[0],
+                next_token_logits=model_outputs[0],
+                hidden_states=model_outputs[1],
+            )
+        else:
+            assert len(model_outputs) == 1
+            return ModelOutputs(
+                logits=model_outputs[0],
+                next_token_logits=model_outputs[0],
             )
 
     def prepare_initial_token_inputs(
@@ -515,6 +544,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
+            return_hidden_states=self.return_hidden_states,
             data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
         )
 
@@ -687,6 +717,7 @@ class Llama3Model(LlamaModelBase):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -698,4 +729,5 @@ class Llama3Model(LlamaModelBase):
             weights,
             adapter,
             return_logits,
+            return_hidden_states,
         )
