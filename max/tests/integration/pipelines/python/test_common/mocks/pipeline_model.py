@@ -14,7 +14,7 @@ from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
+from max.nn import ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -55,6 +55,7 @@ class MockPipelineModel(PipelineModel):
         devices: list[Device] = [],  # noqa: B006
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
@@ -65,6 +66,7 @@ class MockPipelineModel(PipelineModel):
         self.weights = weights
         self.adapter = adapter
         self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states
 
         if not devices:
             self.devices = [CPU()]
