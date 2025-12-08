@@ -16,83 +16,64 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
+import max.nn.module_v3 as nn
+import max.experimental.functional as F
+from max.experimental import tensor
+from max.experimental.tensor import Tensor
+from max.nn.module_v3.sequential import ModuleList
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    ShardingStrategy,
-    TensorValue,
-    Weight,
-    ops,
-)
-from max.driver import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.layer import Layer, Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.kernels import flash_attention_gpu
 
+from ..model_config import TransformerConfig
+from .layers import RMSNorm, LayerNorm, SiLU, ModuleDict, pad_sequence, Transformer2DModelOutput, create_attention_mask, masked_scatter
 
 ADALN_EMBED_DIM = 256
 SEQ_MULTI_OF = 32
 
 
-class TimestepEmbedder(Module):
-    def __init__(
-        self,
-        out_size: int,
-        mid_size: int | None = None,
-        frequency_embedding_size: int = 256,
-        dtype: DType = DType.float32,
-        device: DeviceRef = DeviceRef.CPU(),
-    ):
+class TimestepEmbedder(nn.Module):
+    def __init__(self, out_size: int, mid_size: int | None = None, frequency_embedding_size: int = 256):
         super().__init__()
         if mid_size is None:
             mid_size = out_size
-        
-        self.linear_1 = Linear(
-            frequency_embedding_size,
-            mid_size,
-            has_bias=True,
-            dtype=dtype,
-            device=device,
-        )
-        self.linear_2 = Linear(
-            mid_size,
-            out_size,
-            has_bias=True,
-            dtype=dtype,
-            device=device,
+
+        self.mlp = nn.Sequential(
+            nn.Linear(frequency_embedding_size, mid_size),
+            SiLU(),
+            nn.Linear(mid_size, out_size)
         )
         self.frequency_embedding_size = frequency_embedding_size
 
     @staticmethod
-    def timestep_embedding(
-        t: TensorValue, dim: int, max_period: int = 10000
-    ) -> TensorValue:
+    def timestep_embedding(t: Tensor, dim: int, max_period: int = 10000) -> Tensor:
         """
         Create sinusoidal timestep embeddings.
         """
         half = dim // 2
-        freqs = ops.exp(-math.log(max_period) * ops.range(0, half, 1, dtype=DType.float32, device=t.device) / half)
-        args = ops.unsqueeze(t.cast(DType.float32), -1) * ops.unsqueeze(freqs, 0)
-        embedding = ops.concat([ops.cos(args), ops.sin(args)], axis=-1)
-        
+        freqs = (
+            F.exp(
+                -math.log(max_period)
+                * F.range(0, half, 1, dtype=DType.float32, device=t.device)
+                / half
+            )
+        )
+        args = t[:, None].cast(DType.float32) * freqs[None, :]
+        embedding = F.concat([F.cos(args), F.sin(args)], axis=-1)
+
         if dim % 2:
             zeros = Tensor.zeros([embedding.shape[0], 1], dtype=embedding.dtype, device=embedding.device)
-            embedding = ops.concat([embedding, zeros], axis=-1)
-            
+            embedding = F.concat([embedding, zeros], axis=-1)
+
         return embedding
 
-    def __call__(self, t: TensorValue) -> TensorValue:
+    def __call__(self, t: Tensor) -> Tensor:
         t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
-        # TODO: Does this casting make sense?
-        # if weight_dtype.is_floating_point:
-        t_freq = t_freq.cast(self.linear_1.weight.dtype)
-        t_emb = self.linear_2(ops.silu(self.linear_1(t_freq)))
+        #t_freq = t_freq.cast(self.mlp[0].weight.dtype)
+        t_emb = self.mlp(t_freq)
         return t_emb
 
 
-class ZImageAttention(Module):
+class ZImageSingleStreamAttention(nn.Module):
     """
     Z-Image specific attention module.
     Stateless implementation using flash_attention_ragged_gpu.
@@ -100,232 +81,213 @@ class ZImageAttention(Module):
     def __init__(
         self,
         dim: int,
-        num_attention_heads: int,
-        dtype: DType = DType.float32,
-        use_qk_norm: bool = False,
-        rms_norm_eps: float = 1e-5,
-        flash_attention: bool = False,
-        devices: Sequence[DeviceRef] | None = None,
-        float8_config: Float8Config | None = None,
+        heads: int,
+        dim_head: int,
+        eps: float = 1e-5,
     ):
         super().__init__()
-        self.n_heads = num_attention_heads
-        self.head_dim = dim // num_attention_heads
-        self.scale = self.head_dim**-0.5
-        self.devices = devices if devices is not None else [DeviceRef.CPU()]
-        
-        self.qkv_proj = Weight(
-            name="qkv.weight",
-            dtype=dtype,
-            shape=(3 * dim, self.head_dim),
-            device=self.devices[0],
-        )
-        self.o_proj = Linear(dim, dim, has_bias=False, dtype=dtype, device=device)
-        
-        self.use_qk_norm = use_qk_norm
-        if use_qk_norm:
-            from max.nn.norm.layer_norm import LayerNorm
-            self.q_norm = LayerNorm(dim, devices=[device], dtype=dtype, eps=rms_norm_eps, use_bias=True)
-            self.k_norm = LayerNorm(self.n_kv_heads * self.head_dim, devices=[device], dtype=dtype, eps=rms_norm_eps, use_bias=True)
-        else:
-            self.q_norm = None
-            self.k_norm = None
 
-    def apply_rope(self, x: TensorValue, freqs_cis: TensorValue) -> TensorValue:
-        """
-        Apply Rotary Positional Embeddings (RoPE) to the input tensor.
-        Performs complex number multiplication: (a + ib) * (cos + isin).
-        """
-        freqs_cos = ops.cos(freqs_cis)
-        freqs_sin = ops.sin(freqs_cis)
-        
-        # Reshape for complex representation: [..., head_dim//2, 2]
-        x_reshaped = ops.reshape(x, shape=[x.shape[0], x.shape[1], self.head_dim // 2, 2])
-        x_re = x_reshaped[..., 0]
-        x_im = x_reshaped[..., 1]
-        
-        # Broadcast frequencies
-        freqs_cos = ops.unsqueeze(freqs_cos, 1)
-        freqs_sin = ops.unsqueeze(freqs_sin, 1)
-        
-        # Rotate: (a + ib) * (cos + isin) = (acos - bsin) + i(asin + bcos)
-        out_re = x_re * freqs_cos - x_im * freqs_sin
-        out_im = x_re * freqs_sin + x_im * freqs_cos
-        
-        out = ops.stack([out_re, out_im], axis=-1)
-        return ops.reshape(out, shape=[x.shape[0], x.shape[1], self.head_dim])
+        self.inner_dim = dim_head * heads
+        self.heads = heads
+        self.kv_inner_dim = self.inner_dim
+        self.head_dim = dim // heads
+        self.scale = 1 / math.sqrt(self.head_dim)
+
+        self.to_q = nn.Linear(dim, self.inner_dim, bias=False)
+        self.to_k = nn.Linear(dim, self.kv_inner_dim, bias=False)
+        self.to_v = nn.Linear(dim, self.kv_inner_dim, bias=False)
+        self.to_out = nn.Linear(self.inner_dim, dim, bias=False)
+
+        self.norm_q = RMSNorm(dim // heads, eps)
+        self.norm_k = RMSNorm(dim // heads, eps)
 
     def __call__(
         self,
-        x: TensorValue,
-        freqs_cis: TensorValue,
-        input_row_offsets: TensorValue,
-        max_seq_len: TensorValue,
-    ) -> TensorValue:
-        total_seq_len = x.shape[0]
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor | None = None,
+        attention_mask: Tensor | None = None,
+        freqs_cis: Tensor | None = None,
+    ) -> Tensor:
+        query = self.to_q(hidden_states)
+        key = self.to_k(hidden_states)
+        value = self.to_v(hidden_states)
 
-        qkv = self.qkv_proj(x)
-        
-        q = ops.reshape(q, shape=[total_seq_len, self.n_heads, self.head_dim])
-        k = ops.reshape(k, shape=[total_seq_len, self.n_kv_heads, self.head_dim])
-        v = ops.reshape(v, shape=[total_seq_len, self.n_kv_heads, self.head_dim])
+        if hidden_states.rank > 3:
+             # Flatten spatial/sequence dimensions: (B, D1, D2, ..., C) -> (B, S, C)
+             B = hidden_states.shape[0]
+             C = hidden_states.shape[-1]
+             S = 1
+             for d in hidden_states.shape[1:-1]:
+                 S *= int(d)
+             hidden_states = hidden_states.reshape([B, S, C])
 
-        if self.use_qk_norm:
-            q = self.q_norm(q)
-            k = self.k_norm(k)
+        B, S, _ = hidden_states.shape
+        query = query.reshape((B, S, self.heads, self.head_dim)).transpose(1, 2)
+        key = key.reshape((B, S, self.heads, self.head_dim)).transpose(1, 2)
+        value = value.reshape((B, S, self.heads, self.head_dim)).transpose(1, 2)
 
-        freqs_cis = ops.cast(freqs_cis, q.dtype)
-        q = self.apply_rope(q, freqs_cis)
-        k = self.apply_rope(k, freqs_cis)
-        
-        from max.nn.kernels import flash_attention_ragged_gpu
-        
-        attn_out = flash_attention_ragged_gpu(
-            q, k, v,
-            input_row_offsets=input_row_offsets,
-            max_seq_len=max_seq_len,
-            mask_variant=MHAMaskVariant.NULL_MASK,
-            scale=self.scale
-        )
-        
-        attn_out = ops.reshape(attn_out, shape=[total_seq_len, self.n_heads * self.head_dim])
-        return self.o_proj(attn_out)
+        # Apply norms
+        query = self.norm_q(query)
+        key = self.norm_k(key)
+
+        # Apply RoPE
+        # TODO: Verify this implementation
+        def apply_rotary_emb(x_in: Tensor, freqs_cis: Tensor) -> Tensor:
+            # x_in shape: (B, H, S, D)
+            # Reshape for complex interpretation: [..., head_dim] -> [..., head_dim/2, 2]
+            target_shape = list(x_in.shape[:-1]) + [-1, 2]
+            x_complex = x_in.cast(DType.float32).reshape(target_shape)
+            # x_reshaped is already [..., 2] so no need for as_interleaved_complex
+            freqs_cis_expanded = F.unsqueeze(freqs_cis, 1)  # Expand at dim 1 (heads) to broadcast: (B, 1, S, D, 2)
+
+            # Apply complex multiplication
+            x_rotated = F.complex_mul(x_complex, freqs_cis_expanded)
+            # Reshape back to real: flatten the last 2 dims
+            x_out = x_rotated.reshape(x_in.shape)
+            return x_out.cast(x_in.dtype)
+
+        if freqs_cis is not None:
+            query = apply_rotary_emb(query, freqs_cis)
+            key = apply_rotary_emb(key, freqs_cis)
+
+        # From [batch, seq_len] to [batch, 1, 1, seq_len] -> broadcast to [batch, heads, seq_len, seq_len]
+        if attention_mask is not None and attention_mask.rank == 2:
+            attention_mask = attention_mask[:, None, None, :]
+
+        # Compute joint attention
+        # attn_out = flash_attention_gpu(
+        #    query,
+        #    key,
+        #    value,
+        #    attention_mask,
+        #    self.scale,
+        # )
+        # hidden_states = hidden_states.flatten(2, 3)
+        # Manual attention implementation for CPU compatibility
+        # query, key, value shape: (B, H, S, D) - permuted previously to be (B, H, S, D) for flash_attn
+        # But for matmul we want:
+        # Q: (B, H, S, D)
+        # K: (B, H, S, D) -> K.T (last 2 dims): (B, H, D, S)
+        # attn = (Q @ K.T) * scale
+
+        attn_scores = F.matmul(query, key.transpose(-1, -2)) * self.scale
+
+        if attention_mask is not None:
+             # Mask is (B, 1, 1, S) broadcasted to (B, H, S, S)
+             # Apply mask (assuming additive mask where False/0 means mask out?)
+             # Usually attention_mask in diffusers is 1 for keep, 0 for discard?
+             # Function create_attention_mask returns boolean.
+             # We need to fill -inf where mask is False.
+             # F.where(mask, attn_scores, -inf)
+
+             # Check mask type. `create_attention_mask` returns boolean tensor (True for valid).
+             # So we keep where True.
+             min_val = -1e9 # -inf proxy
+             if attention_mask.dtype == DType.bool:
+                  attn_scores = F.where(attention_mask, attn_scores, min_val)
+             else:
+                  # If float mask (additive), adds directly. But here we assume boolean based on usage.
+                  pass
+
+        attn_probs = F.softmax(attn_scores, axis=-1)
+        attn_out = F.matmul(attn_probs, value) # (B, H, S, S) @ (B, H, S, D) -> (B, H, S, D)
+
+        # attn_out is (B, H, S, D).
+        # We need to match the next steps which expect (B, H, S, D) and then flatten.
+        # attn_out: (B, H, S, D) -> (B, S, H, D) -> (B, S, H*D)
+        hidden_states = F.flatten(attn_out.transpose(1, 2), start_dim=2, end_dim=3)
+        hidden_states = hidden_states.cast(query.dtype)
+
+        output = self.to_out(hidden_states)
+
+        return output
 
 
-class FeedForward(Module):
-    def __init__(
-        self, 
-        dim: int, 
-        hidden_dim: int,
-        dtype: DType = DType.float32,
-        device: DeviceRef = DeviceRef.CPU(),
-    ):
+class FeedForward(nn.Module):
+    def __init__(self, dim: int, hidden_dim: int):
         super().__init__()
-        self.w1 = Linear(dim, hidden_dim, has_bias=False, dtype=dtype, device=device)
-        self.w2 = Linear(hidden_dim, dim, has_bias=False, dtype=dtype, device=device)
-        self.w3 = Linear(dim, hidden_dim, has_bias=False, dtype=dtype, device=device)
+        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
+        self.w3 = nn.Linear(dim, hidden_dim, bias=False)
 
-    def __call__(self, x: TensorValue) -> TensorValue:
-        return self.w2(ops.silu(self.w1(x)) * self.w3(x))
+    def __call__(self, x: Tensor) -> Tensor:
+        return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
-class ZImageTransformerBlock(Module):
+class ZImageTransformerBlock(nn.Module):
     def __init__(
         self,
         layer_id: int,
         dim: int,
         n_heads: int,
-        n_kv_heads: int,
         norm_eps: float,
         qk_norm: bool,
-        dtype: DType = DType.float32,
-        device: DeviceRef = DeviceRef.CPU(),
+        modulation: bool = True,
     ):
         super().__init__()
         self.dim = dim
-        self.head_dim = dim // n_heads
+        head_dim = dim // n_heads
+
+        self.attention = ZImageSingleStreamAttention(dim, n_heads, head_dim, 1e-5)
+
+        self.feed_forward = FeedForward(dim, int(dim / 3 * 8))
         self.layer_id = layer_id
 
-        self.attention = ZImageAttention(
-            dim=dim,
-            num_attention_heads=n_heads,
-            num_key_value_heads=n_kv_heads,
-            dtype=dtype,
-            device=device,
-            use_qk_norm=qk_norm,
-            rms_norm_eps=1e-5,
-        )
+        self.attention_norm1 = RMSNorm(dim, norm_eps)
+        self.ffn_norm1 = RMSNorm(dim, norm_eps)
 
-        self.feed_forward = FeedForward(
-            dim=dim, 
-            hidden_dim=int(dim / 3 * 8),
-            dtype=dtype,
-            device=device
-        )
+        self.attention_norm2 = RMSNorm(dim, norm_eps)
+        self.ffn_norm2 = RMSNorm(dim, norm_eps)
 
-        self.attention_norm1 = RMSNorm(dim, eps=norm_eps, dtype=dtype)
-        self.ffn_norm1 = RMSNorm(dim, eps=norm_eps, dtype=dtype)
-        
-        self.attention_norm2 = RMSNorm(dim, eps=norm_eps, dtype=dtype)
-        self.ffn_norm2 = RMSNorm(dim, eps=norm_eps, dtype=dtype)
-
-        self.adaLN_modulation = Linear(
-            min(dim, ADALN_EMBED_DIM), 
-            6 * dim, 
-            has_bias=True,
-            dtype=dtype,
-                device=device
-            )
+        self.modulation = modulation
+        if modulation:
+            self.adaLN_modulation = nn.Sequential(nn.Linear(min(dim, ADALN_EMBED_DIM), 4 * dim))
 
     def __call__(
         self,
-        x: TensorValue,
-        freqs_cis: TensorValue,
-        input_row_offsets: TensorValue,
-        max_seq_len: TensorValue,
-        adaln_input: TensorValue | None = None,
-    ) -> TensorValue:
-        
-        layer_idx = ops.constant(self.layer_id, DType.uint32, device=x.device)
+        x: Tensor,
+        attn_mask: Tensor,
+        freqs_cis: Tensor,
+        adaln_input: Tensor | None = None,
+    ) -> Tensor:
+        if self.modulation:
+            if adaln_input is None:
+                raise ValueError("adaln_input must not be None")
+            scale_msa, gate_msa, scale_mlp, gate_mlp = F.chunk(F.unsqueeze(self.adaLN_modulation(adaln_input), 1), 4, axis=2)
+            gate_msa, gate_mlp = F.tanh(gate_msa), F.tanh(gate_mlp)
+            scale_msa, scale_mlp = 1.0 + scale_msa, 1.0 + scale_mlp
 
-        if adaln_input is None:
-            raise ValueError("adaln_input required when modulation is True")
-            
-        mod_out = self.adaLN_modulation(adaln_input)
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = ops.chunk(mod_out, 6, axis=1)
-        
-        gate_msa = ops.tanh(gate_msa)
-        gate_mlp = ops.tanh(gate_mlp)
-        scale_msa = 1.0 + scale_msa
-        scale_mlp = 1.0 + scale_mlp
-        
-        # Attention block
-        norm_x = self.attention_norm1(x)
-        mod_x = norm_x * scale_msa
-        
-        attn_out = self.attention(
-            mod_x,
-            freqs_cis,
-            input_row_offsets,
-            max_seq_len
-        )
-        
-        x = x + gate_msa * self.attention_norm2(attn_out)
-        
-        # FFN block
-        norm_x_ffn = self.ffn_norm1(x)
-        mod_x_ffn = norm_x_ffn * scale_mlp
-        
-        ffn_out = self.feed_forward(mod_x_ffn)
-        
-        x = x + gate_mlp * self.ffn_norm2(ffn_out)
+            # Attention block
+            attn_out = self.attention(self.attention_norm1(x) * scale_msa, attention_mask=attn_mask, freqs_cis=freqs_cis)
+            x = x + gate_msa * self.attention_norm2(attn_out)
+
+            # FFN block
+            x = x + gate_mlp * self.ffn_norm2(self.feed_forward(self.ffn_norm1(x) * scale_mlp))
+        else:
+            # Attention block
+            attn_out = self.attention(self.attention_norm1(x), attention_mask=attn_mask, freqs_cis=freqs_cis)
+            x = x + self.attention_norm2(attn_out)
+
+            # FFN block
+            x = x + self.ffn_norm2(self.feed_forward(self.ffn_norm1(x)))
 
         return x
 
 
-class FinalLayer(Module):
-    def __init__(
-        self, 
-        hidden_size: int, 
-        out_channels: int,
-        dtype: DType = DType.float32,
-        device: DeviceRef = DeviceRef.CPU(),
-    ):
+class FinalLayer(nn.Module):
+    def __init__(self, hidden_size: int, out_channels: int):
         super().__init__()
-        self.norm_final = RMSNorm(hidden_size, eps=1e-6, dtype=dtype) 
-        self.linear = Linear(hidden_size, out_channels, has_bias=True, dtype=dtype, device=device)
-        
-        self.adaLN_modulation_0 = Linear(
-            min(hidden_size, ADALN_EMBED_DIM), 
-            hidden_size, 
-            has_bias=True,
-            dtype=dtype,
-            device=device
+        self.norm_final = LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.linear = nn.Linear(hidden_size, out_channels)
+
+        self.adaLN_modulation = nn.Sequential(
+            SiLU(),
+            nn.Linear(min(hidden_size, ADALN_EMBED_DIM), hidden_size),
         )
 
-    def __call__(self, x: TensorValue, c: TensorValue) -> TensorValue:
-        scale = 1.0 + self.adaLN_modulation_0(ops.silu(c))
-        x = self.norm_final(x) * scale
+    def __call__(self, x: Tensor, c: Tensor) -> Tensor:
+        scale = 1.0 + self.adaLN_modulation(c)
+        x = self.norm_final(x) * F.unsqueeze(scale, 1)
         x = self.linear(x)
         return x
 
@@ -340,60 +302,68 @@ class RopeEmbedder:
         self.theta = theta
         self.axes_dims = axes_dims
         self.axes_lens = axes_lens
-        assert len(axes_dims) == len(axes_lens), "axes_dims and axes_lens must have the same length"
+        if len(axes_dims) != len(axes_lens):
+            raise ValueError("axes_dims and axes_lens must have the same length")
         self.freqs_cis = None
 
     @staticmethod
-    def precompute_freqs_cis(dim: Sequence[int], end: Sequence[int], theta: float = 256.0, device: DeviceRef = DeviceRef.CPU()):
+    def precompute_freqs_cis(dim: Sequence[int], end: Sequence[int], theta: float = 256.0, device=None) -> list[Tensor]:
         freqs_cis = []
-        for d, e in zip(dim, end):
-            arange = ops.range(0, d, 2, device=device, dtype=DType.float32)
-            freqs = 1.0 / (theta ** (arange / d))
-            timestep = ops.range(0, e, 1, device=device, dtype=DType.float32)
-            freqs = ops.outer(timestep, freqs)
-            freqs_cis.append(freqs)
-            
+        for i, (d, e) in enumerate(zip(dim, end)):
+            freqs = 1.0 / (theta ** (F.range(0, d, 2, dtype=DType.float64, device=device) / d))
+            timestep = F.range(0, e, dtype=DType.float64, device=device)
+            angles = F.outer(timestep, freqs).cast(DType.float32)
+            # Create complex representation [real, imag]
+            freqs_cos = F.cos(angles)
+            freqs_sin = F.sin(angles)
+            freqs_cis_i = F.stack([freqs_cos, freqs_sin], axis=-1)
+            freqs_cis.append(freqs_cis_i)
+
         return freqs_cis
 
-    def __call__(self, ids: TensorValue) -> TensorValue:
+    def __call__(self, ids: Tensor) -> Tensor:
+        if len(ids.shape) != 2:
+            raise ValueError("ids must be a 2D tensor")
+        if ids.shape[-1] != len(self.axes_dims):
+            raise ValueError("ids must have the same number of columns as the number of axes")
+        device = ids.device
+
         if self.freqs_cis is None:
-            self.freqs_cis = self.precompute_freqs_cis(self.axes_dims, self.axes_lens, theta=self.theta, device=ids.device)
-            
+            self.freqs_cis = self.precompute_freqs_cis(self.axes_dims, self.axes_lens, theta=self.theta, device=device)
+        else:
+            # Ensure freqs_cis are on the same device as ids
+            if self.freqs_cis[0].device != device:
+                self.freqs_cis = [freqs_cis.to(device) for freqs_cis in self.freqs_cis]
+
         result = []
         for i in range(len(self.axes_dims)):
             index = ids[:, i]
-            gathered = ops.gather(self.freqs_cis[i], index, axis=0)
-            result.append(gathered)
-            
-        return ops.concat(result, axis=1)
+            result.append(F.gather(self.freqs_cis[i], index, axis=0))
+        return F.concat(result, axis=1)
 
 
-class ZImageTransformer2DModel(Module):
+class ZImageTransformer2DModel(nn.Module):
     def __init__(
         self,
-        all_patch_size=(2,),
-        all_f_patch_size=(1,),
-        in_channels=16,
-        dim=3840,
-        n_layers=30,
-        n_refiner_layers=2,
-        n_heads=30,
-        n_kv_heads=30,
-        norm_eps=1e-5,
-        qk_norm=True,
-        cap_feat_dim=2560,
-        rope_theta=256.0,
-        t_scale=1000.0,
-        axes_dims=[32, 48, 48],
-        axes_lens=[1024, 512, 512],
-        sample_size=32,
-        dtype: DType = DType.float32,
-        device: DeviceRef = DeviceRef.CPU(),
+        all_patch_size: Sequence[int] = (2,),
+        all_f_patch_size: Sequence[int] = (1,),
+        in_channels: int = 16,
+        dim: int = 3840,
+        n_layers: int = 30,
+        n_refiner_layers: int = 2,
+        n_heads: int = 30,
+        n_kv_heads: int = 30,
+        norm_eps: float = 1e-5,
+        qk_norm: bool = True,
+        cap_feat_dim: int = 2560,
+        rope_theta: float = 256.0,
+        t_scale: float = 1000.0,
+        axes_dims: Sequence[int] = [32, 48, 48],
+        axes_lens: Sequence[int] = [1024, 512, 512],
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = in_channels
-        self.sample_size = sample_size
         self.all_patch_size = all_patch_size
         self.all_f_patch_size = all_f_patch_size
         self.dim = dim
@@ -401,259 +371,325 @@ class ZImageTransformer2DModel(Module):
 
         self.rope_theta = rope_theta
         self.t_scale = t_scale
-        
+        self.gradient_checkpointing = False
 
+        if len(all_patch_size) != len(all_f_patch_size):
+            raise ValueError("all_patch_size and all_f_patch_size must have the same length")
 
-        assert len(all_patch_size) == len(all_f_patch_size)
-
-        self.all_x_embedder = {}
-        self.all_final_layer = {}
-        
+        all_x_embedder = {}
+        all_final_layer = {}
         for patch_idx, (patch_size, f_patch_size) in enumerate(zip(all_patch_size, all_f_patch_size)):
-            key = f"{patch_size}-{f_patch_size}"
-            x_embedder = Linear(
-                f_patch_size * patch_size * patch_size * in_channels, 
-                dim, 
-                has_bias=True,
-                dtype=dtype,
-                device=device
-            )
-            setattr(self, f"x_embedder_{key}", x_embedder)
-            self.all_x_embedder[key] = x_embedder
+            x_embedder = nn.Linear(f_patch_size * patch_size * patch_size * in_channels, dim, bias=True)
+            all_x_embedder[f"{patch_size}-{f_patch_size}"] = x_embedder
 
-            final_layer = FinalLayer(
-                dim, 
-                patch_size * patch_size * f_patch_size * self.out_channels,
-                dtype=dtype,
-                device=device
-            )
-            setattr(self, f"final_layer_{key}", final_layer)
-            self.all_final_layer[key] = final_layer
+            final_layer = FinalLayer(dim, patch_size * patch_size * f_patch_size * self.out_channels)
+            all_final_layer[f"{patch_size}-{f_patch_size}"] = final_layer
 
-        self.noise_refiner = [
-            ZImageTransformerBlock(
-                1000 + layer_id,
-                dim,
-                n_heads,
-                n_kv_heads,
-                norm_eps,
-                qk_norm,
+        self.all_x_embedder = ModuleDict(all_x_embedder)
+        self.all_final_layer = ModuleDict(all_final_layer)
+        self.noise_refiner = ModuleList([ZImageTransformerBlock(1000 + layer_id, dim, n_heads, norm_eps, qk_norm, modulation=True) for layer_id in range(n_refiner_layers)])
+        self.context_refiner = ModuleList([ZImageTransformerBlock(layer_id, dim, n_heads, norm_eps, qk_norm, modulation=False) for layer_id in range(n_refiner_layers)])
+        self.t_embedder = TimestepEmbedder(min(dim, ADALN_EMBED_DIM), mid_size=1024)
+        self.cap_embedder = nn.Sequential(RMSNorm(cap_feat_dim, norm_eps), nn.Linear(cap_feat_dim, dim, bias=True))
 
-                modulation=True,
-                dtype=dtype,
-                device=device,
-            )
-            for layer_id in range(n_refiner_layers)
-        ]
-        for i, layer in enumerate(self.noise_refiner):
-            setattr(self, f"noise_refiner_{i}", layer)
+        self.x_pad_token = Tensor.zeros((1, dim))
+        self.cap_pad_token = Tensor.zeros((1, dim))
 
-        self.context_refiner = [
-            ZImageTransformerBlock(
-                layer_id,
-                dim,
-                n_heads,
-                n_kv_heads,
-                norm_eps,
-                qk_norm,
-
-                modulation=False,
-                dtype=dtype,
-                device=device,
-            )
-            for layer_id in range(n_refiner_layers)
-        ]
-        for i, layer in enumerate(self.context_refiner):
-            setattr(self, f"context_refiner_{i}", layer)
-
-        self.t_embedder = TimestepEmbedder(
-            min(dim, ADALN_EMBED_DIM), 
-            mid_size=1024,
-            dtype=dtype,
-            device=device
-        )
-        
-        self.cap_embedder_norm = RMSNorm(cap_feat_dim, eps=norm_eps, dtype=dtype)
-        self.cap_embedder_linear = Linear(cap_feat_dim, dim, has_bias=True, dtype=dtype, device=device)
-
-        self.x_pad_token = Weight(name="x_pad_token", shape=(1, dim), dtype=dtype, device=device)
-        
-        self.layers = [
-            ZImageTransformerBlock(
-                layer_id, 
-                dim, 
-                n_heads, 
-                n_kv_heads, 
-                norm_eps, 
-                qk_norm,
-
-                dtype=dtype,
-                device=device
-            )
-            for layer_id in range(n_layers)
-        ]
-        for i, layer in enumerate(self.layers):
-            setattr(self, f"layers_{i}", layer)
-
+        self.layers = ModuleList([ZImageTransformerBlock(layer_id, dim, n_heads, norm_eps, qk_norm) for layer_id in range(n_layers)])
         head_dim = dim // n_heads
-        assert head_dim == sum(axes_dims)
+        if head_dim != sum(axes_dims):
+            raise ValueError("head_dim must be equal to sum(axes_dims)")
         self.axes_dims = axes_dims
         self.axes_lens = axes_lens
 
-        self.rope_embedder = RopeEmbedder(theta=rope_theta, axes_dims=axes_dims, axes_lens=axes_lens)
+        self.rope_embedder = RopeEmbedder(rope_theta, axes_dims, axes_lens)
 
-    def unpatchify(self, unified: TensorValue, batch_size_dim: Dim | int, total_cap_tokens_dim: Dim | int) -> TensorValue:
-        """
-        Splits unified tensor into image and caption tokens, and reshapes image tokens.
-        """
-        # Calculate image tokens length
-        img_tokens_dim = unified.shape[0] - total_cap_tokens_dim
-        img_tokens_tensor = ops.shape_to_tensor([img_tokens_dim])[0]
-        
-        # Slice out image tokens
-        x_out = ops.slice_tensor(unified, [
-            (slice(0, img_tokens_tensor), img_tokens_dim), 
-            slice(None)
-        ])
-        
-        p = self.all_patch_size[0]
-        C = self.out_channels
-        H = self.sample_size
-        W = self.sample_size
-        
-        h_patches = H // p
-        w_patches = W // p
-        
-        # Reshape to [batch, H/p, W/p, p, p, C]
-        x_out = ops.reshape(x_out, [batch_size_dim, h_patches, w_patches, p, p, C])
-        
-        # Permute to [batch, C, H, W]
-        x_out = ops.permute(x_out, [0, 5, 1, 3, 2, 4])
-        x_out = ops.reshape(x_out, [batch_size_dim, C, H, W])
-        
-        return x_out
+    def unpatchify(self, x: List[Tensor], size: List[Tuple], patch_size: int, f_patch_size: int) -> List[Tensor]:
+        pH = pW = patch_size
+        pF = f_patch_size
+        bsz = len(x)
+        if len(size) != bsz:
+            raise ValueError("size must have the same length as batch size")
+        for i in range(bsz):
+            F, H, W = size[i]
+            ori_len = (F // pF) * (H // pH) * (W // pW)
+            # "f h w pf ph pw c -> c (f pf) (h ph) (w pw)"
+            x[i] = (
+                x[i][:ori_len]
+                .reshape((F // pF, H // pH, W // pW, pF, pH, pW, self.out_channels))
+                .permute((6, 0, 3, 1, 4, 2, 5))
+                .reshape((self.out_channels, F, H, W))
+            )
+        return x
+
+    @staticmethod
+    def create_coordinate_grid(size, start=None, device=None):
+        if start is None:
+            start = (0 for _ in size)
+
+        grids = []
+        for i, (x0, span) in enumerate(zip(start, size)):
+            # Create range for this dimension
+            axis = F.range(x0, x0 + span, dtype=DType.int32, device=device)
+
+            # Reshape to allow broadcasting: (1, ..., span, ..., 1)
+            target_shape = [1] * len(size)
+            target_shape[i] = span
+            axis = axis.reshape(tuple(target_shape))
+
+            # Broadcast to full size
+            grid = F.broadcast_to(axis, size)
+            grids.append(grid)
+
+        return F.stack(grids, axis=-1)
 
     def patchify_and_embed(
         self,
-        all_image: list[TensorValue],
-        all_cap_feats: list[TensorValue],
+        all_image: List[Tensor],
+        all_cap_feats: List[Tensor],
         patch_size: int,
         f_patch_size: int,
     ):
-        pass
+        pH = pW = patch_size
+        pF = f_patch_size
+        device = all_image[0].device
+
+        all_image_out = []
+        all_image_size = []
+        all_image_pos_ids = []
+        all_image_pad_mask = []
+        all_cap_pos_ids = []
+        all_cap_pad_mask = []
+        all_cap_feats_out = []
+
+        for i, (image, cap_feat) in enumerate(zip(all_image, all_cap_feats)):
+            ### Process Caption
+            #cap_ori_len = len(cap_feat)
+            cap_ori_len = int(cap_feat.shape[0])
+            cap_padding_len = (-cap_ori_len) % SEQ_MULTI_OF
+            # padded position ids
+            cap_padded_pos_ids = F.flatten(self.create_coordinate_grid(
+                size=(cap_ori_len + cap_padding_len, 1, 1),
+                start=(1, 0, 0),
+                device=device,
+            ), 0, 2)
+            all_cap_pos_ids.append(cap_padded_pos_ids)
+            # pad mask
+            cap_pad_mask = F.concat(
+                [
+                    Tensor.zeros((cap_ori_len,), dtype=DType.bool, device=device),
+                    Tensor.ones((cap_padding_len,), dtype=DType.bool, device=device),
+                ],
+                axis=0,
+            )
+            all_cap_pad_mask.append(
+                cap_pad_mask if cap_padding_len > 0 else Tensor.zeros((cap_ori_len,), dtype=DType.bool, device=device)
+            )
+
+            # padded feature
+            if cap_padding_len > 0:
+                cap_feat_last = cap_feat[-1:]
+                cap_repeats = [cap_padding_len] + [1] * (cap_feat_last.rank - 1)
+                cap_padded_feat = F.concat(
+                    [cap_feat, F.tile(cap_feat_last, tuple(cap_repeats))],
+                    axis=0,
+                )
+            else:
+                cap_padded_feat = cap_feat
+
+            all_cap_feats_out.append(cap_padded_feat)
+
+            ### Process Image
+            C, F_dim, H_dim, W_dim = image.shape
+            C, F_dim, H_dim, W_dim = int(C), int(F_dim), int(H_dim), int(W_dim)
+            all_image_size.append((F_dim, H_dim, W_dim))
+            F_tokens, H_tokens, W_tokens = F_dim // pF, H_dim // pH, W_dim // pW
+
+            image = image.reshape((C, F_tokens, pF, H_tokens, pH, W_tokens, pW))
+            # "c f pf h ph w pw -> (f h w) (pf ph pw c)"
+            image = image.permute((1, 3, 5, 2, 4, 6, 0)).reshape((F_tokens * H_tokens * W_tokens, pF * pH * pW * C))
+
+            image_ori_len = int(image.shape[0])
+            image_padding_len = (-image_ori_len) % SEQ_MULTI_OF
+
+            image_ori_pos_ids = F.flatten(self.create_coordinate_grid(
+                size=(F_tokens, H_tokens, W_tokens),
+                start=(cap_ori_len + cap_padding_len + 1, 0, 0),
+                device=device,
+            ), 0, 2)
+            if image_padding_len > 0:
+                image_padded_pos_ids = F.concat(
+                    [
+                        image_ori_pos_ids,
+                        F.tile(F.flatten(
+                            self.create_coordinate_grid(size=(1, 1, 1), start=(0, 0, 0), device=device),
+                            0, 2), (image_padding_len, 1)),
+                    ],
+                    axis=0,
+                )
+            else:
+                image_padded_pos_ids = image_ori_pos_ids
+            all_image_pos_ids.append(image_padded_pos_ids)
+            # pad mask
+            image_pad_mask = F.concat(
+                [
+                    Tensor.zeros((image_ori_len,), dtype=DType.bool, device=device),
+                    Tensor.ones((image_padding_len,), dtype=DType.bool, device=device),
+                ],
+                axis=0,
+            )
+            all_image_pad_mask.append(
+                image_pad_mask
+                if image_padding_len > 0
+                else Tensor.zeros((image_ori_len,), dtype=DType.bool, device=device)
+            )
+            # padded feature
+            if image_padding_len > 0:
+                image_last = image[-1:]
+                image_repeats = [image_padding_len] + [1] * (image_last.rank - 1)
+                image_padded_feat = F.concat(
+                    [image, F.tile(image_last, tuple(image_repeats))],
+                    axis=0,
+                )
+                all_image_out.append(image_padded_feat)
+            else:
+                all_image_out.append(image)
+
+        return (
+            all_image_out,
+            all_cap_feats_out,
+            all_image_size,
+            all_image_pos_ids,
+            all_cap_pos_ids,
+            all_image_pad_mask,
+            all_cap_pad_mask,
+        )
 
     def __call__(
         self,
-        x: TensorValue, # Flattened/ragged image tokens
-        t: TensorValue,
-        cap_feats: TensorValue, # Flattened/ragged caption tokens
-        input_row_offsets: TensorValue, # To delineate batches
-        max_seq_len: TensorValue,
+        x: List[Tensor],
+        t: Tensor,
+        cap_feats: List[Tensor],
         patch_size: int = 2,
         f_patch_size: int = 1,
-        x_pos_ids: TensorValue | None = None,
-        cap_pos_ids: TensorValue | None = None,
+        return_dict: bool = True,
     ):
-        t = t * self.t_scale
-        t_emb = self.t_embedder(t)
+        if patch_size not in self.all_patch_size:
+            raise ValueError(f"patch_size must be in {self.all_patch_size}")
+        if f_patch_size not in self.all_f_patch_size:
+            raise ValueError(f"f_patch_size must be in {self.all_f_patch_size}")
 
-        key = f"{patch_size}-{f_patch_size}"
-        x = self.all_x_embedder[key](x)
-        
-        cap_feats = self.cap_embedder_linear(self.cap_embedder_norm(cap_feats))
-        
-        if x_pos_ids is None or cap_pos_ids is None:
-             raise ValueError("pos_ids required for MAX port")
-             
-        x_freqs_cis = self.rope_embedder(x_pos_ids)
-        cap_freqs_cis = self.rope_embedder(cap_pos_ids)
-        
-        # Compute sequence lengths
-        seq_lens = input_row_offsets[1:] - input_row_offsets[:-1]
-        
-        # Create batch indices for each token to gather t_emb
-        batch_indices = ops.repeat_interleave(
-            ops.range(0, t.shape[0], 1, device=t.device, dtype=DType.int32),
-            seq_lens,
-            out_dim=x.shape[0]
-        )
-        
-        t_emb_expanded = ops.gather(t_emb, batch_indices, axis=0)
-        x = x + t_emb_expanded
-        adaln_input = t_emb_expanded
-        
+        bsz = len(x)
+        device = x[0].device
+        t = t * self.t_scale
+        t = self.t_embedder(t)
+
+        (
+            x,
+            cap_feats,
+            x_size,
+            x_pos_ids,
+            cap_pos_ids,
+            x_inner_pad_mask,
+            cap_inner_pad_mask,
+        ) = self.patchify_and_embed(x, cap_feats, patch_size, f_patch_size)
+
+        # x embed & refine
+        x_item_seqlens = [int(_.shape[0]) for _ in x]
+        if not all(_ % SEQ_MULTI_OF == 0 for _ in x_item_seqlens):
+            raise ValueError("all item seqlens must be a multiple of SEQ_MULTI_OF")
+        x_max_item_seqlen = max(x_item_seqlens)
+
+        x = F.concat(x, axis=0)
+        x = self.all_x_embedder[f"{patch_size}-{f_patch_size}"](x)
+
+        # Match t_embedder output dtype to x for layerwise casting compatibility
+        adaln_input = t.cast(x.dtype)
+        #x[F.concat(x_inner_pad_mask)] = self.x_pad_token
+        # Use masked_scatter for pad token assignment (immutable tensor compatible)
+        pad_mask = F.concat(x_inner_pad_mask)
+        #x = masked_scatter(x, pad_mask, self.x_pad_token)
+        # Ensure pad token is on the correct device
+        x_pad_token = self.x_pad_token.to(x.device).cast(x.dtype)
+        x = masked_scatter(x, pad_mask, x_pad_token)
+        x = list(F.split(x, x_item_seqlens, axis=0))
+        x_freqs_cis = list(F.split(self.rope_embedder(F.concat(x_pos_ids, axis=0)), [int(_.shape[0]) for _ in x_pos_ids], axis=0))
+
+        x = pad_sequence(x, batch_first=True, padding_value=0.0)
+        x_freqs_cis = pad_sequence(x_freqs_cis, batch_first=True, padding_value=0.0)
+        # Clarify the length matches to satisfy Dynamo due to "Symbolic Shape Inference" to avoid compilation errors
+        x_freqs_cis = x_freqs_cis[:, : x.shape[1]]
+
+        #x_attn_mask = Tensor.zeros((bsz, x_max_item_seqlen), dtype=DType.bool, device=device)
+        #for i, seq_len in enumerate(x_item_seqlens):
+        #    x_attn_mask[i, :seq_len] = 1
+        # Use functional attention mask construction (immutable tensor compatible)
+        x_attn_mask = create_attention_mask(bsz, x_max_item_seqlen, x_item_seqlens)
+
         for layer in self.noise_refiner:
-            x = layer(x, x_freqs_cis, input_row_offsets, max_seq_len, adaln_input)
-            
-        for layer in self.context_refiner:
-            cap_feats = layer(cap_feats, cap_freqs_cis, input_row_offsets, max_seq_len)
-            
-        # Prepare for unified layers: interleave image and caption tokens
-        shape_cap = ops.shape_to_tensor(cap_feats.shape)
-        shape_t = ops.shape_to_tensor(t.shape)
-        
-        total_cap_tokens_tensor = shape_cap[0]
-        batch_size_tensor = shape_t[0]
-        
-        cap_len_tensor = total_cap_tokens_tensor // batch_size_tensor
-        cap_len_tensor = ops.cast(cap_len_tensor, DType.int32)
-        
-        adaln_input_cap = ops.repeat_interleave(
-            t_emb,
-            cap_len_tensor,
-            axis=0,
-            out_dim=cap_feats.shape[0]
+            x = layer(x, x_attn_mask, x_freqs_cis, adaln_input)
+
+        # cap embed & refine
+        cap_item_seqlens = [int(_.shape[0]) for _ in cap_feats]
+        cap_max_item_seqlen = max(cap_item_seqlens)
+
+        cap_feats = F.concat(cap_feats, axis=0)
+        cap_feats = self.cap_embedder(cap_feats)
+        #cap_feats[F.concat(cap_inner_pad_mask)] = self.cap_pad_token
+        # Use masked_scatter for pad token assignment (immutable tensor compatible)
+        cap_pad_mask = F.concat(cap_inner_pad_mask)
+        #cap_feats = masked_scatter(cap_feats, cap_pad_mask, self.cap_pad_token)
+        # Ensure pad token is on the correct device
+        cap_pad_token = self.cap_pad_token.to(cap_feats.device).cast(cap_feats.dtype)
+        cap_feats = masked_scatter(cap_feats, cap_pad_mask, cap_pad_token)
+        cap_feats = list(F.split(cap_feats, cap_item_seqlens, axis=0))
+        cap_freqs_cis = list(
+            F.split(self.rope_embedder(F.concat(cap_pos_ids, axis=0)), [int(_.shape[0]) for _ in cap_pos_ids], axis=0)
         )
-        
-        # Concatenate raw tensors
-        raw_unified = ops.concat([x, cap_feats], axis=0)
-        raw_freqs = ops.concat([x_freqs_cis, cap_freqs_cis], axis=0)
-        raw_adaln = ops.concat([adaln_input, adaln_input_cap], axis=0)
-        
-        total_x = shape_t[0]
-        shape_x = ops.shape_to_tensor(x.shape)
-        total_x_tokens = shape_x[0]
-        
-        # Calculate segment starts and lengths
-        img_starts = input_row_offsets[:-1]
-        img_lens = input_row_offsets[1:] - input_row_offsets[:-1]
-        
-        batch_range = ops.range(0, batch_size_tensor, 1, dtype=DType.int32, device=x.device, out_dim=t.shape[0])
-        cap_starts = ops.cast(total_x_tokens, DType.int32) + batch_range * cap_len_tensor
-        
-        # Interleave starts and lens: [img0, cap0, img1, cap1, ...]
-        starts = ops.reshape(ops.stack([img_starts, cap_starts], axis=1), shape=[-1])
-        
-        cap_lens = ops.broadcast_to(cap_len_tensor, [t.shape[0]])
-        lens = ops.reshape(ops.stack([img_lens, cap_lens], axis=1), shape=[-1])
-        
-        # Construct gather indices using cumulative sums
-        lens_cumsum = ops.cumsum(lens, axis=0)
-        lens_cumsum_exclusive = ops.concat([ops.constant([0], DType.int32, device=x.device), lens_cumsum[:-1]], axis=0)
-        
-        total_unified_dim = x.shape[0] + cap_feats.shape[0]
-        
-        segment_offsets_expanded = ops.repeat_interleave(lens_cumsum_exclusive, lens, axis=0, out_dim=total_unified_dim)
-        
-        total_unified_tokens = lens_cumsum[-1]
-        
-        global_indices = ops.range(0, total_unified_tokens, 1, dtype=DType.int32, device=x.device, out_dim=total_unified_dim)
-        
-        local_indices = global_indices - segment_offsets_expanded
-        
-        segment_starts_expanded = ops.repeat_interleave(starts, lens, axis=0, out_dim=total_unified_dim)
-        gather_indices = segment_starts_expanded + local_indices
-        
-        # Gather unified tensors
-        unified = ops.gather(raw_unified, gather_indices, axis=0)
-        unified_freqs_cis = ops.gather(raw_freqs, gather_indices, axis=0)
-        adaln_input_unified = ops.gather(raw_adaln, gather_indices, axis=0)
-        
-        unified_row_offsets = ops.concat([ops.constant([0], DType.int32, device=x.device), lens_cumsum], axis=0)
-        
+
+        cap_feats = pad_sequence(cap_feats, batch_first=True, padding_value=0.0)
+        cap_freqs_cis = pad_sequence(cap_freqs_cis, batch_first=True, padding_value=0.0)
+        # Clarify the length matches to satisfy Dynamo due to "Symbolic Shape Inference" to avoid compilation errors
+        cap_freqs_cis = cap_freqs_cis[:, : cap_feats.shape[1]]
+
+        #cap_attn_mask = Tensor.zeros((bsz, cap_max_item_seqlen), dtype=DType.bool, device=device)
+        #for i, seq_len in enumerate(cap_item_seqlens):
+        #    cap_attn_mask[i, :seq_len] = 1
+        # Use functional attention mask construction (immutable tensor compatible)
+        cap_attn_mask = create_attention_mask(bsz, cap_max_item_seqlen, cap_item_seqlens)
+
+        for layer in self.context_refiner:
+            cap_feats = layer(cap_feats, cap_attn_mask, cap_freqs_cis)
+
+        # unified
+        unified = []
+        unified_freqs_cis = []
+        for i in range(bsz):
+            x_len = x_item_seqlens[i]
+            cap_len = cap_item_seqlens[i]
+            unified.append(F.concat([x[i][:x_len], cap_feats[i][:cap_len]]))
+            unified_freqs_cis.append(F.concat([x_freqs_cis[i][:x_len], cap_freqs_cis[i][:cap_len]]))
+        unified_item_seqlens = [a + b for a, b in zip(cap_item_seqlens, x_item_seqlens)]
+        if not unified_item_seqlens == [int(_.shape[0]) for _ in unified]:
+            raise ValueError("all item seqlens must be a multiple of SEQ_MULTI_OF")
+        unified_max_item_seqlen = max(unified_item_seqlens)
+
+        unified = pad_sequence(unified, batch_first=True, padding_value=0.0)
+        unified_freqs_cis = pad_sequence(unified_freqs_cis, batch_first=True, padding_value=0.0)
+        #unified_attn_mask = Tensor.zeros((bsz, unified_max_item_seqlen), dtype=DType.bool, device=device)
+        #for i, seq_len in enumerate(unified_item_seqlens):
+        #    unified_attn_mask[i, :seq_len] = 1
+        # Use functional attention mask construction (immutable tensor compatible)
+        unified_attn_mask = create_attention_mask(bsz, unified_max_item_seqlen, unified_item_seqlens)
+
         for layer in self.layers:
-            unified = layer(unified, unified_freqs_cis, unified_row_offsets, max_seq_len, adaln_input_unified)
-            
-        unified = self.all_final_layer[key](unified, adaln_input_unified)
-        
-        return self.unpatchify(unified, t.shape[0], cap_feats.shape[0])
+            unified = layer(unified, unified_attn_mask, unified_freqs_cis, adaln_input)
+
+        unified = self.all_final_layer[f"{patch_size}-{f_patch_size}"](unified, adaln_input)
+        unified = [F.squeeze(t, 0) for t in F.split(unified, [1] * int(unified.shape[0]), axis=0)]
+        x = self.unpatchify(unified, x_size, patch_size, f_patch_size)
+
+        if not return_dict:
+            return (x,)
+
+        return Transformer2DModelOutput(sample=x)
