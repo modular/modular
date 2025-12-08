@@ -11,11 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
+import math
 
 from collections.abc import Iterable
 
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn import Linear
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.kernels import flash_attention_gpu
 from max.nn.layer import Module
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
@@ -91,20 +94,19 @@ class Gemma3VisionAttention(Module):
             xv, [batch_size, n_patches, self.num_heads, self.head_dim]
         )
 
-        # Transpose to [batch, n_heads, n_patches, head_dim]
-        xq = xq.transpose(1, 2)
-        xk = xk.transpose(1, 2)
-        xv = xv.transpose(1, 2)
-
-        # Scaled dot-product attention
-        scores = (xq @ ops.transpose(xk, 2, 3)) * self.scaling
-        scores = ops.softmax(scores)
-
-        # Apply attention to values - [batch, n_heads, n_patches, head_dim]
-        output = scores @ xv
+        # Apply flash attention
+        attn_out = flash_attention_gpu(
+            xq,
+            xk,
+            xv,
+            mask_variant=MHAMaskVariant.NULL_MASK,
+            scale=self.scaling,
+        )
 
         # Transpose back and reshape
-        output = output.transpose(1, 2).reshape([batch_size, n_patches, -1])
+        output = attn_out.reshape(
+            (batch_size, n_patches, self.num_heads * self.head_dim)
+        )
 
         return self.out_proj(output)
 
