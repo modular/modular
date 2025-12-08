@@ -410,7 +410,13 @@ def generate_llm_logits(
     with github_log_group(title):
         if framework_name == "max":
             if encoding_name is None:
-                hf_repo = HuggingFaceRepo(pipeline_name)
+                # Get trust_remote_code from pipeline_oracle if available
+                trust_remote_code = getattr(
+                    pipeline_oracle, "config_params", {}
+                ).get("trust_remote_code", False)
+                hf_repo = HuggingFaceRepo(
+                    pipeline_name, trust_remote_code=trust_remote_code
+                )
                 arch = pipelines.PIPELINE_REGISTRY.retrieve_architecture(
                     hf_repo
                 )
@@ -418,7 +424,32 @@ def generate_llm_logits(
                     raise ValueError(
                         "Model architecture not yet supported by MAX."
                     )
-                encoding_name = arch.default_encoding.name
+
+                # Prefer encoding from device_encoding_map if available
+                device_encoding_map = getattr(
+                    pipeline_oracle, "device_encoding_map", None
+                )
+                if device_encoding_map:
+                    # Determine device type from device_specs
+                    device_type = (
+                        device_specs[0].device_type
+                        if device_specs
+                        else "default"
+                    )
+                    # Normalize "default" to "gpu" (default typically means GPU when available)
+                    if device_type == "default":
+                        device_type = "gpu"
+
+                    # Get encodings for this device type
+                    encodings = device_encoding_map.get(device_type)
+                    if encodings and len(encodings) > 0:
+                        encoding_name = encodings[0]
+                    else:
+                        # Fall back to architecture default
+                        encoding_name = arch.default_encoding.name
+                else:
+                    # Fall back to architecture default if no device_encoding_map
+                    encoding_name = arch.default_encoding.name
 
             hooks_ctx = (
                 add_max_hooks(output_directory=intermediates_dir)

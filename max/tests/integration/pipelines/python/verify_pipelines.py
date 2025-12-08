@@ -1004,7 +1004,7 @@ PIPELINES = {
     ),
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big", "nvidia-only"],  # TODO(KERN-2196)
+        tags=["big"],
         run=_make_pipeline_runner(
             pipeline="allenai/OLMo-2-1124-7B",
             encoding="float32",
@@ -1029,7 +1029,7 @@ PIPELINES = {
     ),
     "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big", "nvidia-only"],  # TODO(KERN-2196)
+        tags=["big"],
         run=_make_pipeline_runner(
             pipeline="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
             encoding="float32",
