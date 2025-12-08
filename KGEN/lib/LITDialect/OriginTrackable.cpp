@@ -379,7 +379,10 @@ static void getCallOpEffects(
     // TODO(field-sensitive origins): remove this hack.
     // TODO: This should be removed. This is disabled for packs passed by-ref
     // when they are owned.
-    if (signature.isPack(idx)) {
+    if (signature.isPack(idx) &&
+        // Thunks can directly forward pack arguments, but we don't need to
+        // model them.
+        !isa<BlockArgument>(arg)) {
       auto packVal = RefPackCreateOp::findRefPackCreate(arg);
       assert(packVal && "couldn't decode variadic pack information!");
 
