@@ -32,6 +32,7 @@ from ._mixed_tuple import (
     crd2idx,
     mixed_int_tuple_to_int_tuple,
     _FlattenedOffsets,
+    _IntToComptimeInt,
 )
 from .int_tuple import IntTuple
 from .layout import LayoutTrait
@@ -288,3 +289,14 @@ fn row_major(
                 )
 
     return MixedLayout(flat_shape^, MixedTuple(flat_strides^))
+
+
+fn row_major[
+    *idxs: Int
+]() -> MixedLayout[
+    shape_types = _Flattened[*_IntToComptimeInt[*idxs]],
+    stride_types = _RowMajor[*_IntToComptimeInt[*idxs]],
+]:
+    var shape: MixedTuple[*_IntToComptimeInt[*idxs]]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(shape))
+    return row_major(shape^)
