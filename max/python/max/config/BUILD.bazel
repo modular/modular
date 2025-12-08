@@ -8,6 +8,7 @@ modular_py_library(
     imports = ["../.."],
     deps = [
         requirement("cyclopts"),
+        requirement("pydantic"),
         requirement("pyyaml"),
     ],
 )

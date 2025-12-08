@@ -25,6 +25,9 @@ from pathlib import Path
 from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
 import yaml
+from pydantic import BaseModel, model_validator
+
+from .config_file_model import ConfigFileModel
 
 logger = logging.getLogger("max.pipelines")
 
@@ -1065,3 +1068,8 @@ class MAXConfig:
 
         # Return the wrapped parser
         return MAXConfigArgumentParser(parser, self)
+
+
+all = [
+    "ConfigFileModel",
+]
