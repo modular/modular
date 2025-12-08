@@ -11,427 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, Optional, Tuple, Union
-
-from ...loaders import PeftAdapterMixin
-from ...loaders.single_file_model import FromOriginalModelMixin
-from ...utils.accelerate_utils import apply_forward_hook
-from ..modeling_utils import ModelMixin
 
 from __future__ import annotations
 
-import math
-from typing import Sequence
+from typing import Tuple
 
-from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    ShardingStrategy,
-    TensorValue,
-    Weight,
-    ops,
-)
-from max.driver import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.layer import Layer, Module, Shardable
-from max.nn.linear import Linear
-from max.nn.conv import Conv2d
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
+import max.nn.module_v3 as nn
+from .vae import AutoencoderMixin, Decoder, DecoderOutput, DiagonalGaussianDistribution, Encoder
 
 
-from dataclasses import dataclass
-from typing import Optional, Tuple
+from .layers import Conv2d, AutoencoderKLOutput
+from max.experimental.tensor import Tensor
+import max.experimental.functional as F
 
-import numpy as np
-import torch
-import torch.nn as nn
 
-from ...utils import BaseOutput
-from ...utils.torch_utils import randn_tensor
-from ..activations import get_activation
-from ..attention_processor import SpatialNorm
-from ..unets.unet_2d_blocks import (
-    UNetMidBlock2D,
-    get_down_block,
-    get_up_block,
-)
-
-
-@dataclass
-class EncoderOutput(BaseOutput):
-    r"""
-    Output of encoding method.
-
-    Args:
-        latent (`torch.Tensor` of shape `(batch_size, num_channels, latent_height, latent_width)`):
-            The encoded latent.
-    """
-
-    latent: torch.Tensor
-
-
-@dataclass
-class DecoderOutput(BaseOutput):
-    r"""
-    Output of decoding method.
-
-    Args:
-        sample (`torch.Tensor` of shape `(batch_size, num_channels, height, width)`):
-            The decoded output sample from the last layer of the model.
-    """
-
-    sample: torch.Tensor
-    commit_loss: Optional[torch.FloatTensor] = None
-
-
-class Encoder(nn.Module):
-    r"""
-    The `Encoder` layer of a variational autoencoder that encodes its input into a latent representation.
-
-    Args:
-        in_channels (`int`, *optional*, defaults to 3):
-            The number of input channels.
-        out_channels (`int`, *optional*, defaults to 3):
-            The number of output channels.
-        down_block_types (`Tuple[str, ...]`, *optional*, defaults to `("DownEncoderBlock2D",)`):
-            The types of down blocks to use. See `~diffusers.models.unet_2d_blocks.get_down_block` for available
-            options.
-        block_out_channels (`Tuple[int, ...]`, *optional*, defaults to `(64,)`):
-            The number of output channels for each block.
-        layers_per_block (`int`, *optional*, defaults to 2):
-            The number of layers per block.
-        norm_num_groups (`int`, *optional*, defaults to 32):
-            The number of groups for normalization.
-        act_fn (`str`, *optional*, defaults to `"silu"`):
-            The activation function to use. See `~diffusers.models.activations.get_activation` for available options.
-        double_z (`bool`, *optional*, defaults to `True`):
-            Whether to double the number of output channels for the last block.
-    """
-
-    def __init__(
-        self,
-        in_channels: int = 3,
-        out_channels: int = 3,
-        down_block_types: Tuple[str, ...] = ("DownEncoderBlock2D",),
-        block_out_channels: Tuple[int, ...] = (64,),
-        layers_per_block: int = 2,
-        norm_num_groups: int = 32,
-        act_fn: str = "silu",
-        double_z: bool = True,
-        mid_block_add_attention=True,
-    ):
-        super().__init__()
-        self.layers_per_block = layers_per_block
-
-        self.conv_in = nn.Conv2d(
-            in_channels,
-            block_out_channels[0],
-            kernel_size=3,
-            stride=1,
-            padding=1,
-        )
-
-        self.down_blocks = nn.ModuleList([])
-
-        # down
-        output_channel = block_out_channels[0]
-        for i, down_block_type in enumerate(down_block_types):
-            input_channel = output_channel
-            output_channel = block_out_channels[i]
-            is_final_block = i == len(block_out_channels) - 1
-
-            down_block = get_down_block(
-                down_block_type,
-                num_layers=self.layers_per_block,
-                in_channels=input_channel,
-                out_channels=output_channel,
-                add_downsample=not is_final_block,
-                resnet_eps=1e-6,
-                downsample_padding=0,
-                resnet_act_fn=act_fn,
-                resnet_groups=norm_num_groups,
-                attention_head_dim=output_channel,
-                temb_channels=None,
-            )
-            self.down_blocks.append(down_block)
-
-        # mid
-        self.mid_block = UNetMidBlock2D(
-            in_channels=block_out_channels[-1],
-            resnet_eps=1e-6,
-            resnet_act_fn=act_fn,
-            output_scale_factor=1,
-            resnet_time_scale_shift="default",
-            attention_head_dim=block_out_channels[-1],
-            resnet_groups=norm_num_groups,
-            temb_channels=None,
-            add_attention=mid_block_add_attention,
-        )
-
-        # out
-        self.conv_norm_out = nn.GroupNorm(num_channels=block_out_channels[-1], num_groups=norm_num_groups, eps=1e-6)
-        self.conv_act = nn.SiLU()
-
-        conv_out_channels = 2 * out_channels if double_z else out_channels
-        self.conv_out = nn.Conv2d(block_out_channels[-1], conv_out_channels, 3, padding=1)
-
-        self.gradient_checkpointing = False
-
-    def forward(self, sample: torch.Tensor) -> torch.Tensor:
-        r"""The forward method of the `Encoder` class."""
-
-        sample = self.conv_in(sample)
-
-        if torch.is_grad_enabled() and self.gradient_checkpointing:
-            # down
-            for down_block in self.down_blocks:
-                sample = self._gradient_checkpointing_func(down_block, sample)
-            # middle
-            sample = self._gradient_checkpointing_func(self.mid_block, sample)
-
-        else:
-            # down
-            for down_block in self.down_blocks:
-                sample = down_block(sample)
-
-            # middle
-            sample = self.mid_block(sample)
-
-        # post-process
-        sample = self.conv_norm_out(sample)
-        sample = self.conv_act(sample)
-        sample = self.conv_out(sample)
-
-        return sample
-
-
-class Decoder(nn.Module):
-    r"""
-    The `Decoder` layer of a variational autoencoder that decodes its latent representation into an output sample.
-
-    Args:
-        in_channels (`int`, *optional*, defaults to 3):
-            The number of input channels.
-        out_channels (`int`, *optional*, defaults to 3):
-            The number of output channels.
-        up_block_types (`Tuple[str, ...]`, *optional*, defaults to `("UpDecoderBlock2D",)`):
-            The types of up blocks to use. See `~diffusers.models.unet_2d_blocks.get_up_block` for available options.
-        block_out_channels (`Tuple[int, ...]`, *optional*, defaults to `(64,)`):
-            The number of output channels for each block.
-        layers_per_block (`int`, *optional*, defaults to 2):
-            The number of layers per block.
-        norm_num_groups (`int`, *optional*, defaults to 32):
-            The number of groups for normalization.
-        act_fn (`str`, *optional*, defaults to `"silu"`):
-            The activation function to use. See `~diffusers.models.activations.get_activation` for available options.
-        norm_type (`str`, *optional*, defaults to `"group"`):
-            The normalization type to use. Can be either `"group"` or `"spatial"`.
-    """
-
-    def __init__(
-        self,
-        in_channels: int = 3,
-        out_channels: int = 3,
-        up_block_types: Tuple[str, ...] = ("UpDecoderBlock2D",),
-        block_out_channels: Tuple[int, ...] = (64,),
-        layers_per_block: int = 2,
-        norm_num_groups: int = 32,
-        act_fn: str = "silu",
-        norm_type: str = "group",  # group, spatial
-        mid_block_add_attention=True,
-    ):
-        super().__init__()
-        self.layers_per_block = layers_per_block
-
-        self.conv_in = nn.Conv2d(
-            in_channels,
-            block_out_channels[-1],
-            kernel_size=3,
-            stride=1,
-            padding=1,
-        )
-
-        self.up_blocks = nn.ModuleList([])
-
-        temb_channels = in_channels if norm_type == "spatial" else None
-
-        # mid
-        self.mid_block = UNetMidBlock2D(
-            in_channels=block_out_channels[-1],
-            resnet_eps=1e-6,
-            resnet_act_fn=act_fn,
-            output_scale_factor=1,
-            resnet_time_scale_shift="default" if norm_type == "group" else norm_type,
-            attention_head_dim=block_out_channels[-1],
-            resnet_groups=norm_num_groups,
-            temb_channels=temb_channels,
-            add_attention=mid_block_add_attention,
-        )
-
-        # up
-        reversed_block_out_channels = list(reversed(block_out_channels))
-        output_channel = reversed_block_out_channels[0]
-        for i, up_block_type in enumerate(up_block_types):
-            prev_output_channel = output_channel
-            output_channel = reversed_block_out_channels[i]
-
-            is_final_block = i == len(block_out_channels) - 1
-
-            up_block = get_up_block(
-                up_block_type,
-                num_layers=self.layers_per_block + 1,
-                in_channels=prev_output_channel,
-                out_channels=output_channel,
-                prev_output_channel=prev_output_channel,
-                add_upsample=not is_final_block,
-                resnet_eps=1e-6,
-                resnet_act_fn=act_fn,
-                resnet_groups=norm_num_groups,
-                attention_head_dim=output_channel,
-                temb_channels=temb_channels,
-                resnet_time_scale_shift=norm_type,
-            )
-            self.up_blocks.append(up_block)
-            prev_output_channel = output_channel
-
-        # out
-        if norm_type == "spatial":
-            self.conv_norm_out = SpatialNorm(block_out_channels[0], temb_channels)
-        else:
-            self.conv_norm_out = nn.GroupNorm(num_channels=block_out_channels[0], num_groups=norm_num_groups, eps=1e-6)
-        self.conv_act = nn.SiLU()
-        self.conv_out = nn.Conv2d(block_out_channels[0], out_channels, 3, padding=1)
-
-        self.gradient_checkpointing = False
-
-    def forward(
-        self,
-        sample: torch.Tensor,
-        latent_embeds: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        r"""The forward method of the `Decoder` class."""
-
-        sample = self.conv_in(sample)
-
-        if torch.is_grad_enabled() and self.gradient_checkpointing:
-            # middle
-            sample = self._gradient_checkpointing_func(self.mid_block, sample, latent_embeds)
-
-            # up
-            for up_block in self.up_blocks:
-                sample = self._gradient_checkpointing_func(up_block, sample, latent_embeds)
-        else:
-            # middle
-            sample = self.mid_block(sample, latent_embeds)
-
-            # up
-            for up_block in self.up_blocks:
-                sample = up_block(sample, latent_embeds)
-
-        # post-process
-        if latent_embeds is None:
-            sample = self.conv_norm_out(sample)
-        else:
-            sample = self.conv_norm_out(sample, latent_embeds)
-        sample = self.conv_act(sample)
-        sample = self.conv_out(sample)
-
-        return sample
-
-
-
-class DiagonalGaussianDistribution(object):
-    def __init__(self, parameters: torch.Tensor, deterministic: bool = False):
-        self.parameters = parameters
-        self.mean, self.logvar = torch.chunk(parameters, 2, dim=1)
-        self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
-        self.deterministic = deterministic
-        self.std = torch.exp(0.5 * self.logvar)
-        self.var = torch.exp(self.logvar)
-        if self.deterministic:
-            self.var = self.std = torch.zeros_like(
-                self.mean, device=self.parameters.device, dtype=self.parameters.dtype
-            )
-
-    def sample(self, generator: Optional[torch.Generator] = None) -> torch.Tensor:
-        # make sure sample is on the same device as the parameters and has same dtype
-        sample = randn_tensor(
-            self.mean.shape,
-            generator=generator,
-            device=self.parameters.device,
-            dtype=self.parameters.dtype,
-        )
-        x = self.mean + self.std * sample
-        return x
-
-    def kl(self, other: "DiagonalGaussianDistribution" = None) -> torch.Tensor:
-        if self.deterministic:
-            return torch.Tensor([0.0])
-        else:
-            if other is None:
-                return 0.5 * torch.sum(
-                    torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar,
-                    dim=[1, 2, 3],
-                )
-            else:
-                return 0.5 * torch.sum(
-                    torch.pow(self.mean - other.mean, 2) / other.var
-                    + self.var / other.var
-                    - 1.0
-                    - self.logvar
-                    + other.logvar,
-                    dim=[1, 2, 3],
-                )
-
-    def nll(self, sample: torch.Tensor, dims: Tuple[int, ...] = [1, 2, 3]) -> torch.Tensor:
-        if self.deterministic:
-            return torch.Tensor([0.0])
-        logtwopi = np.log(2.0 * np.pi)
-        return 0.5 * torch.sum(
-            logtwopi + self.logvar + torch.pow(sample - self.mean, 2) / self.var,
-            dim=dims,
-        )
-
-    def mode(self) -> torch.Tensor:
-        return self.mean
-
-class AutoencoderMixin:
-    def enable_tiling(self):
-        r"""
-        Enable tiled VAE decoding. When this option is enabled, the VAE will split the input tensor into tiles to
-        compute decoding and encoding in several steps. This is useful for saving a large amount of memory and to allow
-        processing larger images.
-        """
-        if not hasattr(self, "use_tiling"):
-            raise NotImplementedError(f"Tiling doesn't seem to be implemented for {self.__class__.__name__}.")
-        self.use_tiling = True
-
-    def disable_tiling(self):
-        r"""
-        Disable tiled VAE decoding. If `enable_tiling` was previously enabled, this method will go back to computing
-        decoding in one step.
-        """
-        self.use_tiling = False
-
-    def enable_slicing(self):
-        r"""
-        Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
-        compute decoding in several steps. This is useful to save some memory and allow larger batch sizes.
-        """
-        if not hasattr(self, "use_slicing"):
-            raise NotImplementedError(f"Slicing doesn't seem to be implemented for {self.__class__.__name__}.")
-        self.use_slicing = True
-
-    def disable_slicing(self):
-        r"""
-        Disable sliced VAE decoding. If `enable_slicing` was previously enabled, this method will go back to computing
-        decoding in one step.
-        """
-        self.use_slicing = False
-        
-
-class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModelMixin, PeftAdapterMixin):
+class AutoencoderKL(nn.Module, AutoencoderMixin):
     r"""
     A VAE model with KL loss for encoding images into latents and decoding latent representations into images.
 
@@ -479,9 +73,9 @@ class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModel
         norm_num_groups: int = 32,
         sample_size: int = 32,
         scaling_factor: float = 0.18215,
-        shift_factor: Optional[float] = None,
-        latents_mean: Optional[Tuple[float]] = None,
-        latents_std: Optional[Tuple[float]] = None,
+        shift_factor: float | None = None,
+        latents_mean: Tuple[float] | None = None,
+        latents_std: Tuple[float] | None = None,
         force_upcast: bool = True,
         use_quant_conv: bool = True,
         use_post_quant_conv: bool = True,
@@ -521,16 +115,16 @@ class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModel
         self.use_tiling = False
 
         # only relevant if vae tiling is enabled
-        self.tile_sample_min_size = self.config.sample_size
+        self.tile_sample_min_size = sample_size
         sample_size = (
-            self.config.sample_size[0]
-            if isinstance(self.config.sample_size, (list, tuple))
-            else self.config.sample_size
+            sample_size[0]
+            if isinstance(sample_size, (list, tuple))
+            else sample_size
         )
-        self.tile_latent_min_size = int(sample_size / (2 ** (len(self.config.block_out_channels) - 1)))
+        self.tile_latent_min_size = int(sample_size / (2 ** (len(block_out_channels) - 1)))
         self.tile_overlap_factor = 0.25
 
-    def _encode(self, x: TensorValue) -> TensorValue:
+    def _encode(self, x: Tensor) -> Tensor:
         batch_size, num_channels, height, width = x.shape
 
         if self.use_tiling and (width > self.tile_sample_min_size or height > self.tile_sample_min_size):
@@ -542,71 +136,125 @@ class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModel
 
         return enc
 
-    @apply_forward_hook
-    def encode(self, x: TensorValue) -> Tuple[DiagonalGaussianDistribution]:
+    def encode(
+        self, x: Tensor, return_dict: bool = True
+    ) -> AutoencoderKLOutput | Tuple[DiagonalGaussianDistribution]:
         """
         Encode a batch of images into latents.
 
         Args:
-            x (`TensorValue`): Input batch of images.
+            x (`Tensor`): Input batch of images.
+            return_dict (`bool`, *optional*, defaults to `True`):
+                Whether to return a [`~models.autoencoder_kl.AutoencoderKLOutput`] instead of a plain tuple.
 
         Returns:
-            The latent representations of the encoded images.
+                The latent representations of the encoded images. If `return_dict` is True, a
+                [`~models.autoencoder_kl.AutoencoderKLOutput`] is returned, otherwise a plain `tuple` is returned.
         """
         if self.use_slicing and x.shape[0] > 1:
             encoded_slices = [self._encode(x_slice) for x_slice in x.split(1)]
-            h = ops.concat(encoded_slices)
+            h = F.concat(encoded_slices)
         else:
             h = self._encode(x)
 
         posterior = DiagonalGaussianDistribution(h)
 
-        return posterior
+        if not return_dict:
+            return (posterior,)
 
-    def _decode(self, z: TensorValue) -> TensorValue:
+        return AutoencoderKLOutput(latent_dist=posterior)
+
+    def _decode(self, z: Tensor, return_dict: bool = True) -> DecoderOutput | Tensor:
         if self.use_tiling and (z.shape[-1] > self.tile_latent_min_size or z.shape[-2] > self.tile_latent_min_size):
-            return self.tiled_decode(z)
+            return self.tiled_decode(z, return_dict=return_dict)
 
         if self.post_quant_conv is not None:
             z = self.post_quant_conv(z)
 
         dec = self.decoder(z)
 
-        return dec
+        if not return_dict:
+            return (dec,)
 
-    @apply_forward_hook
-    def decode(self, z: TensorValue) -> TensorValue:
+        return DecoderOutput(sample=dec)
+
+    def decode(
+        self, z: Tensor, return_dict: bool = True, generator=None
+    ) -> DecoderOutput | Tensor:
         """
         Decode a batch of images.
 
         Args:
-            z (`TensorValue`): Input batch of latent vectors.
+            z (`Tensor`): Input batch of latent vectors.
+            return_dict (`bool`, *optional*, defaults to `True`):
+                Whether to return a [`~models.vae.DecoderOutput`] instead of a plain tuple.
 
         Returns:
-            `TensorValue`: The decoded images.
+            [`~models.vae.DecoderOutput`] or `tuple`:
+                If return_dict is True, a [`~models.vae.DecoderOutput`] is returned, otherwise a plain `tuple` is
+                returned.
 
         """
         if self.use_slicing and z.shape[0] > 1:
             decoded_slices = [self._decode(z_slice).sample for z_slice in z.split(1)]
-            decoded = ops.concat(decoded_slices)
+            decoded = F.concat(decoded_slices)
         else:
             decoded = self._decode(z).sample
 
-        return decoded
+        if not return_dict:
+            return (decoded,)
 
-    def blend_v(self, a: TensorValue, b: TensorValue, blend_extent: int) -> TensorValue:
-        blend_extent = min(a.shape[2], b.shape[2], blend_extent)
+        return DecoderOutput(sample=decoded)
+
+    def blend_v(self, a: Tensor, b: Tensor, blend_extent: int) -> Tensor:
+        """Blend two tensors vertically using slice/concat (no item assignment)."""
+        a_h = int(a.shape[2])
+        b_h = int(b.shape[2])
+        blend_extent = min(a_h, b_h, blend_extent)
+        if blend_extent == 0:
+            return b
+
+        # Build blended slices
+        slices = []
         for y in range(blend_extent):
-            b[:, :, y, :] = a[:, :, -blend_extent + y, :] * (1 - y / blend_extent) + b[:, :, y, :] * (y / blend_extent)
-        return b
+            weight = y / blend_extent
+            # Convert negative index to positive: -blend_extent + y => a_h - blend_extent + y
+            a_start = a_h - blend_extent + y
+            a_slice = a[:, :, a_start : a_start + 1, :]
+            b_slice = b[:, :, y : y + 1, :]
+            blended = a_slice * (1 - weight) + b_slice * weight
+            slices.append(blended)
 
-    def blend_h(self, a: TensorValue, b: TensorValue, blend_extent: int) -> TensorValue:
-        blend_extent = min(a.shape[3], b.shape[3], blend_extent)
+        # Concatenate blended region with rest of b
+        blended_region = F.concat(slices, axis=2)
+        rest_of_b = b[:, :, blend_extent:, :]
+        return F.concat([blended_region, rest_of_b], axis=2)
+
+    def blend_h(self, a: Tensor, b: Tensor, blend_extent: int) -> Tensor:
+        """Blend two tensors horizontally using slice/concat (no item assignment)."""
+        a_w = int(a.shape[3])
+        b_w = int(b.shape[3])
+        blend_extent = min(a_w, b_w, blend_extent)
+        if blend_extent == 0:
+            return b
+
+        # Build blended slices
+        slices = []
         for x in range(blend_extent):
-            b[:, :, :, x] = a[:, :, :, -blend_extent + x] * (1 - x / blend_extent) + b[:, :, :, x] * (x / blend_extent)
-        return b
+            weight = x / blend_extent
+            # Convert negative index to positive: -blend_extent + x => a_w - blend_extent + x
+            a_start = a_w - blend_extent + x
+            a_slice = a[:, :, :, a_start : a_start + 1]
+            b_slice = b[:, :, :, x : x + 1]
+            blended = a_slice * (1 - weight) + b_slice * weight
+            slices.append(blended)
 
-    def _tiled_encode(self, x: TensorValue) -> TensorValue:
+        # Concatenate blended region with rest of b
+        blended_region = F.concat(slices, axis=3)
+        rest_of_b = b[:, :, :, blend_extent:]
+        return F.concat([blended_region, rest_of_b], axis=3)
+
+    def _tiled_encode(self, x: Tensor) -> Tensor:
         r"""Encode a batch of images using a tiled encoder.
 
         When this option is enabled, the VAE will split the input tensor into tiles to compute encoding in several
@@ -616,10 +264,10 @@ class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModel
         output, but they should be much less noticeable.
 
         Args:
-            x (`TensorValue`): Input batch of images.
+            x (`Tensor`): Input batch of images.
 
         Returns:
-            `TensorValue`:
+            `Tensor`:
                 The latent representation of the encoded videos.
         """
 
@@ -629,12 +277,14 @@ class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModel
 
         # Split the image into 512x512 tiles and encode them separately.
         rows = []
-        for i in range(0, x.shape[2], overlap_size):
+        for i in range(0, int(x.shape[2]), overlap_size):
             row = []
-            for j in range(0, x.shape[3], overlap_size):
-                tile = x[:, :, i : i + self.tile_sample_min_size, j : j + self.tile_sample_min_size]
+            for j in range(0, int(x.shape[3]), overlap_size):
+                end_i = min(i + self.tile_sample_min_size, int(x.shape[2]))
+                end_j = min(j + self.tile_sample_min_size, int(x.shape[3]))
+                tile = x[:, :, i : end_i, j : end_j]
                 tile = self.encoder(tile)
-                if self.config.use_quant_conv:
+                if self.quant_conv is not None:
                     tile = self.quant_conv(tile)
                 row.append(tile)
             rows.append(row)
@@ -648,21 +298,89 @@ class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModel
                     tile = self.blend_v(rows[i - 1][j], tile, blend_extent)
                 if j > 0:
                     tile = self.blend_h(row[j - 1], tile, blend_extent)
-                result_row.append(tile[:, :, :row_limit, :row_limit])
-            result_rows.append(ops.concat(result_row, dim=3))
+                # Clamp slice limits to actual tile dimensions
+                tile_h = min(row_limit, int(tile.shape[2]))
+                tile_w = min(row_limit, int(tile.shape[3]))
+                result_row.append(tile[:, :, :tile_h, :tile_w])
+            result_rows.append(F.concat(result_row, axis=3))
 
-        enc = ops.concat(result_rows, dim=2)
+        enc = F.concat(result_rows, axis=2)
         return enc
 
-    def tiled_decode(self, z: TensorValue) -> TensorValue:
+    def tiled_encode(self, x: Tensor, return_dict: bool = True) -> AutoencoderKLOutput:
+        r"""Encode a batch of images using a tiled encoder.
+
+        When this option is enabled, the VAE will split the input tensor into tiles to compute encoding in several
+        steps. This is useful to keep memory use constant regardless of image size. The end result of tiled encoding is
+        different from non-tiled encoding because each tile uses a different encoder. To avoid tiling artifacts, the
+        tiles overlap and are blended together to form a smooth output. You may still see tile-sized changes in the
+        output, but they should be much less noticeable.
+
+        Args:
+            x (`Tensor`): Input batch of images.
+            return_dict (`bool`, *optional*, defaults to `True`):
+                Whether or not to return a [`~models.autoencoder_kl.AutoencoderKLOutput`] instead of a plain tuple.
+
+        Returns:
+            [`~models.autoencoder_kl.AutoencoderKLOutput`] or `tuple`:
+                If return_dict is True, a [`~models.autoencoder_kl.AutoencoderKLOutput`] is returned, otherwise a plain
+                `tuple` is returned.
+        """
+
+        overlap_size = int(self.tile_sample_min_size * (1 - self.tile_overlap_factor))
+        blend_extent = int(self.tile_latent_min_size * self.tile_overlap_factor)
+        row_limit = self.tile_latent_min_size - blend_extent
+
+        # Split the image into 512x512 tiles and encode them separately.
+        rows = []
+        for i in range(0, int(x.shape[2]), overlap_size):
+            row = []
+            for j in range(0, int(x.shape[3]), overlap_size):
+                end_i = min(i + self.tile_sample_min_size, int(x.shape[2]))
+                end_j = min(j + self.tile_sample_min_size, int(x.shape[3]))
+                tile = x[:, :, i : end_i, j : end_j]
+                tile = self.encoder(tile)
+                if self.quant_conv is not None:
+                    tile = self.quant_conv(tile)
+                row.append(tile)
+            rows.append(row)
+        result_rows = []
+        for i, row in enumerate(rows):
+            result_row = []
+            for j, tile in enumerate(row):
+                # blend the above tile and the left tile
+                # to the current tile and add the current tile to the result row
+                if i > 0:
+                    tile = self.blend_v(rows[i - 1][j], tile, blend_extent)
+                if j > 0:
+                    tile = self.blend_h(row[j - 1], tile, blend_extent)
+                # Clamp slice limits to actual tile dimensions
+                tile_h = min(row_limit, int(tile.shape[2]))
+                tile_w = min(row_limit, int(tile.shape[3]))
+                result_row.append(tile[:, :, :tile_h, :tile_w])
+            result_rows.append(F.concat(result_row, axis=3))
+
+        moments = F.concat(result_rows, axis=2)
+        posterior = DiagonalGaussianDistribution(moments)
+
+        if not return_dict:
+            return (posterior,)
+
+        return AutoencoderKLOutput(latent_dist=posterior)
+
+    def tiled_decode(self, z: Tensor, return_dict: bool = True) -> DecoderOutput | Tensor:
         r"""
         Decode a batch of images using a tiled decoder.
 
         Args:
-            z (`TensorValue`): Input batch of latent vectors.
+            z (`Tensor`): Input batch of latent vectors.
+            return_dict (`bool`, *optional*, defaults to `True`):
+                Whether or not to return a [`~models.vae.DecoderOutput`] instead of a plain tuple.
 
         Returns:
-            `TensorValue`: The decoded images.
+            [`~models.vae.DecoderOutput`] or `tuple`:
+                If return_dict is True, a [`~models.vae.DecoderOutput`] is returned, otherwise a plain `tuple` is
+                returned.
         """
         overlap_size = int(self.tile_latent_min_size * (1 - self.tile_overlap_factor))
         blend_extent = int(self.tile_sample_min_size * self.tile_overlap_factor)
@@ -671,11 +389,13 @@ class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModel
         # Split z into overlapping 64x64 tiles and decode them separately.
         # The tiles have an overlap to avoid seams between tiles.
         rows = []
-        for i in range(0, z.shape[2], overlap_size):
+        for i in range(0, int(z.shape[2]), overlap_size):
             row = []
-            for j in range(0, z.shape[3], overlap_size):
-                tile = z[:, :, i : i + self.tile_latent_min_size, j : j + self.tile_latent_min_size]
-                if self.config.use_post_quant_conv:
+            for j in range(0, int(z.shape[3]), overlap_size):
+                end_i = min(i + self.tile_latent_min_size, int(z.shape[2]))
+                end_j = min(j + self.tile_latent_min_size, int(z.shape[3]))
+                tile = z[:, :, i : end_i, j : end_j]
+                if self.post_quant_conv is not None:
                     tile = self.post_quant_conv(tile)
                 decoded = self.decoder(tile)
                 row.append(decoded)
@@ -690,23 +410,32 @@ class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModel
                     tile = self.blend_v(rows[i - 1][j], tile, blend_extent)
                 if j > 0:
                     tile = self.blend_h(row[j - 1], tile, blend_extent)
-                result_row.append(tile[:, :, :row_limit, :row_limit])
-            result_rows.append(ops.concat(result_row, dim=3))
+                # Clamp slice limits to actual tile dimensions
+                tile_h = min(row_limit, int(tile.shape[2]))
+                tile_w = min(row_limit, int(tile.shape[3]))
+                result_row.append(tile[:, :, :tile_h, :tile_w])
+            result_rows.append(F.concat(result_row, axis=3))
 
-        dec = ops.concat(result_rows, dim=2)
-        return dec
+        dec = F.concat(result_rows, axis=2)
+        if not return_dict:
+            return (dec,)
 
-    def forward(
+        return DecoderOutput(sample=dec)
+
+    def __call__(
         self,
-        sample: TensorValue,
+        sample: Tensor,
         sample_posterior: bool = False,
-        generator: Optional[torch.Generator] = None,
-    ) -> TensorValue:
+        return_dict: bool = True,
+        generator: Generator | None = None,
+    ) -> DecoderOutput | Tensor:
         r"""
         Args:
-            sample (`TensorValue`): Input sample.
+            sample (`Tensor`): Input sample.
             sample_posterior (`bool`, *optional*, defaults to `False`):
                 Whether to sample from the posterior.
+            return_dict (`bool`, *optional*, defaults to `True`):
+                Whether or not to return a [`DecoderOutput`] instead of a plain tuple.
         """
         x = sample
         posterior = self.encode(x).latent_dist
@@ -716,4 +445,7 @@ class AutoencoderKL(ModelMixin, AutoencoderMixin, ConfigMixin, FromOriginalModel
             z = posterior.mode()
         dec = self.decode(z).sample
 
-        return dec
+        if not return_dict:
+            return (dec,)
+
+        return DecoderOutput(sample=dec)
