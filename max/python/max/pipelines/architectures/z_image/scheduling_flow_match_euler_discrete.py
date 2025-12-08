@@ -1,10 +1,8 @@
-# Copyright 2025 Stability AI, Katherine Crowson and The HuggingFace Team. All rights reserved.
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025 Stability AI, Katherine Crowson, The HuggingFace Team, and Modular Inc. All rights reserved.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,47 +10,63 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
-from max.graph import TensorValue, ops
+from typing import List, Tuple
+import logging
+
+from max.pipelines.lib import ModelOutputs
+from max.experimental.tensor import Tensor
+from max.experimental import functional as F
 from max.dtype import DType
-from max.driver import Tensor, Device
-import max
+from max.experimental import random
+from max.driver import CPU, Device
 
-import numpy as np
-
-from ..configuration_utils import ConfigMixin
-from ..utils import BaseOutput, is_scipy_available, logging
-from .scheduling_utils import SchedulerMixin
-
-
-if is_scipy_available():
+# Note: scipy.stats.beta.ppf is used for beta sigmas but requires scipy
+# For now we keep this optional - use_beta_sigmas defaults to False
+try:
     import scipy.stats
+    _scipy_available = True
+except ImportError:
+    _scipy_available = False
 
-logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
+logger = logging.getLogger("max.pipelines")
 
 
-@dataclass
-class FlowMatchEulerDiscreteSchedulerOutput(BaseOutput):
+def linspace(start, stop, num, dtype=DType.float32):
+    """Write from scratch via max"""
+    if num < 0:
+        raise ValueError("Number of samples, %s, must be non-negative." % num)
+    div = (num - 1) if num > 1 else 1
+    delta = stop - start
+
+    step = delta / div
+    y = Tensor.arange(0, num, dtype=dtype) * step + start
+    if num > 1:
+        y = F.concat((y[:-1], Tensor.constant([stop], dtype=dtype, device=y.device)))
+    return y
+
+
+@dataclass(frozen=True)
+class FlowMatchEulerDiscreteSchedulerOutput:
     """
     Output class for the scheduler's `step` function output.
 
     Args:
-        prev_sample (`TensorValue` of shape `(batch_size, num_channels, height, width)` for images):
+        prev_sample (`Tensor` of shape `(batch_size, num_channels, height, width)` for images):
             Computed sample `(x_{t-1})` of previous timestep. `prev_sample` should be used as next model input in the
             denoising loop.
     """
 
-    prev_sample: TensorValue
+    prev_sample: Tensor
 
 
-class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
+class FlowMatchEulerDiscreteScheduler:
     """
     Euler scheduler.
 
-    This model inherits from [`SchedulerMixin`] and [`ConfigMixin`]. Check the superclass documentation for the generic
-    methods the library implements for all schedulers such as loading and saving.
+    Native Modular implementation (ported from diffusers).
 
     Args:
         num_train_timesteps (`int`, defaults to 1000):
@@ -95,29 +109,48 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         num_train_timesteps: int = 1000,
         shift: float = 1.0,
         use_dynamic_shifting: bool = False,
-        base_shift: Optional[float] = 0.5,
-        max_shift: Optional[float] = 1.15,
-        base_image_seq_len: Optional[int] = 256,
-        max_image_seq_len: Optional[int] = 4096,
+        base_shift: float | None = 0.5,
+        max_shift: float | None = 1.15,
+        base_image_seq_len: int | None = 256,
+        max_image_seq_len: int | None = 4096,
         invert_sigmas: bool = False,
-        shift_terminal: Optional[float] = None,
-        use_karras_sigmas: Optional[bool] = False,
-        use_exponential_sigmas: Optional[bool] = False,
-        use_beta_sigmas: Optional[bool] = False,
+        shift_terminal: float | None = None,
+        use_karras_sigmas: bool | None = False,
+        use_exponential_sigmas: bool | None = False,
+        use_beta_sigmas: bool | None = False,
         time_shift_type: str = "exponential",
         stochastic_sampling: bool = False,
     ):
-        if self.config.use_beta_sigmas and not is_scipy_available():
+        # Store all config parameters as instance attributes
+        self.num_train_timesteps = num_train_timesteps
+        self.use_dynamic_shifting = use_dynamic_shifting
+        self.base_shift = base_shift
+        self.max_shift = max_shift
+        self.base_image_seq_len = base_image_seq_len
+        self.max_image_seq_len = max_image_seq_len
+        self.invert_sigmas = invert_sigmas
+        self.shift_terminal = shift_terminal
+        self.use_karras_sigmas = use_karras_sigmas
+        self.use_exponential_sigmas = use_exponential_sigmas
+        self.use_beta_sigmas = use_beta_sigmas
+        self.time_shift_type = time_shift_type
+        self.stochastic_sampling = stochastic_sampling
+
+        # Validations
+        if use_beta_sigmas and not _scipy_available:
             raise ImportError("Make sure to install scipy if you want to use beta sigmas.")
-        if sum([self.config.use_beta_sigmas, self.config.use_exponential_sigmas, self.config.use_karras_sigmas]) > 1:
+        if sum([use_beta_sigmas, use_exponential_sigmas, use_karras_sigmas]) > 1:
             raise ValueError(
-                "Only one of `config.use_beta_sigmas`, `config.use_exponential_sigmas`, `config.use_karras_sigmas` can be used."
+                "Only one of `use_beta_sigmas`, `use_exponential_sigmas`, `use_karras_sigmas` can be used."
             )
         if time_shift_type not in {"exponential", "linear"}:
             raise ValueError("`time_shift_type` must either be 'exponential' or 'linear'.")
 
-        timesteps = np.linspace(1, num_train_timesteps, num_train_timesteps, dtype=np.float32)[::-1].copy()
-        timesteps = Tensor.from_numpy(timesteps).cast(DType.float32)
+        timesteps = linspace(1, num_train_timesteps, num_train_timesteps, DType.float32)
+        # Reverse the tensor ([::-1] is not supported in Modular, use gather with reversed indices)
+        n = int(timesteps.shape[0])
+        reversed_indices = Tensor.arange(n - 1, -1, -1, dtype=DType.int64)
+        timesteps = F.gather(timesteps, reversed_indices, axis=0)
 
         sigmas = timesteps / num_train_timesteps
         if not use_dynamic_shifting:
@@ -131,33 +164,32 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
         self._shift = shift
 
-        self.sigmas = sigmas.to("cpu")  # to avoid too much CPU/GPU communication
+        self.sigmas = sigmas.to(CPU())  # to avoid too much CPU/GPU communication
         self.sigma_min = self.sigmas[-1].item()
         self.sigma_max = self.sigmas[0].item()
 
     @property
-    def shift(self):
+    def shift(self) -> float:
         """
         The value used for shifting.
         """
         return self._shift
 
     @property
-    def step_index(self):
+    def step_index(self) -> int:
         """
         The index counter for current timestep. It will increase 1 after each scheduler step.
         """
         return self._step_index
 
     @property
-    def begin_index(self):
+    def begin_index(self) -> int:
         """
         The index for the first timestep. It should be set from pipeline with `set_begin_index` method.
         """
         return self._begin_index
 
-    # Copied from diffusers.schedulers.scheduling_dpmsolver_multistep.DPMSolverMultistepScheduler.set_begin_index
-    def set_begin_index(self, begin_index: int = 0):
+    def set_begin_index(self, begin_index: int = 0) -> None:
         """
         Sets the begin index for the scheduler. This function should be run from pipeline before the inference.
 
@@ -167,38 +199,33 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         """
         self._begin_index = begin_index
 
-    def set_shift(self, shift: float):
+    def set_shift(self, shift: float) -> None:
         self._shift = shift
 
     def scale_noise(
         self,
-        sample: TensorValue,
-        timestep: Union[float, TensorValue],
-        noise: Optional[TensorValue] = None,
-    ) -> TensorValue:
+        sample: Tensor,
+        timestep: float | Tensor,
+        noise: Tensor | None = None,
+    ) -> Tensor:
         """
         Forward process in flow-matching
 
         Args:
-            sample (`TensorValue`):
+            sample (`Tensor`):
                 The input sample.
             timestep (`int`, *optional*):
                 The current timestep in the diffusion chain.
 
         Returns:
-            `TensorValue`:
+            `Tensor`:
                 A scaled input sample.
         """
         # Make sure sigmas and timesteps have the same device and dtype as original_samples
         sigmas = self.sigmas.to(sample.device).cast(sample.dtype)
 
-        if sample.device.type == "mps" and torch.is_floating_point(timestep):
-            # mps does not support float64
-            schedule_timesteps = self.timesteps.to(sample.device, dtype=DType.float32)
-            timestep = timestep.to(sample.device, dtype=DType.float32)
-        else:
-            schedule_timesteps = self.timesteps.to(sample.device)
-            timestep = timestep.to(sample.device)
+        schedule_timesteps = self.timesteps.to(sample.device)
+        timestep = timestep.to(sample.device)
 
         # self.begin_index is None when scheduler is used for training, or pipeline does not implement set_begin_index
         if self.begin_index is None:
@@ -218,16 +245,16 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
         return sample
 
-    def _sigma_to_t(self, sigma):
-        return sigma * self.config.num_train_timesteps
+    def _sigma_to_t(self, sigma: Tensor) -> Tensor:
+        return sigma * self.num_train_timesteps
 
-    def time_shift(self, mu: float, sigma: float, t: TensorValue):
-        if self.config.time_shift_type == "exponential":
+    def time_shift(self, mu: float, sigma: float, t: Tensor) -> Tensor:
+        if self.time_shift_type == "exponential":
             return self._time_shift_exponential(mu, sigma, t)
-        elif self.config.time_shift_type == "linear":
+        elif self.time_shift_type == "linear":
             return self._time_shift_linear(mu, sigma, t)
 
-    def stretch_shift_to_terminal(self, t: TensorValue) -> TensorValue:
+    def stretch_shift_to_terminal(self, t: Tensor) -> Tensor:
         r"""
         Stretches and shifts the timestep schedule to ensure it terminates at the configured `shift_terminal` config
         value.
@@ -236,26 +263,26 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
 
         Args:
-            t (`TensorValue`):
+            t (`Tensor`):
                 A tensor of timesteps to be stretched and shifted.
 
         Returns:
-            `TensorValue`:
-                A tensor of adjusted timesteps such that the final value equals `self.config.shift_terminal`.
+            `Tensor`:
+                A tensor of adjusted timesteps such that the final value equals `self.shift_terminal`.
         """
         one_minus_z = 1 - t
-        scale_factor = one_minus_z[-1] / (1 - self.config.shift_terminal)
+        scale_factor = one_minus_z[-1] / (1 - self.shift_terminal)
         stretched_t = 1 - (one_minus_z / scale_factor)
         return stretched_t
 
     def set_timesteps(
         self,
-        num_inference_steps: Optional[int] = None,
-        device: Union[str, Device] = None,
-        sigmas: Optional[List[float]] = None,
-        mu: Optional[float] = None,
-        timesteps: Optional[List[float]] = None,
-    ):
+        num_inference_steps: int | None = None,
+        device: str | Device | None = None,
+        sigmas: List[float] | None = None,
+        mu: float | None = None,
+        timesteps: List[float] | None = None,
+    ) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain (to be run before inference).
 
@@ -274,7 +301,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
                 Custom values for timesteps to be used for each diffusion step. If `None`, the timesteps are computed
                 automatically.
         """
-        if self.config.use_dynamic_shifting and mu is None:
+        if self.use_dynamic_shifting and mu is None:
             raise ValueError("`mu` must be passed when `use_dynamic_shifting` is set to be `True`")
 
         if sigmas is not None and timesteps is not None:
@@ -297,60 +324,60 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         is_timesteps_provided = timesteps is not None
 
         if is_timesteps_provided:
-            timesteps = np.array(timesteps).astype(np.float32)
+            timesteps = Tensor.constant(timesteps).cast(DType.float32)
 
         if sigmas is None:
             if timesteps is None:
-                timesteps = np.linspace(
+                timesteps = linspace(
                     self._sigma_to_t(self.sigma_max), self._sigma_to_t(self.sigma_min), num_inference_steps
                 )
-            sigmas = timesteps / self.config.num_train_timesteps
+            sigmas = timesteps / self.num_train_timesteps
         else:
-            sigmas = np.array(sigmas).astype(np.float32)
+            sigmas = Tensor.constant(sigmas).cast(DType.float32)
             num_inference_steps = len(sigmas)
 
         # 2. Perform timestep shifting. Either no shifting is applied, or resolution-dependent shifting of
         #    "exponential" or "linear" type is applied
-        if self.config.use_dynamic_shifting:
+        if self.use_dynamic_shifting:
             sigmas = self.time_shift(mu, 1.0, sigmas)
         else:
             sigmas = self.shift * sigmas / (1 + (self.shift - 1) * sigmas)
 
         # 3. If required, stretch the sigmas schedule to terminate at the configured `shift_terminal` value
-        if self.config.shift_terminal:
+        if self.shift_terminal:
             sigmas = self.stretch_shift_to_terminal(sigmas)
 
         # 4. If required, convert sigmas to one of karras, exponential, or beta sigma schedules
-        if self.config.use_karras_sigmas:
+        if self.use_karras_sigmas:
             sigmas = self._convert_to_karras(in_sigmas=sigmas, num_inference_steps=num_inference_steps)
-        elif self.config.use_exponential_sigmas:
+        elif self.use_exponential_sigmas:
             sigmas = self._convert_to_exponential(in_sigmas=sigmas, num_inference_steps=num_inference_steps)
-        elif self.config.use_beta_sigmas:
+        elif self.use_beta_sigmas:
             sigmas = self._convert_to_beta(in_sigmas=sigmas, num_inference_steps=num_inference_steps)
 
         # 5. Convert sigmas and timesteps to tensors and move to specified device
-        sigmas = Tensor.from_numpy(sigmas).to(device).cast(DType.float32)
+        sigmas = sigmas.to(device).cast(DType.float32)
         if not is_timesteps_provided:
-            timesteps = sigmas * self.config.num_train_timesteps
+            timesteps = sigmas * self.num_train_timesteps
         else:
-            timesteps = Tensor.from_numpy(timesteps).to(device).cast(DType.float32)
+            timesteps = timesteps.to(device).cast(DType.float32)
 
         # 6. Append the terminal sigma value.
         #    If a model requires inverted sigma schedule for denoising but timesteps without inversion, the
         #    `invert_sigmas` flag can be set to `True`. This case is only required in Mochi
-        if self.config.invert_sigmas:
+        if self.invert_sigmas:
             sigmas = 1.0 - sigmas
-            timesteps = sigmas * self.config.num_train_timesteps
-            sigmas = ops.concat([sigmas, Tensor.from_numpy(np.ones(1)).to(sigmas.device)])
+            timesteps = sigmas * self.num_train_timesteps
+            sigmas = F.concat([sigmas, Tensor.ones([1], device=sigmas.device, dtype=sigmas.dtype)])
         else:
-            sigmas = ops.concat([sigmas, Tensor.zeros(1, device=sigmas.device)])
+            sigmas = F.concat([sigmas, Tensor.zeros([1], device=sigmas.device, dtype=sigmas.dtype)])
 
         self.timesteps = timesteps
         self.sigmas = sigmas
         self._step_index = None
         self._begin_index = None
 
-    def index_for_timestep(self, timestep, schedule_timesteps=None):
+    def index_for_timestep(self, timestep: Tensor, schedule_timesteps: Tensor | None = None) -> int:
         if schedule_timesteps is None:
             schedule_timesteps = self.timesteps
 
@@ -364,9 +391,9 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
         return indices[pos].item()
 
-    def _init_step_index(self, timestep):
+    def _init_step_index(self, timestep: Tensor):
         if self.begin_index is None:
-            if isinstance(timestep, TensorValue):
+            if isinstance(timestep, Tensor):
                 timestep = timestep.to(self.timesteps.device)
             self._step_index = self.index_for_timestep(timestep)
         else:
@@ -374,36 +401,36 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
     def step(
         self,
-        model_output: TensorValue,
-        timestep: Union[float, TensorValue],
-        sample: TensorValue,
+        model_output: Tensor,
+        timestep: float | Tensor,
+        sample: Tensor,
         s_churn: float = 0.0,
         s_tmin: float = 0.0,
         s_tmax: float = float("inf"),
         s_noise: float = 1.0,
-        generator: Optional[torch.Generator] = None,
-        per_token_timesteps: Optional[TensorValue] = None,
+        generator: Generator | None = None,
+        per_token_timesteps: Tensor | None = None,
         return_dict: bool = True,
-    ) -> Union[FlowMatchEulerDiscreteSchedulerOutput, Tuple]:
+    ) -> FlowMatchEulerDiscreteSchedulerOutput | Tuple:
         """
         Predict the sample from the previous timestep by reversing the SDE. This function propagates the diffusion
         process from the learned model outputs (most often the predicted noise).
 
         Args:
-            model_output (`TensorValue`):
+            model_output (`Tensor`):
                 The direct output from learned diffusion model.
-            timestep (`float`):
+            timestep (`float` or `Tensor`):
                 The current discrete timestep in the diffusion chain.
-            sample (`TensorValue`):
+            sample (`Tensor`):
                 A current instance of a sample created by the diffusion process.
             s_churn (`float`):
             s_tmin  (`float`):
             s_tmax  (`float`):
             s_noise (`float`, defaults to 1.0):
                 Scaling factor for noise added to the sample.
-            generator (`torch.Generator`, *optional*):
+            generator (`Generator`, *optional*):
                 A random number generator.
-            per_token_timesteps (`TensorValue`, *optional*):
+            per_token_timesteps (`Tensor`, *optional*):
                 The timesteps for each token in the sample.
             return_dict (`bool`):
                 Whether or not to return a
@@ -416,19 +443,6 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
                 otherwise a tuple is returned where the first element is the sample tensor.
         """
 
-        if (
-            isinstance(timestep, int)
-            #or isinstance(timestep, torch.IntTensor)
-            #or isinstance(timestep, torch.LongTensor)
-        ):
-            raise ValueError(
-                (
-                    "Passing integer indices (e.g. from `enumerate(timesteps)`) as timesteps to"
-                    " `FlowMatchEulerDiscreteScheduler.step()` is not supported. Make sure to pass"
-                    " one of the `scheduler.timesteps` as a timestep."
-                ),
-            )
-
         if self.step_index is None:
             self._init_step_index(timestep)
 
@@ -436,12 +450,12 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         sample = sample.cast(DType.float32)
 
         if per_token_timesteps is not None:
-            per_token_sigmas = per_token_timesteps / self.config.num_train_timesteps
+            per_token_sigmas = per_token_timesteps / self.num_train_timesteps
 
             sigmas = self.sigmas[:, None, None]
             lower_mask = sigmas < per_token_sigmas[None] - 1e-6
             lower_sigmas = lower_mask * sigmas
-            lower_sigmas, _ = lower_sigmas.max(dim=0)
+            lower_sigmas, _ = lower_sigmas.max(axis=0)
 
             current_sigma = per_token_sigmas[..., None]
             next_sigma = lower_sigmas[..., None]
@@ -455,9 +469,9 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             next_sigma = sigma_next
             dt = sigma_next - sigma
 
-        if self.config.stochastic_sampling:
+        if self.stochastic_sampling:
             x0 = sample - current_sigma * model_output
-            noise = ops.random.normal(sample)
+            noise = random.normal(sample)
             prev_sample = (1.0 - next_sigma) * x0 + next_sigma * noise
         else:
             prev_sample = sample + dt * model_output
@@ -466,39 +480,37 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         self._step_index += 1
         if per_token_timesteps is None:
             # Cast sample back to model compatible dtype
-            prev_sample = prev_sample.to(model_output.dtype)
+            prev_sample = prev_sample.cast(model_output.dtype)
 
         if not return_dict:
             return (prev_sample,)
 
         return FlowMatchEulerDiscreteSchedulerOutput(prev_sample=prev_sample)
 
-    # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._convert_to_karras
-    def _convert_to_karras(self, in_sigmas: TensorValue, num_inference_steps) -> TensorValue:
+    def _convert_to_karras(self, in_sigmas: Tensor, num_inference_steps) -> Tensor:
         """
         Construct the noise schedule as proposed in [Elucidating the Design Space of Diffusion-Based Generative
         Models](https://huggingface.co/papers/2206.00364).
 
         Args:
-            in_sigmas (`TensorValue`):
+            in_sigmas (`Tensor`):
                 The input sigma values to be converted.
             num_inference_steps (`int`):
                 The number of inference steps to generate the noise schedule for.
 
         Returns:
-            `TensorValue`:
+            `Tensor`:
                 The converted sigma values following the Karras noise schedule.
         """
 
         # Hack to make sure that other schedulers which copy this function don't break
-        # TODO: Add this logic to the other schedulers
         if hasattr(self.config, "sigma_min"):
-            sigma_min = self.config.sigma_min
+            sigma_min = self.sigma_min
         else:
             sigma_min = None
 
         if hasattr(self.config, "sigma_max"):
-            sigma_max = self.config.sigma_max
+            sigma_max = self.sigma_max
         else:
             sigma_max = None
 
@@ -506,56 +518,53 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         sigma_max = sigma_max if sigma_max is not None else in_sigmas[0].item()
 
         rho = 7.0  # 7.0 is the value used in the paper
-        ramp = np.linspace(0, 1, num_inference_steps)
+        ramp = linspace(0, 1, num_inference_steps)
         min_inv_rho = sigma_min ** (1 / rho)
         max_inv_rho = sigma_max ** (1 / rho)
         sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
         return sigmas
 
-    # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._convert_to_exponential
-    def _convert_to_exponential(self, in_sigmas: TensorValue, num_inference_steps: int) -> TensorValue:
+    def _convert_to_exponential(self, in_sigmas: Tensor, num_inference_steps: int) -> Tensor:
         """
         Construct an exponential noise schedule.
 
         Args:
-            in_sigmas (`TensorValue`):
+            in_sigmas (`Tensor`):
                 The input sigma values to be converted.
             num_inference_steps (`int`):
                 The number of inference steps to generate the noise schedule for.
 
         Returns:
-            `TensorValue`:
+            `Tensor`:
                 The converted sigma values following an exponential schedule.
         """
 
         # Hack to make sure that other schedulers which copy this function don't break
-        # TODO: Add this logic to the other schedulers
         if hasattr(self.config, "sigma_min"):
-            sigma_min = self.config.sigma_min
+            sigma_min = self.sigma_min
         else:
             sigma_min = None
 
         if hasattr(self.config, "sigma_max"):
-            sigma_max = self.config.sigma_max
+            sigma_max = self.sigma_max
         else:
             sigma_max = None
 
         sigma_min = sigma_min if sigma_min is not None else in_sigmas[-1].item()
         sigma_max = sigma_max if sigma_max is not None else in_sigmas[0].item()
 
-        sigmas = np.exp(np.linspace(math.log(sigma_max), math.log(sigma_min), num_inference_steps))
+        sigmas = F.exp(linspace(F.log(sigma_max), F.log(sigma_min), num_inference_steps))
         return sigmas
 
-    # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._convert_to_beta
     def _convert_to_beta(
-        self, in_sigmas: TensorValue, num_inference_steps: int, alpha: float = 0.6, beta: float = 0.6
-    ) -> TensorValue:
+        self, in_sigmas: Tensor, num_inference_steps: int, alpha: float = 0.6, beta: float = 0.6
+    ) -> Tensor:
         """
         Construct a beta noise schedule as proposed in [Beta Sampling is All You
         Need](https://huggingface.co/papers/2407.12173).
 
         Args:
-            in_sigmas (`TensorValue`):
+            in_sigmas (`Tensor`):
                 The input sigma values to be converted.
             num_inference_steps (`int`):
                 The number of inference steps to generate the noise schedule for.
@@ -565,41 +574,40 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
                 The beta parameter for the beta distribution.
 
         Returns:
-            `TensorValue`:
+            `Tensor`:
                 The converted sigma values following a beta distribution schedule.
         """
 
         # Hack to make sure that other schedulers which copy this function don't break
-        # TODO: Add this logic to the other schedulers
         if hasattr(self.config, "sigma_min"):
-            sigma_min = self.config.sigma_min
+            sigma_min = self.sigma_min
         else:
             sigma_min = None
 
         if hasattr(self.config, "sigma_max"):
-            sigma_max = self.config.sigma_max
+            sigma_max = self.sigma_max
         else:
             sigma_max = None
 
         sigma_min = sigma_min if sigma_min is not None else in_sigmas[-1].item()
         sigma_max = sigma_max if sigma_max is not None else in_sigmas[0].item()
 
-        sigmas = np.array(
+        sigmas = Tensor.constant(
             [
                 sigma_min + (ppf * (sigma_max - sigma_min))
                 for ppf in [
-                    scipy.stats.beta.ppf(timestep, alpha, beta)
-                    for timestep in 1 - np.linspace(0, 1, num_inference_steps)
+                    scipy.stats.beta.ppf(timestep, alpha, beta)  # TODO: natively in Modular?
+                    for timestep in 1 - linspace(0, 1, num_inference_steps)
                 ]
             ]
         )
         return sigmas
 
-    def _time_shift_exponential(self, mu, sigma, t):
-        return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
+    def _time_shift_exponential(self, mu: Tensor, sigma: Tensor, t: Tensor) -> Tensor:
+        return F.exp(mu) / (F.exp(mu) + (1 / t - 1) ** sigma)
 
-    def _time_shift_linear(self, mu, sigma, t):
+    def _time_shift_linear(self, mu: Tensor, sigma: Tensor, t: Tensor) -> Tensor:
         return mu / (mu + (1 / t - 1) ** sigma)
 
-    def __len__(self):
-        return self.config.num_train_timesteps
+    def __len__(self) -> int:
+        return self.num_train_timesteps
