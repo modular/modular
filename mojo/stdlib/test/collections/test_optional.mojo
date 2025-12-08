@@ -145,6 +145,12 @@ def test_optional_explicit_copy():
     assert_equal(v2.value(), "testing")
 
 
+def test_optional_conformance():
+    assert_true(conforms_to(Optional[Int], Representable))
+    assert_true(conforms_to(Optional[Int], Stringable))
+    assert_true(conforms_to(Optional[Int], Writable))
+
+
 def test_optional_str_repr():
     var o = Optional(10)
     assert_equal(o.__str__(), "10")

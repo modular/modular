@@ -168,10 +168,10 @@ def test_add():
     assert_equal("123abc", s3)
 
     var s4 = "x"
-    var s5 = s4.join(1, 2, 3)
+    var s5 = s4.join(Span([1, 2, 3]))
     assert_equal("1x2x3", s5)
 
-    var s6 = s4.join(s1, s2)
+    var s6 = s4.join(Span([s1, s2]))
     assert_equal("123xabc", s6)
 
     var s7 = String()
@@ -201,26 +201,28 @@ def test_add_string_slice():
 def test_string_join():
     var sep = ","
     var s0 = "abc"
-    var s1 = sep.join(s0, s0, s0, s0)
+    var s1 = sep.join(Span([s0, s0, s0, s0]))
     assert_equal("abc,abc,abc,abc", s1)
 
-    assert_equal(sep.join(1, 2, 3), "1,2,3")
+    assert_equal(sep.join(Span([1, 2, 3])), "1,2,3")
 
-    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
+    # TODO(MSTDL-2078): Continue supporting heterogenous String.join
+    #   arguments, somehow?
+    # assert_equal(sep.join(1, "abc", 3), "1,abc,3")
 
-    var s2 = ",".join(List[UInt8](1, 2, 3))
+    var s2 = ",".join(Span[UInt8]([1, 2, 3]))
     assert_equal(s2, "1,2,3")
 
-    var s3 = ",".join(List[UInt8](1, 2, 3, 4, 5, 6, 7, 8, 9))
+    var s3 = ",".join(Span[UInt8]([1, 2, 3, 4, 5, 6, 7, 8, 9]))
     assert_equal(s3, "1,2,3,4,5,6,7,8,9")
 
     var s4 = ",".join(List[UInt8]())
     assert_equal(s4, "")
 
-    var s5 = ",".join(List[UInt8](1))
+    var s5 = ",".join(Span[UInt8]([1]))
     assert_equal(s5, "1")
 
-    var s6 = ",".join(List[String]("1", "2", "3"))
+    var s6 = ",".join(Span[String](["1", "2", "3"]))
     assert_equal(s6, "1,2,3")
 
 
@@ -797,13 +799,13 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(bytes=List[UInt8](0xC2, 0x85))
-    var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
-    var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
+    var next_line = String(bytes=Span[Byte]([0xC2, 0x85]))
+    var unicode_line_sep = String(bytes=Span[Byte]([0xE2, 0x80, 0xA8]))
+    var unicode_paragraph_sep = String(bytes=Span[Byte]([0xE2, 0x80, 0xA9]))
 
     for u in [next_line^, unicode_line_sep^, unicode_paragraph_sep^]:
         item = StaticString("").join(
-            "hello", u, "world", u, "mojo", u, "language", u
+            Span(["hello", u, "world", u, "mojo", u, "language", u])
         )
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -1061,7 +1063,6 @@ def test_removesuffix():
 
 def test_intable():
     assert_equal(Int("123"), 123)
-    assert_equal(Int("10", base=8), 8)
 
     with assert_raises():
         _ = Int("hi")
@@ -1426,29 +1427,30 @@ def test_uninit_ctor():
     assert_equal(s3._is_inline(), False)
 
 
-def test_unsafe_cstr():
-    var s1: String = "ab"
-    var p1 = s1.unsafe_cstr_ptr()
-    assert_equal(p1[0], ord("a"))
-    assert_equal(p1[1], ord("b"))
-    assert_equal(p1[2], 0)
+def test_as_c_string_slice_empty():
+    var string = String()
+    var cslice = string.as_c_string_slice()
+    assert_equal(len(string), 0)
+    assert_true(string.capacity() > 0)
+    # Safe to index `len(string)` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    assert_true(string.as_bytes() == cslice.as_bytes())
 
-    var s2: String = ""
-    var p2 = s2.unsafe_cstr_ptr()
-    assert_equal(p2[0], 0)
 
-    var s3 = String()
-    var p3 = s3.unsafe_cstr_ptr()
-    assert_equal(p3[0], 0)
+def test_as_c_string_slice_inlined():
+    var string = String("a")
+    var cslice = string.as_c_string_slice()
+    # Safe to index `len(string)` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    assert_true(string.as_bytes() == cslice.as_bytes())
 
-    # 24 bytes is out of line.
-    var s4: String = "abcdefghabcdefghabcdefgh"
-    var p4 = s4.unsafe_cstr_ptr()
-    assert_equal(p4[0], ord("a"))
-    assert_equal(p4[1], ord("b"))
-    assert_equal(p4[2], ord("c"))
-    assert_equal(p4[23], ord("h"))
-    assert_equal(p4[24], 0)
+
+def test_as_c_string_slice_heap():
+    var string = String("abcdefghijlmnopqrstuvwxyz")
+    var cslice = string.as_c_string_slice()
+    # Safe to index `len(string)` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    assert_true(string.as_bytes() == cslice.as_bytes())
 
 
 def test_variadic_ctors():
@@ -1484,12 +1486,6 @@ def test_sso():
     assert_equal(s._has_nul_terminator(), False)
     assert_equal(s, "hellof")
 
-    # Check that unsafe_cstr_ptr adds the nul terminator at the end.
-    var ptr = s.unsafe_cstr_ptr()
-    assert_equal(s._has_nul_terminator(), True)
-    assert_equal(ptr[len(s) - 1], ord("f"))
-    assert_equal(ptr[len(s)], 0)
-
     # Test StringLiterals behave the same when above SSO capacity.
     comptime long = "hellohellohellohellohellohellohellohellohellohellohello"
     s = String(long)
@@ -1506,12 +1502,6 @@ def test_sso():
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), False)
     assert_equal(s, long + "f")
-
-    # Check that unsafe_cstr_ptr adds the nul terminator at the end.
-    ptr = s.unsafe_cstr_ptr()
-    assert_equal(s._has_nul_terminator(), True)
-    assert_equal(ptr[len(s) - 1], ord("f"))
-    assert_equal(ptr[len(s)], 0)
 
     # Empty strings are stored inline.
     s = String()

@@ -32,16 +32,10 @@ from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 
 # Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
-from layout._fillers import arange
+from layout._fillers import arange, random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
@@ -331,7 +325,7 @@ struct R2GOutputOp[
     num_threads: Int,
     mma_shape: IndexList[3],
     block_tile_shape: IndexList[3],
-    o: Origin,
+    o: MutOrigin,
 ](ImplicitlyCopyable, OutputOp):
     comptime args_type = STOutputOpArgs[Self.dtype, Self.layout, Self.o]
 
@@ -695,7 +689,7 @@ fn matmul_sm100[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
+    c_device: NDBuffer[mut=True, c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
     b_device: NDBuffer[b_type, 2, _, b_shape],
     ctx: DeviceContext,

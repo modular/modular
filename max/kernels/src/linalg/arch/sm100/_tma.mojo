@@ -42,7 +42,7 @@ from builtin.device_passable import DevicePassable
 
 struct TMADescriptor[
     dtype: DType, tile_shape: IntTuple, swizzle_mode: SwizzleMode
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     var tensormap: TensorMap
 
     @always_inline

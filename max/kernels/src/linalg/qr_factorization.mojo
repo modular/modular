@@ -22,8 +22,8 @@ fn qr_factorization[
     dtype: DType,
     element_layout: Layout,
 ](
-    sigma: LayoutTensor[dtype, element_layout=element_layout, **_],
-    A: LayoutTensor[dtype, element_layout=element_layout, **_],
+    sigma: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
+    A: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
 ):
     """Performs QR factorization of a matrix `A` using the Householder reflector
     method.
@@ -95,7 +95,7 @@ fn apply_q[
 ](
     sigma: LayoutTensor[dtype, element_layout=element_layout, **_],
     A: LayoutTensor[dtype, element_layout=element_layout, **_],
-    X: LayoutTensor[dtype, element_layout=element_layout, **_],
+    X: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
 ):
     """Applies the implicit Q factor stored in `A` and `sigma` after calling
     `qr_factorization` to the `X` matrix.
@@ -126,7 +126,7 @@ fn form_q[
 ](
     sigma: LayoutTensor[dtype, element_layout=element_layout, **_],
     A: LayoutTensor[dtype, element_layout=element_layout, **_],
-    Q: LayoutTensor[dtype, element_layout=element_layout, **_],
+    Q: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
 ):
     """Forms the Q factor from the implicit Q factor stored in `A` and `sigma`
     after calling `qr_factorization` and stores the result in `Q`.

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-list-example
-from python import Python
+from python import Python, PythonObject
 
 
 def main():
@@ -20,6 +20,6 @@ def main():
     n = py_list[2]
     print("n =", n)
     py_list.append(5)
-    py_list[0] = "aardvark"
+    py_list[0] = PythonObject("aardvark")
     print(py_list)
     # end-python-list-example

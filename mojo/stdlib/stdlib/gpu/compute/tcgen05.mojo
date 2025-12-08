@@ -22,7 +22,7 @@ from sys.info import _has_blackwell_tcgen05
 from gpu import external_memory
 from gpu.compute.mma import _str_iota  # TODO: move to a string module
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import bitcast
 
 comptime check_blackwell_constraint = constrained[
     _has_blackwell_tcgen05(),
@@ -31,13 +31,16 @@ comptime check_blackwell_constraint = constrained[
         " (sm_100a, sm_101a) hardware."
     ),
 ]
+"""Compile-time constraint ensuring Blackwell hardware is targeted."""
 
 
 @register_passable("trivial")
 struct TensorMemory:
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
-    var ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED]
+    var ptr: UnsafePointer[
+        UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+    ]
     """Pointer to the tensor memory address."""
 
     var num_cols: UInt32
@@ -61,7 +64,9 @@ struct TensorMemory:
 fn tcgen05_alloc[
     cta_group: Int32
 ](
-    ptr_tmem_addr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+    ptr_tmem_addr: UnsafePointer[
+        mut=True, UInt32, address_space = AddressSpace.SHARED
+    ],
     num_cols: UInt32,
 ):
     """Allocates tensor memory for use with tcgen05 instructions.
@@ -77,7 +82,9 @@ fn tcgen05_alloc[
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
     check_blackwell_constraint()
-    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
+    __comptime_assert (
+        cta_group == 1 or cta_group == 2
+    ), "cta_group must be 1 or 2"
     inlined_assembly[
         "tcgen05.alloc.cta_group::"
         + String(cta_group)
@@ -109,7 +116,9 @@ fn tcgen05_dealloc[cta_group: Int32](tmem_addr: UInt32, num_cols: UInt32):
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
     check_blackwell_constraint()
-    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
+    __comptime_assert (
+        cta_group == 1 or cta_group == 2
+    ), "cta_group must be 1 or 2"
     inlined_assembly[
         "tcgen05.dealloc.cta_group::"
         + String(cta_group)
@@ -148,41 +157,53 @@ fn tcgen05_ld[
     """
     check_blackwell_constraint()
 
-    constrained[
+    __comptime_assert (
         (datapaths == 16 and bits == 64)
         or (datapaths == 16 and bits == 128)
         or (datapaths == 16 and bits == 256)
-        or (datapaths == 32 and bits == 32),
+        or (datapaths == 32 and bits == 32)
+    ), (
         "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b, got "
         + String(datapaths)
         + "x"
         + String(bits)
-        + "b.",
-    ]()
+        + "b."
+    )
 
-    constrained[
-        repeat in [1, 2, 4, 8, 16, 32, 64, 128],
-        "`repeat` must be a power of 2 in the range [1, 128].",
-    ]()
+    __comptime_assert repeat in [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+    ], "`repeat` must be a power of 2 in the range [1, 128]."
 
-    constrained[
-        width in [1, 2, 4, 8, 16, 32, 64, 128],
-        "`width` must be a power of 2 in the range [1, 128].",
-    ]()
+    __comptime_assert width in [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+    ], "`width` must be a power of 2 in the range [1, 128]."
 
-    constrained[
+    __comptime_assert (
         width == (repeat * bits * datapaths) // (32 * 32)
-        and size_of[dtype]() == 4,
-        String(
-            (
-                "Only support 4B data type and width must be equal to (num * n"
-                " * m) // (32 * 32). width is "
-            ),
-            width,
-            " but need ",
-            (repeat * bits * datapaths) // (32 * 32),
+        and size_of[dtype]() == 4
+    ), String(
+        (
+            "Only support 4B data type and width must be equal to (num * n"
+            " * m) // (32 * 32). width is "
         ),
-    ]()
+        width,
+        " but need ",
+        (repeat * bits * datapaths) // (32 * 32),
+    )
 
     comptime shape_str = String(datapaths) + "x" + String(bits)
     comptime num_str = String(repeat)
@@ -277,7 +298,7 @@ fn tcgen05_ld[
         ]()
     else:
         constrained[False, "width must be a power of 2 in the range [1, 128]."]()
-        return abort[SIMD[dtype, width]]()
+        abort()
     # fmt: on
 
 
@@ -306,32 +327,42 @@ fn tcgen05_st[
     """
     check_blackwell_constraint()
 
-    constrained[
+    __comptime_assert (
         (datapaths == 16 and bits == 64)
         or (datapaths == 16 and bits == 128)
         or (datapaths == 16 and bits == 256)
-        or (datapaths == 32 and bits == 32),
-        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b.",
-    ]()
+        or (datapaths == 32 and bits == 32)
+    ), "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b."
 
-    constrained[
-        repeat in [1, 2, 4, 8, 16, 32, 64, 128],
-        "`repeat` must be a power of 2 in the range [1, 128].",
-    ]()
+    __comptime_assert repeat in [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+    ], "`repeat` must be a power of 2 in the range [1, 128]."
 
-    constrained[
-        width in [1, 2, 4, 8, 16, 32, 64, 128],
-        "`width` must be a power of 2 in the range [1, 128].",
-    ]()
+    __comptime_assert width in [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+    ], "`width` must be a power of 2 in the range [1, 128]."
 
-    constrained[
+    __comptime_assert (
         width == (repeat * bits * datapaths) // (32 * 32)
-        and size_of[dtype]() == 4,
-        (
-            "Only support 4B data type and width must be equal to (num * n"
-            " * m) // (32 * 32)."
-        ),
-    ]()
+        and size_of[dtype]() == 4
+    ), (
+        "Only support 4B data type and width must be equal to (num * n"
+        " * m) // (32 * 32)."
+    )
 
     comptime shape_str = String(datapaths) + "x" + String(bits)
     comptime num_str = String(repeat)
@@ -429,7 +460,9 @@ fn tcgen05_release_allocation_lock[cta_group: Int32]():
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
     check_blackwell_constraint()
-    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
+    __comptime_assert (
+        cta_group == 1 or cta_group == 2
+    ), "cta_group must be 1 or 2"
 
     inlined_assembly[
         "tcgen05.relinquish_alloc_permit.cta_group::"
@@ -538,44 +571,43 @@ fn tcgen05_cp[
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
     check_blackwell_constraint()
-    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
+    __comptime_assert (
+        cta_group == 1 or cta_group == 2
+    ), "cta_group must be 1 or 2"
 
-    constrained[
+    __comptime_assert (
         (datapaths == 128 and bits == 256)
         or (datapaths == 4 and bits == 256)
         or (datapaths == 128 and bits == 128)
         or (datapaths == 64 and bits == 128)
-        or (datapaths == 32 and bits == 128),
-        (
-            "`datapaths`x`bits`b must be 128x256b, 4x256b, 128x128b, 64x128b or"
-            " 32x128b."
-        ),
-    ]()
+        or (datapaths == 32 and bits == 128)
+    ), (
+        "`datapaths`x`bits`b must be 128x256b, 4x256b, 128x128b, 64x128b or"
+        " 32x128b."
+    )
 
-    constrained[
-        src_fmt == "" or src_fmt == "b6x16_p32" or src_fmt == "b4x16_p64",
-        "src_fmt must be empty, 'b6x16_p32' or 'b4x16_p64'.",
-    ]()
+    __comptime_assert (
+        src_fmt == "" or src_fmt == "b6x16_p32" or src_fmt == "b4x16_p64"
+    ), "src_fmt must be empty, 'b6x16_p32' or 'b4x16_p64'."
 
-    constrained[
-        dst_fmt == "" or dst_fmt == "b8x16",
-        "dst_fmt must be empty or 'b8x16'.",
-    ]()
+    __comptime_assert (
+        dst_fmt == "" or dst_fmt == "b8x16"
+    ), "dst_fmt must be empty or 'b8x16'."
 
-    constrained[
-        not ((len(dst_fmt) == 0) ^ (len(src_fmt) == 0)),
-        "Both or none of dst_fmt and src_fmt must be provided.",
-    ]()
+    __comptime_assert not (
+        (len(dst_fmt) == 0) ^ (len(src_fmt) == 0)
+    ), "Both or none of dst_fmt and src_fmt must be provided."
 
-    constrained[
+    __comptime_assert (
         multicast == ""
         or multicast == "warpx2::02_13"
         or multicast == "warpx2::01_23"
-        or multicast == "warpx4",
-        (
-            "multicast must be empty, 'warpx2::02_13', 'warpx2::01_23' or"
-            " 'warpx4'."
-        ),
+        or multicast == "warpx4"
+    ), "multicast must be empty, 'warpx2::02_13', 'warpx2::01_23' or 'warpx4'."
+
+    constrained[
+        (datapaths != 32 or bits != 128) or multicast == "warpx4",
+        "For 32x128b, multicast must be 'warpx4'",
     ]()
 
     comptime asm_str = (

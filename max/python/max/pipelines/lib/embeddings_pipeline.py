@@ -44,6 +44,8 @@ from max.profiler import Tracer, traced
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
+from max.support.algorithm import flatten2d
+
 from .hf_utils import download_weight_files
 from .interfaces import PipelineModel
 
@@ -124,13 +126,16 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         """
 
         tracer: Tracer = Tracer()
+        replica_batches = list(
+            list(replica_batch.values()) for replica_batch in inputs.batches
+        )
         # Flatten our batch for consistent indexing.
-        context_batch = list(inputs.batch.values())
+        context_batch = flatten2d(replica_batches)
 
         tracer.next("prepare_initial_token_inputs")
         # Prepare inputs for the first token in multistep execution.
         model_inputs = self._pipeline_model.prepare_initial_token_inputs(
-            context_batch=context_batch, kv_cache_inputs=None
+            replica_batches=replica_batches, kv_cache_inputs=None
         )
 
         tracer.next("execute")
@@ -156,4 +161,5 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
 
     def release(self, request_id: RequestID) -> None:
         # Nothing to release.
+        pass
         pass

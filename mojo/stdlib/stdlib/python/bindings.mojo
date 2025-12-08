@@ -153,7 +153,7 @@ struct PyMojoObject[T: AnyType]:
     the registered type methods and bindings.
     """
 
-    # TODO(MSTDL-467): Replace with Optional[T] when Optional doesn't require Copyable and Movable anymore.
+    # TODO(MSTDL-467): Replace with Optional[T] when Optional doesn't require Copyable anymore.
     var is_initialized: Bool
     """Whether the Mojo value has been initialized."""
 
@@ -219,23 +219,6 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
 # Builders
 # ===-----------------------------------------------------------------------===#
 
-comptime PyFunction = fn (mut PythonObject, mut PythonObject) -> PythonObject
-"""The generic function type for non-raising Python bindings.
-
-The first argument is the self object, and the second argument is a tuple of the
-positional arguments. These functions always return a Python object (could be a
-`None` object).
-"""
-
-comptime PyFunctionWithKeywords = fn (
-    mut PythonObject, mut PythonObject, mut PythonObject
-) -> PythonObject
-"""The generic function type for non-raising Python bindings with keyword arguments.
-
-The first argument is the self object, the second argument is a tuple of the
-positional arguments, and the third argument is a dictionary of the keyword arguments.
-"""
-
 comptime PyFunctionRaising = fn (
     mut PythonObject, mut PythonObject
 ) raises -> PythonObject
@@ -256,11 +239,10 @@ positional arguments, and the third argument is a dictionary of the keyword argu
 """
 
 comptime GenericPyFunction = Variant[
-    PyFunction,
-    PyFunctionWithKeywords,
     PyFunctionRaising,
     PyFunctionWithKeywordsRaising,
 ]
+"""A variant type that can hold either a PyFunctionRaising or PyFunctionWithKeywordsRaising."""
 
 
 struct PythonModuleBuilder:
@@ -390,43 +372,9 @@ struct PythonModuleBuilder:
         self.functions.append(PyMethodDef.function(func, func_name, docstring))
 
     fn def_py_function[
-        func: PyFunction
-    ](mut self, func_name: StaticString, docstring: StaticString = ""):
-        """Declare a binding for a function with PyFunction signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        self._generic_def_py_function[func](func_name, docstring)
-
-    fn def_py_function[
         func: PyFunctionRaising
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a function with PyFunctionRaising signature in
-        the module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        self._generic_def_py_function[func](func_name, docstring)
-
-    fn def_py_function[
-        func: PyFunctionWithKeywords
-    ](mut self, func_name: StaticString, docstring: StaticString = ""):
-        """Declare a binding for a function with PyFunctionWithKeywords signature in
         the module.
 
         Parameters:
@@ -528,7 +476,7 @@ struct PythonModuleBuilder:
         return self.module
 
 
-struct PythonTypeBuilder(Copyable, Movable):
+struct PythonTypeBuilder(Copyable):
     """A builder for a Python 'type' binding.
 
     This is typically used to build a type description of a `PyMojoObject[T]`.
@@ -833,38 +781,6 @@ struct PythonTypeBuilder(Copyable, Movable):
         return self
 
     fn def_py_method[
-        method: PyFunction, static_method: Bool = False
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PyFunction signature.
-
-        Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) -> PythonObject`
-        where the first arg is self and the second is a tuple of arguments.
-
-        Parameters:
-            method: The method to declare a binding for.
-            static_method: Whether the method is exposed as a staticmethod.
-                Default is False. Note that CPython will pass a null pointer for
-                the first argument for static methods (i.e. instead of passing
-                the self object). See [METH_STATIC](https://docs.python.org/3/c-api/structures.html#c.METH_STATIC).
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        return self._generic_def_py_method[method, static_method](
-            method_name, docstring
-        )
-
-    fn def_py_method[
         method: PyFunctionRaising, static_method: Bool = False
     ](
         mut self: Self,
@@ -875,36 +791,6 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) raises -> PythonObject`
         where the first arg is self and the second is a tuple of arguments.
-
-        Parameters:
-            method: The method to declare a binding for.
-            static_method: Whether the method is exposed as a staticmethod.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        return self._generic_def_py_method[method, static_method](
-            method_name, docstring
-        )
-
-    fn def_py_method[
-        method: PyFunctionWithKeywords, static_method: Bool = False
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PyFunctionWithKeywords signature.
-
-        Accepts methods with signature:
-        `fn (mut PythonObject, mut PythonObject, mut PythonObject) -> PythonObject`
-        where the first arg is self, the second is a tuple of arguments, and the third is a dict of keyword arguments.
 
         Parameters:
             method: The method to declare a binding for.
@@ -1054,8 +940,7 @@ fn _py_init_function_nonregistered(
     var error_type = cpython.get_error_global("PyExc_TypeError")
     cpython.PyErr_SetString(
         error_type,
-        "No initializer registered for this type. Use def_py_init() or"
-        " def_init_defaultable() to register an initializer.".unsafe_cstr_ptr(),
+        "No initializer registered for this type. Use def_py_init() or def_init_defaultable() to register an initializer.".as_c_string_slice().unsafe_ptr(),
     )
     return -1
 
@@ -1071,7 +956,9 @@ fn _py_new_function_wrapper[
         return _unsafe_alloc[T](subtype)
     except e:
         var error_type = cpython.get_error_global("PyExc_TypeError")
-        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        cpython.PyErr_SetString(
+            error_type, e.data.as_c_string_slice().unsafe_ptr()
+        )
         return {}
 
 
@@ -1098,7 +985,9 @@ fn _py_init_function_wrapper[
     except e:
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
         var error_type = cpython.get_error_global("PyExc_ValueError")
-        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        cpython.PyErr_SetString(
+            error_type, e.data.as_c_string_slice().unsafe_ptr()
+        )
         return -1
 
 
@@ -1157,31 +1046,23 @@ fn _py_c_function_wrapper[
     ref cpython = Python().cpython()
 
     with GILAcquired(Python(cpython)):
-        if user_func.isa[PyFunction]():
-            return user_func[PyFunction](py_self, args).steal_data()
-        elif user_func.isa[PyFunctionWithKeywords]():
-            var kwargs = PythonObject(from_borrowed=kwargs_ptr)
-            return user_func[PyFunctionWithKeywords](
-                py_self, args, kwargs
-            ).steal_data()
-        else:
-            try:
-                if user_func.isa[PyFunctionRaising]():
-                    return user_func[PyFunctionRaising](
-                        py_self, args
-                    ).steal_data()
-                else:
-                    var kwargs = PythonObject(from_borrowed=kwargs_ptr)
-                    return user_func[PyFunctionWithKeywordsRaising](
-                        py_self, args, kwargs
-                    ).steal_data()
-            except e:
-                var error_type = cpython.get_error_global("PyExc_Exception")
+        try:
+            if user_func.isa[PyFunctionRaising]():
+                return user_func[PyFunctionRaising](py_self, args).steal_data()
+            else:
+                var kwargs = PythonObject(from_borrowed=kwargs_ptr)
+                return user_func[PyFunctionWithKeywordsRaising](
+                    py_self, args, kwargs
+                ).steal_data()
+        except e:
+            var error_type = cpython.get_error_global("PyExc_Exception")
 
-                cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+            cpython.PyErr_SetString(
+                error_type, e.data.as_c_string_slice().unsafe_ptr()
+            )
 
-                # Return a NULL `PyObject*`.
-                return PyObjectPtr()
+            # Return a NULL `PyObject*`.
+            return PyObjectPtr()
 
 
 @always_inline

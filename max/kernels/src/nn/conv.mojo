@@ -102,7 +102,7 @@ struct Naive2dConvolution[
     output_type: DType,
     input_type: DType,
     filter_type: DType,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
@@ -375,7 +375,7 @@ struct ConvDirectNHWC[
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[conv_attr_rank],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
     The tile factor for C and F are chosen by a heuristic prioritizing C.
@@ -1398,6 +1398,9 @@ struct ConvDirectNHWC[
             right_pad_impact_start,
             self.conv_shape.wo(),
         )
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = input_base
+        _ = output_base
 
     fn output_space_loop_2d[
         micro_kernel_height: Int,
@@ -1479,6 +1482,9 @@ struct ConvDirectNHWC[
                 right_pad_impact_start,
                 self.conv_shape.wo(),
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = input_base
+            _ = output_base
 
     fn output_space_loop_3d[
         micro_kernel_height: Int,
@@ -1571,6 +1577,9 @@ struct ConvDirectNHWC[
                     right_pad_impact_start,
                     self.conv_shape.wo(),
                 )
+                # TODO(MOCO-2074): Suppress false positive unused var warning.
+                _ = input_base
+                _ = output_base
 
     fn _f_tile_loop_static[
         last_c_tile: Bool
@@ -3027,13 +3036,17 @@ fn conv_nhwc_direct[
     @parameter
     fn description_fn() -> String:
         return ";".join(
-            trace_arg("input", input.runtime_layout.shape.value),
-            trace_arg("filter", filter.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
-            "group=" + String(num_groups),
-            "stride=" + "x".join(stride),
-            "padding_h=" + "x".join(pad_h),
-            "padding_w=" + "x".join(pad_w),
+            Span(
+                [
+                    trace_arg("input", input.runtime_layout.shape.value),
+                    trace_arg("filter", filter.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    "group=" + String(num_groups),
+                    "stride=" + "x".join(Span([stride])),
+                    "padding_h=" + "x".join(Span([pad_h])),
+                    "padding_w=" + "x".join(Span([pad_w])),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
@@ -3183,7 +3196,7 @@ fn check_cudnn_error(stat: cudnnStatus_t):
 
 
 @register_passable
-struct CuDNNConvMeta(ImplicitlyCopyable, Movable):
+struct CuDNNConvMeta(ImplicitlyCopyable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]

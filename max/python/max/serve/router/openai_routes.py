@@ -573,7 +573,7 @@ async def openai_parse_chat_completion_request(
                         message_content.append(
                             {
                                 "type": content_part.root.type,
-                                "content": content_part.root.text,
+                                "text": content_part.root.text,
                             }
                         )
                     else:

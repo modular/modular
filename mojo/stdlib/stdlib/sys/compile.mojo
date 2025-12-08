@@ -104,7 +104,7 @@ comptime OptimizationLevel = _OptimizationLevel()
 
 
 @fieldwise_init
-struct _DebugLevel(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct _DebugLevel(ImplicitlyCopyable, Stringable, Writable):
     """Represents the debug level used during compilation.
 
     The debug level is determined by the __DEBUG_LEVEL environment variable,
@@ -141,4 +141,4 @@ comptime DebugLevel = _DebugLevel()
 comptime SanitizeAddress = is_defined["__SANITIZE_ADDRESS"]() and env_get_int[
     "__SANITIZE_ADDRESS"
 ]() == 1
-"""True if address sanitizer is enabled at compile-time"""
+"""True if address sanitizer is enabled at compile-time."""

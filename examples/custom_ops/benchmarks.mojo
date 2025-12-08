@@ -46,8 +46,8 @@ struct Tensor[
     rank: Int, //,
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank],
-](ImplicitlyCopyable, Movable):
-    alias size = Int(Self.static_spec.shape.product())
+](ImplicitlyCopyable):
+    comptime size = Int(Self.static_spec.shape.product())
 
     var slice: ManagedTensorSlice[
         io_spec = Self.io_spec, static_spec = Self.static_spec
@@ -101,16 +101,16 @@ struct Tensor[
 
 def top_k():
     print("Running top-k benchmark...")
-    alias batch_size = 30_000
-    alias K = 32
-    alias els = batch_size * K
-    alias rank = 2
-    alias val_dtype = DType.float32
-    alias idx_dtype = DType.int32
+    comptime batch_size = 30_000
+    comptime K = 32
+    comptime els = batch_size * K
+    comptime rank = 2
+    comptime val_dtype = DType.float32
+    comptime idx_dtype = DType.int32
 
-    alias shape = DimList(batch_size, K)
-    alias val_spec = StaticTensorSpec[val_dtype, rank](shape)
-    alias idx_spec = StaticTensorSpec[idx_dtype, rank](shape)
+    comptime shape = DimList(batch_size, K)
+    comptime val_spec = StaticTensorSpec[val_dtype, rank](shape)
+    comptime idx_spec = StaticTensorSpec[idx_dtype, rank](shape)
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -155,18 +155,18 @@ def top_k():
 
 def matmul():
     print("Running matmul benchmark...")
-    alias M = 1028
-    alias K = 1028
-    alias N = 1028
+    comptime M = 1028
+    comptime K = 1028
+    comptime N = 1028
 
-    alias rank = 2
-    alias dtype = DType.float32
+    comptime rank = 2
+    comptime dtype = DType.float32
 
-    alias FLOPS = M * N * (2 * K - 1)
+    comptime FLOPS = M * N * (2 * K - 1)
 
-    alias a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
-    alias b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
-    alias c_spec = StaticTensorSpec[dtype, rank](DimList(M, N))
+    comptime a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
+    comptime b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
+    comptime c_spec = StaticTensorSpec[dtype, rank](DimList(M, N))
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -220,18 +220,18 @@ def matmul():
 
 def tensor_core_mma():
     print("Running tensor core mma benchmark...")
-    alias M = 4096
-    alias N = 4096
-    alias K = 4096
+    comptime M = 4096
+    comptime N = 4096
+    comptime K = 4096
 
-    alias rank = 2
-    alias dtype = DType.float16
+    comptime rank = 2
+    comptime dtype = DType.float16
 
-    alias FLOPS = M * N * (2 * K - 1)
+    comptime FLOPS = M * N * (2 * K - 1)
 
-    alias a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
-    alias b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
-    alias c_spec = StaticTensorSpec[DType.float32, rank](DimList(M, N))
+    comptime a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
+    comptime b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
+    comptime c_spec = StaticTensorSpec[DType.float32, rank](DimList(M, N))
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -244,7 +244,7 @@ def tensor_core_mma():
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
     var metrics = [flops, elements]
 
-    alias perform_validation = False
+    comptime perform_validation = False
 
     @parameter
     if perform_validation:
@@ -288,21 +288,21 @@ def tensor_core_mma():
 
 
 def run_conv1d[impl: StaticString]():
-    alias nBatches = 128
-    alias nChannels = 8
-    alias sequenceLength = 1024 * 128
-    alias kWidth = 4
-    alias kNThreads = 128
-    alias kNElts = 4
+    comptime nBatches = 128
+    comptime nChannels = 8
+    comptime sequenceLength = 1024 * 128
+    comptime kWidth = 4
+    comptime kNThreads = 128
+    comptime kNElts = 4
 
-    alias dtype = DType.bfloat16
+    comptime dtype = DType.bfloat16
 
-    alias x_spec = StaticTensorSpec[dtype, 3](
+    comptime x_spec = StaticTensorSpec[dtype, 3](
         DimList(nBatches, nChannels, sequenceLength)
     )
-    alias w_spec = StaticTensorSpec[dtype, 2](DimList(nChannels, kWidth))
-    alias b_spec = StaticTensorSpec[dtype, 1](DimList(nChannels))
-    alias xx2Dshape = StaticTensorSpec[dtype, 2](
+    comptime w_spec = StaticTensorSpec[dtype, 2](DimList(nChannels, kWidth))
+    comptime b_spec = StaticTensorSpec[dtype, 1](DimList(nChannels))
+    comptime xx2Dshape = StaticTensorSpec[dtype, 2](
         DimList(nBatches * nChannels, sequenceLength)
     )
     runOnCPU = False

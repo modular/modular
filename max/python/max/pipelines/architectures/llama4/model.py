@@ -459,7 +459,7 @@ class Llama4Model(
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],
+        replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
@@ -471,13 +471,18 @@ class Llama4Model(
             batching, ragged tensors, and KV cache integration.
 
         Args:
-            context_batch: A sequence of :obj:`TextContext` objects representing
-                the input prompts.
+            replica_batches: A sequence of sequences of :obj:`TextContext` objects representing
+                the input prompts for each replica.
             kv_cache_inputs: Optional inputs required by the KV cache manager.
 
         Returns:
             The prepared :obj:`ModelInputs` object for the initial execution step.
         """
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
+
         assert kv_cache_inputs is not None
         kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
 

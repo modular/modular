@@ -31,7 +31,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Defaultable,
     Equatable,
     Iterable,
-    Movable,
     Sized,
 ):
     """A container for counting hashable items.
@@ -59,6 +58,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DictKeyIter[Self.V, Int, Self.H, iterable_origin]
+    """The iterator type for this counter.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     # Fields
     var _data: Dict[Self.V, Int, Self.H]
@@ -636,7 +641,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self[item.key] = self.get(item.key, 0) - item.value
 
 
-struct CountTuple[V: KeyElement](Comparable, Copyable, Movable):
+struct CountTuple[V: KeyElement](Comparable, Copyable):
     """A tuple representing a value and its count in a `Counter`.
 
     Parameters:

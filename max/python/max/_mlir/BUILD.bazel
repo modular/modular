@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "copy_files", "modular_py_library")
 
+package(default_visibility = ["//max:consumers"])
+
 copy_files(
     name = "ir_py",
     srcs = ["@llvm-project//mlir/python:IRPyFiles"],
@@ -14,7 +16,6 @@ modular_py_library(
     ],
     imports = ["../.."],
     tags = ["no-mypy"],  # Upstream files with violations
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/_mlir/_mlir_libs:_mlir",
     ],

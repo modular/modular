@@ -27,6 +27,7 @@ from .types import (
     MoveCopyCounter,
     MoveCounter,
     MoveOnly,
+    Observable,
     ObservableDel,
     ObservableMoveOnly,
     TriviallyCopyableMoveCounter,

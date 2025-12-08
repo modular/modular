@@ -150,12 +150,12 @@ struct Order:
 
     var _value: Int32
     comptime COL = Self(0)
-    """Column-major
+    """Column-major.
 
     Leading dimension is the stride (in elements) to the beginning of next column in memory.
     """
     comptime ROW = Self(1)
-    """Row major
+    """Row major.
 
     Leading dimension is the stride (in elements) to the beginning of next row in memory.
     """
@@ -201,7 +201,7 @@ struct Order:
             return "COL4_4R2_8C"
         if self == Self.COL32_2R_4R4:
             return "COL32_2R_4R4"
-        return abort[String]("invalid Order entry")
+        abort("invalid Order entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -516,7 +516,7 @@ struct ClusterShape:
             return "SHAPE_1x15x1"
         if self == Self.SHAPE_END:
             return "SHAPE_END"
-        return abort[String]("invalid ClusterShape entry")
+        abort("invalid ClusterShape entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -535,123 +535,123 @@ struct MatmulAlgorithmCapability:
 
     var _value: Int32
     comptime SPLITK_SUPPORT = Self(0)
-    """support for split K, see SPLITK_NUM
+    """Support for split K, see SPLITK_NUM.
 
     int32_t, 0 means no support, supported otherwise.
     """
     comptime REDUCTION_SCHEME_MASK = Self(1)
-    """reduction scheme mask, see ReductionScheme; shows supported reduction schemes, if reduction scheme is
-    not masked out it is supported.
+    """Reduction scheme mask, see ReductionScheme.
 
+    Shows supported reduction schemes, if reduction scheme is not masked out it is supported.
     e.g. int isReductionSchemeComputeTypeSupported ? (reductionSchemeMask & COMPUTE_TYPE) ==
     COMPUTE_TYPE ? 1 : 0;
 
     uint32_t.
     """
     comptime CTA_SWIZZLING_SUPPORT = Self(2)
-    """support for cta swizzling, see CTA_SWIZZLING
+    """Support for cta swizzling, see CTA_SWIZZLING.
 
     uint32_t, 0 means no support, 1 means supported value of 1, other values are reserved.
     """
     comptime STRIDED_BATCH_SUPPORT = Self(3)
-    """support strided batch
+    """Support strided batch.
 
     int32_t, 0 means no support, supported otherwise.
     """
     comptime OUT_OF_PLACE_RESULT_SUPPORT = Self(4)
-    """support results out of place (D != C in D = alpha.A.B + beta.C)
+    """Support results out of place (D != C in D = alpha.A.B + beta.C).
 
     int32_t, 0 means no support, supported otherwise.
     """
     comptime UPLO_SUPPORT = Self(5)
-    """syrk/herk support (on top of regular gemm)
+    """Syrk/herk support (on top of regular gemm).
 
     int32_t, 0 means no support, supported otherwise.
     """
     comptime TILE_IDS = Self(6)
-    """tile ids possible to use, see Tile; if no tile ids are supported use
-    TILE_UNDEFINED
+    """Tile ids possible to use, see Tile.
 
-    use cublasLtMatmulAlgoCapGetAttribute() with sizeInBytes=0 to query actual count
+    If no tile ids are supported use TILE_UNDEFINED.
+    Use cublasLtMatmulAlgoCapGetAttribute() with sizeInBytes=0 to query actual count.
 
     array of uint32_t.
     """
     comptime CUSTOM_OPTION_MAX = Self(7)
-    """custom option range is from 0 to CUSTOM_OPTION_MAX (inclusive), see
-    CUSTOM_OPTION
+    """Custom option range is from 0 to CUSTOM_OPTION_MAX (inclusive), see CUSTOM_OPTION.
 
     int32_t.
     """
     comptime CUSTOM_MEMORY_ORDER = Self(10)
-    """whether algorithm supports custom (not COL or ROW memory order), see Order
+    """Whether algorithm supports custom (not COL or ROW memory order), see Order.
 
     int32_t 0 means only COL and ROW memory order is allowed, non-zero means that algo might have different
-    requirements;.
+    requirements.
     """
     comptime POINTER_MODE_MASK = Self(11)
-    """bitmask enumerating pointer modes algorithm supports
+    """Bitmask enumerating pointer modes algorithm supports.
 
     uint32_t, see PointerModeMask.
     """
     comptime EPILOGUE_MASK = Self(12)
-    """bitmask enumerating kinds of postprocessing algorithm supports in the epilogue
+    """Bitmask enumerating kinds of postprocessing algorithm supports in the epilogue.
 
     uint32_t, see Epilogue.
     """
     comptime STAGES_IDS = Self(13)
-    """stages ids possible to use, see Stages; if no stages ids are supported use
-    STAGES_UNDEFINED
+    """Stages ids possible to use, see Stages.
 
-    use cublasLtMatmulAlgoCapGetAttribute() with sizeInBytes=0 to query actual count
+    If no stages ids are supported use STAGES_UNDEFINED.
+    Use cublasLtMatmulAlgoCapGetAttribute() with sizeInBytes=0 to query actual count.
 
     array of uint32_t.
     """
     comptime LD_NEGATIVE = Self(14)
-    """support for negative ld for all of the matrices
+    """Support for negative ld for all of the matrices.
 
     int32_t 0 means no support, supported otherwise.
     """
     comptime NUMERICAL_IMPL_FLAGS = Self(15)
-    """details about algorithm's implementation that affect it's numerical behavior
+    """Details about algorithm's implementation that affect it's numerical behavior.
 
     uint64_t, see cublasLtNumericalImplFlags_t.
     """
     comptime MIN_ALIGNMENT_A_BYTES = Self(16)
-    """minimum alignment required for A matrix in bytes
-    (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
+    """Minimum alignment required for A matrix in bytes.
 
+    Required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order.
     uint32_t.
     """
     comptime MIN_ALIGNMENT_B_BYTES = Self(17)
-    """minimum alignment required for B matrix in bytes
-    (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
+    """Minimum alignment required for B matrix in bytes.
 
+    Required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order.
     uint32_t.
     """
     comptime MIN_ALIGNMENT_C_BYTES = Self(18)
-    """minimum alignment required for C matrix in bytes
-    (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
+    """Minimum alignment required for C matrix in bytes.
 
+    Required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order.
     uint32_t.
     """
     comptime MIN_ALIGNMENT_D_BYTES = Self(19)
-    """minimum alignment required for D matrix in bytes
-    (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
+    """Minimum alignment required for D matrix in bytes.
 
+    Required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order.
     uint32_t.
     """
     comptime ATOMIC_SYNC = Self(20)
-    """EXPERIMENTAL: support for synchronization via atomic counters
+    """EXPERIMENTAL: support for synchronization via atomic counters.
+
     int32_t.
     """
 
     comptime POINTER_ARRAY_BATCH_SUPPORT = Self(21)
-    """support pointer array batch
+    """Support pointer array batch.
 
     int32_t, 0 means no support, supported otherwise.
     """
     comptime FLOATING_POINT_EMULATION_SUPPORT = Self(22)
-    """describes if the algorithm supports floating point emulation
+    """Describes if the algorithm supports floating point emulation.
 
     int32_t.
     """
@@ -709,7 +709,7 @@ struct MatmulAlgorithmCapability:
             return "POINTER_ARRAY_BATCH_SUPPORT"
         if self == Self.FLOATING_POINT_EMULATION_SUPPORT:
             return "FLOATING_POINT_EMULATION_SUPPORT"
-        return abort[String]("invalid MatmulAlgorithmCapability entry")
+        abort("invalid MatmulAlgorithmCapability entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -728,20 +728,21 @@ struct PointerMode:
 
     var _value: Int32
     comptime HOST = PointerMode(0)
-    """matches CUBLAS_POINTER_MODE_HOST, pointer targets a single value host memory.
+    """Matches CUBLAS_POINTER_MODE_HOST, pointer targets a single value host memory.
     """
     comptime DEVICE = PointerMode(1)
-    """matches CUBLAS_POINTER_MODE_DEVICE, pointer targets a single value device memory.
+    """Matches CUBLAS_POINTER_MODE_DEVICE, pointer targets a single value device memory.
     """
     comptime DEVICE_VECTOR = PointerMode(2)
-    """pointer targets an array in device memory.
+    """Pointer targets an array in device memory.
     """
     comptime ALPHA_DEVICE_VECTOR_BETA_ZERO = PointerMode(3)
-    """alpha pointer targets an array in device memory, beta is zero. Note:
-    CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE is not supported, must be 0.
+    """Alpha pointer targets an array in device memory, beta is zero.
+
+    Note: CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE is not supported, must be 0.
     """
     comptime ALPHA_DEVICE_VECTOR_BETA_HOST = PointerMode(4)
-    """alpha pointer targets an array in device memory, beta is a single value in host memory.
+    """Alpha pointer targets an array in device memory, beta is a single value in host memory.
     """
 
     fn __init__(out self, value: Int):
@@ -765,7 +766,7 @@ struct PointerMode:
             return "ALPHA_DEVICE_VECTOR_BETA_ZERO"
         if self == Self.ALPHA_DEVICE_VECTOR_BETA_HOST:
             return "ALPHA_DEVICE_VECTOR_BETA_HOST"
-        return abort[String]("invalid PointerMode entry")
+        abort("invalid PointerMode entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -872,34 +873,34 @@ struct Search:
 
     var _value: Int32
     comptime BEST_FIT = Self(0)
-    """ask heuristics for best algo for given usecase.
+    """Ask heuristics for best algo for given usecase.
     """
     comptime LIMITED_BY_ALGO_ID = Self(1)
-    """only try to find best config for preconfigured algo id.
+    """Only try to find best config for preconfigured algo id.
     """
     comptime RESERVED_02 = Self(2)
-    """reserved for future use.
+    """Reserved for future use.
     """
     comptime RESERVED_03 = Self(3)
-    """reserved for future use.
+    """Reserved for future use.
     """
     comptime RESERVED_04 = Self(4)
-    """reserved for future use.
+    """Reserved for future use.
     """
     comptime RESERVED_05 = Self(5)
-    """reserved for future use.
+    """Reserved for future use.
     """
     comptime RESERVED_06 = Self(6)
-    """reserved for future use.
+    """Reserved for future use.
     """
     comptime RESERVED_07 = Self(7)
-    """reserved for future use.
+    """Reserved for future use.
     """
     comptime RESERVED_08 = Self(8)
-    """reserved for future use.
+    """Reserved for future use.
     """
     comptime RESERVED_09 = Self(9)
-    """reserved for future use.
+    """Reserved for future use.
     """
 
     fn __init__(out self, value: Int):
@@ -933,7 +934,7 @@ struct Search:
             return "RESERVED_08"
         if self == Self.RESERVED_09:
             return "RESERVED_09"
-        return abort[String]("invalid Search entry")
+        abort("invalid Search entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -984,7 +985,7 @@ struct ReductionScheme:
             return "OUTPUT_TYPE"
         if self == Self.MASK:
             return "MASK"
-        return abort[String]("invalid ReductionScheme entry")
+        abort("invalid ReductionScheme entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -1343,33 +1344,33 @@ struct cublasLtMatmulDescAttributes_t:
     int32_t *, default: NULL.
     """
     comptime CUBLASLT_MATMUL_DESC_A_SCALE_MODE = Self(31)
-    """Scaling mode that defines how the matrix scaling factor for matrix A is interpreted
+    """Scaling mode that defines how the matrix scaling factor for matrix A is interpreted.
 
-    int32_t, default: 0
+    int32_t, default: 0.
     """
 
     comptime CUBLASLT_MATMUL_DESC_B_SCALE_MODE = Self(32)
-    """Scaling mode that defines how the matrix scaling factor for matrix B is interpreted
+    """Scaling mode that defines how the matrix scaling factor for matrix B is interpreted.
 
-    int32_t, default: 0
+    int32_t, default: 0.
     """
 
     comptime CUBLASLT_MATMUL_DESC_C_SCALE_MODE = Self(33)
-    """Scaling mode that defines how the matrix scaling factor for matrix C is interpreted
+    """Scaling mode that defines how the matrix scaling factor for matrix C is interpreted.
 
-    int32_t, default: 0
+    int32_t, default: 0.
     """
 
     comptime CUBLASLT_MATMUL_DESC_D_SCALE_MODE = Self(34)
-    """Scaling mode that defines how the matrix scaling factor for matrix D is interpreted
+    """Scaling mode that defines how the matrix scaling factor for matrix D is interpreted.
 
-    int32_t, default: 0
+    int32_t, default: 0.
     """
 
     comptime CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_MODE = Self(35)
-    """Scaling mode that defines how the matrix scaling factor for the auxiliary matrix is interpreted
+    """Scaling mode that defines how the matrix scaling factor for the auxiliary matrix is interpreted.
 
-    int32_t, default: 0
+    int32_t, default: 0.
     """
 
     comptime CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER = Self(36)
@@ -1384,9 +1385,9 @@ struct cublasLtMatmulDescAttributes_t:
     """
 
     comptime CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE = Self(37)
-    """Scaling mode that defines how the output matrix scaling factor for matrix D is interpreted
+    """Scaling mode that defines how the output matrix scaling factor for matrix D is interpreted.
 
-    int32_t, default: 0
+    int32_t, default: 0.
     """
 
     fn __init__(out self, value: Int):
@@ -1472,7 +1473,7 @@ struct cublasLtMatmulDescAttributes_t:
             return "CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER"
         if self == Self.CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE:
             return "CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE"
-        return abort[String]("invalid cublasLtMatmulDescAttributes_t entry")
+        abort("invalid cublasLtMatmulDescAttributes_t entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -1823,7 +1824,7 @@ struct Preference:
             return "MAX_WAVES_COUNT"
         if self == Self.IMPL_MASK:
             return "IMPL_MASK"
-        return abort[String]("invalid Preference entry")
+        abort("invalid Preference entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -1854,48 +1855,52 @@ struct AlgorithmConfig:
 
     var _value: Int32
     comptime ID = Self(0)
-    """algorithm index, see cublasLtMatmulAlgoGetIds()
+    """Algorithm index, see `cublasLtMatmulAlgoGetIds()`.
 
-    readonly, set by cublasLtMatmulAlgoInit()
+    Readonly, set by cublasLtMatmulAlgoInit().
     int32_t.
     """
     comptime TILE_ID = Self(1)
-    """tile id, see Tile
+    """Tile id, see Tile.
 
     uint32_t, default: TILE_UNDEFINED.
     """
     comptime SPLITK_NUM = Self(2)
-    """Number of K splits. If the number of K splits is greater than one, SPLITK_NUM parts
+    """Number of K splits.
+
+    If the number of K splits is greater than one, SPLITK_NUM parts
     of matrix multiplication will be computed in parallel. The results will be accumulated
-    according to REDUCTION_SCHEME
+    according to REDUCTION_SCHEME.
 
     int32_t, default: 1.
     """
     comptime REDUCTION_SCHEME = Self(3)
-    """reduction scheme, see ReductionScheme
+    """Reduction scheme, see ReductionScheme.
 
     uint32_t, default: NONE.
     """
     comptime CTA_SWIZZLING = Self(4)
-    """cta swizzling, change mapping from CUDA grid coordinates to parts of the matrices
+    """CTA swizzling, change mapping from CUDA grid coordinates to parts of the matrices.
 
-    possible values: 0, 1, other values reserved
+    Possible values: 0, 1, other values reserved.
 
     uint32_t, default: 0.
     """
     comptime CUSTOM_OPTION = Self(5)
-    """custom option, each algorithm can support some custom options that don't fit description of the other config
-    attributes, see CUSTOM_OPTION_MAX to get accepted range for any specific case
+    """Custom option.
+
+    Each algorithm can support some custom options that don't fit description of the other config
+    attributes, see CUSTOM_OPTION_MAX to get accepted range for any specific case.
 
     uint32_t, default: 0.
     """
     comptime STAGES_ID = Self(6)
-    """stages id, see Stages
+    """Stages id, see Stages.
 
     uint32_t, default: STAGES_UNDEFINED.
     """
     comptime INNER_SHAPE_ID = Self(7)
-    """inner shape id, see InnerShape
+    """Inner shape id, see InnerShape.
 
     uint16_t, default: 0 (UNDEFINED).
     """
@@ -1934,7 +1939,7 @@ struct AlgorithmConfig:
             return "INNER_SHAPE_ID"
         if self == Self.CLUSTER_SHAPE_ID:
             return "CLUSTER_SHAPE_ID"
-        return abort[String]("invalid AlgorithmConfig entry")
+        abort("invalid AlgorithmConfig entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2054,7 +2059,7 @@ struct InnerShape:
             return "MMA16816"
         if self == Self.END:
             return "END"
-        return abort[String]("invalid InnerShape entry")
+        abort("invalid InnerShape entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2067,34 +2072,32 @@ struct cublasLtMatmulMatrixScale_t:
 
     var _value: Int32
     comptime MATRIX_SCALE_SCALAR_32F = Self(0)
-    """
-    Scaling factors are single precision scalars applied to the whole tensor
+    """Scaling factors are single precision scalars applied to the whole tensor.
     """
     comptime MATRIX_SCALE_VEC16_UE4M3 = Self(1)
-    """
-    Scaling factors are tensors that contain a dedicated scaling factor stored as an 8-bit CUDA_R_8F_UE4M3 value for
-    each 16-element block in the innermost dimension of the corresponding data tensor
+    """Scaling factors are tensors with a dedicated 8-bit CUDA_R_8F_UE4M3 value per 16-element block.
+
+    The scaling factor is stored for each 16-element block in the innermost dimension of the
+    corresponding data tensor.
     """
     comptime MATRIX_SCALE_VEC32_UE8M0 = Self(2)
-    """
-    Same as above, except that scaling factor tensor elements have type CUDA_R_8F_UE8M0 and the block size is 32
-    elements
+    """Same as VEC16_UE4M3, but with CUDA_R_8F_UE8M0 type and block size of 32 elements.
     """
     comptime MATRIX_SCALE_OUTER_VEC_32F = Self(3)
-    """
-    Scaling factors are single-precision vectors. This mode is only applicable to matrices A and B, in which case the
-    vectors are expected to have M and N elements respectively, and each (i, j)-th element of product of A and B is
+    """Scaling factors are single-precision vectors.
+
+    This mode is only applicable to matrices A and B, in which case the vectors are expected to
+    have M and N elements respectively, and each (i, j)-th element of product of A and B is
     multiplied by i-th element of A scale and j-th element of B scale.
     """
     comptime MATRIX_SCALE_VEC128_32F = Self(4)
-    """
-    Scaling factors are tensors that contain a dedicated FP32 scaling factor for each 128-element block in the
-    innermost dimension of the corresponding data tensor
+    """Scaling factors are tensors with a dedicated FP32 scaling factor per 128-element block.
+
+    The scaling factor is stored for each 128-element block in the innermost dimension of the
+    corresponding data tensor.
     """
     comptime MATRIX_SCALE_BLK128x128_32F = Self(5)
-    """
-    Scaling factors are tensors that contain a dedicated FP32 scaling factor for each 128x128-element block in the
-    the corresponding data tensor
+    """Scaling factors are tensors with a dedicated FP32 scaling factor per 128x128-element block.
     """
     comptime MATRIX_SCALE_END = Self(6)
 
@@ -2123,7 +2126,7 @@ struct cublasLtMatmulMatrixScale_t:
             return "MATRIX_SCALE_BLK128x128_32F"
         if self == Self.MATRIX_SCALE_END:
             return "MATRIX_SCALE_END"
-        return abort[String]("invalid MatmulMatrixScale entry")
+        abort("invalid MatmulMatrixScale entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2160,7 +2163,7 @@ struct cublasLtBatchMode_t:
             return "BATCH_MODE_STRIDED"
         if self == Self.POINTER_ARRAY:
             return "BATCH_MODE_POINTER_ARRAY"
-        return abort[String]("invalid cublasLtBatchMode_t entry")
+        abort("invalid cublasLtBatchMode_t entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2270,7 +2273,7 @@ struct LayoutAttribute:
             return "PLANE_OFFSET"
         if self == Self.BATCH_MODE:
             return "BATCH_MODE"
-        return abort[String]("invalid LayoutAttribute entry")
+        abort("invalid LayoutAttribute entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2506,7 +2509,7 @@ struct Stages:
             return "STAGES_256xAUTO"
         if self == Self.STAGES_END:
             return "STAGES_END"
-        return abort[String]("invalid Stages entry")
+        abort("invalid Stages entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2657,19 +2660,19 @@ struct Epilogue:
     """ReLu and Bias, apply Bias and then ReLu transform.
     """
     comptime RELU_AUX_BIAS = Self(Self.RELU_AUX._value | Self.BIAS._value)
-    """ReLu and Bias, apply Bias and then ReLu transform
+    """ReLu and Bias, apply Bias and then ReLu transform.
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
     comptime DRELU = Self(8 | 128)
-    """ReLu and Bias, apply Bias and then ReLu transform
+    """DReLu, apply derivative of ReLu transform.
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
     comptime DRELU_BGRAD = Self(Self.DRELU._value | 16)
-    """ReLu and Bias, apply Bias and then ReLu transform
+    """DReLu with bias gradient.
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
@@ -2687,19 +2690,19 @@ struct Epilogue:
     """GELU and Bias, apply Bias and then GELU transform.
     """
     comptime GELU_AUX_BIAS = Self(Self.GELU_AUX._value | Self.BIAS._value)
-    """GELU and Bias, apply Bias and then GELU transform
+    """GELU and Bias, apply Bias and then GELU transform.
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
     comptime DGELU = Self(64 | 128)
-    """GELU and Bias, apply Bias and then GELU transform
+    """DGELU, apply derivative of GELU transform.
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
     comptime DGELU_BGRAD = Self(Self.DGELU._value | 16)
-    """GELU and Bias, apply Bias and then GELU transform
+    """DGELU with bias gradient.
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
@@ -2766,7 +2769,7 @@ struct Epilogue:
             return "BGRADA"
         if self == Self.BGRADB:
             return "BGRADB"
-        return abort[String]("invalid Epilogue entry")
+        abort("invalid Epilogue entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2807,19 +2810,19 @@ fn cublasLtMatrixLayoutCreate(
 @fieldwise_init
 @register_passable("trivial")
 struct PointerModeMask:
-    """Mask to define pointer mode capability ."""
+    """Mask to define pointer mode capability."""
 
     var _value: Int32
     comptime HOST = Self(1)
-    """see HOST."""
+    """See HOST."""
     comptime DEVICE = Self(2)
-    """see DEVICE."""
+    """See DEVICE."""
     comptime DEVICE_VECTOR = Self(4)
-    """see DEVICE_VECTOR."""
+    """See DEVICE_VECTOR."""
     comptime ALPHA_DEVICE_VECTOR_BETA_ZERO = Self(8)
-    """see ALPHA_DEVICE_VECTOR_BETA_ZERO."""
+    """See ALPHA_DEVICE_VECTOR_BETA_ZERO."""
     comptime ALPHA_DEVICE_VECTOR_BETA_HOST = Self(16)
-    """see ALPHA_DEVICE_VECTOR_BETA_HOST."""
+    """See ALPHA_DEVICE_VECTOR_BETA_HOST."""
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -2841,7 +2844,7 @@ struct PointerModeMask:
             return "ALPHA_DEVICE_VECTOR_BETA_ZERO"
         if self == Self.ALPHA_DEVICE_VECTOR_BETA_HOST:
             return "ALPHA_DEVICE_VECTOR_BETA_HOST"
-        return abort[String]("invalid PointerModeMask entry")
+        abort("invalid PointerModeMask entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -3607,7 +3610,7 @@ struct Tile:
             return "TILE_256x32"
         if self == Self.TILE_END:
             return "TILE_END"
-        return abort[String]("invalid Tile entry")
+        abort("invalid Tile entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -3890,7 +3893,7 @@ struct TransformDescriptor:
             return "TRANSA"
         if self == Self.TRANSB:
             return "TRANSB"
-        return abort[String]("invalid TransformDescriptor entry")
+        abort("invalid TransformDescriptor entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)

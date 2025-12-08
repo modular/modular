@@ -19,7 +19,6 @@ struct Complex(
     Boolable,
     Equatable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
     Writable,

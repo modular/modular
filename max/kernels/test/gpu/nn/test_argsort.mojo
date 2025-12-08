@@ -13,9 +13,12 @@
 
 
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer
+from layout import Layout, LayoutTensor, RuntimeLayout
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.argsort import argsort
 from testing import assert_equal
+
+from utils.index import IndexList
 
 
 fn linear_filler(i: Int, n: Int) -> Float32:
@@ -32,41 +35,62 @@ fn test_argsort[
     filler: fn (Int, Int) -> Float32,
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
-    var input = HostNDBuffer[dtype, 1](N)
-
-    for i in range(N):
-        input.tensor[i] = filler(i, N).cast[dtype]()
-
-    var device_indices = DeviceNDBuffer[DType.int64, 1](N, ctx=ctx)
-
-    var device_input = input.copy_to_device(ctx)
-
-    argsort[ascending=ascending, target="gpu"](
-        device_indices.to_layout_tensor(), device_input.to_layout_tensor(), ctx
+    # Allocate host memory
+    comptime layout = Layout.row_major[1]()
+    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(N)
+    var input_host = LayoutTensor[dtype, layout](
+        input_host_ptr,
+        RuntimeLayout[layout].row_major(IndexList[1](N)),
     )
 
-    var indices = device_indices.copy_from_device(ctx)
+    for i in range(N):
+        input_host_ptr[i] = filler(i, N).cast[dtype]()
+
+    # Allocate device buffers
+    var device_indices = ctx.enqueue_create_buffer[DType.int64](N)
+    var device_input = ctx.enqueue_create_buffer[dtype](N)
+    ctx.enqueue_copy(device_input, input_host_ptr)
+
+    # Create device LayoutTensors
+    var device_indices_tensor = LayoutTensor[DType.int64, layout, MutAnyOrigin](
+        device_indices.unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[1](N)),
+    )
+    var device_input_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
+        device_input.unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[1](N)),
+    )
+
+    argsort[ascending=ascending, target="gpu"](
+        device_indices_tensor, device_input_tensor, ctx
+    )
+
+    # Copy results back
+    var indices_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(N)
+    ctx.enqueue_copy(indices_host_ptr, device_indices)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var expected_indices = HostNDBuffer[DType.int64, 1](N)
-    argsort[ascending=ascending](
-        expected_indices.to_layout_tensor(), input.to_layout_tensor()
+    var expected_indices_ptr = UnsafePointer[Scalar[DType.int64]].alloc(N)
+    var expected_indices = LayoutTensor[DType.int64, layout](
+        expected_indices_ptr,
+        RuntimeLayout[layout].row_major(IndexList[1](N)),
     )
+    argsort[ascending=ascending](expected_indices, input_host)
 
     for i in range(N):
         assert_equal(
-            indices.tensor[i],
-            expected_indices.tensor[i],
+            indices_host_ptr[i],
+            expected_indices_ptr[i],
             msg=String(
                 "indices[",
                 i,
                 "] = ",
-                indices.tensor[i],
+                indices_host_ptr[i],
                 " expected_indices[",
                 i,
                 "] = ",
-                expected_indices.tensor[i],
+                expected_indices_ptr[i],
                 " N = ",
                 N,
                 " ascending = ",
@@ -76,10 +100,14 @@ fn test_argsort[
             ),
         )
 
+    # Cleanup host memory
+    input_host_ptr.free()
+    indices_host_ptr.free()
+    expected_indices_ptr.free()
+
+    # Cleanup device buffers
     _ = device_indices^
     _ = device_input^
-    _ = indices^
-    _ = expected_indices^
 
 
 fn test_argsort_helper[

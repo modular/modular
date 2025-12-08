@@ -2,9 +2,7 @@
 title: '@implicit'
 description: Marks a constructor as eligible for implicit conversion.
 codeTitle: true
-
 ---
-
 You can add the `@implicit` decorator on any single-argument constructor to
 identify it as eligible for implicit conversion.
 
@@ -20,8 +18,6 @@ struct MyInt:
 
     fn __init__(out self, value: Float64):
         self.value = Int(value)
-
-
 ```
 
 This implicit conversion constructor allows you to pass an `Int` to a function
@@ -37,4 +33,31 @@ fn main():
     func(Int(42))             # Implicit conversion from Int: OK
     func(MyInt(Float64(4.2))) # Explicit conversion from Float64: OK
     func(Float64(4.2))        # Error: can't convert Float64 to MyInt
+```
+
+## Deprecation
+
+Over time, you may decide that an implicit conversion is no longer appropriate
+for your code base. For example, it may hide complexity or cause ambiguous
+function overloads. In such cases, Mojo lets you mark a conversion
+as deprecated using its built-in `deprecated` argument on the @implicit decorator.
+Deprecation allows you to phase out the conversion gradually instead of
+causing abrupt behavior changes.
+
+Supply a Boolean value to the `deprecated` argument:
+
+```mojo
+struct MyStruct:
+    @implicit(deprecated=True)
+    fn __init__(out self, value: Int):
+        # ...
+```
+
+This tells the compiler to emit a warning when the conversion is used implicitly,
+without breaking existing code:
+
+```mojo
+_: MyStruct = 1  # Warns on implicit conversion
+
+_ = MyStruct(1)  # No warning. Conversion is explicit
 ```

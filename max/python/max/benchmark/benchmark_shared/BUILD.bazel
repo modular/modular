@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "benchmark_shared",
     srcs = glob(["**/*.py"]),
@@ -7,7 +9,6 @@ modular_py_library(
         "//max/python/max/benchmark:benchmark_config_yaml_files",
     ],
     imports = ["../../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/config",
         "//max/python/max/pipelines/lib",
@@ -32,5 +33,4 @@ pkg_files(
     srcs = glob(["**/*.py"]),
     prefix = "benchmark/benchmark_shared",
     strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )

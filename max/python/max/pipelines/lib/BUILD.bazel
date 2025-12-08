@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
     name = "lib",
@@ -9,7 +9,6 @@ modular_py_library(
         ":base_max_config_yaml_files",
     ],
     imports = ["../../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/config",
         "//max/python/max/driver",
@@ -38,5 +37,4 @@ pkg_files(
     srcs = glob(["configs/**/*.yaml"]),
     prefix = "lib",
     strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )

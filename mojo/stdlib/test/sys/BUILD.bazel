@@ -1,12 +1,15 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _FILECHECK_TESTS = [
     "test_exit_1.mojo",
 ]
 
 _LIT_TESTS = [
-    "test_invalid_paramenv.mojo",
+    "test_c_types_32bit.mojo",
     "test_compile_sanitize_address.mojo",
+    "test_invalid_paramenv.mojo",
 ]
 
 _PLATFORM_CONSTRAINTS = {

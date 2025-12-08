@@ -34,7 +34,6 @@ struct DType(
     Identifiable,
     ImplicitlyCopyable,
     KeyElement,
-    Movable,
     Representable,
     Stringable,
     Writable,
@@ -174,8 +173,10 @@ struct DType(
     comptime float4_e2m1fn = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f4e2m1fn> : !kgen.dtype`
     )
-    """Represents a 4-bit `e2m1` floating point format, encoded as
-    `s.ee.m` and defined by the [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
+    """Represents a 4-bit `e2m1` floating point format.
+
+    This type is encoded as `s.ee.m` and defined by the
+    [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
 
     - (s)ign: 1 bit
     - (e)xponent: 2 bits
@@ -186,7 +187,9 @@ struct DType(
     comptime float8_e8m0fnu = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e8m0fnu> : !kgen.dtype`
     )
-    """Represents the 8-bit `E8M0Fnu` floating point format defined in the
+    """Represents the 8-bit `E8M0Fnu` floating point format.
+
+    This type is defined in the
     [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
     encoded as `eeeeeeee`:
 
@@ -200,8 +203,9 @@ struct DType(
     comptime float8_e3m4 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
     )
-    """Represents an 8-bit `e3m4` floating point format, encoded as
-    `s.eee.mmmm`:
+    """Represents an 8-bit `e3m4` floating point format.
+
+    This type is encoded as `s.eee.mmmm`:
 
     - (s)ign: 1 bit
     - (e)xponent: 3 bits
@@ -235,8 +239,9 @@ struct DType(
     comptime float8_e4m3fnuz = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e4m3fnuz> : !kgen.dtype`
     )
-    """Represents an 8-bit `e4m3fnuz` floating point format
-    ([ref](https://arxiv.org/pdf/2206.02915)), encoded as `s.eeee.mmm`:
+    """Represents an 8-bit `e4m3fnuz` floating point format.
+
+    See the [format reference](https://arxiv.org/pdf/2206.02915), encoded as `s.eeee.mmm`:
 
     - (s)ign: 1 bit
     - (e)xponent: 4 bits
@@ -249,7 +254,9 @@ struct DType(
     comptime float8_e5m2 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e5m2> : !kgen.dtype`
     )
-    """Represents the 8-bit `E5M2` floating point format defined in the
+    """Represents the 8-bit `E5M2` floating point format.
+
+    This type is defined in the
     [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
     encoded as `s.eeeee.mm`:
 
@@ -264,8 +271,9 @@ struct DType(
     comptime float8_e5m2fnuz = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e5m2fnuz> : !kgen.dtype`
     )
-    """Represents an 8-bit `e5m2fnuz` floating point format
-    ([ref](https://arxiv.org/pdf/2206.02915)), encoded as `s.eeeee.mm`:
+    """Represents an 8-bit `e5m2fnuz` floating point format.
+
+    See the [format reference](https://arxiv.org/pdf/2206.02915), encoded as `s.eeeee.mm`:
 
     - (s)ign: 1 bit
     - (e)xponent: 5 bits
@@ -698,7 +706,9 @@ struct DType(
         Returns:
             The mantissa width.
         """
-        constrained[dtype.is_floating_point(), "dtype must be floating point"]()
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
 
     @staticmethod
@@ -714,7 +724,9 @@ struct DType(
         Returns:
             The max exponent.
         """
-        constrained[dtype.is_floating_point(), "dtype must be floating point"]()
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
 
         @parameter
         if dtype is DType.float4_e2m1fn:
@@ -742,7 +754,9 @@ struct DType(
         Returns:
             The exponent width.
         """
-        constrained[dtype.is_floating_point(), "dtype must be floating point"]()
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
 
         @parameter
         if dtype is DType.float4_e2m1fn:
@@ -847,7 +861,7 @@ struct DType(
         if self is DType.float64:
             return __mlir_attr.f64
 
-        return abort[__mlir_type.`!kgen.deferred`]("invalid dtype")
+        abort("invalid dtype")
 
     # ===----------------------------------------------------------------------===#
     # utils
@@ -999,11 +1013,12 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
 # ===-------------------------------------------------------------------===#
 
 
-fn _scientific_notation_digits[dtype: DType]() -> StaticString:
+fn _scientific_notation_digits[
+    dtype: DType
+]() -> StaticString where dtype.is_floating_point():
     """Get the number of digits as a StaticString for the scientific notation
     representation of a float.
     """
-    constrained[dtype.is_floating_point(), "expected floating point type"]()
 
     @parameter
     if dtype.is_float8():
@@ -1023,10 +1038,14 @@ fn _scientific_notation_digits[dtype: DType]() -> StaticString:
 
 @always_inline
 fn _int_type_of_width[width: Int]() -> DType:
-    constrained[
-        width in (8, 16, 32, 64, 128, 256),
-        "width must be either 8, 16, 32, 64, 128, or 256",
-    ]()
+    __comptime_assert width in (
+        8,
+        16,
+        32,
+        64,
+        128,
+        256,
+    ), "width must be either 8, 16, 32, 64, 128, or 256"
 
     @parameter
     if width == 8:
@@ -1050,10 +1069,14 @@ fn _int_type_of_width[width: Int]() -> DType:
 
 @always_inline
 fn _uint_type_of_width[width: Int]() -> DType:
-    constrained[
-        width in (8, 16, 32, 64, 128, 256),
-        "width must be either 8, 16, 32, 64, 128, or 256",
-    ]()
+    __comptime_assert width in (
+        8,
+        16,
+        32,
+        64,
+        128,
+        256,
+    ), "width must be either 8, 16, 32, 64, 128, or 256"
 
     @parameter
     if width == 8:

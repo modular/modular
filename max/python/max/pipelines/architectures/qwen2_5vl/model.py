@@ -351,7 +351,7 @@ class Qwen2_5VLModel(
         # vision_seq_len is the number of patches in all images and videos in the request
         pixel_values_types = [
             TensorType(
-                DType.float32,
+                DType.bfloat16,
                 shape=["vision_seq_len", vision_encoder.patch_embed.patch_dim],
                 device=DeviceRef.from_device(device),
             )
@@ -807,14 +807,239 @@ class Qwen2_5VLModel(
                 logits=language_outputs[0],
             )
 
+    @staticmethod
+    def prepare_decoder_position_ids(
+        context_batch: Sequence[Qwen2_5VLTextAndVisionContext],
+        devices: list[Device],
+    ) -> Tensor:
+        """Prepare decoder position IDs for a batch of contexts.
+
+        This function computes position IDs for decoder tokens, handling three cases:
+        1. Vision encoding with pre-computed position IDs (use stored values)
+        2. Vision encoding requiring recomputation (after preemption)
+        3. Text-only generation (simple arange with offset)
+
+        Optimized implementation: pre-allocates output array and writes directly,
+        avoiding concatenation overhead for better performance.
+
+        Args:
+            context_batch: Sequence of Qwen2.5VL contexts to process
+            devices: List of devices to place the output tensor on
+
+        Returns:
+            Tensor containing decoder position IDs with shape [n_rope_sections, total_seq_len]
+        """
+        # Optimize concatenation: pre-allocate output array and write directly
+        # Calculate total output size first
+        total_seq_len = sum(ctx.active_length for ctx in context_batch)
+        n_rope_sections = 3  # Fixed for Qwen2.5VL
+
+        # Fast path for single context: avoid concatenation overhead
+        if len(context_batch) == 1:
+            ctx = context_batch[0]
+            ctx_decoder_position_ids = ctx.decoder_position_ids
+
+            # - For each text token, the position id increases by one each time.
+            # - Each image token of same image has the same position id as they
+            #   occupy the same "position" in the sequence.
+            # - The entire image takes up some number of positions so there may
+            #   by a jump > 1 at the image end boundary.
+            #
+            # eg:
+            #               token_ids = [10, 11, 12, 13, IMG, IMG, IMG, IMG, IMG, 14, 15]
+            # temp_position_ids[0, :] = [0, 1, 2, 3, 4, 4, 4, 4, 4, 7, 8]
+            #                                                 jump ^
+            if (
+                ctx.needs_vision_encoding
+                and ctx_decoder_position_ids.shape[1] == ctx.current_length
+            ):
+                result_array = ctx_decoder_position_ids[
+                    :, ctx.start_idx : ctx.active_idx
+                ].astype(np.uint32, copy=False)
+            elif ctx.needs_vision_encoding:
+                # Recompute decoder_position_ids using get_rope_index
+                # This handles the case after preemption where we need to recompute the prompt
+
+                # Extract required parameters from context
+                spatial_merge_size = ctx.spatial_merge_size
+                image_token_id = ctx.image_token_id
+                video_token_id = ctx.video_token_id
+                vision_start_token_id = ctx.vision_start_token_id
+                tokens_per_second = ctx.tokens_per_second
+                image_grid_thw = (
+                    ctx.vision_data.image_grid_thw
+                    if ctx.vision_data is not None
+                    else None
+                )
+
+                # Always create a fresh attention mask based on current context length
+                # The stored attention_mask in extra_model_args may be outdated if tokens
+                # were added after context creation (e.g., during generation before reset)
+                attention_mask = np.ones(
+                    (1, ctx.current_length), dtype=np.float32
+                )
+
+                # Recompute position_ids using get_rope_index (same logic as tokenizer)
+                temp_position_ids, rope_delta_array = get_rope_index(
+                    spatial_merge_size=spatial_merge_size,
+                    image_token_id=image_token_id,
+                    video_token_id=video_token_id,
+                    vision_start_token_id=vision_start_token_id,
+                    tokens_per_second=tokens_per_second,
+                    input_ids=ctx.tokens[: ctx.current_length].reshape(1, -1),
+                    image_grid_thw=image_grid_thw,
+                    video_grid_thw=None,
+                    second_per_grid_ts=None,
+                    attention_mask=attention_mask,
+                )
+                temp_position_ids = temp_position_ids.squeeze(1)
+
+                # Update rope_delta in context if needed
+                ctx.rope_delta = int(rope_delta_array.item())
+
+                # Slice to get only the active portion and convert type
+                result_array = temp_position_ids[
+                    :, ctx.start_idx : ctx.active_idx
+                ].astype(np.uint32, copy=False)
+            else:
+                # This case should only happen during Token Generation
+
+                # Recompute this value on the fly.
+                # This assumes that there are no image placeholder tokens in
+                # next_tokens so it is a simple arange operation.
+                context_seq_length = ctx.active_length
+                temp_position_ids = np.arange(context_seq_length)
+                temp_position_ids = temp_position_ids.reshape(1, 1, -1)
+                temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
+                # Offset by the number of previous tokens (start_idx).
+                delta = ctx.start_idx + ctx.rope_delta
+                temp_position_ids = temp_position_ids + delta
+                result_array = temp_position_ids.squeeze(1).astype(
+                    np.uint32, copy=False
+                )
+
+            decoder_position_ids = Tensor.from_numpy(result_array).to(
+                devices[0]
+            )
+            return decoder_position_ids
+
+        # Multi-context path: pre-allocate output and write directly
+        # Pre-allocate output array with correct dtype to avoid conversion overhead
+        out_array = np.empty(
+            (n_rope_sections, total_seq_len), dtype=np.uint32, order="C"
+        )
+
+        # Track current write position
+        write_offset = 0
+
+        for ctx in context_batch:
+            ctx_decoder_position_ids = ctx.decoder_position_ids
+            active_len = ctx.active_length
+
+            # - For each text token, the position id increases by one each time.
+            # - Each image token of same image has the same position id as they
+            #   occupy the same "position" in the sequence.
+            # - The entire image takes up some number of positions so there may
+            #   by a jump > 1 at the image end boundary.
+            #
+            # eg:
+            #               token_ids = [10, 11, 12, 13, IMG, IMG, IMG, IMG, IMG, 14, 15]
+            # temp_position_ids[0, :] = [0, 1, 2, 3, 4, 4, 4, 4, 4, 7, 8]
+            #                                                 jump ^
+            if (
+                ctx.needs_vision_encoding
+                and ctx_decoder_position_ids.shape[1] == ctx.current_length
+            ):
+                # Direct slice and write to output
+                src_slice = ctx_decoder_position_ids[
+                    :, ctx.start_idx : ctx.active_idx
+                ]
+                out_array[:, write_offset : write_offset + active_len] = (
+                    src_slice.astype(np.uint32, copy=False)
+                )
+            elif ctx.needs_vision_encoding:
+                # Recompute decoder_position_ids using get_rope_index
+                # This handles the case after preemption where we need to recompute the prompt
+
+                # Extract required parameters from context
+                spatial_merge_size = ctx.spatial_merge_size
+                image_token_id = ctx.image_token_id
+                video_token_id = ctx.video_token_id
+                vision_start_token_id = ctx.vision_start_token_id
+                tokens_per_second = ctx.tokens_per_second
+                image_grid_thw = (
+                    ctx.vision_data.image_grid_thw
+                    if ctx.vision_data is not None
+                    else None
+                )
+
+                # Always create a fresh attention mask based on current context length
+                # The stored attention_mask in extra_model_args may be outdated if tokens
+                # were added after context creation (e.g., during generation before reset)
+                attention_mask = np.ones(
+                    (1, ctx.current_length), dtype=np.float32
+                )
+
+                # Recompute position_ids using get_rope_index (same logic as tokenizer)
+                temp_position_ids, rope_delta_array = get_rope_index(
+                    spatial_merge_size=spatial_merge_size,
+                    image_token_id=image_token_id,
+                    video_token_id=video_token_id,
+                    vision_start_token_id=vision_start_token_id,
+                    tokens_per_second=tokens_per_second,
+                    input_ids=ctx.tokens[: ctx.current_length].reshape(1, -1),
+                    image_grid_thw=image_grid_thw,
+                    video_grid_thw=None,
+                    second_per_grid_ts=None,
+                    attention_mask=attention_mask,
+                )
+                temp_position_ids = temp_position_ids.squeeze(1)
+
+                # Update rope_delta in context if needed
+                ctx.rope_delta = int(rope_delta_array.item())
+
+                # Slice to get only the active portion and write directly
+                src_slice = temp_position_ids[:, ctx.start_idx : ctx.active_idx]
+                out_array[:, write_offset : write_offset + active_len] = (
+                    src_slice.astype(np.uint32, copy=False)
+                )
+            else:
+                # This case should only happen during Token Generation
+
+                # Recompute this value on the fly.
+                # This assumes that there are no image placeholder tokens in
+                # next_tokens so it is a simple arange operation.
+                context_seq_length = ctx.active_length
+                temp_position_ids = np.arange(context_seq_length)
+                temp_position_ids = temp_position_ids.reshape(1, 1, -1)
+                temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
+                # Offset by the number of previous tokens (start_idx).
+                delta = ctx.start_idx + ctx.rope_delta
+                temp_position_ids = temp_position_ids + delta
+                temp_position_ids = temp_position_ids.squeeze(1)
+                out_array[:, write_offset : write_offset + active_len] = (
+                    temp_position_ids.astype(np.uint32, copy=False)
+                )
+
+            write_offset += active_len
+
+        decoder_position_ids = Tensor.from_numpy(out_array).to(devices[0])
+
+        return decoder_position_ids
+
     @traced
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[Qwen2_5VLTextAndVisionContext],  # type: ignore[override]
+        replica_batches: Sequence[Sequence[Qwen2_5VLTextAndVisionContext]],  # type: ignore[override]
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen2.5VL model."""
+
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
 
         if kv_cache_inputs is None:
             raise ValueError("KV Cache Inputs must be provided")
@@ -849,98 +1074,9 @@ class Qwen2_5VLModel(
             )
 
         with Tracer("prepare_decoder_position_ids"):
-            position_ids_list = []
-
-            for ctx in context_batch:
-                ctx_decoder_position_ids = ctx.decoder_position_ids
-
-                # - For each text token, the position id increases by one each time.
-                # - Each image token of same image has the same position id as they
-                #   occupy the same "position" in the sequence.
-                # - The entire image takes up some number of positions so there may
-                #   by a jump > 1 at the image end boundary.
-                #
-                # eg:
-                #               token_ids = [10, 11, 12, 13, IMG, IMG, IMG, IMG, IMG, 14, 15]
-                # temp_position_ids[0, :] = [0, 1, 2, 3, 4, 4, 4, 4, 4, 7, 8]
-                #                                                 jump ^
-                if (
-                    ctx.needs_vision_encoding
-                    and ctx_decoder_position_ids.shape[1] == ctx.current_length
-                ):
-                    position_ids_list.append(
-                        ctx_decoder_position_ids[
-                            :, ctx.start_idx : ctx.active_idx
-                        ]
-                    )
-                elif ctx.needs_vision_encoding:
-                    # Recompute decoder_position_ids using get_rope_index
-                    # This handles the case after preemption where we need to recompute the prompt
-
-                    # Extract required parameters from context
-                    spatial_merge_size = ctx.spatial_merge_size
-                    image_token_id = ctx.image_token_id
-                    video_token_id = ctx.video_token_id
-                    vision_start_token_id = ctx.vision_start_token_id
-                    tokens_per_second = ctx.tokens_per_second
-                    image_grid_thw = (
-                        ctx.vision_data.image_grid_thw
-                        if ctx.vision_data is not None
-                        else None
-                    )
-
-                    # Always create a fresh attention mask based on current context length
-                    # The stored attention_mask in extra_model_args may be outdated if tokens
-                    # were added after context creation (e.g., during generation before reset)
-                    attention_mask = np.ones(
-                        (1, ctx.current_length), dtype=np.float32
-                    )
-
-                    # Recompute position_ids using get_rope_index (same logic as tokenizer)
-                    temp_position_ids, rope_delta_array = get_rope_index(
-                        spatial_merge_size=spatial_merge_size,
-                        image_token_id=image_token_id,
-                        video_token_id=video_token_id,
-                        vision_start_token_id=vision_start_token_id,
-                        tokens_per_second=tokens_per_second,
-                        input_ids=ctx.tokens[: ctx.current_length].reshape(
-                            1, -1
-                        ),
-                        image_grid_thw=image_grid_thw,
-                        video_grid_thw=None,
-                        second_per_grid_ts=None,
-                        attention_mask=attention_mask,
-                    )
-                    temp_position_ids = temp_position_ids.squeeze(1)
-
-                    # Update rope_delta in context if needed
-                    ctx.rope_delta = int(rope_delta_array.item())
-
-                    # Slice to get only the active portion
-                    position_ids_list.append(
-                        temp_position_ids[:, ctx.start_idx : ctx.active_idx]
-                    )
-                else:
-                    # This case should only happen during Token Generation
-
-                    # Recompute this value on the fly.
-                    # This assumes that there are no image placeholder tokens in
-                    # next_tokens so it is a simple arange operation.
-                    context_seq_length = ctx.active_length
-                    temp_position_ids = np.arange(context_seq_length)
-                    temp_position_ids = temp_position_ids.reshape(1, 1, -1)
-                    temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
-                    # Offset by the number of previous tokens (start_idx).
-                    delta = ctx.start_idx + ctx.rope_delta
-                    temp_position_ids = temp_position_ids + delta
-                    temp_position_ids = temp_position_ids.squeeze(1)
-                    position_ids_list.append(temp_position_ids)
-
-            decoder_position_ids = Tensor.from_numpy(
-                self._parallel_ops.concatenate(
-                    position_ids_list, axis=1
-                ).astype(np.uint32)
-            ).to(self.devices[0])
+            decoder_position_ids = self.prepare_decoder_position_ids(
+                context_batch, self.devices
+            )
 
         with Tracer("prepare_image_token_indices"):
             scatter_indices, gather_indices = self._batch_image_token_indices(
@@ -972,15 +1108,20 @@ class Qwen2_5VLModel(
         # From here on, assume that all inputs are available in vision_data
         # due to context validators
         with Tracer("preparing_pixel_values"):
-            # pixel_values is a tuple of tensors, that is always length 1 with
-            # Qwen, so we can just take the first element.
             pixel_values_list = [
                 vision_data.concatenated_pixel_values
                 for vision_data in vision_datas
             ]
-            pixel_values_tensor = Tensor.from_numpy(
-                self._parallel_ops.concatenate(pixel_values_list)
-            )
+            concatenated = self._parallel_ops.concatenate(pixel_values_list)
+            pixel_values_tensor = Tensor.from_numpy(concatenated)
+
+            # If uint16, interpret as bfloat16 to work around lack of Numpy
+            # bfloat16 support.
+            if concatenated.dtype == np.uint16:
+                pixel_values_tensor = pixel_values_tensor.view(
+                    DType.bfloat16, pixel_values_tensor.shape
+                )
+
             pixel_values = pixel_values_tensor.to(self.devices)
 
         with Tracer("preparing_window_index"):

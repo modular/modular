@@ -87,11 +87,11 @@ fn fused_reduce_inner_test[
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        output_buf_device0.__setitem__(
-            rebind[IndexList[rank]](coords), rebind[Scalar[dtype]](val[0])
+        output_buf_device0.store[width=width](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
-        output_buf_device1.__setitem__(
-            rebind[IndexList[rank]](coords), rebind[Scalar[dtype]](val[1])
+        output_buf_device1.store[width=width](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[1])
         )
 
     reduce_launch[num_reductions, input_fn, output_fn, reduce_fn, rank, dtype](
@@ -160,7 +160,9 @@ fn reduce_inner_test[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        constrained[reduction_idx < num_reductions, "invalid reduction idx"]()
+        __comptime_assert (
+            reduction_idx < num_reductions
+        ), "invalid reduction idx"
 
         return reduce_fn[dtype, width](lhs, rhs)
 
@@ -183,8 +185,8 @@ fn reduce_inner_test[
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        output_buf_device.__setitem__(
-            rebind[IndexList[rank]](coords), rebind[Scalar[dtype]](val[0])
+        output_buf_device.store[width=width](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
 
     reduce_launch[
@@ -220,7 +222,7 @@ def test_reduce():
         width: Int,
         reduction_idx: Int,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        constrained[reduction_idx < 2, "reduction idx OOB"]()
+        __comptime_assert reduction_idx < 2, "reduction idx OOB"
 
         comptime func = reduce_max if reduction_idx == 0 else reduce_add
         return func(x, y)

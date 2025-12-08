@@ -25,7 +25,6 @@ Use the public API in `random.mojo` instead.
 """
 
 from math import sqrt, log, cos, pi
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.ffi import _Global
 from utils.numerics import isnan, max_finite, FPUtils
@@ -33,7 +32,7 @@ from utils.numerics import isnan, max_finite, FPUtils
 from .philox import Random as PhiloxRandom
 
 
-struct _PhiloxWrapper(Copyable, Movable):
+struct _PhiloxWrapper(Copyable):
     """Wrapper around Philox RNG to provide a simpler interface.
 
     This struct wraps the Philox RNG and caches generated values to provide
@@ -109,7 +108,7 @@ struct _PhiloxWrapper(Copyable, Movable):
         return Float64(value) * (1.0 / Float64(1 << float64_mantissa_bits))
 
 
-struct _RandomState(Copyable, Movable):
+struct _RandomState(Copyable):
     """Global random state manager.
 
     This struct manages a global _PhiloxWrapper instance for the random module.
@@ -259,18 +258,18 @@ fn _init_random_state() -> _RandomState:
     return _RandomState()
 
 
-fn _get_global_random_state() -> UnsafePointer[_RandomState]:
+fn _get_global_random_state(
+    out result: UnsafePointer[_RandomState, MutOrigin.external]
+):
     """Gets the global random state.
 
     Returns:
         A pointer to the global _RandomState instance.
     """
     try:
-        return _global_random_state.get_or_create_ptr()
+        result = _global_random_state.get_or_create_ptr()
     except:
-        return abort[UnsafePointer[_RandomState]](
-            "Failed to initialize global random state"
-        )
+        abort("Failed to initialize global random state")
 
 
 # Global random state (using _Global for proper global storage)

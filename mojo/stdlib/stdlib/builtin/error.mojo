@@ -19,7 +19,7 @@ These are Mojo built-ins, so you don't need to import them.
 from collections.string.format import _CurlyEntryFormattable
 from io.write import _WriteBufferStack
 from sys import _libc, external_call, is_gpu
-from sys.ffi import c_char
+from sys.ffi import c_char, CStringSlice
 
 from memory import (
     ArcPointer,
@@ -114,12 +114,10 @@ struct _ErrorWriter(Writer):
             args[i].write_to(self)
 
 
-@register_passable
 struct Error(
     Boolable,
     Defaultable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
     Writable,
@@ -131,16 +129,9 @@ struct Error(
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var data: UnsafePointer[UInt8, ImmutOrigin.external]
-    """A pointer to the beginning of the string data being referenced."""
+    var data: String
+    """The message of the error."""
 
-    var loaded_length: Int
-    """The length of the string being referenced.
-    Error instances conditionally own their error message. To reduce
-    the size of the error instance we use the sign bit of the length field
-    to store the ownership value. When loaded_length is negative it indicates
-    ownership and a free is executed in the destructor.
-    """
     var stack_trace: StackTrace
     """The stack trace of the error.
     By default the stack trace is not collected for the Error, unless user
@@ -152,11 +143,21 @@ struct Error(
     # ===-------------------------------------------------------------------===#
 
     @always_inline
+    @implicit
+    fn __init__(out self, var value: String, *, depth: Int = -1):
+        """Construct an Error object with a given String.
+
+        Args:
+            value: The error message.
+            depth: The depth of the stack trace to collect.
+        """
+        self.data = value^
+        self.stack_trace = StackTrace(depth=depth)
+
+    @always_inline
     fn __init__(out self):
         """Default constructor."""
-        self.data = {}
-        self.loaded_length = 0
-        self.stack_trace = StackTrace(depth=-1)
+        self = Error(String())
 
     @always_inline
     @implicit
@@ -165,13 +166,18 @@ struct Error(
 
         Args:
             value: The error message.
-
         """
-        self.data = value.unsafe_ptr().unsafe_origin_cast[
-            ImmutOrigin.external
-        ]()
-        self.loaded_length = value.byte_length()
-        self.stack_trace = StackTrace(depth=0)
+        self = Error(String(value), depth=0)
+
+    @no_inline
+    @implicit
+    fn __init__(out self, arg: Some[Writable]):
+        """Construct an Error from a Writable argument.
+
+        Args:
+            arg: A Writable argument.
+        """
+        self = Error(String(arg), depth=0)
 
     @no_inline
     fn __init__[*Ts: Writable](out self, *args: *Ts):
@@ -184,49 +190,7 @@ struct Error(
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
         """
-
-        @parameter
-        fn _write(mut writer: Some[Writer]):
-            @parameter
-            for i in range(args.__len__()):
-                args[i].write_to(writer)
-
-        # Count the total length of bytes to allocate only once
-        var arg_bytes = _TotalWritableBytes()
-        _write(arg_bytes)
-        arg_bytes.size += 1  # nul terminator
-        var writer = _ErrorWriter(List[Byte](capacity=arg_bytes.size))
-        var buffer = _WriteBufferStack(writer)
-        _write(buffer)
-        buffer.flush()
-        writer.data.append(0)  # nul terminator
-        self.loaded_length = -(len(writer.data) - 1)
-        self.data = writer.data.steal_data()
-        self.stack_trace = StackTrace(depth=0)
-
-    fn __del__(deinit self):
-        """Releases memory if allocated."""
-        if self.loaded_length < 0:
-            # Safety: if loaded_length < 0, we own the data allowing us to
-            # safely free (and mutate) it.
-            self.data.unsafe_mut_cast[True]().free()
-
-    fn __copyinit__(out self, existing: Self):
-        """Creates a deep copy of an existing error.
-
-        Args:
-            existing: The error to copy from.
-        """
-        if existing.loaded_length < 0:
-            var length = -existing.loaded_length
-            var dest = alloc[UInt8](length + 1)
-            memcpy(dest=dest, src=existing.data, count=length)
-            dest[length] = 0
-            self.data = dest
-        else:
-            self.data = existing.data
-        self.loaded_length = existing.loaded_length
-        self.stack_trace = existing.stack_trace
+        self = Error(String(args), depth=0)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -247,7 +211,7 @@ struct Error(
         Returns:
             A String of the error message.
         """
-        return String.write(self)
+        return self.data
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -259,7 +223,7 @@ struct Error(
         """
         if not self:
             return
-        writer.write(self.as_string_slice())
+        writer.write(self.data)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -268,44 +232,11 @@ struct Error(
         Returns:
             A printable representation of the error message.
         """
-        return String("Error(", repr(self.as_string_slice()), ")")
-
-    fn byte_length(self) -> Int:
-        """Get the length of the Error string in bytes.
-
-        Returns:
-            The length of the Error string in bytes.
-
-        Notes:
-            This does not include the trailing null terminator in the count.
-        """
-        return abs(self.loaded_length)
+        return String("Error('", self.data, "')")
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    fn unsafe_cstr_ptr(self) -> UnsafePointer[c_char, ImmutOrigin.external]:
-        """Retrieves a C-string-compatible pointer to the underlying memory.
-
-        The returned pointer is guaranteed to be NUL terminated.
-
-        Returns:
-            The pointer to the underlying memory.
-        """
-        return self.data.bitcast[c_char]()
-
-    fn as_string_slice(self) -> StringSlice[ImmutOrigin.external]:
-        """Returns a string slice of the data maybe owned by the Error.
-
-        Returns:
-            A string slice pointing to the data maybe owned by the Error.
-
-        Notes:
-            Since the data is not guaranteed to be owned by the Error, the
-            resulting StringSlice is given an ImmutOrigin.external.
-        """
-        return StringSlice(ptr=self.data, length=self.byte_length())
 
     fn get_stack_trace(self) -> StackTrace:
         """Returns the stack trace of the error.

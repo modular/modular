@@ -21,8 +21,8 @@ Related types:
 
 - [`StringSlice`](/mojo/stdlib/collections/string/string_slice/). A non-owning
   view of string data, which can be either mutable or immutable.
-- [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases). An
-  comptime for an immutable constant `StringSlice`.
+- [`StaticString`](/mojo/stdlib/collections/string/string_slice/#comptime-values).
+  A `comptime` type alias for an immutable constant `StringSlice`.
 - [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/). A
   string literal. String literals are compile-time values. For use at runtime,
   you usually want wrap a `StringLiteral` in a `String` (for a mutable string)
@@ -89,7 +89,7 @@ from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
 from sys import size_of, bit_width_of
-from sys.ffi import c_char
+from sys.ffi import c_char, CStringSlice
 from sys.info import is_32bit
 
 from bit import count_leading_zeros
@@ -138,13 +138,28 @@ struct String(
 
     # Useful string aliases.
     comptime ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
+    """All lowercase ASCII letters."""
+
     comptime ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    """All uppercase ASCII letters."""
+
     comptime ASCII_LETTERS = Self.ASCII_LOWERCASE + Self.ASCII_UPPERCASE
+    """All ASCII letters (lowercase and uppercase)."""
+
     comptime DIGITS = "0123456789"
+    """All decimal digit characters."""
+
     comptime HEX_DIGITS = Self.DIGITS + "abcdef" + "ABCDEF"
+    """All hexadecimal digit characters."""
+
     comptime OCT_DIGITS = "01234567"
+    """All octal digit characters."""
+
     comptime PUNCTUATION = """!"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"""
+    """All ASCII punctuation characters."""
+
     comptime PRINTABLE = Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
+    """All printable ASCII characters."""
 
     # ===------------------------------------------------------------------=== #
     # String Implementation Details
@@ -153,22 +168,35 @@ struct String(
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
     comptime INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
+    """Maximum bytes for inline (SSO) string storage."""
+
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
     comptime FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
+    """Flag indicating string has accessible nul terminator."""
+
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
     comptime FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
+    """Flag indicating string uses reference-counted storage."""
+
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
     comptime FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
+    """Flag indicating string uses inline (SSO) storage."""
+
     # gives us 5 bits for the length.
     comptime INLINE_LENGTH_START = Int.BITWIDTH - 8
+    """Bit position where inline length field starts."""
+
     comptime INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
+    """Bit mask for extracting inline string length."""
+
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
     comptime REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
+    """Size of the reference count prefix for heap strings."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -1018,26 +1046,7 @@ struct String(
             Span(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
 
-    fn join[*Ts: Writable](self, *elems: *Ts) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            Ts: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
-            StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
-        )
-        return String(elems, sep=sep)
-
-    fn join[
-        T: Copyable & Movable & Writable
-    ](self, elems: Span[T, *_]) -> String:
+    fn join[T: Copyable & Writable](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write
@@ -1046,7 +1055,7 @@ struct String(
 
         Parameters:
             T: The type of the elements. Must implement the `Copyable`,
-                `Movable` and `Writable` traits.
+                and `Writable` traits.
 
         Args:
             elems: The input values.
@@ -1177,6 +1186,26 @@ struct String(
 
         return self.unsafe_ptr().unsafe_mut_cast[True]()
 
+    @always_inline
+    fn as_c_string_slice(
+        mut self,
+    ) -> CStringSlice[ImmutOrigin.cast_from[origin_of(self)]]:
+        """Return a `CStringSlice` to the underlying memory of the string.
+
+        Returns:
+            The `CStringSlice` of the string.
+        """
+        # Add a nul terminator, making the string mutable if not already
+        if not self._has_nul_terminator():
+            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
+            var len = self.byte_length()
+            ptr[len] = 0
+            self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
+
+        # Safety: we ensure the string is null-terminated above.
+        return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
+
+    @deprecated("Use `String.as_c_string_slice()` instead.")
     fn unsafe_cstr_ptr(
         mut self,
     ) -> UnsafePointer[c_char, ImmutOrigin.cast_from[origin_of(self)]]:
@@ -1193,7 +1222,6 @@ struct String(
             var len = self.byte_length()
             ptr[len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
-            return self.unsafe_ptr().bitcast[c_char]()
 
         return self.unsafe_ptr().bitcast[c_char]()
 
@@ -1973,9 +2001,7 @@ fn chr(c: Int) -> String:
     var char_opt = Codepoint.from_u32(c)
     if not char_opt:
         # TODO: Raise ValueError instead.
-        return abort[String](
-            String("chr(", c, ") is not a valid Unicode codepoint")
-        )
+        abort(String("chr(", c, ") is not a valid Unicode codepoint"))
 
     # SAFETY: We just checked that `char` is present.
     return String(char_opt.unsafe_value())

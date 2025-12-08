@@ -63,9 +63,7 @@ fn _init_dylib() -> OwnedDLHandle:
         )
         return dylib^
     except e:
-        return abort[OwnedDLHandle](
-            String("CUDA NVML library initialization failed: ", e)
-        )
+        abort(String("CUDA NVML library initialization failed: ", e))
 
 
 @always_inline
@@ -84,7 +82,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
+struct DriverVersion(ImplicitlyCopyable, StringableRaising):
     var _value: List[String]
 
     fn __init__(out self, var value: List[String]):
@@ -113,100 +111,102 @@ struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Result(Equatable, ImplicitlyCopyable, Movable, Stringable, Writable):
+struct Result(Equatable, ImplicitlyCopyable, Stringable, Writable):
     var code: Int32
 
     comptime SUCCESS = Self(0)
-    """The operation was successful"""
+    """The operation was successful."""
 
     comptime UNINITIALIZED = Self(1)
-    """NVML was not first initialized with nvmlInit()"""
+    """NVML was not first initialized with `nvmlInit()`."""
 
     comptime INVALID_ARGUMENT = Self(2)
-    """A supplied argument is invalid"""
+    """A supplied argument is invalid."""
 
     comptime NOT_SUPPORTED = Self(3)
-    """The requested operation is not available on target device"""
+    """The requested operation is not available on target device."""
 
     comptime NO_PERMISSION = Self(4)
-    """The current user does not have permission for operation"""
+    """The current user does not have permission for operation."""
 
     comptime ALREADY_INITIALIZED = Self(5)
     """Deprecated: Multiple initializations are now allowed through ref
-    counting"""
+    counting.
+    """
 
     comptime NOT_FOUND = Self(6)
-    """A query to find an object was unsuccessful"""
+    """A query to find an object was unsuccessful."""
 
     comptime INSUFFICIENT_SIZE = Self(7)
-    """An input argument is not large enough"""
+    """An input argument is not large enough."""
 
     comptime INSUFFICIENT_POWER = Self(8)
-    """A device's external power cables are not properly attached"""
+    """A device's external power cables are not properly attached."""
 
     comptime DRIVER_NOT_LOADED = Self(9)
-    """NVIDIA driver is not loaded"""
+    """NVIDIA driver is not loaded."""
 
     comptime TIMEOUT = Self(10)
-    """User provided timeout passed"""
+    """User provided timeout passed."""
 
     comptime IRQ_ISSUE = Self(11)
-    """NVIDIA Kernel detected an interrupt issue with a GPU"""
+    """NVIDIA Kernel detected an interrupt issue with a GPU."""
 
     comptime LIBRARY_NOT_FOUND = Self(12)
-    """NVML Shared Library couldn't be found or loaded"""
+    """NVML Shared Library couldn't be found or loaded."""
 
     comptime FUNCTION_NOT_FOUND = Self(13)
-    """Local version of NVML doesn't implement this function"""
+    """Local version of NVML doesn't implement this function."""
 
     comptime CORRUPTED_INFOROM = Self(14)
-    """infoROM is corrupted"""
+    """The infoROM is corrupted."""
 
     comptime GPU_IS_LOST = Self(15)
-    """The GPU has fallen off the bus or has otherwise become inaccessible"""
+    """The GPU has fallen off the bus or has otherwise become inaccessible."""
 
     comptime RESET_REQUIRED = Self(16)
-    """The GPU requires a reset before it can be used again"""
+    """The GPU requires a reset before it can be used again."""
 
     comptime OPERATING_SYSTEM = Self(17)
-    """The GPU control device has been blocked by the operating system/cgroups"""
+    """The GPU control device has been blocked by the operating system/cgroups."""
 
     comptime LIB_RM_VERSION_MISMATCH = Self(18)
-    """RM detects a driver/library version mismatch"""
+    """RM detects a driver/library version mismatch."""
 
     comptime IN_USE = Self(19)
-    """An operation cannot be performed because the GPU is currently in use"""
+    """An operation cannot be performed because the GPU is currently in use."""
 
     comptime MEMORY = Self(20)
-    """Insufficient memory"""
+    """Insufficient memory."""
 
     comptime NO_DATA = Self(21)
-    """No data"""
+    """No data."""
 
     comptime VGPU_ECC_NOT_SUPPORTED = Self(22)
     """The requested vgpu operation is not available on target device, because
-    ECC is enabled"""
+    ECC is enabled.
+    """
 
     comptime INSUFFICIENT_RESOURCES = Self(23)
-    """Ran out of critical resources, other than memory"""
+    """Ran out of critical resources, other than memory."""
 
     comptime FREQ_NOT_SUPPORTED = Self(24)
-    """Ran out of critical resources, other than memory"""
+    """Ran out of critical resources, other than memory."""
 
     comptime ARGUMENT_VERSION_MISMATCH = Self(25)
-    """The provided version is invalid/unsupported"""
+    """The provided version is invalid/unsupported."""
 
     comptime DEPRECATED = Self(26)
-    """The requested functionality has been deprecated"""
+    """The requested functionality has been deprecated."""
 
     comptime NOT_READY = Self(27)
-    """The system is not ready for the request"""
+    """The system is not ready for the request."""
 
     comptime GPU_NOT_FOUND = Self(28)
-    """No GPUs were found"""
+    """No GPUs were found."""
 
     comptime UNKNOWN = Self(999)
-    """An internal driver error occurred"""
+    """An internal driver error occurred."""
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -291,14 +291,14 @@ fn _check_error(err: Result) raises:
 
 @fieldwise_init
 @register_passable("trivial")
-struct EnableState(Equatable, ImplicitlyCopyable, Movable):
+struct EnableState(Equatable, ImplicitlyCopyable):
     var code: Int32
 
     comptime DISABLED = Self(0)
-    """Feature disabled"""
+    """Feature disabled."""
 
     comptime ENABLED = Self(1)
-    """Feature enabled"""
+    """Feature enabled."""
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -312,20 +312,20 @@ struct EnableState(Equatable, ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ClockType(Equatable, ImplicitlyCopyable, Movable):
+struct ClockType(Equatable, ImplicitlyCopyable):
     var code: Int32
 
     comptime GRAPHICS = Self(0)
-    """Graphics clock domain"""
+    """Graphics clock domain."""
 
     comptime SM = Self(1)
-    """SM clock domain"""
+    """SM clock domain."""
 
     comptime MEM = Self(2)
-    """Memory clock domain"""
+    """Memory clock domain."""
 
     comptime VIDEO = Self(2)
-    """Video clock domain"""
+    """Video clock domain."""
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -339,7 +339,7 @@ struct ClockType(Equatable, ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl(Defaultable, ImplicitlyCopyable, Movable):
+struct _DeviceImpl(Defaultable, ImplicitlyCopyable):
     var handle: OpaquePointer
 
     @always_inline
@@ -586,7 +586,7 @@ struct Device(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _EnableState(ImplicitlyCopyable, Movable):
+struct _EnableState(ImplicitlyCopyable):
     var state: Int32
 
     comptime DISABLED = _EnableState(0)  # Feature disabled

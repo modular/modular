@@ -52,6 +52,7 @@ from builtin._location import __call_location, _SourceLocation
 comptime DEFAULT_LEVEL = Level._from_str(
     env_get_string["LOGGING_LEVEL", "NOTSET"]()
 )
+"""The default logging level, determined by the LOGGING_LEVEL environment variable."""
 
 # ===-----------------------------------------------------------------------===#
 # Level
@@ -63,7 +64,6 @@ struct Level(
     Comparable,
     Identifiable,
     ImplicitlyCopyable,
-    Movable,
     Stringable,
     Writable,
 ):

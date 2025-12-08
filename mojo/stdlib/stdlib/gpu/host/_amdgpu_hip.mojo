@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import external_call
 
 from gpu.host import DeviceContext, DeviceStream
@@ -31,8 +30,8 @@ struct _ihipStream_t:
     pass
 
 
-comptime hipDevice_t = UnsafePointer[_ihipDevice_t]
-comptime hipStream_t = UnsafePointer[_ihipStream_t]
+comptime hipDevice_t = UnsafePointer[_ihipDevice_t, MutAnyOrigin]
+comptime hipStream_t = UnsafePointer[_ihipStream_t, MutAnyOrigin]
 
 
 # Accessor function to get access to the underlying hipDevice_t from an abstract DeviceContext.
@@ -46,7 +45,7 @@ fn HIP(ctx: DeviceContext) raises -> hipDevice_t:
         external_call[
             "AsyncRT_DeviceContext_hip_device",
             _ConstCharPtr,
-            UnsafePointer[hipDevice_t],
+            UnsafePointer[hipDevice_t, origin_of(result)],
             _DeviceContextPtr,
         ](
             UnsafePointer(to=result),
@@ -66,7 +65,7 @@ fn HIP(stream: DeviceStream) raises -> hipStream_t:
         external_call[
             "AsyncRT_DeviceStream_hip_stream",
             _ConstCharPtr,
-            UnsafePointer[hipStream_t],
+            UnsafePointer[hipStream_t, origin_of(result)],
             _DeviceStreamPtr,
         ](
             UnsafePointer(to=result),

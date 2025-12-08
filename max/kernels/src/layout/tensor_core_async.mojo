@@ -200,6 +200,7 @@ comptime _CM_ROW_BITS = 128
 
 # WGMMA's K dim has 32 bytes.
 comptime WGMMA_K_BYTES = 32
+"""Size of WGMMA K dimension in bytes."""
 
 comptime _CM_LAYOUT_BITS = Layout.row_major(_CM_NUM_ROWS, _CM_ROW_BITS)
 comptime _CM_TILE_STRIDE = IntTuple(1, _CM_ROW_BITS)
@@ -317,6 +318,43 @@ fn tile_layout_k_major[
     comptime atom = select_k_atom[dtype, swizzle_mode]()
     comptime new_shape = _checked_tile_shape[dtype, swizzle_mode, BM, BK]()
     return tile_to_shape(atom, new_shape)
+
+
+fn tile_sf_layout_k_major[
+    BM: Int,
+    BK: Int,
+    SF_SCALE_SIZE: Int,
+]() -> Layout:
+    """Creates a K-major layout for tensor core scale factors.
+
+    Constructs a layout for K-major access patterns for scale factors.
+
+    Parameters:
+        BM: Size of the M dimension in the tile.
+        BK: Size of the K dimension in the tile.
+        SF_SCALE_SIZE: Number of elements in a scale factor vector.
+
+    Returns:
+        `Layout` - A K-major layout configured for the specified dimensions and scale factor size.
+    """
+
+    comptime SF_ATOM_M = (32, 4)
+    comptime SF_ATOM_K = 4
+    comptime SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+
+    comptime sf_atom = Layout(
+        IntTuple(SF_ATOM_M[0], IntTuple(SF_ATOM_M[1], SF_ATOM_K)),
+        IntTuple(SF_ATOM_M[1] * SF_ATOM_K, IntTuple(1, SF_ATOM_M[1])),
+    )
+    comptime sf_layout = tile_to_shape(
+        sf_atom,
+        [
+            (BM // SF_MN_GROUP_SIZE) * SF_ATOM_M[0],
+            (BK // (SF_ATOM_K * SF_SCALE_SIZE)) * (SF_ATOM_M[1] * SF_ATOM_K),
+        ],
+        IntTuple(2, 1),
+    )
+    return sf_layout
 
 
 fn tile_to_descriptor[
@@ -687,7 +725,7 @@ fn _convert_cfrags_to_simd[
 ](
     c_frags_in_tuple: StaticTuple[Scalar[c_type], c_frag_size],
     c_frags: LayoutTensor[
-        c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+        mut=True, c_type, _, address_space = AddressSpace.LOCAL, *_, **_
     ],
 ):
     @parameter
@@ -753,7 +791,12 @@ struct TensorCoreAsync[
             Self.b_type, _, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         c_reg_tile: LayoutTensor[
-            Self.c_type, _, _, address_space = AddressSpace.LOCAL, *_, **_
+            mut=True,
+            Self.c_type,
+            _,
+            _,
+            address_space = AddressSpace.LOCAL,
+            *_, **_,
         ],
         wg_idx: Int = 0,
     ):
@@ -915,7 +958,11 @@ struct TensorCoreAsync[
             Self.b_type, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         c_reg_tile: LayoutTensor[
-            Self.c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+            mut=True,
+            Self.c_type,
+            _,
+            address_space = AddressSpace.LOCAL,
+            *_, **_,
         ],
     ):
         """Perform asynchronous matrix multiplication using warp group matrix multiply-accumulate (WGMMA).

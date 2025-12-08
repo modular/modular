@@ -75,12 +75,12 @@ trait Iterable:
 # ===-----------------------------------------------------------------------===#
 
 
-trait Iterator(Copyable, Movable):
+trait Iterator(Copyable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
 
-    comptime Element: Copyable & Movable
+    comptime Element: Copyable
 
     fn __has_next__(self) -> Bool:
         """Checks if there are more elements in the iterator.
@@ -169,9 +169,7 @@ fn next[
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Enumerate[InnerIteratorType: Iterator](
-    Copyable, Iterable, Iterator, Movable
-):
+struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
     """An iterator that yields tuples of the index and the element of the
     original iterator.
     """
@@ -241,7 +239,7 @@ fn enumerate[
 
 @fieldwise_init
 struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
-    Copyable, Iterable, Iterator, Movable
+    Copyable, Iterable, Iterator
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
@@ -272,7 +270,7 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
 @fieldwise_init
 struct _Zip3[
     IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
-](Copyable, Iterable, Iterator, Movable):
+](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -318,7 +316,7 @@ struct _Zip4[
     IteratorTypeB: Iterator,
     IteratorTypeC: Iterator,
     IteratorTypeD: Iterator,
-](Copyable, Iterable, Iterator, Movable):
+](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -502,10 +500,10 @@ fn zip[
 
 @fieldwise_init
 struct _MapIterator[
-    OutputType: Copyable & Movable,
+    OutputType: Copyable,
     InnerIteratorType: Iterator, //,
     function: fn (var InnerIteratorType.Element) -> OutputType,
-](Copyable, Iterable, Iterator, Movable):
+](Copyable, Iterable, Iterator):
     comptime Element = Self.OutputType
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
@@ -533,7 +531,7 @@ struct _MapIterator[
 fn map[
     origin: ImmutOrigin,
     IterableType: Iterable,
-    ResultType: Copyable & Movable, //,
+    ResultType: Copyable, //,
     function: fn (var IterableType.IteratorType[origin].Element) -> ResultType,
 ](ref [origin]iterable: IterableType) -> _MapIterator[
     OutputType=ResultType, function=function

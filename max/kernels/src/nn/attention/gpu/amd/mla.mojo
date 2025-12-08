@@ -74,7 +74,7 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
         return (
             q_depth
             * (
-                block_idx.y
+                block_idx.x
                 + Self.config.num_heads
                 * Self.q_tile_idx()
                 * Self.config.block_m()
@@ -86,17 +86,7 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
     @staticmethod
     @always_inline
     fn get_output_offset[output_depth: UInt]() -> UInt32:
-        return (
-            output_depth
-            * (
-                block_idx.y
-                + Self.config.num_heads
-                * Self.q_tile_idx()
-                * Self.config.block_m()
-            ) if not Self.token_gen else output_depth
-            * Self.q_tile_idx()
-            * Self.config.block_m()
-        )
+        return Self.get_q_offset[output_depth]()
 
 
 __extension Attention:

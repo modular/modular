@@ -89,7 +89,7 @@ uninitialized, the code won't compile.)
 
 ## Constructing a struct type
 
-Once you have a constructor, with `__init__` or using `@fieldwise_init`, 
+Once you have a constructor, with `__init__` or using `@fieldwise_init`,
 you can create an instance of `MyPair` and set the fields:
 
 ```mojo title="Construct an instance"
@@ -150,7 +150,41 @@ myCustomType = CustomType(0.5, fish="swordfish")
 myCustomType = {0.7, fish="salmon"}
 ```
 
-## Making a struct copyable and movable
+## Mutating a struct
+
+By default, a struct’s methods receive an immutable `self`,
+so they can’t modify the struct’s fields. For example:
+
+```
+struct MyStruct:
+    var value: Int
+
+    fn increment(self):
+        self.value += 1 # ERROR: expression must be mutable in assignment
+
+    # ...
+```
+
+To allow a method to mutate the instance, declare its receiver as `mut self`.
+This makes `self` mutable inside the method and allows changes to its fields
+that persist after the method returns:
+
+```
+struct MyStruct:
+    var value: Int
+
+    fn increment(mut self):
+        self.value += 1 # Works: Mutable `self` allows assignment
+
+    #...
+```
+
+:::info
+Read more about mutable arguments and the `mut` keyword:
+[Mutable arguments (`mut`)](https://docs.modular.com/mojo/manual/values/ownership/#mutable-arguments-mut)
+:::
+
+## Making a struct Copyable {#making-a-struct-copyable-and-movable}
 
 Mojo structs are not copyable or movable by default.
 
@@ -168,12 +202,26 @@ var c = a.copy()  # 'MyPair' value has no attribute 'copy'
 
 # Move
 var d = a^  #  value of type 'MyPair' cannot be copied or moved; consider
-            # conforming it to 'Movable'
+            # conforming it to 'Copyable', which also adds 'Movable' conformance.
 
 ```
 
-In most cases, you can make a struct copyable and movable just by adding the
-appropriate [traits](/mojo/manual/traits).
+In most cases, you can make a struct copyable (and movable) just by adding the
+`Copyable` [trait](/mojo/manual/traits).
+
+### Movability
+
+To make a struct move-only, add the `Movable` trait:
+
+  ```mojo
+  struct MyPair(Movable):
+  ...
+  ```
+
+Mojo will generate a move constructor for you. You have rarely need to
+write your own custom move constructor. For more information,
+see the section on
+[move constructors](/mojo/manual/lifecycle/life#move-constructor).
 
 ### Copyability
 
@@ -190,9 +238,12 @@ need custom logic in the copy constructor—for example, if your struct
 dynamically allocates memory. For more information, see the section on
 [copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
 
-The `Copyable` trait also supplies the `copy()` method, which
+The `Copyable` trait supplies the `copy()` method, which
 provides a more user-friendly way to copy a value than invoking the
 copy constructor directly.
+
+In addition, `Copyable` automatically adds movability, so you won't
+need to add both `Copyable` _and_ `Movable` to your declarations.
 
 ### Implicit copyability
 
@@ -203,48 +254,11 @@ struct MyPair(ImplicitlyCopyable):
     ...
 ```
 
-`ImplicitlyCopyable` automatically implies `Copyable`, so all
+`ImplicitlyCopyable` automatically implies `Copyable` and `Movable`, so all
 the notes related to copyability apply here. A type should only be implicitly
 copyable if copying the type is inexpensive and has no side effects. Unnecessary
 copies can be a big drain on memory and performance, so use this trait with
 caution.
-
-### Movability
-
-To make a struct movable, add the `Movable` trait:
-
-  ```mojo
-  struct MyPair(Copyable, Movable):
-  ...
-  ```
-
-Mojo will generate a move constructor for you. You have rarely need to
-write your own custom move constructor. For more information,
-see the section on
-[move constructors](/mojo/manual/lifecycle/life#move-constructor).
-
-### A movable, copyable `MyPair`
-
-Here's a movable and implicitly copyable version of `MyPair`:
-
-```mojo
-@fieldwise_init
-struct MyPair(ImplicitlyCopyable, Movable):
-    var first: Int
-    var second: Int
-```
-
-Since the `MyPair` struct is a simple data structure that holds two `Int`
-values, there's no harm in making it implicitly copyable.
-
-And here's how to exercise the copy and move constructors:
-
-```mojo
-var original_pair = MyPair(2, 6)
-var copied_pair = original_pair  # implicit copy
-var another_pair = original_pair.copy()  # explicit copy
-var moved_pair = original_pair^  # move
-```
 
 ## Methods
 
@@ -428,4 +442,4 @@ essential lifecycle methods you need (and save yourself some time) using the
 `@fieldwise_init` decorator (described in
 [Struct definition](#struct-definition)), and the `Copyable` and `Movable`
 traits (described in
-[Making a struct copyable and movable](#making-a-struct-copyable-and-movable)).
+[Making a struct copyable](#making-a-struct-copyable-and-movable)).

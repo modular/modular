@@ -113,7 +113,7 @@ fn causal_conv1d_cpu[
     bias: InputTensor[dtype=dtype, rank=1],
     output: OutputTensor[dtype=dtype, rank=3],
 ):
-    alias kChunkSize = threads * elements
+    comptime kChunkSize = threads * elements
     var batch = input.shape()[0]
     var seq_length = input.shape()[2]
     var channels = input.shape()[1]
@@ -253,7 +253,7 @@ def causal_conv1d_gpu[
     output: LayoutTensor,
     xx2D: LayoutTensor,
 ):
-    alias kernel_func = causal_conv1d_kernel[
+    comptime kernel_func = causal_conv1d_kernel[
         dtype,
         input.layout,
         weight.layout,

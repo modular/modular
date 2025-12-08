@@ -45,7 +45,7 @@ trait Writer:
     from memory import Span
 
     @fieldwise_init
-    struct NewString(Writer, Writable, ImplicitlyCopyable, Movable):
+    struct NewString(Writer, Writable, ImplicitlyCopyable):
         var s: String
 
         # Writer requirement to write a Span of Bytes
@@ -64,7 +64,7 @@ trait Writer:
 
 
     @fieldwise_init
-    struct Point(Writable, ImplicitlyCopyable, Movable):
+    struct Point(Writable, ImplicitlyCopyable):
         var x: Int
         var y: Int
 
@@ -176,7 +176,7 @@ struct _WriteBufferHeap(Writable, Writer):
         self._pos = 0
 
     fn write_list[
-        T: Copyable & Movable & Writable, //
+        T: Copyable & Writable, //
     ](mut self, values: List[T, *_], *, sep: StaticString = StaticString()):
         var length = len(values)
         if length == 0:
@@ -194,7 +194,8 @@ struct _WriteBufferHeap(Writable, Writer):
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
-            abort()
+            # TODO(MSTDL-2072): This should be an abort, but it breaks ptxas.
+            return
         memcpy(
             dest=self._data + self._pos, src=bytes.unsafe_ptr(), count=len_bytes
         )
@@ -214,7 +215,9 @@ struct _WriteBufferHeap(Writable, Writer):
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
-            abort()
+            # TODO(MSTDL-2072): This should be an abort, but it breaks ptxas.
+            self._data[self._pos - 1] = 0
+            return
         self._data[self._pos] = 0
         self._pos += 1
 
@@ -244,7 +247,7 @@ struct _WriteBufferStack[
         self.writer = Pointer(to=writer)
 
     fn write_list[
-        T: Copyable & Movable & Writable, //
+        T: Copyable & Writable, //
     ](mut self, values: List[T, *_], *, sep: String = String()):
         var length = len(values)
         if length == 0:
@@ -291,7 +294,7 @@ struct _TotalWritableBytes(Writer):
         self.size = 0
 
     fn __init__[
-        T: Copyable & Movable & Writable, //,
+        T: Copyable & Writable, //,
         origin: ImmutOrigin = StaticConstantOrigin,
     ](
         out self,
@@ -391,7 +394,7 @@ fn _write_hex[
     ```
     """
 
-    constrained[amnt_hex_bytes in (2, 4, 8), "only 2 or 4 or 8 sequences"]()
+    __comptime_assert amnt_hex_bytes in (2, 4, 8), "only 2 or 4 or 8 sequences"
 
     comptime `\\` = Byte(ord("\\"))
     comptime `x` = Byte(ord("x"))

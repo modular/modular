@@ -149,7 +149,7 @@ from utils.numerics import max_finite, min_finite
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
 @register_passable("trivial")
-struct Batch(ImplicitlyCopyable, Movable):
+struct Batch(ImplicitlyCopyable):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations
@@ -183,11 +183,11 @@ struct Unit:
     """Time Unit used by Benchmark Report."""
 
     comptime ns = "ns"
-    """Nanoseconds"""
+    """Nanoseconds."""
     comptime ms = "ms"
-    """Milliseconds"""
+    """Milliseconds."""
     comptime s = "s"
-    """Seconds"""
+    """Seconds."""
 
     @staticmethod
     fn _divisor(unit: String) -> Int:
@@ -203,7 +203,7 @@ struct Unit:
 # Report
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Report(Copyable, Defaultable, Movable):
+struct Report(Copyable, Defaultable):
     """
     Contains the average execution time, iterations, min and max of each batch.
     """

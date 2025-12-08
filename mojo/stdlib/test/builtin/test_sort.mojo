@@ -29,7 +29,7 @@ from testing import assert_equal, assert_false, assert_true, TestSuite
 fn random_numbers[
     dtype: DType
 ](size: Int, max: Int = 3000) -> List[Scalar[dtype]]:
-    var result = List[Scalar[dtype]](size)
+    var result = List[Scalar[dtype]](capacity=size)
     for _ in range(size):
 
         @parameter
@@ -59,7 +59,7 @@ fn assert_sorted_string(mut list: List[String]) raises:
         )
 
 
-fn assert_sorted[T: Copyable & Movable & Comparable](mut list: List[T]) raises:
+fn assert_sorted[T: Copyable & Comparable](mut list: List[T]) raises:
     for i in range(1, len(list)):
         assert_true(list[i] >= list[i - 1], String("error at index: ", i))
 
@@ -484,7 +484,7 @@ fn test_sort_stress() raises:
 
 
 @fieldwise_init
-struct MyStruct(ImplicitlyCopyable, Movable):
+struct MyStruct(ImplicitlyCopyable):
     var val: Int
 
 
@@ -534,7 +534,7 @@ def test_sort_strings():
 
 
 @fieldwise_init
-struct Person(Comparable, ImplicitlyCopyable, Movable):
+struct Person(Comparable, ImplicitlyCopyable):
     var name: String
     var age: Int
 

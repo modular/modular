@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import ceildiv
-from sys import simd_width_of
+from sys import simd_width_of, has_nvidia_gpu_accelerator
 from sys import align_of, size_of
 import gpu.block
 from algorithm.functional import _elementwise_impl_gpu
@@ -30,7 +30,7 @@ from logger import Logger
 from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from stdlib.bit import log2_floor
-
+from algorithm import elementwise
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, max_finite, min_finite
 
@@ -524,56 +524,21 @@ fn matmul_dynamic_scaled_fp8[
         input_scale_granularity == "block"
         and weight_scale_granularity == "block"
     ):
-        # 1D/2D (1x128)x(128x128) blockwise scaling
-        @parameter
-        if (
-            ctx.default_device_info is B200
-            and transpose_b
-            and c_type == DType.bfloat16
-            and m_scale_granularity == 1
-            and n_scale_granularity == k_scale_granularity == 128
-        ):
-            var a_tensor = from_ndbuffer_row_major(a)
-            var b_tensor = from_ndbuffer_row_major(b)
-            var c_tensor = from_ndbuffer_row_major(c)
-            var a_scales_tensor = from_ndbuffer_row_major(a_scales)
-            var b_scales_tensor = from_ndbuffer_row_major(b_scales)
+        var a_tensor = from_ndbuffer_row_major(a)
+        var b_tensor = from_ndbuffer_row_major(b)
+        var c_tensor = from_ndbuffer_row_major(c)
+        var a_scales_tensor = from_ndbuffer_row_major(a_scales)
+        var b_scales_tensor = from_ndbuffer_row_major(b_scales)
 
-            comptime BK = 128
-            comptime MMA_K = 32
-            comptime block_tile_shape = Index(64, 96, BK)
-            comptime umma_shape = Index(128, 192, MMA_K)
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime matmul_config = MatmulConfig[
-                a_type, b_type, c_type, transpose_b
-            ](
-                cluster_shape=Index(
-                    cluster_shape[0], cluster_shape[1], cluster_shape[2]
-                ),
-                mma_shape=umma_shape,
-                cta_group=2,
-            )
-            sm100_warp_specialized_blockwise_fp8[
-                transpose_b=transpose_b,
-                config=matmul_config,
-            ](
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                a_scales_tensor,
-                b_scales_tensor,
-                ctx,
-            )
+        blockwise_scaled_fp8_with_epilogue[
+            transpose_b=transpose_b,
+            scales_granularity_mnk = IndexList[3](
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
+            ),
+        ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
 
-        else:
-            naive_blockwise_scaled_fp8_matmul[
-                transpose_b=transpose_b,
-                scales_granularity_mnk = IndexList[3](
-                    m_scale_granularity,
-                    n_scale_granularity,
-                    k_scale_granularity,
-                ),
-            ](c, a, b, a_scales, b_scales, ctx)
     else:
         constrained[
             False,
@@ -1167,8 +1132,8 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 @always_inline
 fn convert_e4m3fn_to_e4m3fnuz(
-    input_buffer: NDBuffer[DType.float8_e4m3fn, 2, *_],
-    output_buffer: NDBuffer[mut=True, DType.float8_e4m3fnuz, 2, *_],
+    input_buffer: LayoutTensor[DType.float8_e4m3fn, **_],
+    output_buffer: LayoutTensor[mut=True, DType.float8_e4m3fnuz, **_],
     context: DeviceContext,
 ) raises:
     """Convert E4M3FN weights to E4M3FNUZ format for AMD GPU compatibility.
@@ -1182,7 +1147,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
         context: Device context for kernel execution.
     """
     constrained[
-        input_buffer.shape == output_buffer.shape,
+        input_buffer.layout.shape == output_buffer.layout.shape,
         "Input and output shapes must match",
     ]()
 
@@ -1214,3 +1179,153 @@ fn convert_e4m3fn_to_e4m3fnuz(
     _elementwise_impl_gpu[
         func=convert_kernel, simd_width = UInt(target_simd_width)
     ](IndexList[2](input_buffer.dim[0](), input_buffer.dim[1]()), context)
+
+
+########################################################
+# SM100 Blockwise Scaled FP8 + FP32 with normal epilogue kernel dispatch
+########################################################
+
+
+fn blockwise_scaled_fp8_with_epilogue[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType, //,
+    *,
+    scales_granularity_mnk: IndexList[3],
+    BLOCK_DIM: Int = 16,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    accum_type: DType = get_accum_type[c_type](),
+](
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
+    a_scales: LayoutTensor[
+        a_scales_type, address_space = AddressSpace.GENERIC, **_
+    ],
+    b_scales: LayoutTensor[
+        b_scales_type, address_space = AddressSpace.GENERIC, **_
+    ],
+    ctx: DeviceContext,
+) raises:
+    """Our sm100 blockwise scaled fp8 matmul kernel still does not support fusion of elementwise
+    operations. This is a temporary implementation that uses our sm100 blockwise scaled fp8 matmul
+    kernel and dispatch a separate epilogue kernel to apply the elementwise
+    operations. For non B200 GPUs, we use the naive blockwise scaled fp8 matmul which support normal epilogue natively.
+    """
+
+    # 1D/2D (1x128)x(128x128) blockwise scaling
+    @parameter
+    if (
+        ctx.default_device_info is B200
+        and transpose_b
+        and c_type == DType.bfloat16
+        and scales_granularity_mnk[0] == 1
+        and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
+    ):
+        comptime BK = 128
+        comptime MMA_K = 32
+        comptime block_tile_shape = Index(64, 96, BK)
+        comptime umma_shape = Index(128, 192, MMA_K)
+        comptime cluster_shape = Index(2, 1, 1)
+        comptime matmul_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            cluster_shape=Index(
+                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            ),
+            mma_shape=umma_shape,
+            cta_group=2,
+        )
+
+        @parameter
+        if not elementwise_lambda_fn:
+            if not c.ptr:
+                raise "c must be allocated!"
+
+            sm100_warp_specialized_blockwise_fp8[
+                transpose_b=transpose_b,
+                config=matmul_config,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                ctx,
+            )
+        else:
+            comptime epilogue = elementwise_lambda_fn.value()
+            # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
+            # arch support 32B load/store to global memory, see KERN-2037.
+            comptime use_32b_simd = (
+                has_nvidia_gpu_accelerator()
+                and ctx.default_device_info.compute >= B200.compute
+            )
+            comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
+                simd_width_of[c_type, target = get_gpu_target()]()
+            )
+
+            @parameter
+            @__copy_capture(c)
+            fn epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                var c_coord = Index(idx[0], idx[1])
+                var c_val = c.load[width=simd_width,](c_coord)
+                epilogue[c_type, simd_width, alignment=alignment](
+                    c_coord, c_val
+                )
+
+            # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
+            # apply the epilogue.
+            if c.ptr:
+                var m = c.dim[0]()
+                var n = c.dim[1]()
+
+                sm100_warp_specialized_blockwise_fp8[
+                    transpose_b=transpose_b,
+                    config=matmul_config,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    ctx,
+                )
+                elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                    Index(m, n), ctx
+                )
+                return
+
+            # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
+            var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c.size())
+            var c_tmp = c
+            c_tmp.ptr = tmp_device_buffer.unsafe_ptr()
+
+            blockwise_scaled_fp8_with_epilogue[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                scales_granularity_mnk=scales_granularity_mnk,
+            ](
+                c_tmp,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                ctx,
+            )
+
+            _ = tmp_device_buffer^
+
+    else:
+        # For non B200 GPUs, we use the naive blockwise scaled fp8 matmul which support normal epilogue natively.
+        naive_blockwise_scaled_fp8_matmul[
+            transpose_b=transpose_b,
+            scales_granularity_mnk=scales_granularity_mnk,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](c, a, b, a_scales, b_scales, ctx)
+        return

@@ -67,6 +67,7 @@ from utils.numerics import max_finite
 from utils import IndexList
 
 comptime INT_TUPLE_VALIDATION = False
+"""Flag to enable/disable validation for IntTuple operations."""
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:
@@ -279,6 +280,12 @@ struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
+    """The iterator type for IntTuple iteration.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     comptime Element = IntTuple
 
@@ -321,7 +328,6 @@ struct IntTuple(
     ImplicitlyCopyable,
     Intable,
     Iterable,
-    Movable,
     Sized,
     Stringable,
     Writable,
@@ -339,6 +345,12 @@ struct IntTuple(
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _IntTupleIter[ImmutOrigin.cast_from[iterable_origin]]
+    """The iterator type for IntTuple iteration.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     var _store: IntArray
     """The underlying storage for the `IntTuple`.
@@ -2246,7 +2258,7 @@ fn prefix_product(a: IntTuple, init: Int) -> IntTuple:
     if len(a) == 0:
         return IntTuple()
     # Short-circuit for single integer
-    if is_int(a) == 1:
+    if is_int(a):
         return init
 
     var init_tuple = IntTuple(init)
@@ -2448,7 +2460,7 @@ fn idx2crd2(
 
             return apply_zip[idx2crd2](idx, shape, stride)
         else:  # tuple "int" "int"
-            return abort[IntTuple]("Illegal inputs")  # Error
+            abort("Illegal inputs")  # Error
     else:
         if is_tuple(shape):  # "int" tuple tuple
 

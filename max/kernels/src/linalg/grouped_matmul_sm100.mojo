@@ -87,7 +87,7 @@ from .matmul.gpu.sm100.matmul import _blackwell_matmul_tma_umma_warp_specialized
 
 @fieldwise_init
 @register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable, Movable):
+struct WarpRole(ImplicitlyCopyable):
     var _role: Int32
 
     comptime Mma = Self(5)
@@ -199,7 +199,7 @@ fn load_AB[
     var a_gmem_slice_coord = (
         peer_cta_coord[2] * UInt(a_tma_rows)
         + work_tile_coord[0]
-        + expert_ids[Int(scheduler.current_group_idx)] * scheduler.M
+        + expert_ids[Int(scheduler.current_group_idx)] * scheduler.static_MN
     )
     var b_gmem_slice_coord = (
         peer_cta_coord[1] * UInt(b_tma_rows)
@@ -959,14 +959,16 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         transpose_b=transpose_b,
     ]()
 
+    b_offsets_tensor = from_ndbuffer_row_major(b_offsets)
     var scheduler = TileScheduler[
-        M=expert_m,
+        static_MN=expert_m,
         cluster = Index(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
         cta_group=cta_group,
         tile_shape = Index(
             block_tile_shape[0], block_tile_shape[1], block_tile_shape[2]
         ),
-    ](num_active_experts, b_offsets)
+        swapAB=transpose_c,
+    ](num_active_experts, b_offsets_tensor)
 
     var work_info = scheduler.fetch_next_work()
 
@@ -1128,9 +1130,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 zero_output[output_tile_shape=output_tile_shape](
                     c,
                     (UInt32(work_info.m), UInt32(work_info.n)),
-                    scheduler.group_offsets[
-                        Int(scheduler.current_group_idx + 1)
-                    ],
+                    rebind[Scalar[DType.uint32]](
+                        scheduler.group_offsets[
+                            Int(scheduler.current_group_idx + 1)
+                        ]
+                    ),
                 )
                 work_info = scheduler.fetch_next_work()
                 continue
@@ -1156,9 +1160,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 accum_empty_mbar,
                 tmem_addr,
                 work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
-                group_end_idx=scheduler.group_offsets[
-                    Int(scheduler.current_group_idx + 1)
-                ],
+                group_end_idx=rebind[Scalar[DType.uint32]](
+                    scheduler.group_offsets[
+                        Int(scheduler.current_group_idx + 1)
+                    ]
+                ),
                 elect_one_warp=elect_one_warp,
                 M=mnk[0],
                 N=mnk[1],

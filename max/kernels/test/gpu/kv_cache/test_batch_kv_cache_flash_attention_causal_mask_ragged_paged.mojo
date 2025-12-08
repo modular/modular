@@ -15,21 +15,19 @@ from collections import Set
 from math import ceildiv, rsqrt
 from random import random_ui64, seed
 
-from buffer import Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._fillers import random
 from memory import memcpy, memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
@@ -56,69 +54,168 @@ def execute_ragged_flash_attention[
         "expected valid_lengths and cache_lengths size to be equal",
     )
 
-    var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size + 1)
-    )
-    var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size)
-    )
-
+    # Compute dimensions
     var total_length = 0
     var max_full_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
-        input_row_offsets_host.tensor[i] = total_length
-        cache_lengths_host.tensor[i] = cache_lengths[i]
         max_full_context_length = max(
             max_full_context_length, cache_lengths[i] + valid_lengths[i]
         )
         max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
-    input_row_offsets_host.tensor[batch_size] = total_length
 
-    input_row_offsets_device = input_row_offsets_host.copy_to_device(ctx)
-    cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
+    # Define layouts
+    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
+    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
+    comptime q_ragged_layout = Layout.row_major(
+        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+    )
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+    )
+    comptime lookup_table_layout = Layout(UNKNOWN_VALUE)
+    comptime paged_lut_layout = Layout.row_major[2]()
+    comptime kv_block_6d_layout = Layout.row_major[6]()
 
-    q_ragged_host = HostNDBuffer[
-        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
-    random(q_ragged_host.tensor)
-    q_ragged_device = q_ragged_host.copy_to_device(ctx)
+    # Create shapes
+    var row_offsets_shape = IndexList[1](batch_size + 1)
+    var cache_lengths_shape = IndexList[1](batch_size)
+    var q_ragged_shape = IndexList[3](
+        total_length, num_q_heads, Int(kv_params.head_size)
+    )
+    var output_shape = IndexList[3](
+        total_length, num_q_heads, Int(kv_params.head_size)
+    )
 
-    # initialize reference output
-    test_output_host = HostNDBuffer[
-        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
-    test_output_device = test_output_host.copy_to_device(ctx)
-    ref_output_host = HostNDBuffer[
-        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
-    ref_output_device = ref_output_host.copy_to_device(ctx)
+    # Create runtime layouts
+    var row_offsets_runtime_layout = RuntimeLayout[
+        row_offsets_layout
+    ].row_major(row_offsets_shape)
+    var cache_lengths_runtime_layout = RuntimeLayout[
+        cache_lengths_layout
+    ].row_major(cache_lengths_shape)
+    var q_ragged_runtime_layout = RuntimeLayout[q_ragged_layout].row_major(
+        q_ragged_shape
+    )
+    var output_runtime_layout = RuntimeLayout[output_layout].row_major(
+        output_shape
+    )
+    var lookup_table_runtime_layout = RuntimeLayout[
+        lookup_table_layout
+    ].row_major(cache_lengths_shape)
+
+    # Create device buffers
+    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+        row_offsets_shape.flattened_length()
+    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        cache_lengths_shape.flattened_length()
+    )
+    var q_ragged_device = ctx.enqueue_create_buffer[dtype](
+        q_ragged_shape.flattened_length()
+    )
+    var test_output_device = ctx.enqueue_create_buffer[dtype](
+        output_shape.flattened_length()
+    )
+    var ref_output_device = ctx.enqueue_create_buffer[dtype](
+        output_shape.flattened_length()
+    )
+
+    # Host pointers for data that needs to persist for verification
+    var input_row_offsets_host_ptr = UnsafePointer[UInt32].alloc(
+        row_offsets_shape.flattened_length()
+    )
+    var test_output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        output_shape.flattened_length()
+    )
+    var ref_output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        output_shape.flattened_length()
+    )
+
+    # Initialize input_row_offsets and cache_lengths
+    var running_offset: UInt32 = 0
+    with cache_lengths_device.map_to_host() as cache_lengths_host_ptr:
+        for i in range(batch_size):
+            input_row_offsets_host_ptr[i] = running_offset
+            cache_lengths_host_ptr[i] = cache_lengths[i]
+            running_offset += valid_lengths[i]
+        input_row_offsets_host_ptr[batch_size] = running_offset
+    ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_host_ptr)
+
+    # Initialize q_ragged with random data
+    with q_ragged_device.map_to_host() as q_ragged_host_ptr:
+        var q_ragged_tensor = LayoutTensor[dtype, q_ragged_layout](
+            q_ragged_host_ptr, q_ragged_runtime_layout
+        )
+        random(q_ragged_tensor)
 
     var num_continuous_blocks = batch_size + 2
     var num_paged_blocks = (
         ceildiv(max_full_context_length, page_size) * batch_size
     )
 
-    # initialize our KVCache
-    kv_block_continuous_host = HostNDBuffer[dtype, 6](
-        IndexList[6](
-            num_continuous_blocks,
-            2,
-            num_layers,
-            max_full_context_length,
-            Int(kv_params.num_heads),
-            Int(kv_params.head_size),
-        ),
+    # KV block shapes
+    var kv_block_continuous_shape = IndexList[6](
+        num_continuous_blocks,
+        2,
+        num_layers,
+        max_full_context_length,
+        Int(kv_params.num_heads),
+        Int(kv_params.head_size),
+    )
+    var kv_block_paged_shape = IndexList[6](
+        num_paged_blocks,
+        2,
+        num_layers,
+        page_size,
+        Int(kv_params.num_heads),
+        Int(kv_params.head_size),
+    )
+    var paged_lut_shape = IndexList[2](
+        batch_size, ceildiv(max_full_context_length, page_size)
     )
 
-    random(kv_block_continuous_host.tensor)
-    kv_block_continuous_device = kv_block_continuous_host.copy_to_device(ctx)
-    var lookup_table_continuous_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size)
+    # KV block runtime layouts
+    var kv_block_continuous_runtime_layout = RuntimeLayout[
+        kv_block_6d_layout
+    ].row_major(kv_block_continuous_shape)
+    var kv_block_paged_runtime_layout = RuntimeLayout[
+        kv_block_6d_layout
+    ].row_major(kv_block_paged_shape)
+    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
+        paged_lut_shape
     )
 
-    # hacky way to select random blocks for continuous batching
+    # Host pointers for KV blocks (need to persist for memcpy operations)
+    var kv_block_continuous_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        kv_block_continuous_shape.flattened_length()
+    )
+    var kv_block_paged_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        kv_block_paged_shape.flattened_length()
+    )
+    var lookup_table_host_ptr = UnsafePointer[UInt32].alloc(batch_size)
+    var paged_lut_host_ptr = UnsafePointer[UInt32].alloc(
+        paged_lut_shape.flattened_length()
+    )
+
+    # Initialize kv_block_continuous with random data
+    var kv_block_continuous_tensor = LayoutTensor[dtype, kv_block_6d_layout](
+        kv_block_continuous_host_ptr, kv_block_continuous_runtime_layout
+    )
+    random(kv_block_continuous_tensor)
+
+    # Create device buffers for KV blocks
+    var kv_block_continuous_device = ctx.enqueue_create_buffer[dtype](
+        kv_block_continuous_shape.flattened_length()
+    )
+    ctx.enqueue_copy(kv_block_continuous_device, kv_block_continuous_host_ptr)
+
+    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+
+    # Hacky way to select random blocks for continuous batching
     var block_idx_set = Set[Int]()
     var idx = 0
     while idx < batch_size:
@@ -127,69 +224,43 @@ def execute_ragged_flash_attention[
             continue
 
         block_idx_set.add(randval)
-        lookup_table_continuous_host.tensor[idx] = UInt32(randval)
+        lookup_table_host_ptr[idx] = UInt32(randval)
         idx += 1
-    var lookup_table_device = lookup_table_continuous_host.copy_to_device(ctx)
+    ctx.enqueue_copy(lookup_table_device, lookup_table_host_ptr)
+
+    # Create LayoutTensors for KV collection
+    var kv_block_continuous_lt = LayoutTensor[
+        dtype, kv_block_6d_layout, MutAnyOrigin
+    ](kv_block_continuous_device, kv_block_continuous_runtime_layout)
+    var cache_lengths_lt = LayoutTensor[
+        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
+    ](cache_lengths_device, cache_lengths_runtime_layout)
+    var lookup_table_lt = LayoutTensor[
+        DType.uint32, lookup_table_layout, ImmutAnyOrigin
+    ](lookup_table_device, lookup_table_runtime_layout)
 
     kv_collection_continuous_device = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
     ](
-        LayoutTensor[
-            kv_block_continuous_device.dtype,
-            Layout.row_major[6](),
-            MutAnyOrigin,
-        ](
-            kv_block_continuous_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_continuous_device.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_continuous_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[
-            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[
-            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            lookup_table_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
-                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
+        kv_block_continuous_lt,
+        cache_lengths_lt,
+        lookup_table_lt,
         max_prompt_length,
         max_full_context_length,
     )
 
-    # num_paged_blocks = 1,
-    # num_layers = 2
-    # page_size = 512
-    # (total_blocks - 1) * self._stride() + Self.page_size
-    # Self.page_size
-    kv_block_paged_host = HostNDBuffer[dtype, 6](
-        IndexList[6](
-            num_paged_blocks,
-            2,
-            num_layers,
-            page_size,
-            Int(kv_params.num_heads),
-            Int(kv_params.head_size),
-        )
+    # Initialize paged KV cache by copying from continuous
+    var kv_block_paged_tensor = LayoutTensor[dtype, kv_block_6d_layout](
+        kv_block_paged_host_ptr, kv_block_paged_runtime_layout
+    )
+    var paged_lut_tensor = LayoutTensor[DType.uint32, paged_lut_layout](
+        paged_lut_host_ptr, paged_lut_runtime_layout
     )
 
-    paged_lut_host = HostNDBuffer[DType.uint32, 2](
-        IndexList[2](batch_size, ceildiv(max_full_context_length, page_size))
-    )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         seq_len = cache_lengths[bs] + valid_lengths[bs]
-        continuous_idx = Int(lookup_table_continuous_host.tensor[bs])
+        continuous_idx = Int(lookup_table_host_ptr[bs])
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
             var randval = Int(random_ui64(0, num_paged_blocks - 1))
@@ -197,123 +268,146 @@ def execute_ragged_flash_attention[
                 randval = Int(random_ui64(0, num_paged_blocks - 1))
 
             paged_lut_set.add(randval)
-            paged_lut_host.tensor[bs, block_idx] = randval
+            paged_lut_host_ptr[bs * paged_lut_shape[1] + block_idx] = randval
             block_sz = min(page_size, seq_len - block_idx * page_size)
 
             for kv_idx in range(2):
-                paged_ptr = kv_block_paged_host.tensor._offset(
-                    IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
+                # Calculate offsets manually for the 6D tensors
+                var paged_offset = (
+                    randval
+                    * kv_block_paged_shape[1]
+                    * kv_block_paged_shape[2]
+                    * kv_block_paged_shape[3]
+                    * kv_block_paged_shape[4]
+                    * kv_block_paged_shape[5]
+                    + kv_idx
+                    * kv_block_paged_shape[2]
+                    * kv_block_paged_shape[3]
+                    * kv_block_paged_shape[4]
+                    * kv_block_paged_shape[5]
+                    + layer_idx
+                    * kv_block_paged_shape[3]
+                    * kv_block_paged_shape[4]
+                    * kv_block_paged_shape[5]
                 )
-                n_cpy = block_sz * Int(
+                var continuous_offset = (
+                    continuous_idx
+                    * kv_block_continuous_shape[1]
+                    * kv_block_continuous_shape[2]
+                    * kv_block_continuous_shape[3]
+                    * kv_block_continuous_shape[4]
+                    * kv_block_continuous_shape[5]
+                    + kv_idx
+                    * kv_block_continuous_shape[2]
+                    * kv_block_continuous_shape[3]
+                    * kv_block_continuous_shape[4]
+                    * kv_block_continuous_shape[5]
+                    + layer_idx
+                    * kv_block_continuous_shape[3]
+                    * kv_block_continuous_shape[4]
+                    * kv_block_continuous_shape[5]
+                    + block_idx
+                    * page_size
+                    * kv_block_continuous_shape[4]
+                    * kv_block_continuous_shape[5]
+                )
+                var n_cpy = block_sz * Int(
                     kv_params.num_heads * kv_params.head_size
                 )
                 memcpy(
-                    dest=paged_ptr,
-                    src=kv_block_continuous_host.tensor._offset(
-                        IndexList[6](
-                            continuous_idx,
-                            kv_idx,
-                            layer_idx,
-                            block_idx * page_size,
-                            0,
-                            0,
-                        )
-                    ),
+                    dest=kv_block_paged_host_ptr + paged_offset,
+                    src=kv_block_continuous_host_ptr + continuous_offset,
                     count=n_cpy,
                 )
                 if block_sz < page_size:
                     memset_zero(
-                        paged_ptr + n_cpy,
+                        kv_block_paged_host_ptr + paged_offset + n_cpy,
                         (page_size - block_sz)
                         * Int(kv_params.num_heads * kv_params.head_size),
                     )
 
-    paged_lut_device = paged_lut_host.copy_to_device(ctx)
-    kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
+    # Create device buffers and copy paged data
+    var kv_block_paged_device = ctx.enqueue_create_buffer[dtype](
+        kv_block_paged_shape.flattened_length()
+    )
+    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+        paged_lut_shape.flattened_length()
+    )
+    ctx.enqueue_copy(kv_block_paged_device, kv_block_paged_host_ptr)
+    ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
+
+    # Create LayoutTensors for paged KV collection
+    var kv_block_paged_lt = LayoutTensor[
+        dtype, kv_block_6d_layout, MutAnyOrigin
+    ](kv_block_paged_device, kv_block_paged_runtime_layout)
+    var paged_lut_lt = LayoutTensor[
+        DType.uint32, paged_lut_layout, ImmutAnyOrigin
+    ](paged_lut_device, paged_lut_runtime_layout)
 
     kv_collection_paged_device = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        LayoutTensor[
-            kv_block_paged_device.dtype,
-            Layout.row_major[6](),
-            MutAnyOrigin,
-        ](
-            kv_block_paged_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[
-            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[
-            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
-        ](
-            paged_lut_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
-                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
+        kv_block_paged_lt,
+        cache_lengths_lt,
+        paged_lut_lt,
         max_prompt_length,
         max_full_context_length,
     )
 
+    # Create LayoutTensors for flash attention calls
+    var q_ragged_lt = LayoutTensor[dtype, q_ragged_layout, MutAnyOrigin](
+        q_ragged_device, q_ragged_runtime_layout
+    )
+    var ref_output_lt = LayoutTensor[dtype, output_layout, MutAnyOrigin](
+        ref_output_device, output_runtime_layout
+    )
+    var test_output_lt = LayoutTensor[dtype, output_layout, MutAnyOrigin](
+        test_output_device, output_runtime_layout
+    )
+    var input_row_offsets_lt = LayoutTensor[
+        DType.uint32, row_offsets_layout, MutAnyOrigin
+    ](input_row_offsets_device, row_offsets_runtime_layout)
+
     # continuous execution
     flash_attention[ragged=True](
-        ref_output_device.to_layout_tensor(),
-        q_ragged_device.to_layout_tensor(),
+        ref_output_lt,
+        q_ragged_lt,
         kv_collection_continuous_device.get_key_cache(layer_idx),
         kv_collection_continuous_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            input_row_offsets_device.tensor.data,
-            input_row_offsets_device.tensor.get_shape(),
-        ),
+        input_row_offsets_lt,
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
 
     # paged execution
     flash_attention[ragged=True](
-        test_output_device.to_layout_tensor(),
-        q_ragged_device.to_layout_tensor(),
+        test_output_lt,
+        q_ragged_lt,
         kv_collection_paged_device.get_key_cache(layer_idx),
         kv_collection_paged_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            input_row_offsets_device.tensor.data,
-            input_row_offsets_device.tensor.get_shape(),
-        ),
+        input_row_offsets_lt,
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
-    ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
-    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+    ctx.enqueue_copy(test_output_host_ptr, test_output_device)
+    ctx.enqueue_copy(ref_output_host_ptr, ref_output_device)
     ctx.synchronize()
 
-    ref_out = ref_output_host.tensor
-    test_out = test_output_host.tensor
+    # Create host tensors for verification
+    var ref_out = LayoutTensor[dtype, output_layout](
+        ref_output_host_ptr, output_runtime_layout
+    )
+    var test_out = LayoutTensor[dtype, output_layout](
+        test_output_host_ptr, output_runtime_layout
+    )
 
     for bs in range(batch_size):
         prompt_len = valid_lengths[bs]
-        ragged_offset = Int(input_row_offsets_host.tensor[bs])
+        ragged_offset = Int(input_row_offsets_host_ptr[bs])
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
@@ -338,29 +432,21 @@ def execute_ragged_flash_attention[
     # check reproducibility
     for repeat in range(16):
         flash_attention[ragged=True](
-            ref_output_device.to_layout_tensor(),
-            q_ragged_device.to_layout_tensor(),
+            ref_output_lt,
+            q_ragged_lt,
             kv_collection_paged_device.get_key_cache(layer_idx),
             kv_collection_paged_device.get_value_cache(layer_idx),
             CausalMask(),
             IdentityScoreMod(),
-            ManagedTensorSlice[
-                io_spec=IOUnknown,
-                static_spec = StaticTensorSpec[
-                    DType.uint32, 1
-                ].create_unknown(),
-            ](
-                input_row_offsets_device.tensor.data,
-                input_row_offsets_device.tensor.get_shape(),
-            ),
+            input_row_offsets_lt,
             rsqrt(Float32(kv_params.head_size)),
             ctx,
         )
-        ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+        ctx.enqueue_copy(ref_output_host_ptr, ref_output_device)
         ctx.synchronize()
         for bs in range(batch_size):
             prompt_len = valid_lengths[bs]
-            ragged_offset = Int(input_row_offsets_host.tensor[bs])
+            ragged_offset = Int(input_row_offsets_host_ptr[bs])
             for s in range(prompt_len):
                 for h in range(num_q_heads):
                     for d in range(kv_params.head_size):
@@ -371,22 +457,25 @@ def execute_ragged_flash_attention[
                         assert_equal(rep, orig)
                         ref_out[ragged_offset + s, h, Int(d)] = 123.4567
 
-    _ = q_ragged_host^
+    # Free host pointers
+    input_row_offsets_host_ptr.free()
+    test_output_host_ptr.free()
+    ref_output_host_ptr.free()
+    kv_block_continuous_host_ptr.free()
+    kv_block_paged_host_ptr.free()
+    lookup_table_host_ptr.free()
+    paged_lut_host_ptr.free()
+
+    # Free device buffers
     _ = q_ragged_device^
-    _ = kv_block_continuous_host^
     _ = kv_block_continuous_device^
-    _ = kv_block_paged_host^
     _ = kv_block_paged_device^
-    _ = lookup_table_continuous_host^
     _ = lookup_table_device^
     _ = ref_output_device^
-    _ = ref_output_host^
     _ = test_output_device^
-    _ = test_output_host^
-    _ = cache_lengths_host^
     _ = cache_lengths_device^
-    _ = paged_lut_host^
     _ = paged_lut_device^
+    _ = input_row_offsets_device^
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):

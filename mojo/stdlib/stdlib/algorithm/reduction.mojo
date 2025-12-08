@@ -398,7 +398,7 @@ fn _reduce_3D[
     fn get_unroll_factor[simd_width: Int, dtype_size: Int]() -> Int:
         comptime cache_line_size = 64
         comptime unroll_factor = cache_line_size // (simd_width * dtype_size)
-        constrained[unroll_factor > 0, "unroll_factor must be > 0"]()
+        __comptime_assert unroll_factor > 0, "unroll_factor must be > 0"
         return unroll_factor
 
     comptime unroll_factor = get_unroll_factor[
@@ -537,7 +537,7 @@ fn _reduce_generator[
         reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
-    constrained[is_valid_target[target](), "unsupported target"]()
+    __comptime_assert is_valid_target[target](), "unsupported target"
 
     for i in range(len(shape)):
         if shape[i] == 0:
@@ -810,7 +810,9 @@ fn _reduce_generator[
     fn reduce_fn_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](val: SIMD[dtype, width], acc: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        constrained[reduction_idx < num_reductions, "invalid reduction index"]()
+        __comptime_assert (
+            reduction_idx < num_reductions
+        ), "invalid reduction index"
         return reduce_function[dtype, width](val, acc)
 
     var init_wrapped = StaticTuple[Scalar[init.dtype], num_reductions](init)
@@ -1846,8 +1848,12 @@ fn mean[
     @parameter
     fn description_fn() -> String:
         return ";".join(
-            trace_arg("input", input_shape, dtype),
-            trace_arg("output", output_shape, dtype),
+            Span(
+                [
+                    trace_arg("input", input_shape, dtype),
+                    trace_arg("output", output_shape, dtype),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](

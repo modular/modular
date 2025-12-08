@@ -20,6 +20,7 @@ from layout._mixed_tuple import (
     MixedTuple,
     RuntimeInt,
     mixed_int_tuple_to_int_tuple,
+    mixed_tuple,
 )
 from testing import assert_equal, assert_true, TestSuite
 
@@ -55,6 +56,32 @@ fn test_list_literal_construction() raises:
 fn test_flatten_empty() raises:
     var t = MixedTuple[]()
     assert_true(t.flatten() == t)
+
+
+fn test_construction_from_int_variadic_empty() raises:
+    var t = mixed_tuple[]()
+    assert_equal(len(t), 0)
+
+
+fn test_construction_from_int_variadic() raises:
+    var t = mixed_tuple[1, 2, 3]()
+    assert_equal(len(t), 3)
+    assert_equal(t[0].value(), 1)
+    assert_equal(t[1].value(), 2)
+    assert_equal(t[2].value(), 3)
+
+
+fn test_construction_from_int_variadic_list() raises:
+    var t = mixed_tuple[DType.int32]((1, 2, 3))
+    assert_equal(len(t), 3)
+    assert_equal(t[0].value(), 1)
+    assert_equal(t[1].value(), 2)
+    assert_equal(t[2].value(), 3)
+
+
+fn test_static_product() raises:
+    comptime p = mixed_tuple[1, 2, 3]().STATIC_PRODUCT
+    assert_equal(p, 6)
 
 
 def main():

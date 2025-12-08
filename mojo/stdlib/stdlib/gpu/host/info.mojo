@@ -434,19 +434,16 @@ Add your architecture to the constraint list in the `_get_info_from_target`
 function:
 
 ```mojo
-constrained[
-    StaticString(target_arch)
+__comptime_assert StaticString(target_arch)
     in (
         # NVIDIA
         StaticString("cuda"),
         StaticString("52"),
         StaticString("90a"),  # Add your architecture here
         # ... rest of architectures ...
-    ),
-    "the target architecture '",
+    ), String("the target architecture '",
     target_arch0,
-    "' is invalid or not currently supported",
-]()
+    "' is invalid or not currently supported")
 ```
 
 Then add the mapping in the `@parameter` block:
@@ -575,6 +572,7 @@ comptime NvidiaMaxwellFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Maxwell architecture family (sm_50-sm_53)."""
 
 comptime NvidiaPascalFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -583,6 +581,7 @@ comptime NvidiaPascalFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Pascal architecture family (sm_60-sm_62)."""
 
 comptime NvidiaTuringFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -591,6 +590,7 @@ comptime NvidiaTuringFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=32 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Turing architecture family (sm_75)."""
 
 # Ampere architecture has three distinct variants based on compute capability:
 # - sm_80: High-end datacenter (A100)
@@ -604,6 +604,7 @@ comptime NvidiaAmpereDatacenterFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Ampere datacenter architecture family (sm_80)."""
 
 comptime NvidiaAmpereWorkstationFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -612,6 +613,7 @@ comptime NvidiaAmpereWorkstationFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Ampere workstation architecture family (sm_86)."""
 
 comptime NvidiaAmpereEmbeddedFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -620,6 +622,7 @@ comptime NvidiaAmpereEmbeddedFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Ampere embedded architecture family (sm_87)."""
 
 comptime NvidiaAdaFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -628,6 +631,7 @@ comptime NvidiaAdaFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Ada Lovelace architecture family (sm_89)."""
 
 comptime NvidiaHopperFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -636,6 +640,7 @@ comptime NvidiaHopperFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Hopper architecture family (sm_90)."""
 
 comptime NvidiaBlackwellFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -644,6 +649,7 @@ comptime NvidiaBlackwellFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Blackwell datacenter architecture family (sm_100)."""
 
 comptime NvidiaBlackwellConsumerFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -652,6 +658,7 @@ comptime NvidiaBlackwellConsumerFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""NVIDIA Blackwell consumer architecture family (sm_120)."""
 
 # AMD Architecture Families
 comptime AMDCDNA3Family = AcceleratorArchitectureFamily(
@@ -661,6 +668,7 @@ comptime AMDCDNA3Family = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""AMD CDNA3 architecture family (gfx94x)."""
 
 comptime AMDCDNA4Family = AcceleratorArchitectureFamily(
     warp_size=64,
@@ -669,6 +677,7 @@ comptime AMDCDNA4Family = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""AMD CDNA4 architecture family (gfx95x)."""
 
 comptime AMDRDNAFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -677,6 +686,7 @@ comptime AMDRDNAFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=32 * _K,
     max_thread_block_size=_K,
 )
+"""AMD RDNA architecture family."""
 
 # Apple Architecture Families
 comptime AppleMetalFamily = AcceleratorArchitectureFamily(
@@ -686,6 +696,7 @@ comptime AppleMetalFamily = AcceleratorArchitectureFamily(
     max_registers_per_block=64 * _K,
     max_thread_block_size=_K,
 )
+"""Apple Metal GPU architecture family."""
 
 # ===-----------------------------------------------------------------------===#
 # AcceleratorArchitectureFamily
@@ -851,6 +862,7 @@ comptime NoGPU = GPUInfo(
     max_registers_per_block=0,
     max_thread_block_size=0,
 )
+"""Placeholder for when no GPU is available."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -930,6 +942,7 @@ comptime MetalM1 = GPUInfo.from_family(
     version="metal_3",
     sm_count=8,  # M1 has 8 GPU cores
 )
+"""Apple M1 GPU configuration."""
 
 comptime MetalM2 = GPUInfo.from_family(
     family=AppleMetalFamily,
@@ -941,6 +954,7 @@ comptime MetalM2 = GPUInfo.from_family(
     version="metal_3",
     sm_count=10,  # M2 has 10 GPU cores
 )
+"""Apple M2 GPU configuration."""
 
 comptime MetalM3 = GPUInfo.from_family(
     family=AppleMetalFamily,
@@ -952,6 +966,7 @@ comptime MetalM3 = GPUInfo.from_family(
     version="metal_3",
     sm_count=10,  # M3 has 10 GPU cores
 )
+"""Apple M3 GPU configuration."""
 
 comptime MetalM4 = GPUInfo.from_family(
     family=AppleMetalFamily,
@@ -963,6 +978,7 @@ comptime MetalM4 = GPUInfo.from_family(
     version="metal_4",
     sm_count=10,  # M4 has 10 GPU cores
 )
+"""Apple M4 GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1006,6 +1022,7 @@ comptime A100 = GPUInfo.from_family(
     version="sm_80",
     sm_count=108,
 )
+"""NVIDIA A100 GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # A10
@@ -1040,6 +1057,7 @@ comptime A10 = GPUInfo.from_family(
     version="sm_86",
     sm_count=72,
 )
+"""NVIDIA A10 GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # Jetson Orin Nano
@@ -1074,6 +1092,7 @@ comptime OrinNano = GPUInfo.from_family(
     version="sm_87",
     sm_count=8,
 )
+"""NVIDIA Orin Nano GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # Jetson Thor
@@ -1109,6 +1128,7 @@ comptime JetsonThor = GPUInfo.from_family(
     version="sm_110",
     sm_count=20,
 )
+"""NVIDIA Jetson Thor GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # DGX Spark
@@ -1143,6 +1163,7 @@ comptime DGXSpark = GPUInfo.from_family(
     version="sm_121",
     sm_count=48,
 )
+"""NVIDIA DGX Spark GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # L4
@@ -1177,6 +1198,7 @@ comptime L4 = GPUInfo.from_family(
     version="sm_89",
     sm_count=58,
 )
+"""NVIDIA L4 GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # RTX 4090 M
@@ -1211,6 +1233,7 @@ comptime RTX4090m = GPUInfo.from_family(
     version="sm_89",
     sm_count=76,
 )
+"""NVIDIA RTX 4090 Mobile GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # RTX 4090
@@ -1245,6 +1268,7 @@ comptime RTX4090 = GPUInfo.from_family(
     version="sm_89",
     sm_count=128,
 )
+"""NVIDIA RTX 4090 GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1281,6 +1305,7 @@ comptime H100 = GPUInfo.from_family(
     version="sm_90a",
     sm_count=132,
 )
+"""NVIDIA H100 GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # B100
@@ -1317,6 +1342,7 @@ comptime B100 = GPUInfo.from_family(
     version="sm_100a",
     sm_count=132,
 )
+"""NVIDIA B100 GPU configuration."""
 
 comptime B200 = GPUInfo.from_family(
     family=NvidiaBlackwellFamily,
@@ -1328,6 +1354,7 @@ comptime B200 = GPUInfo.from_family(
     version="sm_100a",
     sm_count=148,
 )
+"""NVIDIA B200 GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # RTX5090
@@ -1363,6 +1390,7 @@ comptime RTX5090 = GPUInfo.from_family(
     version="sm_120a",
     sm_count=170,
 )
+"""NVIDIA RTX 5090 GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1399,6 +1427,7 @@ comptime RTX3090 = GPUInfo.from_family(
     version="sm_86",
     sm_count=82,
 )
+"""NVIDIA GeForce RTX 3090 GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1432,6 +1461,7 @@ comptime GTX1080Ti = GPUInfo.from_family(
     version="sm_61",
     sm_count=28,
 )
+"""NVIDIA GeForce GTX 1080 Ti GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1469,6 +1499,7 @@ comptime GTX1060 = GPUInfo.from_family(
     version="sm_61",
     sm_count=10,
 )
+"""NVIDIA GeForce GTX 1060 GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1502,6 +1533,7 @@ comptime GTX970 = GPUInfo.from_family(
     version="sm_52",
     sm_count=13,
 )
+"""NVIDIA GeForce GTX 970 GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1537,6 +1569,7 @@ comptime TeslaP100 = GPUInfo.from_family(
     version="sm_60",
     sm_count=56,
 )
+"""NVIDIA Tesla P100 GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1572,6 +1605,7 @@ comptime RTX2060 = GPUInfo.from_family(
     version="sm_75",
     sm_count=30,
 )
+"""NVIDIA RTX 2060 GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1606,6 +1640,7 @@ comptime MI300X = GPUInfo.from_family(
     version="CDNA3",
     sm_count=304,
 )
+"""AMD MI300X GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1640,6 +1675,7 @@ comptime MI355X = GPUInfo.from_family(
     version="CDNA4",
     sm_count=256,
 )
+"""AMD MI355X GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1827,6 +1863,7 @@ comptime Radeon9070 = GPUInfo.from_family(
     version="RDNA4",
     sm_count=64,
 )
+"""AMD Radeon 9070 GPU configuration."""
 
 comptime Radeon9060 = GPUInfo.from_family(
     family=AMDRDNAFamily,
@@ -1838,6 +1875,7 @@ comptime Radeon9060 = GPUInfo.from_family(
     version="RDNA4",
     sm_count=32,
 )
+"""AMD Radeon 9060 GPU configuration."""
 
 comptime Radeon7900 = GPUInfo.from_family(
     family=AMDRDNAFamily,
@@ -1849,6 +1887,7 @@ comptime Radeon7900 = GPUInfo.from_family(
     version="RDNA3",
     sm_count=96,
 )
+"""AMD Radeon 7900 GPU configuration."""
 
 comptime Radeon7800 = GPUInfo.from_family(
     family=AMDRDNAFamily,
@@ -1860,6 +1899,7 @@ comptime Radeon7800 = GPUInfo.from_family(
     version="RDNA3",
     sm_count=60,
 )
+"""AMD Radeon 7800/7700 GPU configuration."""
 
 comptime Radeon7600 = GPUInfo.from_family(
     family=AMDRDNAFamily,
@@ -1871,6 +1911,7 @@ comptime Radeon7600 = GPUInfo.from_family(
     version="RDNA3",
     sm_count=32,
 )
+"""AMD Radeon 7600 GPU configuration."""
 
 comptime Radeon6900 = GPUInfo.from_family(
     family=AMDRDNAFamily,
@@ -1882,6 +1923,7 @@ comptime Radeon6900 = GPUInfo.from_family(
     version="RDNA2",
     sm_count=60,
 )
+"""AMD Radeon 6900 GPU configuration."""
 
 
 comptime Radeon780m = GPUInfo.from_family(
@@ -1894,6 +1936,7 @@ comptime Radeon780m = GPUInfo.from_family(
     version="RDNA3",
     sm_count=12,
 )
+"""AMD Radeon 780M GPU configuration."""
 
 comptime Radeon880m = GPUInfo.from_family(
     family=AMDRDNAFamily,
@@ -1905,6 +1948,7 @@ comptime Radeon880m = GPUInfo.from_family(
     version="RDNA3.5",
     sm_count=12,
 )
+"""AMD Radeon 880M GPU configuration."""
 
 comptime Radeon8060s = GPUInfo.from_family(
     family=AMDRDNAFamily,
@@ -1916,6 +1960,7 @@ comptime Radeon8060s = GPUInfo.from_family(
     version="RDNA3.5",
     sm_count=40,
 )
+"""AMD Radeon 8060S GPU configuration."""
 
 comptime Radeon860m = GPUInfo.from_family(
     family=AMDRDNAFamily,
@@ -1927,6 +1972,7 @@ comptime Radeon860m = GPUInfo.from_family(
     version="RDNA3.5",
     sm_count=8,
 )
+"""AMD Radeon 860M GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2215,55 +2261,53 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         "nvidia:", ""
     ).replace("amdgpu:", "").replace("metal:", "apple-m")
 
-    constrained[
-        StaticString(target_arch)
-        in (
-            # NVIDIA
-            StaticString("cuda"),
-            StaticString("52"),
-            StaticString("60"),
-            StaticString("61"),
-            StaticString("75"),
-            StaticString("80"),
-            StaticString("86"),
-            StaticString("87"),
-            StaticString("89"),
-            StaticString("90"),
-            StaticString("90a"),
-            StaticString("100"),
-            StaticString("100a"),
-            StaticString("110"),
-            StaticString("110a"),
-            StaticString("120"),
-            StaticString("120a"),
-            StaticString("121"),
-            StaticString("121a"),
-            # AMD
-            StaticString("mi300x"),
-            StaticString("mi355x"),
-            StaticString("gfx942"),
-            StaticString("gfx950"),
-            StaticString("gfx1030"),
-            StaticString("gfx1100"),
-            StaticString("gfx1101"),
-            StaticString("gfx1102"),
-            StaticString("gfx1103"),
-            StaticString("gfx1150"),
-            StaticString("gfx1151"),
-            StaticString("gfx1152"),
-            StaticString("gfx1200"),
-            StaticString("gfx1201"),
-            # Apple
-            StaticString("apple-m1"),
-            StaticString("apple-m2"),
-            StaticString("apple-m3"),
-            StaticString("apple-m4"),
-        ),
+    __comptime_assert StaticString(target_arch) in (
+        # NVIDIA
+        StaticString("cuda"),
+        StaticString("52"),
+        StaticString("60"),
+        StaticString("61"),
+        StaticString("75"),
+        StaticString("80"),
+        StaticString("86"),
+        StaticString("87"),
+        StaticString("89"),
+        StaticString("90"),
+        StaticString("90a"),
+        StaticString("100"),
+        StaticString("100a"),
+        StaticString("110"),
+        StaticString("110a"),
+        StaticString("120"),
+        StaticString("120a"),
+        StaticString("121"),
+        StaticString("121a"),
+        # AMD
+        StaticString("mi300x"),
+        StaticString("mi355x"),
+        StaticString("gfx942"),
+        StaticString("gfx950"),
+        StaticString("gfx1030"),
+        StaticString("gfx1100"),
+        StaticString("gfx1101"),
+        StaticString("gfx1102"),
+        StaticString("gfx1103"),
+        StaticString("gfx1150"),
+        StaticString("gfx1151"),
+        StaticString("gfx1152"),
+        StaticString("gfx1200"),
+        StaticString("gfx1201"),
+        # Apple
+        StaticString("apple-m1"),
+        StaticString("apple-m2"),
+        StaticString("apple-m3"),
+        StaticString("apple-m4"),
+    ), String(
         "the target architecture '",
         # Note: Print the full architecture name, not the trimmed string name.
         target_arch0,
         "' is invalid or not currently supported",
-    ]()
+    )
 
     @parameter
     if target_arch == "52":

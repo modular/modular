@@ -700,7 +700,7 @@ fn _matmul_gpu[
                                     key, a_type, b_type, c_type, transpose_b
                                 ]()
                                 if curr_config.num_pipeline_stages == 0:
-                                    raise "no match for the triple"
+                                    raise Error("no match for the triple")
                                 return _multistage_gemm[curr_config]()
                         raise "no match for the triple"
                     except:
@@ -1011,7 +1011,7 @@ fn multistage_gemm[
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    config.shared_mem_usage()
+                    runtime_config.shared_mem_usage()
                 ),
             )
 

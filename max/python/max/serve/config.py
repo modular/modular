@@ -21,7 +21,6 @@ import logging
 from enum import Enum, IntEnum
 from pathlib import Path
 
-from max.serve.kvcache_agent.dispatcher_factory import DispatcherConfig
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import Field, field_validator
@@ -241,10 +240,13 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_KV_CACHE_EVENTS_ZMQ_ENDPOINT",
     )
 
-    dispatcher_config: DispatcherConfig = Field(
-        default_factory=DispatcherConfig,
-        description="Expose Dispatcher Config for use in inter-node communication.",
-        alias="MAX_SERVE_DISPATCHER_CONFIG",
+    di_bind_address: str = Field(
+        default="tcp://127.0.0.1:5555",
+        description=(
+            "Bind address for the disaggregated inference dispatcher. "
+            "This address is used for communication between the decode and prefill workers."
+        ),
+        alias="MAX_SERVE_DI_BIND_ADDRESS",
     )
 
     log_prefix: str | None = Field(

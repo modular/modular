@@ -55,7 +55,9 @@ struct Buffer[capacity: Int](Defaultable, Writer):
             args[i].write_to(self)
 
 
-fn check_float[dtype: DType, //, expected: StaticString](f8: Scalar[dtype]):
+fn check_float[
+    dtype: DType, //, expected: StaticString
+](f8: Scalar[dtype]) where dtype.is_floating_point():
     var f8_str = Buffer[len(expected)]()
     _write_float(f8_str, f8)
     var res = memcmp(

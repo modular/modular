@@ -23,17 +23,11 @@ from typing import TYPE_CHECKING, Any, Generic
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph.weights import (
-    Weights,
-    WeightsAdapter,
-)
-from max.interfaces import (
-    BaseContextType,
-    LogProbabilities,
-)
+from max.graph.weights import Weights, WeightsAdapter
+from max.interfaces import BaseContextType, LogProbabilities
 from max.kv_cache import infer_optimal_batch_size
 from max.nn.kv_cache import KVCacheInputs
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
@@ -93,6 +87,9 @@ class ModelOutputs:
 
     logit_offsets: Tensor | None = None
     """Offsets to access variable length logits for each sequence."""
+
+    hidden_states: Tensor | None = None
+    """Hidden states for a variable number of tokens per sequence."""
 
 
 class ModelInputs:
@@ -160,6 +157,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         weights: Weights,
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
@@ -169,6 +167,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self.weights = weights
         self.adapter = adapter
         self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states
 
         # Initialize `max_seq_len` here to avoid repeated HF config access.
         self.max_seq_len = self.calculate_max_seq_len(
@@ -185,6 +184,9 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 pipeline_config.lora_config,
                 pipeline_config.model_config.model_name,
                 self.dtype,
+                huggingface_config.num_attention_heads,
+                huggingface_config.num_key_value_heads,
+                huggingface_config.head_dim,
                 pipeline_config.zmq_endpoint_base,
             )
             if pipeline_config.lora_config
@@ -382,7 +384,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     @abstractmethod
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[BaseContextType],
+        replica_batches: Sequence[Sequence[BaseContextType]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:

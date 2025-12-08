@@ -1,10 +1,14 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "pkg_files", "requirement")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_binary(
     name = "kbench",
     srcs = [
         "__init__.py",
+        "bencher_utils.py",
         "kbench.py",
+        "kbench_model.py",
         "utils.py",
     ],
     data = [
@@ -114,7 +118,9 @@ modular_py_test(
     srcs = glob(["tests/*.py"]),
     data = glob(["tests/*.csv"]) + [
         "sample.mojo",
+        "sample.py",
         "test.yaml",
+        "test_python.yaml",
     ],
     env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"},
     mojo_deps = [
@@ -127,6 +133,11 @@ modular_py_test(
         "//max:register",
         "@mojo//:stdlib",
     ],
+    target_compatible_with = select({
+        # FIXME
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":kbench",
         ":kplot",
@@ -144,5 +155,4 @@ pkg_files(
         "utils.py",
     ],
     prefix = "kernel-benchmark/autotune",
-    visibility = ["//visibility:public"],
 )

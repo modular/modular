@@ -45,7 +45,7 @@ comptime elementwise_simd_epilogue_type = fn[
 
 @fieldwise_init
 @register_passable("trivial")
-struct ConvShape[rank: Int](ImplicitlyCopyable, Movable):
+struct ConvShape[rank: Int](ImplicitlyCopyable):
     """A shape struct describing the convolution dimensions."""
 
     var n: Int  # Input batch size.
@@ -660,7 +660,7 @@ fn get_micro_kernel_shape[
 
 @fieldwise_init
 @register_passable("trivial")
-struct ConvPartition(ImplicitlyCopyable, Movable):
+struct ConvPartition(ImplicitlyCopyable):
     """Work range for a partition."""
 
     # Batch and group dims are merged into one.
@@ -855,7 +855,7 @@ fn get_partition(
 
 @fieldwise_init
 @register_passable("trivial")
-struct ConvAlgorithm(ImplicitlyCopyable, Movable):
+struct ConvAlgorithm(ImplicitlyCopyable):
     var value: Int
     comptime Default = ConvAlgorithm(0)  # statically unknown layout.
     comptime Im2Col = ConvAlgorithm(1)  # channels first layout.

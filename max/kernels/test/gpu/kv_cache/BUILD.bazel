@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _GPU_MEMORY = {
     "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": "8",
 }

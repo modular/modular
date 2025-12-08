@@ -14,7 +14,6 @@
 from math import cos, sin
 
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, TestSuite
 
 
@@ -31,7 +30,9 @@ fn run_func[
     var out = ctx.enqueue_create_buffer[dtype](1)
 
     @parameter
-    fn kernel(out_dev: UnsafePointer[Scalar[dtype]], lhs: Scalar[dtype]):
+    fn kernel(
+        out_dev: UnsafePointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
+    ):
         var result = kernel_fn(lhs)
         out_dev[0] = result
 

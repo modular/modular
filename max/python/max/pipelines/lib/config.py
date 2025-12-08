@@ -864,7 +864,10 @@ class PipelineConfig(MAXConfig):
         arch.pipeline_model.finalize_pipeline_config(self)
 
         MemoryEstimator.estimate_memory_footprint(
-            self, arch.pipeline_model, model_config, devices
+            self,
+            arch.pipeline_model,
+            model_config,
+            devices,
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
@@ -877,6 +880,18 @@ class PipelineConfig(MAXConfig):
                     f"Clamping max_length from {self.max_length} to {clamped_max_seq_len} due to capacity of KV Cache"
                 )
                 self.max_length = clamped_max_seq_len
+
+        # Validate whether the architecture requires a max batch context length to be specified.
+        # This needs to be done after max_length is resolved.
+        if (
+            arch.requires_max_batch_context_length
+            and self.max_batch_context_length is None
+        ):
+            logger.warning(
+                f"Architecture '{arch.name}' requires max-batch-context-length to be specified but found None. "
+                f"Defaulting to the max sequence length of the model: {self.max_length}"
+            )
+            self.max_batch_context_length = self.max_length
 
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""

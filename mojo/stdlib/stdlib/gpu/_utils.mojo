@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from utils import StaticTuple
 
 

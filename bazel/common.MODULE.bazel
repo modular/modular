@@ -29,8 +29,12 @@ bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 # TODO: Remove when transitives bump to this version or above
+bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
+bazel_dep(name = "rules_apple", version = "3.22.0")
 bazel_dep(name = "rules_foreign_cc", version = "0.13.0")  # NOTE: Avoid direct usage
 bazel_dep(name = "rules_nodejs", version = "6.5.0")
+bazel_dep(name = "rules_swift", version = "2.8.2")
+bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 
 single_version_override(
     module_name = "abseil-cpp",
@@ -54,9 +58,8 @@ single_version_override(
     patches = [
         # https://github.com/bazelbuild/bazel/pull/26925
         "//bazel/public-patches:rules_cc_dsym_feature.patch",
-        # https://github.com/bazelbuild/rules_cc/pull/527
-        "//bazel/public-patches:rules_cc_textual_hdrs.patch",
     ],
+    version = "0.2.8",
 )
 
 single_version_override(
@@ -118,6 +121,15 @@ single_version_override(
     patches = [
         # https://github.com/aspect-build/rules_js/pull/2330
         "//bazel/public-patches:aspect_rules_js_toolchains.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_swift",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazelbuild/rules_swift/pull/1535
+        "//bazel/public-patches:rules_swift.patch",
     ],
 )
 

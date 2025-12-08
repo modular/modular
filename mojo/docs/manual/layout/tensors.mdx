@@ -180,9 +180,9 @@ memory to store the tensor data. A common way to allocate memory for a
 [`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray/):
 
 ```mojo
-alias rows = 8
-alias columns = 16
-alias layout = Layout.row_major(rows, columns)
+comptime rows = 8
+comptime columns = 16
+comptime layout = Layout.row_major(rows, columns)
 var storage = InlineArray[Float32, rows * columns](uninitialized=True)
 var tensor = LayoutTensor[DType.float32, layout](storage).fill(0)
 ```
@@ -196,10 +196,10 @@ preferable for very large tensors.
 
 
 ```mojo
-alias rows = 1024
-alias columns = 1024
-alias buf_size = rows * columns
-alias layout = Layout.row_major(rows, columns)
+comptime rows = 1024
+comptime columns = 1024
+comptime buf_size = rows * columns
+comptime layout = Layout.row_major(rows, columns)
 var ptr = alloc[Float32](buf_size)
 memset(ptr, 0, buf_size)
 var tensor = LayoutTensor[DType.float32, layout](ptr)
@@ -247,14 +247,14 @@ initializing a `LayoutTensor` from the CPU and passing it to a GPU kernel.
 
 ```mojo
 def initialize_tensor_from_cpu_example():
-    alias dtype = DType.float32
-    alias rows = 32
-    alias cols = 8
-    alias block_size = 8
-    alias row_blocks = rows // block_size
-    alias col_blocks = cols // block_size
-    alias input_layout = Layout.row_major(rows, cols)
-    alias size: Int = rows * cols
+    comptime dtype = DType.float32
+    comptime rows = 32
+    comptime cols = 8
+    comptime block_size = 8
+    comptime row_blocks = rows // block_size
+    comptime col_blocks = cols // block_size
+    comptime input_layout = Layout.row_major(rows, cols)
+    comptime size: Int = rows * cols
 
 
     fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
@@ -310,7 +310,7 @@ is to copy a small tile of a larger tensor into shared memory or local memory to
 reduce memory access time.
 
 ```mojo
-alias tile_layout = Layout.row_major(16, 16)
+comptime tile_layout = Layout.row_major(16, 16)
 
 var shared_tile = LayoutTensor[
     dtype,
@@ -370,12 +370,12 @@ The
 method extracts a tile with a given size at a given set of coordinates:
 
 ```mojo
-alias rows = 2
-alias columns = 4
-alias tile_size = 32
-alias tile_layout = Layout.row_major(tile_size, tile_size)
-alias tiler_layout = Layout.row_major(rows, columns)
-alias tiled_layout = blocked_product(tile_layout, tiler_layout)
+comptime rows = 2
+comptime columns = 4
+comptime tile_size = 32
+comptime tile_layout = Layout.row_major(tile_size, tile_size)
+comptime tiler_layout = Layout.row_major(rows, columns)
+comptime tiled_layout = blocked_product(tile_layout, tiler_layout)
 var storage = InlineArray[Float32, tiled_layout.size()](uninitialized=True)
 for i in range(tiled_layout.size()):
     storage[i] = i
@@ -414,7 +414,7 @@ usually results in an error.
 :::
 
 If you need to know the type of the tile (to declare a variable, for example),
-you can use the `TileType` alias, with the same tile size parameters.
+you can use the `TileType` type alias, with the same tile size parameters.
 
 ```mojo
 var my_tile: tensor.TileType[tile_size, tile_size]
@@ -442,11 +442,11 @@ memory one tile at a time. This essentially treats the memory as a flat array of
 tiles.
 
 ```mojo
-alias buf_size = 128
+comptime buf_size = 128
 var storage = InlineArray[Int16, buf_size](uninitialized=True)
 for i in range(buf_size):
     storage[i] = i
-alias tile_layout = Layout.row_major(4, 4)
+comptime tile_layout = Layout.row_major(4, 4)
 var iter = LayoutTensorIter[
     DType.int16,
     tile_layout,
@@ -492,8 +492,8 @@ method, which produces a `LayoutTensorIter`:
 
 ```mojo
 # given a tensor of size rows x cols
-alias num_row_tiles = ceildiv(rows, tile_size)
-alias num_col_tiles = ceildiv(cols, tile_size)
+comptime num_row_tiles = ceildiv(rows, tile_size)
+comptime num_col_tiles = ceildiv(cols, tile_size)
 
 for i in range(num_row_tiles):
     var iter = tensor.tiled_iterator[tile_size, tile_size, axis=1](i, 0)
@@ -571,7 +571,7 @@ For example, the following code vectorizes and partitions a tensor over a full
 warp worth of threads:
 
 ```mojo
-alias thread_layout = Layout.row_major(WARP_SIZE // simd_size, simd_size)
+comptime thread_layout = Layout.row_major(WARP_SIZE // simd_size, simd_size)
 var fragment = tile.vectorize[1, simd_size]().distribute[thread_layout](lane_id())
 ```
 
@@ -606,21 +606,21 @@ and from shared memory.
 
 ```mojo
 fn copy_from_async_example():
-    alias dtype = DType.float32
-    alias rows = 128
-    alias cols = 128
-    alias block_size = 16
-    alias num_row_blocks = rows // block_size
-    alias num_col_blocks = cols // block_size
-    alias input_layout = Layout.row_major(rows, cols)
-    alias simd_width = 4
+    comptime dtype = DType.float32
+    comptime rows = 128
+    comptime cols = 128
+    comptime block_size = 16
+    comptime num_row_blocks = rows // block_size
+    comptime num_col_blocks = cols // block_size
+    comptime input_layout = Layout.row_major(rows, cols)
+    comptime simd_width = 4
 
     fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
             Int(block_idx.y), Int(block_idx.x)
         )
-        alias tile_layout = Layout.row_major(block_size, block_size)
+        comptime tile_layout = Layout.row_major(block_size, block_size)
         var shared_tile = LayoutTensor[
             dtype,
             tile_layout,
@@ -629,7 +629,7 @@ fn copy_from_async_example():
         ].stack_allocation()
 
         # Create thread layouts for copying
-        alias thread_layout = Layout.row_major(
+        comptime thread_layout = Layout.row_major(
             WARP_SIZE // simd_width, simd_width
         )
         var global_fragment = global_tile.vectorize[

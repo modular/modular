@@ -29,10 +29,6 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from sys import size_of
 
 from utils import StaticTuple
@@ -357,7 +353,7 @@ struct AccessProperty(Identifiable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttribute(Defaultable, ImplicitlyCopyable, Movable):
+struct LaunchAttribute(Defaultable, ImplicitlyCopyable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
@@ -439,7 +435,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
         The CUDA driver may align the `base_ptr` and restrict the maximum size.
     """
 
-    var base_ptr: OpaquePointer
+    var base_ptr: OpaquePointer[MutAnyOrigin]
     """Starting address of the access policy window. Driver may align it."""
 
     var num_bytes: Int
@@ -459,7 +455,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
 
     fn __init__(out self):
         """Initializes a new AccessPolicyWindow with default values."""
-        self.base_ptr = OpaquePointer()
+        self.base_ptr = {}
         self.num_bytes = 0
         self.hit_ratio = 0
         self.hit_prop = AccessProperty.NORMAL
@@ -470,7 +466,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
     ](
         out self,
         *,
-        base_ptr: UnsafePointer[T, **_],
+        base_ptr: UnsafePointer[T, *_, **_],
         count: Int,
         hit_ratio: Float32,
         hit_prop: AccessProperty = AccessProperty.NORMAL,

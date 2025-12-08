@@ -28,6 +28,7 @@ from max.nn import (
     Llama3RotaryEmbedding,
     LongRoPERotaryEmbedding,
     LongRoPEScalingParams,
+    ReturnHiddenStates,
     ReturnLogits,
     RotaryEmbedding,
 )
@@ -128,6 +129,7 @@ class Llama3ConfigBase(MAXModelConfigBase):
     dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -181,13 +183,17 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         cache_dtype: DType,
         data_parallel_degree: int = 1,
     ) -> KVCacheParams:
+        if hasattr(huggingface_config, "head_dim"):
+            head_dim = huggingface_config.head_dim
+        else:
+            head_dim = (
+                huggingface_config.hidden_size
+                // huggingface_config.num_attention_heads
+            )
         return KVCacheParams(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=(
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            ),
+            head_dim=head_dim,
             num_layers=Llama3Config.get_num_layers(huggingface_config),
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
@@ -234,6 +240,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
         attention_bias: bool = False,
         data_parallel_degree: int = 1,
@@ -389,6 +396,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             model_quantization_encoding=pipeline_config.model_config.graph_quantization_encoding,
             quantization_config=pipeline_config.model_config._quant_config,
             return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),

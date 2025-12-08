@@ -90,15 +90,20 @@ from gpu.host._nvidia_cuda import CUDA
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from runtime.tracing import Trace, TraceLevel
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-)
 from buffer import DimList, NDBuffer
 from utils import IndexList
 from utils.variant import Variant
 from gpu.host.info import B200
 from collections import OptionalReg, Optional
+from linalg.fp4_utils import (
+    SF_ATOM_M,
+    SF_ATOM_K,
+    SF_MN_GROUP_SIZE,
+    MXFP8_SF_VECTOR_SIZE,
+    MXFP8_SF_DTYPE,
+    NVFP4_SF_VECTOR_SIZE,
+    NVFP4_SF_DTYPE,
+)
 
 # ===----------------------------------------------------------------------===#
 # Backend
@@ -106,7 +111,7 @@ from collections import OptionalReg, Optional
 
 
 @register_passable("trivial")
-struct Backend(Equatable, ImplicitlyCopyable, Movable, Writable):
+struct Backend(Equatable, ImplicitlyCopyable, Writable):
     var _value: Int32
 
     comptime AUTOMATIC = Self(0)
@@ -154,9 +159,14 @@ fn _resolve_backend[
     @parameter
     if backend is not Backend.AUTOMATIC:
         return backend
+    # TODO: Remove this once we have a proper hipBLASLt backend for float32.
+    elif dtype is DType.float32 and has_amd_gpu_accelerator():
+        return Backend.ROCBLAS
     elif has_amd_gpu_accelerator():
         return Backend.HIPBLASLT
-    elif dtype.is_float8():
+    # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+    # Replace this with float4-e2m1fn when GENAI-337 is fixed.
+    elif dtype.is_float8() or dtype is DType.uint8:
         return Backend.CUBLASLT
     return Backend.CUBLAS
 
@@ -167,7 +177,7 @@ fn _resolve_backend[
 
 
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
-    ImplicitlyCopyable, Movable
+    ImplicitlyCopyable
 ):
     comptime resolved_backend = _resolve_backend[Self.backend]()
     comptime _cublas_type = UnsafePointer[cublasContext]
@@ -650,7 +660,7 @@ fn _cublas_matmul[
                 K if transpose_b else N,
                 UnsafePointer(a.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[a_type](),
-                K,
+                M if transpose_a else K,
                 UnsafePointer(to=beta).bitcast[NoneType](),
                 UnsafePointer(c.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[c_type](),
@@ -877,11 +887,15 @@ fn _cublasLt_matmul[
                 DType.float8_e5m2,
                 DType.bfloat16,
                 DType.float16,
+                # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+                # Replace this with float4-e2m1fn when GENAI-337 is fixed.
+                DType.uint8,
             )
         ),
         (
-            "Only E4M3, E5M2, bfloat16, and float16 input data types are"
-            " supported. Please extend it if you need more data types."
+            "Only E4M3, E5M2, bfloat16, float16, and E2M1x2 (UInt8) input data"
+            " types are supported. Please extend it if you need more data"
+            " types."
         ),
     ]()
 
@@ -969,39 +983,76 @@ fn _cublasLt_matmul[
         if a_scales or b_scales:
             if not (a_scales and b_scales):
                 raise Error("a_scales and b_scales must be provided together")
-            if scales_type != DType.float8_e8m0fnu:
-                raise Error("Only float8_e8m0fnu scaling is supported for B200")
-            if not (a_type == b_type and a_type == DType.float8_e4m3fn):
-                raise Error("Only E4M3 is supported for block scaled matmul")
-
             a_scale_tensor = a_scales.value()
             b_scale_tensor = b_scales.value()
 
-            if a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5:
-                raise Error("Invalid A/B scales dimensions.")
+            comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE if scales_type == NVFP4_SF_DTYPE else MXFP8_SF_VECTOR_SIZE
 
-            comptime SF_VECTOR_SIZE = 32
-            comptime atom_m = (32, 4)
-            comptime atom_k = 4
-            var sf_k = ceildiv(K, SF_VECTOR_SIZE)
+            if scales_type not in (MXFP8_SF_DTYPE, NVFP4_SF_DTYPE):
+                raise Error(
+                    "Only float8_e8m0fnu(scaling type: MXFP8) and"
+                    " float8_e4m3fn(scaling type: MXFP4) are supported for B200"
+                )
+            if not (
+                a_type == b_type
+                and (
+                    (
+                        a_type is DType.float8_e4m3fn
+                        and scales_type is MXFP8_SF_DTYPE
+                    )
+                    or (a_type is DType.uint8 and scales_type is NVFP4_SF_DTYPE)
+                )
+            ):
+                raise Error(
+                    "Only E4M3 input with MXFP8 scales or E2M1x2(i.e,"
+                    " UINT8) input with NVFP4 scales are supported for block"
+                    " scaled matmul"
+                )
+
+            # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+            # We need to double the K dimension as we are allocating for uint8 input data type.
+            # Remove this when GENAI-337 is fixed.
+            if a_type is DType.uint8 and scales_type is NVFP4_SF_DTYPE:
+                K = K * 2
+
+            if not (
+                (a_type is DType.uint8 and K % 32 == 0)
+                or (a_type is DType.float8_e4m3fn and K % 16 == 0)
+            ):
+                raise Error(
+                    "Due to TMA 16B alignment requirement, K must be divisible"
+                    " by 16/32 for MXFP8/NVFP4 input data type, respectively"
+                )
+
+            if a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5:
+                raise Error(
+                    "Invalid A/B scales dimensions. Expected 5D tensors."
+                )
 
             if (
-                a_scale_tensor.dim(0) != ceildiv(M, atom_m[0] * atom_m[1])
-                or a_scale_tensor.dim(1) != ceildiv(sf_k, atom_k)
-                or b_scale_tensor.dim(0) != ceildiv(N, atom_m[0] * atom_m[1])
-                or b_scale_tensor.dim(1) != ceildiv(sf_k, atom_k)
-                or a_scale_tensor.dim(2) != b_scale_tensor.dim(2) != atom_m[0]
-                or a_scale_tensor.dim(3) != b_scale_tensor.dim(3) != atom_m[1]
-                or a_scale_tensor.dim(4) != b_scale_tensor.dim(4) != atom_k
+                a_scale_tensor.dim(0) != ceildiv(M, SF_MN_GROUP_SIZE)
+                or a_scale_tensor.dim(1)
+                != ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
+                or b_scale_tensor.dim(0) != ceildiv(N, SF_MN_GROUP_SIZE)
+                or b_scale_tensor.dim(1)
+                != ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
+                or a_scale_tensor.dim(2)
+                != b_scale_tensor.dim(2)
+                != SF_ATOM_M[0]
+                or a_scale_tensor.dim(3)
+                != b_scale_tensor.dim(3)
+                != SF_ATOM_M[1]
+                or a_scale_tensor.dim(4) != b_scale_tensor.dim(4) != SF_ATOM_K
             ):
                 raise Error("Invalid A/B scales dimensions.")
 
             var a_scale_mode: cublasLtMatmulMatrixScale_t
             var b_scale_mode: cublasLtMatmulMatrixScale_t
 
-            a_scale_mode = (
-                b_scale_mode
-            ) = cublasLtMatmulMatrixScale_t.MATRIX_SCALE_VEC32_UE8M0
+            a_scale_mode = b_scale_mode = (
+                cublasLtMatmulMatrixScale_t.MATRIX_SCALE_VEC16_UE4M3 if scales_type
+                == NVFP4_SF_DTYPE else cublasLtMatmulMatrixScale_t.MATRIX_SCALE_VEC32_UE8M0
+            )
 
             var a_scale_ptr = b_scale_tensor.ptr.bitcast[
                 NoneType

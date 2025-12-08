@@ -32,7 +32,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Movable, Stringable, Writable):
+](Copyable, Equatable, Hashable, Stringable, Writable):
     """Static configuration of GPU matmul."""
 
     # Mandatory parameters

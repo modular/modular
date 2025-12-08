@@ -1813,6 +1813,8 @@ class FnEffects(enum.Enum):
 
     register_passable = 128
 
+    extern = 256
+
 class InlineLevel(enum.Enum):
     automatic = 0
 
@@ -3814,7 +3816,16 @@ class UnreachableOp(max._core.Operation):
     """
 
     def __init__(
-        self, builder: max._core.OpBuilder, location: Location
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        is_after_unreachable_call: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def is_after_unreachable_call(self) -> bool: ...
+    @is_after_unreachable_call.setter
+    def is_after_unreachable_call(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
 class VariantCreateOp(max._core.Operation):
@@ -4191,6 +4202,17 @@ class GeneratorType(max._core.Type):
     def body(self) -> max._core.Type | None: ...
     @property
     def metadata(self) -> GeneratorMetadataAttrInterface: ...
+
+class NeverType(max._core.Type):
+    """
+    A `!kgen.never` type represents a type that cannot be
+    constructed. This is used to represent functions that never return or
+    generic thrown types that resolve to a concrete type of "not actually
+    thrown".
+    ```
+    """
+
+    def __init__(self) -> None: ...
 
 class NoneType(max._core.Type):
     """

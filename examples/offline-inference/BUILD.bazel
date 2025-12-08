@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
 
+package(default_visibility = ["//visibility:private"])
+
 modular_py_binary(
     name = "basic",
     srcs = ["basic.py"],

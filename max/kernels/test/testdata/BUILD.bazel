@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 mojo_library(
     name = "testdata",
@@ -16,5 +16,4 @@ mojo_library(
 filegroup(
     name = "ptx_files",
     srcs = glob(["*.ptx"]),
-    visibility = ["//visibility:public"],
 )

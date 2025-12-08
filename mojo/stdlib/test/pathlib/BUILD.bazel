@@ -1,5 +1,21 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
+_NO_ASAN = [
+    "test_pathlib.mojo",  # TODO: Enable once ASAN timeout/failure is resolved
+]
+
+_PLATFORM_CONSTRAINTS = {
+    src: select({
+        "//:asan": ["@platforms//:incompatible"],
+        # FIXME: MSTDL-2081
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+    for src in _NO_ASAN
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -9,6 +25,7 @@ load("//bazel:api.bzl", "mojo_test")
             "full",
         ],
         data = [src],  # NOTE: some tests attempt to read their source files
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

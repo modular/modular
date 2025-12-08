@@ -36,6 +36,7 @@ from os import abort
 
 from utils import Variant
 
+from builtin.constrained import _constrained_conforms_to
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
 from memory import LegacyOpaquePointer as OpaquePointer
@@ -43,7 +44,7 @@ from memory import LegacyOpaquePointer as OpaquePointer
 
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
-struct _NoneType(ImplicitlyCopyable, Movable):
+struct _NoneType(ImplicitlyCopyable):
     pass
 
 
@@ -52,8 +53,15 @@ struct _NoneType(ImplicitlyCopyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Optional[T: Copyable & Movable](
-    Boolable, Defaultable, ImplicitlyCopyable, Iterable, Iterator, Movable
+struct Optional[T: Copyable](
+    Boolable,
+    Defaultable,
+    ImplicitlyCopyable,
+    Iterable,
+    Iterator,
+    Representable,
+    Stringable,
+    Writable,
 ):
     """A type modeling a value which may or may not be present.
 
@@ -64,7 +72,7 @@ struct Optional[T: Copyable & Movable](
     Your value can take on a value or `None`, and you need to check
     and explicitly extract the value to get it out.
 
-    Currently T is required to be a `Copyable & Movable` so we can implement
+    Currently T is required to be a `Copyable` so we can implement
     copy/move for Optional and allow it to be used in collections itself.
 
     Examples:
@@ -87,8 +95,15 @@ struct Optional[T: Copyable & Movable](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
+    """The iterator type for this optional.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     comptime Element = Self.T
+    """The element type of this optional."""
 
     # Fields
     # _NoneType comes first so its index is 0.
@@ -181,7 +196,7 @@ struct Optional[T: Copyable & Movable](
         return self is None
 
     fn __eq__[
-        _T: Equatable & Copyable & Movable
+        _T: Equatable & Copyable
     ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `True` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -189,7 +204,7 @@ struct Optional[T: Copyable & Movable](
 
         Parameters:
             _T: The type of the elements in the list. Must implement the
-                traits `Copyable`, `Movable` and `Equatable`.
+                traits `Copyable` and `Equatable`.
 
         Args:
             rhs: The value to compare to.
@@ -215,7 +230,7 @@ struct Optional[T: Copyable & Movable](
         return self is not None
 
     fn __ne__[
-        _T: Equatable & Copyable & Movable, //
+        _T: Equatable & Copyable, //
     ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `False` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -223,7 +238,7 @@ struct Optional[T: Copyable & Movable](
 
         Parameters:
             _T: The type of the elements in the list. Must implement the
-                traits `Copyable`, `Movable` and `Equatable`.
+                traits `Copyable` and `Equatable`.
 
         Args:
             rhs: The value to compare to.
@@ -305,40 +320,40 @@ struct Optional[T: Copyable & Movable](
             raise Error(".value() on empty Optional")
         return self.unsafe_value()
 
-    fn __str__[
-        U: Copyable & Movable & Representable, //
-    ](self: Optional[U]) -> String:
+    fn __str__(self: Self) -> String:
         """Return the string representation of the value of the `Optional`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
             A string representation of the `Optional`.
         """
-        var output = String()
-        self.write_to(output)
-        return output
+        _constrained_conforms_to[
+            conforms_to(Self.T, Stringable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Stringable",
+        ]()
 
-    # TODO: Include the Parameter type in the string as well.
-    fn __repr__[
-        U: Representable & Copyable & Movable, //
-    ](self: Optional[U]) -> String:
+        if self:
+            return trait_downcast[Stringable](self.value()).__str__()
+        else:
+            return "None"
+
+    fn __repr__(self: Self) -> String:
         """Returns the verbose string representation of the `Optional`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
             A verbose string representation of the `Optional`.
         """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Representable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Representable",
+        ]()
+
         var output = String()
-        output.write("Optional(")
-        self.write_to(output)
-        output.write(")")
-        return output
+        output.write("Optional(", self, ")")
+        return output^
 
     @always_inline("nodebug")
     fn __merge_with__[
@@ -354,20 +369,21 @@ struct Optional[T: Copyable & Movable](
         """
         return self.__bool__()
 
-    fn write_to[
-        U: Representable & Copyable & Movable, //
-    ](self: Optional[U], mut writer: Some[Writer]):
+    fn write_to(self: Self, mut writer: Some[Writer]):
         """Write `Optional` string representation to a `Writer`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
 
         Args:
             writer: The object to write to.
         """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Representable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Representable",
+        ]()
+
         if self:
-            writer.write(repr(self.value()))
+            writer.write(trait_downcast[Representable](self.value()).__repr__())
         else:
             writer.write("None")
 
@@ -438,7 +454,7 @@ struct Optional[T: Copyable & Movable](
         debug_assert(self.__bool__(), "`.unsafe_take()` on empty `Optional`")
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
-    fn or_else(self, default: Self.T) -> Self.T:
+    fn or_else(deinit self, var default: Self.T) -> Self.T:
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
 
@@ -448,14 +464,14 @@ struct Optional[T: Copyable & Movable](
         Returns:
             The underlying value contained in the `Optional` or a default value.
         """
-        if self.__bool__():
-            return self._value[Self.T].copy()
-        return default.copy()
+        if self:
+            return self.unsafe_take()
+        return default^
 
     fn copied[
         mut: Bool,
         origin: Origin[mut], //,
-        _T: Copyable & Movable,
+        _T: Copyable,
     ](self: Optional[Pointer[_T, origin]]) -> Optional[_T]:
         """Converts an `Optional` containing a Pointer to an `Optional` of an
         owned value by copying.
@@ -511,6 +527,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
     var _value: Self._mlir_type
 
     comptime device_type: AnyType = Self
+    """The device-side type for this optional register."""
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

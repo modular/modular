@@ -32,10 +32,10 @@ from utils import IndexList, StaticTuple
 
 @register_passable("trivial")
 struct Dim(
+    Boolable,
     CeilDivable,
     Defaultable,
     Equatable,
-    ImplicitlyBoolable,
     Indexer,
     Intable,
     Stringable,
@@ -92,15 +92,6 @@ struct Dim(
             Whether the dimension has a static value.
         """
         return self._value_or_missing != Self._sentinel
-
-    @always_inline("builtin")
-    fn __as_bool__(self) -> Bool:
-        """Returns True if the dimension has a static value.
-
-        Returns:
-            Whether the dimension has a static value.
-        """
-        return self.__bool__()
 
     @always_inline("nodebug")
     fn has_value(self) -> Bool:
@@ -316,7 +307,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         self.value = VariadicList[Dim](Int(index(value)))
 
     @always_inline("nodebug")
-    fn __init__[I: Indexer & Copyable & Movable](out self, values: Tuple[I]):
+    fn __init__[I: Indexer & Copyable](out self, values: Tuple[I]):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -329,8 +320,8 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     fn __init__[
-        I0: Indexer & Copyable & Movable,
-        I1: Indexer & Copyable & Movable,
+        I0: Indexer & Copyable,
+        I1: Indexer & Copyable,
     ](out self, values: Tuple[I0, I1]):
         """Creates a dimension list from the given list of values.
 
@@ -345,9 +336,9 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     fn __init__[
-        I0: Indexer & Copyable & Movable,
-        I1: Indexer & Copyable & Movable,
-        I2: Indexer & Copyable & Movable,
+        I0: Indexer & Copyable,
+        I1: Indexer & Copyable,
+        I2: Indexer & Copyable,
     ](out self, values: Tuple[I0, I1, I2]):
         """Creates a dimension list from the given list of values.
 
@@ -365,8 +356,8 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     fn __init__[
-        I0: Indexer & Copyable & Movable,
-        I1: Indexer & Copyable & Movable,
+        I0: Indexer & Copyable,
+        I1: Indexer & Copyable,
     ](out self, val0: I0, val1: I1):
         """Creates a dimension list from the given list of values.
 
@@ -459,7 +450,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Returns:
             The static dimension value at the specified index.
         """
-        constrained[i >= 0, "index must be positive"]()
+        __comptime_assert i >= 0, "index must be positive"
         return self.value[i].get()
 
     @always_inline("nodebug")
@@ -472,7 +463,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Returns:
             The dimension at the specified index.
         """
-        constrained[i >= 0, "index must be positive"]()
+        __comptime_assert i >= 0, "index must be positive"
         return self.value[i]
 
     @always_inline("nodebug")
@@ -485,7 +476,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Returns:
             Whether the specified dimension has a static value.
         """
-        constrained[i >= 0, "index must be positive"]()
+        __comptime_assert i >= 0, "index must be positive"
         return self.value[i].__bool__()
 
     @always_inline
@@ -638,12 +629,13 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Returns:
             A list of all dynamic dimension values.
         """
-        constrained[length > 0, "length must be positive"]()
+        __comptime_assert length > 0, "length must be positive"
 
         return Self(
             VariadicList[Dim](
                 __mlir_op.`pop.variadic.splat`[
-                    numElements = length._mlir_value, _type = Variadic[Dim]
+                    numElements = length._mlir_value,
+                    _type = Variadic.ValuesOfType[Dim],
                 ](Dim())
             )
         )

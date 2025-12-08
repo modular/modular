@@ -380,8 +380,6 @@ def test_bool():
 
     assert_true(ptr.__bool__())
     assert_false(nullptr.__bool__())
-    assert_true(ptr.__as_bool__())
-    assert_false(nullptr.__as_bool__())
 
     ptr.free()
 

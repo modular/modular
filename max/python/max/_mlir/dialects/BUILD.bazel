@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "copy_files")
 
+package(default_visibility = ["//max:consumers"])
+
 copy_files(
     name = "dialects",
     srcs = [
@@ -12,5 +14,4 @@ copy_files(
         "mo.py",
         "rmo.py",
     ],
-    visibility = ["//visibility:public"],
 )

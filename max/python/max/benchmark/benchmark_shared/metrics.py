@@ -16,9 +16,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from .server_metrics import ParsedMetrics
 
 
 def _validate_data(data: list[float]) -> None:
@@ -233,3 +236,47 @@ class BenchmarkMetrics:
     # measured in percent (0-100), combined over server pids
     cpu_utilization_user: float | None
     cpu_utilization_system: float | None
+
+    # Server-side metrics (optional, from Prometheus endpoint)
+    server_metrics: ParsedMetrics | None = None
+
+    # Convenience properties for common server-side metrics
+    @property
+    def mean_prefill_batch_time_ms(self) -> float | None:
+        """Mean prefill (context encoding) batch execution time in milliseconds."""
+        if not self.server_metrics:
+            return None
+        hist = self.server_metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+        )
+        return hist.mean if hist else None
+
+    @property
+    def mean_decode_batch_time_ms(self) -> float | None:
+        """Mean decode (token generation) batch execution time in milliseconds."""
+        if not self.server_metrics:
+            return None
+        hist = self.server_metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+        )
+        return hist.mean if hist else None
+
+    @property
+    def prefill_batch_count(self) -> int:
+        """Total number of prefill (context encoding) batches executed."""
+        if not self.server_metrics:
+            return 0
+        hist = self.server_metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+        )
+        return int(hist.count) if hist else 0
+
+    @property
+    def decode_batch_count(self) -> int:
+        """Total number of decode (token generation) batches executed."""
+        if not self.server_metrics:
+            return 0
+        hist = self.server_metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+        )
+        return int(hist.count) if hist else 0

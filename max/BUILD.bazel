@@ -1,40 +1,26 @@
+load("@mojo//:mojo.bzl", "max_aliases")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
-# Convenience aliases
-_ALIASES = {
-    "kv_cache": "kernels/src/kv_cache",
-    "layout": "kernels/src/layout",
-    "linalg": "kernels/src/linalg",
-    "nn": "kernels/src/nn",
-    "nvml": "kernels/src/nvml",
-    "shmem": "kernels/src/shmem",
-    "quantization": "kernels/src/quantization",
-    "register": "kernels/src/register",
-    "MOGGPrimitives": "kernels/src/Mogg/MOGGPrimitives",
-    "MOGGKernelAPI": "kernels/src/Mogg/MOGGKernelAPI",
-    "tensor": "kernels/src/extensibility/tensor",
-    "compiler_internal": "kernels/src/extensibility/compiler_internal",
-    "weights_registry": "kernels/src/weights_registry",
-    "internal_utils": "kernels/src/internal_utils",
-    "comm": "kernels/src/comm",
-    "testdata": "kernels/test/testdata",
-    "compiler": "compiler/src:compiler",
-    "_cublas": "kernels/src/_cublas",
-    "_cufft": "kernels/src/_cufft",
-    "_curand": "kernels/src/_curand",
-    "_cudnn": "kernels/src/_cudnn",
-    "_rocblas": "kernels/src/_rocblas",
-}
+# gazelle:default_visibility //max:consumers
 
-[
-    alias(
-        name = name,
-        testonly = name == "MOGGKernelAPI",
-        actual = "//max/" + target,
-        visibility = ["//visibility:public"],
-    )
-    for name, target in _ALIASES.items()
-]
+package(default_visibility = ["//max:consumers"])
+
+package_group(
+    name = "consumers",
+    packages = [
+        "//GenericML/...",
+        "//Kernels/...",
+        "//SDK/...",
+        "//bazel/...",
+        "//docs/...",
+        "//examples/...",  # OSS only
+        "//max/...",
+        "//open-source/...",
+        "//utils/...",
+    ],
+)
+
+max_aliases()
 
 alias(
     name = "max",

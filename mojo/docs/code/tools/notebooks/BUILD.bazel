@@ -1,0 +1,78 @@
+load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
+
+package(default_visibility = ["//docs:__subpackages__"])
+
+# Non-GPU examples
+
+NON_GPU_SRCS = [
+    "hello.mojo",
+    "parameterized.mojo",
+]
+
+# GPU examples
+
+GPU_SRCS = [
+    "gpu_hello.mojo",
+    "vector_addition.mojo",
+]
+
+_PLATFORM_CONSTRAINTS = {
+    "gpu_hello.mojo": ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
+# Non-GPU binaries
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in NON_GPU_SRCS
+]
+
+# GPU binaries
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(
+            src,
+            ["//:has_gpu"],
+        ),
+        deps = [
+            "//max:layout",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in GPU_SRCS
+]
+
+# Non-GPU tests
+
+[
+    modular_run_binary_test(
+        name = src.split(".")[0] + "_test",
+        size = "small",
+        binary = src.split(".")[0],
+    )
+    for src in NON_GPU_SRCS
+]
+
+# GPU tests
+
+[
+    modular_run_binary_test(
+        name = src.split(".")[0] + "_test",
+        size = "small",
+        binary = src.split(".")[0],
+        tags = ["gpu"],
+    )
+    for src in GPU_SRCS
+]

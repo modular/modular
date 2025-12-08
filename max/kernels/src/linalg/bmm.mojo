@@ -392,9 +392,9 @@ fn batched_matmul[
     fn description_fn() -> String:
         # fmt: off
         return String(
-            trace_arg("A", a_buf),
-            ";", trace_arg("B", b_buf),
-            ";", trace_arg("C", c_buf),
+            trace_arg("A", a_buf.dynamic_shape, a_buf.dtype),
+            ";", trace_arg("B", b_buf.dynamic_shape, b_buf.dtype),
+            ";", trace_arg("C", c_buf.dynamic_shape, c_buf.dtype),
             ";transpose_a=", transpose_a,
             ";transpose_b=", transpose_b,
         )
@@ -807,15 +807,15 @@ fn _batched_matmul_gpu[
     if batch_size == 0 or m == 0 or n == 0 or k == 0:
         return
 
-    comptime has_static_NK = b_tensor_reshaped.shape[
+    comptime has_static_NK = b_tensor_reshaped.is_static_shape[
         1
-    ]() != UNKNOWN_VALUE and b_tensor_reshaped.shape[
+    ]() and b_tensor_reshaped.is_static_shape[
         2
-    ]() != UNKNOWN_VALUE and a_tensor_reshaped.shape[
+    ]() and a_tensor_reshaped.is_static_shape[
         2
-    ]() != UNKNOWN_VALUE and c_tensor_reshaped.shape[
+    ]() and c_tensor_reshaped.is_static_shape[
         2
-    ]() != UNKNOWN_VALUE
+    ]()
 
     if batch_size == 1:
         with Trace[TraceLevel.OP]("batched_matmul_via_matmul"):

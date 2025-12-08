@@ -371,9 +371,7 @@ class KVCacheParams:
             return 0
         assert self.host_kvcache_swap_space_gb is not None
         GiB = 1024 * 1024 * 1024
-        host_gb_per_replica = (
-            self.host_kvcache_swap_space_gb // self.data_parallel_degree
-        )
+        host_gb_per_replica = self.host_kvcache_swap_space_gb
         host_bytes_per_replica = host_gb_per_replica * GiB
         num_host_blocks = int(host_bytes_per_replica // self.bytes_per_block)
 

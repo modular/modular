@@ -62,7 +62,7 @@ fn count(start: Int = 0, step: Int = 1) -> _CountIterator:
 
 @fieldwise_init
 struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
-    Copyable, Iterable, Iterator, Movable
+    Copyable, Iterable, Iterator
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
@@ -77,12 +77,14 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     var _initial_inner_b: Self.IteratorTypeB
 
     fn __init__(
-        out self, inner_a: Self.IteratorTypeA, inner_b: Self.IteratorTypeB
+        out self,
+        var inner_a: Self.IteratorTypeA,
+        var inner_b: Self.IteratorTypeB,
     ):
-        self._inner_a = inner_a.copy()
+        self._inner_a = inner_a^
         self._inner_b = inner_b.copy()
         self._inner_a_elem = None
-        self._initial_inner_b = inner_b.copy()
+        self._initial_inner_b = inner_b^
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -175,7 +177,7 @@ fn product[
 @fieldwise_init
 struct _Product3[
     IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
-](Copyable, Iterable, Iterator, Movable):
+](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -194,12 +196,12 @@ struct _Product3[
 
     fn __init__(
         out self,
-        inner_a: Self.IteratorTypeA,
-        inner_b: Self.IteratorTypeB,
-        inner_c: Self.IteratorTypeC,
+        var inner_a: Self.IteratorTypeA,
+        var inner_b: Self.IteratorTypeB,
+        var inner_c: Self.IteratorTypeC,
     ):
-        var product2 = Self._Product2Type(inner_b, inner_c)
-        self._inner = Self._OuterProduct2Type(inner_a, product2)
+        var product2 = Self._Product2Type(inner_b^, inner_c^)
+        self._inner = Self._OuterProduct2Type(inner_a^, product2^)
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -272,7 +274,7 @@ struct _Product4[
     IteratorTypeB: Iterator,
     IteratorTypeC: Iterator,
     IteratorTypeD: Iterator,
-](Copyable, Iterable, Iterator, Movable):
+](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -292,13 +294,13 @@ struct _Product4[
 
     fn __init__(
         out self,
-        inner_a: Self.IteratorTypeA,
-        inner_b: Self.IteratorTypeB,
-        inner_c: Self.IteratorTypeC,
-        inner_d: Self.IteratorTypeD,
+        var inner_a: Self.IteratorTypeA,
+        var inner_b: Self.IteratorTypeB,
+        var inner_c: Self.IteratorTypeC,
+        var inner_d: Self.IteratorTypeD,
     ):
-        var product3 = Self._Product3Type(inner_b, inner_c, inner_d)
-        self._inner = Self._Product2Type(inner_a, product3)
+        var product3 = Self._Product3Type(inner_b^, inner_c^, inner_d^)
+        self._inner = Self._Product2Type(inner_a^, product3^)
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -384,9 +386,7 @@ fn product[
 
 
 @fieldwise_init
-struct _RepeatIterator[ElementType: Copyable & Movable](
-    Copyable, Iterable, Iterator, Movable
-):
+struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
     """Iterator that repeats an element a specified number of times.
 
     Parameters:
@@ -421,7 +421,7 @@ struct _RepeatIterator[ElementType: Copyable & Movable](
 
 @always_inline
 fn repeat[
-    ElementType: Copyable & Movable
+    ElementType: Copyable
 ](element: ElementType, *, times: Int) -> _RepeatIterator[ElementType]:
     """Constructs an iterator that repeats the given element a specified number of times.
 

@@ -63,9 +63,22 @@ py_library(
     ], exclude = [
         "modular/lib/mojo/*",
     ]),
+    pyi_srcs = glob([
+        "max/**/*.pyi",
+    ]),
     visibility = ["//visibility:public"],
     imports = ["."],
-)""",
+)
+
+filegroup(
+    name = "tblgen_python_srcs",
+    srcs = [
+        "max/_mlir/dialects/mo.py",
+        "max/_mlir/dialects/rmo.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
     )
 
 rebuild_wheel = repository_rule(
@@ -96,6 +109,16 @@ alias(
         "@//:linux_aarch64": "@module_platlib_linux_aarch64//:max",
         "@//:linux_x86_64": "@module_platlib_linux_x86_64//:max",
         "@platforms//os:macos": "@module_platlib_macos_arm64//:max",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "tblgen_python_srcs",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:tblgen_python_srcs",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:tblgen_python_srcs",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:tblgen_python_srcs",
     }),
     visibility = ["//visibility:public"],
 )

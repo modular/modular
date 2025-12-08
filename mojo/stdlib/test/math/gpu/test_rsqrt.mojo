@@ -28,7 +28,7 @@ def run_elementwise[
     kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
-](ctx: DeviceContext):
+](ctx: DeviceContext) where dtype.is_floating_point():
     comptime length = 256
 
     comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()

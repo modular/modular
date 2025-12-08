@@ -30,14 +30,14 @@ from gpu import block_id_in_cluster, lane_id
 from gpu.intrinsics import Scope
 from gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import stack_allocation
 from testing import assert_almost_equal
 
 from utils.static_tuple import StaticTuple
 
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
-fn cluster_launch_control(data: UnsafePointer[Float32], n: Int):
+fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
     result = stack_allocation[
         1,
         UInt128,
@@ -206,7 +206,7 @@ fn test_cluster_launch_control(ctx: DeviceContext) raises:
         block_dim=(1024),
     )
 
-    var data_host_ptr = UnsafePointer[Float32].alloc(n)
+    var data_host_ptr = alloc[Float32](n)
     var data_host = NDBuffer[DType.float32, 1, _, DimList(n)](data_host_ptr)
 
     ctx.enqueue_copy(data_host_ptr, data)

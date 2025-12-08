@@ -1299,14 +1299,12 @@ struct PyObjectFunction[
         if _type_is_eq[Self.self_type, NoneType]():
             constrained[False, "Cannot get self arg for NoneType"]()
             # This line should never be reached due to the constraint
-            return abort[UnsafePointer[Self.self_type, MutAnyOrigin]](
-                "Unreachable code"
-            )
+            abort("Unreachable code")
         else:
             try:
                 return py_self.downcast_value_ptr[Self.self_type]()
             except e:
-                return abort[UnsafePointer[Self.self_type, MutAnyOrigin]](
+                abort(
                     String(
                         (
                             "Python method receiver object did not have the"
@@ -1644,10 +1642,9 @@ struct PyObjectFunction[
 
     @always_inline("nodebug")
     fn _call_func(self, py_args: PO, py_kwargs: PO) raises -> PO:
-        constrained[
-            Self.has_kwargs,
-            "should only be used for functions that accept kwargs",
-        ]()
+        __comptime_assert (
+            Self.has_kwargs
+        ), "should only be used for functions that accept kwargs"
         var kwargs = Self._convert_kwargs(py_kwargs)
 
         @parameter
@@ -1833,7 +1830,7 @@ struct PyObjectFunction[
 
     @always_inline("nodebug")
     fn _call_method(self, py_self: PO, py_args: PO) raises -> PO:
-        constrained[not Self._has_arity(0), "method arity must not be 0"]()
+        __comptime_assert not Self._has_arity(0), "method arity must not be 0"
 
         @parameter
         if Self._has_arity(1):
@@ -2083,11 +2080,10 @@ struct PyObjectFunction[
 
     @always_inline("nodebug")
     fn _call_method(self, py_self: PO, py_args: PO, py_kwargs: PO) raises -> PO:
-        constrained[not Self._has_arity(0), "method arity must not be 0"]()
-        constrained[
-            Self.has_kwargs,
-            "should only be used for methods that accept kwargs",
-        ]()
+        __comptime_assert not Self._has_arity(0), "method arity must not be 0"
+        __comptime_assert (
+            Self.has_kwargs
+        ), "should only be used for methods that accept kwargs"
         var kwargs = Self._convert_kwargs(py_kwargs)
 
         @parameter

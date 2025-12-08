@@ -1,8 +1,9 @@
 load("//bazel:api.bzl", "modular_py_library")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "_core_types",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
 )

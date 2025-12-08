@@ -417,6 +417,19 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Enable server stats collection for serving benchmarks."""
 
+    trace: bool = field(default=False, metadata={"group": "Control Flags"})
+    """Enable nsys tracing of the benchmark run. Requires the server to be run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs."""
+
+    trace_file: str | None = field(
+        default=None, metadata={"group": "Control Flags"}
+    )
+    """Path to save nsys trace file. Default: $MODULAR_PATH/profile.nsys-rep or ./profile.nsys-rep."""
+
+    trace_session: str | None = field(
+        default=None, metadata={"group": "Control Flags"}
+    )
+    """Optional session name to trace. If not specified, nsys traces the default session."""
+
     # Result saving (serving-specific extensions)
     record_output_lengths: str | None = field(
         default=None, metadata={"group": "Result Saving"}
@@ -504,6 +517,10 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "collect_cpu_stats": "Enable CPU stats collection for serving benchmarks.",
+            "collect_server_stats": "Enable server stats collection for serving benchmarks.",
+            "trace": "Enable nsys tracing. Requires server run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs.",
+            "trace_file": "Path to save nsys trace. Default: $MODULAR_PATH/profile.nsys-rep or ./profile.nsys-rep.",
+            "trace_session": "Optional session name to trace. If not specified, nsys traces the default session.",
             "result_filename": "JSON filename for results. If None, no results are saved. Can include directory path.",
             "record_output_lengths": "Path to save output lengths in YAML format.",
             "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',

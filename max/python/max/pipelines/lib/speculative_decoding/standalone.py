@@ -23,7 +23,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
-from max.pipelines.core import TextContext
+from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 
@@ -71,7 +71,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         if is_draft:
             return (
                 model.prepare_initial_token_inputs(
-                    context_batch=batch,
+                    replica_batches=[batch],
                     kv_cache_inputs=KVCacheInputsSequence(
                         kv_cache_inputs=kv_cache_inputs
                     ),
@@ -180,9 +180,6 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 new_tokens, curr_step_inputs
             )
 
-        # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run
-        for i, context in enumerate(batch):  # noqa: B007
-            context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
         return (
             num_steps,
             generated_tokens,
@@ -203,19 +200,22 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_draft_offsets: Tensor,
         all_draft_logits: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        # Prepare next token inputs for target model
-        target_inputs, _target_num_steps = self.prepare_batch(
-            self._target_model,
-            context_batch,
-            # I believe, num steps in this scenario is 1, as we are only
-            # generating one token beyond the draft tokens.
-            num_steps=1,
-            draft_inputs=draft_inputs,
-            return_n_logits=num_draft_tokens_generated + 1,
-            is_draft=False,
-            merged_draft_tokens=merged_draft_tokens,
-            merged_draft_offsets=merged_draft_offsets,
-        )
+        # # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run.
+        with reserve_token_space_for_batch(
+            context_batch, num_draft_tokens_generated
+        ):
+            target_inputs, _target_num_steps = self.prepare_batch(
+                self._target_model,
+                context_batch,
+                # num steps in this scenario is 1, as we are only
+                # generating at one token beyond the draft tokens.
+                num_steps=1,
+                draft_inputs=draft_inputs,
+                return_n_logits=num_draft_tokens_generated + 1,
+                is_draft=False,
+                merged_draft_tokens=merged_draft_tokens,
+                merged_draft_offsets=merged_draft_offsets,
+            )
 
         # Generate target tokens.
         target_outputs = self._target_model.execute(model_inputs=target_inputs)
@@ -256,6 +256,10 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         3. Apply rejection sampling to accept/reject tokens
         """
         # Flatten our batch for consistent indexing.
+        if len(inputs.batches) > 1:
+            raise ValueError(
+                "Standalone speculative decoding does not support data parallelism"
+            )
         context_batch = list(inputs.batch.values())
 
         draft_inputs, draft_num_steps = self.prepare_batch(

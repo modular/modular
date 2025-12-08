@@ -14,7 +14,7 @@
 from compile import compile_info
 from gpu import *
 from gpu.host import *
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import stack_allocation
 from testing import *
 from testing import TestSuite
 from sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
@@ -54,7 +54,7 @@ comptime target_regular = __mlir_attr[
 
 
 def _test_data_layout_llvm[emission_kind: StaticString]():
-    fn my_func(src: UnsafePointer[Int32]):
+    fn my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
         return
 
     var target_short_llvm = compile_info[
@@ -81,7 +81,7 @@ def test_data_layout_llvm():
 
 
 def test_data_layout_asm():
-    fn my_func(src: UnsafePointer[Int32]):
+    fn my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
         var a = stack_allocation[
             20, Int32, address_space = AddressSpace.SHARED
         ]()
@@ -108,9 +108,9 @@ def test_cross_compile():
     comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
     fn test_kernel():
-        constrained[
-            _cdna_4_or_newer(), "test_kernel is only supported on CDNA4+"
-        ]()
+        __comptime_assert (
+            _cdna_4_or_newer()
+        ), "test_kernel is only supported on CDNA4+"
 
     var asm = compile_info[test_kernel, target=MI355X_TARGET]()
     assert_true("amdgcn-amd-amdhsa--gfx950" in asm)

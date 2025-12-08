@@ -11,14 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
-from sys.info import size_of
-
 from gpu.host import DeviceContext
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.gather_scatter import gather
 
-from utils.index import Index
+from utils import IndexList
 
 
 # CHECK-LABEL: test_gather
@@ -30,102 +27,86 @@ fn test_gather(ctx: DeviceContext) raises:
     fn _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
-
-        comptime layout_2d = Layout.row_major[2]()
-        var input_host_ptr = UnsafePointer[Float32].alloc(num_rows * row_size)
-        var input_host = LayoutTensor[
-            DType.float32,
-            Layout.row_major(num_rows, row_size),
-        ](input_host_ptr)
-        for i in range(num_rows):
-            for j in range(row_size):
-                input_host[i, j] = Float32(i)
-        var input_device_ptr = ctx.enqueue_create_buffer[DType.float32](
-            input_host.size() * size_of[DType.float32]()
-        )
-        ctx.enqueue_copy(input_device_ptr, input_host.ptr)
-        var input_device = LayoutTensor[
-            DType.float32,
-            Layout.row_major(num_rows, row_size),
-        ](input_device_ptr.unsafe_ptr())
-
         comptime num_indices = 16
-        var indices_host_ptr = UnsafePointer[Scalar[indices_type]].alloc(
-            num_indices
-        )
-        var indices_host = LayoutTensor[
-            indices_type,
-            Layout.row_major(num_indices),
-        ](indices_host_ptr)
-        var indices_device_ptr = ctx.enqueue_create_buffer[indices_type](
-            indices_host.size() * size_of[indices_type]()
-        )
-        var indices_device = LayoutTensor[
-            indices_type,
-            Layout.row_major(num_indices),
-        ](indices_device_ptr.unsafe_ptr())
 
-        for i in range(num_indices):
-            indices_host[i] = i // 2
-        indices_host[0] = -1
-        indices_host[1] = -num_rows
+        # Input tensor layout [num_rows, row_size]
+        comptime input_layout = Layout.row_major(num_rows, row_size)
+        var input_shape = IndexList[2](num_rows, row_size)
+        var input_runtime = RuntimeLayout[input_layout].row_major(input_shape)
 
-        ctx.enqueue_copy(indices_device_ptr, indices_host.ptr)
-
-        # create output
-        var output_host_ptr = UnsafePointer[Float32].alloc(
-            num_indices * row_size
+        # Indices tensor layout [num_indices]
+        comptime indices_layout = Layout.row_major(num_indices)
+        var indices_shape = IndexList[1](num_indices)
+        var indices_runtime = RuntimeLayout[indices_layout].row_major(
+            indices_shape
         )
-        var output_host = LayoutTensor[
-            DType.float32,
-            Layout.row_major(num_indices, row_size),
-        ](output_host_ptr)
-        var output_device_ptr = ctx.enqueue_create_buffer[DType.float32](
-            output_host.size() * size_of[DType.float32]()
-        )
-        var output_device = LayoutTensor[
-            DType.float32,
-            Layout.row_major(num_indices, row_size),
-        ](output_device_ptr.unsafe_ptr())
 
-        comptime output_layout = Layout.row_major[output_device.rank]()
-        comptime input_layout = Layout.row_major[input_device.rank]()
-        comptime indices_layout = Layout.row_major[indices_device.rank]()
+        # Output tensor layout [num_indices, row_size]
+        comptime output_layout = Layout.row_major(num_indices, row_size)
+        var output_shape = IndexList[2](num_indices, row_size)
+        var output_runtime = RuntimeLayout[output_layout].row_major(
+            output_shape
+        )
+
+        # Create device buffers
+        var input_device = ctx.enqueue_create_buffer[DType.float32](
+            input_shape.flattened_length()
+        )
+        var indices_device = ctx.enqueue_create_buffer[indices_type](
+            indices_shape.flattened_length()
+        )
+        var output_device = ctx.enqueue_create_buffer[DType.float32](
+            output_shape.flattened_length()
+        )
+
+        # Initialize input data
+        with input_device.map_to_host() as input_host:
+            var input_tensor = LayoutTensor[DType.float32, input_layout](
+                input_host, input_runtime
+            )
+            for i in range(num_rows):
+                for j in range(row_size):
+                    input_tensor[i, j] = Float32(i)
+
+        # Initialize indices
+        with indices_device.map_to_host() as indices_host:
+            var indices_tensor = LayoutTensor[indices_type, indices_layout](
+                indices_host, indices_runtime
+            )
+            for i in range(num_indices):
+                indices_tensor[i] = i // 2
+            indices_tensor[0] = -1
+            indices_tensor[1] = -num_rows
+
+        # Create layout tensors for GPU operations
+        var input_tensor = LayoutTensor[DType.float32, input_layout](
+            input_device, input_runtime
+        )
+        var indices_tensor = LayoutTensor[indices_type, indices_layout](
+            indices_device, indices_runtime
+        )
+        var output_tensor = LayoutTensor[DType.float32, output_layout](
+            output_device, output_runtime
+        )
 
         gather[axis=0, target="gpu"](
-            LayoutTensor[output_device.dtype, output_layout](
-                output_device.ptr,
-                RuntimeLayout[output_layout].row_major(
-                    output_device.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[input_device.dtype, input_layout](
-                input_device.ptr,
-                RuntimeLayout[input_layout].row_major(
-                    input_device.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[indices_device.dtype, indices_layout](
-                indices_device.ptr,
-                RuntimeLayout[indices_layout].row_major(
-                    indices_device.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            output_tensor,
+            input_tensor,
+            indices_tensor,
             context=ctx,
         )
         ctx.synchronize()
 
-        ctx.enqueue_copy(output_host.ptr, output_device_ptr)
-
-        print(output_host[0, 0])
-        print(output_host[1, 0])
-        print(output_host[2, 0])
-        print(output_host[6, 0])
-        print(output_host[15, 0])
-
-        input_host_ptr.free()
-        indices_host_ptr.free()
-        output_host_ptr.free()
+        # Read back and print results
+        with output_device.map_to_host() as output_host:
+            var output_tensor_host = LayoutTensor[DType.float32, output_layout](
+                output_host, output_runtime
+            )
+            print(output_tensor_host[0, 0])
+            print(output_tensor_host[1, 0])
+            print(output_tensor_host[2, 0])
+            print(output_tensor_host[6, 0])
+            print(output_tensor_host[15, 0])
 
     # CHECK: 15.0
     # CHECK: 0.0

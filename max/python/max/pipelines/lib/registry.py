@@ -208,6 +208,13 @@ class SupportedArchitecture:
     Most architectures do not require empty batch support and should leave this as False.
     """
 
+    requires_max_batch_context_length: bool = False
+    """Whether the architecture requires a max batch context length to be specified.
+
+    If True and max_batch_context_length is not specified, we will default to
+    the max sequence length of the model.
+    """
+
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
         if isinstance(self.tokenizer, type):

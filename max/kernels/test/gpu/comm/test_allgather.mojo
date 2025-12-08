@@ -237,23 +237,23 @@ def main() -> None:
     )
 
     # Test configurations.
-    comptime test_lengths = (
-        List[Int](8 * 1024, 8 * 1024),
-        List[Int](128 * 1024, 8 * 1024),
-        List[Int](8 * 1024, 256 * 1024),
-        List[Int](8 * 1024, 8 * 1024, 8 * 1024, 8 * 1024),
-        List[Int](128 * 1024, 256 * 1024, 8 * 1024, 64 * 1024),
+    comptime test_lengths: List[List[Int]] = [
+        [8 * 1024, 8 * 1024],
+        [128 * 1024, 8 * 1024],
+        [8 * 1024, 256 * 1024],
+        [8 * 1024, 8 * 1024, 8 * 1024, 8 * 1024],
+        [128 * 1024, 256 * 1024, 8 * 1024, 64 * 1024],
         # Test uneven shapes.
-        List[Int](37919, 37919, 37918, 37918),
+        [37919, 37919, 37918, 37918],
         # Simple uneven case.
-        List[Int](4, 3, 3),
+        [4, 3, 3],
         # Another uneven case with 2 GPUs.
-        List[Int](1025, 1024),
+        [1025, 1024],
         # Zero length cases
-        List[Int](0, 0),
-        List[Int](8 * 1024, 0),
-        List[Int](0, 8 * 1024),
-    )
+        [0, 0],
+        [8 * 1024, 0],
+        [0, 8 * 1024],
+    ]
 
     @parameter
     for test_idx in range(len(test_lengths)):

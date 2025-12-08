@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _DEPS = [
     "//max:internal_utils",
     "//max:linalg",
@@ -7,9 +9,11 @@ _DEPS = [
     "@mojo//:stdlib",
 ]
 
-_FP8_TESTS = [
+_FP8_FP4_TESTS = [
     "test_scaled_matmul.mojo",
     "test_scaled_fp8_quantization.mojo",
+    "test_scaled_nvfp4_quantization.mojo",
+    "test_nvfp4_block_scales_interleave.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -20,6 +24,14 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_scaled_fp8_quantization.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_scaled_nvfp4_quantization.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_nvfp4_block_scales_interleave.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -36,7 +48,7 @@ _EXTRA_CONSTRAINTS = {
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = _DEPS,
     )
-    for src in _FP8_TESTS
+    for src in _FP8_FP4_TESTS
 ]
 
 [
@@ -51,7 +63,7 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "test_multistage_gemm_q.mojo",
-        ] + _FP8_TESTS,
+        ] + _FP8_FP4_TESTS,
     )
 ]
 

@@ -58,9 +58,7 @@ fn PyInit_mojo_module() -> PythonObject:
         ).def_init_defaultable[FailToInitialize]()
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -89,7 +87,9 @@ fn case_raise_string_error() -> PythonObject:
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
-    cpython.PyErr_SetString(error_type, "sample value error".unsafe_cstr_ptr())
+    cpython.PyErr_SetString(
+        error_type, "sample value error".as_c_string_slice().unsafe_ptr()
+    )
 
     return PythonObject(from_owned=PyObjectPtr())
 
@@ -127,7 +127,7 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Representable):
     var name: String
     var age: Int
 

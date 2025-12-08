@@ -266,6 +266,8 @@ fn gather_reduce[
                 gather_k_tile,
                 k_tile_sizes,
             ](0, row_size)
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = i
 
     sync_parallelize[task_func](num_tasks)
 
@@ -1625,6 +1627,7 @@ fn _gather_nd_impl[
     var slice_rank = data.rank - batch_dims - indices.dim[indices.rank - 1]()
     var slice_last_dim = output.dim[output.rank - 1]() if slice_rank > 0 else 1
 
+    __comptime_assert data.rank - 1 != UNKNOWN_VALUE
     var use_simd = (
         data.stride[data.rank - 1]() == 1
         and (slice_last_dim % target_simd_width) == 0

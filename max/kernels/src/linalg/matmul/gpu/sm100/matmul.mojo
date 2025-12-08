@@ -107,7 +107,7 @@ from .pipeline import ProducerConsumerPipeline
 
 @fieldwise_init
 @register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable, Movable):
+struct WarpRole(ImplicitlyCopyable):
     var _role: Int32
 
     comptime Mma = Self(6)
@@ -396,15 +396,56 @@ comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
 
 
 @always_inline
+fn f32_frag_to_smem[
+    swizzle_mode: TensorMapSwizzle,
+    stageN: UInt,
+](
+    vec: SIMD[_, _],
+    dst: LayoutTensor[
+        mut=True, _, _, address_space = AddressSpace.SHARED, *_, **_
+    ],
+):
+    # TODO: apply swizzle. Somehow swizzle+distribute results in wrong values.
+    # alias swizzle = make_swizzle[DType.float64, swizzle_mode]() # hack
+    # var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4), swizzle=swizzle](lane_id())
+    var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
+        lane_id()
+    )
+    constrained[
+        2 * dst_frag.layout.size() == vec.size,
+        "2*dst_frag.layout.size() must be equal to vec.size",
+    ]()
+
+    @parameter
+    for i in range(dst_frag.layout.shape[0].value()):
+
+        @parameter
+        for j in range(dst_frag.layout.shape[1].value()):
+            comptime i_vec = i + j * dst_frag.layout.shape[0].value()
+            val = SIMD[dst.dtype, 2](
+                rebind[Scalar[dst.dtype]](vec[2 * i_vec]),
+                rebind[Scalar[dst.dtype]](vec[2 * i_vec + 1]),
+            )
+            dst_frag[i, j] = rebind[dst_frag.element_type](val)
+
+
+@always_inline
 fn stsm_helper[
     swizzle: Swizzle,
     stageN: UInt,
     transpose_c: Bool = False,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
     vec: SIMD[_, _],
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    dst: LayoutTensor[
+        mut=True, _, _, address_space = AddressSpace.SHARED, *_, **_
+    ],
     warp_offset: UInt32 = 0,
 ):
+    @parameter
+    if size_of[dst.dtype]() == 4:
+        constrained[not transpose_c, "transpose_c must be False"]()
+        return f32_frag_to_smem[swizzle_mode, stageN](vec, dst)
     # Number of elements in one row is 32B and 16B per stsmx4 and stmtx2 tile, respectively.
     comptime stsmx_row_size = 32 // size_of[
         dst.dtype

@@ -138,7 +138,7 @@ struct AlibiScoreMod[
 
 @fieldwise_init
 @register_passable("trivial")
-struct IdentityScoreMod(ImplicitlyCopyable, Movable, ScoreModTrait):
+struct IdentityScoreMod(ImplicitlyCopyable, ScoreModTrait):
     """IdentityScoreMod simply returns attention score."""
 
     comptime name_str: String = "no_pos"

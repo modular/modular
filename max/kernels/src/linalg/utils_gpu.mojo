@@ -97,7 +97,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](ImplicitlyCopyable, Movable, Stringable, Writable):
+](ImplicitlyCopyable, Stringable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -330,7 +330,7 @@ fn _shared_memory_usage[
 @register_passable("trivial")
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.
@@ -561,7 +561,7 @@ fn get_hilbert_lut_with_cache(
     # use runtime lookup since key is computed at runtime
     var cached_ptr = external_call[
         "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer
-    ](key_str.unsafe_cstr_ptr(), key_str.byte_length())
+    ](key_str.as_string_slice().unsafe_ptr(), key_str.byte_length())
 
     if cached_ptr:
         var device_ptr = cached_ptr.bitcast[UInt32]()

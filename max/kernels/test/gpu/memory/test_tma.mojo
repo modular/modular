@@ -25,7 +25,7 @@ from gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import stack_allocation
 
 from utils.index import Index
 
@@ -76,7 +76,7 @@ fn kernel_copy_async_tma(descriptor: TMADescriptor):
 # CHECK-DAG: (1, 1) : 36 37 38 39; 44 45 46 47; 52 53 54 55; 60 61 62 63
 def test_tma_tile_copy(ctx: DeviceContext):
     print("== test_tma_tile_copy")
-    var gmem_host = UnsafePointer[Float32].alloc(8 * 8)
+    var gmem_host = alloc[Float32](8 * 8)
     for i in range(64):
         gmem_host[i] = i
 

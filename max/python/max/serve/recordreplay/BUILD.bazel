@@ -1,10 +1,11 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "recordreplay",
     srcs = glob(["**/*.py"]),
     imports = ["../../.."],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("asgiref"),
         requirement("httpx"),

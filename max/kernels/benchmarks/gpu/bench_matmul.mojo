@@ -26,7 +26,8 @@ import linalg.matmul.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, arg_parse
+from internal_utils import arg_parse
+from memory import LegacyUnsafePointer as UnsafePointer
 from internal_utils._utils import (
     InitializationType,
     ValOrDim,
@@ -136,24 +137,28 @@ fn bench_matmul[
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
     var buffer_c = ctx.enqueue_create_buffer[DType.bfloat16](cache_c)
 
+    # Host allocations
+    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_a)
+    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_b)
+
     # TODO: remove init_on_gpu flag and the loading on CPU
     comptime init_on_gpu = True
-    var a_host = HostNDBuffer[dtype, 1](DimList(cache_a))
-    var b_host = HostNDBuffer[dtype, 1](DimList(cache_b))
 
     @parameter
     if not init_on_gpu:
+        var a_host = NDBuffer[dtype, 1](a_host_ptr, cache_a)
+        var b_host = NDBuffer[dtype, 1](b_host_ptr, cache_b)
 
         @parameter
         if dtype.is_float8():
-            random(a_host.tensor)
-            random(b_host.tensor)
+            random(a_host)
+            random(b_host)
         else:
-            initialize(a_host.tensor, init_type)
-            initialize(b_host.tensor, init_type)
+            initialize(a_host, init_type)
+            initialize(b_host, init_type)
 
-        ctx.enqueue_copy(buffer_a, a_host.tensor.data)
-        ctx.enqueue_copy(buffer_b, b_host.tensor.data)
+        ctx.enqueue_copy(buffer_a, a_host_ptr)
+        ctx.enqueue_copy(buffer_b, b_host_ptr)
         ctx.synchronize()
     else:
         init_vector_launch[dtype](buffer_a, cache_a, init_type, ctx)
@@ -245,13 +250,14 @@ fn bench_matmul[
         [flops],
     )
 
-    # Retain our buffers till the end.
+    # Cleanup host pointers
+    a_host_ptr.free()
+    b_host_ptr.free()
+
+    # Consume device buffers
     _ = buffer_a^
     _ = buffer_b^
     _ = buffer_c^
-
-    _ = a_host^
-    _ = b_host^
 
 
 fn create_matmul_bench[

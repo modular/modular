@@ -61,6 +61,10 @@ comptime StaticConstantOrigin = __mlir_attr[
 comptime OriginSet = __mlir_type.`!lit.origin.set`
 """A set of origin parameters."""
 
+comptime Never = __mlir_type.`!kgen.never`
+"""A type that can never have an instance constructed, used as a function result
+by functions that never return."""
+
 
 @register_passable("trivial")
 struct Origin[mut: Bool]:
@@ -88,6 +92,9 @@ struct Origin[mut: Bool]:
     This is a low-level way to coerce Origin mutability. This should be used
     rarely, typically when building low-level fundamental abstractions. Strongly
     consider alternatives before reaching for this "escape hatch".
+
+    Parameters:
+        o: The origin to cast.
 
     Safety:
         This is an UNSAFE operation if used to cast an immutable origin to

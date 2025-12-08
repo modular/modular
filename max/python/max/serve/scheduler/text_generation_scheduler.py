@@ -32,8 +32,8 @@ from max.pipelines.lib import PipelineConfig, get_paged_manager
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
+from .batch_constructor import TextBatchConstructor
 from .config import TokenGenerationSchedulerConfig
-from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -70,6 +70,11 @@ class TokenGenerationScheduler(Scheduler):
         )
         self.scheduler_logger = SchedulerLogger()
         self.support_empty_batches = support_empty_batches
+        self.max_items_per_drain = (
+            scheduler_config.max_batch_size_ce
+            * scheduler_config.data_parallel_degree
+            * 2
+        )
 
         # We are parameterizing the offload of queue draining to allow for
         # the use case where we want to drain the queue in the main thread.
@@ -84,7 +89,7 @@ class TokenGenerationScheduler(Scheduler):
                 TextContext | TextAndVisionContext
             ](
                 self.request_queue,
-                max_items_per_drain=self.scheduler_config.max_batch_size_ce * 2,
+                max_items_per_drain=self.max_items_per_drain,
             )
 
     @traced
@@ -99,17 +104,34 @@ class TokenGenerationScheduler(Scheduler):
         This method is responsible for ensuring that new requests are continuously
         fetched and made available for batching and scheduling.
         """
-        if self._queue_drainer is not None:
-            self._queue_drainer.start_draining()
-            items = self._queue_drainer.retrieve_items()
-        else:
-            items = drain_queue(
-                self.request_queue,
-                max_items=self.scheduler_config.max_batch_size_ce * 2,
-            )
+        with Tracer("drain_queue"):
+            # Collect items that were already drained by the background
+            # drainer while the GPU was running.
+            items: list[TextContext | TextAndVisionContext]
+            if self._queue_drainer is not None:
+                items = self._queue_drainer.retrieve_items()
 
-        for context in items:
-            self.batch_constructor.enqueue_new_request(context)
+                # If there are no outstanding CE requests, we want to seed the
+                # system as quickly as possible and avoid latency from the
+                # background thread and GIL handoffs. In that case we perform a
+                # blocking drain on the main thread.
+                if len(self.batch_constructor.all_ce_reqs) == 0:
+                    items.extend(
+                        drain_queue(
+                            self.request_queue,
+                            self.max_items_per_drain,
+                        )
+                    )
+            else:
+                # No background drainer configured, drain synchronously.
+                items = drain_queue(
+                    self.request_queue,
+                    max_items=self.max_items_per_drain,
+                )
+
+        with Tracer(f"adding_to_batch_constructor: {len(items)} items"):
+            for context in items:
+                self.batch_constructor.enqueue_new_request(context)
 
     @traced
     def run_iteration(self) -> SchedulerProgress:
@@ -154,33 +176,42 @@ class TokenGenerationScheduler(Scheduler):
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
-        for req_id in get_cancelled_reqs(self.cancel_queue):
-            is_cancelled = self.batch_constructor.cancel_request(req_id)
-            if is_cancelled:
+        for cancelled_id in get_cancelled_reqs(self.cancel_queue):
+            if self.batch_constructor.contains(cancelled_id):
+                self.batch_constructor.release_request(cancelled_id)
                 self.response_queue.put_nowait(
-                    {req_id: SchedulerResult.cancelled()}
+                    {cancelled_id: SchedulerResult.cancelled()}
                 )
 
         return SchedulerProgress.MADE_PROGRESS
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
+        # Execute the batch. When a background drainer is configured we
+        # overlap draining of the request queue with GPU execution; otherwise
+        # we simply run the pipeline synchronously.
+        if self._queue_drainer is not None:
+            with self._queue_drainer.drain_while_gpu():
+                responses = self.pipeline.execute(inputs)
+        else:
+            responses = self.pipeline.execute(inputs)
 
-        # execute the batch
-        responses = self.pipeline.execute(inputs)
+        # Advance the requests and collect the invalid request IDs
+        for (
+            request_id
+        ) in self.batch_constructor.advance_requests_and_collect_invalid_ids(
+            inputs.batches
+        ):
+            # The only scenario where the request ID should not be in the responses dictionary, is if the pipeline
+            # errored out, this should not happen.
+            del responses[request_id]
 
-        # If there is a chunked request, we put it back into the request queue
-        self.batch_constructor.move_completed_ce_requests_to_tg(
-            inputs.batches,
-            responses,
-        )
-
-        # remove terminated requests from the batch
-        num_terminated_reqs = (
-            self.batch_constructor.release_terminated_requests(
-                responses,
-            )
-        )
+        # Release terminated requests from the batch
+        num_terminated_requests = 0
+        for request_id, response in responses.items():
+            if response.is_done:
+                self.batch_constructor.release_request(request_id)
+                num_terminated_requests += 1
 
         # send the responses to the API process
         if responses:
@@ -191,7 +222,7 @@ class TokenGenerationScheduler(Scheduler):
                 }
             )
 
-        return num_terminated_reqs
+        return num_terminated_requests
 
 
 def load_text_generation_scheduler(

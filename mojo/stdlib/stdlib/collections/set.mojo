@@ -24,7 +24,6 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     Hashable,
     Iterable,
     KeyElement,
-    Movable,
     Sized,
 ):
     """A set data type.
@@ -56,6 +55,12 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DictKeyIter[Self.T, NoneType, Self.H, iterable_origin]
+    """The iterator type for this set.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     # Fields
     var _data: Dict[Self.T, NoneType, Self.H]

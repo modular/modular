@@ -91,7 +91,7 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
 
 fn _write_float[
     W: Writer, dtype: DType, //
-](mut writer: W, value: Scalar[dtype]):
+](mut writer: W, value: Scalar[dtype]) where dtype.is_floating_point():
     """Write a SIMD float type into a Writer, using the dragonbox algorithm for
     perfect roundtrip, shortest representable format, and high performance.
     Paper: https://github.com/jk-jeon/dragonbox/blob/master/other_files/Dragonbox.pdf
@@ -105,7 +105,6 @@ fn _write_float[
         writer: The Writer to write the float to.
         value: The float to write into the Writer.
     """
-    constrained[dtype.is_floating_point()]()
 
     @parameter
     if dtype is DType.float8_e5m2:

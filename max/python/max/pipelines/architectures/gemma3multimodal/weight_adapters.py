@@ -14,39 +14,53 @@
 from __future__ import annotations
 
 from max.graph.weights import WeightData, Weights
-from transformers import AutoConfig
 
-# Maps from Safetensor to MAX weight names.
-GEMMA3_SAFETENSOR_MAP: dict[str, str] = {
-    "language_model.model.": "language_model.",
+GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
+    "language_model.model.": "",
+}
+
+# For the vision model
+GEMMA3_MULTIMODAL_SAFETENSOR_MAP: dict[str, str] = {
+    "vision_tower.vision_model.": "",
+    "multi_modal_": "",
 }
 
 
-def _apply_name_mappings(name: str) -> str:
-    """Apply all name mappings to a given name."""
-    for before, after in GEMMA3_SAFETENSOR_MAP.items():
-        name = name.replace(before, after)
-    return name
-
-
-def convert_safetensor_state_dict(
+def convert_safetensor_language_state_dict(
     state_dict: dict[str, Weights],
-    huggingface_config: AutoConfig,
-    **unused_kwargs,
 ) -> dict[str, WeightData]:
+    """Convert safetensor state dict to MAX format for the language model."""
     new_state_dict: dict[str, WeightData] = {}
 
-    # Remap HuggingFace -> MAX-style names
     for weight_name, value in state_dict.items():
-        max_name = _apply_name_mappings(weight_name)
-        new_state_dict[max_name] = value.data()
+        if weight_name.startswith("language_model."):
+            max_name = weight_name
+            for before, after in GEMMA3_LANGUAGE_SAFETENSOR_MAP.items():
+                max_name = max_name.replace(before, after)
+            new_state_dict[max_name] = value.data()
 
-    # For quantized model, we apply the same name re-mapping to the `ignore` list
-    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    if hf_quant_config and "ignore" in hf_quant_config:
-        hf_quant_config["ignore"] = [
-            _apply_name_mappings(module_name)
-            for module_name in hf_quant_config["ignore"]
-        ]
+    return new_state_dict
+
+
+def convert_safetensor_vision_state_dict(
+    state_dict: dict[str, Weights],
+) -> dict[str, WeightData]:
+    """Convert safetensor state dict to MAX format for the vision model."""
+    new_state_dict: dict[str, WeightData] = {}
+
+    # include vision tower weights AND multi modal weights
+    for weight_name, value in state_dict.items():
+        if not weight_name.startswith("vision_tower.vision_model."):
+            if not weight_name.startswith("multi_modal_"):
+                continue
+
+        max_name = weight_name
+
+        for before, after in GEMMA3_MULTIMODAL_SAFETENSOR_MAP.items():
+            max_name = max_name.replace(before, after)
+
+        weight_data = value.data()
+
+        new_state_dict[max_name] = weight_data
 
     return new_state_dict

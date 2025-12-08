@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//visibility:private"])
 
 mojo_binary(
     name = "vector_addition",

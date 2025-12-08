@@ -16,7 +16,6 @@ from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
 from gpu import lane_id as get_lane_id, warp_id
@@ -30,14 +29,7 @@ from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 
 # Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
-from internal_utils._utils import ValOrDim, dynamic, static
+from internal_utils import assert_almost_equal
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -46,7 +38,6 @@ from layout import (
     RuntimeTuple,
 )
 from layout._fillers import arange
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
 from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
@@ -409,11 +400,11 @@ fn kernel_4[
 
 fn blackwell_kernel_4[
     c_type: DType,
-    c_shape: DimList,
+    c_layout: Layout,
     a_type: DType,
-    a_shape: DimList,
+    a_layout: Layout,
     b_type: DType,
-    b_shape: DimList,
+    b_layout: Layout,
     *,
     transpose_b: Bool,
     umma_shape: IndexList[3],
@@ -422,14 +413,11 @@ fn blackwell_kernel_4[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
     var M = c.dim[0]()
     var N = c.dim[1]()
     var K = a.dim[1]()
@@ -551,7 +539,10 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                 transpose_b,
                 BK,
                 benchmark=True,
-            ](ctx, dynamic(shape[0]), static[shape[1]](), static[shape[2]]())
+                M = shape[0],
+                N = shape[1],
+                K = shape[2],
+            ](ctx)
         except e:
             print("Error: Failed to run benchmark for this shape")
 
@@ -567,71 +558,56 @@ def test_blackwell_kernel_4[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     benchmark: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
-    var M = m.value
-    var N = n.value
-    var K = k.value
+    M: Int = 4096,
+    N: Int = 4096,
+    K: Int = 4096,
+](ctx: DeviceContext):
+    print(M, "x", N, "x", K)
 
-    print(
-        M,
-        "x",
-        N,
-        "x",
-        K,
-    )
+    comptime a_layout = Layout.row_major(M, K)
+    comptime b_layout = Layout.row_major(
+        N, K
+    ) if transpose_b else Layout.row_major(K, N)
+    comptime c_layout = Layout.row_major(M, N)
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
+    var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
+    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
+    var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
+    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
+    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
 
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[b_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-
-    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
-    )
-    var b_device = DeviceNDBuffer[b_type, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
-    )
-    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
-    )
-    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var a_device = ctx.enqueue_create_buffer[a_type](M * K)
+    var a_device_lt = LayoutTensor[a_type, a_layout](a_device.unsafe_ptr())
+    var b_device = ctx.enqueue_create_buffer[b_type](N * K)
+    var b_device_lt = LayoutTensor[b_type, b_layout](b_device.unsafe_ptr())
+    var c_device = ctx.enqueue_create_buffer[c_type](M * N)
+    var c_device_lt = LayoutTensor[c_type, c_layout](c_device.unsafe_ptr())
+    var c_device_ref = ctx.enqueue_create_buffer[c_type](M * N)
+    var c_device_ref_lt = LayoutTensor[c_type, c_layout](
+        c_device_ref.unsafe_ptr()
     )
 
     # Initialize matmul operands
-    var at = a_host.tensor
-    var bt = b_host.tensor
-    for m in range(M):
-        for k in range(K):
-            at[m, k] = Float32(k).cast[a_type]()
-    for n in range(N):
-        for k in range(K):
-            bt[n, k] = Float32(1 if n == k else 0).cast[b_type]()
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    for m_idx in range(M):
+        for k_idx in range(K):
+            a_host[m_idx, k_idx] = Float32(k_idx).cast[a_type]()
+    for n_idx in range(N):
+        for k_idx in range(K):
+            b_host[n_idx, k_idx] = Float32(1 if n_idx == k_idx else 0).cast[
+                b_type
+            ]()
+    for i in range(M * N):
+        c_host_ptr[i] = Scalar[c_type](0)
+        c_host_ref_ptr[i] = Scalar[c_type](0)
 
     # Move operands to the Device
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
-
-    var a = from_ndbuffer_row_major(a_device.tensor)
-    var b = from_ndbuffer_row_major(b_device.tensor)
-    var c = from_ndbuffer_row_major(c_device.tensor)
+    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
@@ -643,9 +619,9 @@ def test_blackwell_kernel_4[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
     ](
-        c_device.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device_lt,
+        a_device_lt,
+        b_device_lt,
         ctx,
     )
 
@@ -665,9 +641,9 @@ def test_blackwell_kernel_4[
                 b_swizzle=b_swizzle,
                 c_swizzle=c_swizzle,
             ](
-                c_device.tensor,
-                a_device.tensor,
-                b_device.tensor,
+                c_device_lt,
+                a_device_lt,
+                b_device_lt,
                 ctx,
             )
 
@@ -687,39 +663,37 @@ def test_blackwell_kernel_4[
     else:
         vendor_blas.matmul(
             ctx,
-            c_device_ref.tensor,
-            a_device.tensor,
-            b_device.tensor,
+            c_device_ref_lt,
+            a_device_lt,
+            b_device_lt,
             c_row_major=True,
             transpose_b=transpose_b,
         )
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.enqueue_copy(c_host_ptr, c_device)
+        ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
         ctx.synchronize()
         comptime rtol = 1e-2
 
         assert_almost_equal(
-            c_host.tensor,
-            c_host_ref.tensor,
+            c_host_ptr,
+            c_host_ref_ptr,
+            M * N,
             atol=0.0001,
             rtol=rtol,
         )
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
-
-    _ = a
-    _ = b
-    _ = c
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
 
 
 def main():
@@ -740,4 +714,7 @@ def main():
             c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             BK=64,
-        ](ctx, dynamic(4096), static[4096](), static[4096]())
+            M=4096,
+            N=4096,
+            K=4096,
+        ](ctx)

@@ -17,10 +17,6 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from testing import TestSuite
 
 comptime T = DType.float64
@@ -38,7 +34,7 @@ trait MaybeZeroSized:
 struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -54,10 +50,7 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
         return 2
 
     fn write_to(self, mut writer: Some[Writer]):
-        constrained[
-            not is_gpu(),
-            "ZeroSized is not supported on GPUs",
-        ]()
+        __comptime_assert not is_gpu(), "ZeroSized is not supported on GPUs"
         writer.write("ZeroSized(")
         writer.write(self.value())
         writer.write(")")
@@ -68,7 +61,7 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
 struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -89,10 +82,7 @@ struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
         return self.val
 
     fn write_to(self, mut writer: Some[Writer]):
-        constrained[
-            not is_gpu(),
-            "ZeroSized is not supported on GPUs",
-        ]()
+        __comptime_assert not is_gpu(), "ZeroSized is not supported on GPUs"
         writer.write("NotZeroSized(")
         writer.write(self.value())
         writer.write(")")
@@ -100,9 +90,9 @@ struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
 
 fn _vec_func_zero(
     zs: ZeroSized,
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
@@ -113,9 +103,9 @@ fn _vec_func_zero(
 
 fn _vec_func_not_zero(
     zs: NotZeroSized,
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
@@ -128,9 +118,9 @@ fn _vec_func[
     zero_sized_t: MaybeZeroSized
 ](
     zs: zero_sized_t,
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x

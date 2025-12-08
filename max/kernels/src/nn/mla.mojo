@@ -45,7 +45,13 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target, DeviceBuffer
+from gpu.host import (
+    DeviceContext,
+    FuncAttribute,
+    get_gpu_target,
+    DeviceBuffer,
+    Dim as LaunchDim,
+)
 from gpu.host.info import A100, H100
 from gpu.memory import (
     AddressSpace,
@@ -169,8 +175,12 @@ fn flare_mla_decoding[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -622,7 +632,7 @@ fn mla_decoding[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mla_decoding"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -1306,10 +1316,14 @@ fn flare_mla_prefill[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k.runtime_layout.shape.value),
-            trace_arg("v", v.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -1464,10 +1478,14 @@ fn flare_mla_prefill[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k.runtime_layout.shape.value),
-            trace_arg("v", v.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -1707,6 +1725,15 @@ fn flare_mla_prefill_dispatch[
         use_cascade_attention=use_cascade_attention,
         _ndbuffer_mha_operand=_ndbuffer_mha_operand,
     ]
+    var grid_dim = LaunchDim(
+        Int(ceildiv(max_prompt_len, Int(BM))),
+        Int(config.num_heads),
+        Int(batch_size),
+    ) if has_nvidia_gpu_accelerator() else LaunchDim(
+        Int(config.num_heads),
+        Int(ceildiv(max_prompt_len, Int(BM))),
+        Int(batch_size),
+    )
     ctx.enqueue_function_checked[kernel, kernel](
         q_device,
         k,
@@ -1723,11 +1750,7 @@ fn flare_mla_prefill_dispatch[
         cache_offsets,
         mask_functor,
         score_mod_functor,
-        grid_dim=(
-            Int(ceildiv(max_prompt_len, Int(BM))),
-            Int(config.num_heads),
-            Int(batch_size),
-        ),
+        grid_dim=grid_dim,
         block_dim=(Int(config.num_threads()), 1, 1),
         shared_mem_bytes=Int(smem_use),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
@@ -1807,7 +1830,15 @@ fn mla_prefill[
     end_of_seq = Int(valid_length[batch_idx + 1])
     seq_len = end_of_seq - start_of_seq
 
-    if seq_len < Int(block_idx.x * config.block_m()):
+    @always_inline
+    fn q_block_idx() -> UInt:
+        return block_idx.x if is_nvidia_gpu() else block_idx.y
+
+    @always_inline
+    fn head_idx() -> UInt:
+        return block_idx.y if is_nvidia_gpu() else block_idx.x
+
+    if seq_len < Int(q_block_idx() * config.block_m()):
         return
 
     num_keys = k.cache_length(Int(batch_idx))
@@ -1824,7 +1855,7 @@ fn mla_prefill[
 
     q_batch_offset = start_of_seq * q_depth * Int(config.num_heads)
     o_batch_offset = start_of_seq * Int(depth) * Int(config.num_heads)
-    softmax_info_offset = start_of_seq * 2 + total_seq_len * block_idx.y * 2
+    softmax_info_offset = start_of_seq * 2 + total_seq_len * head_idx() * 2
 
     @parameter
     if is_nvidia_gpu():
@@ -1877,7 +1908,7 @@ fn mla_prefill[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mla_prefill_single_batch"
+            operation = __get_current_function_name()
         ]()
 
 

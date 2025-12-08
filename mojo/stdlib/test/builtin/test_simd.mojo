@@ -17,7 +17,6 @@ from sys.info import CompilationTarget, is_64bit
 from bit import count_leading_zeros
 from builtin.simd import _modf
 from itertools import product
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import (
     assert_almost_equal,
     assert_equal,
@@ -26,6 +25,9 @@ from testing import (
     TestSuite,
 )
 from testing.prop import PropTest
+
+# TODO(MOCO-522): Figure out desired behavior for importing files with only
+# extensions in them.
 from testing.prop.strategy import SIMD
 
 from utils import StaticTuple
@@ -345,7 +347,7 @@ def test_simd_repr():
 def test_issue_1625():
     var size = 16
     comptime simd_width = 8
-    var ptr = UnsafePointer[Int64].alloc(size)
+    var ptr = alloc[Int64](size)
     for i in range(size):
         ptr[i] = i
 
@@ -365,7 +367,7 @@ def test_issue_1625():
 
 
 def test_issue_20421():
-    var a = UnsafePointer[UInt8].alloc(count=16 * 64, alignment=64)
+    var a = alloc[UInt8](count=16 * 64, alignment=64)
     for i in range(16 * 64):
         a[i] = i & 255
     var av16 = (
@@ -2161,8 +2163,8 @@ def test_from_bytes_as_bytes():
         @parameter
         for b in range(2):
             assert_equal(
-                Int16.from_bytes[big_endian=b](
-                    Int16(x).as_bytes[big_endian=b]()
+                Int16.from_bytes[big_endian = Bool(b)](
+                    Int16(x).as_bytes[big_endian = Bool(b)]()
                 ),
                 x,
             )

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
 from math import align_up
 from sys import (
     env_get_bool,
@@ -26,10 +27,9 @@ from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext, get_gpu_target
-from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse
+from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
-    ValOrDim,
     dynamic,
     init_vector_launch,
     initialize,
@@ -37,8 +37,13 @@ from internal_utils._utils import (
     static,
 )
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
+from linalg.matmul.gpu.sm100.config import MatmulConfig
+from memory import LegacyUnsafePointer as UnsafePointer
+from linalg.grouped_matmul_sm100_blockwise_fp8 import (
+    grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
+)
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig
 
 from utils import Index, IndexList
 from collections import OptionalReg
@@ -115,7 +120,7 @@ fn bench_grouped_matmul[
     mut bench: Bench,
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
-    expert_ids: List[Int],
+    expert_ids_input: List[Int],
     init_type: InitializationType,
 ) raises:
     comptime N = expert_shape[0]
@@ -132,63 +137,129 @@ fn bench_grouped_matmul[
         total_num_tokens += num_tokens
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, num_tokens)
 
-    # Create host A C buffers
+    # Define shapes and sizes
     comptime static_a_shape = DimList(Dim(), K)
-    var dynamic_a_shape = DimList(total_num_tokens, K)
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
+    var a_size = total_num_tokens * K
     comptime static_c_shape = DimList(Dim(), N)
-    var dynamic_c_shape = DimList(total_num_tokens, N)
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var a_offsets_host = HostNDBuffer[DType.uint32, 1, DimList(Dim())](
+    var c_size = total_num_tokens * N
+    comptime static_b_shape = DimList(num_experts, N, K)
+    var b_size = num_experts * N * K
+
+    # Host allocations
+    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
         num_active_experts + 1
     )
-
-    # Create host B buffers
-    comptime static_b_shape = DimList(num_experts, N, K)
-    var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
-    var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
+    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
+        num_active_experts
+    )
 
     # Setup offsets and expert ids
-    a_offsets_host.tensor[0] = 0
+    a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host.tensor[i + 1] = (
-            a_offsets_host.tensor[i] + num_tokens_by_expert[i]
-        )
-        expert_ids_host.tensor[i] = expert_ids[i]
+        var num_tokens = num_tokens_by_expert[i]
 
-    # Create device buffers
-    var a_dev = DeviceNDBuffer[a_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+        @parameter
+        if in_type == DType.float8_e4m3fn:
+            comptime a_scale_alignment = 16 // size_of[DType.float32]()
+            if num_tokens % a_scale_alignment != 0:
+                abort(
+                    "num_tokens=num_tokens_by_expert["
+                    + String(i)
+                    + "]="
+                    + String(num_tokens)
+                    + " must be divisible by a_scale_alignment="
+                    + String(a_scale_alignment)
+                )
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + num_tokens
+        expert_ids_host_ptr[i] = expert_ids_input[i]
+
+    # Device allocations
+    var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
+    var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
+    var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+        num_active_experts + 1
     )
-    var c_dev = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
+        num_active_experts
     )
-    var b_dev = DeviceNDBuffer[b_type, 3, static_b_shape](
-        static_b_shape, ctx=ctx
+
+    var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
+        a_dev_buffer.unsafe_ptr(),
+        DimList(total_num_tokens, K),
     )
-    var a_offsets_dev = DeviceNDBuffer[DType.uint32, 1](
-        num_active_experts + 1, ctx=ctx
+    var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
+        b_dev_buffer.unsafe_ptr(),
+        static_b_shape,
     )
-    var expert_ids_dev = DeviceNDBuffer[DType.int32, 1](
-        num_active_experts, ctx=ctx
+    var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
+        c_dev_buffer.unsafe_ptr(),
+        DimList(total_num_tokens, N),
+    )
+    var a_offsets_dev = NDBuffer[DType.uint32, 1](
+        a_offsets_dev_buffer.unsafe_ptr(),
+        num_active_experts + 1,
+    )
+    var expert_ids_dev = NDBuffer[DType.int32, 1](
+        expert_ids_dev_buffer.unsafe_ptr(),
+        num_active_experts,
     )
 
     # Initialize data on the device
-    init_vector_launch[a_type](
-        a_dev.buffer, a_host.tensor.num_elements(), init_type, ctx
-    )
-    init_vector_launch[b_type](
-        b_dev.buffer, b_host.tensor.num_elements(), init_type, ctx
-    )
+    init_vector_launch[a_type](a_dev_buffer, a_size, init_type, ctx)
+    init_vector_launch[b_type](b_dev_buffer, b_size, init_type, ctx)
 
     # Move host-initialized data to device
-    ctx.enqueue_copy(a_offsets_dev.buffer, a_offsets_host.tensor.data)
-    ctx.enqueue_copy(expert_ids_dev.buffer, expert_ids_host.tensor.data)
+    ctx.enqueue_copy(a_offsets_dev_buffer, a_offsets_host_ptr)
+    ctx.enqueue_copy(expert_ids_dev_buffer, expert_ids_host_ptr)
 
-    var c_dev_ndbuffer = c_dev.tensor
+    comptime BLOCK_SCALE_K = 128
+    comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
+    var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
+    comptime static_b_scales_shape = DimList(
+        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    )
+    var b_scales_size = (
+        num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
+    )
+
+    # Scales device allocations
+    var a_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        a_scales_size
+    )
+    var b_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        b_scales_size
+    )
+
+    var a_scales_dev = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
+        a_scales_dev_buffer.unsafe_ptr(),
+        DimList(K // BLOCK_SCALE_K, total_num_tokens),
+    )
+    var b_scales_dev = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
+        b_scales_dev_buffer.unsafe_ptr(),
+        static_b_scales_shape,
+    )
+
+    @parameter
+    if in_type == DType.float8_e4m3fn:
+        init_vector_launch[DType.float32](
+            a_scales_dev_buffer,
+            a_scales_size,
+            init_type,
+            ctx,
+        )
+        init_vector_launch[DType.float32](
+            b_scales_dev_buffer,
+            b_scales_size,
+            init_type,
+            ctx,
+        )
 
     @always_inline
-    @__copy_capture(c_dev_ndbuffer)
+    @__copy_capture(c_dev)
     @parameter
     fn epilogue_fn[
         dtype: DType, width: Int, *, alignment: Int = 1
@@ -199,12 +270,33 @@ fn bench_grouped_matmul[
         for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
-        c_dev_ndbuffer.store[width=width, alignment=alignment](
+        c_dev.store[width=width, alignment=alignment](
             idx, new_val.cast[out_type]()
         )
 
+    var a = from_ndbuffer_row_major(a_dev)
+    var b = from_ndbuffer_row_major(b_dev)
+    var c = from_ndbuffer_row_major(c_dev)
+    var a_scales = from_ndbuffer_row_major(a_scales_dev)
+    var b_scales = from_ndbuffer_row_major(b_scales_dev)
+    var a_offsets = from_ndbuffer_row_major(a_offsets_dev)
+    var expert_ids = from_ndbuffer_row_major(expert_ids_dev)
+
     @parameter
-    @__copy_capture(a_dev, b_dev, c_dev, a_offsets_dev, expert_ids_dev)
+    @__copy_capture(
+        a_dev,
+        b_dev,
+        c_dev,
+        a_offsets_dev,
+        expert_ids_dev,
+        a,
+        b,
+        c,
+        a_scales,
+        b_scales,
+        a_offsets,
+        expert_ids,
+    )
     @always_inline
     fn bench_func(mut bench: Bencher):
         @parameter
@@ -216,20 +308,52 @@ fn bench_grouped_matmul[
                 pass
 
             else:
-                grouped_matmul[
-                    elementwise_lambda_fn = OptionalReg[
-                        elementwise_epilogue_type
-                    ](epilogue_fn) if has_epilogue else None,
-                ](
-                    c_dev.tensor,
-                    a_dev.tensor,
-                    b_dev.tensor,
-                    a_offsets_dev.tensor,
-                    expert_ids_dev.tensor,
-                    max_num_tokens_by_expert,
-                    num_active_experts,
-                    ctx,
-                )
+
+                @parameter
+                if in_type == DType.float8_e4m3fn:
+                    comptime umma_shape = Index(64, 64, 32)
+                    comptime transpose_b = True
+                    comptime config = MatmulConfig[
+                        a_type, b_type, c_type, transpose_b
+                    ](
+                        cluster_shape=Index(1, 1, 1),
+                        mma_shape=umma_shape,
+                        cta_group=1,
+                        AB_swapped=False,
+                        k_group_size=1,
+                    )
+                    grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+                        config=config,
+                        elementwise_lambda_fn = OptionalReg[
+                            elementwise_epilogue_type
+                        ](epilogue_fn) if has_epilogue else None,
+                    ](
+                        c,
+                        a,
+                        b,
+                        a_scales,
+                        b_scales,
+                        a_offsets,
+                        expert_ids,
+                        max_num_tokens_by_expert,
+                        num_active_experts,
+                        ctx,
+                    )
+                else:
+                    grouped_matmul[
+                        elementwise_lambda_fn = OptionalReg[
+                            elementwise_epilogue_type
+                        ](epilogue_fn) if has_epilogue else None,
+                    ](
+                        c_dev,
+                        a_dev,
+                        b_dev,
+                        a_offsets_dev,
+                        expert_ids_dev,
+                        max_num_tokens_by_expert,
+                        num_active_experts,
+                        ctx,
+                    )
 
         bench.iter_custom[kernel_launch](ctx)
 
@@ -256,16 +380,21 @@ fn bench_grouped_matmul[
         ],
     )
 
-    # Retain our buffers till the end.
-    _ = a_dev^
-    _ = b_dev^
-    _ = c_dev^
-    _ = a_offsets_dev^
-    _ = expert_ids_dev^
+    # Cleanup host pointers
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    a_offsets_host_ptr.free()
+    expert_ids_host_ptr.free()
 
-    _ = a_host^
-    _ = b_host^
-    _ = c_host^
+    # Consume device buffers
+    _ = a_dev_buffer^
+    _ = b_dev_buffer^
+    _ = c_dev_buffer^
+    _ = a_offsets_dev_buffer^
+    _ = expert_ids_dev_buffer^
+    _ = a_scales_dev_buffer^
+    _ = b_scales_dev_buffer^
 
 
 fn create_grouped_matmul_bench[

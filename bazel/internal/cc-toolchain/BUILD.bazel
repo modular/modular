@@ -8,6 +8,8 @@ load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load("//bazel/internal/cc-toolchain/features:features.bzl", "MARKER_FEATURES")  # buildifier: disable=bzl-visibility
 load("//bazel/internal/cc-toolchain/tools:tools.bzl", "PLATFORMS")  # buildifier: disable=bzl-visibility
 
+package(default_visibility = ["//visibility:public"])
+
 cc_sysroot(
     name = "linux_sysroot_aarch64",
     actions = [
@@ -57,6 +59,7 @@ cc_sysroot(
             "//bazel/internal/cc-toolchain/args:compile_warnings",
             "//bazel/internal/cc-toolchain/args:compile_warnings_as_errors",
             "//bazel/internal/cc-toolchain/args/modular:assertions",  # Comes after warnings to allow disabling them
+            "//bazel/internal/cc-toolchain/args:ignore_unused_command_line_argument",
         ] + select({
             "@platforms//os:linux": [
                 "@rules_cc//cc/toolchains/args/soname_flags:set_soname",

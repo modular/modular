@@ -35,7 +35,7 @@ def test_string():
 
 
 def test_range():
-    var array_size: PythonObject = 2
+    var array_size = PythonObject(2)
 
     # we check that the numbers appear in order
     # and that there are not less iterations than expected
@@ -45,16 +45,16 @@ def test_range():
         assert_equal(i, expected.pop(0))
     assert_false(expected)
 
-    var start: PythonObject = 0
-    var end: PythonObject = 4
+    var start = PythonObject(0)
+    var end = PythonObject(4)
     expected = [0, 1, 2, 3]
     for i in range(start, end):
         assert_equal(i, expected.pop(0))
     assert_false(expected)
 
-    var start2: PythonObject = 5
-    var end2: PythonObject = 10
-    var step: PythonObject = 2
+    var start2 = PythonObject(5)
+    var end2 = PythonObject(10)
+    var step = PythonObject(2)
     expected = [5, 7, 9]
     for i in range(start2, end2, step):
         assert_equal(i, expected.pop(0))

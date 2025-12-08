@@ -36,8 +36,10 @@ class PrintHook(BasePrintHook):
     print ops can be added to the graph.
     """
 
-    def __init__(self, export_path: str | None = None) -> None:
-        super().__init__(export_path=export_path)
+    def __init__(
+        self, export_path: str | None = None, filter: list[str] | None = None
+    ) -> None:
+        super().__init__(export_path=export_path, filter=filter)
         add_layer_hook(self)
         if export_path is not None:
             logger.warning(

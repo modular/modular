@@ -268,13 +268,15 @@ Inputs:
     new_shape = ShapeAttr(#mosh<ape[div(n_patches, 4), 4, 2048]> : !mosh.ape)
 
 Diagnostics:
-    [reshape] input and output number of elements must match: #mosh<ape[n_patches, 2048]> : !mosh.ape != #mosh<ape[div(n_patches, 4), 4, 2048]> : !mosh.ape
-If you are confident this is correct, consider a rebind to assert that the reshape is valid.
-Ex: ```
-    n, m = x.shape
-    x = x.rebind([(n // 4) * 4, m])
-    x.reshape([n // 4, 4, m])
-```""")
+    
+Operation creation failed:
+error: unknown: [reshape] input and output number of elements must match: #mosh<ape[n_patches, 2048]> : !mosh.ape != #mosh<ape[div(n_patches, 4), 4, 2048]> : !mosh.ape
+  If you are confident this is correct, consider a rebind to assert that the reshape is valid.
+  Ex: ```
+      n, m = x.shape
+      x = x.rebind([(n // 4) * 4, m])
+      x.reshape([n // 4, 4, m])
+  ```""")
     with Graph("test_MAXPLAT_329", input_types=[input_type]) as graph:
         (x,) = graph.inputs
         n_patches, _ = x.tensor.shape

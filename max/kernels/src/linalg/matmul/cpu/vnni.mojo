@@ -17,7 +17,8 @@ from sys import prefetch
 from sys.info import CompilationTarget, align_of
 from sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import NDBuffer, partial_simd_load
+from buffer.buffer import partial_simd_load
+from layout import Layout, LayoutTensor, RuntimeTuple
 from memory.unsafe import bitcast
 
 from utils.index import Index, IndexList
@@ -46,8 +47,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         kernel_cols: Int,
     ](
         self,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -67,6 +68,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 processing tile to index the packed B matrix.
             tile_n_k: TODO
         """
+        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
+
         comptime c_type = c_local.dtype
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
@@ -74,9 +77,11 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
 
         # Global K index.
         var global_k = global_offset.K + kl
-        var b_ptr = b_packed._offset(Index(n_outer_idx, kl // 4, 0)).bitcast[
-            Scalar[c_type]
-        ]()
+
+        var b_offset = b_packed.runtime_layout(
+            RuntimeTuple[b_packed.layout.shape](Index(n_outer_idx, kl // 4, 0))
+        )
+        var b_ptr = b_packed.ptr.offset(b_offset).bitcast[Scalar[c_type]]()
 
         @parameter
         if not is_tail:
@@ -99,15 +104,15 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         # This inner kernels works with non-transposed A.
         var K = a.dim[1]()
 
-        var a_local = NDBuffer[
-            a.type,
-            1,
+        # Stack allocation for local A buffer
+        var a_local = LayoutTensor[
+            a.dtype,
+            Layout.row_major(kernel_rows * 4),
             MutAnyOrigin,
-            4 * kernel_rows,
             address_space = a.address_space,
         ].stack_allocation()
-        var a_base_ptr = a.data.offset(global_offset.M * K + global_k)
-        var a_ptr = a_local.data if (
+        var a_base_ptr = a.ptr.offset(global_offset.M * K + global_k)
+        var a_ptr = a_local.ptr if (
             is_tail
             and not CompilationTarget.has_avx512f()
             # This origin cast is not ideal since we give up
@@ -161,8 +166,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     var a_val2 = SIMD[c_type, simd_size](a_val)
                     c_val = _neon_dotprod(
                         c_val,
-                        bitcast[a.type, simd_size * 4](a_val2),
-                        bitcast[b_packed.type, simd_size * 4](b_val),
+                        bitcast[a.dtype, simd_size * 4](a_val2),
+                        bitcast[b_packed.dtype, simd_size * 4](b_val),
                     )
                 elif Self.saturated_vnni:
                     c_val = dot_i8_to_i32_saturated_x86[simd_size](
@@ -179,9 +184,9 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         simd_size: Int,
     ](
         self,
-        c: NDBuffer,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        c: LayoutTensor[mut=True, **_],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
@@ -190,19 +195,20 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
         """
+        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
         debug_assert(
             tile_n_k[1] % 0 == 0, "K dimension must be a multiple of 4"
         )
 
         var c_stride = c.dim[1]()
 
-        var c_ptr = c.data.offset(global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr.offset(global_offset.M * c_stride + global_offset.N)
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )
 
         var acc = _Accumulator[
-            c.type, kernel_rows, kernel_cols // simd_size, simd_size
+            c.dtype, kernel_rows, kernel_cols // simd_size, simd_size
         ]()
 
         for idx_n in range(0, tile_n_k[0], kernel_cols):
@@ -212,7 +218,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                    rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -242,7 +248,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     tile_n_k,
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

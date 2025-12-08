@@ -1,6 +1,8 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")
 
+package(default_visibility = ["//max:consumers"])
+
 _EXTRA_CONSTRAINTS = {
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
     "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
@@ -51,10 +53,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2366
-    "test_split_k_reduce.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "test_gemv.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -87,9 +85,16 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//:b200_gpu"],
     "test_naive_blockwise_fp8_matmul.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_cublaslt_scaled_mxfp8_matmul.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_cublaslt_scaled_nvfp4_matmul.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -125,6 +130,8 @@ _B200_TESTS = [
     "test_matmul_sm100_2sm_fp8.mojo",
     "test_matmul_sm100_1sm_fp8.mojo",
     "test_matmul_sm100_splitk_2sm_bf16.mojo",
+    "test_tma_mma_sm100_mxfp8.mojo",
+    "test_tma_pair_mma_sm100_mxfp8.mojo",
 ]
 
 _GPU_MEMORY = {

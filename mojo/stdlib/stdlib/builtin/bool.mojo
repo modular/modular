@@ -25,6 +25,7 @@ from python import (
     PythonObject,
 )
 
+from builtin.rebind import trait_downcast
 from utils._select import _select_register_value as select
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -59,45 +60,6 @@ trait Boolable:
 
 
 # ===----------------------------------------------------------------------=== #
-#  ImplicitlyBoolable
-# ===----------------------------------------------------------------------=== #
-
-
-trait ImplicitlyBoolable(Boolable):
-    """The `ImplicitlyBoolable` trait describes a type that can be implicitly
-    converted to a `Bool`.
-
-    Types conforming to this trait can be passed to a function that expects a
-    `Bool` without explicitly converting to it. Accordingly, most types should
-    conform to `Boolable` instead, since implicit conversions to `Bool` can have
-    unintuitive consequences.
-
-    This trait requires the type to implement the `__as_bool__()` method. For
-    example:
-
-    ```mojo
-    struct Foo(ImplicitlyBoolable):
-        var val: Bool
-
-        fn __as_bool__(self) -> Bool:
-            return self.val
-
-        fn __bool__(self) -> Bool:
-            return self.__as_bool__()
-    ```
-    """
-
-    @always_inline
-    fn __as_bool__(self) -> Bool:
-        """Get the boolean representation of the value.
-
-        Returns:
-            The boolean representation of the value.
-        """
-        return self.__bool__()
-
-
-# ===----------------------------------------------------------------------=== #
 #  Bool
 # ===----------------------------------------------------------------------=== #
 
@@ -105,17 +67,16 @@ trait ImplicitlyBoolable(Boolable):
 @lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct Bool(
+    Boolable,
     Comparable,
     ConvertibleFromPython,
     ConvertibleToPython,
     Defaultable,
     Floatable,
     Hashable,
-    ImplicitlyBoolable,
     ImplicitlyCopyable,
     Indexer,
     Intable,
-    Movable,
     Representable,
     Stringable,
     Writable,
@@ -180,19 +141,6 @@ struct Bool(
         ](mlir_value)
 
     @always_inline("nodebug")
-    @implicit
-    fn __init__[T: ImplicitlyBoolable, //](out self, value: T):
-        """Convert an ImplicitlyBoolable value to a Bool.
-
-        Parameters:
-            T: The ImplicitlyBoolable type.
-
-        Args:
-            value: The boolable value.
-        """
-        self = value.__bool__()
-
-    @always_inline("nodebug")
     fn __init__[T: Boolable, //](out self, value: T):
         """Set the bool representation of the object.
 
@@ -231,15 +179,6 @@ struct Bool(
             This value.
         """
         return self
-
-    @always_inline("builtin")
-    fn __as_bool__(self) -> Bool:
-        """Convert to Bool.
-
-        Returns:
-            This value.
-        """
-        return self.__bool__()
 
     @always_inline("builtin")
     fn __mlir_i1__(self) -> __mlir_type.i1:
@@ -569,41 +508,25 @@ struct Bool(
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: Combine these into Iterators over Boolable elements
-
-
-fn any[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
-    """Checks if **any** element in the list is truthy.
+fn any[
+    IterableType: Iterable
+](iterable: IterableType) -> Bool where conforms_to(
+    IterableType.IteratorType[origin_of(iterable)].Element, Boolable
+):
+    """Checks if **all** elements in the list are truthy.
 
     Parameters:
-        T: The type of elements to check.
+        IterableType: The type of the iterable containing `Boolable` items.
 
     Args:
-        list: The list to check.
+        iterable: The iterable to check.
 
     Returns:
         `True` if **any** element in the list is truthy, `False` otherwise.
     """
-    for item in list:
-        if item:
-            return True
-    return False
 
-
-fn any[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
-    """Checks if **any** element in the set is truthy.
-
-    Parameters:
-        T: The type of elements to check.
-
-    Args:
-        set: The set to check.
-
-    Returns:
-        `True` if **any** element in the set is truthy, `False` otherwise.
-    """
-    for item in set:
-        if item:
+    for item in iterable:
+        if trait_downcast[Boolable](item):
             return True
     return False
 
@@ -626,41 +549,24 @@ fn any(value: SIMD) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: Combine these into Iterators over Boolable elements
-
-
-fn all[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
+fn all[
+    IterableType: Iterable
+](iterable: IterableType) -> Bool where conforms_to(
+    IterableType.IteratorType[origin_of(iterable)].Element, Boolable
+):
     """Checks if **all** elements in the list are truthy.
 
     Parameters:
-        T: The type of elements to check.
+        IterableType: The type of the iterable containing `Boolable` items.
 
     Args:
-        list: The list to check.
+        iterable: The iterable to check.
 
     Returns:
-        `True` if **all** elements in the list are truthy, `False` otherwise.
+        `True` if **all** elements in the iterable are truthy, `False` otherwise.
     """
-    for item in list:
-        if not item:
-            return False
-    return True
-
-
-fn all[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
-    """Checks if **all** elements in the set are truthy.
-
-    Parameters:
-        T: The type of elements to check.
-
-    Args:
-        set: The set to check.
-
-    Returns:
-        `True` if **all** elements in the set are truthy, `False` otherwise.
-    """
-    for item in set:
-        if not item:
+    for item in iterable:
+        if not trait_downcast[Boolable](item):
             return False
     return True
 

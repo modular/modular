@@ -3,6 +3,7 @@
 load("@rules_cc//cc:cc_binary.bzl", _cc_binary = "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", _cc_library = "cc_library")
 load("@rules_pkg//pkg:mappings.bzl", _pkg_filegroup = "pkg_filegroup", _pkg_files = "pkg_files", _strip_prefix = "strip_prefix")
+load("//bazel/internal:copy_files.bzl", _copy_files = "copy_files")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_multi_py_version_test.bzl", _modular_multi_py_version_test = "modular_multi_py_version_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
@@ -47,12 +48,8 @@ def _has_internal_reference(deps):
 def modular_py_library(
         name,
         deps = [],
-        visibility = ["//visibility:public"],
+        visibility = None,
         **kwargs):
-    if name == "_mlir":
-        native.alias(name = name, actual = "@modular_wheel//:wheel", visibility = visibility)
-        return
-
     if _has_internal_reference(deps):
         return
 
@@ -86,12 +83,28 @@ def modular_run_binary_test(external_noop = False, **kwargs):
         **kwargs
     )
 
-def modular_generate_stubfiles(name, **_kwargs):
-    native.alias(name = name, actual = "@modular_wheel//:wheel", visibility = ["//visibility:public"])
+def modular_generate_stubfiles(name, pyi_srcs, imports, deps = [], **_kwargs):
+    modular_py_library(
+        name = name,
+        pyi_srcs = pyi_srcs,
+        imports = imports,
+        deps = deps + ["@modular_wheel//:wheel"],
+    )
+
+# buildifier: disable=function-docstring
+def copy_files(srcs, **kwargs):
+    new_srcs = []
+    for src in srcs:
+        if src.startswith("//GenericML:"):
+            if "@modular_wheel//:tblgen_python_srcs" not in new_srcs:
+                new_srcs.append("@modular_wheel//:tblgen_python_srcs")
+        else:
+            new_srcs.append(src)
+
+    _copy_files(srcs = new_srcs, **kwargs)
 
 def _noop(**_kwargs):
     pass
 
-copy_files = _noop
 mojo_kgen_lib = _noop
 modular_nanobind_extension = _noop

@@ -169,6 +169,7 @@ trait IntableRaising:
 @register_passable("trivial")
 struct Int(
     Absable,
+    Boolable,
     CeilDivable,
     Ceilable,
     Comparable,
@@ -179,13 +180,11 @@ struct Int(
     DivModable,
     Floorable,
     Hashable,
-    ImplicitlyBoolable,
     ImplicitlyCopyable,
     Indexer,
     Intable,
     IntervalElement,
     KeyElement,
-    Movable,
     Powable,
     Representable,
     Roundable,
@@ -324,41 +323,6 @@ struct Int(
             If the type does not have an integral representation.
         """
         self = value.__int__()
-
-    @always_inline("nodebug")
-    fn __init__(out self, value: StringSlice, base: UInt = 10) raises:
-        """Parses and returns the given string as an integer in the given base.
-
-        If base is set to 0, the string is parsed as an Integer literal, with the
-        following considerations:
-        - '0b' or '0B' prefix indicates binary (base 2)
-        - '0o' or '0O' prefix indicates octal (base 8)
-        - '0x' or '0X' prefix indicates hexadecimal (base 16)
-        - Without a prefix, it's treated as decimal (base 10)
-
-        Args:
-            value: A string to be parsed as an integer in the given base.
-            base: Base used for conversion, value must be between 2 and 36, or 0.
-
-        Raises:
-            If the given string cannot be parsed as an integer value or if an
-            incorrect base is provided.
-
-        Examples:
-            >>> Int("32")
-            32
-            >>> Int("FF", 16)
-            255
-            >>> Int("0xFF", 0)
-            255
-            >>> Int("0b1010", 0)
-            10
-
-        Notes:
-            This follows [Python's integer literals](
-            https://docs.python.org/3/reference/lexical_analysis.html#integers).
-        """
-        self = atol(value, Int(base))
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
@@ -578,7 +542,7 @@ struct Int(
         var denom = select(rhs == 0, 1, rhs)
         var div = self._positive_div(denom)
         var rem = self._positive_rem(denom)
-        var neg = ((rhs < 0) ^ (self < 0)) & rem
+        var neg = ((rhs < 0) ^ (self < 0)) & Bool(rem)
         div = select(neg, div - 1, div)
         mod = select(neg, rem + rhs, rem)
         return select(rhs == 0, 0, div), select(rhs == 0, 0, mod)
@@ -954,15 +918,6 @@ struct Int(
             False Bool value if the value is equal to 0 and True otherwise.
         """
         return self != 0
-
-    @always_inline("builtin")
-    fn __as_bool__(self) -> Bool:
-        """Convert this Int to Bool.
-
-        Returns:
-            False Bool value if the value is equal to 0 and True otherwise.
-        """
-        return self.__bool__()
 
     @always_inline("builtin")
     fn __mlir_index__(self) -> __mlir_type.index:

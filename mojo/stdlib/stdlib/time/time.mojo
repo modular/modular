@@ -20,7 +20,6 @@ from time import perf_counter_ns
 """
 
 from math import floor
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import (
     CompilationTarget,
@@ -52,9 +51,7 @@ comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 
 @fieldwise_init
 @register_passable("trivial")
-struct _CTimeSpec(
-    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
-):
+struct _CTimeSpec(Defaultable, ImplicitlyCopyable, Stringable, Writable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -221,7 +218,7 @@ fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
             has_side_effect=True,
         ]()
 
-    return perf_counter_ns()
+    return UInt64(perf_counter_ns())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -287,7 +284,7 @@ fn time_function[func: fn () capturing [_] -> None]() -> UInt:
     try:
         return time_function[raising_func]()
     except err:
-        return abort[UInt](String(err))
+        abort(String(err))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -315,12 +312,9 @@ fn sleep(sec: Float64):
         Int(total_secs),
         Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
     )
-    var req = UnsafePointer[_CTimeSpec](to=tv_spec)
-    var rem = UnsafePointer[_CTimeSpec]()
+    var req = UnsafePointer(to=tv_spec)
+    var rem = UnsafePointer[_CTimeSpec, MutOrigin.external]()
     _ = external_call["nanosleep", Int32](req, rem)
-    _ = tv_spec
-    _ = req
-    _ = rem
 
 
 fn _gpu_sleep_inst() -> StaticString:

@@ -77,3 +77,21 @@ def test_row_major():
         layout3_static.stride
         == MixedTuple(ComptimeInt[20](), ComptimeInt[5](), ComptimeInt[1]())
     )
+
+
+def test_row_major_static_constructor_empty():
+    var layout = row_major[]()
+    assert_equal(len(layout.shape), 0)
+    assert_equal(len(layout.stride), 0)
+
+
+def test_row_major_static_constructor_():
+    var layout = row_major[1, 2, 3]()
+    assert_equal(len(layout.shape), 3)
+    assert_equal(len(layout.stride), 3)
+    assert_equal(layout.shape[0].value(), 1)
+    assert_equal(layout.shape[1].value(), 2)
+    assert_equal(layout.shape[2].value(), 3)
+    assert_equal(layout.stride[0].value(), 6)
+    assert_equal(layout.stride[1].value(), 3)
+    assert_equal(layout.stride[2].value(), 1)

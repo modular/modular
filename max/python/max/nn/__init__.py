@@ -67,6 +67,7 @@ from .sequential import Sequential
 from .transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
+    ReturnHiddenStates,
     ReturnLogits,
     Transformer,
     TransformerBlock,
@@ -118,6 +119,7 @@ __all__ = [
     "RMSNorm",
     "RMSNormV1",
     "RaggedAttention",
+    "ReturnHiddenStates",
     "ReturnLogits",
     "RotaryEmbedding",
     "Sequential",

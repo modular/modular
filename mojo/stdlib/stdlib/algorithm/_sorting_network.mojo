@@ -495,9 +495,9 @@ fn _sort[
 ](x: Span[Scalar[dtype], origin]):
     comptime network = _networks(n)
 
-    constrained[
-        len(network) > 0, String("a sorting of length ", n, " is not available")
-    ]()
+    __comptime_assert len(network) > 0, String(
+        "a sorting of length ", n, " is not available"
+    )
 
     @parameter
     for level in network:

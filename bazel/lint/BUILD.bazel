@@ -6,6 +6,8 @@ load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//bazel:api.bzl", "modular_py_binary", "mojo_binary")
 
+package(default_visibility = ["//visibility:public"])
+
 _BUILDIFIER_IGNORES = [
     "./.derived/*",
     "./.git/*",
@@ -18,7 +20,6 @@ buildifier(
     exclude_patterns = _BUILDIFIER_IGNORES,
     lint_mode = "warn",
     mode = "diff",
-    visibility = ["//visibility:public"],
 )
 
 buildifier(
@@ -26,7 +27,6 @@ buildifier(
     exclude_patterns = _BUILDIFIER_IGNORES,
     lint_mode = "fix",
     mode = "fix",
-    visibility = ["//visibility:public"],
 )
 
 npm_link_all_packages(
@@ -60,7 +60,6 @@ js_binary(
         ":node_modules/@datadog/datadog-ci",
     ],
     entry_point = ":datadog_ci_entry_point",
-    visibility = ["//visibility:public"],
 )
 
 sh_binary(
@@ -72,7 +71,6 @@ sh_binary(
 command(
     name = "markdownlint.check",
     command = "markdownlint-wrapper",
-    visibility = ["//visibility:public"],
 )
 
 command(
@@ -80,14 +78,12 @@ command(
     arguments = ["--fix"],
     command = "markdownlint-wrapper",
     environment = {"FAST": "1"},
-    visibility = ["//visibility:public"],
 )
 
 command(
     name = "markdownlint.fix",
     arguments = ["--fix"],
     command = "markdownlint-wrapper",
-    visibility = ["//visibility:public"],
 )
 
 sh_binary(
@@ -98,21 +94,18 @@ sh_binary(
         "//:linux_aarch64": ["@ruff-aarch64-unknown-linux-gnu//:ruff"],
         "@platforms//os:macos": ["@ruff-aarch64-apple-darwin//:ruff"],
     }),
-    visibility = ["//visibility:public"],
 )
 
 command(
     name = "ruff.check",
     arguments = ["check"],
     command = ":ruff-wrapper",
-    visibility = ["//visibility:public"],
 )
 
 command(
     name = "ruff.fix",
     arguments = ["fix"],
     command = ":ruff-wrapper",
-    visibility = ["//visibility:public"],
 )
 
 modular_py_binary(
@@ -130,7 +123,6 @@ command(
         ".",
     ],
     command = ":mblack-wrapper",
-    visibility = ["//visibility:public"],
 )
 
 command(
@@ -140,7 +132,6 @@ command(
         ".",
     ],
     command = ":mblack-wrapper",
-    visibility = ["//visibility:public"],
 )
 
 command(
@@ -150,7 +141,6 @@ command(
     ],
     command = ":mblack-wrapper",
     environment = {"FAST": "1"},
-    visibility = ["//visibility:public"],
 )
 
 mojo_binary(
@@ -183,7 +173,6 @@ multirun(
         ":ruff.check",
     ],
     jobs = 0,
-    visibility = ["//visibility:public"],
 )
 
 COMMON_FIX_COMMANDS = [
@@ -200,7 +189,6 @@ multirun(
         ":mblack.fix-fast",
     ],
     jobs = 0,
-    visibility = ["//visibility:public"],
 )
 
 multirun(
@@ -211,5 +199,16 @@ multirun(
         ":mblack.fix",
     ],
     jobs = 0,
-    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "format",
+    srcs = ["format-wrapper.sh"],
+    data = ["//bazel/lint:fix"],
+)
+
+sh_binary(
+    name = "format-fast",
+    srcs = ["format-fast-wrapper.sh"],
+    data = ["//bazel/lint:fix-fast"],
 )

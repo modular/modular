@@ -16,9 +16,9 @@
 struct Sentiment(Equatable, ImplicitlyCopyable):
     var _value: Int
 
-    alias NEGATIVE = Sentiment(0)
-    alias NEUTRAL = Sentiment(1)
-    alias POSITIVE = Sentiment(2)
+    comptime NEGATIVE = Sentiment(0)
+    comptime NEUTRAL = Sentiment(1)
+    comptime POSITIVE = Sentiment(2)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

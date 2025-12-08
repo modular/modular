@@ -15,19 +15,18 @@ from collections import Set
 from random import random_ui64, seed
 from sys import size_of
 
-from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, thread_idx
 from gpu.memory import fence_async_view_proxy
-from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._fillers import random
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMANestedTensorTile
 from memory import stack_allocation
@@ -133,14 +132,16 @@ fn mha_operand_tma_copy_kernel[
             dst_tma_tile.wait_group()
 
 
-def mha_operand_copy[
+fn mha_operand_copy[
     kv_t: MHAOperand, //,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
     *,
     is_k_major: Bool,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-](ctx: DeviceContext, src: kv_t, dst: kv_t, batch_size: Int, max_seq_len: Int,):
+](
+    ctx: DeviceContext, src: kv_t, dst: kv_t, batch_size: Int, max_seq_len: Int
+) raises:
     # Each kernel call copies the entire array, iterating over `tile_m` chunks
     # along the rows. `head_size` is the continugous axis.
     # For `Q @ K'`, `is_k_major` is True.
@@ -185,11 +186,11 @@ def mha_operand_copy[
     ctx.synchronize()
 
 
-def test_mha_host_operand[
+fn test_mha_host_operand[
     kv_t: MHAOperand, //,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
-](src: kv_t, dst: kv_t, batch_size: Int):
+](src: kv_t, dst: kv_t, batch_size: Int) raises:
     """Test function that compares two MHAOperands using block_paged_ptr."""
     comptime kv_row_stride = Int(kv_params.head_size * kv_params.num_heads)
     # Iterate over all batch entries and tokens
@@ -217,11 +218,13 @@ def test_mha_host_operand[
                         assert_equal(src_val, dst_val)
 
 
-def test_continuous_kv_cache[
+fn test_continuous_kv_cache[
     dtype: DType,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
-](ctx: DeviceContext, batch_size: Int, max_seq_len: Int, num_layers: Int,):
+](
+    ctx: DeviceContext, batch_size: Int, max_seq_len: Int, num_layers: Int
+) raises:
     comptime msg = "  Testing ContinuousBatchingKVCache with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
@@ -229,7 +232,7 @@ def test_continuous_kv_cache[
 
     # Initialize cache blocks
     num_blocks = batch_size + 2
-    dyn_shape = IndexList[6](
+    var dyn_shape = IndexList[6](
         num_blocks,
         2,  # key and value
         num_layers,
@@ -237,121 +240,85 @@ def test_continuous_kv_cache[
         Int(kv_params.num_heads),
         Int(kv_params.head_size),
     )
-    kv_block_host = HostNDBuffer[dtype, 6](dyn_shape)
-    random(kv_block_host.tensor)
-    kv_block_device = kv_block_host.copy_to_device(ctx)
+
+    comptime kv_block_layout = Layout.row_major[6]()
+    var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
+        dyn_shape
+    )
+
+    # Create device buffer for kv blocks
+    var kv_block_device = ctx.enqueue_create_buffer[dtype](
+        dyn_shape.flattened_length()
+    )
+
+    # Initialize with random data
+    with kv_block_device.map_to_host() as kv_block_host:
+        var kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
+            kv_block_host, kv_block_runtime_layout
+        )
+        random(kv_block_host_tensor)
 
     # Set up lookup table and cache lengths
-    lookup_table_host = HostNDBuffer[DType.uint32, 1](IndexList[1](batch_size))
-    cache_lengths_host = HostNDBuffer[DType.uint32, 1](IndexList[1](batch_size))
+    comptime lookup_layout = Layout(UNKNOWN_VALUE)
+    var lookup_shape = IndexList[1](batch_size)
+    var lookup_runtime_layout = RuntimeLayout[lookup_layout].row_major(
+        lookup_shape
+    )
 
-    for i in range(batch_size):
-        lookup_table_host.tensor[i] = i
-        cache_lengths_host.tensor[i] = max_seq_len // 2  # Half filled caches
+    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
 
-    lookup_table_device = lookup_table_host.copy_to_device(ctx)
-    cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
+    with lookup_table_device.map_to_host() as lookup_host:
+        for i in range(batch_size):
+            lookup_host[i] = i
 
-    # Create source and destination collections
-    src_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        LayoutTensor[
-            kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
-        ](
-            kv_block_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+    with cache_lengths_device.map_to_host() as cache_lengths_host:
+        for i in range(batch_size):
+            cache_lengths_host[i] = max_seq_len // 2  # Half filled caches
+
+    # Create source collection on device
+    var src_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
+        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
+            kv_block_device, kv_block_runtime_layout
         ),
-        LayoutTensor[
-            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[DType.uint32, lookup_layout, ImmutAnyOrigin](
+            cache_lengths_device, lookup_runtime_layout
         ),
-        LayoutTensor[
-            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            lookup_table_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
-                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[DType.uint32, lookup_layout, ImmutAnyOrigin](
+            lookup_table_device, lookup_runtime_layout
         ),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
 
-    # Test copying key cache at layer 0
     src_key = KVCacheMHAOperand(src_collection.get_key_cache(0))
-    src_host_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        LayoutTensor[kv_block_host.dtype, Layout.row_major[6](), MutAnyOrigin](
-            kv_block_host.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_host.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_host.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[
-            cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths_host.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
-                cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[
-            lookup_table_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            lookup_table_host.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                lookup_table_host.to_layout_tensor().runtime_layout.shape.value,
-                lookup_table_host.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        UInt32(max_seq_len),
-        UInt32(max_seq_len),
-    )
-
-    src_host_key = KVCacheMHAOperand(src_host_collection.get_key_cache(0))
 
     for is_k_major in range(2):
-        dst_block_host = HostNDBuffer[dtype, 6](dyn_shape)
-        dst_block_device = dst_block_host.copy_to_device(ctx)
+        # Create destination buffer
+        var dst_block_device = ctx.enqueue_create_buffer[dtype](
+            dyn_shape.flattened_length()
+        )
 
-        dst_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-            LayoutTensor[
-                dst_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
-            ](
-                dst_block_device.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()](
-                    dst_block_device.to_layout_tensor().runtime_layout.shape.value,
-                    dst_block_device.to_layout_tensor().runtime_layout.stride.value,
-                ),
+        # Initialize destination with zeros
+        with dst_block_device.map_to_host() as dst_host:
+            for i in range(len(dst_host)):
+                dst_host[i] = 0
+
+        var dst_collection = ContinuousBatchingKVCacheCollection[
+            dtype, kv_params
+        ](
+            LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
+                dst_block_device, kv_block_runtime_layout
             ),
-            LayoutTensor[
-                cache_lengths_device.dtype,
-                Layout(UNKNOWN_VALUE),
-                ImmutAnyOrigin,
-            ](
-                cache_lengths_device.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                    cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                    cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
-                ),
+            LayoutTensor[DType.uint32, lookup_layout, ImmutAnyOrigin](
+                cache_lengths_device, lookup_runtime_layout
             ),
-            LayoutTensor[
-                lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                lookup_table_device.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                    lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
-                    lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
-                ),
+            LayoutTensor[DType.uint32, lookup_layout, ImmutAnyOrigin](
+                lookup_table_device, lookup_runtime_layout
             ),
             UInt32(max_seq_len),
             UInt32(max_seq_len),
@@ -375,68 +342,65 @@ def test_continuous_kv_cache[
                 max_seq_len,
             )
 
-        # Verify results - copy device data back to host
-        ctx.enqueue_copy(dst_block_host.tensor.data, dst_block_device.buffer)
-        ctx.synchronize()
+        # Verify results by comparing on host
+        with kv_block_device.map_to_host() as src_host:
+            with dst_block_device.map_to_host() as dst_host:
+                with lookup_table_device.map_to_host() as lookup_host:
+                    with cache_lengths_device.map_to_host() as cache_lengths_host:
+                        var src_host_tensor = LayoutTensor[
+                            dtype, kv_block_layout
+                        ](src_host, kv_block_runtime_layout)
+                        var dst_host_tensor = LayoutTensor[
+                            dtype, kv_block_layout
+                        ](dst_host, kv_block_runtime_layout)
+                        var lookup_host_tensor = LayoutTensor[
+                            DType.uint32, lookup_layout
+                        ](lookup_host, lookup_runtime_layout)
+                        var cache_lengths_host_tensor = LayoutTensor[
+                            DType.uint32, lookup_layout
+                        ](cache_lengths_host, lookup_runtime_layout)
 
-        # Create host-side MHAOperands for verification
-        dst_host_collection = ContinuousBatchingKVCacheCollection[
-            dtype, kv_params
-        ](
-            LayoutTensor[
-                dst_block_host.dtype, Layout.row_major[6](), MutAnyOrigin
-            ](
-                dst_block_host.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()](
-                    dst_block_host.to_layout_tensor().runtime_layout.shape.value,
-                    dst_block_host.to_layout_tensor().runtime_layout.stride.value,
-                ),
-            ),
-            LayoutTensor[
-                cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                cache_lengths_host.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                    cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
-                    cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
-                ),
-            ),
-            LayoutTensor[
-                lookup_table_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                lookup_table_host.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                    lookup_table_host.to_layout_tensor().runtime_layout.shape.value,
-                    lookup_table_host.to_layout_tensor().runtime_layout.stride.value,
-                ),
-            ),
-            UInt32(max_seq_len),
-            UInt32(max_seq_len),
-        )
-        dst_host_key = KVCacheMHAOperand(dst_host_collection.get_key_cache(0))
-        # Verify using block_paged_ptr
-        test_mha_host_operand[tile_m, kv_params](
-            src_host_key, dst_host_key, batch_size
-        )
-        _ = dst_block_device^
-        _ = dst_block_host^
+                        var src_host_collection = ContinuousBatchingKVCacheCollection[
+                            dtype, kv_params
+                        ](
+                            src_host_tensor.as_any_origin(),
+                            cache_lengths_host_tensor.as_any_origin().get_immutable(),
+                            lookup_host_tensor.as_any_origin().get_immutable(),
+                            UInt32(max_seq_len),
+                            UInt32(max_seq_len),
+                        )
+                        var dst_host_collection = ContinuousBatchingKVCacheCollection[
+                            dtype, kv_params
+                        ](
+                            dst_host_tensor.as_any_origin(),
+                            cache_lengths_host_tensor.as_any_origin().get_immutable(),
+                            lookup_host_tensor.as_any_origin().get_immutable(),
+                            UInt32(max_seq_len),
+                            UInt32(max_seq_len),
+                        )
+
+                        src_host_key = KVCacheMHAOperand(
+                            src_host_collection.get_key_cache(0)
+                        )
+                        dst_host_key = KVCacheMHAOperand(
+                            dst_host_collection.get_key_cache(0)
+                        )
+
+                        test_mha_host_operand[tile_m, kv_params](
+                            src_host_key, dst_host_key, batch_size
+                        )
 
     print("    ContinuousBatchingKVCache test passed!")
 
-    _ = kv_block_host^
-    _ = kv_block_device^
-    _ = lookup_table_host^
-    _ = lookup_table_device^
-    _ = cache_lengths_host^
-    _ = cache_lengths_device^
 
-
-def test_paged_kv_cache[
+fn test_paged_kv_cache[
     dtype: DType,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
     page_size: Int,
-](ctx: DeviceContext, batch_size: Int, max_seq_len: Int, num_layers: Int,):
+](
+    ctx: DeviceContext, batch_size: Int, max_seq_len: Int, num_layers: Int
+) raises:
     comptime msg = "  Testing PagedKVCache with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
@@ -447,7 +411,7 @@ def test_paged_kv_cache[
     num_blocks = batch_size * pages_per_seq + 10  # Extra blocks
 
     # Initialize paged cache blocks
-    dyn_shape = IndexList[6](
+    var dyn_shape = IndexList[6](
         num_blocks,
         2,  # key and value
         num_layers,
@@ -456,139 +420,104 @@ def test_paged_kv_cache[
         Int(kv_params.head_size),
     )
 
-    kv_block_host = HostNDBuffer[dtype, 6](dyn_shape)
-    random(kv_block_host.tensor)
-    kv_block_device = kv_block_host.copy_to_device(ctx)
+    comptime kv_block_layout = Layout.row_major[6]()
+    var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
+        dyn_shape
+    )
+
+    # Create device buffer for kv blocks
+    var kv_block_device = ctx.enqueue_create_buffer[dtype](
+        dyn_shape.flattened_length()
+    )
+
+    # Initialize with random data
+    with kv_block_device.map_to_host() as kv_block_host:
+        var kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
+            kv_block_host, kv_block_runtime_layout
+        )
+        random(kv_block_host_tensor)
 
     # Set up page lookup table
-    paged_lut_host = HostNDBuffer[DType.uint32, 2](
-        IndexList[2](batch_size, pages_per_seq)
+    comptime paged_lut_layout = Layout.row_major[2]()
+    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
+        paged_lut_shape
     )
-    paged_lut_set = Set[Int]()
 
-    for bs in range(batch_size):
-        for page_idx in range(pages_per_seq):
-            block_idx = Int(random_ui64(0, num_blocks - 1))
-            while block_idx in paged_lut_set:
+    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+        paged_lut_shape.flattened_length()
+    )
+
+    var paged_lut_set = Set[Int]()
+    with paged_lut_device.map_to_host() as paged_lut_host:
+        var paged_lut_tensor = LayoutTensor[DType.uint32, paged_lut_layout](
+            paged_lut_host, paged_lut_runtime_layout
+        )
+        for bs in range(batch_size):
+            for page_idx in range(pages_per_seq):
                 block_idx = Int(random_ui64(0, num_blocks - 1))
-            paged_lut_set.add(block_idx)
-            paged_lut_host.tensor[bs, page_idx] = block_idx
-
-    paged_lut_device = paged_lut_host.copy_to_device(ctx)
+                while block_idx in paged_lut_set:
+                    block_idx = Int(random_ui64(0, num_blocks - 1))
+                paged_lut_set.add(block_idx)
+                paged_lut_tensor[bs, page_idx] = block_idx
 
     # Set up cache lengths
-    cache_lengths_host = HostNDBuffer[DType.uint32, 1](IndexList[1](batch_size))
-    for i in range(batch_size):
-        cache_lengths_host.tensor[i] = max_seq_len // 2  # Half filled
+    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
+    var cache_lengths_shape = IndexList[1](batch_size)
+    var cache_lengths_runtime_layout = RuntimeLayout[
+        cache_lengths_layout
+    ].row_major(cache_lengths_shape)
 
-    cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
 
-    # Create source and destination collections
-    src_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        LayoutTensor[
-            kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
-        ](
-            kv_block_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+    with cache_lengths_device.map_to_host() as cache_lengths_host:
+        for i in range(batch_size):
+            cache_lengths_host[i] = max_seq_len // 2  # Half filled
+
+    # Create source collection on device
+    var src_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
+        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
+            kv_block_device, kv_block_runtime_layout
         ),
-        LayoutTensor[
-            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[DType.uint32, cache_lengths_layout, ImmutAnyOrigin](
+            cache_lengths_device, cache_lengths_runtime_layout
         ),
-        LayoutTensor[
-            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
-        ](
-            paged_lut_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
-                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
+            paged_lut_device, paged_lut_runtime_layout
         ),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
     src_key = KVCacheMHAOperand(src_collection.get_key_cache(0))
 
-    # Create host-side MHAOperands for verification
-    src_host_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        LayoutTensor[kv_block_host.dtype, Layout.row_major[6](), MutAnyOrigin](
-            kv_block_host.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_host.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_host.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[
-            cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths_host.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
-                cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[
-            paged_lut_host.dtype, Layout.row_major[2](), ImmutAnyOrigin
-        ](
-            paged_lut_host.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_host.to_layout_tensor().runtime_layout.shape.value,
-                paged_lut_host.to_layout_tensor().runtime_layout.stride.value,
-            ),
-        ),
-        UInt32(max_seq_len),
-        UInt32(max_seq_len),
-    )
-
-    src_host_key = KVCacheMHAOperand(src_host_collection.get_key_cache(0))
-
     for is_k_major in range(2):
-        # Create destination with zeroed blocks
-        dst_block_host = HostNDBuffer[dtype, 6](dyn_shape)
-        dst_block_device = dst_block_host.copy_to_device(ctx)
+        # Create destination buffer
+        var dst_block_device = ctx.enqueue_create_buffer[dtype](
+            dyn_shape.flattened_length()
+        )
 
-        dst_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-            LayoutTensor[
-                dst_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
-            ](
-                dst_block_device.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()](
-                    dst_block_device.to_layout_tensor().runtime_layout.shape.value,
-                    dst_block_device.to_layout_tensor().runtime_layout.stride.value,
-                ),
+        # Initialize destination with zeros
+        with dst_block_device.map_to_host() as dst_host:
+            for i in range(len(dst_host)):
+                dst_host[i] = 0
+
+        var dst_collection = PagedKVCacheCollection[
+            dtype, kv_params, page_size
+        ](
+            LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
+                dst_block_device, kv_block_runtime_layout
             ),
-            LayoutTensor[
-                cache_lengths_device.dtype,
-                Layout(UNKNOWN_VALUE),
-                ImmutAnyOrigin,
-            ](
-                cache_lengths_device.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                    cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                    cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
-                ),
+            LayoutTensor[DType.uint32, cache_lengths_layout, ImmutAnyOrigin](
+                cache_lengths_device, cache_lengths_runtime_layout
             ),
-            LayoutTensor[
-                paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
-            ](
-                paged_lut_device.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()](
-                    paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
-                    paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
-                ),
+            LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
+                paged_lut_device, paged_lut_runtime_layout
             ),
             UInt32(max_seq_len),
             UInt32(max_seq_len),
         )
-        # Test copying key cache at layer 0
         dst_key = KVCacheMHAOperand(dst_collection.get_key_cache(0))
 
         if is_k_major == 0:
@@ -608,94 +537,114 @@ def test_paged_kv_cache[
                 max_seq_len,
             )
 
-        # Verify results - copy device data back to host
-        ctx.enqueue_copy(dst_block_host.tensor.data, dst_block_device.buffer)
-        ctx.synchronize()
+        # Verify results by comparing on host
+        with kv_block_device.map_to_host() as src_host:
+            with dst_block_device.map_to_host() as dst_host:
+                with paged_lut_device.map_to_host() as paged_lut_host:
+                    with cache_lengths_device.map_to_host() as cache_lengths_host:
+                        var src_host_tensor = LayoutTensor[
+                            dtype, kv_block_layout
+                        ](src_host, kv_block_runtime_layout)
+                        var dst_host_tensor = LayoutTensor[
+                            dtype, kv_block_layout
+                        ](dst_host, kv_block_runtime_layout)
+                        var paged_lut_host_tensor = LayoutTensor[
+                            DType.uint32, paged_lut_layout
+                        ](paged_lut_host, paged_lut_runtime_layout)
+                        var cache_lengths_host_tensor = LayoutTensor[
+                            DType.uint32, cache_lengths_layout
+                        ](cache_lengths_host, cache_lengths_runtime_layout)
 
-        dst_host_collection = PagedKVCacheCollection[
-            dtype, kv_params, page_size
-        ](
-            LayoutTensor[
-                dst_block_host.dtype, Layout.row_major[6](), MutAnyOrigin
-            ](
-                dst_block_host.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()](
-                    dst_block_host.to_layout_tensor().runtime_layout.shape.value,
-                    dst_block_host.to_layout_tensor().runtime_layout.stride.value,
-                ),
-            ),
-            LayoutTensor[
-                cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                cache_lengths_host.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                    cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
-                    cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
-                ),
-            ),
-            LayoutTensor[
-                paged_lut_host.dtype, Layout.row_major[2](), ImmutAnyOrigin
-            ](
-                paged_lut_host.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()](
-                    paged_lut_host.to_layout_tensor().runtime_layout.shape.value,
-                    paged_lut_host.to_layout_tensor().runtime_layout.stride.value,
-                ),
-            ),
-            UInt32(max_seq_len),
-            UInt32(max_seq_len),
-        )
-        dst_host_key = KVCacheMHAOperand(dst_host_collection.get_key_cache(0))
+                        var src_host_collection = PagedKVCacheCollection[
+                            dtype, kv_params, page_size
+                        ](
+                            src_host_tensor.as_any_origin(),
+                            cache_lengths_host_tensor.as_any_origin().get_immutable(),
+                            paged_lut_host_tensor.as_any_origin().get_immutable(),
+                            UInt32(max_seq_len),
+                            UInt32(max_seq_len),
+                        )
+                        var dst_host_collection = PagedKVCacheCollection[
+                            dtype, kv_params, page_size
+                        ](
+                            dst_host_tensor.as_any_origin(),
+                            cache_lengths_host_tensor.as_any_origin().get_immutable(),
+                            paged_lut_host_tensor.as_any_origin().get_immutable(),
+                            UInt32(max_seq_len),
+                            UInt32(max_seq_len),
+                        )
 
-        # Verify using block_paged_ptr
-        test_mha_host_operand[tile_m, kv_params](
-            src_host_key, dst_host_key, batch_size
-        )
-        _ = dst_block_device^
-        _ = dst_block_host^
+                        src_host_key = KVCacheMHAOperand(
+                            src_host_collection.get_key_cache(0)
+                        )
+                        dst_host_key = KVCacheMHAOperand(
+                            dst_host_collection.get_key_cache(0)
+                        )
+
+                        test_mha_host_operand[tile_m, kv_params](
+                            src_host_key, dst_host_key, batch_size
+                        )
 
     print("    PagedKVCache test passed!")
 
-    _ = kv_block_host^
-    _ = kv_block_device^
-    _ = paged_lut_host^
-    _ = paged_lut_device^
-    _ = cache_lengths_host^
-    _ = cache_lengths_device^
 
-
-def test_ndbuffer[
+fn test_ndbuffer[
     dtype: DType,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
-](ctx: DeviceContext, batch_size: Int, max_seq_len: Int,):
+](ctx: DeviceContext, batch_size: Int, max_seq_len: Int) raises:
     comptime msg = "  Testing NDBuffer with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
 
     # Create source and destination buffers with BSHD layout
-    dyn_shape = IndexList[4](
+    var dyn_shape = IndexList[4](
         batch_size,
         max_seq_len,
         Int(kv_params.num_heads),
         Int(kv_params.head_size),
     )
 
-    src_host = HostNDBuffer[dtype, 4](dyn_shape)
-    random(src_host.tensor)
-    src_device = src_host.copy_to_device(ctx)
-
-    # Create MHAOperands
-    src_operand = LayoutTensorMHAOperand(
-        src_device.to_layout_tensor().as_any_origin()
+    comptime tensor_layout = Layout.row_major[4]()
+    var tensor_runtime_layout = RuntimeLayout[tensor_layout].row_major(
+        dyn_shape
     )
-    for is_k_major in range(2):
-        dst_host = HostNDBuffer[dtype, 4](dyn_shape)
 
-        dst_device = dst_host.copy_to_device(ctx)
+    # Create device buffer for source
+    var src_device = ctx.enqueue_create_buffer[dtype](
+        dyn_shape.flattened_length()
+    )
+
+    # Initialize with random data
+    with src_device.map_to_host() as src_host:
+        var src_host_tensor = LayoutTensor[dtype, tensor_layout](
+            src_host, tensor_runtime_layout
+        )
+        random(src_host_tensor)
+
+    # Create MHAOperand for source
+    src_operand = LayoutTensorMHAOperand(
+        LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
+            src_device, tensor_runtime_layout
+        )
+    )
+
+    for is_k_major in range(2):
+        # Create destination buffer
+        var dst_device = ctx.enqueue_create_buffer[dtype](
+            dyn_shape.flattened_length()
+        )
+
+        # Initialize destination with zeros
+        with dst_device.map_to_host() as dst_host:
+            for i in range(len(dst_host)):
+                dst_host[i] = 0
+
         dst_operand = LayoutTensorMHAOperand(
-            dst_device.to_layout_tensor().as_any_origin()
+            LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
+                dst_device, tensor_runtime_layout
+            )
         )
 
         if is_k_major == 0:  # unswitch
@@ -715,34 +664,33 @@ def test_ndbuffer[
                 max_seq_len,
             )
 
-        # Verify results - copy device data back to host
-        ctx.enqueue_copy(dst_host.tensor.data, dst_device.buffer)
-        ctx.synchronize()
+        # Verify results by comparing on host
+        with src_device.map_to_host() as src_host:
+            with dst_device.map_to_host() as dst_host:
+                var src_host_tensor = LayoutTensor[dtype, tensor_layout](
+                    src_host, tensor_runtime_layout
+                )
+                var dst_host_tensor = LayoutTensor[dtype, tensor_layout](
+                    dst_host, tensor_runtime_layout
+                )
 
-        # Create host-side MHAOperands for verification
-        src_host_operand = LayoutTensorMHAOperand(
-            src_host.to_layout_tensor().as_any_origin()
-        )
-        dst_host_operand = LayoutTensorMHAOperand(
-            dst_host.to_layout_tensor().as_any_origin()
-        )
+                src_host_operand = LayoutTensorMHAOperand(
+                    src_host_tensor.as_any_origin()
+                )
+                dst_host_operand = LayoutTensorMHAOperand(
+                    dst_host_tensor.as_any_origin()
+                )
 
-        # Verify using block_paged_ptr
-        test_mha_host_operand[tile_m, kv_params](
-            src_host_operand, dst_host_operand, batch_size
-        )
-        _ = dst_host^
-        _ = dst_device^
+                test_mha_host_operand[tile_m, kv_params](
+                    src_host_operand, dst_host_operand, batch_size
+                )
 
     print("    NDBuffer test passed!")
 
-    _ = src_host^
-    _ = src_device^
 
-
-def test_ragged[
+fn test_ragged[
     dtype: DType, tile_m: Int, kv_params: KVCacheStaticParams
-](ctx: DeviceContext, batch_size: Int):
+](ctx: DeviceContext, batch_size: Int) raises:
     comptime msg = "  Testing RaggedTensor with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
@@ -751,33 +699,62 @@ def test_ragged[
     # Create variable length sequences
     seq_lens = List[Int]()
     total_tokens = 0
+
     # Create cache row offsets
-    cache_row_offsets_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size + 1)
+    comptime offsets_layout = Layout(UNKNOWN_VALUE)
+    var offsets_shape = IndexList[1](batch_size + 1)
+    var offsets_runtime_layout = RuntimeLayout[offsets_layout].row_major(
+        offsets_shape
     )
+
+    var cache_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size + 1
+    )
+
+    # First pass: calculate sequence lengths and total tokens
     for i in range(batch_size):
         seq_len = Int(random_ui64(100, 500))
         seq_lens.append(seq_len)
-        cache_row_offsets_host.tensor[i] = total_tokens
         total_tokens += seq_len
 
-    cache_row_offsets_host.tensor[batch_size] = total_tokens
-
-    cache_row_offsets_device = cache_row_offsets_host.copy_to_device(ctx)
+    # Initialize offsets on device
+    with cache_row_offsets_device.map_to_host() as offsets_host:
+        offset = 0
+        for i in range(batch_size):
+            offsets_host[i] = offset
+            offset += seq_lens[i]
+        offsets_host[batch_size] = offset
 
     # Create ragged buffers
-    dyn_shape = IndexList[3](
+    var dyn_shape = IndexList[3](
         total_tokens, Int(kv_params.num_heads), Int(kv_params.head_size)
     )
 
-    src_host = HostNDBuffer[dtype, 3](dyn_shape)
-    random(src_host.tensor)
-    src_device = src_host.copy_to_device(ctx)
+    comptime tensor_layout = Layout.row_major[3]()
+    var tensor_runtime_layout = RuntimeLayout[tensor_layout].row_major(
+        dyn_shape
+    )
 
-    # Create MHAOperands
+    # Create device buffer for source
+    var src_device = ctx.enqueue_create_buffer[dtype](
+        dyn_shape.flattened_length()
+    )
+
+    # Initialize with random data
+    with src_device.map_to_host() as src_host:
+        var src_host_tensor = LayoutTensor[dtype, tensor_layout](
+            src_host, tensor_runtime_layout
+        )
+        random(src_host_tensor)
+
+    # Create MHAOperand for source
     src_operand = RaggedMHAOperand(
-        src_device.to_layout_tensor().as_any_origin(),
-        cache_row_offsets_device.to_layout_tensor().as_any_origin(),
+        LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
+            src_device, tensor_runtime_layout
+        ),
+        LayoutTensor[DType.uint32, offsets_layout, MutAnyOrigin](
+            cache_row_offsets_device, offsets_runtime_layout
+        ),
     )
 
     # Find max sequence length for grid calculation
@@ -785,19 +762,24 @@ def test_ragged[
     for i in range(batch_size):
         max_seq_len = max(max_seq_len, seq_lens[i])
 
-    # Create host-side MHAOperands for verification
-    src_host_operand = RaggedMHAOperand(
-        src_host.to_layout_tensor().as_any_origin(),
-        cache_row_offsets_host.to_layout_tensor().as_any_origin(),
-    )
-
     for is_k_major in range(2):
-        dst_host = HostNDBuffer[dtype, 3](dyn_shape)
-        dst_device = dst_host.copy_to_device(ctx)
+        # Create destination buffer
+        var dst_device = ctx.enqueue_create_buffer[dtype](
+            dyn_shape.flattened_length()
+        )
+
+        # Initialize destination with zeros
+        with dst_device.map_to_host() as dst_host:
+            for i in range(len(dst_host)):
+                dst_host[i] = 0
 
         dst_operand = RaggedMHAOperand(
-            dst_device.to_layout_tensor().as_any_origin(),
-            cache_row_offsets_device.to_layout_tensor().as_any_origin(),
+            LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
+                dst_device, tensor_runtime_layout
+            ),
+            LayoutTensor[DType.uint32, offsets_layout, MutAnyOrigin](
+                cache_row_offsets_device, offsets_runtime_layout
+            ),
         )
 
         if is_k_major == 0:
@@ -817,29 +799,34 @@ def test_ragged[
                 max_seq_len,
             )
 
-        # Verify results - copy device data back to host
-        ctx.enqueue_copy(dst_host.tensor.data, dst_device.buffer)
-        ctx.synchronize()
+        # Verify results by comparing on host
+        with src_device.map_to_host() as src_host:
+            with dst_device.map_to_host() as dst_host:
+                with cache_row_offsets_device.map_to_host() as offsets_host:
+                    var src_host_tensor = LayoutTensor[dtype, tensor_layout](
+                        src_host, tensor_runtime_layout
+                    )
+                    var dst_host_tensor = LayoutTensor[dtype, tensor_layout](
+                        dst_host, tensor_runtime_layout
+                    )
+                    var offsets_host_tensor = LayoutTensor[
+                        DType.uint32, offsets_layout
+                    ](offsets_host, offsets_runtime_layout)
 
-        dst_host_operand = RaggedMHAOperand(
-            dst_host.to_layout_tensor().as_any_origin(),
-            cache_row_offsets_host.to_layout_tensor().as_any_origin(),
-        )
+                    src_host_operand = RaggedMHAOperand(
+                        src_host_tensor.as_any_origin(),
+                        offsets_host_tensor.as_any_origin(),
+                    )
+                    dst_host_operand = RaggedMHAOperand(
+                        dst_host_tensor.as_any_origin(),
+                        offsets_host_tensor.as_any_origin(),
+                    )
 
-        # Verify using block_paged_ptr
-        test_mha_host_operand[tile_m, kv_params](
-            src_host_operand, dst_host_operand, batch_size
-        )
-
-        _ = dst_host^
-        _ = dst_device^
+                    test_mha_host_operand[tile_m, kv_params](
+                        src_host_operand, dst_host_operand, batch_size
+                    )
 
     print("    RaggedTensor test passed!")
-
-    _ = src_host^
-    _ = src_device^
-    _ = cache_row_offsets_host^
-    _ = cache_row_offsets_device^
 
 
 def main():

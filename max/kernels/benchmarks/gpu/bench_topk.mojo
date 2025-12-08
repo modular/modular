@@ -21,7 +21,8 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse
+from internal_utils import arg_parse
+from memory import LegacyUnsafePointer as UnsafePointer
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
@@ -48,53 +49,121 @@ fn bench_topk_batched[
     # Instantiate data in host memory
     var out_idx_len = 1 if sampling else K
 
-    var in_buffer = HostNDBuffer[dtype, rank](DimList(batch_size, N))
-    var topk_vals = HostNDBuffer[dtype, rank](DimList(batch_size, K))
-    var topk_idxs = HostNDBuffer[out_idx_type, rank](
-        DimList(batch_size, out_idx_len)
+    var in_size = batch_size * N
+    var topk_vals_size = batch_size * K
+    var topk_idxs_size = batch_size * out_idx_len
+
+    var in_buffer_ptr = UnsafePointer[Scalar[dtype]].alloc(in_size)
+    var topk_vals_ptr = UnsafePointer[Scalar[dtype]].alloc(topk_vals_size)
+    var topk_idxs_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
+        topk_idxs_size
+    )
+
+    var in_buffer = NDBuffer[dtype, rank](in_buffer_ptr, DimList(batch_size, N))
+    var topk_vals = NDBuffer[dtype, rank](topk_vals_ptr, DimList(batch_size, K))
+    var topk_idxs = NDBuffer[out_idx_type, rank](
+        topk_idxs_ptr, DimList(batch_size, out_idx_len)
     )
 
     # Fill the buffer
-    fill_buffer[rank, dtype](in_buffer.tensor, fill_fn_name)
+    fill_buffer[rank, dtype](in_buffer, fill_fn_name)
 
     # Move data to device
-    var device_in = DeviceNDBuffer[dtype, rank](DimList(batch_size, N), ctx=ctx)
-    var device_out_vals = DeviceNDBuffer[dtype, rank](
-        DimList(batch_size, K), ctx=ctx
+    var device_in_buffer = ctx.enqueue_create_buffer[dtype](in_size)
+    var device_out_vals_buffer = ctx.enqueue_create_buffer[dtype](
+        topk_vals_size
     )
-    var device_out_idxs = DeviceNDBuffer[out_idx_type, rank](
-        DimList(batch_size, out_idx_len), ctx=ctx
+    var device_out_idxs_buffer = ctx.enqueue_create_buffer[out_idx_type](
+        topk_idxs_size
+    )
+
+    var device_in = NDBuffer[dtype, rank](
+        device_in_buffer.unsafe_ptr(), DimList(batch_size, N)
+    )
+    var device_out_vals = NDBuffer[dtype, rank](
+        device_out_vals_buffer.unsafe_ptr(), DimList(batch_size, K)
+    )
+    var device_out_idxs = NDBuffer[out_idx_type, rank](
+        device_out_idxs_buffer.unsafe_ptr(), DimList(batch_size, out_idx_len)
     )
 
     if not num_blocks_per_input:
         num_blocks_per_input = min(ceildiv(N, block_size), 8)
 
-    var device_local_topk_vals = DeviceNDBuffer[dtype, rank](
-        DimList(batch_size, num_blocks_per_input * K), ctx=ctx
+    var local_topk_size = batch_size * num_blocks_per_input * K
+    var device_local_topk_vals_buffer = ctx.enqueue_create_buffer[dtype](
+        local_topk_size
     )
-    var device_local_topk_idxs = DeviceNDBuffer[out_idx_type, rank](
-        DimList(batch_size, num_blocks_per_input * K), ctx=ctx
+    var device_local_topk_idxs_buffer = ctx.enqueue_create_buffer[out_idx_type](
+        local_topk_size
     )
 
-    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
-
-    var K_device_buffer = DeviceNDBuffer[DType.int64, 1](
-        DimList(batch_size), ctx=ctx
+    var device_local_topk_vals = NDBuffer[dtype, rank](
+        device_local_topk_vals_buffer.unsafe_ptr(),
+        DimList(batch_size, num_blocks_per_input * K),
     )
-    var K_host_buffer = HostNDBuffer[DType.int64, 1](DimList(batch_size))
+    var device_local_topk_idxs = NDBuffer[out_idx_type, rank](
+        device_local_topk_idxs_buffer.unsafe_ptr(),
+        DimList(batch_size, num_blocks_per_input * K),
+    )
+
+    ctx.enqueue_copy(device_in_buffer, in_buffer_ptr)
+
+    var K_dev_buffer = ctx.enqueue_create_buffer[DType.int64](batch_size)
+    var K_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(batch_size)
+    var K_host_buffer = NDBuffer[DType.int64, 1](K_host_ptr, batch_size)
     for i in range(batch_size):
-        K_host_buffer.tensor.data[i] = K
+        K_host_ptr[i] = K
 
-    var max_k = Int(reduce_max(K_host_buffer.tensor))
+    var max_k = Int(reduce_max(K_host_buffer))
 
-    ctx.enqueue_copy(K_device_buffer.buffer, K_host_buffer.tensor.data)
+    ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
     ctx.synchronize()
 
-    var k_lt = K_device_buffer.to_layout_tensor()
+    comptime k_layout = Layout.row_major(UNKNOWN_VALUE)
+    var k_lt = LayoutTensor[DType.int64, k_layout, MutAnyOrigin](
+        K_dev_buffer.unsafe_ptr(),
+        RuntimeLayout[k_layout].row_major(IndexList[1](batch_size)),
+    )
+
+    # Create LayoutTensors for kernel calls
+    comptime in_layout = Layout.row_major[rank]()
+    var device_in_lt = LayoutTensor[dtype, in_layout, MutAnyOrigin](
+        device_in_buffer.unsafe_ptr(),
+        RuntimeLayout[in_layout].row_major(IndexList[rank](batch_size, N)),
+    )
+    var device_local_topk_vals_lt = LayoutTensor[
+        dtype, in_layout, MutAnyOrigin
+    ](
+        device_local_topk_vals_buffer.unsafe_ptr(),
+        RuntimeLayout[in_layout].row_major(
+            IndexList[rank](batch_size, num_blocks_per_input * K)
+        ),
+    )
+    var device_local_topk_idxs_lt = LayoutTensor[
+        out_idx_type, in_layout, MutAnyOrigin
+    ](
+        device_local_topk_idxs_buffer.unsafe_ptr(),
+        RuntimeLayout[in_layout].row_major(
+            IndexList[rank](batch_size, num_blocks_per_input * K)
+        ),
+    )
+    var device_out_vals_lt = LayoutTensor[dtype, in_layout, MutAnyOrigin](
+        device_out_vals_buffer.unsafe_ptr(),
+        RuntimeLayout[in_layout].row_major(IndexList[rank](batch_size, K)),
+    )
+    var device_out_idxs_lt = LayoutTensor[
+        out_idx_type, in_layout, MutAnyOrigin
+    ](
+        device_out_idxs_buffer.unsafe_ptr(),
+        RuntimeLayout[in_layout].row_major(
+            IndexList[rank](batch_size, out_idx_len)
+        ),
+    )
 
     @parameter
     @always_inline
-    @__copy_capture(K_device_buffer)
+    @__copy_capture(K_dev_buffer)
     fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
@@ -102,14 +171,14 @@ fn bench_topk_batched[
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
-                device_in.to_layout_tensor(),
-                device_local_topk_vals.to_layout_tensor(),
-                device_local_topk_idxs.to_layout_tensor(),
-                device_out_vals.to_layout_tensor(),
-                device_out_idxs.to_layout_tensor(),
+                device_in_lt,
+                device_local_topk_vals_lt,
+                device_local_topk_idxs_lt,
+                device_out_vals_lt,
+                device_out_idxs_lt,
                 k=OptionalReg(
                     LayoutTensor[
-                        K_device_buffer.dtype,
+                        DType.int64,
                         Layout.row_major(UNKNOWN_VALUE),
                         MutAnyOrigin,
                     ](
@@ -130,71 +199,105 @@ fn bench_topk_batched[
         "bench-topk", "/N=", N, "/K=", K, "/batch_size=", batch_size
     )
 
-    var num_bytes = device_in.tensor.size() * size_of[dtype]()
+    var num_bytes = device_in.size() * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(kernel_name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
     # Copy results back to host
-    ctx.enqueue_copy(topk_vals.tensor.data, device_out_vals.buffer)
-    ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
+    ctx.enqueue_copy(topk_vals_ptr, device_out_vals_buffer)
+    ctx.enqueue_copy(topk_idxs_ptr, device_out_idxs_buffer)
     ctx.synchronize()
 
     # ASSERT equality with CPU topk kernel reference
     @parameter
     if not sampling:
-        var topk_vals_cpu = HostNDBuffer[dtype, rank](DimList(batch_size, K))
-        var topk_idxs_cpu = HostNDBuffer[DType.int64, rank](
-            DimList(batch_size, K)
+        var topk_vals_cpu_ptr = UnsafePointer[Scalar[dtype]].alloc(
+            topk_vals_size
+        )
+        var topk_idxs_cpu_ptr = UnsafePointer[Scalar[DType.int64]].alloc(
+            topk_vals_size
+        )
+        var topk_vals_cpu = NDBuffer[dtype, rank](
+            topk_vals_cpu_ptr, DimList(batch_size, K)
+        )
+        var topk_idxs_cpu = NDBuffer[DType.int64, rank](
+            topk_idxs_cpu_ptr, DimList(batch_size, K)
         )
 
-        var k_lt = K_host_buffer.to_layout_tensor()
+        # Create LayoutTensors for CPU topk
+        var k_host_lt = LayoutTensor[DType.int64, k_layout, MutAnyOrigin](
+            K_host_ptr,
+            RuntimeLayout[k_layout].row_major(IndexList[1](batch_size)),
+        )
+        var in_buffer_lt = LayoutTensor[dtype, in_layout, MutAnyOrigin](
+            in_buffer_ptr,
+            RuntimeLayout[in_layout].row_major(IndexList[rank](batch_size, N)),
+        )
+        var topk_vals_cpu_lt = LayoutTensor[dtype, in_layout, MutAnyOrigin](
+            topk_vals_cpu_ptr,
+            RuntimeLayout[in_layout].row_major(IndexList[rank](batch_size, K)),
+        )
+        var topk_idxs_cpu_lt = LayoutTensor[
+            DType.int64, in_layout, MutAnyOrigin
+        ](
+            topk_idxs_cpu_ptr,
+            RuntimeLayout[in_layout].row_major(IndexList[rank](batch_size, K)),
+        )
 
         _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
-            in_buffer.to_layout_tensor(),
+            in_buffer_lt,
             max_k,
             rank - 1,
-            topk_vals_cpu.to_layout_tensor(),
-            topk_idxs_cpu.to_layout_tensor(),
+            topk_vals_cpu_lt,
+            topk_idxs_cpu_lt,
             1,
             True,
             k=OptionalReg(
                 LayoutTensor[
-                    K_device_buffer.dtype,  # or K_host_buffer?
+                    DType.int64,
                     Layout.row_major(UNKNOWN_VALUE),
                     MutAnyOrigin,
                 ](
-                    k_lt.ptr,
+                    k_host_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
-                        k_lt.runtime_layout.shape.value.canonicalize(),
-                        k_lt.runtime_layout.stride.value.canonicalize(),
+                        k_host_lt.runtime_layout.shape.value.canonicalize(),
+                        k_host_lt.runtime_layout.stride.value.canonicalize(),
                     ),
                 )
             ),
         )
 
-        for i in range(topk_vals.tensor.num_elements()):
+        for i in range(topk_vals.num_elements()):
             assert_almost_equal(
-                topk_vals.tensor.data[i],
-                topk_vals_cpu.tensor.data[i],
+                topk_vals_ptr[i],
+                topk_vals_cpu_ptr[i],
             )
 
             @parameter
             if dtype is DType.float32:
                 assert_equal(
-                    topk_idxs.tensor.data[i],
-                    topk_idxs_cpu.tensor.data[i].cast[out_idx_type](),
+                    topk_idxs_ptr[i],
+                    topk_idxs_cpu_ptr[i].cast[out_idx_type](),
                 )
 
-    _ = topk_vals
-    _ = topk_idxs
-    _ = in_buffer
-    _ = device_in
-    _ = device_local_topk_vals
-    _ = device_local_topk_idxs
-    _ = device_out_vals
-    _ = device_out_idxs
+        topk_vals_cpu_ptr.free()
+        topk_idxs_cpu_ptr.free()
+
+    # Cleanup host pointers
+    in_buffer_ptr.free()
+    topk_vals_ptr.free()
+    topk_idxs_ptr.free()
+    K_host_ptr.free()
+
+    # Consume device buffers
+    _ = device_in_buffer^
+    _ = device_out_vals_buffer^
+    _ = device_out_idxs_buffer^
+    _ = device_local_topk_vals_buffer^
+    _ = device_local_topk_idxs_buffer^
+    _ = K_dev_buffer^
 
 
 fn bench_topk_multi_rank[
@@ -225,21 +328,39 @@ fn bench_topk_multi_rank[
     var out_idxs_shape = input_shape
     out_idxs_shape[rank - 1] = out_idx_len
 
-    var in_buffer = HostNDBuffer[dtype, rank](input_shape)
-    var topk_vals = HostNDBuffer[dtype, rank](out_vals_shape)
-    var topk_idxs = HostNDBuffer[out_idx_type, rank](out_idxs_shape)
+    var in_size = input_shape.flattened_length()
+    var out_vals_size = out_vals_shape.flattened_length()
+    var out_idxs_size = out_idxs_shape.flattened_length()
+
+    var in_buffer_ptr = UnsafePointer[Scalar[dtype]].alloc(in_size)
+    var topk_vals_ptr = UnsafePointer[Scalar[dtype]].alloc(out_vals_size)
+    var topk_idxs_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(out_idxs_size)
+
+    var in_buffer = NDBuffer[dtype, rank](in_buffer_ptr, input_shape)
+    var topk_vals = NDBuffer[dtype, rank](topk_vals_ptr, out_vals_shape)
+    var topk_idxs = NDBuffer[out_idx_type, rank](topk_idxs_ptr, out_idxs_shape)
 
     # Fill the buffer
-    fill_buffer[rank, dtype](in_buffer.tensor, fill_fn_name)
+    fill_buffer[rank, dtype](in_buffer, fill_fn_name)
 
     # Move data to device
-    var device_in = DeviceNDBuffer[dtype, rank](input_shape, ctx=ctx)
-    var device_out_vals = DeviceNDBuffer[dtype, rank](out_vals_shape, ctx=ctx)
-    var device_out_idxs = DeviceNDBuffer[out_idx_type, rank](
-        out_idxs_shape, ctx=ctx
+    var device_in_buffer = ctx.enqueue_create_buffer[dtype](in_size)
+    var device_out_vals_buffer = ctx.enqueue_create_buffer[dtype](out_vals_size)
+    var device_out_idxs_buffer = ctx.enqueue_create_buffer[out_idx_type](
+        out_idxs_size
     )
 
-    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+    var device_in = NDBuffer[dtype, rank](
+        device_in_buffer.unsafe_ptr(), input_shape
+    )
+    var device_out_vals = NDBuffer[dtype, rank](
+        device_out_vals_buffer.unsafe_ptr(), out_vals_shape
+    )
+    var device_out_idxs = NDBuffer[out_idx_type, rank](
+        device_out_idxs_buffer.unsafe_ptr(), out_idxs_shape
+    )
+
+    ctx.enqueue_copy(device_in_buffer, in_buffer_ptr)
     var batch_size: Int
 
     @parameter
@@ -251,22 +372,42 @@ fn bench_topk_multi_rank[
         var last_dim = input_shape[rank - 1]
         batch_size = Int(input_shape.flattened_length() / last_dim)
 
-    var K_host_buffer = HostNDBuffer[DType.int64, 1](DimList(batch_size))
+    var K_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(batch_size)
+    var K_host_buffer = NDBuffer[DType.int64, 1](K_host_ptr, batch_size)
     for i in range(batch_size):
-        K_host_buffer.tensor.data[i] = K
+        K_host_ptr[i] = K
 
-    var K_device_buffer = DeviceNDBuffer[DType.int64, 1](
-        DimList(batch_size), ctx=ctx
-    )
-    ctx.enqueue_copy(K_device_buffer.buffer, K_host_buffer.tensor.data)
+    var K_dev_buffer = ctx.enqueue_create_buffer[DType.int64](batch_size)
+    ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
     ctx.synchronize()
-    var max_k = Int(reduce_max(K_host_buffer.tensor))
+    var max_k = Int(reduce_max(K_host_buffer))
 
-    var k_lt = K_device_buffer.to_layout_tensor()
+    comptime k_layout = Layout.row_major(UNKNOWN_VALUE)
+    var k_lt = LayoutTensor[DType.int64, k_layout, MutAnyOrigin](
+        K_dev_buffer.unsafe_ptr(),
+        RuntimeLayout[k_layout].row_major(IndexList[1](batch_size)),
+    )
+
+    # Create LayoutTensors for kernel calls
+    comptime mr_layout = Layout.row_major[rank]()
+    var device_in_lt = LayoutTensor[dtype, mr_layout, MutAnyOrigin](
+        device_in_buffer.unsafe_ptr(),
+        RuntimeLayout[mr_layout].row_major(input_shape),
+    )
+    var device_out_vals_lt = LayoutTensor[dtype, mr_layout, MutAnyOrigin](
+        device_out_vals_buffer.unsafe_ptr(),
+        RuntimeLayout[mr_layout].row_major(out_vals_shape),
+    )
+    var device_out_idxs_lt = LayoutTensor[
+        out_idx_type, mr_layout, MutAnyOrigin
+    ](
+        device_out_idxs_buffer.unsafe_ptr(),
+        RuntimeLayout[mr_layout].row_major(out_idxs_shape),
+    )
 
     @parameter
     @always_inline
-    @__copy_capture(K_device_buffer)
+    @__copy_capture(K_dev_buffer)
     fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
@@ -274,12 +415,12 @@ fn bench_topk_multi_rank[
             topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
-                device_in.to_layout_tensor(),
-                device_out_vals.to_layout_tensor(),
-                device_out_idxs.to_layout_tensor(),
+                device_in_lt,
+                device_out_vals_lt,
+                device_out_idxs_lt,
                 k=OptionalReg(
                     LayoutTensor[
-                        K_device_buffer.dtype,
+                        DType.int64,
                         Layout.row_major(UNKNOWN_VALUE),
                         MutAnyOrigin,
                     ](
@@ -297,58 +438,101 @@ fn bench_topk_multi_rank[
         b.iter_custom[kernel_launch](ctx)
 
     var kernel_name = "topk-multirank"
-    var num_bytes = device_in.tensor.size() * size_of[dtype]()
+    var num_bytes = device_in.size() * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(kernel_name), [ThroughputMeasure(BenchMetric.bytes, num_bytes)]
     )
 
     # Copy results back to host
-    ctx.enqueue_copy(topk_vals.tensor.data, device_out_vals.buffer)
-    ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
+    ctx.enqueue_copy(topk_vals_ptr, device_out_vals_buffer)
+    ctx.enqueue_copy(topk_idxs_ptr, device_out_idxs_buffer)
     ctx.synchronize()
 
     # ASSERT equality with CPU topk kernel reference
     @parameter
     if not sampling:
-        var topk_vals_cpu = HostNDBuffer[dtype, rank](out_vals_shape)
-        var topk_idxs_cpu = HostNDBuffer[DType.int64, rank](out_idxs_shape)
-        var k_lt = K_host_buffer.to_layout_tensor()
+        var topk_vals_cpu_ptr = UnsafePointer[Scalar[dtype]].alloc(
+            out_vals_size
+        )
+        var topk_idxs_cpu_ptr = UnsafePointer[Scalar[DType.int64]].alloc(
+            out_vals_size
+        )
+        var topk_vals_cpu = NDBuffer[dtype, rank](
+            topk_vals_cpu_ptr, out_vals_shape
+        )
+        var topk_idxs_cpu = NDBuffer[DType.int64, rank](
+            topk_idxs_cpu_ptr, out_idxs_shape
+        )
+
+        var k_host_lt = LayoutTensor[DType.int64, k_layout, MutAnyOrigin](
+            K_host_ptr,
+            RuntimeLayout[k_layout].row_major(IndexList[1](batch_size)),
+        )
+        var in_buffer_lt = LayoutTensor[dtype, mr_layout, MutAnyOrigin](
+            in_buffer_ptr,
+            RuntimeLayout[mr_layout].row_major(input_shape),
+        )
+        var topk_vals_cpu_lt = LayoutTensor[dtype, mr_layout, MutAnyOrigin](
+            topk_vals_cpu_ptr,
+            RuntimeLayout[mr_layout].row_major(out_vals_shape),
+        )
+        var topk_idxs_cpu_lt = LayoutTensor[
+            DType.int64, mr_layout, MutAnyOrigin
+        ](
+            topk_idxs_cpu_ptr,
+            RuntimeLayout[mr_layout].row_major(out_idxs_shape),
+        )
 
         _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
-            in_buffer.to_layout_tensor(),
+            in_buffer_lt,
             max_k,
             rank - 1,
-            topk_vals_cpu.to_layout_tensor(),
-            topk_idxs_cpu.to_layout_tensor(),
+            topk_vals_cpu_lt,
+            topk_idxs_cpu_lt,
             1,
             True,
             k=OptionalReg(
                 LayoutTensor[
-                    K_host_buffer.dtype,
+                    DType.int64,
                     Layout.row_major(UNKNOWN_VALUE),
                     MutAnyOrigin,
                 ](
-                    k_lt.ptr,
+                    k_host_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
-                        k_lt.runtime_layout.shape.value.canonicalize(),
-                        k_lt.runtime_layout.stride.value.canonicalize(),
+                        k_host_lt.runtime_layout.shape.value.canonicalize(),
+                        k_host_lt.runtime_layout.stride.value.canonicalize(),
                     ),
                 )
             ),
         )
 
-        for i in range(topk_vals.tensor.num_elements()):
+        for i in range(topk_vals.num_elements()):
             assert_almost_equal(
-                topk_vals.tensor.data[i],
-                topk_vals_cpu.tensor.data[i],
+                topk_vals_ptr[i],
+                topk_vals_cpu_ptr[i],
             )
 
             @parameter
             if dtype is DType.float32:
                 assert_equal(
-                    topk_idxs.tensor.data[i],
-                    topk_idxs_cpu.tensor.data[i].cast[out_idx_type](),
+                    topk_idxs_ptr[i],
+                    topk_idxs_cpu_ptr[i].cast[out_idx_type](),
                 )
+
+        topk_vals_cpu_ptr.free()
+        topk_idxs_cpu_ptr.free()
+
+    # Cleanup host pointers
+    in_buffer_ptr.free()
+    topk_vals_ptr.free()
+    topk_idxs_ptr.free()
+    K_host_ptr.free()
+
+    # Consume device buffers
+    _ = device_in_buffer^
+    _ = device_out_vals_buffer^
+    _ = device_out_idxs_buffer^
+    _ = K_dev_buffer^
 
 
 fn fill_random[
@@ -391,9 +575,7 @@ fn fill_buffer[
 
 
 @fieldwise_init
-struct TestCase[_sampling: Bool, _largest: Bool = True](
-    ImplicitlyCopyable, Movable
-):
+struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
     comptime sampling = Self._sampling
     comptime largest = Self._largest
     var N: Int

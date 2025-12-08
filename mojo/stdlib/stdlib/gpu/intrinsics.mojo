@@ -26,7 +26,6 @@ underlying GPU architecture.
 """
 
 from collections.string.string_slice import get_static_string
-from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Consistency
 from sys import (
     is_amd_gpu,
@@ -43,7 +42,12 @@ from sys.info import (
     _is_sm_9x_or_newer,
     align_of,
     bit_width_of,
+    _cdna_3_or_newer,
     _cdna_4_or_newer,
+    _is_amd_rdna1,
+    _is_amd_rdna2,
+    _is_amd_rdna3,
+    _is_amd_rdna4,
 )
 from sys.intrinsics import llvm_intrinsic, readfirstlane
 
@@ -62,7 +66,7 @@ fn ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
+](x: UnsafePointer[mut=False, Scalar[dtype]]) -> SIMD[dtype, width]:
     """Load data from global memory through the non-coherent cache.
 
     This function provides a hardware-accelerated global memory load operation
@@ -86,7 +90,7 @@ fn ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    constrained[dtype.is_numeric(), "the dtype must be numeric"]()
+    __comptime_assert dtype.is_numeric(), "the dtype must be numeric"
     return x.load[width=width, alignment=alignment, invariant=True]()
 
 
@@ -115,15 +119,13 @@ fn warpgroup_reg_alloc[count: Int]():
           longer needed
     """
 
-    constrained[
-        count % 8 == 0,
-        "count argument to warpgroup_reg_alloc must be in multiples of 8",
-    ]()
+    __comptime_assert (
+        count % 8 == 0
+    ), "count argument to warpgroup_reg_alloc must be in multiples of 8"
 
-    constrained[
-        24 <= count <= 256,
-        "count argument must be within 24 and 256",
-    ]()
+    __comptime_assert (
+        24 <= count <= 256
+    ), "count argument must be within 24 and 256"
 
     @parameter
     if _is_sm_9x_or_newer():
@@ -152,15 +154,13 @@ fn warpgroup_reg_dealloc[count: Int]():
         - Pair with `warpgroup_reg_alloc()` when extra registers are needed.
     """
 
-    constrained[
-        count % 8 == 0,
-        "count argument to warpgroup_reg_dealloc must be in multiples of 8",
-    ]()
+    __comptime_assert (
+        count % 8 == 0
+    ), "count argument to warpgroup_reg_dealloc must be in multiples of 8"
 
-    constrained[
-        24 <= count <= 256,
-        "count argument must be within 24 and 256",
-    ]()
+    __comptime_assert (
+        24 <= count <= 256
+    ), "count argument must be within 24 and 256"
 
     @parameter
     if _is_sm_9x_or_newer():
@@ -211,7 +211,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
     else:
         return CompilationTarget.unsupported_target_error[
             Int32,
-            operation="lop",
+            operation = __get_current_function_name(),
             note="lop() is only supported when targeting NVIDIA GPUs.",
         ]()
 
@@ -257,7 +257,7 @@ fn _byte_permute_inst() -> StaticString:
     else:
         return CompilationTarget.unsupported_target_error[
             StaticString,
-            operation="byte_permute",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -486,7 +486,7 @@ fn get_ib_sts() -> Int32:
 
 
 @fieldwise_init
-struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Movable, Writable):
+struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Writable):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from
@@ -631,13 +631,14 @@ fn threadfence[scope: Scope = Scope.GPU]():
         - Critical for synchronizing memory access in parallel algorithms.
         - Performance impact increases with broader scopes.
     """
-    constrained[
-        scope in (Scope.GPU, Scope.BLOCK, Scope.SYSTEM),
-        "invalid threadfence scope",
-    ]()
-    constrained[
-        is_nvidia_gpu(), "threadfence is only implemented on NVIDIA GPUs"
-    ]()
+    __comptime_assert scope in (
+        Scope.GPU,
+        Scope.BLOCK,
+        Scope.SYSTEM,
+    ), "invalid threadfence scope"
+    __comptime_assert (
+        is_nvidia_gpu()
+    ), "threadfence is only implemented on NVIDIA GPUs"
 
     comptime suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
@@ -667,13 +668,10 @@ fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
 
 
 fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
-    constrained[
-        is_nvidia_gpu(),
-        (
-            "the _get_nvtx_register_constraint function is currently restricted"
-            " to only be defined on NVIDIA GPUs"
-        ),
-    ]()
+    __comptime_assert is_nvidia_gpu(), (
+        "the _get_nvtx_register_constraint function is currently restricted"
+        " to only be defined on NVIDIA GPUs"
+    )
     if dtype is DType.bool:
         return "b"
     if dtype.is_half_float():
@@ -695,13 +693,10 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
 
 
 fn _get_nvtx_pointer_constraint() -> StaticString:
-    constrained[
-        is_nvidia_gpu(),
-        (
-            "the _get_nvtx_pointer_constraint function is currently restricted"
-            " to only be defined on NVIDIA GPUs"
-        ),
-    ]()
+    __comptime_assert is_nvidia_gpu(), (
+        "the _get_nvtx_pointer_constraint function is currently restricted"
+        " to only be defined on NVIDIA GPUs"
+    )
     return _get_nvtx_register_constraint[DType.int]()
 
 
@@ -738,7 +733,7 @@ fn store_release[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs an atomic store with release memory ordering semantics.
 
     This function provides a memory barrier that ensures all previous memory operations
@@ -761,7 +756,7 @@ fn store_release[
         - Ensures all previous memory operations complete before this store.
         - Critical for implementing synchronization primitives.
     """
-    constrained[is_gpu(), "atomic store only supported on GPU"]()
+    __comptime_assert is_gpu(), "atomic store only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -806,7 +801,7 @@ fn store_release[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="store_release"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -817,7 +812,7 @@ fn store_relaxed[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs an atomic store with relaxed memory ordering semantics.
 
     On NVIDIA, maps to PTX st.relaxed; on AMD, maps to POP atomic store with MONOTONIC ordering.
@@ -832,7 +827,7 @@ fn store_relaxed[
         ptr: Pointer to the memory location.
         value: Value to store.
     """
-    constrained[is_gpu(), "atomic store only supported on GPU"]()
+    __comptime_assert is_gpu(), "atomic store only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -857,7 +852,7 @@ fn store_relaxed[
         ](value, ptr.address)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="store_relaxed"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -868,7 +863,7 @@ fn load_acquire[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs an atomic load operation with acquire memory ordering semantics.
 
     This function provides a memory barrier that ensures no subsequent memory operations
@@ -893,7 +888,7 @@ fn load_acquire[
         - Ensures subsequent memory operations don't execute until after load.
         - Critical for implementing synchronization primitives.
     """
-    constrained[is_gpu(), "atomic load only supported on GPU"]()
+    __comptime_assert is_gpu(), "atomic load only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -939,7 +934,7 @@ fn load_acquire[
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
-            operation="load_acquire",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -950,7 +945,7 @@ fn load_relaxed[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs an atomic load with relaxed memory ordering semantics.
 
     On NVIDIA, maps to PTX ld.relaxed; on AMD, maps to POP atomic load with MONOTONIC ordering.
@@ -967,7 +962,7 @@ fn load_relaxed[
     Returns:
         The loaded value.
     """
-    constrained[is_gpu(), "atomic load only supported on GPU"]()
+    __comptime_assert is_gpu(), "atomic load only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -993,14 +988,14 @@ fn load_relaxed[
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
-            operation="load_relaxed",
+            operation = __get_current_function_name(),
         ]()
 
 
 @always_inline
 fn store_volatile[
     dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs a volatile store operation that cannot be optimized away.
 
     This function guarantees that the store operation will be performed exactly as
@@ -1021,9 +1016,9 @@ fn store_volatile[
         - Useful for memory-mapped I/O or synchronization primitives.
         - May have performance implications compared to regular stores.
     """
-    constrained[
-        is_nvidia_gpu(), "store_volatile is not currently supported on AMD GPUs"
-    ]()
+    __comptime_assert (
+        is_nvidia_gpu()
+    ), "store_volatile is not currently supported on AMD GPUs"
     comptime mem_constraint = StaticString(",~{memory}") if memory else ""
     comptime constraints = _get_nvtx_register_constraint[
         dtype
@@ -1038,7 +1033,7 @@ fn store_volatile[
 @always_inline
 fn load_volatile[
     dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
+](ptr: UnsafePointer[mut=False, Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs a volatile load operation that cannot be optimized away.
 
     This function guarantees that the load operation will be performed exactly as
@@ -1061,9 +1056,9 @@ fn load_volatile[
         - Useful for memory-mapped I/O or synchronization primitives.
         - May have performance implications compared to regular loads.
     """
-    constrained[
-        is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
-    ]()
+    __comptime_assert (
+        is_nvidia_gpu()
+    ), "load_volatile is not currently supported on AMD GPUs"
     comptime mem_constraint = StaticString(",~{memory}") if memory else ""
     comptime constraints = "=" + _get_nvtx_register_constraint[
         dtype
@@ -1090,6 +1085,8 @@ struct AMDBufferResource:
         dtype: DType
     ](
         out self,
+        # TODO: This should propagate mutability correctly.
+        # E.g. only allow AMDBufferResource.store when mutable.
         gds_ptr: UnsafePointer[Scalar[dtype], **_],
         num_records: Int = Int(UInt32.MAX),
     ):
@@ -1102,13 +1099,9 @@ struct AMDBufferResource:
             gds_ptr: Pointer to the buffer in global memory.
             num_records: Number of records in the buffer.
         """
-        constrained[
-            is_amd_gpu(),
-            (
-                "The AMDBufferResource struct is only applicable on AMDGPU"
-                " hardware."
-            ),
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The AMDBufferResource struct is only applicable on AMDGPU hardware."
 
         self.desc = SIMD[DType.uint32, 4](0)
         var address = bitcast[DType.uint32, 2](UInt64(Int(gds_ptr)))
@@ -1116,19 +1109,30 @@ struct AMDBufferResource:
         # assuming 0 stride currently
         self.desc[1] = address[1]
         self.desc[2] = size_of[dtype]() * num_records
+
+        # Architecture-specific word 3 value for buffer resource.
         # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
-        self.desc[3] = 0x00020000
+        @parameter
+        if _is_amd_rdna3() or _is_amd_rdna4():
+            # GFX11/GFX12 (RDNA3/RDNA4)
+            self.desc[3] = 0x31004000
+        elif _is_amd_rdna1() or _is_amd_rdna2():
+            # GFX10.x (RDNA1/RDNA2)
+            self.desc[3] = 0x31014000
+        else:
+            __comptime_assert _cdna_3_or_newer(), (
+                "The AMDBufferResource struct is only defined for CDNA 3+"
+                " and RDNA 1-4 GPUs."
+            )
+            # GFX9 (CDNA/GCN)
+            self.desc[3] = 0x00020000
 
     @always_inline("nodebug")
     fn __init__(out self):
         """Constructs a zeroed AMD buffer resource descriptor."""
-        constrained[
-            is_amd_gpu(),
-            (
-                "The AMDBufferResource struct is only applicable on AMDGPU"
-                " hardware."
-            ),
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The AMDBufferResource struct is only applicable on AMDGPU hardware."
         self.desc = 0
 
     @always_inline("nodebug")
@@ -1172,10 +1176,9 @@ struct AMDBufferResource:
         Returns:
             SIMD vector containing the loaded data.
         """
-        constrained[
-            is_amd_gpu(),
-            "The buffer_load function is only applicable on AMDGPU hardware.",
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The buffer_load function is only applicable on AMDGPU hardware."
 
         comptime bytes = size_of[dtype]() * width
         comptime aux = _cache_operation_to_amd_aux[cache_policy]()
@@ -1204,7 +1207,7 @@ struct AMDBufferResource:
         self,
         vector_offset: Int32,
         shared_ptr: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED
+            mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
         ],
         *,
         scalar_offset: Int32 = 0,
@@ -1224,13 +1227,9 @@ struct AMDBufferResource:
             shared_ptr: Shared memory address.
             scalar_offset: Scalar memory offset in elements (shared across wave).
         """
-        constrained[
-            is_amd_gpu(),
-            (
-                "The buffer_load_lds function is only applicable on AMDGPU"
-                " hardware."
-            ),
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The buffer_load_lds function is only applicable on AMDGPU hardware."
 
         comptime bytes = size_of[dtype]() * width
         comptime aux = _cache_operation_to_amd_aux[cache_policy]()
@@ -1285,10 +1284,9 @@ struct AMDBufferResource:
             - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
             - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
         """
-        constrained[
-            is_amd_gpu(),
-            "The buffer_store function is only applicable on AMDGPU hardware.",
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The buffer_store function is only applicable on AMDGPU hardware."
 
         comptime bytes = width * size_of[dtype]()
         comptime aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
@@ -1354,7 +1352,7 @@ fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
     elif bytes == 2:
         return DType.uint16
     else:
-        constrained[bytes in (4, 8, 16), "Width not supported"]()
+        __comptime_assert bytes in (4, 8, 16), "Width not supported"
         return DType.uint32
 
 
@@ -1373,7 +1371,7 @@ fn ds_read_tr16_b64[
     dtype: DType, //,
 ](
     shared_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED, **_
+        mut=False, Scalar[dtype], address_space = AddressSpace.SHARED
     ]
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
@@ -1393,22 +1391,20 @@ fn ds_read_tr16_b64[
         - Result width is fixed to 4 elements of dtype.
     """
 
-    constrained[
-        is_amd_gpu(),
-        "The ds_read_tr16_b64 function is only applicable on AMDGPU hardware.",
-    ]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "The ds_read_tr16_b64 function is only applicable on AMDGPU hardware."
 
-    constrained[
-        size_of[dtype]() == 2,
-        "ds_read_tr16_b64 supports 16-bit dtypes.",
-    ]()
+    __comptime_assert (
+        size_of[dtype]() == 2
+    ), "ds_read_tr16_b64 supports 16-bit dtypes."
 
-    constrained[
-        _cdna_4_or_newer(), "ds_read_tr16_b64 is only supported on CDNA4+"
-    ]()
+    __comptime_assert (
+        _cdna_4_or_newer()
+    ), "ds_read_tr16_b64 is only supported on CDNA4+"
 
     return llvm_intrinsic[
-        "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=False
+        "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=True
     ](shared_ptr)
 
 
@@ -1434,18 +1430,14 @@ fn permlane_swap[
     Returns:
         SIMD vector containing the swapped values.
     """
-    constrained[
-        is_amd_gpu(),
-        (
-            "The _amd_permlane_swap function is only applicable on AMDGPU"
-            " hardware."
-        ),
-    ]()
-    constrained[
-        _cdna_4_or_newer(), "permlane swap is only supported on CDNA4+"
-    ]()
-    constrained[bit_width_of[dtype]() == 32, "Unsupported dtype"]()
-    constrained[stride in (16, 32), "Unsupported stride"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "The _amd_permlane_swap function is only applicable on AMDGPU hardware."
+    __comptime_assert (
+        _cdna_4_or_newer()
+    ), "permlane swap is only supported on CDNA4+"
+    __comptime_assert bit_width_of[dtype]() == 32, "Unsupported dtype"
+    __comptime_assert stride in (16, 32), "Unsupported stride"
 
     comptime asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
     var result = llvm_intrinsic[

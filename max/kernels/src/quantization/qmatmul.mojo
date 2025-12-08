@@ -184,6 +184,13 @@ fn _quantize_a_buffer[
             a_scale_ptr += tile_m * (ko_count // group_size)
 
         tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = am_ptr
+        _ = ko_count
+
+    # TODO(MOCO-2074): Suppress false positive unused var warning.
+    _ = a_quant_ptr
+    _ = a_scale_ptr
 
 
 fn _unpack_weights[
@@ -1074,6 +1081,9 @@ fn _matmul_qint4_m_1[
         tile[process_cols, VariadicList[Int](2, 1)](
             0, ceildiv(task_n_count, simd_width)
         )
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = task_n_start
+        _ = b_ptr
 
     sync_parallelize[task_func](num_workers)
 
@@ -1230,10 +1240,20 @@ fn _matmul_qint4_m_any[
                                     )
 
                 tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+                # TODO(MOCO-2074): Suppress false positive unused var warning.
+                _ = ak_ptr
+                _ = ak_scale_ptr
 
             tile[process_cols, VariadicList[Int](2, 1)](
                 0, ceildiv(task_n_count, simd_width)
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = ko_count
+            _ = ko_group
+
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = task_n_start
+        _ = b_ptr
 
     sync_parallelize[task_func](num_workers)
 

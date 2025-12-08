@@ -94,19 +94,6 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     return reader_compiled
 
 
-def test_opaque_simple(
-    maker_model: Model, bumper_model: Model, reader_model: Model
-) -> None:
-    counter = maker_model.execute()[0]
-    for _ in range(5):
-        bumper_model.execute(counter)
-    x = reader_model.execute(counter)[0]
-    assert isinstance(x, Tensor)
-    result = x.to_numpy()
-
-    assert (result == [5, 15]).all()
-
-
 def test_opaque_introspection(
     maker_model: Model, bumper_model: Model, reader_model: Model
 ) -> None:

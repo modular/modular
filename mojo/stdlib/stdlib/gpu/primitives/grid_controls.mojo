@@ -142,9 +142,16 @@ struct PDLLevel(Defaultable):
     var _level: Int
 
     comptime OFF = PDLLevel(0)
+    """PDL disabled."""
+
     comptime OVERLAP_AT_END = PDLLevel(1)
+    """PDL overlap at end of kernel."""
+
     comptime OVERLAP_AT_BEGINNING = PDLLevel(2)
+    """PDL overlap at beginning of kernel."""
+
     comptime NO_WAIT_OVERLAP_AT_END = PDLLevel(3)
+    """PDL no-wait overlap at end of kernel."""
 
     @always_inline
     fn __init__(out self):

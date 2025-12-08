@@ -104,18 +104,29 @@ fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
 
 # shapes
 comptime shape_null = IndexList[3](0, 0, 0)
+"""Null tensor core shape (0x0x0)."""
 comptime shape_16x8x4 = IndexList[3](16, 8, 4)
+"""Tensor core shape 16x8x4."""
 comptime shape_16x8x8 = IndexList[3](16, 8, 8)
+"""Tensor core shape 16x8x8."""
 comptime shape_16x8x16 = IndexList[3](16, 8, 16)
+"""Tensor core shape 16x8x16."""
 comptime shape_8x8x4 = IndexList[3](8, 8, 4)
+"""Tensor core shape 8x8x4."""
 comptime shape_16x8x32 = IndexList[3](16, 8, 32)
+"""Tensor core shape 16x8x32."""
 
 # AMDGPU shapes
 comptime shape_16x16x4 = IndexList[3](16, 16, 4)
+"""AMDGPU tensor core shape 16x16x4."""
 comptime shape_16x16x16 = IndexList[3](16, 16, 16)
+"""AMDGPU tensor core shape 16x16x16."""
 comptime shape_16x16x32 = IndexList[3](16, 16, 32)
+"""AMDGPU tensor core shape 16x16x32."""
 comptime shape_32x32x8 = IndexList[3](32, 32, 8)
+"""AMDGPU tensor core shape 32x32x8."""
 comptime shape_32x32x16 = IndexList[3](32, 32, 16)
+"""AMDGPU tensor core shape 32x32x16."""
 
 
 fn _get_a_k_group_size[a: Layout, shape: IndexList[3]]() -> Int:
@@ -186,11 +197,13 @@ struct TensorCore[
         == shape_16x8x8 if is_nvidia_gpu() else Self.shape
         == shape_16x16x4
     )
+    """Whether float32 is supported for this tensor core configuration."""
     comptime supported_half = Self.in_type.is_half_float() and (
         Self.shape
         == shape_16x8x16 if is_nvidia_gpu() else Self.shape
         in (shape_16x16x16, shape_16x16x32, shape_32x32x8, shape_32x32x16)
     )
+    """Whether half-precision float is supported for this configuration."""
     comptime supported_fp8 = (
         Self.in_type
         in (
@@ -206,20 +219,25 @@ struct TensorCore[
         )
         and Self.shape == shape_16x16x32
     )
+    """Whether float8 is supported for this tensor core configuration."""
     comptime supported_fp64 = Self.in_type is DType.float64 and Self.out_type is DType.float64 and (
         Self.shape in (shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16)
     ) if is_nvidia_gpu() else False
+    """Whether float64 is supported for this tensor core configuration."""
 
     # Operand register types.
     comptime a_reg_type = SIMD[
         Self.in_type, num_matrix_reg[Self.shape[0], Self.shape[2]]()
     ]
+    """SIMD type for the A operand registers."""
     comptime b_reg_type = SIMD[
         Self.in_type, num_matrix_reg[Self.shape[2], Self.shape[1]]()
     ]
+    """SIMD type for the B operand registers."""
     comptime c_reg_type = SIMD[
         Self.out_type, num_matrix_reg[Self.shape[0], Self.shape[1]]()
     ]
+    """SIMD type for the C/accumulator operand registers."""
 
     comptime c_reg_tile_type = LayoutTensor[
         Self.out_type,
@@ -227,6 +245,7 @@ struct TensorCore[
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
+    """LayoutTensor type for the C register tile."""
 
     fn __init__(out self):
         """
@@ -628,7 +647,7 @@ struct TensorCore[
                 lane_id()
             )
             b_reg_tile.vectorize[4, 1]().copy_from(b_ram_frags)
-        elif in_type is DType.float64:
+        elif Self.in_type is DType.float64:
             constrained[
                 reg_per_thread in (1, 2, 4),
                 "No valid mma shape to load matrix fragment b",
@@ -852,7 +871,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         """
@@ -889,7 +908,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         comptime frag_type = fragments.element_type
@@ -916,7 +935,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         comptime frag_type = fragments.element_type
@@ -943,7 +962,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
@@ -995,7 +1014,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
@@ -1032,7 +1051,7 @@ struct TensorCore[
     fn _load_b_nvidia(
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
@@ -1188,7 +1207,7 @@ struct TensorCore[
     fn load_b(
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         scales: LayoutTensor,
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
@@ -1276,7 +1295,10 @@ struct TensorCore[
 
     @always_inline
     fn mma(
-        self, a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
+        self,
+        a_frag: LayoutTensor,
+        b_frag: LayoutTensor,
+        c_frag: LayoutTensor[mut=True, **_],
     ):
         """Perform matrix multiply-accumulate operation using tensor cores.
 
@@ -1566,6 +1588,7 @@ struct TiledTensorCore[
     comptime mma_op = TensorCore[
         Self.out_type, Self.in_type, Self.shape, Self.transpose_b
     ]()
+    """The underlying TensorCore instance for MMA operations."""
 
     @staticmethod
     @always_inline
@@ -1574,7 +1597,7 @@ struct TiledTensorCore[
     ](
         a_reg_tile: LayoutTensor,
         b_reg_tile: LayoutTensor,
-        c_reg_tile: LayoutTensor,
+        c_reg_tile: LayoutTensor[mut=True, **_],
     ):
         """Perform multiple matrix multiply-accumulate operations along the K dimension.
 
@@ -1617,7 +1640,9 @@ struct TiledTensorCore[
 
         @parameter
         fn _inner_loop(
-            a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
+            a_frag: LayoutTensor,
+            b_frag: LayoutTensor,
+            c_frag: LayoutTensor[mut=True, **_],
         ):
             comptime num_m_mmas = a_frag.shape[0]()
             comptime num_n_mmas = b_frag.shape[0]()

@@ -353,7 +353,7 @@ As an example, the following code causes a compile-time error because the
 calculated `IntLiteral` value is too large to store in an `Int` variable:
 
 ```mojo
-alias big_int = (1 << 65) + 123456789  # IntLiteral
+ comptime big_int = (1 << 65) + 123456789  # IntLiteral
 var too_big_int: Int = big_int
 print("Result:", too_big_int)
 ```
@@ -368,7 +368,7 @@ compiles and runs successfully, because the final `IntLiteral` quotient can fit
 in a 64-bit `Int`.
 
 ```mojo
-alias big_int = (1 << 65) + 123456789  # IntLiteral
+comptime big_int = (1 << 65) + 123456789  # IntLiteral
 var not_too_big_int: Int = big_int // 10
 print("Result:", not_too_big_int)
 ```
@@ -495,7 +495,7 @@ at run-time it materializes to a `String`, allowing you to mutate it:
 
 ```mojo
 message = "Hello"       # type = String
-alias name = " Pat"       # type = StringLiteral
+comptime name = " Pat"       # type = StringLiteral
 greeting = " good Day!"  # type = String
 
 # Mutate the original `message` String
@@ -517,10 +517,10 @@ The `+` operator performs string concatenation. The `StringLiteral` type
 supports compile-time string concatenation.
 
 ```mojo
-alias last_name = "Curie"
+comptime last_name = "Curie"
 
-# Compile-time StringLiteral alias
-alias marie = "Marie " + last_name
+# Compile-time StringLiteral value
+comptime marie = "Marie " + last_name
 print(marie)
 
 # Compile-time concatenation before materializing to a run-time `String`
@@ -568,16 +568,16 @@ string replication. The following examples perform compile-time string
 replication resulting in `StringLiteral` values:
 
 ```mojo
-alias divider1 = "=" * 40
-alias symbol = "#"
-alias divider2 = symbol * 40
+comptime divider1 = "=" * 40
+comptime symbol = "#"
+comptime divider2 = symbol * 40
 
-# You must define the following function using `fn` because an alias
+# You must define the following function using `fn` because a comptime
 # initializer cannot call a function that can potentially raise an error.
 fn generate_divider(char: String, repeat: Int) -> String:
     return char * repeat
 
-alias divider3 = generate_divider("~", 40)  # Evaluated at compile-time
+comptime divider3 = generate_divider("~", 40)  # Evaluated at compile-time
 
 print(divider1)
 print(divider2)
@@ -834,7 +834,7 @@ Individual structs can define custom type merging logic by defining a
 
 ```mojo
 @fieldwise_init
-struct MyType(Movable, Copyable):
+struct MyType(Copyable):
     var val: Int
 
     def __bool__(self) -> Bool:
@@ -1058,6 +1058,19 @@ The `in` and `not in` operators depend on a type implementing the
 value as an argument and return a `Bool` indicating whether the value is present
 in the collection or not.
 
+### Identity operator dunder methods
+
+The `is` and `is not` operators compare the identity of two values.
+
+When a type conforms to [`Identifiable`](https://docs.modular.com/mojo/stdlib/builtin/identifiable/Identifiable),
+these operators call the [`__is__()`](https://docs.modular.com/mojo/stdlib/builtin/identifiable/Identifiable/#__is__)
+method to determine whether the left-hand operand has the same identity as the right-hand operand. For example,
+you might compare raw values or use some other way to establish what "identity" means in your work.
+
+The `is not` operator uses the automatically provided
+[`__isnot__()`](https://docs.modular.com/mojo/stdlib/builtin/identifiable/Identifiable/#__isnot__) method, which
+returns the logical negation of `__is__()`.
+
 ### Subscript and slicing dunder methods
 
 Subscripting and slicing typically apply only to sequential collection types,
@@ -1073,7 +1086,7 @@ In the simple case of a one-dimensional sequence, the `__getitem__()` and
 `__setitem__()` methods should have signatures similar to this:
 
 ```mojo
-struct MySeq[type: Copyable & Movable]:
+struct MySeq[type: Copyable]:
     fn __getitem__(self, idx: Int) -> type:
         # Return element at the given index
         ...
@@ -1087,7 +1100,7 @@ multiple index arguments—or even variadic index arguments for
 arbitrary—dimension collections.
 
 ```mojo
-struct MySeq[type: Copyable & Movable]:
+struct MySeq[type: Copyable]:
     # 2-dimension support
     fn __getitem__(self, x_idx: Int, y_idx: Int) -> type:
         ...
@@ -1106,7 +1119,7 @@ collection) you implement to methods to accept a
 the case of a multi-dimensional collection).
 
 ```mojo
-struct MySeq[type: Copyable & Movable]:
+struct MySeq[type: Copyable]:
     # Return a new MySeq with a subset of elements
     fn __getitem__(self, span: Slice) -> Self:
         ...
@@ -1129,7 +1142,7 @@ non-negative values. You can then use these normalized values to determine the
 corresponding elements of your collection being referenced.
 
 ```mojo
-struct MySeq[type: Copyable & Movable]:
+struct MySeq[type: Copyable]:
     var size: Int
 
     # Return a new MySeq with a subset of elements
@@ -1230,7 +1243,7 @@ c2: Real: 3.1415899999999999; Imaginary: 0.0
 ### Implement the `Writable` and `Stringable` traits
 
 To make it simpler to print `Complex` values, let's implement the
-[Writable](/mojo/stdlib/utils/write/Writable) trait. While we're at it, let's
+[Writable](/mojo/stdlib/io/write/Writable) trait. While we're at it, let's
 also implement the [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait so
 that we can use the `String()` constructor to generate a `String` representation of a
 `Complex` value. You can find out more about these traits and their associated

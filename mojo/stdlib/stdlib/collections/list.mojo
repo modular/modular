@@ -16,6 +16,8 @@ These APIs are imported automatically, just like builtins.
 """
 
 
+from builtin.constrained import _constrained_conforms_to
+from compile.reflection import get_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
@@ -36,10 +38,10 @@ from .optional import Optional
 @fieldwise_init
 struct _ListIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: Copyable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for List.
 
     Parameters:
@@ -96,8 +98,16 @@ struct _ListIter[
         return (iter_len, {iter_len})
 
 
-struct List[T: Copyable & Movable](
-    Boolable, Copyable, Defaultable, Iterable, Movable, Sized
+struct List[T: Copyable](
+    Boolable,
+    Copyable,
+    Defaultable,
+    Equatable,
+    Iterable,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
 ):
     """A dynamically-allocated and resizable list.
 
@@ -258,6 +268,12 @@ struct List[T: Copyable & Movable](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _ListIter[Self.T, iterable_origin, True]
+    """The iterator type for this list.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     # asan annotation methods
     fn _annotate_new(self):
@@ -327,7 +343,7 @@ struct List[T: Copyable & Movable](
         self.resize(length, fill)
 
     @always_inline
-    fn __init__(out self, var *values: Self.T, __list_literal__: () = ()):
+    fn __init__(out self, var *values: Self.T, __list_literal__: ()):
         """Constructs a list from the given values.
 
         Args:
@@ -424,14 +440,11 @@ struct List[T: Copyable & Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __eq__[
-        U: Equatable & Copyable & Movable, //
-    ](self: List[U, *_], other: List[U, *_]) -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         """Checks if two lists are equal.
 
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-               trait `Equatable`.
+        Constraints:
+            `T` must conform to `Equatable`.
 
         Args:
             other: The list to compare with.
@@ -447,18 +460,28 @@ struct List[T: Copyable & Movable](
         print("x and y are equal" if x == y else "x and y are not equal")
         ```
         """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Equatable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Equatable",
+        ]()
+
         if len(self) != len(other):
             return False
+
         var index = 0
         for element in self:
-            if element != other[index]:
+            ref lhs = trait_downcast[Equatable](element)
+            ref rhs = trait_downcast[Equatable](other[index])
+            if lhs != rhs:
                 return False
             index += 1
         return True
 
     @always_inline
     fn __ne__[
-        U: Equatable & Copyable & Movable, //
+        U: Equatable & Copyable, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are not equal.
 
@@ -483,7 +506,7 @@ struct List[T: Copyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        U: Equatable & Copyable & Movable, //
+        U: Equatable & Copyable, //
     ](self: List[U, *_], value: U) -> Bool:
         """Verify if a given value is present in the list.
 
@@ -608,30 +631,11 @@ struct List[T: Copyable & Movable](
         return len(self) > 0
 
     @no_inline
-    fn __str__[
-        U: Representable & Copyable & Movable, //
-    ](self: List[U, *_]) -> String:
+    fn __str__(self) -> String:
         """Returns a string representation of a `List`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-              trait `Representable`.
 
         Returns:
             A string representation of the list.
-
-        Notes:
-            Note that since we can't condition methods on a trait yet,
-            the way to call this method is a bit special. Here is an example
-            below:
-
-            ```mojo
-            var my_list = [1, 2, 3]
-            print(my_list.__str__())
-            ```
-
-            When the compiler supports conditional methods, then a simple
-            `String(my_list)` will be enough.
         """
         # at least 1 byte per item e.g.: [a, b, c, d] = 4 + 2 * 3 + [] + null
         var l = len(self)
@@ -640,49 +644,37 @@ struct List[T: Copyable & Movable](
         return output^
 
     @no_inline
-    fn write_to[
-        U: Representable & Copyable & Movable, //
-    ](self: List[U, *_], mut writer: Some[Writer]):
+    fn write_to(self, mut writer: Some[Writer]):
         """Write `my_list.__str__()` to a `Writer`.
 
-        Parameters:
-            U: The type of the List elements. Must have the trait
-                `Representable`.
+        Constraints:
+            `T` must conform to `Representable`.
 
         Args:
             writer: The object to write to.
         """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Representable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Writable",
+            ElementConformsTo="Representable",
+        ]()
+
         writer.write("[")
         for i in range(len(self)):
-            writer.write(repr(self[i]))
+            ref elem = trait_downcast[Representable](self[i])
+            writer.write(repr(elem))
             if i < len(self) - 1:
                 writer.write(", ")
         writer.write("]")
 
     @no_inline
-    fn __repr__[
-        U: Representable & Copyable & Movable, //
-    ](self: List[U, *_]) -> String:
+    fn __repr__(self) -> String:
         """Returns a string representation of a `List`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-              trait `Representable`.
 
         Returns:
             A string representation of the list.
-
-        Notes:
-            Note that since we can't condition methods on a trait yet, the way
-            to call this method is a bit special. Here is an example below:
-
-            ```mojo
-            var my_list = [1, 2, 3]
-            print(my_list.__repr__())
-            ```
-
-            When the compiler supports conditional methods, then a simple
-            `repr(my_list)` will be enough.
         """
         return self.__str__()
 
@@ -1016,7 +1008,7 @@ struct List[T: Copyable & Movable](
 
     # TODO: Remove explicit self type when issue 1876 is resolved.
     fn index[
-        C: Equatable & Copyable & Movable, //
+        C: Equatable & Copyable, //
     ](
         ref self: List[C, *_],
         value: C,
@@ -1209,7 +1201,7 @@ struct List[T: Copyable & Movable](
         (self._data + idx).init_pointee_move(value^)
 
     fn count[
-        _T: Equatable & Copyable & Movable, //
+        _T: Equatable & Copyable, //
     ](self: List[_T, *_], value: _T) -> Int:
         """Counts the number of occurrences of a value in the list.
 

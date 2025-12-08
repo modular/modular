@@ -18,7 +18,7 @@ trait DefaultQuackable:
 
 
 @fieldwise_init
-struct DefaultDuck(Copyable, DefaultQuackable, Movable):
+struct DefaultDuck(Copyable, DefaultQuackable):
     pass
 
 

@@ -137,8 +137,8 @@ build --experimental_output_paths=strip
 # Set base macOS deployment target otherwise the target depends on the host OS
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
-build --@llvm_zstd//:llvm_enable_zstd=false
-build --experimental_propagate_custom_flag=@llvm_zstd//:llvm_enable_zstd
+build --@llvm-project//third-party:llvm_enable_zstd=false
+build --experimental_propagate_custom_flag=@llvm-project//third-party:llvm_enable_zstd
 build --@llvm-project//lldb:enable_libedit=true
 build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_libedit
 build --@llvm-project//lldb:enable_curses=true
@@ -147,6 +147,14 @@ build --@llvm-project//llvm:pfm=disable
 build --experimental_propagate_custom_flag=@llvm-project//llvm:pfm
 build --@llvm-project//mlir:enable_cuda=true
 build --experimental_propagate_custom_flag=@llvm-project//mlir:enable_cuda
+
+# Enable mypy running on python builds
+build --aspects=//bazel/pip:mypy.bzl%mypy_aspect
+build --output_groups=+mypy
+
+build:disable-mypy --output_groups=-mypy
+
+build:disable-lint --config=disable-mypy
 
 build --remote_download_outputs=toplevel
 build --remote_download_regex='.*\.(inc|h)$'

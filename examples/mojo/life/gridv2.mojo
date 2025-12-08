@@ -17,12 +17,12 @@ from collections import Optional
 from memory import memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
+struct Grid[rows: Int, cols: Int](Copyable, Stringable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias num_cells = Self.rows * Self.cols
+    comptime num_cells = Self.rows * Self.cols
     var data: UnsafePointer[Int8, MutOrigin.external]
 
     # ===-------------------------------------------------------------------===#

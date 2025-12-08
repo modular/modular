@@ -25,7 +25,9 @@ from math import iota
 from sys import _libc as libc
 from sys import (
     align_of,
+    codegen_unreachable,
     external_call,
+    env_get_string,
     is_compile_time,
     is_gpu,
     llvm_intrinsic,
@@ -110,8 +112,7 @@ fn _memcmp_impl[
     s1: UnsafePointer[mut=False, Scalar[dtype], **_],
     s2: UnsafePointer[mut=False, Scalar[dtype], **_],
     count: Int,
-) -> Int:
-    constrained[dtype.is_integral(), "the input dtype must be integral"]()
+) -> Int where dtype.is_integral():
     if is_compile_time():
         return _memcmp_impl_unconstrained(s1, s2, count)
     else:
@@ -491,6 +492,15 @@ fn _malloc[
 ):
     @parameter
     if is_gpu():
+        comptime enable_gpu_malloc = env_get_string[
+            "ENABLE_GPU_MALLOC", "true"
+        ]()
+        # no runtime allocation on GPU
+        codegen_unreachable[
+            enable_gpu_malloc != "true",
+            "runtime allocation on GPU not allowed",
+        ]()
+
         comptime U = UnsafePointer[
             NoneType,
             MutOrigin.external,

@@ -264,6 +264,15 @@ fn _p2p_cache_destroy_wrapper(ptr: OpaquePointer) -> None:
     pass
 
 
+# No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
+fn group_start():
+    return
+
+
+fn group_end():
+    return
+
+
 fn can_enable_p2p() raises -> Bool:
     """
     If peer-to-peer access is supported, enables it between all GPU pairs.
@@ -1093,7 +1102,7 @@ fn _dispatch_max_num_blocks[
         return x.ngpus == -1 and x.num_bytes == -1
 
     comptime default_idx = allreduce_table.query_index[rule_eq_arch_default]()
-    constrained[len(default_idx)]()
+    constrained[len(default_idx) > 0]()
     comptime default_entry = allreduce_table.configs[default_idx[0]]
     var default_num_blocks = default_entry.num_blocks
 

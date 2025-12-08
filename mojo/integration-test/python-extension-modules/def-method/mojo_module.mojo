@@ -55,13 +55,11 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 @fieldwise_init
-struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Representable):
     var name: String
     var age: Int
 
@@ -85,7 +83,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
-            return abort[UnsafePointer[Self, MutAnyOrigin]](
+            abort(
                 String(
                     (
                         "Python method receiver object did not have the"
@@ -135,7 +133,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
         try:
             return PythonObject(Int(this_year) - self_ptr[].age)
         except e:
-            return abort[PythonObject](String("failed to get birth year: ", e))
+            abort(String("failed to get birth year: ", e))
 
     @staticmethod
     fn _with_first_last_name(
@@ -145,7 +143,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
         try:
             self_ptr[].name = String(first_name) + " " + String(last_name)
         except e:
-            return abort[PythonObject](String("failed to set name: ", e))
+            abort(String("failed to set name: ", e))
         return py_self
 
     @staticmethod

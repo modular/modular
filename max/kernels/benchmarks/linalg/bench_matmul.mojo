@@ -54,9 +54,7 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
             try:
                 assert_almost_equal(c[i, j], c_ref[i, j])
             except e:
-                abort(
-                    String(e)
-                )  # this function should raise, blocked by #31795
+                abort(String(e))
     c_ref_ptr.free()
 
 
@@ -145,7 +143,7 @@ fn bench_matmul[
 
 
 @fieldwise_init
-struct MatmulSpecStatic(ImplicitlyCopyable, Movable):
+struct MatmulSpecStatic(ImplicitlyCopyable):
     var b_packed: Bool
     var a_type: DType
     var b_type: DType
@@ -154,7 +152,7 @@ struct MatmulSpecStatic(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 struct MatmulSpec[static_info: MatmulSpecStatic](
-    ImplicitlyCopyable, Movable, Stringable
+    ImplicitlyCopyable, Stringable
 ):
     var m: Int
     var n: Int

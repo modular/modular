@@ -1,5 +1,9 @@
 load("//bazel:api.bzl", "modular_py_library")
 
+# gazelle:default_visibility //visibility:public
+
+package(default_visibility = ["//visibility:public"])
+
 modular_py_library(
     name = "mojo",
     srcs = glob(["**/*.py"]),
@@ -7,5 +11,4 @@ modular_py_library(
         "@mojo//:stdlib",
     ],
     imports = [".."],
-    visibility = ["//visibility:public"],
 )

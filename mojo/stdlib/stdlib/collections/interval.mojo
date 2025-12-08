@@ -54,8 +54,8 @@ from builtin.string_literal import StaticString
 from .deque import Deque
 
 
-trait IntervalElement(Comparable, Copyable, Intable, Movable, Writable):
-    """The trait denotes a trait composition of the `Copyable`, `Movable`,
+trait IntervalElement(Comparable, Copyable, Intable, Writable):
+    """The trait denotes a trait composition of the `Copyable`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
     """
 
@@ -75,7 +75,6 @@ struct Interval[T: IntervalElement](
     Boolable,
     Equatable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Sized,
     Stringable,
@@ -314,8 +313,8 @@ struct Interval[T: IntervalElement](
 
 struct _IntervalNode[
     T: IntervalElement,
-    U: Copyable & Movable & Stringable & Comparable,
-](ImplicitlyCopyable, Movable, Stringable, Writable):
+    U: Copyable & Stringable & Comparable,
+](ImplicitlyCopyable, Stringable, Writable):
     """A node containing an interval and associated data.
 
     Parameters:
@@ -488,7 +487,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement,
-    U: Copyable & Movable & Stringable & Comparable,
+    U: Copyable & Stringable & Comparable,
 ](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 

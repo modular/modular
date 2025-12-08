@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from max.profiler import Tracer
 
 logger = logging.getLogger(__name__)
 
@@ -130,21 +131,24 @@ def open_shm_array(meta: dict[str, Any]) -> npt.NDArray[Any]:
         RuntimeError: If the shared memory segment cannot be opened or mapped
             (e.g., insufficient permissions or ENOMEM under memory pressure).
     """
-    try:
-        shm = shared_memory.SharedMemory(name=meta["name"])
-    except (OSError, FileNotFoundError) as e:
-        raise RuntimeError(
-            f"Failed to open shared memory array in consumer: {e}"
-        ) from e
+    with Tracer("open_shm_array_file"):
+        try:
+            shm = shared_memory.SharedMemory(name=meta["name"])
+        except (OSError, FileNotFoundError) as e:
+            raise RuntimeError(
+                f"Failed to open shared memory array in consumer: {e}"
+            ) from e
 
     # Create numpy array view into shared memory
-    arr: npt.NDArray[Any] = np.ndarray(
-        shape=meta["shape"], dtype=np.dtype(meta["dtype"]), buffer=shm.buf
-    )
+    with Tracer("creating_ndarray_from_shm.buf"):
+        arr: npt.NDArray[Any] = np.ndarray(
+            shape=meta["shape"], dtype=np.dtype(meta["dtype"]), buffer=shm.buf
+        )
 
     # Mode: register cleanup and mark for deletion when last reference closes.
     weakref.finalize(arr, shm.close)
-    shm.unlink()
+    with Tracer("unlinking_shared_memory"):
+        shm.unlink()
 
     # NOTE: we could reduce shared memory pressure by returning a copy here.
     return arr

@@ -48,8 +48,8 @@ from max.serve.scheduler.base import (
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
 
 from .base import SchedulerProgress
+from .batch_constructor import TextBatchConstructor
 from .config import TokenGenerationSchedulerConfig
-from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -103,7 +103,7 @@ class DecodeScheduler(Scheduler):
         self.scheduler_logger = SchedulerLogger()
         # None corresponds to the default destination address.
         # TODO: delete the default destination address.
-        self.remote_endpoints: set[str | None] = set()
+        self.remote_endpoints: set[str] = set()
 
         # We are parameterizing the offload of queue draining to allow for
         # the use case where we want to drain the queue in the main thread.
@@ -161,7 +161,12 @@ class DecodeScheduler(Scheduler):
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
         """
-
+        # TODO: Do not crash the scheduler if a request does not have a target endpoint.
+        #       Instead we should validate this in the frontend.
+        if data.target_endpoint is None:
+            raise ValueError(
+                f"Target endpoint is not specified for the request {request_id}"
+            )
         if data.target_endpoint not in self.remote_endpoints:
             self.dispatcher.send_request_nowait(
                 self.transfer_engine.metadata,
@@ -246,8 +251,9 @@ class DecodeScheduler(Scheduler):
 
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
-            # Remove it from the active batch.
-            if self.batch_constructor.cancel_request(req_id):
+            if self.batch_constructor.contains(req_id):
+                # Remove it from the active batch.
+                self.batch_constructor.release_request(req_id)
                 # Send the cancelled result back to the response q
                 self.response_queue.put_nowait(
                     {req_id: SchedulerResult.cancelled()}
@@ -255,11 +261,21 @@ class DecodeScheduler(Scheduler):
 
             # If it is pending prefill, remove the pending request.
             elif req_id in self.prefill_reqs:
+                data = self.prefill_reqs[req_id]
+
                 # Remove from pending requests.
                 del self.prefill_reqs[req_id]
 
+                # TODO: Do not crash the scheduler if a request does not have a target endpoint.
+                #       Instead we should validate this in the frontend.
+                if data.target_endpoint is None:
+                    raise ValueError(
+                        f"Target endpoint is not specified for the request {req_id}."
+                    )
                 # Send a cancel request to the prefill node
-                self.dispatcher.send_request_nowait(CancelRequest(id=req_id))
+                self.dispatcher.send_request_nowait(
+                    CancelRequest(id=req_id), data.target_endpoint
+                )
 
                 # Send the cancelled result back to the response q
                 self.response_queue.put_nowait(
@@ -316,17 +332,20 @@ class DecodeScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        self.batch_constructor.move_completed_ce_requests_to_tg(
-            inputs.batches,
-            responses,
-        )
-
-        # remove terminated requests from the batch
-        num_terminated_reqs = (
-            self.batch_constructor.release_terminated_requests(
-                responses,
+        pruned_ids = (
+            self.batch_constructor.advance_requests_and_collect_invalid_ids(
+                inputs.batches
             )
         )
+        for request_id in pruned_ids:
+            del responses[request_id]
+
+        # Release terminated requests
+        num_terminated_requests = 0
+        for request_id, response in responses.items():
+            if response.is_done:
+                self.batch_constructor.release_request(request_id)
+                num_terminated_requests += 1
 
         # send the responses to the API process
         self.response_queue.put_nowait(
@@ -336,7 +355,7 @@ class DecodeScheduler(Scheduler):
             }
         )
 
-        return num_terminated_reqs
+        return num_terminated_requests
 
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes decode requests.
@@ -427,9 +446,6 @@ def load_decode_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        dispatcher=DecodeDispatcherClientV2(
-            bind_addr=settings.dispatcher_config.transport_config.bind_address,
-            default_dest_addr=settings.dispatcher_config.transport_config.default_destination_address,
-        ),
+        dispatcher=DecodeDispatcherClientV2(bind_addr=settings.di_bind_address),
         offload_queue_draining=pipeline_config.experimental_background_queue,
     )

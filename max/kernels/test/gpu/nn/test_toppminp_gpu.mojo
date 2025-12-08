@@ -20,8 +20,8 @@ from benchmark import Bench, Bencher, BenchId
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer
 from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from testing import assert_almost_equal, assert_equal
@@ -33,7 +33,7 @@ comptime PRINT_OUTPUT = False
 
 
 struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
-    ImplicitlyCopyable, Movable
+    ImplicitlyCopyable
 ):
     comptime is_top_p = Self._is_top_p
     comptime dtype = Self._dtype
@@ -272,19 +272,27 @@ fn test_case_sampling[
         p_thresholds.data[i] = p_threshold
 
     # Create device buffers
-    var device_in = DeviceNDBuffer[dtype, rank](
-        DimList(batch_size, vocab_size), ctx=ctx
+    var device_in_buf = ctx.enqueue_create_buffer[dtype](
+        batch_size * vocab_size
     )
-    var device_token_ids = DeviceNDBuffer[out_idx_type, rank](
-        DimList(batch_size, 1), ctx=ctx
+    var device_token_ids_buf = ctx.enqueue_create_buffer[out_idx_type](
+        batch_size * 1
     )
-    var device_p_thresholds = DeviceNDBuffer[dtype, 1](
-        DimList(batch_size), ctx=ctx
+    var device_p_thresholds_buf = ctx.enqueue_create_buffer[dtype](batch_size)
+
+    var device_in = NDBuffer[dtype, rank](
+        device_in_buf.unsafe_ptr(), DimList(batch_size, vocab_size)
+    )
+    var device_token_ids = NDBuffer[out_idx_type, rank](
+        device_token_ids_buf.unsafe_ptr(), DimList(batch_size, 1)
+    )
+    var device_p_thresholds = NDBuffer[dtype, 1](
+        device_p_thresholds_buf.unsafe_ptr(), DimList(batch_size)
     )
 
     # Copy to device
-    ctx.enqueue_copy(device_in.buffer, in_logits.data)
-    ctx.enqueue_copy(device_p_thresholds.buffer, p_thresholds.data)
+    ctx.enqueue_copy(device_in_buf, in_logits.data)
+    ctx.enqueue_copy(device_p_thresholds_buf, p_thresholds.data)
 
     # Copy to CPU and perform softmax & sort for correctness testing
     var in_logits_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
@@ -328,6 +336,12 @@ fn test_case_sampling[
     in_logits_cpu_test_ptr.free()
     sort_buf_descending(probs_cpu_test, vocab_size)
 
+    var device_in_tensor = from_ndbuffer_row_major(device_in)
+    var device_token_ids_tensor = from_ndbuffer_row_major(device_token_ids)
+    var device_p_thresholds_tensor = from_ndbuffer_row_major(
+        device_p_thresholds
+    )
+
     @parameter
     if DEBUG_BENCH:
 
@@ -337,17 +351,17 @@ fn test_case_sampling[
             if is_top_p:
                 top_p_sampling_gpu(
                     ctx,
-                    device_p_thresholds.to_layout_tensor(),
-                    device_in.to_layout_tensor(),
-                    device_token_ids.to_layout_tensor(),
+                    device_p_thresholds_tensor,
+                    device_in_tensor,
+                    device_token_ids_tensor,
                     temperature=temperature,
                 )
             else:
                 min_p_sampling_gpu(
                     ctx,
-                    device_p_thresholds.to_layout_tensor(),
-                    device_in.to_layout_tensor(),
-                    device_token_ids.to_layout_tensor(),
+                    device_p_thresholds_tensor,
+                    device_in_tensor,
+                    device_token_ids_tensor,
                     temperature=temperature,
                 )
             ctx.synchronize()
@@ -363,22 +377,22 @@ fn test_case_sampling[
     if is_top_p:
         top_p_sampling_gpu[_test_sort=True](
             ctx,
-            device_p_thresholds.to_layout_tensor(),
-            device_in.to_layout_tensor(),
-            device_token_ids.to_layout_tensor(),
+            device_p_thresholds_tensor,
+            device_in_tensor,
+            device_token_ids_tensor,
             temperature=temperature,
         )
     else:
         min_p_sampling_gpu[_test_sort=True](
             ctx,
-            device_p_thresholds.to_layout_tensor(),
-            device_in.to_layout_tensor(),
-            device_token_ids.to_layout_tensor(),
+            device_p_thresholds_tensor,
+            device_in_tensor,
+            device_token_ids_tensor,
             temperature=temperature,
         )
     # Copy results back
-    ctx.enqueue_copy(token_ids.data, device_token_ids.buffer)
-    ctx.enqueue_copy(in_logits.data, device_in.buffer)  # for testing
+    ctx.enqueue_copy(token_ids.data, device_token_ids_buf)
+    ctx.enqueue_copy(in_logits.data, device_in_buf)  # for testing
     ctx.synchronize()
 
     # Check if the probs are sorted in descending order, this validates the
@@ -409,9 +423,9 @@ fn test_case_sampling[
     @parameter
     if DEBUG_BENCH:
         m.dump_report()
-    _ = device_token_ids.buffer^
-    _ = device_in.buffer^
-    _ = device_p_thresholds.buffer^
+    _ = device_token_ids_buf^
+    _ = device_in_buf^
+    _ = device_p_thresholds_buf^
     # free all pointers
     in_logits_ptr.free()
     token_ids_ptr.free()

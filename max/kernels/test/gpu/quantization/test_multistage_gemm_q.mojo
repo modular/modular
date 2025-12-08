@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
 from pathlib import Path
 from random import rand, randint, random_float64
 from sys import align_of, argv, size_of
@@ -31,20 +30,17 @@ from gpu import (
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.intrinsics import lop
 from gpu.memory import external_memory
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+
+from internal_utils import assert_almost_equal, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor, Layout, copy_dram_to_sram
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulKernels
+from memory import LegacyUnsafePointer as UnsafePointer
 from memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
@@ -421,7 +417,7 @@ fn test_repack_Q4_0_for_sm8x(
 ) raises:
     print("test repack_Q4_0_for_sm8x")
 
-    fn fill_random[dtype: DType](array: InlineArray[Scalar[dtype]]):
+    fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype]]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
     fn build_b_buffer(N: Int, K: Int, b_ptr: UnsafePointer[UInt8]):
@@ -458,51 +454,78 @@ fn test_repack_Q4_0_for_sm8x(
     )
     var dynamic_dequan_shape = DimList(k.value, n.value)
 
-    var gguf_b_host = HostNDBuffer[DType.uint8, 2](dynamic_gguf_b_shape)
-    var repacked_b_host = HostNDBuffer[DType.uint8, 2, static_repacked_b_shape](
-        dynamic_repacked_b_shape
+    var gguf_b_size = n.value * ((k.value // group_size) * group_bytes)
+    var repacked_b_size = n.value * ((k.value // group_size) * group_bytes)
+    var dequan_size = k.value * n.value
+
+    var gguf_b_host_ptr = UnsafePointer[Scalar[DType.uint8]].alloc(gguf_b_size)
+    var repacked_b_host_ptr = UnsafePointer[Scalar[DType.uint8]].alloc(
+        repacked_b_size
     )
-    var gguf_dequan_ref_host = HostNDBuffer[DType.bfloat16, 2](
-        dynamic_dequan_shape
+    var gguf_dequan_ref_host_ptr = UnsafePointer[Scalar[DType.bfloat16]].alloc(
+        dequan_size
     )
-    var repacked_dequan_host = HostNDBuffer[DType.bfloat16, 2](
-        dynamic_dequan_shape
+    var repacked_dequan_host_ptr = UnsafePointer[Scalar[DType.bfloat16]].alloc(
+        dequan_size
     )
 
-    zero(repacked_b_host.tensor)
-    build_b_buffer(N, K, gguf_b_host.tensor.data)
-    var gguf_dequan_ref_host_tensor = gguf_dequan_ref_host.to_layout_tensor()
+    var gguf_b_host = NDBuffer[DType.uint8, 2](
+        gguf_b_host_ptr, dynamic_gguf_b_shape
+    )
+    var repacked_b_host = NDBuffer[DType.uint8, 2, _, static_repacked_b_shape](
+        repacked_b_host_ptr, dynamic_repacked_b_shape
+    )
+    var gguf_dequan_ref_host = NDBuffer[DType.bfloat16, 2](
+        gguf_dequan_ref_host_ptr, dynamic_dequan_shape
+    )
+    var repacked_dequan_host = NDBuffer[DType.bfloat16, 2](
+        repacked_dequan_host_ptr, dynamic_dequan_shape
+    )
+
+    zero(repacked_b_host)
+    build_b_buffer(N, K, gguf_b_host_ptr)
+    var gguf_dequan_ref_host_tensor = from_ndbuffer_row_major(
+        gguf_dequan_ref_host
+    )
     Q4sym[group_size, DType.bfloat16].dequantize_and_write_to_tensor(
-        gguf_b_host.to_layout_tensor(),
+        from_ndbuffer_row_major(gguf_b_host),
         gguf_dequan_ref_host_tensor,
         rebind[IndexList[gguf_dequan_ref_host_tensor.rank]](
             gguf_dequan_ref_host_tensor.runtime_layout.shape.value.canonicalize()
         ),
     )
-    zero(repacked_dequan_host.tensor)
+    zero(repacked_dequan_host)
 
-    var gguf_b_device = DeviceNDBuffer[DType.uint8, 2, static_gguf_b_shape](
-        dynamic_gguf_b_shape, ctx=ctx
+    var gguf_b_device = ctx.enqueue_create_buffer[DType.uint8](gguf_b_size)
+    var repacked_b_device = ctx.enqueue_create_buffer[DType.uint8](
+        repacked_b_size
     )
-    var repacked_b_device = DeviceNDBuffer[
-        DType.uint8, 2, static_repacked_b_shape
-    ](dynamic_repacked_b_shape, ctx=ctx)
-    var repacked_dequan_device = DeviceNDBuffer[
-        DType.bfloat16, 2, static_dequan_shape
-    ](dynamic_dequan_shape, ctx=ctx)
-
-    ctx.enqueue_copy(gguf_b_device.buffer, gguf_b_host.tensor.data)
-    ctx.enqueue_copy(repacked_b_device.buffer, repacked_b_host.tensor.data)
-
-    comptime gguf_b_layout = Layout.row_major[gguf_b_device.rank](
-        gguf_b_device.shape
+    var repacked_dequan_device = ctx.enqueue_create_buffer[DType.bfloat16](
+        dequan_size
     )
-    comptime repacked_b_layout = Layout.row_major[repacked_b_device.rank](
-        repacked_b_device.shape
+
+    var gguf_b_device_nd = NDBuffer[DType.uint8, 2, _, static_gguf_b_shape](
+        gguf_b_device.unsafe_ptr(), dynamic_gguf_b_shape
+    )
+    var repacked_b_device_nd = NDBuffer[
+        DType.uint8, 2, _, static_repacked_b_shape
+    ](repacked_b_device.unsafe_ptr(), dynamic_repacked_b_shape)
+    var repacked_dequan_device_nd = NDBuffer[
+        DType.bfloat16, 2, _, static_dequan_shape
+    ](repacked_dequan_device.unsafe_ptr(), dynamic_dequan_shape)
+
+    ctx.enqueue_copy(gguf_b_device, gguf_b_host_ptr)
+    ctx.enqueue_copy(repacked_b_device, repacked_b_host_ptr)
+
+    comptime gguf_b_layout = Layout.row_major[gguf_b_device_nd.rank](
+        gguf_b_device_nd.shape
+    )
+    comptime repacked_b_layout = Layout.row_major[repacked_b_device_nd.rank](
+        repacked_b_device_nd.shape
     )
     comptime repack_dequan_layout = Layout.row_major[
-        repacked_dequan_device.rank
-    ](repacked_dequan_device.shape)
+        repacked_dequan_device_nd.rank
+    ](repacked_dequan_device_nd.shape)
     comptime repacked_b_old_layout = Layout.row_major(
         Int(n.dim) // 64,
         Int(k.dim) * 64 // pack_factor,
@@ -514,28 +537,28 @@ fn test_repack_Q4_0_for_sm8x(
     ]
 
     var gguf_b_tensor = gguf_b_tensor_type(
-        gguf_b_device.buffer,
+        gguf_b_device.unsafe_ptr(),
         RuntimeLayout[
             gguf_b_layout,
             element_type = gguf_b_tensor_type.layout_int_type,
             linear_idx_type = gguf_b_tensor_type.linear_idx_type,
         ].row_major(
-            gguf_b_device.tensor.dynamic_shape.cast[
+            gguf_b_device_nd.dynamic_shape.cast[
                 gguf_b_tensor_type.layout_int_type
             ]()
         ),
     )
     var repacked_b_tensor = LayoutTensor[DType.uint8, repacked_b_layout](
-        repacked_b_device.buffer,
+        repacked_b_device.unsafe_ptr(),
     )
     var repacked_dequan_tensor = repacked_dequan_tensor_type(
-        repacked_dequan_device.buffer.unsafe_ptr(),
+        repacked_dequan_device.unsafe_ptr(),
         RuntimeLayout[
             repack_dequan_layout,
             element_type = repacked_dequan_tensor_type.layout_int_type,
             linear_idx_type = repacked_dequan_tensor_type.linear_idx_type,
         ].row_major(
-            repacked_dequan_device.tensor.dynamic_shape.cast[
+            repacked_dequan_device_nd.dynamic_shape.cast[
                 repacked_dequan_tensor_type.layout_int_type
             ]()
         ),
@@ -576,31 +599,29 @@ fn test_repack_Q4_0_for_sm8x(
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
-    ctx.enqueue_copy(repacked_b_host.tensor.data, repacked_b_device.buffer)
-    ctx.enqueue_copy(
-        repacked_dequan_host.tensor.data, repacked_dequan_device.buffer
-    )
+    ctx.enqueue_copy(repacked_b_host_ptr, repacked_b_device)
+    ctx.enqueue_copy(repacked_dequan_host_ptr, repacked_dequan_device)
 
     ctx.synchronize()
 
     comptime rtol = 2e-2
     assert_almost_equal(
-        gguf_dequan_ref_host.tensor,
-        repacked_dequan_host.tensor,
+        gguf_dequan_ref_host,
+        repacked_dequan_host,
         atol=0.0001,
         rtol=rtol,
     )
 
-    _ = gguf_dequan_ref_host
+    gguf_b_host_ptr.free()
+    repacked_b_host_ptr.free()
+    gguf_dequan_ref_host_ptr.free()
+    repacked_dequan_host_ptr.free()
     _ = repacked_dequan_tensor
-    _ = repacked_dequan_host
-    _ = repacked_dequan_device
     _ = gguf_b_tensor
-    _ = gguf_b_device
-    _ = gguf_b_host
     _ = repacked_b_tensor
-    _ = repacked_b_device
-    _ = repacked_b_host
+    _ = gguf_b_device^
+    _ = repacked_b_device^
+    _ = repacked_dequan_device^
 
 
 fn test_quantized[
@@ -638,83 +659,109 @@ fn test_quantized[
     var dynamic_b_ref_shape = DimList(n.value, k.value)
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[dtype, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[a_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[a_type, 2, static_c_shape](dynamic_c_shape)
+    var a_size = m.value * k.value
+    var b_size = n.value * ((k.value // group_size) * group_bytes)
+    var b_ref_size = n.value * k.value
+    var c_size = m.value * n.value
 
-    zero(c_host.tensor)
-    random(a_host.tensor)
+    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
+    var c_host_ptr = UnsafePointer[Scalar[a_type]].alloc(c_size)
+    var c_host_ref_ptr = UnsafePointer[Scalar[a_type]].alloc(c_size)
 
-    var b_scales_ptr = (b_host.tensor.data + N * K // 2).bitcast[
-        Scalar[a_type]
-    ]()
+    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+        a_host_ptr, dynamic_a_shape
+    )
+    var b_host = NDBuffer[dtype, 2, _, static_b_shape](
+        b_host_ptr, dynamic_b_shape
+    )
+    var c_host = NDBuffer[a_type, 2, _, static_c_shape](
+        c_host_ptr, dynamic_c_shape
+    )
+    var c_host_ref = NDBuffer[a_type, 2, _, static_c_shape](
+        c_host_ref_ptr, dynamic_c_shape
+    )
+
+    zero(c_host)
+    random(a_host)
+
+    var b_scales_ptr = (b_host_ptr + N * K // 2).bitcast[Scalar[a_type]]()
     var b_scales_view = NDBuffer[
         a_type, 2, _, DimList(k.dim // group_size, n.dim)
     ](b_scales_ptr)
     # elements of b matrix is between [-1, 1]
     random(b_scales_view, 0, 0.125)
     randint(
-        b_host.tensor.data.bitcast[UInt32](),
+        b_host_ptr.bitcast[UInt32](),
         n.value * (k.value // pack_factor),
         Int(UInt32.MIN),
         Int(UInt32.MAX),
     )
 
-    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+    var a_device = ctx.enqueue_create_buffer[a_type](a_size)
+    var b_device = ctx.enqueue_create_buffer[dtype](b_size)
+    var b_device_ref = ctx.enqueue_create_buffer[a_type](b_ref_size)
+    var c_device = ctx.enqueue_create_buffer[a_type](c_size)
+
+    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+        a_device.unsafe_ptr(), dynamic_a_shape
     )
-    var b_device = DeviceNDBuffer[dtype, 2, shape=static_b_shape](
-        dynamic_b_shape, ctx=ctx
+    var b_device_nd = NDBuffer[dtype, 2, _, static_b_shape](
+        b_device.unsafe_ptr(), dynamic_b_shape
     )
-    var b_device_ref = DeviceNDBuffer[a_type, 2, static_b_ref_shape](
-        dynamic_b_ref_shape, ctx=ctx
+    var b_device_ref_nd = NDBuffer[a_type, 2, _, static_b_ref_shape](
+        b_device_ref.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var c_device = DeviceNDBuffer[a_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_device_nd = NDBuffer[a_type, 2, _, static_c_shape](
+        c_device.unsafe_ptr(), dynamic_c_shape
     )
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
 
-    comptime b_layout = Layout.row_major[c_device.rank](b_device.shape)
-    comptime b_ref_layout = Layout.row_major[b_device_ref.rank](
-        b_device_ref.shape
+    comptime b_layout = Layout.row_major[c_device_nd.rank](b_device_nd.shape)
+    comptime b_ref_layout = Layout.row_major[b_device_ref_nd.rank](
+        b_device_ref_nd.shape
     )
     comptime b_tensor_type = LayoutTensor[dtype, b_layout]
     comptime b_ref_tensor_type = LayoutTensor[a_type, b_ref_layout]
 
     var b_tensor = b_tensor_type(
-        b_device.buffer,
+        b_device.unsafe_ptr(),
         RuntimeLayout[
             b_layout,
             element_type = b_tensor_type.layout_int_type,
             linear_idx_type = b_tensor_type.linear_idx_type,
         ].row_major(
-            b_device.tensor.dynamic_shape.cast[b_tensor_type.layout_int_type]()
+            b_device_nd.dynamic_shape.cast[b_tensor_type.layout_int_type]()
         ),
     )
     var b_ref_tensor = b_ref_tensor_type(
-        b_device_ref.buffer,
+        b_device_ref.unsafe_ptr(),
         RuntimeLayout[
             b_ref_layout,
             element_type = b_ref_tensor_type.layout_int_type,
             linear_idx_type = b_ref_tensor_type.linear_idx_type,
         ].row_major(
-            b_device_ref.tensor.dynamic_shape.cast[
+            b_device_ref_nd.dynamic_shape.cast[
                 b_ref_tensor_type.layout_int_type
             ]()
         ),
     )
 
-    var c_device_ref = DeviceNDBuffer[a_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_device_ref = ctx.enqueue_create_buffer[a_type](c_size)
+    var c_device_ref_nd = NDBuffer[a_type, 2, _, static_c_shape](
+        c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
     comptime kernels = MatmulKernels[a_type, dtype, a_type, True]()
     comptime config = kernels.ampere_128x128_4
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
+
+    var c_dev_lt = from_ndbuffer_row_major(c_device_nd)
+    var a_dev_lt = from_ndbuffer_row_major(a_device_nd)
+    var b_dev_lt = from_ndbuffer_row_major(b_device_nd)
 
     if is_benchmark():
         comptime nrun = 200
@@ -726,9 +773,9 @@ fn test_quantized[
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
             ](
-                c_device.to_layout_tensor(),
-                a_device.to_layout_tensor(),
-                b_device.to_layout_tensor(),
+                c_dev_lt,
+                a_dev_lt,
+                b_dev_lt,
                 config,
                 ctx,
             )
@@ -738,9 +785,9 @@ fn test_quantized[
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
             ](
-                c_device.to_layout_tensor(),
-                a_device.to_layout_tensor(),
-                b_device.to_layout_tensor(),
+                c_dev_lt,
+                a_dev_lt,
+                b_dev_lt,
                 config,
                 ctx,
             )
@@ -761,9 +808,9 @@ fn test_quantized[
     multistage_gemm_q[
         group_size=group_size, pack_factor=pack_factor, config=config
     ](
-        c_device.to_layout_tensor(),
-        a_device.to_layout_tensor(),
-        b_device.to_layout_tensor(),
+        c_dev_lt,
+        a_dev_lt,
+        b_dev_lt,
         config,
         ctx,
     )
@@ -786,37 +833,38 @@ fn test_quantized[
         # dump_asm=Path("./pipeline-gemm-2.ptx"),
     )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device)
 
     comptime kernels_ref = MatmulKernels[a_type, a_type, a_type, True]()
     comptime config_ref = kernels_ref.ampere_128x128_4
     _matmul_gpu[use_tensor_core=True, transpose_b=True, config=config_ref](
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device_ref.tensor,
+        c_device_ref_nd,
+        a_device_nd,
+        b_device_ref_nd,
         ctx,
     )
 
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
 
     ctx.synchronize()
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
+        c_host,
+        c_host_ref,
         atol=0.0001,
         rtol=rtol,
     )
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_ref
-    _ = a_device
-    _ = b_device
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device^
+    _ = b_device^
+    _ = b_device_ref^
+    _ = c_device^
+    _ = c_device_ref^
 
     _ = b_tensor
 

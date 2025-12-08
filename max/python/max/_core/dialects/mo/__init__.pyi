@@ -6322,41 +6322,6 @@ class SliceDimOp(max._core.Operation):
     @property
     def step(self) -> max._core.Value[TensorType]: ...
 
-class SliceDimOuterOp(max._core.Operation):
-    """
-    A subset of the SliceDim operation, limited to cases where the operation can
-    be represented by a simple memory offset, where the sliced dimension is the outermost dimension and the step is 1.
-
-    Example:
-    ```mlir
-      %input: !mo.tensor<[?, ?, ?], f32>
-      %start: !mo.tensor<[1], si64> // [1]
-      %stop: !mo.tensor<[1], si32>  // [-3]
-      // equivalent to this in numpy: `input[1:-3, :, :]`
-      %res = mo.slice_dim_outer(%input, %start, %stop) : (
-        !mo.tensor<[10, 10, 10], f32>,
-        !mo.tensor<[1], si64>,
-        !mo.tensor<[1], si64>,
-      ) -> !mo.tensor<[?, ?, ?], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-        start: max._core.Value[TensorType],
-        stop: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def start(self) -> max._core.Value[TensorType]: ...
-    @property
-    def stop(self) -> max._core.Value[TensorType]: ...
-
 class SliceOp(max._core.Operation):
     """
     Returns a new tensor with a subset of the elements from an N-dimensional

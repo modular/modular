@@ -30,7 +30,6 @@ struct AddressSpace(
     Identifiable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):
@@ -61,6 +60,8 @@ struct AddressSpace(
     """Local GPU memory address space (per thread, private)."""
     comptime SHARED_CLUSTER = AddressSpace(7)
     """Shared cluster GPU memory address space (NVIDIA-specific)."""
+    comptime BUFFER_RESOURCE = AddressSpace(8)
+    """Buffer resource GPU memory address space (AMD-specific)."""
 
     @always_inline("builtin")
     fn __init__(out self, value: Int):
@@ -181,7 +182,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](ImplicitlyCopyable, Movable, Stringable):
+](ImplicitlyCopyable, Stringable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to

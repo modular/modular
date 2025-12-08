@@ -19,7 +19,7 @@ from typing import Literal
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn import DistributedGemmConfig, ReturnLogits
+from max.nn import DistributedGemmConfig, ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
@@ -116,6 +116,7 @@ class Olmo2Config(Llama3Config):
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
         data_parallel_degree: int = 1,

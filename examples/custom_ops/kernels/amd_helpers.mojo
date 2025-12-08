@@ -77,14 +77,14 @@ fn amd_scheduling_hints[
 
     """
 
-    alias NUM_THREADS = 256
-    alias threads_per_row = BK // simd_width_of[input_type]()
-    alias rows_per_thread_block = NUM_THREADS // threads_per_row
-    alias a_loads_per_thread = BM // rows_per_thread_block
-    alias b_loads_per_thread = BN // rows_per_thread_block
-    alias mmas_per_warp_m = WM // MMA_M
-    alias mmas_per_warp_n = WN // MMA_N
-    alias k_tiles_count = BK // MMA_K
+    comptime NUM_THREADS = 256
+    comptime threads_per_row = BK // simd_width_of[input_type]()
+    comptime rows_per_thread_block = NUM_THREADS // threads_per_row
+    comptime a_loads_per_thread = BM // rows_per_thread_block
+    comptime b_loads_per_thread = BN // rows_per_thread_block
+    comptime mmas_per_warp_m = WM // MMA_M
+    comptime mmas_per_warp_n = WN // MMA_N
+    comptime k_tiles_count = BK // MMA_K
 
     # scheduler_hint[0] For MFMA after DS_WRITE and VMEM_READ
     # scheduler_hint[1] For MFMA after VMEM_READ
@@ -141,20 +141,20 @@ fn copy_local_to_dram_32_32_8[
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
     var buffer = make_amd_buffer_resource(dst_base)
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
-    alias num_stores_per_thread = dst_fragments.layout.size()
+    comptime num_stores_per_thread = dst_fragments.layout.size()
 
-    alias M = src.layout.shape[0].value()
-    alias N = src.layout.shape[1].value()
+    comptime M = src.layout.shape[0].value()
+    comptime N = src.layout.shape[1].value()
 
     @parameter
     for n in range(N):
 
         @parameter
         for m in range(M):
-            alias src_idx = 4 * n + 16 * m
-            alias i = 4 * n + m + ((m // 4) * 12)
+            comptime src_idx = 4 * n + 16 * m
+            comptime i = 4 * n + m + ((m // 4) * 12)
 
-            alias dst_static_idx = dst_fragments.layout(i)
+            comptime dst_static_idx = dst_fragments.layout(i)
             var dst_idx = dst_frag_offset
 
             @parameter
@@ -168,7 +168,7 @@ fn copy_local_to_dram_32_32_8[
                 src.runtime_element_layout,
             )
 
-            alias element_stride = dst_fragments.element_layout.stride[
+            comptime element_stride = dst_fragments.element_layout.stride[
                 1
             ].value()
 
@@ -182,7 +182,7 @@ fn copy_local_to_dram_32_32_8[
 
                 @parameter
                 for i in range(dst_fragments.element_layout.size()):
-                    alias element_offset = dst_fragments.element_layout(i)
+                    comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
                         Int32(dst_idx + element_offset),
@@ -204,8 +204,8 @@ struct AMD_MMA[
     BK: Int,
     WK: Int,
 ]:
-    alias type_alignment = align_of[SIMD[Self.in_type, Self.simd_width]]()
-    alias tensor_core_mma = TiledTensorCore[
+    comptime type_alignment = align_of[SIMD[Self.in_type, Self.simd_width]]()
+    comptime tensor_core_mma = TiledTensorCore[
         Self.out_type,
         Self.in_type,
         Self.shape,
@@ -213,7 +213,7 @@ struct AMD_MMA[
         Self.transpose_b,
     ]()
 
-    alias SharedMemTileType[smem_layout: Layout] = LayoutTensor[
+    comptime SharedMemTileType[smem_layout: Layout] = LayoutTensor[
         Self.in_type,
         smem_layout,
         MutAnyOrigin,
@@ -221,7 +221,7 @@ struct AMD_MMA[
         alignment = Self.type_alignment,
     ]
 
-    alias MMARegTileType[num_mmas: Int] = LayoutTensor[
+    comptime MMARegTileType[num_mmas: Int] = LayoutTensor[
         Self.in_type,
         Layout.row_major(num_mmas * Self.num_k_tiles, Self.simd_width),
         MutAnyOrigin,
@@ -229,7 +229,7 @@ struct AMD_MMA[
         alignment = Self.type_alignment,
     ]
 
-    alias SharedMemWarpTileType[
+    comptime SharedMemWarpTileType[
         warp_rows: Int, smem_layout: Layout
     ] = Self.SharedMemTileType[smem_layout].TileType[warp_rows, Self.WK]
 
@@ -242,7 +242,7 @@ fn mma[
 ](
     a_tiles: MMATileBuffers[mma_type=MMAType],
     b_tiles: MMATileBuffers[mma_type=MMAType],
-    c_reg_tile: LayoutTensor,
+    c_reg_tile: LayoutTensor[mut=True, **_],
 ):
     """
     AMD-style MMA operation wrapper for the AMD_MMA struct.
@@ -292,7 +292,9 @@ struct MMATileBuffers[
     # Tensor types for different memory regions
 
     # Shared memory allocation for matrix data shared across the block
-    alias SharedMemTileType = Self.mma_type.SharedMemTileType[Self.smem_layout]
+    comptime SharedMemTileType = Self.mma_type.SharedMemTileType[
+        Self.smem_layout
+    ]
     var shared_mem_tile: Self.SharedMemTileType
 
     # Tile view optimized for matrix multiplication acceleration (MMA) operations
@@ -301,7 +303,7 @@ struct MMATileBuffers[
     ]
 
     # Buffer for loading data from global memory before transferring to shared memory
-    alias MMARegTileType = Self.mma_type.MMARegTileType[Self.num_mmas]
+    comptime MMARegTileType = Self.mma_type.MMARegTileType[Self.num_mmas]
     var load_reg_tile: Self.MMARegTileType
 
     # Register-level storage for matrix data during computation
@@ -310,7 +312,7 @@ struct MMATileBuffers[
     ]
 
     # Global memory iterator for input tensor
-    alias iter_type = Self.tensor_type.TileType[
+    comptime iter_type = Self.tensor_type.TileType[
         Self.block_rows, Self.stride
     ].TiledIteratorType[Self.block_rows, Self.mma_type.BK, axis=1]
     var gmem_iter: Self.iter_type
@@ -467,9 +469,9 @@ fn compute_relative_error_kernel[
     var abs_diff = abs(comp_val - ref_val)
 
     # Compute denominator with epsilon to prevent division by zero
-    alias epsilon = Scalar[dtype](1e-8) if dtype == DType.float32 else Scalar[
-        dtype
-    ](1e-4)
+    comptime epsilon = Scalar[dtype](
+        1e-8
+    ) if dtype == DType.float32 else Scalar[dtype](1e-4)
     var denominator = max(abs(ref_val), epsilon)
 
     # Compute relative error
@@ -574,7 +576,7 @@ fn compare_equal[
     )
 
     # Compute the relative error between the reference and computed tensors
-    alias rel_error_kernel = compute_relative_error_kernel[dtype, layout]
+    comptime rel_error_kernel = compute_relative_error_kernel[dtype, layout]
     gpu_ctx.enqueue_function_checked[rel_error_kernel, rel_error_kernel](
         reference,
         computed,
@@ -592,7 +594,7 @@ fn compare_equal[
         var num_threadblocks = ceildiv(i, 1024)
         var num_elements = i if i < 1024 else 1024
 
-        alias reduce_kernel = max_reduce_kernel[dtype, layout]
+        comptime reduce_kernel = max_reduce_kernel[dtype, layout]
         gpu_ctx.enqueue_function_checked[reduce_kernel, reduce_kernel](
             max_relative_error,
             num_elements,

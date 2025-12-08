@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "schemas",
     srcs = glob(["*.py"]),
@@ -17,5 +19,4 @@ pkg_files(
     ],
     prefix = "max/api",
     strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )

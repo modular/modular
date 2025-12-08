@@ -298,16 +298,15 @@ names = List[String]()
 ```
 
 We can also create a `List` with an initial set of values and let the compiler
-infer the type. We can either pass multiple values directly to the `List`
-constructor or use the *list literal* syntax and simply enclose the values in
-square brackets (`[]`).
+infer the type. Use the *list literal* syntax and simply enclose the values in
+square brackets (`[]`):
 
 ```mojo
-# Create a List[Int] with the List constructor, inferring the type
-nums1 = List(12, -7, 64)
-
 # Create a List[Int] with the list literal syntax, inferring the type
 nums2 = [12, -7, 64]
+
+# which is equivalent to
+nums2: List[Int] = [12, -7, 64]
 ```
 
 The Mojo `List` type includes the ability to append to the list, pop values from
@@ -426,9 +425,9 @@ implement, usually in the form of one or more method signatures.
 - The `String`, `Int` and other numeric types conform to the
   [`ImplicitlyCopyable`](/mojo/stdlib/builtin/value/ImplicitlyCopyable/) trait,
   which indicates that they are **implicitly copyable**. Additionally, the
-  `ImplicitlyCopyable` trait inherits from the `Copyable` trait, so you can also
+  `ImplicitlyCopyable` trait inherits from the `Copyable` and `Movable` traits, so you can also
   use types that conform to the `ImplicitlyCopyable` trait in the same way you
-  can use types that conform to the `Copyable` trait.
+  can use types that conform to the other traits.
 
 :::
 
@@ -567,7 +566,7 @@ the following definition of a struct named `Grid` with three fields:
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable):
+struct Grid(Copyable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
@@ -630,17 +629,17 @@ copied, and destroyed.
 Structs that conform to the [`Movable`](/mojo/stdlib/builtin/value/Movable/)
 [trait](/mojo/manual/traits) denote a type whose value can be moved, and structs
 that conform to the [`Copyable`](/mojo/stdlib/builtin/value/Copyable/) trait
-denote a type whose value can be *explicitly* copied. You can then implement
-custom move and copy constructors that perform the necessary operations to move
-or copy the instance.
+denote a type whose value can be *explicitly* copied and/or moved. You can then
+implement custom move and copy constructors that perform the necessary
+operations to move or copy the instance.
 
 As a convenience for structs that are basic aggregations of other types and
 don't require custom resource management or lifecycle behaviors, you can simply
-indicate that the struct conforms to the `Movable` and `Copyable` traits without
+indicate that the struct conforms to the `Movable` or `Copyable` traits without
 implementing the corresponding lifecycle methods. In that case, the Mojo
 compiler automatically generates the missing methods for you. For our simple
-`Grid` struct, indicating that it conforms to the `Movable` and `Copyable`
-traits is enough to have the Mojo compiler automatically generate the missing
+`Grid` struct, indicating that it conforms to the `Copyable`
+trait is enough to have the Mojo compiler automatically generate the missing
 methods for us. The `Copyable` trait also provides a default implementation of
 the `copy()` method, so you don't need to implement it yourself.
 
@@ -749,7 +748,7 @@ simply copy the code below into `gridv1.mojo`):
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable):
+struct Grid(Copyable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
@@ -851,7 +850,7 @@ the type conforms to `Stringable` and rename the `grid_str()` method to
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable, Stringable):
+struct Grid(Copyable, Stringable):
     ...
     fn __str__(self) -> String:
         ...
@@ -912,7 +911,7 @@ built-in operators for a custom type by implementing special *dunder*
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable, Stringable):
+struct Grid(Copyable, Stringable):
     ...
     fn __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
@@ -940,7 +939,7 @@ indexing syntax to access the cell value.
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable, Stringable):
+struct Grid(Copyable, Stringable):
     ...
     fn __str__(self) -> String:
         ...
@@ -955,7 +954,7 @@ struct Grid(Copyable, Movable, Stringable):
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable, Stringable):
+struct Grid(Copyable, Stringable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
@@ -1004,7 +1003,7 @@ function. We indicate that a method is static by using the
 import random
 
 @fieldwise_init
-struct Grid(Copyable, Movable, Stringable):
+struct Grid(Copyable, Stringable):
     ...
     @staticmethod
     fn random(rows: Int, cols: Int) -> Self:
@@ -1109,7 +1108,7 @@ we'll have `evolve()` return a new instance of `Grid` for the next generation.
 
 ```mojo title="gridv1.mojo"
 ...
-struct Grid(Copyable, Movable, Stringable):
+struct Grid(Copyable, Stringable):
     ...
     fn evolve(self) -> Self:
         next_generation = List[List[Int]]()
@@ -1305,7 +1304,7 @@ def run_display(
     pygame.init()
 
     # Create a window and set its title
-    window = pygame.display.set_mode(Python.tuple(window_height, window_width))
+    window = pygame.display.set_mode(Python.tuple(window_width, window_height))
     pygame.display.set_caption("Conway's Game of Life")
 
     cell_height = window_height / grid.rows
@@ -1370,8 +1369,8 @@ definition.
 After importing the `pygame` module, we call `pygame.init()` to initialize all
 pygame subsystems.
 
-The `set_mode()` function creates and initializes a window with the height and
-width passed as a Python tuple of two values. This returns a
+The `set_mode()` function creates and initializes a window with the width and
+height passed as a Python tuple of two values. This returns a
 [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) wrapper for the
 window, which we can then use to call functions and set attributes to manipulate
 the window. (For more information about interacting with Python objects from

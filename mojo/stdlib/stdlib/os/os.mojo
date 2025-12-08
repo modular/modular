@@ -24,13 +24,14 @@ from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
 from io import FileDescriptor
 from sys import CompilationTarget, external_call, is_gpu
-from sys.ffi import c_char, c_int
+from sys.ffi import c_char, c_int, get_errno
 
 from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
 comptime sep = "/"
+"""The path separator for the current platform."""
 
 
 # ===----------------------------------------------------------------------=== #
@@ -51,7 +52,7 @@ comptime SEEK_END: UInt8 = 2
 # ===----------------------------------------------------------------------=== #
 
 
-struct _dirent_linux(Copyable, Movable):
+struct _dirent_linux(Copyable):
     comptime MAX_NAME_SIZE = 256
     var d_ino: Int64
     """File serial number."""
@@ -65,7 +66,7 @@ struct _dirent_linux(Copyable, Movable):
     """Name of entry."""
 
 
-struct _dirent_macos(Copyable, Movable):
+struct _dirent_macos(Copyable):
     comptime MAX_NAME_SIZE = 1024
     var d_ino: Int64
     """File serial number."""
@@ -96,11 +97,18 @@ struct _DirHandle:
             raise Error("the directory '", path, "' does not exist")
 
         self._handle = external_call["opendir", type_of(self._handle)](
-            path.unsafe_cstr_ptr()
+            path.as_c_string_slice().unsafe_ptr()
         )
 
         if not self._handle:
-            raise Error("unable to open the directory '", path, "'")
+            var err = get_errno()
+            raise Error(
+                "unable to open the directory '",
+                path,
+                "'",
+                " Err: ",
+                String(err),
+            )
 
     fn __del__(deinit self):
         """Closes the handle opened via popen."""
@@ -221,14 +229,9 @@ fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
 
 
 @no_inline
-fn abort[result: AnyType = NoneType._mlir_type]() -> result:
-    """Calls a target dependent trap instruction if available.
-
-    Parameters:
-        result: The result type.
-
-    Returns:
-        A null result type.
+fn abort() -> Never:
+    """Terminates execution, using a target dependent trap instruction if
+    available.
     """
 
     __mlir_op.`llvm.intr.trap`()
@@ -239,27 +242,21 @@ fn abort[result: AnyType = NoneType._mlir_type]() -> result:
 
 
 @no_inline
-fn abort[
-    result: AnyType = NoneType._mlir_type, *, prefix: StaticString = "ABORT:"
-](message: String) -> result:
+fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
-        result: The result type.
         prefix: A static string prefix to include before the message.
 
     Args:
         message: The message to include when aborting.
-
-    Returns:
-        A null result type.
     """
 
     @parameter
     if not is_gpu():
         print(prefix, message, flush=True)
 
-    return abort[result]()
+    abort()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -282,14 +279,13 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["unlink", Int32](fspath.unsafe_cstr_ptr())
+    var error = external_call["unlink", Int32](
+        fspath.as_c_string_slice().unsafe_ptr()
+    )
 
     if error != 0:
-        # TODO get error message, the following code prints it
-        # var error_str = String("Something went wrong")
-        # _ = external_call["perror", OpaquePointer](error_str.unsafe_ptr())
-        # _ = error_str
-        raise Error("Can not remove file: ", fspath)
+        var err = get_errno()
+        raise Error("Can not remove file: ", fspath, " Err: ", String(err))
 
 
 fn unlink[PathLike: os.PathLike](path: PathLike) raises:
@@ -309,6 +305,88 @@ fn unlink[PathLike: os.PathLike](path: PathLike) raises:
         If the operation fails.
     """
     remove(path.__fspath__())
+
+
+# ===----------------------------------------------------------------------=== #
+# symlink
+# ===----------------------------------------------------------------------=== #
+
+
+fn symlink[
+    TargetType: os.PathLike, LinkType: os.PathLike
+](target: TargetType, linkpath: LinkType) raises:
+    """Creates a symlink.
+
+    If linkpath already exists it will not be overwritten.
+    See `symlink(2)`
+
+    Parameters:
+        TargetType: The path type of the link target.
+        LinkType: The path type of the link.
+
+    Args:
+        target: The target of the symbolic link.
+        linkpath: The path of the symbolic link to create.
+
+    Raises:
+        If the operation fails.
+    """
+    var target_fspath = target.__fspath__()
+    var linkpath_fspath = linkpath.__fspath__()
+
+    var error = external_call["symlink", c_int](
+        target_fspath.as_c_string_slice().unsafe_ptr(),
+        linkpath_fspath.as_c_string_slice().unsafe_ptr(),
+    )
+
+    if error != 0:
+        var err = get_errno()
+        raise Error(
+            "Can not create symlink from ",
+            linkpath_fspath,
+            " to ",
+            target_fspath,
+            " Err: ",
+            String(err),
+        )
+
+
+# ===----------------------------------------------------------------------=== #
+# link
+# ===----------------------------------------------------------------------=== #
+
+
+fn link[
+    OldType: os.PathLike, NewType: os.PathLike
+](oldpath: OldType, newpath: NewType) raises:
+    """Creates a new hard-link to an existing file.
+
+    Parameters:
+        OldType: The path type of the existing file.
+        NewType: The path type of the file to create.
+
+    Args:
+        oldpath: The exsting file.
+        newpath: The new file.
+    """
+    var oldpath_fspath = oldpath.__fspath__()
+    var newpath_fspath = newpath.__fspath__()
+
+    var error = external_call["link", Int32](
+        oldpath_fspath.as_c_string_slice().unsafe_ptr(),
+        newpath_fspath.as_c_string_slice().unsafe_ptr(),
+    )
+
+    if error != 0:
+        var err = get_errno()
+        raise Error(
+            "Can not create link from ",
+            newpath_fspath,
+            " to ",
+            oldpath_fspath,
+            " Err: ",
+            String(err),
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -334,9 +412,12 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
     """
 
     var fspath = path.__fspath__()
-    var error = external_call["mkdir", Int32](fspath.unsafe_cstr_ptr(), mode)
+    var error = external_call["mkdir", Int32](
+        fspath.as_c_string_slice().unsafe_ptr(), mode
+    )
     if error != 0:
-        raise Error("Can not create directory: ", fspath)
+        var err = get_errno()
+        raise Error("Can not create directory: ", fspath, " Err: ", String(err))
 
 
 fn makedirs[
@@ -396,9 +477,12 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["rmdir", Int32](fspath.unsafe_cstr_ptr())
+    var error = external_call["rmdir", Int32](
+        fspath.as_c_string_slice().unsafe_ptr()
+    )
     if error != 0:
-        raise Error("Can not remove directory: ", fspath)
+        var err = get_errno()
+        raise Error("Can not remove directory: ", fspath, " Err: ", String(err))
 
 
 fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:

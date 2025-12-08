@@ -108,12 +108,16 @@ fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
         return DataType.R_8F_E4M3
     elif mojo_type is DType.float8_e5m2:
         return DataType.R_8F_E5M2
+    # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+    # Replace this with float4-e2m1fn when GENAI-337 is fixed.
+    elif mojo_type is DType.uint8:
+        return DataType.R_4F_E2M1
     else:
         constrained[
             mojo_type is DType.bfloat16,
             (
-                "Only support FP32, FP16, BF16, E4M3, and E5M2. Please extend"
-                " it if more types are needed."
+                "Only support FP32, FP16, BF16, E4M3, E5M2, and E2M1x2 (UInt8)."
+                " Please extend it if more types are needed."
             ),
         ]()
         return DataType.R_16BF
@@ -808,7 +812,7 @@ struct cublasPointerMode_t:
             return "CUBLAS_POINTER_MODE_HOST"
         if self == Self.CUBLAS_POINTER_MODE_DEVICE:
             return "CUBLAS_POINTER_MODE_DEVICE"
-        return abort[String]("invalid cublasPointerMode_t entry")
+        abort("invalid cublasPointerMode_t entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -978,7 +982,7 @@ struct cublasMath_t:
             return "CUBLAS_TF32_TENSOR_OP_MATH"
         if self == Self.CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION:
             return "CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION"
-        return abort[String]("invalid cublasMath_t entry")
+        abort("invalid cublasMath_t entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2210,7 +2214,7 @@ struct Algorithm:
             return "ALGO14_TENSOR_OP"
         if self == Self.ALGO15_TENSOR_OP:
             return "ALGO15_TENSOR_OP"
-        return abort[String]("invalid Algorithm entry")
+        abort("invalid Algorithm entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2656,7 +2660,7 @@ struct cublasDiagType_t:
             return "CUBLAS_DIAG_NON_UNIT"
         if self == Self.CUBLAS_DIAG_UNIT:
             return "CUBLAS_DIAG_UNIT"
-        return abort[String]("invalid cublasDiagType_t entry")
+        abort("invalid cublasDiagType_t entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2711,7 +2715,7 @@ struct ComputeType:
             return "COMPUTE_32I"
         if self == Self.COMPUTE_32I_PEDANTIC:
             return "COMPUTE_32I_PEDANTIC"
-        return abort[String]("invalid ComputeType entry")
+        abort("invalid ComputeType entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -4701,7 +4705,7 @@ struct FillMode:
             return "UPPER"
         if self == Self.FULL:
             return "FULL"
-        return abort[String]("invalid FillMode entry")
+        abort("invalid FillMode entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -6147,7 +6151,7 @@ struct cublasAtomicsMode_t:
             return "CUBLAS_ATOMICS_NOT_ALLOWED"
         if self == Self.CUBLAS_ATOMICS_ALLOWED:
             return "CUBLAS_ATOMICS_ALLOWED"
-        return abort[String]("invalid cublasAtomicsMode_t entry")
+        abort("invalid cublasAtomicsMode_t entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -6448,7 +6452,7 @@ struct cublasSideMode_t:
             return "CUBLAS_SIDE_LEFT"
         if self == Self.CUBLAS_SIDE_RIGHT:
             return "CUBLAS_SIDE_RIGHT"
-        return abort[String]("invalid cublasSideMode_t entry")
+        abort("invalid cublasSideMode_t entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -7084,7 +7088,7 @@ struct cublasOperation_t:
             return "CUBLAS_OP_HERMITAN"
         if self == Self.CUBLAS_OP_CONJG:
             return "CUBLAS_OP_CONJG"
-        return abort[String]("invalid cublasOperation_t entry")
+        abort("invalid cublasOperation_t entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)

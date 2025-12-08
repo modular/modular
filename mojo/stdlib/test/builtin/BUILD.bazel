@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _DATA = [
     "test_file_dummy_input.txt",
 ]
@@ -8,12 +10,23 @@ _NO_ASAN = [
     "test_simd.mojo",  # Takes too long to compile with ASAN
 ]
 
+_NO_MACOS = [
+    # FIXME: MSTDL-2081
+    "test_file.mojo",
+]
+
 _PLATFORM_CONSTRAINTS = {
     src: select({
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     })
     for src in _NO_ASAN
+} | {
+    src: select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+    for src in _NO_MACOS
 }
 
 _FILECHECK_TESTS = [

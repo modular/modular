@@ -110,7 +110,7 @@ fn _memcpy_gpu[
 
 @register_passable("trivial")
 struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
-    ImplicitlyCopyable & Movable
+    ImplicitlyCopyable
 ):
     var pre_pad: Int
     var post_pad: Int

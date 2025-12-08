@@ -42,11 +42,13 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.config_enums import PipelineRole
+from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Inputs, DeepseekV2Model
+from ..llama3.data_parallel_llama import compute_data_parallel_splits
 from .deepseekV3 import DeepseekV3
 from .model_config import DeepseekV3Config
 
@@ -283,10 +285,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             max_kv_length: int = 0
 
             if pipeline_config.max_batch_context_length is None:
-                logger.info(
-                    "Estimation for activation memory might be inaccurate, "
-                    "max-batch-context-length is not set."
-                )
+                # If max_batch_context_length is not set, we use max_length.
+                max_kv_length = pipeline_config.max_length or 0
             else:
                 max_kv_length = pipeline_config.max_batch_context_length
 
@@ -478,10 +478,17 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],
+        replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV3Inputs:
+        dp = self.pipeline_config.model_config.data_parallel_degree
+        if len(replica_batches) != dp:
+            raise ValueError(
+                "Number of replica batches must match data parallel degree"
+            )
+
+        context_batch = flatten2d(replica_batches)
         # Create tokens
         if len(context_batch) == 0:
             tokens = Tensor(shape=[0], dtype=DType.int64).to(self.devices[0])
@@ -502,16 +509,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 )
             )
 
-        data_parallel_splits: Tensor
-        if self.pipeline_config.model_config.data_parallel_degree > 1:
-            assert isinstance(self.kv_manager, PagedKVCacheManager)
-            data_parallel_splits = self.kv_manager.get_data_parallel_splits(
-                context_batch
-            )
-        else:
-            data_parallel_splits = Tensor.from_numpy(
-                np.array([0, len(context_batch)], dtype=np.int64)
-            )
+        data_parallel_splits = compute_data_parallel_splits(replica_batches)
 
         return DeepseekV3Inputs(
             tokens=tokens,
@@ -521,7 +519,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ).to(self.devices[0]),
-            data_parallel_splits=data_parallel_splits,
+            data_parallel_splits=Tensor.from_numpy(data_parallel_splits),
         )
 
     def prepare_next_token_inputs(

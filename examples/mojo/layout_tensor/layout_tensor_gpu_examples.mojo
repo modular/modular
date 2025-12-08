@@ -42,14 +42,14 @@ from sys import exit
 
 # start-initialize-tensor-from-cpu-example
 def initialize_tensor_from_cpu_example():
-    alias dtype = DType.float32
-    alias rows = 32
-    alias cols = 8
-    alias block_size = 8
-    alias row_blocks = rows // block_size
-    alias col_blocks = cols // block_size
-    alias input_layout = Layout.row_major(rows, cols)
-    alias size: Int = rows * cols
+    comptime dtype = DType.float32
+    comptime rows = 32
+    comptime cols = 8
+    comptime block_size = 8
+    comptime row_blocks = rows // block_size
+    comptime col_blocks = cols // block_size
+    comptime input_layout = Layout.row_major(rows, cols)
+    comptime size: Int = rows * cols
 
     fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         if global_idx.y < UInt(tensor.shape[0]()) and global_idx.x < UInt(
@@ -96,11 +96,11 @@ def initialize_tensor_from_cpu_example():
 
 
 def shared_memory_alloc_example():
-    alias dtype = DType.float32
-    alias in_size = 128
-    alias block_size = 16
-    alias num_blocks = in_size // block_size  # number of block in one dimension
-    alias input_layout = Layout.row_major(in_size, in_size)
+    comptime dtype = DType.float32
+    comptime in_size = 128
+    comptime block_size = 16
+    comptime num_blocks = in_size // block_size  # number of block in one dimension
+    comptime input_layout = Layout.row_major(in_size, in_size)
 
     fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
@@ -108,7 +108,7 @@ def shared_memory_alloc_example():
             Int(block_idx.y), Int(block_idx.x)
         )
         # start-shared-memory-alloc-example
-        alias tile_layout = Layout.row_major(block_size, block_size)
+        comptime tile_layout = Layout.row_major(block_size, block_size)
         var shared_tile = LayoutTensor[
             dtype,
             tile_layout,
@@ -164,17 +164,17 @@ fn simd_width_example():
     from sys.info import simd_width_of
     from gpu.host.compile import get_gpu_target
 
-    alias simd_width = simd_width_of[DType.float32, get_gpu_target()]
+    comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]
     # end-simd-width-example
 
 
 def layout_tensor_vectorized_example():
-    alias dtype = DType.int32
-    alias vector_width = 4
+    comptime dtype = DType.int32
+    comptime vector_width = 4
 
-    alias rows = 64
-    alias columns = 64
-    alias layout = Layout.row_major(rows, columns)
+    comptime rows = 64
+    comptime columns = 64
+    comptime layout = Layout.row_major(rows, columns)
     var storage = InlineArray[Scalar[dtype], rows * columns](uninitialized=True)
     for i in range(rows * columns):
         storage[i] = i
@@ -191,10 +191,10 @@ def layout_tensor_vectorized_example():
 
 
 fn layout_tensor_distribute_example():
-    alias rows = 4
-    alias columns = 8
-    alias layout = Layout.row_major(rows, columns)
-    alias dtype = DType.int32
+    comptime rows = 4
+    comptime columns = 8
+    comptime layout = Layout.row_major(rows, columns)
+    comptime dtype = DType.int32
 
     fn kernel(tensor: LayoutTensor[dtype, layout, MutAnyOrigin]):
         var fragment = tensor.vectorize[1, 4]().distribute[
@@ -223,20 +223,20 @@ fn layout_tensor_distribute_example():
 
 # TODO: Add simple copy example to doc
 fn simple_copy_example():
-    alias dtype = DType.float32
-    alias rows = 128
-    alias cols = 128
-    alias block_size = 16
-    alias num_row_blocks = rows // block_size
-    alias num_col_blocks = cols // block_size
-    alias input_layout = Layout.row_major(rows, cols)
+    comptime dtype = DType.float32
+    comptime rows = 128
+    comptime cols = 128
+    comptime block_size = 16
+    comptime num_row_blocks = rows // block_size
+    comptime num_col_blocks = cols // block_size
+    comptime input_layout = Layout.row_major(rows, cols)
 
     fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
             Int(block_idx.y), Int(block_idx.x)
         )
-        alias tile_layout = Layout.row_major(block_size, block_size)
+        comptime tile_layout = Layout.row_major(block_size, block_size)
         var shared_tile = LayoutTensor[
             dtype,
             tile_layout,
@@ -293,21 +293,21 @@ fn simple_copy_example():
 fn copy_from_async_example():
     @parameter
     if not has_apple_gpu_accelerator():
-        alias dtype = DType.float32
-        alias rows = 128
-        alias cols = 128
-        alias block_size = 16
-        alias num_row_blocks = rows // block_size
-        alias num_col_blocks = cols // block_size
-        alias input_layout = Layout.row_major(rows, cols)
-        alias simd_width = 4
+        comptime dtype = DType.float32
+        comptime rows = 128
+        comptime cols = 128
+        comptime block_size = 16
+        comptime num_row_blocks = rows // block_size
+        comptime num_col_blocks = cols // block_size
+        comptime input_layout = Layout.row_major(rows, cols)
+        comptime simd_width = 4
 
         fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
             # extract a tile from the input tensor.
             var global_tile = tensor.tile[block_size, block_size](
                 Int(block_idx.y), Int(block_idx.x)
             )
-            alias tile_layout = Layout.row_major(block_size, block_size)
+            comptime tile_layout = Layout.row_major(block_size, block_size)
             var shared_tile = LayoutTensor[
                 dtype,
                 tile_layout,
@@ -316,7 +316,7 @@ fn copy_from_async_example():
             ].stack_allocation()
 
             # Create thread layouts for copying
-            alias thread_layout = Layout.row_major(
+            comptime thread_layout = Layout.row_major(
                 WARP_SIZE // simd_width, simd_width
             )
             var global_fragment = global_tile.vectorize[

@@ -34,19 +34,22 @@ class PipelineTokenizer(
 
     @property
     def expects_content_wrapping(self) -> bool:
-        """If true, this tokenizer expects messages to have a `content` property.
+        """If true, this tokenizer expects messages to be wrapped as a dict.
 
         Text messages are formatted as:
 
         .. code-block:: json
 
-            { "type": "text", "content": "text content" }
+            {
+              "role": "user",
+              "content": [{ "type": "text", "text": "text content" }]
+            }
 
-        instead of the OpenAI spec:
+        instead of:
 
         .. code-block:: json
 
-            { "type": "text", "text": "text content" }
+            { "role": "user", "content": "text_content" }
 
         NOTE: Multimodal messages omit the `content` property.
         Both :obj:`image_urls` and :obj:`image` content parts are converted to:

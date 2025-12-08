@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 # Special configuration for multimem allreduce test - only runs on SM90+ hardware
 mojo_test(
     name = "test_multimem_allreduce.mojo.test",

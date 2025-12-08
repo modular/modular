@@ -54,12 +54,11 @@ struct LegacyUnsafePointer[
     mut: Bool = True,
     origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],
 ](
+    Boolable,
     Comparable,
     Defaultable,
-    ImplicitlyBoolable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):
@@ -255,7 +254,7 @@ struct LegacyUnsafePointer[
             Pointer to the newly allocated uninitialized array.
         """
         comptime size_of_t = size_of[Self.type]()
-        constrained[size_of_t > 0, "size must be greater than zero"]()
+        __comptime_assert size_of_t > 0, "size must be greater than zero"
         return _malloc[Self.type](size_of_t * count, alignment=alignment)
 
     # ===-------------------------------------------------------------------===#
@@ -646,13 +645,12 @@ struct LegacyUnsafePointer[
             The loaded SIMD vector.
         """
         _simd_construction_checks[dtype, width]()
-        constrained[
-            alignment > 0, "alignment must be a positive integer value"
-        ]()
-        constrained[
-            not volatile or volatile ^ invariant,
-            "both volatile and invariant cannot be set at the same time",
-        ]()
+        __comptime_assert (
+            alignment > 0
+        ), "alignment must be a positive integer value"
+        __comptime_assert (
+            not volatile or volatile ^ invariant
+        ), "both volatile and invariant cannot be set at the same time"
 
         @parameter
         if is_nvidia_gpu() and size_of[dtype]() == 1 and alignment == 1:
@@ -710,7 +708,7 @@ struct LegacyUnsafePointer[
         Returns:
             The loaded value.
         """
-        constrained[offset.dtype.is_integral(), "offset must be integer"]()
+        __comptime_assert offset.dtype.is_integral(), "offset must be integer"
         return self.offset(Int(offset)).load[
             width=width,
             alignment=alignment,
@@ -817,7 +815,7 @@ struct LegacyUnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        constrained[offset_type.is_integral(), "offset must be integer"]()
+        __comptime_assert offset_type.is_integral(), "offset must be integer"
         self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
             val
         )
@@ -875,10 +873,10 @@ struct LegacyUnsafePointer[
         self: LegacyUnsafePointer[Scalar[dtype], mut=True, **_],
         val: SIMD[dtype, width],
     ):
-        constrained[width > 0, "width must be a positive integer value"]()
-        constrained[
-            alignment > 0, "alignment must be a positive integer value"
-        ]()
+        __comptime_assert width > 0, "width must be a positive integer value"
+        __comptime_assert (
+            alignment > 0
+        ), "alignment must be a positive integer value"
 
         __mlir_op.`pop.store`[
             alignment = alignment._mlir_value,
@@ -976,14 +974,12 @@ struct LegacyUnsafePointer[
         Returns:
             The SIMD vector containing the gathered values.
         """
-        constrained[
-            offset.dtype.is_integral(),
-            "offset type must be an integral type",
-        ]()
-        constrained[
-            alignment.is_power_of_two(),
-            "alignment must be a power of two integer value",
-        ]()
+        __comptime_assert (
+            offset.dtype.is_integral()
+        ), "offset type must be an integral type"
+        __comptime_assert (
+            alignment.is_power_of_two()
+        ), "alignment must be a power of two integer value"
 
         var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
         return gather[alignment=alignment](base, mask, default)
@@ -1030,14 +1026,12 @@ struct LegacyUnsafePointer[
             mask: The SIMD vector of boolean values, indicating for each
                 element whether to store at memory or not.
         """
-        constrained[
-            offset.dtype.is_integral(),
-            "offset type must be an integral type",
-        ]()
-        constrained[
-            alignment.is_power_of_two(),
-            "alignment must be a power of two integer value",
-        ]()
+        __comptime_assert (
+            offset.dtype.is_integral()
+        ), "offset type must be an integral type"
+        __comptime_assert (
+            alignment.is_power_of_two()
+        ), "alignment must be a power of two integer value"
 
         var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
         scatter[alignment=alignment](val, base, mask)
@@ -1104,10 +1098,9 @@ struct LegacyUnsafePointer[
             A pointer with the same type, origin and address space as the
             original pointer, but with the newly specified mutability.
         """
-        constrained[
-            target_mut == False or target_mut == Self.mut,
-            "Cannot safely cast an immutable pointer to mutable",
-        ]()
+        __comptime_assert (
+            target_mut == False or target_mut == Self.mut
+        ), "Cannot safely cast an immutable pointer to mutable"
         return self.unsafe_mut_cast[target_mut]()
 
     @always_inline("builtin")
@@ -1185,9 +1178,8 @@ struct LegacyUnsafePointer[
 
     @doc_private
     fn as_any_origin(
-        self: LegacyUnsafePointer[Self.type, **_],
-        out result: Self._OriginCastType[False, ImmutAnyOrigin],
-    ):
+        self: LegacyUnsafePointer[Self.type, **_]
+    ) -> Self._OriginCastType[False, ImmutAnyOrigin]:
         constrained[
             False,
             (
@@ -1197,7 +1189,7 @@ struct LegacyUnsafePointer[
                 " function."
             ),
         ]()
-        result = abort[type_of(result)]()
+        abort()
 
     @always_inline("builtin")
     fn as_any_origin(

@@ -27,8 +27,8 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin.device_passable import DevicePassable
 from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
+    # Keep LegacyOpaquePointer for DevicePassable trait compatibility
+    LegacyOpaquePointer,
     memset_zero,
     stack_allocation,
 )
@@ -201,7 +201,7 @@ fn _compute_ndbuffer_stride[
     Returns:
         The default strides of the NDBuffer.
     """
-    constrained[rank > 0]()
+    __comptime_assert rank > 0
 
     @parameter
     if rank == 1:
@@ -240,7 +240,6 @@ struct NDBuffer[
     Defaultable,
     DevicePassable,
     ImplicitlyCopyable,
-    Movable,
     Sized,
     Stringable,
     Writable,
@@ -264,11 +263,12 @@ struct NDBuffer[
     """
 
     comptime type = Self.dtype
+    """The data type of elements in this buffer."""
+
     var data: UnsafePointer[
         Scalar[Self.dtype],
+        Self.origin,
         address_space = Self.address_space,
-        mut = Self.mut,
-        origin = Self.origin,
     ]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
@@ -295,9 +295,8 @@ struct NDBuffer[
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
+            Self.origin,
             address_space = Self.address_space,
-            mut = Self.mut,
-            origin = Self.origin, **_,
         ],
     ):
         """Constructs an NDBuffer with statically known rank, shapes and
@@ -309,10 +308,9 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
         """
-        constrained[
-            Self.shape.all_known[Self.rank](),
-            "dimensions must all be known",
-        ]()
+        __comptime_assert Self.shape.all_known[
+            Self.rank
+        ](), "dimensions must all be known"
 
         self.data = ptr
         self.dynamic_shape = _make_tuple[
@@ -342,40 +340,35 @@ struct NDBuffer[
             other: The other NDBuffer type.
         """
         # It is probably unsafe to convert between address spaces
-        constrained[
-            other.address_space == Self.address_space,
-            "cannot convert between buffer types with different address spaces",
-        ]()
+        __comptime_assert (
+            other.address_space == Self.address_space
+        ), "cannot convert between buffer types with different address spaces"
 
         # We can only downgrade our alignment
-        constrained[
+        __comptime_assert (
             other.alignment2 >= Self.alignment2
-            and other.alignment2 % Self.alignment2 == 0,
-            "cannot convert between buffers with incompatible alignments",
-        ]()
+            and other.alignment2 % Self.alignment2 == 0
+        ), "cannot convert between buffers with incompatible alignments"
 
         # Exclusivity can only be lost
-        constrained[
-            other.exclusive == Self.exclusive or not Self.exclusive,
-            (
-                "Cannot convert a non-exclusive buffer to an exclusive buffer."
-                " This is caused by passing a non-exclusive NDBuffer to a"
-                " function which requires an exclusive NDBuffer. Consider"
-                " unbinding the exclusive parameter for the function if it does"
-                " not require an exclusive buffer for correctness."
-            ),
-        ]()
+        __comptime_assert (
+            other.exclusive == Self.exclusive or not Self.exclusive
+        ), (
+            "Cannot convert a non-exclusive buffer to an exclusive buffer."
+            " This is caused by passing a non-exclusive NDBuffer to a"
+            " function which requires an exclusive NDBuffer. Consider"
+            " unbinding the exclusive parameter for the function if it does"
+            " not require an exclusive buffer for correctness."
+        )
 
         # We can lose information about shape/stride, but not gain information
         comptime unknown_dim_list = DimList.create_unknown[Self.rank]()
-        constrained[
-            other.shape == Self.shape or Self.shape == unknown_dim_list,
-            "cannot convert between buffers with incompatible shapes",
-        ]()
-        constrained[
-            other.strides == Self.strides or Self.strides == unknown_dim_list,
-            "cannot convert between buffers with incompatible strides",
-        ]()
+        __comptime_assert (
+            other.shape == Self.shape or Self.shape == unknown_dim_list
+        ), "cannot convert between buffers with incompatible shapes"
+        __comptime_assert (
+            other.strides == Self.strides or Self.strides == unknown_dim_list
+        ), "cannot convert between buffers with incompatible strides"
 
         self.data = rebind[type_of(self.data)](other.data)
         self.dynamic_shape = other.dynamic_shape
@@ -385,39 +378,9 @@ struct NDBuffer[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[Self.dtype]._mlir_type,
-            address_space = Self.address_space,
-            mut = Self.mut,
-            origin = Self.origin,
-        ],
-        dynamic_shape: IndexList[Self.rank, **_],
-    ):
-        """Constructs an NDBuffer with statically known rank, but dynamic
-        shapes and type.
-
-        Constraints:
-            The rank is known.
-
-        Args:
-            ptr: Pointer to the data.
-            dynamic_shape: A static tuple of size 'rank' representing shapes.
-        """
-        self.data = ptr.bitcast[Scalar[Self.dtype]]()
-        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
-            dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
-        )
-        self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
-            self.dynamic_shape
-        )
-
-    @always_inline
-    fn __init__(
-        out self,
-        ptr: UnsafePointer[
             Scalar[Self.dtype],
+            Self.origin,
             address_space = Self.address_space,
-            mut = Self.mut,
-            origin = Self.origin,
         ],
         dynamic_shape: IndexList[Self.rank, **_],
     ):
@@ -440,13 +403,61 @@ struct NDBuffer[
         )
 
     @always_inline
+    fn __init__[
+        _dtype: DType,
+        _rank: Int,
+        _shape: DimList = DimList.create_unknown[_rank](),
+        _strides: DimList = DimList.create_unknown[_rank](),
+        _alignment2: Int = 1,
+        _address_space: AddressSpace = AddressSpace.GENERIC,
+        _exclusive: Bool = True,
+    ](
+        out self: NDBuffer[
+            _dtype,
+            _rank,
+            MutAnyOrigin,
+            _shape,
+            _strides,
+            alignment2=_alignment2,
+            address_space=_address_space,
+            exclusive=_exclusive,
+        ],
+        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
+        dynamic_shape: IndexList[_rank, **_],
+    ):
+        """Constructs an NDBuffer with MutAnyOrigin from any pointer.
+
+        This overload allows origin erasure when constructing an NDBuffer with
+        MutAnyOrigin, accepting pointers with any origin.
+
+        Parameters:
+            _dtype: The element type of the buffer.
+            _rank: The rank of the buffer.
+            _shape: The static shape of the buffer.
+            _strides: The static strides of the buffer.
+            _alignment2: The alignment of the buffer.
+            _address_space: The address space of the buffer.
+            _exclusive: Whether the buffer has exclusive access.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+        """
+        self.data = rebind[type_of(self.data)](ptr)
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
+        )
+        self.dynamic_stride = _compute_ndbuffer_stride[_rank](
+            self.dynamic_shape
+        )
+
+    @always_inline
     fn __init__(
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
+            Self.origin,
             address_space = Self.address_space,
-            mut = Self.mut,
-            origin = Self.origin,
         ],
         dynamic_shape: DimList,
     ):
@@ -463,13 +474,62 @@ struct NDBuffer[
         self = Self(ptr, _make_tuple[Self.rank](dynamic_shape))
 
     @always_inline
+    fn __init__[
+        _dtype: DType,
+        _rank: Int,
+        _shape: DimList = DimList.create_unknown[_rank](),
+        _strides: DimList = DimList.create_unknown[_rank](),
+        _alignment2: Int = 1,
+        _address_space: AddressSpace = AddressSpace.GENERIC,
+        _exclusive: Bool = True,
+    ](
+        out self: NDBuffer[
+            _dtype,
+            _rank,
+            MutAnyOrigin,
+            _shape,
+            _strides,
+            alignment2=_alignment2,
+            address_space=_address_space,
+            exclusive=_exclusive,
+        ],
+        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
+        dynamic_shape: DimList,
+    ):
+        """Constructs an NDBuffer with MutAnyOrigin from any pointer.
+
+        This overload allows origin erasure when constructing an NDBuffer with
+        MutAnyOrigin, accepting pointers with any origin.
+
+        Parameters:
+            _dtype: The element type of the buffer.
+            _rank: The rank of the buffer.
+            _shape: The static shape of the buffer.
+            _strides: The static strides of the buffer.
+            _alignment2: The alignment of the buffer.
+            _address_space: The address space of the buffer.
+            _exclusive: Whether the buffer has exclusive access.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A DimList of size 'rank' representing shapes.
+        """
+        var shape_tuple = _make_tuple[_rank](dynamic_shape)
+        self.data = rebind[type_of(self.data)](ptr)
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            shape_tuple.cast[type_of(self.dynamic_shape).element_type]()
+        )
+        self.dynamic_stride = _compute_ndbuffer_stride[_rank](
+            self.dynamic_shape
+        )
+
+    @always_inline
     fn __init__(
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
+            Self.origin,
             address_space = Self.address_space,
-            mut = Self.mut,
-            origin = Self.origin,
         ],
         dynamic_shape: IndexList[Self.rank, **_],
         dynamic_stride: IndexList[Self.rank, **_],
@@ -494,13 +554,63 @@ struct NDBuffer[
         )
 
     @always_inline
+    fn __init__[
+        _dtype: DType,
+        _rank: Int,
+        _shape: DimList = DimList.create_unknown[_rank](),
+        _strides: DimList = DimList.create_unknown[_rank](),
+        _alignment2: Int = 1,
+        _address_space: AddressSpace = AddressSpace.GENERIC,
+        _exclusive: Bool = True,
+    ](
+        out self: NDBuffer[
+            _dtype,
+            _rank,
+            MutAnyOrigin,
+            _shape,
+            _strides,
+            alignment2=_alignment2,
+            address_space=_address_space,
+            exclusive=_exclusive,
+        ],
+        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
+        dynamic_shape: IndexList[_rank, **_],
+        dynamic_stride: IndexList[_rank, **_],
+    ):
+        """Constructs a strided NDBuffer with MutAnyOrigin from any pointer.
+
+        This overload allows origin erasure when constructing an NDBuffer with
+        MutAnyOrigin, accepting pointers with any origin.
+
+        Parameters:
+            _dtype: The element type of the buffer.
+            _rank: The rank of the buffer.
+            _shape: The static shape of the buffer.
+            _strides: The static strides of the buffer.
+            _alignment2: The alignment of the buffer.
+            _address_space: The address space of the buffer.
+            _exclusive: Whether the buffer has exclusive access.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+            dynamic_stride: A static tuple of size 'rank' representing strides.
+        """
+        self.data = rebind[type_of(self.data)](ptr)
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
+        )
+        self.dynamic_stride = rebind[type_of(self.dynamic_stride)](
+            dynamic_stride.cast[type_of(self.dynamic_shape).element_type]()
+        )
+
+    @always_inline
     fn __init__(
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
+            Self.origin,
             address_space = Self.address_space,
-            mut = Self.mut,
-            origin = Self.origin,
         ],
         dynamic_shape: DimList,
         dynamic_stride: IndexList[Self.rank, **_],
@@ -522,6 +632,58 @@ struct NDBuffer[
             dynamic_stride=dynamic_stride,
         )
 
+    @always_inline
+    fn __init__[
+        _dtype: DType,
+        _rank: Int,
+        _shape: DimList = DimList.create_unknown[_rank](),
+        _strides: DimList = DimList.create_unknown[_rank](),
+        _alignment2: Int = 1,
+        _address_space: AddressSpace = AddressSpace.GENERIC,
+        _exclusive: Bool = True,
+    ](
+        out self: NDBuffer[
+            _dtype,
+            _rank,
+            MutAnyOrigin,
+            _shape,
+            _strides,
+            alignment2=_alignment2,
+            address_space=_address_space,
+            exclusive=_exclusive,
+        ],
+        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
+        dynamic_shape: DimList,
+        dynamic_stride: IndexList[_rank, **_],
+    ):
+        """Constructs a strided NDBuffer with MutAnyOrigin from any pointer.
+
+        This overload allows origin erasure when constructing an NDBuffer with
+        MutAnyOrigin, accepting pointers with any origin.
+
+        Parameters:
+            _dtype: The element type of the buffer.
+            _rank: The rank of the buffer.
+            _shape: The static shape of the buffer.
+            _strides: The static strides of the buffer.
+            _alignment2: The alignment of the buffer.
+            _address_space: The address space of the buffer.
+            _exclusive: Whether the buffer has exclusive access.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A DimList of size 'rank' representing shapes.
+            dynamic_stride: A static tuple of size 'rank' representing strides.
+        """
+        var shape_tuple = _make_tuple[_rank](dynamic_shape)
+        self.data = rebind[type_of(self.data)](ptr)
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            shape_tuple.cast[type_of(self.dynamic_shape).element_type]()
+        )
+        self.dynamic_stride = rebind[type_of(self.dynamic_stride)](
+            dynamic_stride.cast[type_of(self.dynamic_shape).element_type]()
+        )
+
     comptime OriginCastType[
         target_mut: Bool,
         target_origin: Origin[target_mut],
@@ -535,6 +697,12 @@ struct NDBuffer[
         address_space = Self.address_space,
         exclusive = Self.exclusive,
     ]
+    """Type alias for casting this buffer to a different origin.
+
+    Parameters:
+        target_mut: Whether the target buffer is mutable.
+        target_origin: The target origin to cast to.
+    """
 
     @always_inline("nodebug")
     fn get_immutable(
@@ -722,9 +890,8 @@ struct NDBuffer[
         self, idx: VariadicList[Int]
     ) -> UnsafePointer[
         Scalar[Self.dtype],
+        Self.origin,
         address_space = Self.address_space,
-        mut = Self.mut,
-        origin = Self.origin, **_,
     ]:
         """Computes the NDBuffer's offset using the index positions provided.
 
@@ -734,7 +901,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        constrained[Self.rank <= _MAX_RANK]()
+        __comptime_assert Self.rank <= _MAX_RANK
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
@@ -742,21 +909,19 @@ struct NDBuffer[
         self, idx: IndexList[Self.rank, **_]
     ) -> UnsafePointer[
         Scalar[Self.dtype],
+        Self.origin,
         address_space = Self.address_space,
-        mut = Self.mut,
-        origin = Self.origin, **_,
     ]:
-        constrained[Self.rank <= _MAX_RANK]()
-        return self.data.offset(_compute_ndbuffer_offset(self, idx))
+        __comptime_assert Self.rank <= _MAX_RANK
+        return self.data.offset(_compute_ndbuffer_offset(self, idx.as_tuple()))
 
     @always_inline
     fn _offset(
         self, idx: StaticTuple[Int, Self.rank]
     ) -> UnsafePointer[
         Scalar[Self.dtype],
+        Self.origin,
         address_space = Self.address_space,
-        mut = Self.mut,
-        origin = Self.origin, **_,
     ]:
         """Computes the NDBuffer's offset using the index positions provided.
 
@@ -766,7 +931,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        constrained[Self.rank <= _MAX_RANK]()
+        __comptime_assert Self.rank <= _MAX_RANK
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
@@ -816,17 +981,15 @@ struct NDBuffer[
             The tiled buffer at tile_coords.
         """
 
-        comptime num_tile_sizes = stdlib.builtin.variadic_size(tile_sizes)
+        comptime num_tile_sizes = stdlib.builtin.Variadic.size(tile_sizes)
 
-        constrained[
-            num_tile_sizes == Self.rank,
-            "The tile should have the same rank as the buffer",
-        ]()
+        __comptime_assert (
+            num_tile_sizes == Self.rank
+        ), "The tile should have the same rank as the buffer"
 
-        constrained[
-            DimList(tile_sizes).all_known[Self.rank](),
-            "Static tile sizes are only supported",
-        ]()
+        __comptime_assert DimList(tile_sizes).all_known[
+            Self.rank
+        ](), "Static tile sizes are only supported"
 
         var offset = 0
         var dyn_shape = IndexList[Self.rank]()
@@ -927,7 +1090,7 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        constrained[idx.size == Self.rank, "invalid index size"]()
+        __comptime_assert idx.size == Self.rank, "invalid index size"
         return self.load[width=width, alignment=alignment](
             rebind[IndexList[Self.rank, element_type = idx.element_type]](
                 idx
@@ -1156,7 +1319,7 @@ struct NDBuffer[
             True if the buffer is contiguous in memory and False otherwise.
         """
 
-        constrained[Self.rank > 0, "rank must be positive"]()
+        __comptime_assert Self.rank > 0, "rank must be positive"
         return self.stride[Self.rank - 1]() == 1
 
     @always_inline
@@ -1323,13 +1486,10 @@ struct NDBuffer[
         Returns:
             Constructed NDBuffer with the allocated space.
         """
-        constrained[
-            Self.shape.all_known[Self.rank](),
-            (
-                "the shape of the NDBuffer must be known to allow for stack"
-                " allocation"
-            ),
-        ]()
+        __comptime_assert Self.shape.all_known[Self.rank](), (
+            "the shape of the NDBuffer must be known to allow for stack"
+            " allocation"
+        )
         var data_pointer = (
             stack_allocation[
                 Self.shape.product[Self.rank]().get(),
@@ -1368,8 +1528,9 @@ struct NDBuffer[
 
     # `trait DevicePassable` implementation
     comptime device_type: AnyType = Self
+    """The device-side type for this buffer."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -1413,7 +1574,7 @@ struct NDBuffer[
 fn partial_simd_load[
     dtype: DType, //, width: Int
 ](
-    storage: UnsafePointer[Scalar[dtype], **_],
+    storage: UnsafePointer[mut=False, Scalar[dtype], **_],
     lbound: Int,
     rbound: Int,
     pad_value: Scalar[dtype],
@@ -1454,7 +1615,7 @@ fn partial_simd_load[
 fn partial_simd_store[
     dtype: DType, //, width: Int
 ](
-    storage: UnsafePointer[Scalar[dtype], **_],
+    storage: UnsafePointer[mut=True, Scalar[dtype], **_],
     lbound: Int,
     rbound: Int,
     data: SIMD[dtype, width],
@@ -1486,13 +1647,7 @@ fn partial_simd_store[
     var incr = iota[DType.int32, width]()
     var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
-    # Rebind for the inconsistency between (1) `ptr: UnsafePointer` deduces
-    # address_space as ptr1 and (2) `UnsafePointer[Scalar[dtype]]` sets address_space to
-    # generic by default. The `masked_store` takes (2) to enforce the same type
-    # between data and storage. #28834.
-    return masked_store(
-        data, rebind[UnsafePointer[Scalar[dtype]]](storage), mask
-    )
+    return masked_store(data, storage, mask)
 
 
 @always_inline

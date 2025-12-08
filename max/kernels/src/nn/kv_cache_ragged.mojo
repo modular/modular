@@ -31,7 +31,7 @@ from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import (
-    naive_blockwise_scaled_fp8_matmul,
+    blockwise_scaled_fp8_with_epilogue,
     quantize_dynamic_scaled_fp8,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -54,7 +54,6 @@ from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor import ManagedTensorSlice, trace_slice_arg
 
 from utils.index import IndexList
 
@@ -102,12 +101,18 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("hidden_state", hidden_state.runtime_layout.shape.value),
-            trace_arg("weight", weight.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -175,12 +180,18 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("hidden_state", hidden_state.runtime_layout.shape.value),
-            trace_arg("weight", weight.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                ]
+            )
         )
 
     comptime name = "mo.fused_qkv_matmul.ragged.paged.nhead_" + String(
@@ -253,12 +264,18 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("hidden_state", hidden_state.runtime_layout.shape.value),
-            trace_arg("weight", weight.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                ]
+            )
         )
 
     comptime name = "mo.fused_qkv_matmul.ragged.paged.bias.nhead_" + String(
@@ -341,14 +358,24 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("hidden_state", hidden_state.runtime_layout.shape.value),
-            trace_arg("weight", weight.runtime_layout.shape.value),
-            trace_arg("input_scale", input_scale.runtime_layout.shape.value),
-            trace_arg("weight_scale", weight_scale.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    trace_arg(
+                        "input_scale", input_scale.runtime_layout.shape.value
+                    ),
+                    trace_arg(
+                        "weight_scale", weight_scale.runtime_layout.shape.value
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                ]
+            )
         )
 
     comptime name = "mo.fused_qkv_matmul.ragged.paged.scale.nhead_" + String(
@@ -1134,7 +1161,7 @@ fn _matmul_blockwise_scaled_fp8_common[
         RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
 
-    naive_blockwise_scaled_fp8_matmul[
+    blockwise_scaled_fp8_with_epilogue[
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
         scales_granularity_mnk=scales_granularity_mnk,
@@ -1185,10 +1212,14 @@ fn kv_matmul_ragged_paged[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("weight", weight.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -1405,8 +1436,12 @@ fn k_matmul_ragged_paged[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("weight", weight.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
+            Span(
+                [
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    "layer_idx=" + String(layer_idx),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -1595,11 +1630,21 @@ fn k_matmul_ragged_paged_scale[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("hidden_state", hidden_state.runtime_layout.shape.value),
-            trace_arg("weight", weight.runtime_layout.shape.value),
-            trace_arg("input_scale", input_scale.runtime_layout.shape.value),
-            trace_arg("weight_scale", weight_scale.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
+            Span(
+                [
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    trace_arg(
+                        "input_scale", input_scale.runtime_layout.shape.value
+                    ),
+                    trace_arg(
+                        "weight_scale", weight_scale.runtime_layout.shape.value
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -1793,15 +1838,19 @@ fn unfused_qkv_matmul_ragged_paged_gguf_quantized[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q_weight", q_weight.runtime_layout.shape.value),
-            trace_arg("k_weight", k_weight.runtime_layout.shape.value),
-            trace_arg("v_weight", v_weight.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
-            "quantization_encoding_q=" + quantization_encoding_q,
-            "quantization_encoding_k=" + quantization_encoding_k,
-            "quantization_encoding_v=" + quantization_encoding_v,
+            Span(
+                [
+                    trace_arg("q_weight", q_weight.runtime_layout.shape.value),
+                    trace_arg("k_weight", k_weight.runtime_layout.shape.value),
+                    trace_arg("v_weight", v_weight.runtime_layout.shape.value),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    "quantization_encoding_q=" + quantization_encoding_q,
+                    "quantization_encoding_k=" + quantization_encoding_k,
+                    "quantization_encoding_v=" + quantization_encoding_v,
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
@@ -2131,13 +2180,19 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("q_proj", q_proj.runtime_layout.shape.value),
-            trace_arg("freqs_cis", freqs_cis.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
-            "interleaved=" + String(interleaved),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
+                    trace_arg(
+                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    "interleaved=" + String(interleaved),
+                ]
+            )
         )
 
     # Pass device context only on GPU.
@@ -2236,13 +2291,19 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("q_proj", q_proj.runtime_layout.shape.value),
-            trace_arg("freqs_cis", freqs_cis.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
-            "interleaved=" + String(interleaved),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
+                    trace_arg(
+                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    "interleaved=" + String(interleaved),
+                ]
+            )
         )
 
     # Pass device context only on GPU.
@@ -2314,7 +2375,9 @@ fn generic_flash_attention_kv_cache_ragged[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2377,7 +2440,9 @@ fn _flash_attention_dispatch[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     kv_cache: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2408,8 +2473,8 @@ fn _flash_attention_dispatch[
             if is_cpu[target]():
                 return flash_attention_kv_cache_cpu(
                     q,
-                    input_row_offsets.to_layout_tensor(),
-                    input_row_offsets.to_layout_tensor(),
+                    input_row_offsets,
+                    input_row_offsets,
                     k,
                     v,
                     mask,
@@ -2458,7 +2523,9 @@ fn generic_flash_attention_kv_cache_ragged_sink[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2550,11 +2617,15 @@ fn generic_flare_mla_decode_kv_cache_ragged[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            "scale=" + String(scale),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(collection_t.kv_params.num_heads),
-            "head_size=" + String(collection_t.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    "scale=" + String(scale),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(collection_t.kv_params.num_heads),
+                    "head_size=" + String(collection_t.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -2696,24 +2767,29 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k.runtime_layout.shape.value),
-            trace_arg("v", v.runtime_layout.shape.value),
-            trace_arg(
-                "buffer_row_offsets",
-                buffer_row_offsets.runtime_layout.shape.value,
-            ),
-            trace_arg(
-                "cache_offsets", cache_offsets.runtime_layout.shape.value
-            ),
-            trace_arg(
-                "input_row_offsets",
-                input_row_offsets.runtime_layout.shape.value,
-            ),
-            "scale=" + String(scale),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(collection_t.kv_params.num_heads),
-            "head_size=" + String(collection_t.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg(
+                        "buffer_row_offsets",
+                        buffer_row_offsets.runtime_layout.shape.value,
+                    ),
+                    trace_arg(
+                        "cache_offsets",
+                        cache_offsets.runtime_layout.shape.value,
+                    ),
+                    trace_arg(
+                        "input_row_offsets",
+                        input_row_offsets.runtime_layout.shape.value,
+                    ),
+                    "scale=" + String(scale),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(collection_t.kv_params.num_heads),
+                    "head_size=" + String(collection_t.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -2998,7 +3074,9 @@ fn _cross_attention_dispatch[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    q_input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     q_max_seq_len: UInt32,
     kv_input_row_offsets: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, **_
@@ -3028,7 +3106,7 @@ fn _cross_attention_dispatch[
         if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q,
-                q_input_row_offsets.to_layout_tensor(),
+                q_input_row_offsets,
                 # Use KV offsets for cross attention.
                 kv_input_row_offsets,
                 k,
@@ -3087,7 +3165,9 @@ fn generic_cross_attention_kv_cache[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, **_],
-    q_input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    q_input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     q_max_seq_len: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, **_
     ],
@@ -3109,16 +3189,23 @@ fn generic_cross_attention_kv_cache[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_slice_arg("q_input_row_offsets", q_input_row_offsets),
-            trace_arg(
-                "kv_input_row_offsets",
-                kv_input_row_offsets.runtime_layout.shape.value,
-            ),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(collection_t.kv_params.num_heads),
-            "head_size=" + String(collection_t.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg(
+                        "q_input_row_offsets",
+                        q_input_row_offsets.runtime_layout.shape.value,
+                    ),
+                    trace_arg(
+                        "kv_input_row_offsets",
+                        kv_input_row_offsets.runtime_layout.shape.value,
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(collection_t.kv_params.num_heads),
+                    "head_size=" + String(collection_t.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -3322,3 +3409,126 @@ fn kv_cache_store_ragged[
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](input_shape)
+
+
+# ===-----------------------------------------------------------------------===#
+# KV cache ragged 2M iadd dispatch
+# ===-----------------------------------------------------------------------===#
+
+
+fn kv_cache_2m_iadd_dispatch[
+    dtype: DType,
+    collection_t: KVCollectionT, //,
+    target: StaticString,
+](
+    kv: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    cache: collection_t,
+    input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
+    lora_end_idx: LayoutTensor[
+        DType.int64, address_space = AddressSpace.GENERIC, **_
+    ],
+    batch_seq_len: LayoutTensor[
+        DType.int64, address_space = AddressSpace.GENERIC, **_
+    ],
+    layer_idx: UInt32,
+    ctx: Optional[DeviceContext],
+) raises:
+    """
+    In-place add to paged KV cache with concatenated K/V layout. This kernel is
+    only used for LoRA.
+
+    Performs an in-place addition of new key-value projections to paged KV cache.
+    The input tensor `a` uses a "2m" layout where keys and values are concatenated:
+    rows [0, m) contain keys and rows [m, 2m) contain values, where m is the number
+    of tokens. We use the `lora_end_idx` to index into the K or V tensor.
+    We call this value `m` since this value will be a subset of the
+    total tokens in the batch. We write tokens to K as [0, m) and V as [m, 2m).
+    """
+    comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
+    var kv_shape = kv.runtime_layout.shape.value.canonicalize()
+    constrained[
+        dtype == collection_t.dtype,
+        "Mismatch in dtype between computation and KV tensors",
+    ]()
+    constrained[
+        kv.layout.shape[1] != UNKNOWN_VALUE,
+        "Input tensor must have known shape in last dim",
+    ]()
+    constrained[
+        Int(kv.layout.shape[1]) == Int(hidden_size),
+        "Mismatch in hidden size between input "
+        + String(Int(kv.layout.shape[1]))
+        + " and KV tensors "
+        + String(hidden_size),
+    ]()
+
+    var layer_idx_cast = Int(layer_idx)
+    var k_cache = cache.get_key_cache(layer_idx_cast)
+    var v_cache = cache.get_value_cache(layer_idx_cast)
+    var m = Int(lora_end_idx[0])
+    var M = Int(batch_seq_len[0])
+
+    # [2m, N]
+    var elementwise_shape = IndexList[2](2 * m, kv_shape[1])
+
+    @parameter
+    @__copy_capture(kv, k_cache, v_cache, input_row_offsets, m, M)
+    fn iadd[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        constrained[rank == 2, "Rank must be 2"]()
+
+        var cache: collection_t.CacheType
+        var row_idx: Int
+        var major_idx: Int
+
+        if idx[0] < m:
+            cache = k_cache
+            row_idx = Int(idx[0])
+        else:
+            cache = v_cache
+            row_idx = Int(idx[0] - m)
+
+        var batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
+        var tok_idx = Int(row_idx - input_row_offsets[batch_idx])
+
+        var h_idx: UInt
+        var hd_idx: UInt
+        h_idx, hd_idx = divmod(UInt(idx[1]), collection_t.kv_params.head_size)
+
+        var cache_length = cache.cache_length(batch_idx)
+        var cache_token_idx = Int(tok_idx) + cache_length
+
+        var old_val = cache.load[width=width](
+            batch_idx, Int(h_idx), cache_token_idx, Int(hd_idx)
+        )
+        var a_val = rebind[type_of(old_val)](
+            kv.load[width=width](idx[0], idx[1])
+        )
+
+        cache.store(
+            batch_idx,
+            Int(h_idx),
+            cache_token_idx,
+            Int(hd_idx),
+            a_val + old_val,
+        )
+
+    @parameter
+    if is_gpu[target]():
+        with Trace[TraceLevel.OP, target=target](
+            "kv-cache-2m-iadd",
+            task_id=Int(ctx.value().id()),
+        ):
+            debug_assert(ctx is not None, "ctx is None")
+            comptime compile_target = get_gpu_target()
+            comptime simd_width = simd_width_of[dtype, target=compile_target]()
+
+            elementwise[iadd, simd_width, target=target](
+                elementwise_shape, ctx.value()
+            )
+    else:
+        comptime compile_target = _current_target()
+        comptime simd_width = simd_width_of[dtype, target=compile_target]()
+
+        elementwise[iadd, simd_width, target=target](elementwise_shape)

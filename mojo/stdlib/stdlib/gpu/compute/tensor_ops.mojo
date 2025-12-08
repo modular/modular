@@ -60,10 +60,9 @@ fn tc_reduce_gevm_8x[
         Uses tensor core matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    constrained[
-        out_type is DType.float32 and in_type is DType.bfloat16,
-        "unsupported input/output type",
-    ]()
+    __comptime_assert (
+        out_type is DType.float32 and in_type is DType.bfloat16
+    ), "unsupported input/output type"
 
     var d_reg = SIMD[out_type, simd_width]()
     var a_reg = SIMD[in_type, simd_width * 2](1)
@@ -96,10 +95,9 @@ fn tc_reduce_gevm_4x[
         Uses tensor core matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    constrained[
-        out_type is DType.float32 and in_type is DType.bfloat16,
-        "unsupported input/output type",
-    ]()
+    __comptime_assert (
+        out_type is DType.float32 and in_type is DType.bfloat16
+    ), "unsupported input/output type"
 
     var d_reg = SIMD[out_type, simd_width]()
     var a_reg = SIMD[in_type, simd_width * 2](1)
@@ -265,7 +263,7 @@ fn _tc_reduce_scalar[
         Uses matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    constrained[out_type is DType.float32]()
+    __comptime_assert out_type is DType.float32
 
     @parameter
     if out_type is DType.float32 and in_type is DType.float16:
@@ -310,10 +308,9 @@ fn _tc_reduce_scalar[
         return d_reg[0]
 
     else:
-        constrained[
-            in_type is DType.float16 and out_type is DType.float16,
-            "unsupported dtype",
-        ]()
+        __comptime_assert (
+            in_type is DType.float16 and out_type is DType.float16
+        ), "unsupported dtype"
         var d_reg = SIMD[out_type, 2]()
         var a_reg = Scalar[in_type](1)
         var b_reg = Scalar[in_type](val)

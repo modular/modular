@@ -83,7 +83,7 @@ fn simd_load[
 fn simd_store[
     simd_width: Int
 ](
-    buffer: NDBuffer,
+    buffer: NDBuffer[mut=True, *_, **_],
     index: IndexList[buffer.rank],
     val: SIMD[buffer.type, simd_width],
 ):

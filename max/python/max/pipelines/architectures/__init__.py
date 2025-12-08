@@ -25,6 +25,7 @@ def register_all_models() -> None:
 
     from .deepseekV2 import deepseekV2_arch
     from .deepseekV3 import deepseekV3_arch
+    from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
     from .gemma3 import gemma3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
@@ -52,6 +53,7 @@ def register_all_models() -> None:
         exaone_arch,
         deepseekV2_arch,
         deepseekV3_arch,
+        eagle_llama_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
         granite_arch,

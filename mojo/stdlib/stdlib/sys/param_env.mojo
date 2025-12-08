@@ -83,16 +83,13 @@ fn env_get_bool[name: StaticString]() -> Bool:
     """
     comptime val = env_get_string[name]().lower()
 
-    constrained[
-        _is_bool_like[val](),
-        String(
-            "the boolean environment value of `",
-            name,
-            "` with value `",
-            env_get_string[name](),
-            "` is not recognized",
-        ),
-    ]()
+    __comptime_assert _is_bool_like[val](), String(
+        "the boolean environment value of `",
+        name,
+        "` with value `",
+        env_get_string[name](),
+        "` is not recognized",
+    )
 
     return val == "true" or val == "1" or val == "on"
 

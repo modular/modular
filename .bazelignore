@@ -1,12 +1,4 @@
 bazel/lint/node_modules
 max/python/max/_core/internal
 # TODO: Remove when these are open sourced
-# Not an exhaustive list, just the ones that cause issues currently
-max/tests/integration/pipelines
-max/tests/integration/serve
-max/tests/integration/API/python/tensor
-max/tests/tests/_core_mojo
-max/tests/tests/diagnostics
-max/tests/tests/entrypoints
-max/tests/tests/serve
-max/tests/tests/torch
+max/tests
