@@ -2,6 +2,7 @@ from typing import List
 from PIL import Image
 from max.experimental.tensor import Tensor
 from max.driver import CPU
+import numpy as np
 
 
 class VaeImageProcessor:
@@ -40,7 +41,9 @@ class VaeImageProcessor:
 
         # Convert to numpy (this is the bridge to PIL)
         # We expect B x C x H x W, need to convert to B x H x W x C for PIL
-        images_np = images.permute([0, 2, 3, 1]).to_numpy()
+        # Convert to numpy first to avoid potential symbolic tensor issues with permute
+        images_np = np.from_dlpack(images)
+        images_np = images_np.transpose(0, 2, 3, 1)
 
         # Convert to uint8 [0, 255]
         images_np = (images_np * 255).round().astype("uint8")
