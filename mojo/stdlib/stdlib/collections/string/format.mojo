@@ -70,7 +70,7 @@ methods.
 """
 
 
-from collections.string.string import _chr_ascii
+from collections.string._ascii import _chr_ascii
 
 from utils import Variant
 
