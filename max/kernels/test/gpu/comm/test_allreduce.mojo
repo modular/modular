@@ -279,12 +279,10 @@ fn allreduce_test[
 
                     @parameter
                     for i in range(ngpus):
-                        vendor_ccl.allreduce[
-                            dtype=dtype, rank=rank, ngpus=ngpus
-                        ](
-                            in_bufs[i],
+                        vendor_ccl.allreduce[ngpus=ngpus](
+                            in_bufs,
                             out_bufs_vendor[i],
-                            i,
+                            rank_sigs,
                             list_of_ctx[i],
                         )
 
@@ -298,12 +296,10 @@ fn allreduce_test[
 
                     @parameter
                     for i in range(ngpus):
-                        vendor_ccl.allreduce[
-                            dtype=dtype, rank=rank, ngpus=ngpus
-                        ](
-                            in_bufs[i],
+                        vendor_ccl.allreduce[ngpus=ngpus](
+                            in_bufs,
                             out_bufs_vendor[i],
-                            i,
+                            rank_sigs,
                             list_of_ctx[i],
                         )
 
