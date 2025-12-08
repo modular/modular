@@ -31,6 +31,7 @@ from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
 comptime sep = "/"
+"""The path separator for the current platform."""
 
 
 # ===----------------------------------------------------------------------=== #

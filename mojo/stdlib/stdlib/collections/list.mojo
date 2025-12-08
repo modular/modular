@@ -268,6 +268,12 @@ struct List[T: Copyable](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _ListIter[Self.T, iterable_origin, True]
+    """The iterator type for this list.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     # asan annotation methods
     fn _annotate_new(self):

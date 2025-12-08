@@ -106,6 +106,12 @@ fn rebind_var[
 comptime downcast[_Trait: type_of(AnyType), T: AnyType] = __mlir_attr[
     `#kgen.downcast<`, T, `> : `, _Trait
 ]
+"""Type alias for downcasting a type to conform to a trait.
+
+Parameters:
+    _Trait: The trait type to downcast to.
+    T: The type to downcast.
+"""
 
 
 @always_inline

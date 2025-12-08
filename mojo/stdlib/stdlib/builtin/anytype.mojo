@@ -123,6 +123,7 @@ trait AnyType:
 # A temporary alias to help with the linear types transition, see
 # https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
 comptime ImplicitlyDestructible = AnyType
+"""Temporary alias for types that can be implicitly destroyed."""
 
 
 comptime __SomeImpl[Trait: AnyTrivialRegType, T: Trait] = T
@@ -144,4 +145,7 @@ one can write:
 fn foo(x: Some[Intable]) -> Int:
     return x.__int__()
 ```
+
+Parameters:
+    Trait: The trait or trait composition that the argument type must implement.
 """

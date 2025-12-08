@@ -33,6 +33,7 @@ from utils import IndexList, Variant
 from os import abort
 
 comptime log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
+"""Logger instance for operation tracing with INFO level and [OP] prefix."""
 
 
 fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
@@ -84,10 +85,15 @@ struct TraceCategory(Equatable, Identifiable, Intable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     comptime OTHER = Self(0)
+    """Other or uncategorized trace events."""
     comptime ASYNCRT = Self(1)
+    """Asynchronous runtime trace events."""
     comptime MEM = Self(2)
+    """Memory-related trace events."""
     comptime Kernel = Self(3)
+    """Kernel execution trace events."""
     comptime MAX = Self(4)
+    """MAX framework trace events."""
 
     var value: Int
     """The integer value representing the trace category. Used for bitwise operations
@@ -149,8 +155,11 @@ struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
+    """Always trace at this level."""
     comptime OP = Self(1)
+    """Operation-level tracing."""
     comptime THREAD = Self(2)
+    """Thread-level tracing."""
 
     var value: Int
     """The integer value representing the trace level.

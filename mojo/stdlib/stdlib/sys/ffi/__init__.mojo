@@ -88,6 +88,7 @@ comptime c_double = Float64
 """C `double` type."""
 
 comptime MAX_PATH = _get_max_path()
+"""Maximum path length for the current platform."""
 
 
 fn _get_max_path() -> Int:
@@ -154,6 +155,7 @@ struct RTLD:
 
 
 comptime DEFAULT_RTLD = RTLD.NOW | RTLD.GLOBAL
+"""Default runtime linker flags for dynamic library loading."""
 
 
 struct OwnedDLHandle(Movable):

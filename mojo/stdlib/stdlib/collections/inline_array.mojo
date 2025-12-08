@@ -91,10 +91,13 @@ struct InlineArray[
     comptime type = __mlir_type[
         `!pop.array<`, Self.size._mlir_value, `, `, Self.ElementType, `>`
     ]
+    """The underlying MLIR array type."""
+
     var _array: Self.type
     """The underlying storage for the array."""
 
     comptime device_type: AnyType = Self
+    """The device-side type for this array."""
 
     fn _to_device_type(self, target: LegacyOpaquePointer):
         """Convert the host type object to a device_type and store it at the

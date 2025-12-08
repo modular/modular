@@ -242,6 +242,7 @@ comptime GenericPyFunction = Variant[
     PyFunctionRaising,
     PyFunctionWithKeywordsRaising,
 ]
+"""A variant type that can hold either a PyFunctionRaising or PyFunctionWithKeywordsRaising."""
 
 
 struct PythonModuleBuilder:

@@ -59,13 +59,20 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     comptime nan = FloatLiteral[__mlir_attr.`#pop.float_literal<nan>`]()
+    """Not a number (NaN) value."""
+
     comptime infinity = FloatLiteral[__mlir_attr.`#pop.float_literal<inf>`]()
+    """Positive infinity value."""
+
     comptime negative_infinity = FloatLiteral[
         __mlir_attr.`#pop.float_literal<neg_inf>`
     ]()
+    """Negative infinity value."""
+
     comptime negative_zero = FloatLiteral[
         __mlir_attr.`#pop.float_literal<neg_zero>`
     ]()
+    """Negative zero value."""
 
     @always_inline("builtin")
     fn is_nan(self) -> Bool:

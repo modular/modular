@@ -37,6 +37,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
     """
 
     comptime uint_type = _uint_type_of_width[bit_width_of[Self.dtype]()]()
+    """The unsigned integer type used for the fast division algorithm."""
 
     var _div: Scalar[Self.uint_type]
     var _mprime: Scalar[Self.uint_type]

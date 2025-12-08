@@ -36,11 +36,18 @@ struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
     """Metric's throughput rate unit (count/second)."""
 
     comptime elements = BenchMetric(0, "throughput", "GElems/s")
+    """Metric for measuring throughput in elements per second."""
+
     comptime bytes = BenchMetric(1, "DataMovement", "GB/s")
+    """Metric for measuring data movement in bytes per second."""
+
     comptime flops = BenchMetric(2, "Arithmetic", "GFLOPS/s")
+    """Metric for measuring floating point operations per second."""
+
     comptime theoretical_flops = BenchMetric(
         3, "TheoreticalArithmetic", "GFLOPS/s"
     )
+    """Metric for measuring theoretical floating point operations per second."""
 
     comptime DEFAULTS: List[BenchMetric] = [
         Self.elements,
@@ -485,8 +492,12 @@ struct Mode(ImplicitlyCopyable):
 
     var value: Int
     """Represents the mode type."""
+
     comptime Benchmark = Mode(0)
+    """Mode for running actual benchmarks."""
+
     comptime Test = Mode(1)
+    """Mode for running tests."""
 
     fn __eq__(self, other: Self) -> Bool:
         """Check if its Benchmark mode or test mode.

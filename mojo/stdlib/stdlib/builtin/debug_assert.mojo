@@ -28,6 +28,7 @@ from sys.param_env import env_get_string
 from builtin._location import __call_location, _SourceLocation
 
 comptime ASSERT_MODE = env_get_string["ASSERT", "safe"]()
+"""The compile-time assertion mode from the ASSERT environment variable."""
 
 
 @no_inline

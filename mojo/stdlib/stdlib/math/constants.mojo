@@ -30,4 +30,4 @@ comptime tau = 2 * pi
 """The mathematical constant τ = 6.283185.... Tau is a circumference of a circle (2π)."""
 
 comptime log2e = 1.442695040888963407359924681001892137426646
-"""log2e = log2(e), where e is Euler's constant."""
+"""The value of log2(e), where e is Euler's constant."""

@@ -38,19 +38,19 @@ struct UMMAKind(Stringable, Writable):
     var _value: Int32
 
     comptime KIND_TF32 = Self(0)
-    """tf32 type"""
+    """TF32 type."""
 
     comptime KIND_F16 = Self(2)
-    """f16 type"""
+    """F16 type."""
 
     comptime KIND_F8F6F4 = Self(3)
-    """f8f6f4 type"""
+    """F8F6F4 type."""
 
     comptime KIND_I8 = Self(4)
-    """i8 type"""
+    """I8 type."""
 
     comptime KIND_MXF8F6F4 = Self(5)
-    """mxf8f6f4 type"""
+    """MXF8F6F4 type."""
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:

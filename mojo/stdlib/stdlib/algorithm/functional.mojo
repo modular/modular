@@ -480,15 +480,17 @@ fn _parallelize_impl[
 # ===-----------------------------------------------------------------------===#
 
 comptime Static1DTileUnitFunc = fn[width: Int] (Int) capturing [_] -> None
-"""
-Signature of a 1d tiled function that performs some work with a static tile size
-and an offset. i.e. func<tile_size: Int> (offset: Int)
+"""Signature of a 1D tiled function with static tile size.
+
+The function takes a static tile size parameter and an offset argument,
+i.e. `func[tile_size: Int](offset: Int)`.
 """
 
 comptime Dynamic1DTileUnitFunc = fn (Int, Int) capturing [_] -> None
-"""
-Signature of a 1d tiled function that performs some work with a dynamic tile size
-  and an offset. i.e. func(offset: Int, tile_size: Int)
+"""Signature of a 1D tiled function with dynamic tile size.
+
+The function takes a dynamic tile size and an offset argument,
+i.e. `func(offset: Int, tile_size: Int)`.
 """
 
 
@@ -634,10 +636,10 @@ fn tile[
 comptime Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (
     Int, Int
 ) capturing [_] -> None
-"""
-Signature of a 2d tiled function that performs some work with a static tile size
-and an offset. i.e.
-func<tile_size_x: Int, tile_size_y: Int> (offset_x: Int, offset_y: Int)
+"""Signature of a 2D tiled function with static tile size.
+
+The function takes static tile size parameters and offset arguments, i.e.
+`func[tile_size_x: Int, tile_size_y: Int](offset_x: Int, offset_y: Int)`.
 """
 
 
@@ -687,9 +689,11 @@ fn tile[
 
 # Signature of a function that unswitch can take.
 comptime SwitchedFunction = fn[sw: Bool] () raises capturing [_] -> None
+"""Signature of a function that unswitch can take."""
 
 # Version of unswitch supporting 2 predicates.
 comptime SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing [_] -> None
+"""Signature for unswitch supporting 2 predicates."""
 
 
 @always_inline
@@ -835,14 +839,16 @@ fn unswitch[
 comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
     Int, Int
 ) capturing [_] -> None
-"""
-Signature of a tiled function that performs some work with a static tile size
-  and an offset. i.e. func<tile_size: Int> (offset: Int)
+"""Signature of a tiled function with static tile size and unswitch flag.
+
+The function takes a static tile size parameter and offset arguments,
+i.e. `func[tile_size: Int](offset: Int)`.
 """
 
 comptime Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool] (
     Int
 ) capturing [_] -> None
+"""Signature of a tiled function with a static tile size, offset, and flag."""
 
 
 @always_inline("nodebug")
@@ -891,6 +897,7 @@ fn tile_and_unswitch[
 comptime Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (
     Int, Int, Int
 ) capturing [_] -> None
+"""Signature of a dynamic tiled unswitch unit function."""
 
 
 @always_inline
@@ -1000,6 +1007,7 @@ fn tile_middle_unswitch_boundaries[
 comptime Static1DTileUnitFuncWithFlags = fn[
     width: Int, left_flag: Bool, right_flag: Bool
 ] (Int) capturing [_] -> None
+"""Signature of a tiled function with left and right boundary flags."""
 
 
 @always_inline
@@ -1784,7 +1792,10 @@ fn parallelize_over_rows[
 # ===-----------------------------------------------------------------------===#
 
 comptime stencil = _stencil_impl_cpu
+"""CPU implementation of stencil computation."""
+
 comptime stencil_gpu = _stencil_impl_gpu
+"""GPU implementation of stencil computation."""
 
 
 fn _stencil_impl_cpu[

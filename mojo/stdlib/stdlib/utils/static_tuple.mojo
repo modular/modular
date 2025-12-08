@@ -56,6 +56,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         `!pop.array<`, Self.size._mlir_value, `, `, Self.element_type, `>`
     ]
     comptime device_type: AnyType = Self
+    """The device-side type for this `StaticTuple`."""
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""

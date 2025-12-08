@@ -416,21 +416,21 @@ comptime Py_tp_repr = 66
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
 comptime destructor = fn (PyObjectPtr) -> None
-"""`typedef void (*destructor)(PyObject*)`"""
+"""`typedef void (*destructor)(PyObject*)`."""
 comptime reprfunc = fn (PyObjectPtr) -> PyObjectPtr
-"""`typedef PyObject *(*reprfunc)(PyObject*)`"""
+"""`typedef PyObject *(*reprfunc)(PyObject*)`."""
 comptime Typed_initproc = fn (
     PyObjectPtr,
     PyObjectPtr,
     PyObjectPtr,  # NULL if no keyword arguments were passed
 ) -> c_int
-"""`typedef int (*initproc)(PyObject*, PyObject*, PyObject*)`"""
+"""`typedef int (*initproc)(PyObject*, PyObject*, PyObject*)`."""
 comptime Typed_newfunc = fn (
     PyTypeObjectPtr,
     PyObjectPtr,
     PyObjectPtr,
 ) -> PyObjectPtr
-"""`typedef PyObject *(*newfunc)(PyTypeObject*, PyObject*, PyObject*)`"""
+"""`typedef PyObject *(*newfunc)(PyTypeObject*, PyObject*, PyObject*)`."""
 
 
 @fieldwise_init

@@ -106,7 +106,15 @@ struct CodepointSliceIter[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
+    """The iterator type for this codepoint iterator.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
+
     comptime Element = StringSlice[Self.origin]
+    """The element type yielded by iteration."""
 
     var _slice: StringSlice[Self.origin]
 
@@ -330,7 +338,15 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
+    """The iterator type for this codepoint iterator.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
+
     comptime Element = Codepoint
+    """The element type yielded by iteration."""
 
     var _slice: StringSlice[Self.origin]
     """String slice containing the bytes that have not been read yet.

@@ -31,6 +31,7 @@ comptime check_blackwell_constraint = constrained[
         " (sm_100a, sm_101a) hardware."
     ),
 ]
+"""Compile-time constraint ensuring Blackwell hardware is targeted."""
 
 
 @register_passable("trivial")

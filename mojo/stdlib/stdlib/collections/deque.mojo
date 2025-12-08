@@ -43,6 +43,12 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DequeIter[Self.ElementType, iterable_origin]
+    """The iterator type for this deque.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     # ===-------------------------------------------------------------------===#
     # Aliases

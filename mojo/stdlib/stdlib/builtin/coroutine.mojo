@@ -23,6 +23,7 @@ from sys import size_of
 
 
 comptime AnyCoroutine = __mlir_type.`!co.routine`
+"""The MLIR type representing a coroutine handle."""
 
 
 @always_inline

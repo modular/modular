@@ -263,6 +263,8 @@ struct NDBuffer[
     """
 
     comptime type = Self.dtype
+    """The data type of elements in this buffer."""
+
     var data: UnsafePointer[
         Scalar[Self.dtype],
         address_space = Self.address_space,
@@ -528,6 +530,12 @@ struct NDBuffer[
         address_space = Self.address_space,
         exclusive = Self.exclusive,
     ]
+    """Type alias for casting this buffer to a different origin.
+
+    Parameters:
+        target_mut: Whether the target buffer is mutable.
+        target_origin: The target origin to cast to.
+    """
 
     @always_inline("nodebug")
     fn get_immutable(
@@ -1356,6 +1364,7 @@ struct NDBuffer[
 
     # `trait DevicePassable` implementation
     comptime device_type: AnyType = Self
+    """The device-side type for this buffer."""
 
     fn _to_device_type(self, target: OpaquePointer):
         """Convert the host type object to a device_type and store it at the

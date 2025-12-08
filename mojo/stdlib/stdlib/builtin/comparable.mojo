@@ -14,6 +14,7 @@
 
 @deprecated(use=Equatable)
 comptime EqualityComparable = Equatable
+"""Deprecated alias for `Equatable`."""
 
 
 trait Equatable:
