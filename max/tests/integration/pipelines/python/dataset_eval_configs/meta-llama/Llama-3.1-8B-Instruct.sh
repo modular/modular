@@ -4,6 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
+# shellcheck disable=SC2034  # Variables are used when sourced
 batch_size=512
 max_length=16384  # Llama-3.1 supports longer contexts, increase from 4096
 extra_pipelines_args=(--enable-echo)

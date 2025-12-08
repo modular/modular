@@ -4,6 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
+# shellcheck disable=SC2034  # Variables are used when sourced
 batch_size=64
 max_length=50000
 
@@ -15,7 +16,7 @@ extra_lm_eval_args=(
   --log_samples
   --apply_chat_template
   --fewshot_as_multiturn
-  --gen_kwargs=max_gen_toks=4096,seed=42,temperature=0
+  "--gen_kwargs=max_gen_toks=4096,seed=42,temperature=0"
 )
 
 # Increase generation timeout to 5000s

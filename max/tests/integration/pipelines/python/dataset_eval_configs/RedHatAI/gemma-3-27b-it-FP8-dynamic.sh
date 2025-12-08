@@ -4,6 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
+# shellcheck disable=SC2034  # Variables are used when sourced
 batch_size=512
 max_length=8192
 extra_pipelines_args=(--enable-echo)

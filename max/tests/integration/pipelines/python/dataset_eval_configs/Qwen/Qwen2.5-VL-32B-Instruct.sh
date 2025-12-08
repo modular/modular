@@ -4,6 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
+# shellcheck disable=SC2034  # Variables are used when sourced
 batch_size=256
 max_length=128000
 
