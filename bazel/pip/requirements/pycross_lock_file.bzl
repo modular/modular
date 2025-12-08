@@ -98,6 +98,7 @@ PINS = {
     "peft": "peft@0.13.2",
     "pillow": "pillow@12.0.0",
     "platformdirs": "platformdirs@4.2.2",
+    "plotext": "plotext@5.3.2",
     "plotly": "plotly@6.0.1",
     "pre-commit": "pre-commit@4.0.1",
     "prometheus-client": "prometheus-client@0.20.0",
@@ -5009,6 +5010,17 @@ def targets():
         name = "platformdirs@4.2.2",
         wheel = ":_wheel_platformdirs@4.2.2",
         testonly = "platformdirs" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_plotext@5.3.2",
+        actual = "@pycross_lock_file_wheel_plotext_5.3.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "plotext@5.3.2",
+        wheel = ":_wheel_plotext@5.3.2",
+        testonly = "plotext" in _TESTONLY_DEPS,
     )
 
     _plotly_6_0_1_deps = [
@@ -15419,6 +15431,16 @@ def repositories():
         ],
         sha256 = "2d7a1657e36a80ea911db832a8a6ece5ee53d8de21edd5cc5879af6530b1bfee",
         downloaded_file_path = "platformdirs-4.2.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_plotext_5.3.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/f6/1e/12fe7c40cd2099a1f454518754ed229b01beaf3bbb343127f0cc13ce6c22/plotext-5.3.2-py3-none-any.whl",
+        ],
+        sha256 = "394362349c1ddbf319548cfac17ca65e6d5dfc03200c40dfdc0503b3e95a2283",
+        downloaded_file_path = "plotext-5.3.2-py3-none-any.whl",
     )
 
     maybe(
