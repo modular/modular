@@ -1465,3 +1465,18 @@ fn issue4518():
         pass
 
 fn issue4518_fn_that_raises() raises -> Int: return 0
+
+
+# MOCO-2918: Default traits methods don't work if they have variadic packs
+# Test direct passing of the variadic pack.
+trait HasBarWVariadicPack:
+    fn method_with_pack[*Ts: AnyType](mut self, *args: *Ts):
+        pass
+# CHECK-LABEL: lit.struct.decl @InheritDefaultFromHasBarWVariadicPack
+struct InheritDefaultFromHasBarWVariadicPack(HasBarWVariadicPack):
+    pass
+
+# CHECK: lit.fn @"method_with_pack{{.*}}(%self: !lit.ref<!InheritDefaultFromHasBarWVariadicPack, mut *"0_unnamed`"> mut,
+# CHECK-SAME: %args: !lit.ref<!lit.struct<#VariadicPack
+# CHECK-NEXT: lit.call {{.*}}@"method_with_pack{{.*}}(%self, %args)
+# CHECK-NEXT: kgen.return %0
