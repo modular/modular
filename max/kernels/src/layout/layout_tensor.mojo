@@ -2598,7 +2598,7 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
-    fn shape[idx: Int]() -> Int where idx != UNKNOWN_VALUE:
+    fn shape[idx: Int]() -> Int:
         """Returns the size of the tensor along the specified dimension.
 
         Provides static access to the tensor's shape information. This method
@@ -2626,7 +2626,9 @@ struct LayoutTensor[
         - This is a static method that operates on the tensor's type information,
             not on a specific tensor instance.
         """
-
+        __comptime_assert (
+            0 <= idx < len(Self.layout.shape)
+        ), "idx must be within bounds"
         comptime shape = Self._to_static[
             Self.layout.shape, Self.layout_int_type
         ]()
@@ -2634,7 +2636,7 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
-    fn stride[idx: Int where idx != UNKNOWN_VALUE]() -> Int:
+    fn stride[idx: Int]() -> Int:
         """Returns the memory stride of the tensor along the specified
         dimension.
 
@@ -2671,7 +2673,9 @@ struct LayoutTensor[
         - For non-contiguous tensors (e.g., tensor slices), strides may not
             follow a simple pattern.
         """
-
+        __comptime_assert (
+            0 <= idx < len(Self.layout.shape)
+        ), "idx must be within bounds"
         comptime stride = Self._to_static[
             Self.layout.stride, Self.linear_idx_type
         ]()
