@@ -289,3 +289,65 @@ def def_implicit_return_type(x: Int):
         x: An explicit argument.
     """
     pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Alias doc string validation
+# ===----------------------------------------------------------------------=== #
+
+
+# expected-warning-re @below {{public symbol 'AliasWithParams_MissingDocString{{.*}}' is missing a doc string}}
+comptime AliasWithParams_MissingDocString[T: AnyType] = T
+
+
+comptime _AliasWithParams_Private[T: AnyType] = T
+
+
+# expected-warning @below {{alias takes parameters, but no 'Parameters' in doc string}}
+comptime AliasWithParams_MissingParamsSection[T: AnyType] = T
+"""This alias doc string is missing a Parameters section."""
+
+
+comptime AliasWithParams_InvalidParam[T: AnyType] = T
+"""This alias has an invalid parameter documented.
+
+# expected-warning-re @below {{parameter '{{.*}}T' is not documented}}
+Parameters:
+    invalid_param: This is an invalid parameter.
+      # expected-warning @above {{unknown parameter 'invalid_param' in doc string}}
+"""
+
+
+comptime AliasWithParams_Valid[T: AnyType] = T
+"""This alias has valid parameter documentation.
+
+Parameters:
+    T: The type parameter.
+"""
+
+
+# expected-warning @+5 {{'U' is defined at index 1, but specified in doc string at index 0}}
+comptime AliasWithMultipleParams_Order[T: AnyType, U: AnyType] = T
+"""This alias has parameters in wrong order.
+
+Parameters:
+    U: Second parameter documented first.
+    T: First parameter documented second.
+"""
+
+
+# Test that autoparams (compiler-generated parameters with mangled names like
+# `a`1`) are correctly ignored in docstring validation. When doing partial
+# binding, the compiler generates autoparams for the unbound parameters.
+struct _AutoParamTest[a: __mlir_type.`!kgen.dtype`, b: __mlir_type.`!kgen.dtype`]:
+    pass
+
+
+fn _fn_with_params[x: Int](s: _AutoParamTest):
+    pass
+
+
+# Partial binding generates autoparams like `a`1`, `b`2` for the struct's params.
+# These mangled names should NOT require documentation.
+comptime AliasWithAutoParams = _fn_with_params[1]
+"""This alias has compiler-generated autoparams that should be ignored."""
