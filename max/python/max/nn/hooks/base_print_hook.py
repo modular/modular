@@ -53,7 +53,11 @@ class BasePrintHook(ABC):
     - summarize(): Summarize the total number of tensors printed at each step.
     """
 
-    def __init__(self, export_path: str | None = None) -> None:
+    def __init__(
+        self,
+        export_path: str | None = None,
+        filter: Sequence[str] | None = None,
+    ) -> None:
         self._known_layers = IdentityMap[Layer, LayerInfo]()
         self._export_path = export_path
         self._current_step = 0
@@ -62,6 +66,8 @@ class BasePrintHook(ABC):
 
         # Maps step number -> [list of printed tensors]
         self._recorded_prints: dict[int, list[str]] = {}
+        # Optional filter of layer names to print.
+        self._layer_filter: set[str] | None = set(filter) if filter else None
 
     def add_layer(self, layer: Any, name: str) -> None:
         self._known_layers[layer] = LayerInfo(name)
@@ -109,6 +115,13 @@ class BasePrintHook(ABC):
             debug_name = f"{info.layer_name}({info.call_count})"
         else:
             debug_name = info.layer_name
+
+        # If a filter is specified, skip layers not in the filter list.
+        if (
+            self._layer_filter is not None
+            and info.layer_name not in self._layer_filter
+        ):
+            return
 
         # Print input args and kwargs
         for n, arg in enumerate(args):
