@@ -150,6 +150,40 @@ myCustomType = CustomType(0.5, fish="swordfish")
 myCustomType = {0.7, fish="salmon"}
 ```
 
+## Mutating a struct
+
+By default, a struct’s methods receive an immutable `self`,
+so they can’t modify the struct’s fields. For example:
+
+```
+struct MyStruct:
+    var value: Int
+
+    fn increment(self):
+        self.value += 1 # ERROR: expression must be mutable in assignment
+
+    # ...
+```
+
+To allow a method to mutate the instance, declare its receiver as `mut self`.
+This makes `self` mutable inside the method and allows changes to its fields
+that persist after the method returns:
+
+```
+struct MyStruct:
+    var value: Int
+
+    fn increment(mut self):
+        self.value += 1 # Works: Mutable `self` allows assignment
+
+    #...
+```
+
+:::info
+Read more about mutable arguments and the `mut` keyword:
+[Mutable arguments (`mut`)](https://docs.modular.com/mojo/manual/values/ownership/#mutable-arguments-mut)
+:::
+
 ## Making a struct Copyable {#making-a-struct-copyable-and-movable}
 
 Mojo structs are not copyable or movable by default.
