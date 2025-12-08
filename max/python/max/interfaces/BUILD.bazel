@@ -12,6 +12,5 @@ modular_py_library(
         requirement("msgspec"),
         requirement("numpy"),
         requirement("typing-extensions"),
-        requirement("xxhash"),
     ],
 )
