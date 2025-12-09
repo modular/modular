@@ -304,3 +304,182 @@ struct MmaOpSM100_SS[
             ]()
 
         return UMMAKind(-1)
+
+
+@register_passable("trivial")
+struct MmaOpSM100_BlockScaled_SS[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    sfa_dtype: DType,
+    sfb_dtype: DType,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    /,
+    *,
+    accum_type: DType = DType.float32,
+    cta_group: Int = 1,
+    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    transpose_b: Bool = False,
+](Defaultable):
+    var idesc: UMMAInsDescriptor[Self._get_umma_kind[Self.a_type]()]
+    var mask: UInt16
+
+    @always_inline
+    fn __init__(out self):
+        __comptime_assert (
+            Self.transpose_b
+        ), "MmaOpSM100 only supports transposed B"
+        __comptime_assert Self.cta_group in (
+            1,
+            2,
+        ), "MmaOpSM100 only supports cta_group 1 or 2"
+        __comptime_assert (
+            Self.a_type == Self.b_type
+        ), "a_type and b_type must be the same"
+        __comptime_assert (
+            Self.sfa_dtype == Self.sfb_dtype
+        ), "sfa_dtype and sfb_dtype must be the same"
+        __comptime_assert (
+            Self.sfa_dtype == DType.float8_e8m0fnu
+        ), "Only support float8_e8m0fnu for scales"
+
+        self.idesc = UMMAInsDescriptor[
+            Self._get_umma_kind[Self.a_type]()
+        ].create[
+            Self.accum_type,
+            Self.a_type,
+            Self.b_type,
+            Self.sfa_dtype,
+            Index[dtype = DType.uint32](Self.mma_shape[0], Self.mma_shape[1]),
+            transpose_b = Self.transpose_b,
+        ]()
+
+        self.mask = 0
+
+        # Here we compute the mask inside mma object to hide the complexity.
+        # We may get better asm if the mask if computed outside from TMA masks,
+        # and passed to `commit`, need to verify.
+        @parameter
+        if product(Self.cluster_shape) > 1:
+            comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
+            comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
+
+            # The mask includes ctas on the same row and column in the cluster
+            # Example mask for cta (0, 1) is cluster (4,4)
+            #             x x x x
+            #             o x o o
+            #             o x o o
+            #             o x o o
+            self.mask = (
+                dim0_mask
+                << (block_id_in_cluster.y * UInt(Self.cluster_shape[0]))
+            ) | (dim1_mask << block_id_in_cluster.x)
+
+            # Include peer cta's row
+            # Example mask for cta (0, 1) is cluster (4,4)
+            #             x x x x
+            #             x x x x
+            #             o x o o
+            #             o x o o
+            @parameter
+            if Self.cta_group == 2:
+                self.mask |= dim1_mask << (block_id_in_cluster.x ^ 1)
+
+    @always_inline
+    fn mma(
+        self,
+        a: LayoutTensor[address_space = AddressSpace.SHARED, *_, **_],
+        b: LayoutTensor[address_space = AddressSpace.SHARED, *_, **_],
+        c_tmem: UInt32,
+        sfa_tmem: UInt32,
+        sfb_tmem: UInt32,
+        init_c: Bool,
+    ):
+        """MMA input tiles.
+
+        The layout assumes that coalesce(A) has shape (bm, sw_k, num_sw_k), we currently
+        assumes bm = mma_m. In future, we can tile it to (mma_m, sw_k, num_sw_k, num_mma_m)
+        The same logic applies to matrix B.
+        """
+
+        # Coalesce a and b
+        # A and B are coalesced to rank-2 if it's only one tile or rank-3 if it has
+        # multiple canonical layouts in K dim.
+        comptime a_coalesced_layout = coalesce(a.layout)
+        comptime b_coalesced_layout = coalesce(b.layout)
+
+        # Canonical layouts are tiled by core matrices.
+        comptime a_canonical_layout = tile_to_descriptor[
+            a.dtype, extract_first_2_modes[a_coalesced_layout]()
+        ]()
+        comptime b_canonical_layout = tile_to_descriptor[
+            b.dtype, extract_first_2_modes[b_coalesced_layout]()
+        ]()
+
+        var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
+        var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
+
+        __comptime_assert (
+            Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
+        ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
+
+        @parameter
+        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+            comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
+                Self.a_type
+            ]()
+            comptime b_offset = b.layout(IntTuple(0, k)) * size_of[
+                Self.b_type
+            ]()
+
+            var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
+
+            var runtime_desc = UMMAInsDescriptor[
+                Self._get_umma_kind[Self.a_type]()
+            ].update_desc_with_sf_id[k // Self.mma_shape[2]](
+                self.idesc,
+            )
+            mma[Self.cta_group](
+                a_desc + a_offset,
+                b_desc + b_offset,
+                c_tmem,
+                runtime_desc,
+                sfa_tmem,
+                sfb_tmem,
+                c_scale=c_scale,
+            )
+
+    @always_inline
+    fn commit(
+        self,
+        ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],
+    ):
+        @parameter
+        if product(Self.cluster_shape) == 1:
+            mma_arrive[Self.cta_group](ptr_mbar)
+        else:
+            mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
+
+    @always_inline
+    fn wait(self):
+        pass
+
+    @staticmethod
+    fn _get_umma_kind[dtype: DType]() -> UMMAKind:
+        @parameter
+        if dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
+            return UMMAKind.KIND_MXF8F6F4
+        else:
+            constrained[
+                False,
+                (
+                    "Unsupported/not implemented operand type for block scaled"
+                    " UMMA: "
+                ),
+                String(dtype),
+            ]()
+
+        return UMMAKind(-1)

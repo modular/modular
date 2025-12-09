@@ -134,6 +134,8 @@ _B200_TESTS = [
     "test_matmul_sm100_splitk_2sm_bf16.mojo",
     "test_tma_mma_sm100_mxfp8.mojo",
     "test_tma_pair_mma_sm100_mxfp8.mojo",
+    "test_matmul_sm100_block_scaled_mxfp8_1sm.mojo",
+    "test_matmul_sm100_block_scaled_mxfp8_2sm.mojo",
 ]
 
 _GPU_MEMORY = {
