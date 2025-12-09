@@ -1432,14 +1432,13 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     auto getAttrs = parentDecl->lookupInCurrentScope("__getattr__");
     if (!hasOnlyInferredParams &&
         (!getItems.empty() || !setItems.empty() || !getAttrs.empty())) {
-      auto diag = p.emitWarning(
-          funcOp->getLoc(),
-          llvm::formatv(
-              "parametric '__call__' method cannot be "
-              "called directly because '{}' defines '__getitem__', "
-              "'__setitem__', or '__getattr__'; consider using a different "
-              "name for this method",
-              parentDecl->getNameIfOperation()));
+      auto diag = p.emitWarning(funcOp->getLoc())
+                  << "parametric '__call__' method cannot be called directly "
+                     "because '"
+                  << *parentDecl->getUserNameIfOperation()
+                  << "' defines '__getitem__', '__setitem__', or "
+                     "'__getattr__'; consider using a different name for this "
+                     "method";
 
       for (const auto &decl : getItems)
         diag.attachNote(decl->getLoc()) << "__getitem__ defined here";
@@ -2357,8 +2356,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       return failure();
 
     ASTDecl &traitDecl = *decl.getParentDecl();
-    auto name = demangleParameterName(*decl.getNameIfOperation());
-
+    auto name = *decl.getUserNameIfOperation();
     ASTDecl &parentTraitDecl = getDeclForTypeSymbol(parentTraitRef);
 
     auto decls = parentTraitDecl.lookupInCurrentScope(name);

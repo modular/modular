@@ -55,8 +55,9 @@ public:
   Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
   void setIRValue(DeclIRValue value) { irValue = value; }
 
-  /// Get the name of the declaration if it has one.
-  std::optional<StringRef> getNameIfOperation() const;
+  /// Get the user-printable name of the declaration if it has one.
+  ///  This removes any mangling (e.g. for parameters).
+  std::optional<StringRef> getUserNameIfOperation() const;
 
   /// If the IRValue is a function, return it as a PValue.
   PValue getFuncAsPValue() const;

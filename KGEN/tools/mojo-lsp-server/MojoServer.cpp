@@ -919,7 +919,7 @@ AsyncValueRef<Chain> MojoDocument::newTaskChain() {
 
 void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
   KGEN::CompilerTimeTraceScope("checkModuleSemantics", [&]() {
-    return decl->getNameIfOperation().value_or("").str();
+    return decl->getUserNameIfOperation().value_or("").str();
   });
 
   // Don't check the semantics of the module if there were parser errors.
@@ -1384,7 +1384,7 @@ void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
                                      MojoASTDeclRef decl,
                                      MojoASTDeclRef curReplDecl) {
   KGEN::CompilerTimeTraceScope("processDocStrings", [&]() {
-    return decl->getNameIfOperation().value_or("").str();
+    return decl->getUserNameIfOperation().value_or("").str();
   });
 
   unsigned bufferId = sourceMgr.FindBufferContainingLoc(decl.getLoc());

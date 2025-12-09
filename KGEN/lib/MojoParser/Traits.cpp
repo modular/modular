@@ -697,7 +697,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       ASTDecl &parentDecl =
           emitter.getDeclResolver().getDeclForTypeSymbol(it->second.first);
       diag->attachNote(parentDecl.getLoc())
-          << "inherited through '" << *parentDecl.getNameIfOperation()
+          << "inherited through '" << *parentDecl.getUserNameIfOperation()
           << "' here";
     }
   }
