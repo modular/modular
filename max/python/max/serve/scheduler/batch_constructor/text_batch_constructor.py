@@ -141,6 +141,204 @@ class PreemptionReason(str, Enum):
 
 
 class TextBatchConstructor:
+    """Construct per-replica text batches from CE (prefill) and TG queues.
+
+    This class encapsulates the high-level policy for forming execution
+    batches for text pipelines. It operates on two logical phases of each
+    request:
+
+    - **Context encoding (CE / prefill)**: processing prompt tokens.
+    - **Token generation (TG / decode)**: generating continuation tokens for
+      already-prefilled requests.
+
+    The batching policy is expressed entirely in terms of scheduler
+    configuration (:class:`TokenGenerationSchedulerConfig`), model context
+    metadata (e.g., lengths and LoRA adapter names), and KV cache / resource
+    limits. The sections below describe the *intended behaviour* rather than
+    the exact implementation.
+
+    .. note::
+       When chunked prefill is enabled and a request is split across multiple
+       CE iterations, no output is emitted for that request until its full
+       prefill completes. The request remains in the CE queue across
+       iterations until all prompt tokens have been processed.
+
+    **Replica assignment**
+
+    The constructor supports data-parallel execution across
+    ``data_parallel_degree`` replicas:
+
+    - Each replica maintains its own CE and TG queues and forms batches
+      independently using the same policy.
+    - New requests are assigned to replicas in a straightforward round-robin
+      fashion, which keeps load approximately balanced without inspecting
+      per-replica cache state. Round-robin does not account for prompt length,
+      so replicas may become imbalanced if request sizes vary significantly.
+    - When a paged KV cache manager is present, all replicas share the same
+      logical KV memory budget, but the high-level placement policy remains
+      round-robin and budget-based rather than attempting fine-grained
+      load-balancing.
+
+    **Non-LoRA batch construction**
+
+    The following describes batch construction when no LoRA manager is
+    attached.
+
+    **1. CE vs TG prioritization**
+
+    For each replica the constructor maintains separate CE and TG queues.
+    Priority depends on the ``enable_in_flight_batching`` setting:
+
+    - When **False** (default):
+
+      - If there are any CE requests waiting, the constructor prioritises
+        building a CE batch until the CE queue is drained or budgets / limits
+        are reached.
+      - TG batches are formed only when there is no CE work pending on that
+        replica. This favours fast admission of new prompts at the cost of
+        slightly higher latency for ongoing generations.
+
+    - When **True**:
+
+      - If there are TG requests, the constructor prioritises TG, building a
+        TG batch first and then optionally filling any remaining capacity in
+        that iteration with CE work.
+      - CE-only batches are formed when there is no TG work on the replica.
+      - This favours throughput and inter-token latency for active
+        generations at the cost of time-to-first-token for new requests, while
+        still opportunistically progressing prefill when there is headroom.
+
+    **2. Token budgets**
+
+    Two logical token budgets can limit batch size. A context is admitted to
+    the batch only if *all* active budgets agree that it fits. Budgets may
+    report that:
+
+    - Additional contexts can be admitted.
+    - The current context should be admitted but further admissions in this
+      batch should stop.
+    - The context cannot fit and should be deferred to a later batch.
+
+    *Active-token budget*
+
+    - Capacity: ``target_tokens_per_batch_ce``.
+    - Interprets the current active window of each context and enforces a soft
+      limit on how many prompt tokens are processed in one CE batch.
+    - When ``enable_chunked_prefill`` is **True**, large prompts may be
+      *chunked* so that only a prefix of the prompt is processed in the
+      current CE batch. The remainder is scheduled for follow-up CE
+      iterations. This allows the constructor to:
+
+      - Fill CE batches to approximately ``target_tokens_per_batch_ce``
+        tokens.
+      - Admit very large prompts without blocking the batch behind a single
+        oversized request.
+
+    - When chunked prefill is **disabled**, prompts are either admitted in
+      full or deferred to a later batch once the active-token budget has been
+      reached.
+
+    *Total-context budget (optional)*
+
+    - Enabled when ``max_batch_context_length`` is not ``None``.
+    - Tracks the total resident context across the batch, accounting for
+      current context length and planned forward steps, and ensures the sum
+      does not exceed ``max_batch_context_length``.
+    - This budget is only applied when a CE request is present, or to be
+      added to the batch.
+
+    **3. Max batch size limits**
+
+    Independently of token budgets, explicit batch-size caps ensure that no
+    batch grows without bound:
+
+    - ``max_batch_size_ce`` limits the number of requests in a CE batch per
+      replica.
+    - ``max_batch_size_tg`` limits the number of requests in a TG batch per
+      replica.
+
+    Once a batch reaches its respective maximum size, no further requests are
+    considered for that iteration, even if token budgets or cache capacity
+    would allow more.
+
+    **4. Decode step limits**
+
+    The number of decode steps per TG iteration is bounded by
+    ``max_forward_steps_tg``. When ``max_seq_len`` is provided, the final
+    number of decode steps for an iteration is the *minimum* of
+    ``max_forward_steps_tg`` and the number of steps each request can run
+    before reaching ``max_seq_len``.
+
+    **5. KV cache watermark and memory pressure**
+
+    When a paged KV cache is used, KV memory becomes an additional limiting
+    factor:
+
+    - During CE, the constructor estimates how many KV blocks would be used if
+      a candidate request were admitted.
+    - If admitting the request would push usage above ``kvcache_ce_watermark``
+      *and* there is active TG work on the replica, the request is deferred to
+      protect room for ongoing generations. This prevents CE from starving
+      existing TG batches of KV memory.
+    - During TG, if allocating KV blocks for a candidate request fails due to
+      insufficient capacity, the constructor may preempt other TG candidates
+      to free KV space, ensuring that at least a subset of requests can
+      continue generating. When preemption is required, the constructor evicts
+      the most recently enqueued TG request first, minimising wasted work. A
+      warning is logged when this occurs.
+
+    Overall, KV cache limits, token budgets, and max batch sizes jointly
+    determine the final CE and TG batch composition for each iteration.
+
+    **LoRA batch construction**
+
+    When a :class:`LoRAManager` is attached, the constructor applies
+    additional constraints to respect the maximum number of concurrently
+    loaded LoRA adapters and to avoid evicting adapters needed for active
+    generations.
+
+    - LoRA and data parallelism are mutually exclusive: if a LoRA manager is
+      present, ``data_parallel_degree`` must be 1 so that all LoRA state is
+      local to a single replica.
+    - Each replica tracks a set of *protected* active LoRAs that are currently
+      participating in the TG batch and must not be evicted.
+
+    **1. CE batching with LoRA**
+
+    For CE requests that target LoRA-adapted models:
+
+    - A LoRA request is admitted into the CE batch only if activating its
+      adapter would not exceed the LoRA manager's capacity, taking into
+      account:
+
+      - The protected LoRAs already in use by TG.
+      - Any additional LoRAs the constructor intends to activate in this CE
+        iteration.
+
+    - If admitting a new LoRA request would require evicting a protected LoRA,
+      that request is temporarily deferred and re-queued for a later CE batch,
+      rather than forcing an eviction that would disrupt ongoing TG work.
+    - When a LoRA request is finally admitted to CE, its adapter is activated
+      and tracked as active for the replica, so that subsequent TG iterations
+      can safely use it.
+
+    This ensures that CE never "steals" LoRA capacity away from requests that
+    are currently generating tokens.
+
+    **2. TG batching with LoRA**
+
+    For TG requests that depend on LoRA adapters:
+
+    - The constructor requires that the corresponding LoRA adapter is
+      currently active. If it is not, the request is *preempted* from the TG
+      batch, reset, and returned to CE so that its LoRA weights can be safely
+      reloaded in a future batch. A warning is logged when this occurs.
+    - TG batches therefore only ever contain LoRA requests for which the
+      correct adapters are already resident, guaranteeing that generations are
+      computed with the intended LoRA parameters.
+
+    """
+
     def __init__(
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
