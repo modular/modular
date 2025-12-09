@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -20,38 +21,67 @@ import numpy.typing as npt
 from max.profiler import traced
 
 
+@lru_cache(maxsize=1024)
+def mrope_pos_ids_3d_inner(
+    h: int,
+    w: int,
+    spatial_merge_size: int,
+) -> npt.NDArray[np.int32]:
+    """Calculate the 3D rope index based on the image's height and width in LLM using NumPy.
+    Implementation can be found here: https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/models/utils.py#L92.
+
+    Note: Qwen2.5VL benchmark results show that lru_cache results in nearly 7.5K cache hits while only adding an additional 85KB of additional memory usage.
+    This scenario had a cache size of 14, which indicates that even if the cache was full in the worst case, we would only expect it to take up around 6MB of memory.
+
+    Args:
+        h: Height of the image
+        w: Width of the image
+        spatial_merge_size: Factor for downscaling spatial dimensions
+
+    Returns:
+        pos_ids: Stacked array of height, width position IDs, dtype=int32
+    """
+
+    hpos_ids: npt.NDArray[np.integer[Any]] = np.arange(h).reshape(h, 1)
+    hpos_ids = np.tile(hpos_ids, (1, w))
+    hpos_ids = hpos_ids.reshape(
+        h // spatial_merge_size,
+        spatial_merge_size,
+        w // spatial_merge_size,
+        spatial_merge_size,
+    )
+    hpos_ids = np.transpose(hpos_ids, (0, 2, 1, 3)).flatten()
+
+    wpos_ids: npt.NDArray[np.integer[Any]] = np.arange(w).reshape(1, w)
+    wpos_ids = np.tile(wpos_ids, (h, 1))
+    wpos_ids = wpos_ids.reshape(
+        h // spatial_merge_size,
+        spatial_merge_size,
+        w // spatial_merge_size,
+        spatial_merge_size,
+    )
+    wpos_ids = np.transpose(wpos_ids, (0, 2, 1, 3)).flatten()
+
+    return np.stack([hpos_ids, wpos_ids], axis=-1)
+
+
 @traced
 def mrope_pos_ids_3d(
     grid_thw: npt.NDArray[np.integer[Any]], spatial_merge_size: int
-) -> npt.NDArray[np.integer[Any]]:
+) -> npt.NDArray[np.int32]:
     """Calculate the 3D rope index based on image and video's temporal, height, and width in LLM using NumPy."""
-    pos_ids = []
-
+    pos_ids_list = []
+    # Precompute vision_position_ids for this context
     for t, h, w in grid_thw:
-        hpos_ids = np.arange(h).reshape(h, 1)
-        hpos_ids = np.tile(hpos_ids, (1, w))  # type: ignore
-        hpos_ids = hpos_ids.reshape(  # type: ignore
-            h // spatial_merge_size,
-            spatial_merge_size,
-            w // spatial_merge_size,
-            spatial_merge_size,
+        position_ids = mrope_pos_ids_3d_inner(
+            h=h,
+            w=w,
+            spatial_merge_size=spatial_merge_size,
         )
-        hpos_ids = np.transpose(hpos_ids, (0, 2, 1, 3)).flatten()  # type: ignore
-
-        wpos_ids = np.arange(w).reshape(1, w)
-        wpos_ids = np.tile(wpos_ids, (h, 1))  # type: ignore
-        wpos_ids = wpos_ids.reshape(  # type: ignore
-            h // spatial_merge_size,
-            spatial_merge_size,
-            w // spatial_merge_size,
-            spatial_merge_size,
+        pos_ids_list.append(
+            position_ids if t == 1 else position_ids.repeat(t, axis=0)
         )
-        wpos_ids = np.transpose(wpos_ids, (0, 2, 1, 3)).flatten()  # type: ignore
-
-        pos_ids.append(
-            np.stack([hpos_ids, wpos_ids], axis=-1).repeat(t, axis=0)
-        )
-    return np.concatenate(pos_ids, axis=0)
+    return np.concatenate(pos_ids_list, axis=0)
 
 
 @traced
