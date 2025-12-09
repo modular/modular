@@ -226,7 +226,7 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId,
 /// else unparsed.
 static void resolveForLSP(DeclResolver &resolver, ASTDecl &decl) {
   CompilerTimeTraceScope traceScope("resolveForLSP", [&] {
-    return decl.getNameIfOperation().value_or("").str();
+    return decl.getUserNameIfOperation().value_or("").str();
   });
 
   // We need to resolve decls in a breadth-first style, hence why we use a queue

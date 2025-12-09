@@ -559,19 +559,23 @@ fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
 # Structs
 ##===----------------------------------------------------------------------===##
 
-# expected-note @below {{originally resolving it here}}
+# expected-note @below {{by declaration 'Rec'}}
+# expected-error @below {{attempt to resolve a recursive reference to declaration 'Rec'}}
+# expected-note @below {{referenced through this use}}
 struct Rec[
-  # expected-error @below {{attempt to resolve a recursive reference to declaration}}
+  # expected-note @below {{referenced from here}}
   param: Rec]:
   pass
 
-
-struct Rec1[# expected-note {{originally resolving it here}}
+# expected-error @+2 {{attempt to resolve a recursive reference to declaration 'Rec1'}}
+# expected-note @+1 {{referenced through this use}}
+struct Rec1[# expected-note {{by declaration 'Rec1'}}
  # expected-note @below {{referenced through this use}}
   p1: Rec2]: pass
 
+# expected-note @below {{by declaration 'Rec2'}}
 struct Rec2[
-  # expected-error @below {{attempt to resolve a recursive reference to declaration}}
+  # expected-note @below {{referenced from here}}
   p2: Rec1]:
 
 

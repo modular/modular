@@ -8,6 +8,7 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITInterfaces.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "llvm/ADT/StringExtras.h"
@@ -86,7 +87,7 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
     result.push_back(astDecl);
 
   // Handle both struct and trait types for extension lookup.
-  if (!astDecl || !astDecl->getNameIfOperation() ||
+  if (!astDecl || !astDecl->getUserNameIfOperation() ||
       !isa<StructDeclOp, TraitDeclOp>(astDecl->getIfOperation()))
     return result;
 
@@ -94,7 +95,7 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
   // Extensions are registered with the name of their target type, prefixed
   // with "extension:" (e.g., "extension:Spaceship") so that we can do this
   // lookup here.
-  StringRef typeName = astDecl->getNameIfOperation().value();
+  StringRef typeName = astDecl->getUserNameIfOperation().value();
   std::string extensionName = "extension:" + typeName.str();
   LookupAllResult lookupResult =
       shared.lookupAllDeclsWithName(extensionName, callLoc, *this, true);
@@ -246,10 +247,10 @@ ASTType ASTDecl::getIfTypeValue() const {
   return {};
 }
 
-std::optional<StringRef> ASTDecl::getNameIfOperation() const {
+std::optional<StringRef> ASTDecl::getUserNameIfOperation() const {
   if (Operation *op = getIfOperation())
     if (auto decl = dyn_cast<ASTDeclInterface>(op))
-      return decl.getDeclName().getValue();
+      return LIT::demangleParameterName(decl.getDeclName().getValue());
   return {};
 }
 

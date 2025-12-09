@@ -794,26 +794,38 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     return success(!decl.isErroneous());
   }
 
-  auto emitError = [&](SMLoc loc, const Twine &message) -> MojoInflightDiag {
-    return this->emitError(loc, message);
-  };
-
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
   if (failed(declsCurrentlyProcessing.insert(&decl, loc))) {
-    auto diag = emitError(
-        loc, "attempt to resolve a recursive reference to declaration");
+    auto diag =
+        emitError(decl.getLoc(),
+                  "attempt to resolve a recursive reference to declaration");
+
+    auto addDeclName = [&](ASTDecl *decl) {
+      std::optional<StringRef> name = decl->getUserNameIfOperation();
+      if (!name)
+        return;
+      diag << " '";
+      if (auto structOp = dyn_cast_or_null<StructDeclOp>(
+              decl->getParentDecl()->getIfOperation()))
+        diag << structOp.getDeclName().getValue() << ".";
+      diag << *name << "'";
+    };
+
+    addDeclName(&decl);
+    diag.attachNote(loc) << "referenced from here";
 
     // Include a stack trace of notes showing why this is being cyclicly
     // resolved.
     for (ASTDecl *prev : llvm::reverse(declsCurrentlyProcessing.stack)) {
       // Bottom out when we find the declaration in question.
-      auto useLoc = declsCurrentlyProcessing.map[prev];
-      if (prev == &decl) {
-        diag.attachNote(useLoc) << "originally resolving it here";
+      diag.attachNote(prev->getLoc()) << "by declaration";
+      addDeclName(prev);
+
+      diag.attachNote(declsCurrentlyProcessing.map[prev])
+          << "referenced through this use";
+      if (prev == &decl)
         break;
-      }
-      diag.attachNote(useLoc) << "referenced through this use";
     }
     decl.setErroneous();
     return failure();
@@ -990,7 +1002,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
                                             bool eraseUnparsedDecls) {
   CompilerTimeTraceScope traceScope("resolveAllReferencedFrom", [&] {
-    return decl.getNameIfOperation().value_or("").str();
+    return decl.getUserNameIfOperation().value_or("").str();
   });
 
   // The first stage is to fully resolve all of the decls recursively defined

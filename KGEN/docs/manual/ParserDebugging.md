@@ -15,7 +15,7 @@ Your four best friends:
 - A lot of types have a `.getLoc()` which says where the thing is in the .mojo
   source. Locations are `char*` so you can `print somedecl.getLoc()` to see
   where it is in the source code.
-- `ASTDecl` has a `.getNameIfOperation()` with the name of the
+- `ASTDecl` has a `.getUserNameIfOperation()` with the name of the
   struct/function/etc.
 
 Details on these, and other tricks, are below!
@@ -51,7 +51,7 @@ To print an expression or a type or an `ASTDecl`, you can do `whatever.dump()`.
 (If `whatever.dump()` gives an error, try `whatever.mlirType.dump()`)
 
 When you have a stack trace open in a VS Code debugger session, it can be
-enlightening to call `.dump()`, `getNameIfOperation()`, `getDeclName()`, etc
+enlightening to call `.dump()`, `getUserNameIfOperation()`, `getDeclName()`, etc
 everything in each stack frame until things start to make sense.
 
 You can also print things out directly in code:

@@ -464,8 +464,7 @@ Block &SharedState::getArgumentOwningBlock() {
 }
 
 void SharedState::deleteDecl(ASTDecl &decl) {
-  std::optional<StringRef> name = decl.getNameIfOperation();
-  if (!name)
+  if (!decl.getUserNameIfOperation())
     return;
   Operation *op = decl.getIfOperation();
 
