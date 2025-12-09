@@ -182,7 +182,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     @property
     def start_idx(self) -> int:
-        return self._start_idx
+        return self._start_idx + self._draft_offset
 
     @property
     def active_idx(self) -> int:
@@ -244,6 +244,13 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     def end_idx(self) -> int:
         return self._end_idx
 
+    @property
+    def draft_offset(self) -> int:
+        return self._draft_offset
+
+    def set_draft_offset(self, offset: int) -> None:
+        self._draft_offset = offset
+
     def get_min_token_logit_mask(
         self, num_steps: int
     ) -> list[npt.NDArray[np.int32]]:
@@ -293,7 +300,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         This will be the prompt size for context encoding, and simply 1 (or more) for
         token generation.
         """
-        return self._active_idx - self._start_idx
+        return self._active_idx - self.start_idx
 
     def to_generation_output(self) -> TextGenerationOutput:
         """Get completion tokens that are ready to be returned to the user.
@@ -382,7 +389,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         Returns:
             np.ndarray: Array of tokens that have been generated but not yet processed.
         """
-        return self.tokens[self._start_idx : self._active_idx]
+        return self.tokens[self.start_idx : self._active_idx]
 
     @property
     def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:

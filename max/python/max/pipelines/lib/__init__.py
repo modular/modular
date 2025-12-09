@@ -57,6 +57,7 @@ from .sampling import (
 )
 from .speculative_config import SpeculativeConfig
 from .speculative_decoding import (
+    EAGLESpeculativeDecodingPipeline,
     SpeculativeDecodingPipelineBase,
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -75,6 +76,7 @@ __all__ = [
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
     "AudioGenerationConfig",
+    "EAGLESpeculativeDecodingPipeline",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "HuggingFaceRepo",

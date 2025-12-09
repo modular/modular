@@ -30,6 +30,7 @@ from max.pipelines.core import TextContext
 
 from ..speculative_config import SpeculativeMethod
 from .base import SpeculativeDecodingPipelineBase
+from .eagle import EAGLESpeculativeDecodingPipeline
 from .ragged_token_merger import RaggedTokenMerger, ragged_token_merger
 from .standalone import StandaloneSpeculativeDecodingPipeline
 
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
     from ..interfaces import PipelineModel
 
 __all__ = [
+    "EAGLESpeculativeDecodingPipeline",
     "RaggedTokenMerger",
     "SpeculativeDecodingPipelineBase",
     "StandaloneSpeculativeDecodingPipeline",

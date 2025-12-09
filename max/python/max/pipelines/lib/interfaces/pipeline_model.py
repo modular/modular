@@ -129,6 +129,9 @@ class ModelInputs:
     lora_ranks: Tensor | None = None
     """Tensor containing the LoRA ranks"""
 
+    hidden_states: Tensor | None = None
+    """Hidden states for a variable number of tokens per sequence."""
+
     def update(self, **kwargs) -> None:
         key: str
         value: Any

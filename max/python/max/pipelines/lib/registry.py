@@ -50,6 +50,7 @@ from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
+    EAGLESpeculativeDecodingPipeline,
     SpeculativeMethod,
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -64,6 +65,7 @@ PipelineTypes = Union[  # noqa: UP007 (This breaks a mypy check, unsure why)
     AudioGeneratorPipeline,
     StandaloneSpeculativeDecodingPipeline,
     SpeechTokenGenerationPipeline,
+    EAGLESpeculativeDecodingPipeline,
 ]
 
 
@@ -75,6 +77,7 @@ def get_pipeline_for_task(
     | type[AudioGeneratorPipeline]
     | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
+    | type[EAGLESpeculativeDecodingPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
         if pipeline_config._speculative_config is not None:
@@ -87,6 +90,15 @@ def get_pipeline_for_task(
                 == SpeculativeMethod.STANDALONE
             ):
                 return StandaloneSpeculativeDecodingPipeline
+            elif (
+                pipeline_config._speculative_config.speculative_method
+                == SpeculativeMethod.EAGLE
+            ):
+                return EAGLESpeculativeDecodingPipeline
+            else:
+                raise ValueError(
+                    f"Unsupported speculative method: {pipeline_config._speculative_config.speculative_method}"
+                )
         else:
             return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
