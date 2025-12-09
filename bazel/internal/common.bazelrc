@@ -195,6 +195,7 @@ build:macos --build_metadata=TAG_HOST_OS=macos
 build:macos --build_metadata=TAG_TARGET_OS=macos
 
 # Separate CI config that doesn't affect build output for verifying we share caches
+build:ci-no-config --curses=no
 build:ci-no-config --build_metadata=ROLE=CI
 build:ci-no-config --config=cache
 build:ci-no-config --disk_cache=
