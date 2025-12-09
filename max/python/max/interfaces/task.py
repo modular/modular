@@ -34,6 +34,7 @@ Available tasks:
     - EMBEDDINGS_GENERATION: Generate vector embeddings for input data.
     - AUDIO_GENERATION: Generate audio outputs from input data.
     - SPEECH_TOKEN_GENERATION: Generate speech tokens for speech-related tasks.
+    - IMAGE_GENERATION: Generate or edit images from input data.
 
 See the `PipelineTask` enum for further details on each task type.
 """
@@ -58,6 +59,8 @@ class PipelineTask(str, Enum):
     """Task for generating audio."""
     SPEECH_TOKEN_GENERATION = "speech_token_generation"
     """Task for generating speech tokens."""
+    IMAGE_GENERATION = "image_generation"
+    """Task for generating images."""
 
     @property
     def output_type(
@@ -72,6 +75,7 @@ class PipelineTask(str, Enum):
         from .pipeline_variants import (
             AudioGenerationOutput,
             EmbeddingsGenerationOutput,
+            ImageGenerationOutput,
             TextGenerationOutput,
         )
         from .scheduler import SchedulerResult
@@ -85,6 +89,8 @@ class PipelineTask(str, Enum):
             return dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
         elif self == PipelineTask.AUDIO_GENERATION:
             return dict[RequestID, SchedulerResult[AudioGenerationOutput]]
+        elif self == PipelineTask.IMAGE_GENERATION:
+            return dict[RequestID, SchedulerResult[ImageGenerationOutput]]
         else:
             raise ValueError(
                 f"PipelineTask ({self}) does not have an output_type defined."
