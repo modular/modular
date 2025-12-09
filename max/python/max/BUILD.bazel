@@ -41,7 +41,6 @@ When you modify a .cpp file in the _core/src directory, you can run
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 """,
-    imports = [".."],
     include_private = True,
     pattern_file = "//max/python/max/_core/internal:patterns.nb",
     pyi_srcs = glob(["**/*.pyi"]),
@@ -55,7 +54,6 @@ When you modify a .cpp file in the _core/src directory, you can run
 modular_py_library(
     name = "max",
     srcs = [],
-    imports = [".."],
     deps = [
         ":_core",
         "//max/python/max/_core_mojo",

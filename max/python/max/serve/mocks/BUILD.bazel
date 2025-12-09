@@ -5,5 +5,4 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "mocks",
     srcs = glob(["*.py"]),
-    imports = ["../../.."],
 )

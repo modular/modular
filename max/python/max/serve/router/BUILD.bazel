@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "router",
     srcs = glob(["*.py"]),
-    imports = ["../../.."],
     deps = [
         "//max/python/max/serve/parser",
         "//max/python/max/serve/pipelines",

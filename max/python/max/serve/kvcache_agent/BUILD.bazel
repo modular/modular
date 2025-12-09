@@ -12,7 +12,6 @@ modular_py_library(
         "dispatcher_v2.py",
         "kvcache_agent.py",
     ],
-    imports = ["../../.."],
     deps = [
         requirement("grpcio"),  # NOTE: Order matters for PYTHONPATH nonsense
         "//max/python/max/pipelines/core",
@@ -30,7 +29,6 @@ modular_py_library(
         ":kvcache_agent_service_v1_grpc_py",
         ":kvcache_agent_service_v1_py",
     ],
-    imports = ["../../.."],
     tags = ["no-mypy"],
     deps = [
         requirement("protobuf"),

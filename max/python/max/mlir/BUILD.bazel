@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "mlir",
     srcs = glob(["**/*.py"]),
-    imports = ["../.."],
     deps = [
         "//max/python/max/_mlir",
     ],

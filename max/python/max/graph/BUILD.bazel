@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "graph",
     srcs = glob(["**/*.py"]),
-    imports = ["../.."],
     deps = [
         "//max/python/max:_core",
         "//max/python/max/driver",
