@@ -52,6 +52,15 @@ from .nn.data_processing import get_rope_index, mrope_pos_ids_3d
 logger = logging.getLogger("max.pipelines")
 
 
+# Pre-computed normalization constants for ImageNet
+# These are computed as: scale = 1 / (255 * std), offset = -mean / std
+# This allows simplified normalization: normalized = pixel * scale + offset
+_IMAGENET_MEAN = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
+_IMAGENET_STD = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)
+_NORM_SCALE = (1.0 / (255.0 * _IMAGENET_STD)).astype(np.float32)
+_NORM_OFFSET = (-_IMAGENET_MEAN / _IMAGENET_STD).astype(np.float32)
+
+
 def qwen2_5vl_image_preprocessing(
     image: Image.Image,
     *,
@@ -79,75 +88,63 @@ def qwen2_5vl_image_preprocessing(
     if image.mode != "RGB":
         image = image.convert("RGB")
 
-    # Image is already correctly sized by fetch_image, no need to resize
     # Get actual dimensions
     width, height = image.size
 
-    # Convert to numpy array and rescale to [0, 1]
-    img_array = np.array(image, dtype=np.float32) / 255.0
-
-    # Apply Standard ImageNet normalization (best match from testing)
-    mean = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
-    std = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)
-    img_array = (img_array - mean) / std
-
     # Calculate grid dimensions based on actual image dimensions
-    height_patches = height // patch_size
-    width_patches = width // patch_size
+    grid_h = height // patch_size
+    grid_w = width // patch_size
 
-    # Convert to numpy array
-    patches = np.array([img_array])  # Shape: (n_images, height, width, 3)
-
-    # Transpose to channel-first format
-    patches = patches.transpose(
-        0, 3, 1, 2
-    )  # Shape: (n_images, 3, height, width)
-
-    # Calculate dimensions
-    channel = patches.shape[1]
-    grid_h, grid_w = height_patches, width_patches
-
-    # Handle temporal dimension
-    if patches.shape[0] % temporal_patch_size != 0:
-        repeats = np.repeat(
-            patches[-1][np.newaxis],
-            temporal_patch_size - (patches.shape[0] % temporal_patch_size),
-            axis=0,
-        )
-        patches = np.concatenate([patches, repeats], axis=0)
-
-    # For images, grid_t should be 1 (single temporal group)
-    grid_t = 1
-
-    # Check if spatial merging is possible
+    # Check if spatial merging is possible early
     if grid_h % merge_size != 0 or grid_w % merge_size != 0:
         raise ValueError(
             f"Spatial merging is not possible because grid_h {grid_h} % merge_size {merge_size} != 0 or grid_w {grid_w} % merge_size {merge_size} != 0"
         )
-    else:
-        # Now reshape with spatial merging
-        patches = patches.reshape(
-            grid_t,  # Temporal groups (1 for images)
-            temporal_patch_size,  # Patches per temporal group (2)
-            channel,  # RGB channels (3)
-            grid_h // merge_size,  # Spatial groups in height (49)
-            merge_size,  # Patches per spatial group (2)
-            patch_size,  # Patch height (14)
-            grid_w // merge_size,  # Spatial groups in width (73)
-            merge_size,  # Patches per spatial group (2)
-            patch_size,  # Patch width (14)
-        )
 
-        # Transpose following transformers library logic
-        # This reorders dimensions to get the correct patch ordering
-        patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
+    # Convert to numpy array (float32) with simplified normalization
+    # This combines: (pixel / 255.0 - mean) / std = pixel * scale + offset
+    # Using in-place operations to reduce memory allocations
+    img_array = np.array(image, dtype=np.float32)
+    np.multiply(img_array, _NORM_SCALE, out=img_array)
+    np.add(img_array, _NORM_OFFSET, out=img_array)
 
-        # Flatten patches
-        # This preserves the patch ordering from the transpose
-        flatten_patches = patches.reshape(
-            grid_t * grid_h * grid_w,
-            channel * temporal_patch_size * patch_size * patch_size,
-        )
+    # For single images, temporal dimension is always 1 and we need to repeat
+    # for temporal_patch_size.
+    channel = 3
+    grid_t = 1
+
+    # Transpose to channel-first: (H, W, 3) -> (3, H, W)
+    img_chw = img_array.transpose(2, 0, 1)
+
+    # Repeat for temporal dimension using temporal_patch_size parameter
+    patches = np.repeat(
+        img_chw[np.newaxis], temporal_patch_size, axis=0
+    )  # (temporal_patch_size, 3, H, W)
+
+    # Reshape with spatial merging
+    # Input shape: (temporal_patch_size, channel, height, width)
+    patches = patches.reshape(
+        grid_t,  # Temporal groups (1 for images)
+        temporal_patch_size,  # Patches per temporal group (2)
+        channel,  # RGB channels (3)
+        grid_h // merge_size,  # Spatial groups in height
+        merge_size,  # Patches per spatial group (2)
+        patch_size,  # Patch height (14)
+        grid_w // merge_size,  # Spatial groups in width
+        merge_size,  # Patches per spatial group (2)
+        patch_size,  # Patch width (14)
+    )
+
+    # Transpose following transformers library logic
+    # This reorders dimensions to get the correct patch ordering
+    patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
+
+    # Flatten patches
+    # This preserves the patch ordering from the transpose
+    flatten_patches = patches.reshape(
+        grid_t * grid_h * grid_w,
+        channel * temporal_patch_size * patch_size * patch_size,
+    )
 
     # Create grid dimensions (temporal, height, width)
     image_grid_thw = (grid_t, grid_h, grid_w)
