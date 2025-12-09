@@ -165,8 +165,6 @@ def test_compare_attention_with_rope_no_opaque() -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=max_batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=32,
         devices=[device],
         session=session,

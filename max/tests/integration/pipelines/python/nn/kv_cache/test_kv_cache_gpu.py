@@ -31,8 +31,6 @@ async def _test_kv_cache_gpu() -> None:
     )
     kv_manager = PagedKVCacheManager(
         params=kv_params,
-        max_batch_size=1,
-        max_seq_len=512,
         devices=[device],
         session=InferenceSession(devices=[device]),
         total_num_pages=8,

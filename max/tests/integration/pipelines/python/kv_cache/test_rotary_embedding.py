@@ -401,8 +401,6 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=2,
-        max_seq_len=100,
         total_num_pages=8,
         devices=[CPU()],
         session=session,

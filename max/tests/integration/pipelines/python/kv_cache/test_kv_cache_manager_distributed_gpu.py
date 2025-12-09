@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-import pytest
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -41,8 +40,6 @@ def _create_kv_manager(
     )
     manager = PagedKVCacheManager(
         params=params,
-        max_batch_size=batch_size,
-        max_seq_len=100,
         devices=devices,
         session=InferenceSession(devices=devices),
         total_num_pages=8,
@@ -58,19 +55,17 @@ def test_init() -> None:
     kv_manager = _create_kv_manager(data_parallel_degree, num_devices)
     devices = kv_manager.devices
     for i, single_device_manager in enumerate(kv_manager._replica_managers):
-        assert single_device_manager.max_batch_size == 4
         assert single_device_manager.devices == [devices[i]]
-        assert single_device_manager.max_seq_len == 100
         assert single_device_manager.params.num_layers == 10
 
 
-def test_claim_until_full() -> None:
+def test_claim() -> None:
     data_parallel_degree = 2
     num_devices = 2
 
     kv_manager = _create_kv_manager(data_parallel_degree, num_devices)
 
-    max_batch_size = kv_manager.max_batch_size
+    max_batch_size = 10
     batch = []
     for i in range(max_batch_size * data_parallel_degree):
         context = create_text_context(np.empty(i))
@@ -79,14 +74,6 @@ def test_claim_until_full() -> None:
         batch.append((replica_idx, context))
 
     new_context = create_text_context(np.empty(i))
-
-    # Check that all slots have been claimed.
-    for i in range(num_devices):
-        with pytest.raises(
-            ValueError,
-            match=r"Unable to claim request ID .* due to batch size limit.",
-        ):
-            kv_manager.claim(new_context.request_id, replica_idx=i)
 
     # Release a slot.
     replica_idx, context = batch[0]

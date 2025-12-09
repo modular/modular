@@ -96,8 +96,6 @@ class _TPPagedKVCacheManager:
         params: KVCacheParams,
         total_num_pages: int,
         total_num_host_pages: int,
-        max_batch_size: int,
-        max_seq_len: int,
         devices: Sequence[Device],
         session: InferenceSession,
         zmq_endpoint_base: str | None = None,
@@ -115,8 +113,6 @@ class _TPPagedKVCacheManager:
         self.params = params
         self.total_num_pages = total_num_pages
         self.total_num_host_pages = total_num_host_pages
-        self.max_batch_size = max_batch_size
-        self.max_seq_len = max_seq_len
         self.page_size = params.page_size
         self.devices = devices
         self.session = session
@@ -290,10 +286,6 @@ class _TPPagedKVCacheManager:
 
             # Compute the total sequence length
             seq_len = ctx.current_length + num_steps - 1
-            if seq_len > self.max_seq_len:
-                raise RuntimeError(
-                    f"Request has current length ({ctx.current_length}) + num_steps ({num_steps}) - 1 = {seq_len} which exceeds model max_seq_len of {self.max_seq_len}"
-                )
             max_seq_len = max(max_seq_len, seq_len)
 
         # Allocate the buffers containing metadata about the batch.
@@ -487,10 +479,6 @@ class _TPPagedKVCacheManager:
         """Reserve a sequence ID for the given request ID."""
         if request_id in self._claimed_requests:
             raise ValueError(f"Request ID {request_id} is already claimed")
-        if len(self._claimed_requests) == self.max_batch_size:
-            raise ValueError(
-                f"Unable to claim request ID {request_id} due to batch size limit."
-            )
         self._claimed_requests.add(request_id)
 
     def contains(self, request_id: RequestID) -> bool:

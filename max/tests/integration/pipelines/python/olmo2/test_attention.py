@@ -170,8 +170,6 @@ def generate_max_outputs(
     # Set up blank KV cache.
     kv_manager = PagedKVCacheManager(
         params=kv_params,
-        max_batch_size=1,
-        max_seq_len=MAX_SEQ_LEN,
         devices=[device],
         total_num_pages=1,
         session=session,

@@ -148,8 +148,6 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=2,
-        max_seq_len=100,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -339,8 +337,6 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=2,
-        max_seq_len=100,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -474,8 +470,6 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=2,
-        max_seq_len=100,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -580,8 +574,6 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=1,
-        max_seq_len=1,
         total_num_pages=8,
         devices=[CPU()],
         session=InferenceSession(devices=[CPU()]),

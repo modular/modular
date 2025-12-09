@@ -49,8 +49,6 @@ def load_kv_manager(
         )
         return NullKVCacheManager(
             params=params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
             devices=devices,
             session=session,
         )
@@ -76,8 +74,6 @@ def load_kv_manager(
                 max_seq_len=max_seq_len,
             ),
             total_num_host_pages=params.compute_num_host_blocks(),
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
             devices=devices,
             session=session,
         )

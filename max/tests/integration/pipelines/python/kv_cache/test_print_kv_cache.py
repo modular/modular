@@ -93,8 +93,6 @@ def test_print_kv_cache(dtype: DType) -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=1,
-        max_seq_len=1,
         total_num_pages=8,
         devices=[CPU()],
         session=InferenceSession(devices=[CPU()]),

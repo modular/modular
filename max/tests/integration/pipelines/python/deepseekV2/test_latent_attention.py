@@ -105,8 +105,6 @@ def generate_max_outputs(
         devices=[Accelerator(0)],
         params=kv_params,
         total_num_pages=8,
-        max_batch_size=1,
-        max_seq_len=config.max_position_embeddings,
         session=session,
     )
 
@@ -271,8 +269,6 @@ def generate_max_outputs_dp(
         devices=[Accelerator(0)],
         params=kv_params,
         total_num_pages=8,
-        max_batch_size=1,
-        max_seq_len=config.max_position_embeddings,
         session=session,
     )
 

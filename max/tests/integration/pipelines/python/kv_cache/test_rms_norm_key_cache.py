@@ -92,8 +92,6 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -170,8 +168,6 @@ def test_partial_rms_norm_key_cache(
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -262,8 +258,6 @@ def test_rms_norm_new_key_cache(
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -366,8 +360,6 @@ def test_rms_norm_key_cache_dtype_mismatch(
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -415,8 +407,6 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,

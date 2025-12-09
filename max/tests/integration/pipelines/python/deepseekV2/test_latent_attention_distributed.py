@@ -101,8 +101,6 @@ def _single_gpu_baseline(
         devices=[Accelerator(0)],
         params=kv_params,
         total_num_pages=8,
-        max_batch_size=1,
-        max_seq_len=config.max_position_embeddings,
         session=session,
     )
 
@@ -361,8 +359,6 @@ def _run_distributed_dp(
         devices=devices,
         params=_build_kv_params(config, dp_degree),
         total_num_pages=8,
-        max_batch_size=dp_degree,  # one request per replica
-        max_seq_len=config.max_position_embeddings,
         session=session,
     )
 

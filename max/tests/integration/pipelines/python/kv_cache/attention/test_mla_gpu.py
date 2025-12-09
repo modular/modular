@@ -46,8 +46,6 @@ def test_mla_prefill_plan() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        max_batch_size=2,
-        max_seq_len=100,
         devices=[Accelerator(0)],
         session=session,
     )
@@ -157,8 +155,6 @@ def test_mla_decompress_k_cache() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        max_batch_size=2,
-        max_seq_len=100,
         devices=[Accelerator(0)],
         session=session,
     )
@@ -303,8 +299,6 @@ def test_mla_decompress_k_cache_only_k() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        max_batch_size=2,
-        max_seq_len=100,
         devices=[Accelerator(0)],
         session=session,
     )

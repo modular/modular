@@ -70,8 +70,6 @@ class PagedKVCacheManager:
         self,
         params: KVCacheParams,
         total_num_pages: int,
-        max_batch_size: int,
-        max_seq_len: int,
         devices: Sequence[Device],
         session: InferenceSession,
         total_num_host_pages: int = 0,
@@ -89,11 +87,6 @@ class PagedKVCacheManager:
             enable_runtime_checks: Whether to enable runtime checks
         """
         self.params = params
-        self.max_seq_len = max_seq_len
-        self.max_batch_size = max_batch_size
-
-        if max_batch_size == 0:
-            raise ValueError("Cannot have a max batch size of 0")
 
         # The effective total number of pages is .
         self.num_replicas = params.data_parallel_degree
@@ -111,8 +104,6 @@ class PagedKVCacheManager:
                     params=dp_1_params,
                     total_num_pages=total_num_pages,
                     total_num_host_pages=total_num_host_pages,
-                    max_batch_size=max_batch_size,
-                    max_seq_len=max_seq_len,
                     devices=devices,
                     session=session,
                     zmq_endpoint_base=zmq_endpoint_base,

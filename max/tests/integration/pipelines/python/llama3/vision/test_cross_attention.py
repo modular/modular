@@ -186,8 +186,6 @@ def test_cross_attention(
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=8,
-        max_batch_size=batch_size,
-        max_seq_len=config.max_position_embeddings,
         devices=[CPU()],
         session=session,
     )

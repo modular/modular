@@ -90,8 +90,6 @@ def create_paged_manager(
         params=kv_params,
         total_num_pages=num_blocks,
         total_num_host_pages=num_host_pages,
-        max_batch_size=max_batch_size,
-        max_seq_len=max_seq_len,
         devices=[device] * dp,
         session=session,
         enable_runtime_checks=True,
@@ -145,7 +143,7 @@ def create_paged_scheduler(
         data_parallel_degree=dp,
         kvcache_ce_watermark=kvcache_ce_watermark,
     )
-    token_pipeline = FakeTokenGeneratorPipeline(paged_manager)
+    token_pipeline = FakeTokenGeneratorPipeline(paged_manager, max_seq_len)
     request_queue: queue.Queue[TextContext] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
@@ -168,15 +166,19 @@ class FakeTokenGeneratorPipeline(
     Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput]
 ):
     def __init__(
-        self, kv_manager: PagedKVCacheManager, start_token_id: int = 42
+        self,
+        kv_manager: PagedKVCacheManager,
+        max_seq_len: int,
+        start_token_id: int = 42,
     ) -> None:
         self.kv_manager = kv_manager
         self.token_id = start_token_id
+        self.max_seq_len = max_seq_len
 
     def execute(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
-        max_seq_len = self.kv_manager.max_seq_len
+        max_seq_len = self.max_seq_len
         # Truncate num steps based on the max seq len
         for context in inputs.batch.values():
             num_available_steps = context.compute_num_available_steps(

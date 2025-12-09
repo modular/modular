@@ -196,8 +196,6 @@ def test_cross_attention_gpu(
     )
     kv_manager = PagedKVCacheManager(
         params=kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=config.max_position_embeddings,
         session=session,
         devices=[cuda],
         total_num_pages=2,

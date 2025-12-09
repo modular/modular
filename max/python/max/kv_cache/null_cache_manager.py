@@ -52,8 +52,6 @@ class NullKVCacheManager:
     def __init__(
         self,
         params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
         devices: Sequence[Device],
         session: InferenceSession,
     ) -> None:
@@ -61,15 +59,11 @@ class NullKVCacheManager:
 
         Args:
             params: The KV cache parameters for the pipeline.
-            max_batch_size: The maximum batch size to support.
-            max_seq_len: The maximum sequence length to support.
             devices: The list of virtual devices.
             session: The inference session for graph operations.
             available_cache_memory: The nominal available cache memory in bytes.
         """
         self.params = params
-        self.max_batch_size = max_batch_size
-        self.max_seq_len = max_seq_len
         self.devices = devices
         self.session = session
         self._metrics = KVCacheMetrics()
