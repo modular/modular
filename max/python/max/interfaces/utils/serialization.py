@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import functools
+import logging
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -22,6 +24,8 @@ import msgspec
 import numpy as np
 
 from .shared_memory import ndarray_to_shared_memory, open_shm_array
+
+logger = logging.getLogger("max.interfaces")
 
 
 def numpy_encoder_hook(
@@ -95,7 +99,18 @@ class MsgpackNumpyEncoder:
             shared_memory_threshold: Minimum size in bytes for shared memory conversion.
                                     If 0, all arrays are candidates for conversion.
         """
-        self._use_shared_memory = use_shared_memory
+
+        if (
+            use_shared_memory
+            and float(os.environ.get("MODULAR_MAX_SHM_WATERMARK", 0.9)) == 0.0
+        ):
+            logger.warning(
+                "MODULAR_MAX_SHM_WATERMARK is set to 0.0, shared memory will be disabled."
+            )
+            self._use_shared_memory = False
+        else:
+            self._use_shared_memory = use_shared_memory
+
         self._shared_memory_threshold = shared_memory_threshold
         self._encoder: msgspec.msgpack.Encoder | None = None
         self._create_encoder()

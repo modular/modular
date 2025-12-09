@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 import weakref
 from multiprocessing import shared_memory
@@ -26,6 +27,10 @@ import numpy.typing as npt
 from max.profiler import Tracer
 
 logger = logging.getLogger(__name__)
+
+SHARED_MEMORY_WATERMARK = float(os.getenv("MODULAR_MAX_SHM_WATERMARK", 0.9))
+LAST_WARNING = time.monotonic()
+WARNING_INTERVAL = 30.0  # seconds
 
 
 def can_allocate(size: int) -> bool:
@@ -44,8 +49,7 @@ def can_allocate(size: int) -> bool:
         # If we can't check capacity, assume we can allocate.
         return True
 
-    watermark = float(os.getenv("MODULAR_MAX_SHM_WATERMARK", "0.8"))
-    return size < available * watermark
+    return size < available * SHARED_MEMORY_WATERMARK
 
 
 class SharedMemoryArray:
@@ -75,12 +79,15 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
     """
     # Check shared memory capacity.
     if not can_allocate(arr.nbytes):
-        logger.warning(
-            "Unable to allocate shared memory for array (size: %d bytes). "
-            "Consider increasing the shared memory watermark (set MODULAR_MAX_SHM_WATERMARK), "
-            "expanding /dev/shm capacity, or reducing concurrency.",
-            arr.nbytes,
-        )
+        global LAST_WARNING
+        if time.monotonic() - LAST_WARNING > WARNING_INTERVAL:
+            LAST_WARNING = time.monotonic()
+            logger.warning(
+                "Unable to allocate shared memory for array (size: %d bytes). "
+                "Consider increasing the shared memory watermark (set MODULAR_MAX_SHM_WATERMARK), "
+                "expanding /dev/shm capacity, or reducing concurrency.",
+                arr.nbytes,
+            )
         return None
 
     elif arr.nbytes == 0:
