@@ -99,7 +99,7 @@ struct InlineArray[
     comptime device_type: AnyType = Self
     """The device-side type for this array."""
 
-    fn _to_device_type(self, target: LegacyOpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
 

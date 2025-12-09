@@ -27,7 +27,6 @@ from sys.info import bit_width_of
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, DivModable, Powable
-from memory import LegacyOpaquePointer as OpaquePointer
 from python import (
     ConvertibleFromPython,
     ConvertibleToPython,
@@ -217,7 +216,7 @@ struct Int(
     comptime device_type: AnyType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 

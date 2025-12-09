@@ -133,7 +133,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     comptime device_type: AnyType = Self
     """The device-side type for this `Span`."""
 
-    fn _to_device_type(self, target: LegacyOpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 

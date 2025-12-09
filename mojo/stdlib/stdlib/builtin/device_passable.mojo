@@ -11,11 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import (
-    LegacyUnsafePointer as UnsafePointer,
-    LegacyOpaquePointer as OpaquePointer,
-)
-
 
 trait DevicePassable:
     """This trait marks types as passable to accelerator devices."""
@@ -23,7 +18,7 @@ trait DevicePassable:
     comptime device_type: AnyType
     """Indicate the type being used on accelerator devices."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """
         Convert the host type object to a device_type and store it at the
         target address.

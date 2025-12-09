@@ -317,7 +317,7 @@ struct LayoutTensor[
     comptime device_type: AnyType = Self
     """The device-side type representation."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod

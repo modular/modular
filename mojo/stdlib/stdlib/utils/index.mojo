@@ -25,7 +25,6 @@ from sys import bit_width_of
 
 from builtin.device_passable import DevicePassable
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
-from memory import LegacyOpaquePointer
 
 from .static_tuple import StaticTuple
 
@@ -757,7 +756,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         for i in range(Self.size):
             hasher.update(self.data[i])
 
-    fn _to_device_type(self, target: LegacyOpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """
         Convert the host type object to a device_type and store it at the
         target address.

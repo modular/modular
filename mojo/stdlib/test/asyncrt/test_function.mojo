@@ -34,7 +34,9 @@ struct TwoS:
 struct OneS(DevicePassable):
     comptime device_type: AnyType = TwoS
 
-    fn _to_device_type(self, target: LegacyOpaquePointer):
+    fn _to_device_type[
+        origin: MutOrigin
+    ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = TwoS(self.s)
 
     @staticmethod
