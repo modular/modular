@@ -506,11 +506,14 @@ specifications.
 <Tabs groupId="os">
 <TabItem value="mac" label="Mac">
 
-- macOS Ventura (13) or later
+- macOS Sequoia (15) or later
 - Apple silicon (M1/M2/M3/M4 processor)
 - Python 3.10 - 3.14
-- Xcode or Xcode Command Line Tools
-- We currently don't support Mac GPUs
+- Xcode or Xcode Command Line Tools 16 or later
+- We have [limited compatibility](#gpu-compatibility) for Apple Silicon GPUs.
+  You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
+  downloads the Metal utilities required for GPU programming in later versions
+  of Xcode.
 
 </TabItem>
 <TabItem value="linux" label="Linux">
