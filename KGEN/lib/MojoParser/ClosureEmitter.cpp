@@ -2448,10 +2448,12 @@ void ClosureEmitter::addConformanceToDevicePassable(
         StructType structType = cast<StructType>(targetArgument.getType());
         assert(structType.getParamValues().size() > 1 &&
                "expected pointer to be parameterized on element type");
+        // UnsafePointer parameters: [mut: Bool, type: AnyType, origin, ...]
+        // The element type is at index 1.
         auto pointerElementType =
-            dyn_cast<KGEN::TypeParamAttr>(structType.getParamValues().front());
+            dyn_cast<KGEN::TypeParamAttr>(structType.getParamValues()[1]);
         assert(pointerElementType &&
-               "expected a the pointer type's first parameter to "
+               "expected the pointer type's second parameter to "
                "indicate its element type");
         Value addressRef =
             StructExtractOp::create(

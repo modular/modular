@@ -153,8 +153,8 @@ fn mutateInt(mut a: Int):
 
 
 fn initialize_in_addrspace(
-    memptr: UnsafePointer[MemExample, address_space = AddressSpace(1)],
-    regptr: UnsafePointer[Int, address_space = AddressSpace(1)],
+    memptr: UnsafePointer[MemExample, MutAnyOrigin, address_space = AddressSpace(1)],
+    regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
 ):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied or moved into a non-default address space}}
     memptr[] = MemExample()
@@ -163,8 +163,8 @@ fn initialize_in_addrspace(
 
 
 fn mutate_in_addrspace(
-    memptr: UnsafePointer[MemExample, address_space = AddressSpace(1)],
-    regptr: UnsafePointer[Int, address_space = AddressSpace(1)],
+    memptr: UnsafePointer[MemExample, MutAnyOrigin, address_space = AddressSpace(1)],
+    regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
 ):
     # expected-error @+1 {{non-trivial value cannot be copied from a non-default address space}}
     mutateMem(memptr[])
@@ -173,8 +173,8 @@ fn mutate_in_addrspace(
 
 
 fn variadic_addr_space(
-    memptr: UnsafePointer[MemExample, address_space = AddressSpace(1)],
-    regptr: UnsafePointer[Int, address_space = AddressSpace(1)],
+    memptr: UnsafePointer[MemExample, MutAnyOrigin, address_space = AddressSpace(1)],
+    regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
 ):
     # expected-error @below {{non-trivial value cannot be copied from a non-default address space}}
     pack_func(memptr[])

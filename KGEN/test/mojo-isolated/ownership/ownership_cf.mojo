@@ -47,8 +47,8 @@ struct MemExample(ImplicitlyCopyable):
     fn __bool__(self) -> Bool:
         return True
 
-    fn unsafe_ptr(self) -> UnsafePointer[Int]:
-        return UnsafePointer[Int]()
+    fn unsafe_ptr(self) -> UnsafePointer[Int, MutAnyOrigin]:
+        return UnsafePointer[Int, MutAnyOrigin]()
 
     fn __del__(deinit self):
         pass

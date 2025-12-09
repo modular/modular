@@ -12,10 +12,10 @@
 
 
 struct MyList[T: ImplicitlyCopyable]:
-    var data: UnsafePointer[Self.T]
+    var data: UnsafePointer[Self.T, MutAnyOrigin]
 
     fn __init__(out self):
-        self.data = UnsafePointer[Self.T]()
+        self.data = UnsafePointer[Self.T, MutAnyOrigin]()
 
     fn __del__(deinit self):
         pass

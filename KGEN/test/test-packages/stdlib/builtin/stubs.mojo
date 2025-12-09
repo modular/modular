@@ -508,18 +508,16 @@ struct Span[
     origin: Origin[mut],
 ]:
     # Field
-    var _data: UnsafePointer[Self.T, mut = Self.mut, origin = Self.origin]
+    var _data: UnsafePointer[Self.T, Self.origin]
     var _len: Int
 
     fn __init__(out self):
-        self._data = UnsafePointer[
-            Self.T, mut = Self.mut, origin = Self.origin
-        ]()
+        self._data = UnsafePointer[Self.T, Self.origin]()
         self._len = 0
 
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Self.T, mut = Self.mut, origin = Self.origin,]:
+    ) -> UnsafePointer[Self.T, Self.origin]:
         return self._data
 
 
@@ -560,7 +558,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
     @always_inline
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, mut=mut, origin=origin]:
+    ) -> UnsafePointer[Byte, origin]:
         return self._slice.unsafe_ptr()
 
     @always_inline
@@ -637,7 +635,7 @@ struct String(ImplicitlyCopyable, KeyElement):
 
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[UInt8, mut=False, origin = origin_of(self)]:
+    ) -> UnsafePointer[UInt8, origin_of(self)]:
         return {}
 
 
@@ -1084,15 +1082,15 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
 
 @register_passable("trivial")
 struct UnsafePointer[
-    T: AnyType,
+    mut: Bool, //,
+    type: AnyType,
+    origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],
 ]:
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
-        Self.T,
+        Self.type,
         `,`,
         Self.address_space._value._mlir_value,
         `>`,
@@ -1109,7 +1107,9 @@ struct UnsafePointer[
 
     @always_inline("nodebug")
     fn __init__(
-        out self, *, ref [Self.address_space._value._mlir_value]to: Self.T
+        out self,
+        *,
+        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -1119,16 +1119,16 @@ struct UnsafePointer[
         self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
 
     @staticmethod
-    fn address_of(ref [Self.address_space]arg: Self.T) -> Self:
+    fn address_of(ref [Self.address_space]arg: Self.type) -> Self:
         return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))
 
-    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.T:
+    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
         while __mlir_attr.true:
             pass
 
     fn __getitem__(
         self, offset: Int
-    ) -> ref [Self.origin, Self.address_space] Self.T:
+    ) -> ref [Self.origin, Self.address_space] Self.type:
         while __mlir_attr.true:
             pass
 
@@ -1140,9 +1140,16 @@ struct UnsafePointer[
     ](ref [self_origin]self, offset: Int = 0) -> ref [
         Origin[True].cast_from[_lit_indirect_origin[self_origin].result],
         Self.address_space,
-    ] Self.T:
+    ] Self.type:
         while __mlir_attr.true:
             pass
+
+
+comptime MutOpaquePointer[
+    origin: MutOrigin,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = UnsafePointer[NoneType, origin, address_space=address_space]
 
 
 @register_passable("trivial")
