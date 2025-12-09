@@ -296,7 +296,8 @@ async def test_prefix_caching_with_random_prompts(
             orig_start_idx = context.start_idx
             for tok in prompt:
                 context.update(tok)
-            context.set_token_indices(start_idx=orig_start_idx)
+
+            context.rewind_processing(context.start_idx - orig_start_idx)
 
             # This fetch can trigger evictions from the tree.
             for ctx in batch:
@@ -600,7 +601,7 @@ async def test_prefix_caching_grouped_prefixes(
             orig_start_idx = ctx.start_idx
             for tok in extended:
                 ctx.update(tok)
-            ctx.set_token_indices(start_idx=orig_start_idx)
+            ctx.rewind_processing(ctx.start_idx - orig_start_idx)
 
         ctxs = list(batch.values())
         orig_request_ids_and_prompts = {
@@ -643,7 +644,7 @@ def run_forward(
     orig_start_idx = ctx.start_idx
     for tok in prompt:
         ctx.update(tok)
-    ctx.set_token_indices(start_idx=orig_start_idx)
+    ctx.rewind_processing(ctx.start_idx - orig_start_idx)
     if orig_start_idx == 0:
         ctx._prompt_len = len(prompt)
     batch = [ctx]

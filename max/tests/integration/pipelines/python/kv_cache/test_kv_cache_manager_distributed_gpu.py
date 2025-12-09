@@ -124,7 +124,7 @@ def test_step() -> None:
             orig_start_idx = ctx.start_idx
             for _ in range(prompt_lens[i] - 1):
                 ctx.update(42)
-            ctx.set_token_indices(start_idx=orig_start_idx)
+            ctx.rewind_processing(ctx.start_idx - orig_start_idx)
 
 
 @dataclass

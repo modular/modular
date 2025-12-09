@@ -347,13 +347,13 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         new_active_idx = active_idx + self._active_idx
         new_end_idx = end_idx + self._end_idx
 
-        self.set_token_indices(
+        self._set_token_indices(
             start_idx=new_start_idx,
             active_idx=new_active_idx,
             end_idx=new_end_idx,
         )
 
-    def set_token_indices(
+    def _set_token_indices(
         self,
         start_idx: int | None = None,
         active_idx: int | None = None,
@@ -707,16 +707,20 @@ class TextAndVisionContext(
         )
         self._validate_state()
 
-    def set_token_indices(
+    def _set_token_indices(
         self,
         start_idx: int | None = None,
         active_idx: int | None = None,
         end_idx: int | None = None,
     ) -> None:
         self._validate_state()
-        super().set_token_indices(
+        super()._set_token_indices(
             start_idx=start_idx, active_idx=active_idx, end_idx=end_idx
         )
+        self._validate_state()
+
+    def chunk(self, chunk_size: int) -> None:
+        super().chunk(chunk_size)
         self._validate_state()
 
     def update(

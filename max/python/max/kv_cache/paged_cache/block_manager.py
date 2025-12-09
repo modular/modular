@@ -218,11 +218,7 @@ class BlockManager:
             )
             # Update BlockManager's committed index and advance ctx start_idx
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
-            ctx.set_token_indices(start_idx=new_committed_idx)
-            assert ctx.start_idx == new_committed_idx
-
-            # Check that the cached_idx has increased.
-            assert ctx.start_idx > orig_start_idx
+            ctx.skip_processing(new_committed_idx - ctx.start_idx)
 
     @traced
     def _count_full_blocks_from_prefix_cache(
@@ -603,9 +599,11 @@ class BlockManager:
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
             self.device_block_pool.free_block(block)
-        ctx.set_token_indices(
-            start_idx=self.req_to_committed_idx[ctx.request_id]
-        )
+        delta = ctx.start_idx - self.req_to_committed_idx[ctx.request_id]
+        if delta > 0:
+            ctx.rewind_processing(delta)
+        elif delta < 0:
+            ctx.skip_processing(-delta)
 
     @traced
     def get_req_blocks(self, request_id: RequestID) -> list[int]:

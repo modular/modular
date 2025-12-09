@@ -798,14 +798,9 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     while processed_tokens < new_prompt_len:
         # Calculate current chunk size
         remaining_tokens = new_prompt_len - processed_tokens
-        current_chunk_size = min(chunk_size, remaining_tokens)
-
-        # Simulate what the scheduler does: set indices for chunked processing
-        context.set_token_indices(
-            start_idx=processed_tokens,
-            active_idx=processed_tokens + current_chunk_size,
-            end_idx=new_prompt_len,
-        )
+        current_chunk_size = min(remaining_tokens, chunk_size)
+        if current_chunk_size < remaining_tokens:
+            context.chunk(current_chunk_size)
 
         # Before simulating the update call, verify needs_ce
         assert context.needs_ce is True, (
@@ -949,17 +944,17 @@ def test_text_and_vision_context_happy_case() -> None:
     assert ctx.needs_vision_encoding is True
     assert len(ctx.next_images) == 2
 
-    ctx.set_token_indices(start_idx=9)
+    ctx.skip_processing(9)
     assert ctx.image_idx == 1
     assert ctx.needs_vision_encoding is True
     assert len(ctx.next_images) == 1
 
-    ctx.set_token_indices(start_idx=14)
+    ctx.skip_processing(5)
     assert ctx.image_idx == 1
     assert ctx.needs_vision_encoding is True
     assert len(ctx.next_images) == 1
 
-    ctx.set_token_indices(start_idx=19)
+    ctx.skip_processing(5)
     assert ctx.image_idx == 2
     assert ctx.needs_vision_encoding is False
     assert len(ctx.next_images) == 0
@@ -1048,7 +1043,7 @@ def test_text_and_vision_context_sad_case() -> None:
         ValueError,
         match="It is invalid for the active_idx \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
     ):
-        ctx.set_token_indices(active_idx=7)
+        ctx.chunk(7)
 
     with pytest.raises(
         ValueError,

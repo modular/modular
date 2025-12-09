@@ -370,24 +370,6 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
-    def set_token_indices(
-        self,
-        start_idx: int | None = None,
-        active_idx: int | None = None,
-        end_idx: int | None = None,
-    ) -> None:
-        """Set token indices to specific absolute values.
-
-        This method provides direct control over token index positioning,
-        allowing precise management of the token array state.
-
-        Args:
-            start_idx: New absolute value for ``start_idx``, if provided.
-            active_idx: New absolute value for ``active_idx``, if provided.
-            end_idx: New absolute value for ``end_idx``, if provided.
-        """
-        ...
-
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt.
         This method is used when a request is evicted, meaning that the context
