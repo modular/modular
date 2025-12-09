@@ -167,6 +167,16 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="Audio output length in milliseconds",
     ),  # type: ignore
+    "maxserve.input_tokens_per_request": _meter.create_histogram(
+        "maxserve.input_tokens_per_request",
+        unit="tokens",
+        description="Distribution of input tokens per request",
+    ),  # type: ignore
+    "maxserve.output_tokens_per_request": _meter.create_histogram(
+        "maxserve.output_tokens_per_request",
+        unit="tokens",
+        description="Distribution of output tokens per request",
+    ),  # type: ignore
 }
 
 
@@ -429,6 +439,18 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement("maxserve.tts.audio_output_length", length_ms),
             MetricLevel.DETAILED,
+        )
+
+    def input_tokens_per_request(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.input_tokens_per_request", value),
+            MetricLevel.BASIC,
+        )
+
+    def output_tokens_per_request(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.output_tokens_per_request", value),
+            MetricLevel.BASIC,
         )
 
 

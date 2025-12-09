@@ -120,12 +120,21 @@ def record_request_start() -> None:
 
 @traced
 def record_request_end(
-    status_code: int, request_path: str, elapsed_ms: float, n_tokens: int
+    status_code: int,
+    request_path: str,
+    elapsed_ms: float,
+    output_tokens: int | None = None,
+    input_tokens: int | None = None,
 ) -> None:
     METRICS.reqs_running(-1)
     METRICS.request_count(status_code, request_path)
     METRICS.request_time(elapsed_ms, request_path)
-    METRICS.output_tokens(n_tokens)
+    if output_tokens is not None:
+        METRICS.output_tokens(output_tokens)
+        METRICS.output_tokens_per_request(output_tokens)
+    if input_tokens is not None:
+        METRICS.input_tokens(input_tokens)
+        METRICS.input_tokens_per_request(input_tokens)
 
 
 def get_finish_reason_from_status(
@@ -330,6 +339,7 @@ class OpenAIChatResponseGenerator(
                 request.request_path,
                 request_timer.elapsed_ms,
                 n_tokens,
+                prompt_tokens,
             )
 
     async def complete(
@@ -342,6 +352,7 @@ class OpenAIChatResponseGenerator(
         request = requests[0]
         record_request_start()
         n_tokens = 0
+        prompt_tokens: int | None = None
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         status_code = 200
         tool_use = request.tools is not None
@@ -350,6 +361,8 @@ class OpenAIChatResponseGenerator(
             completed_outputs = await self.pipeline.all_tokens(request)
 
             n_tokens = len(completed_outputs)
+            if n_tokens > 0:
+                prompt_tokens = completed_outputs[0].prompt_token_count
 
             response_message = "".join(
                 output.decoded_token if output.decoded_token is not None else ""
@@ -420,6 +433,7 @@ class OpenAIChatResponseGenerator(
                 request.request_path,
                 request_timer.elapsed_ms,
                 n_tokens,
+                prompt_tokens,
             )
 
     def _parse_resp_to_json(self, text: str) -> list[Any] | None:
@@ -516,7 +530,6 @@ class OpenAIEmbeddingsResponseGenerator:
                 status_code,
                 metrics_req.request_path,
                 request_timer.elapsed_ms,
-                0,
             )
 
 
@@ -1006,6 +1019,7 @@ class OpenAICompletionResponseGenerator(
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
+        prompt_tokens = 0
         status_code = 200
         try:
             async for token in self.pipeline.next_token(request):
@@ -1015,6 +1029,9 @@ class OpenAICompletionResponseGenerator(
                     n_tokens,
                     token.decoded_token,
                 )
+
+                if token.prompt_token_count:
+                    prompt_tokens = token.prompt_token_count
 
                 log_probs = _process_log_probabilities([token])
 
@@ -1090,6 +1107,7 @@ class OpenAICompletionResponseGenerator(
                 request.request_path,
                 request_timer.elapsed_ms,
                 n_tokens,
+                prompt_tokens,
             )
 
     async def complete(
@@ -1099,6 +1117,7 @@ class OpenAICompletionResponseGenerator(
         # request and timestamp, request id, path should all be the same.
         record_request_start()
         n_tokens = 0
+        prompt_tokens = 0
         request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
         status_code = 200
 
@@ -1109,6 +1128,8 @@ class OpenAICompletionResponseGenerator(
             response_choices = []
             for i, req_outputs in enumerate(req_output_list):
                 n_tokens += len(req_outputs)
+                if req_outputs and req_outputs[0].prompt_token_count:
+                    prompt_tokens += req_outputs[0].prompt_token_count
 
                 log_probs = _process_log_probabilities(req_outputs)
                 response_message = "".join(
@@ -1148,6 +1169,7 @@ class OpenAICompletionResponseGenerator(
                 requests[0].request_path,
                 request_timer.elapsed_ms,
                 n_tokens,
+                prompt_tokens,
             )
 
 
