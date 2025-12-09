@@ -403,41 +403,15 @@ struct NDBuffer[
         )
 
     @always_inline
-    fn __init__[
-        _dtype: DType,
-        _rank: Int,
-        _shape: DimList = DimList.create_unknown[_rank](),
-        _strides: DimList = DimList.create_unknown[_rank](),
-        _alignment2: Int = 1,
-        _address_space: AddressSpace = AddressSpace.GENERIC,
-        _exclusive: Bool = True,
-    ](
-        out self: NDBuffer[
-            _dtype,
-            _rank,
-            MutAnyOrigin,
-            _shape,
-            _strides,
-            alignment2=_alignment2,
-            address_space=_address_space,
-            exclusive=_exclusive,
-        ],
-        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
-        dynamic_shape: IndexList[_rank, **_],
+    fn __init__(
+        out self: Self.OriginCastType[MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype], *_, **_],
+        dynamic_shape: IndexList[Self.rank, **_],
     ):
         """Constructs an NDBuffer with MutAnyOrigin from any pointer.
 
         This overload allows origin erasure when constructing an NDBuffer with
         MutAnyOrigin, accepting pointers with any origin.
-
-        Parameters:
-            _dtype: The element type of the buffer.
-            _rank: The rank of the buffer.
-            _shape: The static shape of the buffer.
-            _strides: The static strides of the buffer.
-            _alignment2: The alignment of the buffer.
-            _address_space: The address space of the buffer.
-            _exclusive: Whether the buffer has exclusive access.
 
         Args:
             ptr: Pointer to the data.
@@ -447,7 +421,7 @@ struct NDBuffer[
         self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
             dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
         )
-        self.dynamic_stride = _compute_ndbuffer_stride[_rank](
+        self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
             self.dynamic_shape
         )
 
@@ -474,26 +448,9 @@ struct NDBuffer[
         self = Self(ptr, _make_tuple[Self.rank](dynamic_shape))
 
     @always_inline
-    fn __init__[
-        _dtype: DType,
-        _rank: Int,
-        _shape: DimList = DimList.create_unknown[_rank](),
-        _strides: DimList = DimList.create_unknown[_rank](),
-        _alignment2: Int = 1,
-        _address_space: AddressSpace = AddressSpace.GENERIC,
-        _exclusive: Bool = True,
-    ](
-        out self: NDBuffer[
-            _dtype,
-            _rank,
-            MutAnyOrigin,
-            _shape,
-            _strides,
-            alignment2=_alignment2,
-            address_space=_address_space,
-            exclusive=_exclusive,
-        ],
-        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
+    fn __init__(
+        out self: Self.OriginCastType[MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype], *_, **_],
         dynamic_shape: DimList,
     ):
         """Constructs an NDBuffer with MutAnyOrigin from any pointer.
@@ -501,25 +458,16 @@ struct NDBuffer[
         This overload allows origin erasure when constructing an NDBuffer with
         MutAnyOrigin, accepting pointers with any origin.
 
-        Parameters:
-            _dtype: The element type of the buffer.
-            _rank: The rank of the buffer.
-            _shape: The static shape of the buffer.
-            _strides: The static strides of the buffer.
-            _alignment2: The alignment of the buffer.
-            _address_space: The address space of the buffer.
-            _exclusive: Whether the buffer has exclusive access.
-
         Args:
             ptr: Pointer to the data.
             dynamic_shape: A DimList of size 'rank' representing shapes.
         """
-        var shape_tuple = _make_tuple[_rank](dynamic_shape)
+        var shape_tuple = _make_tuple[Self.rank](dynamic_shape)
         self.data = rebind[type_of(self.data)](ptr)
         self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
             shape_tuple.cast[type_of(self.dynamic_shape).element_type]()
         )
-        self.dynamic_stride = _compute_ndbuffer_stride[_rank](
+        self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
             self.dynamic_shape
         )
 
@@ -554,42 +502,16 @@ struct NDBuffer[
         )
 
     @always_inline
-    fn __init__[
-        _dtype: DType,
-        _rank: Int,
-        _shape: DimList = DimList.create_unknown[_rank](),
-        _strides: DimList = DimList.create_unknown[_rank](),
-        _alignment2: Int = 1,
-        _address_space: AddressSpace = AddressSpace.GENERIC,
-        _exclusive: Bool = True,
-    ](
-        out self: NDBuffer[
-            _dtype,
-            _rank,
-            MutAnyOrigin,
-            _shape,
-            _strides,
-            alignment2=_alignment2,
-            address_space=_address_space,
-            exclusive=_exclusive,
-        ],
-        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
-        dynamic_shape: IndexList[_rank, **_],
-        dynamic_stride: IndexList[_rank, **_],
+    fn __init__(
+        out self: Self.OriginCastType[MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype], *_, **_],
+        dynamic_shape: IndexList[Self.rank, **_],
+        dynamic_stride: IndexList[Self.rank, **_],
     ):
         """Constructs a strided NDBuffer with MutAnyOrigin from any pointer.
 
         This overload allows origin erasure when constructing an NDBuffer with
         MutAnyOrigin, accepting pointers with any origin.
-
-        Parameters:
-            _dtype: The element type of the buffer.
-            _rank: The rank of the buffer.
-            _shape: The static shape of the buffer.
-            _strides: The static strides of the buffer.
-            _alignment2: The alignment of the buffer.
-            _address_space: The address space of the buffer.
-            _exclusive: Whether the buffer has exclusive access.
 
         Args:
             ptr: Pointer to the data.
@@ -633,49 +555,23 @@ struct NDBuffer[
         )
 
     @always_inline
-    fn __init__[
-        _dtype: DType,
-        _rank: Int,
-        _shape: DimList = DimList.create_unknown[_rank](),
-        _strides: DimList = DimList.create_unknown[_rank](),
-        _alignment2: Int = 1,
-        _address_space: AddressSpace = AddressSpace.GENERIC,
-        _exclusive: Bool = True,
-    ](
-        out self: NDBuffer[
-            _dtype,
-            _rank,
-            MutAnyOrigin,
-            _shape,
-            _strides,
-            alignment2=_alignment2,
-            address_space=_address_space,
-            exclusive=_exclusive,
-        ],
-        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
+    fn __init__(
+        out self: Self.OriginCastType[MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype], *_, **_],
         dynamic_shape: DimList,
-        dynamic_stride: IndexList[_rank, **_],
+        dynamic_stride: IndexList[Self.rank, **_],
     ):
         """Constructs a strided NDBuffer with MutAnyOrigin from any pointer.
 
         This overload allows origin erasure when constructing an NDBuffer with
         MutAnyOrigin, accepting pointers with any origin.
 
-        Parameters:
-            _dtype: The element type of the buffer.
-            _rank: The rank of the buffer.
-            _shape: The static shape of the buffer.
-            _strides: The static strides of the buffer.
-            _alignment2: The alignment of the buffer.
-            _address_space: The address space of the buffer.
-            _exclusive: Whether the buffer has exclusive access.
-
         Args:
             ptr: Pointer to the data.
             dynamic_shape: A DimList of size 'rank' representing shapes.
             dynamic_stride: A static tuple of size 'rank' representing strides.
         """
-        var shape_tuple = _make_tuple[_rank](dynamic_shape)
+        var shape_tuple = _make_tuple[Self.rank](dynamic_shape)
         self.data = rebind[type_of(self.data)](ptr)
         self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
             shape_tuple.cast[type_of(self.dynamic_shape).element_type]()
@@ -684,10 +580,7 @@ struct NDBuffer[
             dynamic_stride.cast[type_of(self.dynamic_shape).element_type]()
         )
 
-    comptime OriginCastType[
-        target_mut: Bool,
-        target_origin: Origin[target_mut],
-    ] = NDBuffer[
+    comptime OriginCastType[target_origin: Origin] = NDBuffer[
         Self.dtype,
         Self.rank,
         target_origin,
@@ -700,14 +593,13 @@ struct NDBuffer[
     """Type alias for casting this buffer to a different origin.
 
     Parameters:
-        target_mut: Whether the target buffer is mutable.
         target_origin: The target origin to cast to.
     """
 
     @always_inline("nodebug")
     fn get_immutable(
         self,
-    ) -> Self.OriginCastType[False, ImmutOrigin.cast_from[Self.origin]]:
+    ) -> Self.OriginCastType[ImmutOrigin.cast_from[Self.origin]]:
         """Changes the mutability of the `NDBuffer` to immutable.
 
         Returns:
@@ -722,7 +614,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn as_any_origin(
         self: NDBuffer[mut=True, *_, **_],
-    ) -> type_of(self).OriginCastType[True, MutAnyOrigin]:
+    ) -> type_of(self).OriginCastType[MutAnyOrigin]:
         """Changes the origin of the `NDBuffer` to `MutAnyOrigin`.
 
         Returns:
@@ -745,7 +637,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn as_any_origin(
         self: NDBuffer[mut=False, *_, **_],
-    ) -> type_of(self).OriginCastType[False, ImmutAnyOrigin]:
+    ) -> type_of(self).OriginCastType[ImmutAnyOrigin]:
         """Changes the origin of the `NDBuffer` to `ImmutAnyOrigin`.
 
         Returns:
