@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "pipelines",
+    srcs = glob(["*.py"]),
+    data = glob(["testdata/*"]),
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max",
+        requirement("numpy"),
+        # TODO(GEX-2238): replace data field in WeightData with driver tensor.
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)

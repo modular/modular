@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "modular_py_test")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "internvl",
+    srcs = glob(["*.py"]),
+    deps = [
+        "//max/python/max",
+        "//max/python/max/pipelines/architectures",
+    ],
+)

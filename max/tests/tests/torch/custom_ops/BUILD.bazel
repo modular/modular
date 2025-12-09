@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+mojo_library(
+    name = "custom_ops",
+    testonly = True,
+    srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
+    deps = [
+        "//max:MOGGPrimitives",
+        "//max:compiler_internal",
+        "//max:tensor",
+        "@mojo//:stdlib",
+    ],
+)

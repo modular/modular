@@ -1,0 +1,7 @@
+# Test file moved to utils/benchmarking/pipeline-latency/test/test_benchmark_pipeline_latency.py
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
