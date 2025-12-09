@@ -84,3 +84,20 @@ def test_batch_execution_time_with_attributes() -> None:
         "maxserve.batch_execution_time", 50.2, attributes={"batch_type": "TG"}
     )
     m_tg.commit()  # Should not raise
+
+
+def test_tokens_per_request_histograms() -> None:
+    """Test that per-request token histogram metrics can be recorded."""
+    common.configure_metrics(Settings())
+
+    # Verify metrics exist in SERVE_METRICS
+    assert "maxserve.input_tokens_per_request" in metrics.SERVE_METRICS
+    assert "maxserve.output_tokens_per_request" in metrics.SERVE_METRICS
+
+    # Test recording input tokens per request
+    m_input = metrics.MaxMeasurement("maxserve.input_tokens_per_request", 256)
+    m_input.commit()  # Should not raise
+
+    # Test recording output tokens per request
+    m_output = metrics.MaxMeasurement("maxserve.output_tokens_per_request", 128)
+    m_output.commit()  # Should not raise
