@@ -1,0 +1,133 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""The fixtures for all tests in this directory."""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Mapping
+from typing import Any
+
+import pytest
+from fastapi import FastAPI
+from max.interfaces import (
+    PipelineTask,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
+from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.core import TextContext
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
+from max.serve.config import Settings
+from max.serve.pipelines.echo_gen import (
+    EchoPipelineTokenizer,
+    EchoTokenGenerator,
+)
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
+from max.serve.telemetry.common import configure_metrics
+
+
+class MockModelConfig(MAXModelConfig):
+    def __init__(self):
+        self.served_model_name = "echo"
+
+
+class MockPipelineConfig(PipelineConfig):
+    def __init__(self):
+        self.max_batch_size = 1
+        self._model_config = MockModelConfig()
+        self.zmq_endpoint_base: str = generate_zmq_ipc_path()
+
+
+class SleepyEchoTokenGenerator(EchoTokenGenerator):
+    def execute(
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> dict[RequestID, TextGenerationOutput]:
+        # Sleep for 1 ms - otherwise, the echo token generator
+        # can break some separation of timescale assumptions
+        time.sleep(1e-3)
+        return super().execute(inputs)
+
+
+# This has to be picklable and lambdas are not picklable
+def echo_factory():  # noqa: ANN201
+    return SleepyEchoTokenGenerator()
+
+
+@pytest.fixture
+def mock_pipeline_config() -> PipelineConfig:
+    return MockPipelineConfig()
+
+
+@pytest.fixture()
+def echo_app(mock_pipeline_config: PipelineConfig) -> FastAPI:
+    tokenizer = EchoPipelineTokenizer()
+
+    serving_settings = ServingTokenGeneratorSettings(
+        model_factory=echo_factory,
+        pipeline_config=mock_pipeline_config,
+        tokenizer=tokenizer,
+    )
+
+    settings = Settings(MAX_SERVE_USE_HEARTBEAT=True)
+    app = fastapi_app(settings, serving_settings)
+    return app
+
+
+@pytest.fixture(scope="session")
+def pipeline_config(request: pytest.FixtureRequest):  # noqa: ANN201
+    return request.param
+
+
+@pytest.fixture(scope="session")
+def settings_config(request: pytest.FixtureRequest):  # noqa: ANN201
+    """Fixture to control settings configuration"""
+    return getattr(request, "param", {"MAX_SERVE_USE_HEARTBEAT": True})
+
+
+@pytest.fixture(scope="function")
+def app(
+    pipeline_config: PipelineConfig, settings_config: Mapping[str, Any]
+) -> FastAPI:
+    """The FastAPI app used to serve the model."""
+
+    pipeline_task = PipelineTask.TEXT_GENERATION
+    if (
+        pipeline_config.model_config.model_path
+        == "sentence-transformers/all-mpnet-base-v2"
+    ):
+        pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
+
+    tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+        pipeline_config, task=pipeline_task
+    )
+
+    serving_settings = ServingTokenGeneratorSettings(
+        model_factory=pipeline_factory,
+        pipeline_config=pipeline_config,
+        tokenizer=tokenizer,
+        pipeline_task=pipeline_task,
+    )
+
+    settings = Settings(**settings_config)
+    configure_metrics(settings)
+    app = fastapi_app(settings, serving_settings)
+    return app
+
+
+@pytest.fixture()
+def reset_sse_starlette_appstatus_event() -> None:
+    """
+    Fixture that resets the appstatus event in the sse_starlette app.
+
+    Should be used on any test that uses sse_starlette to stream events.
+    """
+    # See https://github.com/sysid/sse-starlette/issues/59
+    from sse_starlette.sse import AppStatus
+
+    AppStatus.should_exit_event = None

@@ -1,0 +1,47 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+import asyncio
+
+import numpy as np
+from max.driver import Accelerator
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
+from test_common.context_utils import create_text_context
+
+
+def test_kv_cache_gpu() -> None:
+    asyncio.run(_test_kv_cache_gpu())
+
+
+async def _test_kv_cache_gpu() -> None:
+    device = Accelerator()
+    kv_params = KVCacheParams(
+        n_kv_heads=8,
+        head_dim=128,
+        dtype=DType.bfloat16,
+        num_layers=32,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+    )
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        max_batch_size=1,
+        max_seq_len=512,
+        devices=[device],
+        session=InferenceSession(devices=[device]),
+        total_num_pages=8,
+    )
+    context = create_text_context(np.empty(1))
+    kv_manager.claim(context.request_id)
+    kv_manager.alloc(context)
+    batch = [context]
+    # suffixed [0] because we only have one device
+    kv_tuple = kv_manager.get_runtime_inputs(batch)[0]
+    assert isinstance(kv_tuple, KVCacheInputs)
+    assert len(kv_tuple) == 4

@@ -1,0 +1,82 @@
+# InternVL integration tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "torch_utils",
+    testonly = True,
+    srcs = ["torch_utils.py"],
+    deps = [
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("transformers"),
+    ],
+)
+
+[
+    modular_py_test(
+        name = src.split("/")[-1].split(".")[0],
+        size = "large",
+        srcs = [src] + glob(
+            [
+                "utils/*.py",
+                "internvl_impl/*.py",
+            ],
+        ) + ["tests/__init__.py"],
+        data = [
+            "configs/internvl-2B.json",
+            "configs/internvl-38B.json",
+            "configs/internvl-8B.json",
+        ],
+        env = {
+            "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+        },
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
+        gpu_constraints = ["//:has_multi_gpu"] if src == "tests/test_vision_embeddings.py" else ["//:has_gpu"] + select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),  # FIXME: MOCO-2411
+        imports = ["."],
+        tags = [
+            "gpu",
+            "no-sandbox",
+        ],
+        deps = [
+            ":torch_utils",
+            "//max/python/max/dtype",
+            "//max/python/max/engine",
+            "//max/python/max/entrypoints",
+            "//max/python/max/graph",
+            "//max/python/max/nn",
+            "//max/python/max/pipelines/architectures",
+            "//max/python/max/serve",
+            "//max/tests/integration/pipelines/python/test_common",
+            requirement("numpy"),
+            requirement("pillow"),
+            requirement("pytest-asyncio"),
+            requirement("pytest-mock"),
+            requirement("requests"),
+            requirement("timm"),
+            requirement("torch"),
+            requirement("torchvision"),
+            requirement("transformers"),
+        ],
+    )
+    for src in glob(["tests/test_*.py"])
+]

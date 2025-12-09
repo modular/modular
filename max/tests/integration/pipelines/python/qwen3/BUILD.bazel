@@ -1,0 +1,48 @@
+# qwen3 tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "qwen3",
+    size = "large",
+    srcs = glob(["**/test_*.py"]) + ["conftest.py"],
+    data = [
+        "//max/tests/integration/pipelines/python/qwen3/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/pipelines/python/qwen3/testdata"
+        ),
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "1.5",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/entrypoints",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/serve",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
