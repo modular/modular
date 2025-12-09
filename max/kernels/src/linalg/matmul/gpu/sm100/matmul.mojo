@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer as UnsafePointer
-from sys import align_of, simd_width_of, size_of
+from sys import align_of, env_get_bool, simd_width_of, size_of
 
 from bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
@@ -103,6 +103,9 @@ from ..profiler import (
     MatmulWarpSpecializationWorkSpaceManager,
 )
 from .pipeline import ProducerConsumerPipeline
+
+# Feature flag: set MODULAR_USE_STRUCTURED_SM100=1 to use sm100_structured
+comptime _USE_STRUCTURED = env_get_bool["MODULAR_USE_STRUCTURED_SM100", False]()
 
 
 @fieldwise_init
@@ -3048,6 +3051,29 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     b_device: LayoutTensor[b_type, b_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
+    # Feature flag: use sm100_structured implementation when enabled
+    @parameter
+    if _USE_STRUCTURED:
+        from ..sm100_structured import (
+            blackwell_matmul_tma_umma_warp_specialized as structured_impl,
+        )
+
+        structured_impl[
+            c_type,
+            c_layout,
+            a_type,
+            a_layout,
+            b_type,
+            b_layout,
+            transpose_b,
+            config=config,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            register_based_epilogue=register_based_epilogue,
+            pdl_level=pdl_level,
+            max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+        ](c_device, a_device, b_device, ctx)
+        return
+
     @parameter
     if config.AB_swapped:
         # Swap the a_type, b_type in signature
