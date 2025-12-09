@@ -24,6 +24,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
+    "test_ping_pong.mojo": ["//:amd_gpu"],
     "test_structured_kernel_components.mojo": ["//:amd_gpu"],
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
