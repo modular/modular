@@ -800,9 +800,9 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
 
     # Simulate first decode step (single-token generation).
     # Mimic the pipeline's next iteration: move to decode phase with single active token.
-    ctx.start_idx = L
-    ctx.active_idx = L + 1
-    ctx.end_idx = L + 1
+    ctx.start_idx = L  # type: ignore
+    ctx.active_idx = L + 1  # type: ignore
+    ctx.end_idx = L + 1  # type: ignore
 
     step1_inputs = model.prepare_initial_token_inputs(
         replica_batches=[[ctx]],

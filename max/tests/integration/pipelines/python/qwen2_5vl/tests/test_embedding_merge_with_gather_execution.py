@@ -164,7 +164,7 @@ def test_embeddings_merge_with_gather() -> None:
     empty_results = compiled.execute(
         Tensor.zeros(shape=(0, 0), dtype=DType.float32),
         Tensor.zeros(shape=(0, 0), dtype=DType.float32),
-        Tensor.zeros(shape=(0), dtype=DType.int32),
-        Tensor.zeros(shape=(0), dtype=DType.int64),
+        Tensor.zeros(shape=(0), dtype=DType.int32),  # type: ignore
+        Tensor.zeros(shape=(0), dtype=DType.int64),  # type: ignore
     )
     assert empty_results[0].shape == (0, 0)

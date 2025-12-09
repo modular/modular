@@ -40,7 +40,7 @@ MAX_READ_SIZE = 10 * 1024
     ],
     indirect=True,
 )
-async def test_smollm_serve_gpu(app: FastAPI) -> None:
+async def test_smollm_serve_gpu(app: FastAPI) -> None:  # type: ignore
     # Arbitrary - just demonstrate we can submit multiple async
     # requests and collect the results later
     N_REQUESTS = 3
@@ -98,7 +98,7 @@ async def test_smollm_serve_gpu(app: FastAPI) -> None:
     ],
 )
 async def test_smollm_serve_gpu_nonchat_completions(
-    app: FastAPI,
+    app: FastAPI,  # type: ignore
     prompt: str | list[str] | list[int] | list[list[int]],
     expected_choices: int,
 ) -> None:
@@ -131,7 +131,7 @@ async def test_smollm_serve_gpu_nonchat_completions(
     indirect=True,
 )
 @pytest.mark.asyncio
-async def test_tinyllama_serve_gpu_stream(app: FastAPI) -> None:
+async def test_tinyllama_serve_gpu_stream(app: FastAPI) -> None:  # type: ignore
     NUM_TASKS = 16
 
     def openai_completion_request(content: str) -> dict[str, Any]:
