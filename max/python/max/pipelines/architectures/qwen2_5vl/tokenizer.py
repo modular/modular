@@ -116,16 +116,14 @@ def qwen2_5vl_image_preprocessing(
     # Transpose to channel-first: (H, W, 3) -> (3, H, W)
     img_chw = img_array.transpose(2, 0, 1)
 
-    # Repeat for temporal dimension using temporal_patch_size parameter
-    patches = np.repeat(
-        img_chw[np.newaxis], temporal_patch_size, axis=0
-    )  # (temporal_patch_size, 3, H, W)
+    # Add temporal dimension (single frame for images, will tile to temporal_patch_size at the end)
+    patches = img_chw[np.newaxis]  # (1, 3, H, W)
 
     # Reshape with spatial merging
-    # Input shape: (temporal_patch_size, channel, height, width)
+    # Input shape: (1, channel, height, width) - single temporal frame
     patches = patches.reshape(
         grid_t,  # Temporal groups (1 for images)
-        temporal_patch_size,  # Patches per temporal group (2)
+        1,  # Single frame, will tile at the end
         channel,  # RGB channels (3)
         grid_h // merge_size,  # Spatial groups in height
         merge_size,  # Patches per spatial group (2)
@@ -137,19 +135,28 @@ def qwen2_5vl_image_preprocessing(
 
     # Transpose following transformers library logic
     # This reorders dimensions to get the correct patch ordering
+    # Output shape: (grid_t, gh//m, gw//m, m, m, channel, 1, ps, ps)
     patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
 
-    # Flatten patches
-    # This preserves the patch ordering from the transpose
-    flatten_patches = patches.reshape(
-        grid_t * grid_h * grid_w,
+    # Tile for temporal dimension: images have 1 frame but model expects
+    # temporal_patch_size frames, so we replicate the single frame.
+    num_patches = grid_t * grid_h * grid_w
+    # Reshape to expose temporal dimension: (num_patches, channel, 1, patch_size^2)
+    patches_4d = patches.reshape(
+        num_patches, channel, 1, patch_size * patch_size
+    )
+    # Tile to (num_patches, channel, temporal_patch_size, patch_size^2)
+    patches_tiled = np.tile(patches_4d, (1, 1, temporal_patch_size, 1))
+    # Flatten to final shape: (num_patches, channel * temporal_patch_size * patch_size^2)
+    flatten_patches = patches_tiled.reshape(
+        num_patches,
         channel * temporal_patch_size * patch_size * patch_size,
     )
 
+    flatten_patches_uint16 = float32_to_bfloat16_as_uint16(flatten_patches)
+
     # Create grid dimensions (temporal, height, width)
     image_grid_thw = (grid_t, grid_h, grid_w)
-
-    flatten_patches_uint16 = float32_to_bfloat16_as_uint16(flatten_patches)
 
     return flatten_patches_uint16, image_grid_thw
 
