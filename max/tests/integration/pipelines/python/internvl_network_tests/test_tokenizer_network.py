@@ -19,7 +19,6 @@ from pytest_mock import MockerFixture
 from test_common.mocks import mock_estimate_memory_footprint
 
 
-@pytest.mark.skip(reason="Disabled due to MODELS-849")
 @pytest.mark.asyncio
 @mock_estimate_memory_footprint
 async def test_internvl_tokenizer_with_image() -> None:
