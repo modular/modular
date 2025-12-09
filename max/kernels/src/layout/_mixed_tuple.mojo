@@ -22,7 +22,6 @@ from builtin.variadics import (
     _ReduceValueAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys.intrinsics import _type_is_eq_parse_time
 
 

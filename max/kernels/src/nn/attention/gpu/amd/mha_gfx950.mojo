@@ -15,7 +15,6 @@ from collections import OptionalReg
 from itertools import product
 from math import ceildiv, recip
 from math.constants import log2e
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of, llvm_intrinsic
 from sys.intrinsics import readfirstlane
 from sys.info import _cdna_4_or_newer

@@ -35,7 +35,6 @@ Performance features:
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
 from collections import OptionalReg
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
 
