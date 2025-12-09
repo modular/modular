@@ -87,6 +87,10 @@ struct InlineArray[
     ```
     """
 
+    comptime __del__is_trivial: Bool = Self.ElementType.__del__is_trivial
+    comptime __copyinit__is_trivial: Bool = Self.ElementType.__copyinit__is_trivial
+    comptime __moveinit__is_trivial: Bool = Self.ElementType.__moveinit__is_trivial
+
     # Fields
     comptime type = __mlir_type[
         `!pop.array<`, Self.size._mlir_value, `, `, Self.ElementType, `>`
