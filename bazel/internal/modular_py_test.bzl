@@ -175,6 +175,6 @@ def modular_py_test(
             srcs = srcs + ["//bazel/internal:pytest_runner"],
             exec_properties = default_exec_properties | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
-            tags = tags + (["manual"] if len(test_srcs) > 1 else []),
+            tags = tags,
             **kwargs
         )
