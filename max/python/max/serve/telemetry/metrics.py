@@ -100,6 +100,9 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.num_input_tokens": _meter.create_counter(
         "maxserve.num_input_tokens", description="Count of input tokens"
     ),  # type: ignore
+    "maxserve.num_input_characters": _meter.create_counter(
+        "maxserve.num_input_characters", description="Count of input characters"
+    ),  # type: ignore
     "maxserve.num_output_tokens": _meter.create_counter(
         "maxserve.num_output_tokens", description="Count of generated tokens"
     ),  # type: ignore
@@ -344,6 +347,12 @@ class _AsyncMetrics:
     def input_tokens(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.num_input_tokens", value),
+            MetricLevel.BASIC,
+        )
+
+    def input_characters(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.num_input_characters", value),
             MetricLevel.BASIC,
         )
 
