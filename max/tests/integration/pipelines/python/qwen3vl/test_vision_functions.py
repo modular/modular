@@ -9,11 +9,13 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
+from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    mrope_pos_ids_3d,
+    mrope_pos_ids_3d_inner,
+)
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
     get_seqlens,
-    mrope_pos_ids_3d,
-    mrope_pos_ids_3d_inner,
 )
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_rope_index as get_rope_index_qwen3vl_np,

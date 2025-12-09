@@ -29,8 +29,10 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    get_rope_index,
     get_seqlens,
     get_window_index,
+    mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     fetch_image,
@@ -47,7 +49,6 @@ from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
 
 from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
-from .nn.data_processing import get_rope_index, mrope_pos_ids_3d
 
 logger = logging.getLogger("max.pipelines")
 
