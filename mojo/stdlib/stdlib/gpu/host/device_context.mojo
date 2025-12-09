@@ -1852,29 +1852,6 @@ struct DeviceEvent(ImplicitlyCopyable):
 
     @doc_private
     @always_inline
-    fn __init__(out self, stream: DeviceStream) raises:
-        """Creates a new event recorded on the given stream.
-
-        Args:
-            stream: The stream to record the event on.
-
-        Raises:
-            If event creation or recording fails.
-        """
-        var result: _DeviceEventPtr = {}
-        # const char *AsyncRT_DeviceStream_enqueue_event(const DeviceEvent **result, const DeviceStream *stream)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceStream_eventCreate",
-                _ConstCharPtr,
-                UnsafePointer[_DeviceEventPtr, origin_of(result)],
-                _DeviceStreamPtr,
-            ](UnsafePointer(to=result), stream._handle)
-        )
-        self._handle = result
-
-    @doc_private
-    @always_inline
     fn __init__(out self, ctx: DeviceContext) raises:
         """Creates a new event recorded on the given context's default stream.
 
