@@ -26,18 +26,8 @@ from max.mlir import Context, Location
 
 from . import passes as passes
 
-# Many of the generated overloads for constructors are more specialized in
-# C++ than they are in Python. For example, `int32_t` and `int64_t` and `size_t`
-# all map to `int` in Python typing. It may not always be clear which of these
-# overloads will be run for a given set of inputs (though in most cases it's the first one)
-# but we disable mypy errors for shadowed overloads.
-#
+# C++ overloads on different int types look the same in Python, ignore these
 # mypy: disable-error-code="overload-cannot-match"
-
-# DiagnosticHandlers aren't a thing that Python can reasonably provided. In most cases
-# these are automatically provided, but there are a few custom verifiers not covered yet.
-# This binding prevents errors in those cases.
-DiagnosticHandler = Callable
 
 class BufferType(max._core.Type):
     """

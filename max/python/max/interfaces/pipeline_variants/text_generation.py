@@ -784,7 +784,7 @@ def hash_image(pixel_values: npt.NDArray[Any]) -> int:
     Uses xxhash for fast hashing. Ensures C-contiguous memory layout for
     correct hashing (np.ascontiguousarray is a no-op if already contiguous).
     """
-    hash_val = xxhash.xxh3_64_intdigest(np.ascontiguousarray(pixel_values).data)
+    hash_val = xxhash.xxh3_64_intdigest(np.ascontiguousarray(pixel_values).data)  # type: ignore[arg-type]
     # xxh3_64_intdigest returns unsigned 64-bit int; convert to signed for numpy compatibility
     return int(np.uint64(hash_val).astype(np.int64))
 

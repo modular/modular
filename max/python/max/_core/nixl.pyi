@@ -17,7 +17,7 @@ import enum
 from collections.abc import Mapping, Sequence
 from typing import overload
 
-from numpy.typing import ArrayLike
+from numpy.typing import NDArray
 
 INIT_AGENT: str = ""
 
@@ -104,9 +104,7 @@ class TransferDescriptorList:
 
     @overload
     def __init__(
-        self,
-        type: MemoryType,
-        descs: Sequence[ArrayLike | tuple[int, int, int]],
+        self, type: MemoryType, descs: Sequence[NDArray | tuple[int, int, int]]
     ) -> None:
         """
         Constructs a descriptor list with given values.
@@ -117,7 +115,7 @@ class TransferDescriptorList:
                  Each element is either a tuple or a dlpack object.
         """
 
-    def append(self, desc: ArrayLike | tuple[int, int, int]) -> None:
+    def append(self, desc: NDArray | tuple[int, int, int]) -> None:
         """
         Adds a descriptor to the list.
 
@@ -154,7 +152,7 @@ class RegistrationDescriptorList:
     def __init__(
         self,
         type: MemoryType,
-        descs: Sequence[ArrayLike | tuple[int, int, int, str]],
+        descs: Sequence[NDArray | tuple[int, int, int, str]],
     ) -> None:
         """
         Constructs a descriptor list with given values.
@@ -165,7 +163,7 @@ class RegistrationDescriptorList:
                  Each element is either a tuple or a dlpack object.
         """
 
-    def append(self, desc: ArrayLike | tuple[int, int, int, str]) -> None:
+    def append(self, desc: NDArray | tuple[int, int, int, str]) -> None:
         """
         Adds a descriptor to the list.
 
