@@ -14,6 +14,8 @@
 
 shopt -s expand_aliases
 dir="$(pwd)"
+# This doesn't exist in the public repo
+# shellcheck disable=SC1091
 source "$MODULAR_PATH/utils/start-modular.sh"
 cd "$dir" || exit 1
 
