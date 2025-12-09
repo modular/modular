@@ -1521,7 +1521,7 @@ struct DeviceStream(ImplicitlyCopyable):
         Raises:
             If the wait operation fails.
         """
-        # const char *AsyncRT_DeviceStream_enqueue_enqueue_wait_for(const DeviceStream *stream, const DeviceEvent *event)
+        # const char *AsyncRT_DeviceStream_waitForEvent(const DeviceStream *stream, const DeviceEvent *event)
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_waitForEvent",
@@ -1565,7 +1565,7 @@ struct DeviceStream(ImplicitlyCopyable):
         default_stream.record_event(event)
         ```
         """
-        # const char *AsyncRT_DeviceStream_event_record(const DeviceStream *stream, const DeviceEvent *event)
+        # const char *AsyncRT_DeviceStream_eventRecord(const DeviceStream *stream, const DeviceEvent *event)
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_eventRecord",
@@ -6219,7 +6219,7 @@ struct DeviceContext(ImplicitlyCopyable):
         if interprocess:
             flags |= EventFlags.interprocess
 
-        # const char *AsyncRT_DeviceContext_event_create(const DeviceEvent **result, const DeviceContext *ctx, unsigned int flags)
+        # const char *AsyncRT_DeviceContext_eventCreate(const DeviceEvent **result, const DeviceContext *ctx, unsigned int flags)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_eventCreate",
@@ -6270,7 +6270,7 @@ struct DeviceContext(ImplicitlyCopyable):
         var flags: c_uint = 0 if blocking else 1
         var result = _DeviceStreamPtr()
 
-        # const char *AsyncRT_cuda_create_stream_with_priority(CUstream *stream, int priority, const DeviceContext *ctx)
+        # const char *AsyncRT_streamCreate(const DeviceStream **stream, const DeviceContext *ctx, unsigned int flags)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_streamCreate",
@@ -6306,7 +6306,7 @@ struct DeviceContext(ImplicitlyCopyable):
         var flags: c_uint = 0 if blocking else 1
         var result = _DeviceStreamPtr()
 
-        # const char *AsyncRT_cuda_create_stream_with_priority(CUstream *stream, int priority, const DeviceContext *ctx)
+        # const char *AsyncRT_streamCreateWithPriority(const DeviceStream **stream, unsigned int flags, int priority, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_streamCreateWithPriority",
