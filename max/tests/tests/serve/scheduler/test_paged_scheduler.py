@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.driver import CPU
+from max.interfaces import BatchType
 from max.kv_cache import InsufficientBlocksError
 from max.support.math import ceildiv
 from tests.serve.scheduler.common import (
@@ -35,6 +36,8 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
         max_batch_size=100,
         num_blocks=num_blocks,
         page_size=page_size,
+        # For now, I am going to ignore kvcache watermark, and make its own test.
+        kvcache_ce_watermark=1.0,
     )
 
     # Check that we would exceed max_seq_len during TG step
@@ -45,6 +48,65 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
 
     # Check that we would run out of blocks if we try to run TG with num_steps = 10
     assert num_reqs * (prompt_len + num_steps) > num_blocks * page_size
+
+    print(f"supported tokens: {num_blocks * page_size}")
+
+    # Create a few requests with 2040 tokens
+    for _ in range(num_reqs):
+        enqueue_request(request_queue, prompt_len, max_seq_len=max_seq_len)
+
+    # fmt: off
+    if num_reqs == 1:
+        expected = [
+            BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=2040, cached_toks=0),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=8, preempted=0, input_toks=1, cached_toks=2040),
+            BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+        ]
+    elif num_reqs == 2:
+        expected = [
+            BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=4080, cached_toks=0),
+            BatchInfo(TG, batch_size=2, terminated=2, steps=8, preempted=0, input_toks=2, cached_toks=4080),
+            BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+        ]
+    else:
+        # We can support 6144 tokens, therefore
+        expected = [
+            BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=6120, cached_toks=0),
+            BatchInfo(TG, batch_size=3, terminated=3, steps=8, preempted=0, input_toks=3, cached_toks=6120),
+            BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+        ]
+    # fmt: on
+
+    actual = run_until_completion(scheduler)
+    assert_batch_info_equal(actual, expected)
+
+
+@pytest.mark.parametrize("num_reqs", [1, 2, 3])
+def test_paged_scheduler_tg_request_exceed_max_seq_len_with_watermark(
+    num_reqs: int,
+) -> None:
+    max_seq_len = 2048
+    page_size = 128
+    num_blocks = int(max_seq_len / page_size * num_reqs)
+    scheduler, request_queue = create_paged_scheduler(
+        max_seq_len=max_seq_len,
+        max_batch_size=100,
+        num_blocks=num_blocks,
+        page_size=page_size,
+        # For now, I am going to ignore kvcache watermark, and make its own test.
+        kvcache_ce_watermark=0.95,
+    )
+
+    # Check that we would exceed max_seq_len during TG step
+    prompt_len = 2040
+    num_steps = scheduler.scheduler_config.max_forward_steps_tg
+    assert num_steps == 10
+    assert prompt_len + num_steps > max_seq_len
+
+    # Check that we would run out of blocks if we try to run TG with num_steps = 10
+    assert num_reqs * (prompt_len + num_steps) > num_blocks * page_size
+
+    print(f"supported tokens: {num_blocks * page_size}")
 
     # Create a few requests with 2040 tokens
     for _ in range(num_reqs):
@@ -66,7 +128,9 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
             BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
         ]
     else:
+        # We can support 6144 tokens, therefore
         expected = [
+            # 4080 = 0.66%, therefore we can add a second.
             BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=4080, cached_toks=0),
             BatchInfo(TG, batch_size=2, terminated=2, steps=8, preempted=0, input_toks=2, cached_toks=4080),
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=2040, cached_toks=0),
@@ -138,6 +202,7 @@ def test_basic_ce_scheduling() -> None:
         num_blocks=num_blocks,
         max_batch_size=999,
         page_size=page_size,
+        kvcache_ce_watermark=0.95,
     )
 
     for _ in range(num_prompts):
@@ -440,6 +505,7 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
         enable_chunked_prefill=False,
         enable_in_flight_batching=False,
         enable_prefix_caching=False,
+        kvcache_ce_watermark=0.95,
     )
 
     # set seed for reproducibility
@@ -464,8 +530,8 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
         BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=390),
         BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=420),
         BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=450),
-        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=1, input_toks=2, cached_toks=320),
-        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=340),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=320),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=1, input_toks=2, cached_toks=340),
         BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=360),
         BatchInfo(TG, batch_size=2, terminated=2, steps=10, preempted=0, input_toks=2, cached_toks=380),
         # This encodes more than 3*100 tokens since we are re-encoding some previously
@@ -497,6 +563,7 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
+        kvcache_ce_watermark=0.95,
     )
 
     # set seed for reproducibility
@@ -523,12 +590,12 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
         # To run TG on 8 reqs, we need 8 blocks. To free up 8 blocks, we preempt
         # 2 reqs since each req has 4 uncommitted blocks to release.
 	BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=240, cached_toks=360),
-	BatchInfo(TG, batch_size=8, terminated=0, steps=10, preempted=2, input_toks=8, cached_toks=800),
-	BatchInfo(TG, batch_size=7, terminated=0, steps=10, preempted=1, input_toks=7, cached_toks=770),
+	BatchInfo(TG, batch_size=8, terminated=0, steps=10, preempted=1, input_toks=8, cached_toks=800),
+	BatchInfo(TG, batch_size=7, terminated=0, steps=10, preempted=2, input_toks=7, cached_toks=770),
 	BatchInfo(TG, batch_size=6, terminated=0, steps=10, preempted=1, input_toks=6, cached_toks=720),
 	BatchInfo(TG, batch_size=5, terminated=0, steps=10, preempted=1, input_toks=5, cached_toks=650),
-	BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=1, input_toks=4, cached_toks=560),
-	BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=0, input_toks=4, cached_toks=600),
+	BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=0, input_toks=4, cached_toks=560),
+	BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=1, input_toks=4, cached_toks=600),
 	BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=0, input_toks=4, cached_toks=640),
 	BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=1, input_toks=3, cached_toks=510),
 	BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=540),
@@ -611,6 +678,8 @@ def test_paged_scheduler_tg_preemption_basic() -> None:
         num_blocks=num_blocks,
         max_batch_size=999,
         page_size=page_size,
+        kvcache_ce_watermark=0.95,
+        max_seq_len=110,
     )
 
     for _ in range(num_prompts):
@@ -628,9 +697,9 @@ def test_paged_scheduler_tg_preemption_basic() -> None:
         BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=40),
         BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=60),
         BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=80),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=50),
         # Run out of blocks so we preempt req 1
-        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=1, input_toks=1, cached_toks=50),
-        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=60),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=1, input_toks=1, cached_toks=60),
         BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=70),
         BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=80),
         BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=90),
@@ -705,7 +774,7 @@ def test_paged_scheduler_oom_tg() -> None:
         )
 
     actual: list[BatchInfo] = []
-    with pytest.raises(RuntimeError) as e:
+    with pytest.raises(InsufficientBlocksError) as e:
         run_until_completion(scheduler, output_list=actual)
 
     # fmt: off
@@ -727,7 +796,7 @@ def test_paged_scheduler_oom_tg() -> None:
     # fmt: on
     # The error message should be informative:
     assert (
-        "Insufficient KV pages to run token generation on a single request with 101 tokens.\n"
+        "Insufficient KV pages for a single request with 101 tokens.\n"
         "The KVCache has 10 pages with page size 10. This is only enough to support 100 tokens.\n"
         "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
         in str(e.value)
@@ -749,17 +818,17 @@ def test_paged_scheduler_max_batch_context_length_ce() -> None:
 
     actual = run_until_completion(scheduler)
     # fmt: off
+    #
+    #
     expected = [
-        # CE batch is limited to 16 requests by max_batch_context_length=1000
-        # batch_size * prompt_len = 16 * 60 = 960 tokens. A 17th req would cross the 1000 token limit.
-        BatchInfo(CE, batch_size=16, terminated=0, steps=1, preempted=0, input_toks=960, cached_toks=0),
-        BatchInfo(TG, batch_size=16, terminated=0, steps=2, preempted=0, input_toks=16, cached_toks=960),
-        # We run 15 of the 16 TG requests. The 16 request is skipped (not preempted) to not exceed the max_batch_context_length limit
-        BatchInfo(TG, batch_size=15, terminated=15, steps=4, preempted=0, input_toks=15, cached_toks=930),
-        # Encode the remaining 4 requests that are not yet encoded
-        BatchInfo(CE, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=240, cached_toks=0),
-        # Now there are 4 (newly encoded) + 1 (skipped) = 5 reqs in the TG batch
-        BatchInfo(TG, batch_size=5, terminated=5, steps=7, preempted=0, input_toks=5, cached_toks=302),
+        # CE batch is limited to 17 requests as we can fit 16 * 60 = 960, and then chunk a 17th request
+        # to get to 1000.
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=0),
+        # As we can increase the TG batch size, by introducing new CE requests. We introduce the remaining
+        # CE requests.
+        BatchInfo(CE, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=200, cached_toks=40),
+        BatchInfo(TG, batch_size=20, terminated=20, steps=7, preempted=0, input_toks=20, cached_toks=1200),
+        # The entire batch is completed, leading to a remaining empty batch.
         BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
     # fmt: on
@@ -768,7 +837,8 @@ def test_paged_scheduler_max_batch_context_length_ce() -> None:
         cached_toks = batch.cached_toks
         steps = batch.steps
         batch_size = batch.batch_size
-        assert cached_toks + batch_size * steps <= max_batch_context_length
+        if batch.batch_type == BatchType.CE:
+            assert cached_toks + batch_size * steps <= max_batch_context_length
 
 
 def test_paged_scheduler_max_batch_context_length_tg() -> None:
@@ -789,17 +859,8 @@ def test_paged_scheduler_max_batch_context_length_tg() -> None:
         BatchInfo(CE, batch_size=20, terminated=0, steps=1, preempted=0, input_toks=600, cached_toks=0),
         BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=600),
         BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=800),
-        # num_steps is limited to 2 here to ensure that
-        # cached_toks + batch_size * num_steps <= max_batch_context_length.
-        # - 950 + 19 * 2 = 988 <= 1000 (good)
-        # - 950 + 19 * 3 = 1007 > 1000 (bad)
-        BatchInfo(TG, batch_size=19, terminated=0, steps=2, preempted=0, input_toks=19, cached_toks=950),
-        BatchInfo(TG, batch_size=18, terminated=0, steps=3, preempted=0, input_toks=18, cached_toks=936),
-        BatchInfo(TG, batch_size=17, terminated=0, steps=3, preempted=0, input_toks=17, cached_toks=935),
-        BatchInfo(TG, batch_size=16, terminated=0, steps=4, preempted=0, input_toks=16, cached_toks=928),
-        BatchInfo(TG, batch_size=15, terminated=15, steps=4, preempted=0, input_toks=15, cached_toks=930),
-        BatchInfo(TG, batch_size=5, terminated=2, steps=10, preempted=0, input_toks=5, cached_toks=277),
-        BatchInfo(TG, batch_size=3, terminated=3, steps=7, preempted=0, input_toks=3, cached_toks=187),
+        BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=1000),
+        BatchInfo(TG, batch_size=20, terminated=20, steps=7, preempted=0, input_toks=20, cached_toks=1200),
         BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
     # fmt: on
@@ -808,7 +869,8 @@ def test_paged_scheduler_max_batch_context_length_tg() -> None:
         cached_toks = batch.cached_toks
         steps = batch.steps
         batch_size = batch.batch_size
-        assert cached_toks + batch_size * steps <= max_batch_context_length
+        if batch.batch_type == BatchType.CE:
+            assert cached_toks + batch_size * steps <= max_batch_context_length
 
 
 def test_paged_scheduler_dp8() -> None:

@@ -115,6 +115,7 @@ def create_paged_scheduler(
     max_batch_context_length: int | None = None,
     dp: int = 1,
     device: Device = CPU(),
+    kvcache_ce_watermark: float = 1.0,
 ) -> tuple[
     TokenGenerationScheduler,
     MAXPushQueue[TextContext],
@@ -142,6 +143,7 @@ def create_paged_scheduler(
         enable_in_flight_batching=enable_in_flight_batching,
         max_batch_context_length=max_batch_context_length,
         data_parallel_degree=dp,
+        kvcache_ce_watermark=kvcache_ce_watermark,
     )
     token_pipeline = FakeTokenGeneratorPipeline(paged_manager)
     request_queue: queue.Queue[TextContext] = queue.Queue()
@@ -294,13 +296,15 @@ def assert_batch_info_equal(
         len_expected = len(expected)
         raise AssertionError(
             f"Lengths of actual and expected batch infos do not match: {len_actual} != {len_expected}. Actual:\n"
-            f"{pretty_format_batch_info_list(actual)}"
+            f"{pretty_format_batch_info_list(actual)}\nExpected:\n"
+            f"{pretty_format_batch_info_list(expected)}"
         )
     for i in range(len(actual)):
         if actual[i] != expected[i]:
             raise AssertionError(
                 f"Batch info at index {i} does not match: {actual[i]} != {expected[i]}. Actual:\n"
-                f"{pretty_format_batch_info_list(actual)}"
+                f"{pretty_format_batch_info_list(actual)}\nExpected:\n"
+                f"{pretty_format_batch_info_list(expected)}"
             )
 
 

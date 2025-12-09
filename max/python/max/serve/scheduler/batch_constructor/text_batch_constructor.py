@@ -41,7 +41,9 @@ from .token_budget import (
     ActiveTokenBudget,
     BudgetStatus,
     RequestType,
+    TokenBudget,
     TokenBudgetCollection,
+    TotalContextTokenBudget,
 )
 
 logger = logging.getLogger("max.serve")
@@ -62,6 +64,45 @@ class ReplicaRequests:
         default_factory=OrderedDict
     )
 
+    # LoRA-related bookkeeping for this replica.
+    active_loras: set[str] = field(default_factory=set)
+    deferred_lora_requests: dict[RequestID, TextContext] = field(
+        default_factory=dict
+    )
+
+    def add_active_lora(
+        self, context: TextContext, lora_manager: LoRAManager | None
+    ) -> None:
+        """Mark a LoRA as active for this replica and refresh its LRU in the manager."""
+        if lora_manager is None:
+            return
+
+        if is_lora(context, lora_manager):
+            lora_manager.activate_adapter(context.model_name)
+            self.active_loras.add(context.model_name)
+
+    def update_deferred_lora_requests(self) -> None:
+        """Return deferred LoRA requests back to the CE queue in FIFO order."""
+        for req_id, ctx in self.deferred_lora_requests.items():
+            self.ce_reqs[req_id] = ctx
+            self.ce_reqs.move_to_end(req_id, last=False)
+        self.deferred_lora_requests.clear()
+
+    def can_allocate_lora_request(
+        self, context: TextContext, lora_manager: LoRAManager | None
+    ) -> bool:
+        """Check LoRA budget and defer the request if it cannot be safely activated."""
+        if lora_manager is None:
+            return True
+
+        if not can_allocate_lora_request(
+            context, self.active_loras, lora_manager
+        ):
+            self.deferred_lora_requests[context.request_id] = context
+            return False
+
+        return True
+
 
 @dataclass
 class ReplicaBatch:
@@ -74,8 +115,15 @@ class ReplicaBatch:
     used outside of this file.
     """
 
-    batch: dict[RequestID, TextContext] = field(default_factory=dict)
-    num_steps: int = 1
+    batch: dict[RequestID, TextContext]
+    num_steps: int
+    token_budget: TokenBudgetCollection
+
+    def __len__(self) -> int:
+        return len(self.batch)
+
+    def is_empty(self) -> bool:
+        return len(self.batch) == 0
 
 
 class PreemptionReason(str, Enum):
@@ -118,26 +166,34 @@ class TextBatchConstructor:
         ]
         self._request_id_to_replica_idx: dict[RequestID, int] = {}
 
-        # Round-robin counter to determine which replica to enqueue the new request to.
-        # This is only used when not using paged attention.
-        self._round_robin_counter = 0
+        self.total_preemption_count: int = 0
+        self.last_preemption_logging_time: float = time.monotonic()
 
-        self.total_preemption_count = 0
-        self.last_preemption_logging_time: float = 0.0
+        self._round_robin_counter: int = 0
 
     def _create_new_token_budget(self) -> TokenBudgetCollection:
-        return TokenBudgetCollection(
-            token_budgets=[
-                ActiveTokenBudget(
-                    capacity=self.scheduler_config.target_tokens_per_batch_ce,
+        token_budgets: list[TokenBudget] = [
+            ActiveTokenBudget(
+                capacity=self.scheduler_config.target_tokens_per_batch_ce,
+                allow_chunking=self.scheduler_config.enable_chunked_prefill,
+                applicable_types=RequestType.all(),
+            )
+        ]
+
+        if self.scheduler_config.max_batch_context_length is not None:
+            token_budgets.append(
+                TotalContextTokenBudget(
+                    capacity=self.scheduler_config.max_batch_context_length,
                     allow_chunking=self.scheduler_config.enable_chunked_prefill,
                     applicable_types=[
                         RequestType.CE,
-                        RequestType.TG,
                         RequestType.MIXED,
                     ],
                 )
-            ]
+            )
+
+        return TokenBudgetCollection(
+            token_budgets=token_budgets,
         )
 
     def get_next_replica_idx(self) -> int:
@@ -207,8 +263,8 @@ class TextBatchConstructor:
             # Move the requests from CE to TG
             replica.tg_reqs.update(per_replica_batch)
 
-            # Move Chunked requests back to the Ce request queue
-            last_request = list(per_replica_batch.values())[-1]
+            # Move Chunked requests back to the CE request queue
+            last_request = next(reversed(per_replica_batch.values()))
             if last_request.needs_ce:
                 del replica.tg_reqs[last_request.request_id]
                 replica.ce_reqs[last_request.request_id] = last_request
@@ -315,345 +371,261 @@ class TextBatchConstructor:
                 + f" Total Preemption Count: {self.total_preemption_count}"
             )
 
-    @traced
-    def _create_tg_batch(self, replica_idx: int) -> ReplicaBatch:
-        """Creates a non empty token generation batch"""
-        replica = self.replicas[replica_idx]
+    def _identify_priority(self, replica_idx: int) -> RequestType:
+        # If there are no CE requests, prioritize TG
+        if len(self.replicas[replica_idx].ce_reqs) == 0:
+            return RequestType.TG
 
-        # If we are not using paged attention, we can always schedule the active
-        # batch since we reserved blocks for all active requests previously
-        if self.paged_cache is None:
-            return ReplicaBatch(
-                # This copy is necessary to avoid aliasing of the tg_reqs dict.
-                batch=replica.tg_reqs.copy(),
-                num_steps=self.scheduler_config.max_forward_steps_tg,
-            )
+        # If there are no TG requests, prioritize Ce
+        if len(self.replicas[replica_idx].tg_reqs) == 0:
+            return RequestType.CE
 
-        num_steps = self.scheduler_config.max_forward_steps_tg
-        max_seq_len = self.scheduler_config.max_seq_len
-        max_batch_context_length = (
-            self.scheduler_config.max_batch_context_length
-            if self.scheduler_config.max_batch_context_length is not None
-            else float("inf")
-        )
-        batch_context_length = 0
+        # If we've enabled in flight batching, prioritize TG
+        if self.scheduler_config.enable_in_flight_batching:
+            return RequestType.TG
 
-        # Assume this is sorted by request arrival time where the leftmost request
-        # is the oldest and the rightmost request is the newest.
-        candidate_reqs = deque(replica.tg_reqs.values())
-        first_req_ctx = candidate_reqs[0]
-        scheduled: dict[RequestID, TextContext] = {}
+        # Otherwise, prioritize CE
+        return RequestType.CE
 
-        while len(candidate_reqs) > 0:
-            # Get the oldest request
-            ctx = candidate_reqs.popleft()
+    def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
+        replica_requests = self.replicas[replica_idx]
+        max_batch_size_ce = self.scheduler_config.max_batch_size_ce
 
-            # Check if adding this request would violate the max_batch_context_length
-            # limit assuming we run for num_steps=1.
-            if (
-                batch_context_length + ctx.start_idx + len(scheduled) + 1
-                > max_batch_context_length
+        # If there is anything in the batch, we can assume its TG, and the requests
+        # are also counted in the tg_reqs.
+        starting_tg_reqs_count = len(batch)
+        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
+        while (
+            len(batch) < max_batch_size_ce
+            # At a high level, active ce requests + tg_requests should not exceed the total max batch size.
+            and len(batch)
+            + len(replica_requests.tg_reqs)
+            - starting_tg_reqs_count
+            < max_batch_size_tg
+            and len(replica_requests.ce_reqs) > 0
+        ):
+            # Pop new request off the queue.
+            req_id, ctx = replica_requests.ce_reqs.popitem(last=False)
+
+            # Check LoRA budget before resource allocation
+            if not replica_requests.can_allocate_lora_request(
+                ctx, self._lora_manager
             ):
-                break
+                continue
+
+            # Exit early if the budget is already exhausted
+            if batch.token_budget.remaining <= 0:
+                self._return_to_request_queue(ctx, replica_idx)
+                return
+
+            # Check if the request fits in memory
+            if self.paged_cache is not None:
+                # Claim the request if needed.
+                if not self.paged_cache.contains(req_id):
+                    self.paged_cache.claim(req_id, replica_idx=replica_idx)
+
+                # Check that the CE request does not go above the watermark
+                pct_blocks_used_after_ce_request = max(
+                    0.0,
+                    min(
+                        self.paged_cache.get_pct_used_blocks_after_allocation(
+                            ctx
+                        ),
+                        1.0,
+                    ),
+                )
+                if (
+                    pct_blocks_used_after_ce_request
+                    > self.scheduler_config.kvcache_ce_watermark
+                ) and (len(batch) != 0 or len(replica_requests.tg_reqs) != 0):
+                    self._return_to_request_queue(ctx, replica_idx)
+                    break
+
+                # Try to allocate kv cache blocks
+                try:
+                    self.paged_cache.alloc(ctx, num_steps=1)
+                except InsufficientBlocksError:
+                    if len(replica_requests.tg_reqs) == 0 and len(batch) == 0:
+                        raise
+
+                    # Return the Object to the request queue
+                    self._return_to_request_queue(ctx, replica_idx)
+                    break
+
+            # Check if it fits within the token budget
+            match batch.token_budget.status_after_context(
+                ctx, num_steps=1, request_type=RequestType.CE
+            ):
+                case BudgetStatus.BUDGET_EXHAUSTED:
+                    self._return_to_request_queue(ctx, replica_idx)
+                    return
+                case BudgetStatus.BUDGET_REACHED:
+                    batch.batch[req_id] = ctx
+                    batch.num_steps = 1
+                    replica_requests.add_active_lora(ctx, self._lora_manager)
+                    batch.token_budget.add_to_budget(
+                        ctx, request_type=RequestType.CE
+                    )
+                    break
+                case BudgetStatus.BUDGET_AVAILABLE:
+                    batch.batch[req_id] = ctx
+                    batch.num_steps = 1
+                    batch.token_budget.add_to_budget(
+                        ctx, request_type=RequestType.CE
+                    )
+                    replica_requests.add_active_lora(ctx, self._lora_manager)
+                # case _:
+                #     raise ValueError(f"Unexpected budget status: {status}")
+
+        # Update deferred LoRA requests
+        replica_requests.update_deferred_lora_requests()
+
+    def _add_tg_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
+        replica_requests = self.replicas[replica_idx]
+
+        # If we do not have a paged cache, assume we can add all items
+        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
+        if self.paged_cache is None:
+            tg_request_ids = tuple(replica_requests.tg_reqs.keys())
+            for request_id in tg_request_ids[:max_batch_size_tg]:
+                ctx = replica_requests.tg_reqs[request_id]
+                batch.batch[request_id] = ctx
+
+            return
+
+        # Add based on the oldest request, respecting KV cache limits and token budgets.
+        candidate_ids = deque(replica_requests.tg_reqs.keys())
+        max_seq_len = self.scheduler_config.max_seq_len
+        while len(batch) < max_batch_size_tg and len(candidate_ids) > 0:
+            # Pop the oldest request
+            candidate_id = candidate_ids.popleft()
+            candidate_context = replica_requests.tg_reqs[candidate_id]
 
             # Determine the number of steps to schedule based on the max_seq_len
             # of the pipeline model.
             if max_seq_len is not None:
-                num_available_steps = ctx.compute_num_available_steps(
-                    max_seq_len
+                batch.num_steps = min(
+                    batch.num_steps,
+                    candidate_context.compute_num_available_steps(
+                        max_seq_len,
+                    ),
                 )
-                num_steps = min(num_steps, num_available_steps)
 
             # Verify LoRA is active for TG requests
             # LoRA requests should have been activated during CE
-            if is_lora(ctx, self._lora_manager) and not is_active_lora(
-                ctx, self._lora_manager
-            ):
+            if is_lora(
+                candidate_context, self._lora_manager
+            ) and not is_active_lora(candidate_context, self._lora_manager):
                 self._preempt_request(
-                    ctx, replica_idx, reason=PreemptionReason.MAX_NUM_LORAS
-                )
-                continue
-
-            is_scheduled = False
-            while not is_scheduled:
-                # If this is the only request, we should not exceed the max_length
-                # specified in its request parameter.
-                if (
-                    len(scheduled) == 0
-                    and len(candidate_reqs) == 0
-                    and ctx.max_length is not None
-                ):
-                    num_available_steps = ctx.compute_num_available_steps(
-                        ctx.max_length
-                    )
-                    num_steps = min(num_steps, num_available_steps)
-
-                # Attempt to schedule the request.
-                try:
-                    self.paged_cache.alloc(ctx, num_steps)
-                    is_scheduled = True
-                except InsufficientBlocksError:
-                    is_scheduled = False
-
-                # We were able to schedule this request
-                if is_scheduled:
-                    break
-
-                # We were not able to schedule this request but there is nothing
-                # to preempt
-                if len(candidate_reqs) == 0:
-                    break
-
-                # We were unable to schedule this request so we will try again
-                # after preempting the newest request
-                ctx_preempt = candidate_reqs.pop()
-                self._preempt_request(
-                    ctx_preempt,
+                    candidate_context,
                     replica_idx,
-                    reason=PreemptionReason.KV_CACHE_MEMORY,
+                    reason=PreemptionReason.MAX_NUM_LORAS,
                 )
-
-            # If we still can't schedule the request, we preempt it
-            if not is_scheduled:
-                self._preempt_request(
-                    ctx, replica_idx, reason=PreemptionReason.KV_CACHE_MEMORY
-                )
-                break
-
-            # Add the request to the batch
-            scheduled[ctx.request_id] = ctx
-            batch_context_length += ctx.start_idx
-
-        # We successfully created a TG batch
-        if len(scheduled) > 0:
-            # Truncate num_steps based on the maximum of num_available_steps
-            # calculated using the max_length request parameter. This differs from
-            # the max_seq_len of the pipeline model which is a hard limit that
-            # cannot ever be exceeded.
-            # e.g:
-            #   - num_steps = 10
-            #   - request 1 has 3 num_available_steps
-            #   - request 2 has 9 num_available_steps
-            #   - request 3 has 8 num_available_steps
-            #   => new_num_steps should be 9
-            # Note that some tokens for req 1 and 3 will be generated but discarded.
-            # This is intentional in order to prevent a single short request from
-            # limiting the num_steps for performance reasons.
-            num_available_steps_req: int | None = None
-            for ctx in scheduled.values():
-                # If any request has no max_length, we should not change num_steps
-                if ctx.max_length is None:
-                    num_available_steps_req = None
-                    break
-                steps = ctx.compute_num_available_steps(ctx.max_length)
-                if num_available_steps_req is None:
-                    num_available_steps_req = steps
-                elif steps > num_available_steps_req:
-                    num_available_steps_req = steps
-
-            if (
-                num_available_steps_req is not None
-                and num_available_steps_req < num_steps
-            ):
-                num_steps = num_available_steps_req
-
-            # If running for num_steps would exceed the max_batch_context_length
-            # limit, we need to reduce the number of steps we are running for.
-            if (
-                batch_context_length + len(scheduled) * num_steps
-                > max_batch_context_length
-            ):
-                num_steps = (
-                    int(max_batch_context_length) - batch_context_length
-                ) // len(scheduled)
-                # Based on construction of batch, we know that we can at least
-                # run for 1 step without exceeding max_batch_context_length.
-                assert num_steps >= 1
-
-            return ReplicaBatch(
-                batch=scheduled,
-                num_steps=num_steps,
-            )
-
-        # We have utterly failed to construct a TG batch.
-        # This should literally never happen unless the user sets an absurdly
-        # large max seq len or the KV cache is very small.
-        current_len = first_req_ctx.current_length
-        page_size = self.paged_cache.page_size
-        total_num_blocks = self.paged_cache.total_num_pages
-        max_seq_len = total_num_blocks * page_size
-        raise RuntimeError(
-            f"Insufficient KV pages to run token generation on a single request with {current_len} tokens.\n"
-            f"The KVCache has {total_num_blocks} pages with page size {page_size}. This is only enough to support {max_seq_len} tokens.\n"
-            "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
-        )
-
-    @traced
-    def _try_create_ce_batch(self, replica_idx: int) -> ReplicaBatch:
-        """Try to create a context encoding batch"""
-        replica = self.replicas[replica_idx]
-        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
-        max_batch_size_ce = self.scheduler_config.max_batch_size_ce
-        ce_batch: dict[RequestID, TextContext] = {}
-
-        # Reset the token budget for each CE batch construction.
-        token_budget = self._create_new_token_budget()
-
-        # Cannot schedule CE if there are no requests awaiting CE and or if the
-        # TG batch is full.
-        if (
-            len(replica.ce_reqs) == 0
-            or len(replica.tg_reqs) >= max_batch_size_tg
-        ):
-            return ReplicaBatch(batch=ce_batch, num_steps=1)
-
-        if self.scheduler_config.enable_in_flight_batching and replica.tg_reqs:
-            tg_batch = self._create_tg_batch(replica_idx)
-            ce_batch = tg_batch.batch
-            for ctx in ce_batch.values():
-                # active length should be 1 for TG requests
-                assert ctx.active_length == 1
-                token_budget.add_to_budget(ctx, request_type=RequestType.TG)
-
-        if self._lora_manager:
-            # Track which LoRAs are currently active from running (TG) requests
-            active_loras = set()
-
-            # Count LoRAs from TG requests (these are "running" and must be maintained)
-            for _, ctx in replica.tg_reqs.items():
-                if self._lora_manager.is_lora(ctx.model_name):
-                    active_loras.add(ctx.model_name)
-                    # Refresh LRU position for TG LoRAs to protect them from eviction.
-                    # This ensures they are marked as most-recently-used before we
-                    # activate any new CE LoRAs.
-                    if self._lora_manager.is_active_lora(ctx.model_name):
-                        self._lora_manager.activate_adapter(ctx.model_name)
-
-            deferred_lora_requests = {}
-
-        max_batch_context_length = (
-            self.scheduler_config.max_batch_context_length
-            if self.scheduler_config.max_batch_context_length is not None
-            else float("inf")
-        )
-        batch_context_length = sum(
-            ctx.current_length for ctx in replica.tg_reqs.values()
-        )
-
-        while (
-            replica.ce_reqs
-            and len(ce_batch) < max_batch_size_ce
-            and len(ce_batch) + len(replica.tg_reqs) < max_batch_size_tg
-            and batch_context_length < max_batch_context_length
-        ):
-            req_id, ctx = replica.ce_reqs.popitem(last=False)
-
-            # Check LoRA budget before resource allocation
-            if self._lora_manager and not can_allocate_lora_request(
-                ctx, active_loras, self._lora_manager
-            ):
-                deferred_lora_requests[req_id] = ctx
                 continue
 
-            # Claim the cache slot for the request if it's a new request.
-            if ctx.start_idx == 0:
-                if self.paged_cache is not None:
-                    self.paged_cache.claim(req_id, replica_idx=replica_idx)
-
-            # Check if the CE request would exceed the max_batch_context_length limit
-            if (
-                batch_context_length + ctx.current_length
-                > max_batch_context_length
-            ):
-                self._return_to_request_queue(ctx, replica_idx)
-                break
-
-            if self.paged_cache is not None:
-                # Check if the CE request will fit in the KVCache
-                pct_blocks_used_after_ce_request = (
-                    self.paged_cache.get_pct_used_blocks_after_allocation(
-                        ctx,
-                        1,  # Number of steps to schedule
-                    )
-                )
-                pct_blocks_used_after_ce_request = max(
-                    0.0, min(pct_blocks_used_after_ce_request, 1.0)
-                )
-
-                # Check if the percentage of blocks used after allocating for
-                # the CE request is within the allowed limit.
-                sufficient_free_blocks = (
-                    pct_blocks_used_after_ce_request
-                    <= self.scheduler_config.kvcache_ce_watermark
-                )
-                # If there are no active TG requests then we must schedule CE.
-                no_active_requests = (
-                    len(replica.tg_reqs) == 0 and len(ce_batch) == 0
-                )
-                scheduled = False
-                if sufficient_free_blocks or no_active_requests:
-                    # Attempt to schedule the request.
-                    try:
-                        self.paged_cache.alloc(ctx, num_steps=1)
-                        scheduled = True
-                    except InsufficientBlocksError:
-                        # If we cannot schedule this CE request and there are no
-                        # other active requests, we re-raise the exception since
-                        # this is a fatal error. This should never occur unless
-                        # a single request saturates the KV cache.
-                        if no_active_requests:
-                            raise
-                        scheduled = False
-
-                # We were not able to schedule this request
-                if not scheduled:
-                    self._return_to_request_queue(ctx, replica_idx)
-                    break
-
-            # activate the LoRA
-            if self._lora_manager and is_lora(ctx, self._lora_manager):
-                # Always call activate_adapter to refresh LRU position
-                self._lora_manager.activate_adapter(ctx.model_name)
-                active_loras.add(ctx.model_name)
-
-            budget_status = token_budget.status_after_context(
-                ctx, request_type=RequestType.CE
+            # Check if it fits within the token budget
+            # This is quite cheap, compared to the paged cache allocations
+            # So we can do it first.
+            status = batch.token_budget.status_after_context(
+                candidate_context,
+                num_steps=batch.num_steps,
+                request_type=RequestType.TG,
             )
-
-            if budget_status == BudgetStatus.BUDGET_EXHAUSTED:
-                self._return_to_request_queue(ctx, replica_idx)
+            if status == BudgetStatus.BUDGET_EXHAUSTED:
                 break
 
-            batch_context_length += ctx.current_length
-            ce_batch[req_id] = ctx
-            token_budget.add_to_budget(ctx, request_type=RequestType.CE)
+            # At this point, we can assume that the paged cache is active.
+            while True:
+                try:
+                    self.paged_cache.alloc(candidate_context, batch.num_steps)
+                    break
+                except InsufficientBlocksError:
+                    if len(candidate_ids) == 0:
+                        if len(batch) == 0:
+                            raise
+                        else:
+                            return
 
-            if budget_status == BudgetStatus.BUDGET_REACHED:
-                break
+                    # Pop the oldest candidate id
+                    oldest_id = candidate_ids.pop()
+                    oldest_context = replica_requests.tg_reqs.pop(oldest_id)
+                    self._preempt_request(
+                        oldest_context,
+                        replica_idx,
+                        reason=PreemptionReason.KV_CACHE_MEMORY,
+                    )
 
-        if self._lora_manager:
-            # Return requests back to the queue
-            for req_id, ctx in deferred_lora_requests.items():
-                replica.ce_reqs[req_id] = ctx
-                replica.ce_reqs.move_to_end(req_id, last=False)
+            match status:
+                case BudgetStatus.BUDGET_REACHED:
+                    batch.batch[candidate_context.request_id] = (
+                        candidate_context
+                    )
+                    batch.token_budget.add_to_budget(
+                        candidate_context, request_type=RequestType.TG
+                    )
+                    break
+                case BudgetStatus.BUDGET_AVAILABLE:
+                    batch.batch[candidate_context.request_id] = (
+                        candidate_context
+                    )
+                    batch.token_budget.add_to_budget(
+                        candidate_context, request_type=RequestType.TG
+                    )
+                case _:
+                    raise ValueError(f"Unexpected budget status: {status}")
 
-        return ReplicaBatch(batch=ce_batch, num_steps=1)
+    def _shrink_num_steps(self, batch: ReplicaBatch) -> None:
+        """Shrinks the number of steps for a batch to fit within the token budget."""
+        # If we are already running for 1 step, we cannot shrink further.
+        if batch.num_steps == 1:
+            return
+
+        # Otherwise, we need to find the maximum number of steps that can be run for any request in the batch
+        max_num_steps = 1
+        for ctx in batch.batch.values():
+            if ctx.max_length is None:
+                return
+
+            candidate_num_steps = ctx.compute_num_available_steps(
+                ctx.max_length
+            )
+            if candidate_num_steps > max_num_steps:
+                max_num_steps = candidate_num_steps
+
+        if max_num_steps < batch.num_steps:
+            batch.num_steps = max_num_steps
 
     @traced
     def _construct_replica_batch(self, replica_idx: int) -> ReplicaBatch:
         """Constructs a batch for a single replica."""
-        replica = self.replicas[replica_idx]
 
-        ce_batch = self._try_create_ce_batch(replica_idx)
-        if len(ce_batch.batch) > 0:
-            return ce_batch
-        # failed to create a CE batch, try to create a TG batch instead
+        # Initialize batch
+        batch = ReplicaBatch(
+            batch={},
+            num_steps=self.scheduler_config.max_forward_steps_tg,
+            token_budget=self._create_new_token_budget(),
+        )
 
-        # if there are no active requests, we can't create a TG batch
-        if not replica.tg_reqs:
-            return ReplicaBatch()
+        match self._identify_priority(replica_idx):
+            case RequestType.CE:
+                self._add_ce_requests(batch, replica_idx)
 
-        return self._create_tg_batch(replica_idx)
+                if len(batch) == 0:
+                    self._add_tg_requests(batch, replica_idx)
+
+            case RequestType.TG:
+                self._add_tg_requests(batch, replica_idx)
+
+                if (
+                    self.scheduler_config.enable_in_flight_batching
+                    and len(batch) > 0
+                ):
+                    self._add_ce_requests(batch, replica_idx)
+
+        # Shrink the number of steps
+        self._shrink_num_steps(batch)
+
+        return batch
 
     def construct_batch(self) -> TextGenerationInputs[TextContext]:
         """Constructs Pipeline Inputs which includes a batch for each replica."""
