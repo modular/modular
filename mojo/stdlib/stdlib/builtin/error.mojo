@@ -108,11 +108,6 @@ struct _ErrorWriter(Writer):
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         self.data.extend(bytes)
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(self)
-
 
 struct Error(
     Boolable,

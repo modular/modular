@@ -113,13 +113,10 @@ trait Writer:
         Args:
             args: Sequence of arguments to write to this Writer.
         """
-        ...
-        # TODO: When have default implementations on traits, we can use this:
-        # @parameter
-        # for i in range(args.__len__()):
-        #     args[i].write_to(self)
-        #
-        # To only have to implement `write_bytes` to make a type a valid Writer
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -201,11 +198,6 @@ struct _WriteBufferHeap(Writable, Writer):
         )
         self._pos += len_bytes
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         writer.write_bytes(Span(ptr=self._data, length=self._pos))
 
@@ -281,11 +273,6 @@ struct _WriteBufferStack[
         )
         self.pos += len_bytes
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(self)
-
 
 struct _TotalWritableBytes(Writer):
     var size: Int
@@ -312,11 +299,6 @@ struct _TotalWritableBytes(Writer):
 
     fn write_bytes(mut self, bytes: Span[UInt8, _]):
         self.size += len(bytes)
-
-    fn write[*Ts: Writable](mut self, *args: *Ts):
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(self)
 
 
 # ===-----------------------------------------------------------------------===#
