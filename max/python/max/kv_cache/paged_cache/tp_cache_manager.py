@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import logging
-import queue
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -25,7 +24,7 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
-from max.interfaces import RequestID, TextGenerationContext, get_blocking
+from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kv_cache.cache_params import KVCacheParams
 from max.nn.kv_cache.manager import RaggedKVCacheInputs
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -35,7 +34,6 @@ from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
 )
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.support.math import ceildiv
 
 from .block_copy_engine import BlockCopyEngine
@@ -98,7 +96,6 @@ class _TPPagedKVCacheManager:
         total_num_host_pages: int,
         devices: Sequence[Device],
         session: InferenceSession,
-        zmq_endpoint_base: str | None = None,
         enable_runtime_checks: bool = False,
     ) -> None:
         """Initialize the tensor-parallel paged KV cache manager.
@@ -133,13 +130,6 @@ class _TPPagedKVCacheManager:
 
         # Whether prefix caching is enabled.
         self.enable_prefix_caching = self.params.enable_prefix_caching
-
-        # Watches for requests to reset the prefix cache.
-        self.reset_prefix_cache_backend: ResetPrefixCacheBackend | None = None
-        if zmq_endpoint_base is not None and self.enable_prefix_caching:
-            self.reset_prefix_cache_backend = ResetPrefixCacheBackend(
-                zmq_endpoint_base
-            )
 
         # Whether kvcache swapping to host is enabled
         self.enable_kvcache_swapping_to_host = (
@@ -271,10 +261,6 @@ class _TPPagedKVCacheManager:
 
         if self.block_copy_engine is not None:
             self.block_copy_engine.wait_for_completion()
-
-        if self.reset_prefix_cache_backend is not None:
-            if self.reset_prefix_cache_backend.should_reset_prefix_cache():
-                self.reset_prefix_cache()
 
         max_seq_len = -1
         for batch_idx, ctx in enumerate(batch):  # noqa: B007
@@ -501,39 +487,3 @@ class _TPPagedKVCacheManager:
 
     def reset_prefix_cache(self) -> None:
         self.block_manager.reset_prefix_cache()
-
-
-ZMQ_RESET_PREFIX_CACHE_ENDPOINT = "reset_prefix_cache"
-
-
-class ResetPrefixCacheBackend:
-    def __init__(self, zmq_endpoint_base: str):
-        self.socket = ZmqPullSocket[None](
-            endpoint=f"{zmq_endpoint_base}-{ZMQ_RESET_PREFIX_CACHE_ENDPOINT}",
-            payload_type=None,
-        )
-
-    def should_reset_prefix_cache(self, blocking: bool = False) -> bool:
-        # If blocking is True, we do not return until we receive a message from
-        # the frontend to reset the prefix cache. Hence, it will always return True.
-        if blocking:
-            get_blocking(self.socket)
-            return True
-
-        # If non-blocking, we return True if there is a message in the queue.
-        try:
-            self.socket.get_nowait()
-            return True
-        except queue.Empty:
-            return False
-
-
-class ResetPrefixCacheFrontend:
-    def __init__(self, zmq_endpoint_base: str):
-        self.socket = ZmqPushSocket[None](
-            endpoint=f"{zmq_endpoint_base}-{ZMQ_RESET_PREFIX_CACHE_ENDPOINT}",
-            payload_type=None,
-        )
-
-    def enqueue_reset_prefix_cache(self) -> None:
-        self.socket.put_nowait(None)

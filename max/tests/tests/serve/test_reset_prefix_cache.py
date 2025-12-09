@@ -17,11 +17,11 @@ import pytest_asyncio
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.interfaces import TextGenerationRequest
-from max.kv_cache.paged_cache import ResetPrefixCacheBackend
 from max.pipelines.lib import IdentityPipelineTokenizer, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
+from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from tests.serve.conftest import DEFAULT_ZMQ_ENDPOINT_BASE
 
 

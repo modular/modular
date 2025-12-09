@@ -73,7 +73,6 @@ class PagedKVCacheManager:
         devices: Sequence[Device],
         session: InferenceSession,
         total_num_host_pages: int = 0,
-        zmq_endpoint_base: str | None = None,
         enable_runtime_checks: bool = False,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
@@ -106,7 +105,6 @@ class PagedKVCacheManager:
                     total_num_host_pages=total_num_host_pages,
                     devices=devices,
                     session=session,
-                    zmq_endpoint_base=zmq_endpoint_base,
                     enable_runtime_checks=enable_runtime_checks,
                 )
             )

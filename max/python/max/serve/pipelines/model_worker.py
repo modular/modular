@@ -31,11 +31,11 @@ from max.interfaces import (
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.kv_cache.paged_cache import ResetPrefixCacheBackend
 from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_cuda_oom
+from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import load_scheduler
