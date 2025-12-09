@@ -799,7 +799,7 @@ fn unbound_function_type():
 # Crash converting mvalue of #lit.any.origin origin to Pointer with specific one.
 # https://github.com/modular/mojo/issues/1921
 struct SomeStruct:
-  fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int])
+  fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int, MutAnyOrigin])
       -> Pointer[Int, origin_of(self)]:
     # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutAnyOrigin]' value to 'Pointer[Int, origin_of(self)]'}}
     return Pointer(to=ptr[])
@@ -977,7 +977,7 @@ fn test_comptime_materialize():
   # Swimmingly fine.
   var rt_byte = byte
 
-  # expected-error @below {{cannot materialize compile-time value of type 'UnsafePointer[UInt8, mut=False, origin=ComptimeOrigin]' to a runtime value}}
+  # expected-error @below {{cannot materialize compile-time value of type 'UnsafePointer[UInt8, ComptimeOrigin]' to a runtime value}}
   # expected-note @below {{the type contains an origin referring to a compile-time value}}
   var use_bad = bad
 

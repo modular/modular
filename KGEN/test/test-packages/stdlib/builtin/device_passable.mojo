@@ -8,7 +8,7 @@
 trait DevicePassable:
     comptime device_type: AnyType
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         ...
 
     @staticmethod

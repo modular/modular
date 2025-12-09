@@ -290,8 +290,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}(%arg)
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut {{.*}}#lit.any.origin{{.*}}> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"mut`", "_mlir_value">,
-  # CHECK-NEXT: [[RES:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[ADJREFVAL]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[REF]])
   # CHECK-NEXT: kgen.return [[RES]]
   return Pointer[Int, arg.origin](to=UnsafePointer(to=arg[])[])
 

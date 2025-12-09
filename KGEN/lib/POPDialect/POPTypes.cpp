@@ -343,8 +343,13 @@ ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
   int64_t bitWidth = dtype.getWidthInBits(state.getTarget());
   int64_t byteSize = vecSize / *getResolvedSize();
   int64_t shiftBits = byteSize * CHAR_BIT - bitWidth;
+  // Use consistent internal storage width for pointer-sized types to avoid
+  // bit width mismatches when cross-compiling to targets with different
+  // pointer sizes.
   int64_t storageBitWidth =
-      dtype.isIndex() ? IndexType::kInternalStorageBitWidth : bitWidth;
+      (dtype.isIndex() || dtype.isUIndex() || dtype.isAddress())
+          ? IndexType::kInternalStorageBitWidth
+          : bitWidth;
 
   SmallVector<DTypeValue> values;
   APInt value(byteSize * CHAR_BIT, 0);

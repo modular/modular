@@ -232,7 +232,7 @@ fn test_variadic_and_kw_only_params_indirect[x: Int,
 
 # CHECK-LABEL: lit.fn @"initialize_in_addrspace
 fn initialize_in_addrspace(
-    ptr: UnsafePointer[ExampleRegPassable, address_space=AddressSpace(1)]
+    ptr: UnsafePointer[ExampleRegPassable, MutAnyOrigin, address_space=AddressSpace(1)]
 ):
 
     # Get !lit.ref in addr space #1
@@ -260,7 +260,7 @@ fn test_param_refitem[a: SomeRefItemStruct]():
 # CHECK-LABEL: lit.fn @"mutate_in_addrspace
 fn mutate_in_addrspace(
     a: ExampleRegPassable,
-    ptr: UnsafePointer[ExampleRegPassable, address_space=AddressSpace(1)],
+    ptr: UnsafePointer[ExampleRegPassable, MutAnyOrigin, address_space=AddressSpace(1)],
 ):
     # Get !lit.ref in addr space #1
     # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
@@ -430,7 +430,7 @@ struct ThingWithParam[X: Int]:
 
 fn test_cond_conformance(exclude: Bool):
     comptime local_alias = 42
-    var ptr : UnsafePointer[ThingWithParam[local_alias]]
+    var ptr : UnsafePointer[ThingWithParam[local_alias], MutAnyOrigin]
     ptr[] = exclude
 
 
