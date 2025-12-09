@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import pytest
@@ -22,7 +22,7 @@ from max._core.nixl import (
     TransferOpType,
 )
 from max.driver import CPU, Accelerator, Device, Tensor
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike
 
 
 def create_agent(
@@ -88,12 +88,12 @@ def test_memory_registration(device: Device) -> None:
         type=memory_type,
         # This cast should not be necessary.
         # descs should accept any object that implements __dlpack__ instead.
-        descs=[cast(NDArray[Any], buffer)],
+        descs=[cast(ArrayLike, buffer)],
     )
 
     # Test append()
     buffer2 = Tensor.from_numpy(np.ones((50, 50))).to(device)
-    registration_descriptor.append(cast(NDArray[Any], buffer2))
+    registration_descriptor.append(cast(ArrayLike, buffer2))
 
     # Register Memory
     status = agent.register_memory(
@@ -127,12 +127,12 @@ def test_memory_transfer(device: Device) -> None:
 
     # Register Memory
     reg_dlist_1 = RegistrationDescriptorList(
-        type=memory_type, descs=[cast(NDArray[Any], buffer_1)]
+        type=memory_type, descs=[cast(ArrayLike, buffer_1)]
     )
     agent_1.register_memory(descs=reg_dlist_1, backends=[ucx_backend_1])
 
     reg_dlist_2 = RegistrationDescriptorList(
-        type=memory_type, descs=[cast(NDArray[Any], buffer_2)]
+        type=memory_type, descs=[cast(ArrayLike, buffer_2)]
     )
     agent_2.register_memory(descs=reg_dlist_2, backends=[ucx_backend_2])
 

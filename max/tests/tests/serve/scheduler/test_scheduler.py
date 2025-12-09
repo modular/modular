@@ -309,6 +309,51 @@ def test_should_schedule_ce_full_batch() -> None:
     assert mock_request_ce.request_id not in batch
 
 
+def test_schedule_mixed_ce_tg() -> None:
+    scheduler, request_push_socket, _, _ = create_scheduler()
+    batch_constructor = scheduler.batch_constructor
+
+    # Setup scheduler with chunked prefill enabled
+    scheduler.scheduler_config.enable_chunked_prefill = True
+    scheduler.scheduler_config.enable_in_flight_batching = True
+    scheduler.scheduler_config.target_tokens_per_batch_ce = 20
+
+    mock_request_tg = create_mock_request(seq_len=10)
+    assert mock_request_tg.active_idx == 10
+    assert mock_request_tg.end_idx == 10
+
+    request_push_socket.put_nowait(mock_request_tg)
+    scheduler._retrieve_pending_requests()
+
+    batch_to_execute = batch_constructor.construct_batch().batch
+    assert len(batch_to_execute) == 1
+    inputs = TextGenerationInputs(
+        batches=[batch_to_execute],
+        num_steps=1,
+    )
+
+    scheduler._schedule(inputs)
+    # req1 has been put in `active_batch`
+
+    mock_request_ce = create_mock_request(seq_len=30)
+    request_push_socket.put_nowait(mock_request_ce)
+    scheduler._retrieve_pending_requests()
+    batch = batch_constructor.construct_batch().batch
+
+    # `batch_to_execute` should contain 1 token from req1 and 19 tokens from req2
+    assert len(batch) == 2
+    assert mock_request_tg.request_id in batch
+    assert mock_request_ce.request_id in batch
+
+    tg_req = batch[mock_request_tg.request_id]
+    assert tg_req.active_idx == 11
+    assert tg_req.active_length == 1
+
+    ce_req = batch[mock_request_ce.request_id]
+    assert ce_req.active_idx == 19
+    assert ce_req.active_length == 19
+
+
 def test_schedule_tg() -> None:
     scheduler, _, _, _ = create_scheduler()
 

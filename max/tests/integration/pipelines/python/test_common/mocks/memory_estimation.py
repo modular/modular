@@ -27,15 +27,8 @@ def mock_estimate_memory_footprint(func: Callable[_P, _R]) -> Callable[_P, _R]:
 
         @wraps(func)
         async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-            with (
-                patch.object(
-                    MemoryEstimator, "estimate_memory_footprint", return_value=0
-                ),
-                patch.object(
-                    MemoryEstimator,
-                    "max_supported_sequence_length",
-                    return_value=None,
-                ),
+            with patch.object(
+                MemoryEstimator, "estimate_memory_footprint", return_value=0
             ):
                 return await func(*args, **kwargs)
 
@@ -44,15 +37,8 @@ def mock_estimate_memory_footprint(func: Callable[_P, _R]) -> Callable[_P, _R]:
 
         @wraps(func)
         def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-            with (
-                patch.object(
-                    MemoryEstimator, "estimate_memory_footprint", return_value=0
-                ),
-                patch.object(
-                    MemoryEstimator,
-                    "max_supported_sequence_length",
-                    return_value=None,
-                ),
+            with patch.object(
+                MemoryEstimator, "estimate_memory_footprint", return_value=0
             ):
                 return func(*args, **kwargs)
 

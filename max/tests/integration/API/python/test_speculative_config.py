@@ -13,24 +13,10 @@ from max.pipelines.lib.speculative_config import (
 )
 
 
-def test_is_eagle() -> None:
-    """Verify is_eagle() returns correct boolean."""
-    assert SpeculativeConfig(
-        speculative_method=SpeculativeMethod.EAGLE
-    ).is_eagle()
-    assert not SpeculativeConfig(
-        speculative_method=SpeculativeMethod.STANDALONE
-    ).is_eagle()
-    assert not SpeculativeConfig(speculative_method=None).is_eagle()
-
-
 def test_is_standalone() -> None:
     """Verify is_standalone() returns correct boolean."""
     assert SpeculativeConfig(
         speculative_method=SpeculativeMethod.STANDALONE
-    ).is_standalone()
-    assert not SpeculativeConfig(
-        speculative_method=SpeculativeMethod.EAGLE
     ).is_standalone()
     assert not SpeculativeConfig(speculative_method=None).is_standalone()
 
@@ -50,4 +36,3 @@ def test_num_speculative_tokens() -> None:
 def test_enum_values() -> None:
     """Verify expected SpeculativeMethod enum values exist."""
     assert SpeculativeMethod.STANDALONE == "standalone"
-    assert SpeculativeMethod.EAGLE == "eagle"
