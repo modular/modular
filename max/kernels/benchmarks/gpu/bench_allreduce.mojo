@@ -16,7 +16,15 @@ from math import floor, align_up
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
 from utils.numerics import get_accum_type
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from benchmark import (
+    Bench,
+    Bencher,
+    BenchmarkInfo,
+    BenchId,
+    BenchMetric,
+    Report,
+    ThroughputMeasure,
+)
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
@@ -105,6 +113,10 @@ fn bench_reduce[
 ) raises:
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
+
+    var name = String(
+        _get_test_str[dtype, use_multimem, use_vendor_ccl](ngpus, num_bytes)
+    )
 
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -240,7 +252,15 @@ fn bench_reduce[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    var results = InlineArray[Float64, ngpus](fill={})
+    # Necessary to fill this InlineArray w/ default BenchmarkInfo
+    # otherwise each thread attempts to free uninitialized BenchmarkInfo
+    # when copying below
+    var default_info = BenchmarkInfo(
+        name="",
+        result=Report(),
+        measures=List[ThroughputMeasure](),
+    )
+    var results_b = InlineArray[BenchmarkInfo, ngpus](fill=default_info)
 
     @parameter
     fn per_gpu(i: Int) raises:
@@ -289,26 +309,28 @@ fn bench_reduce[
             b.iter_custom[call_fn](list_of_ctx[i])
 
         var b = Bench()
-        b.config.show_progress = False
         b.bench_function[bench_iter](
-            BenchId(String("")),
+            BenchId(name),
             [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
         )
-        results[i] = b.info_vec[0].result.mean(unit="ms")
+        results_b[i] = b.info_vec[0].copy()
 
     sync_parallelize[per_gpu](ngpus)
 
     var max_time = 0.0
+    var max_loc = 0
+
     for i in range(ngpus):
-        if results[i] > max_time:
-            max_time = results[i]
+        var val = results_b[i].result.mean(unit="ms")
+        if val > max_time:
+            max_time = val
+            max_loc = i
+
+    var b_final = Bench()
+    b_final.info_vec.append(results_b[max_loc].copy())
+    b_final.dump_report()
 
     var gbps = num_bytes / (max_time * 1000 * 1000)
-    print("")
-    var name = String(
-        _get_test_str[dtype, use_multimem](ngpus, num_bytes),
-        "-vendor_ccl" if use_vendor_ccl else "",
-    )
     # algbw and busbw are explain in the following link:
     # https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md#allreduce
     var busbw = 2 * gbps * (ngpus - 1) / ngpus
@@ -366,15 +388,17 @@ fn bench_reduce[
 
 
 fn _get_test_str[
-    dtype: DType, use_multimem: Bool
+    dtype: DType, use_multimem: Bool, use_vendorccl: Bool
 ](ngpus: Int, num_bytes: Int) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
+    var vendorccl_tag = "-vendorccl" if use_vendorccl else ""
     return String(
         "allreduce-",
         dtype,
         "-",
         ngpus,
         multimem_tag,
+        vendorccl_tag,
         "-",
         _human_memory(num_bytes),
     )
@@ -412,9 +436,6 @@ def main():
         # Don't benchmark the naive allreduce.
         print("P2P not enabled, skipping benchmark.")
         return
-
-    # Generate descriptive test name.
-    print(_get_test_str[dtype, use_multimem](num_gpus, num_bytes))
 
     var m = Bench()
 
