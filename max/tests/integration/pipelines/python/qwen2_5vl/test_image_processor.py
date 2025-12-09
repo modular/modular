@@ -13,6 +13,7 @@ import io
 import urllib.request
 
 import numpy as np
+import numpy.typing as npt
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import fetch_image
 
 # Import our custom processor
@@ -21,6 +22,25 @@ from max.pipelines.architectures.qwen2_5vl.tokenizer import (
 )
 from PIL import Image
 from transformers import Qwen2VLImageProcessor
+
+
+def bfloat16_as_uint16_to_float32(
+    arr: npt.NDArray[np.uint16],
+) -> npt.NDArray[np.float32]:
+    """Convert bfloat16 representation stored as uint16 back to float32.
+
+    This is the inverse of float32_to_bfloat16_as_uint16.
+
+    Args:
+        arr: Uint16 array containing bfloat16 bit representation
+
+    Returns:
+        Float32 numpy array
+    """
+    # Create a uint32 array to hold the result
+    # bfloat16 goes into the upper 16 bits, lower 16 bits are zeros
+    uint32_arr = arr.astype(np.uint32) << 16
+    return uint32_arr.view(np.float32)
 
 
 def download_image(url: str) -> Image.Image:
@@ -176,11 +196,13 @@ def test_image_processor() -> None:
     )
     print("✅ Grid dimensions match")
 
-    # Check if the difference is systematic
-    diff = (
+    # Convert custom result from bfloat16 (stored as uint16) back to float32 for comparison
+    custom_pixel_values_float32 = bfloat16_as_uint16_to_float32(
         custom_result["concatenated_pixel_values"]
-        - transformers_result["pixel_values"]
     )
+
+    # Check if the difference is systematic
+    diff = custom_pixel_values_float32 - transformers_result["pixel_values"]
     print("  Difference (custom - transformers):")
     print(f"    - min: {diff.min():.6f}")
     print(f"    - max: {diff.max():.6f}")
@@ -188,7 +210,7 @@ def test_image_processor() -> None:
     print(f"    - std: {diff.std():.6f}")
 
     # Check if it's a scaling issue
-    ratio = custom_result["concatenated_pixel_values"] / (
+    ratio = custom_pixel_values_float32 / (
         transformers_result["pixel_values"] + 1e-8
     )
     print("  Ratio (custom / transformers):")
@@ -199,34 +221,32 @@ def test_image_processor() -> None:
 
     # Debug: Show first few values from both processors
     print("\nDebug: First 10 values comparison:")
-    print(f"  Custom:     {custom_result['concatenated_pixel_values'][0, :10]}")
+    print(f"  Custom:     {custom_pixel_values_float32[0, :10]}")
     print(f"  Transformers: {transformers_result['pixel_values'][0, :10]}")
     print(f"  Difference: {diff[0, :10]}")
 
     # Debug: Show values from middle of array
-    mid_idx = custom_result["concatenated_pixel_values"].shape[0] // 2
+    mid_idx = custom_pixel_values_float32.shape[0] // 2
     print(f"\nDebug: Middle 10 values (row {mid_idx}):")
-    print(
-        "  Custom:    "
-        f" {custom_result['concatenated_pixel_values'][mid_idx, :10]}"
-    )
+    print(f"  Custom:     {custom_pixel_values_float32[mid_idx, :10]}")
     print(
         f"  Transformers: {transformers_result['pixel_values'][mid_idx, :10]}"
     )
     print(f"  Difference: {diff[mid_idx, :10]}")
 
-    # TODO: `MODELS-912` Fix failing unit test.
     # ASSERT: Compare pixel values (allow for small numerical differences)
-    # assert np.allclose(
-    #     custom_result["concatenated_pixel_values"],
-    #     transformers_result["pixel_values"],
-    #     rtol=1e-5,
-    #     atol=1e-5,
-    # ), (
-    #     f"Pixel values don't match within tolerance. "
-    #     f"Custom min/max: {custom_result['concatenated_pixel_values'].min():.6f}/{custom_result['concatenated_pixel_values'].max():.6f}, "
-    #     f"Transformers min/max: {transformers_result['pixel_values'].min():.6f}/{transformers_result['pixel_values'].max():.6f}"
-    # )
+    # Using rtol=1e-2 to account for bfloat16 precision loss
+    assert np.allclose(
+        custom_pixel_values_float32,
+        transformers_result["pixel_values"],
+        rtol=1e-2,
+        atol=1e-3,
+    ), (
+        f"Pixel values don't match within tolerance. "
+        f"Custom min/max: {custom_pixel_values_float32.min():.6f}/{custom_pixel_values_float32.max():.6f}, "
+        f"Transformers min/max: {transformers_result['pixel_values'].min():.6f}/{transformers_result['pixel_values'].max():.6f}"
+    )
+    print("✅ Pixel values match")
 
 
 def test_multiple_images() -> None:
@@ -323,16 +343,21 @@ def test_multiple_images() -> None:
     )
     print("✅ Multiple image grid dimensions match")
 
-    # TODO: `MODELS-912` Fix failing unit test.
+    # Convert custom result from bfloat16 (stored as uint16) back to float32 for comparison
+    custom_pixel_values_float32 = bfloat16_as_uint16_to_float32(
+        custom_result["concatenated_pixel_values"]
+    )
+
     # ASSERT: Compare pixel values
-    # assert np.allclose(
-    #     custom_result["concatenated_pixel_values"],
-    #     transformers_result["pixel_values"],
-    #     rtol=1e-5,
-    #     atol=1e-5,
-    # ), (
-    #     f"Pixel values don't match within tolerance. "
-    #     f"Custom min/max: {custom_result['concatenated_pixel_values'].min():.6f}/{custom_result['concatenated_pixel_values'].max():.6f}, "
-    #     f"Transformers min/max: {transformers_result['pixel_values'].min():.6f}/{transformers_result['pixel_values'].max():.6f}"
-    # )
+    # Using rtol=1e-2 to account for bfloat16 precision loss
+    assert np.allclose(
+        custom_pixel_values_float32,
+        transformers_result["pixel_values"],
+        rtol=1e-2,
+        atol=1e-3,
+    ), (
+        f"Pixel values don't match within tolerance. "
+        f"Custom min/max: {custom_pixel_values_float32.min():.6f}/{custom_pixel_values_float32.max():.6f}, "
+        f"Transformers min/max: {transformers_result['pixel_values'].min():.6f}/{transformers_result['pixel_values'].max():.6f}"
+    )
     print("✅ Multiple image pixel values match")
