@@ -115,7 +115,9 @@ fn bench_topk_batched[
     for i in range(batch_size):
         K_host_ptr[i] = K
 
-    var max_k = Int(reduce_max(K_host_buffer))
+    var max_k = Int(
+        reduce_max(Span(ptr=K_host_buffer.data, length=len(K_host_buffer)))
+    )
 
     ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
     ctx.synchronize()
@@ -380,7 +382,9 @@ fn bench_topk_multi_rank[
     var K_dev_buffer = ctx.enqueue_create_buffer[DType.int64](batch_size)
     ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
     ctx.synchronize()
-    var max_k = Int(reduce_max(K_host_buffer))
+    var max_k = Int(
+        reduce_max(Span(ptr=K_host_buffer.data, length=len(K_host_buffer)))
+    )
 
     comptime k_layout = Layout.row_major(UNKNOWN_VALUE)
     var k_lt = LayoutTensor[DType.int64, k_layout, MutAnyOrigin](

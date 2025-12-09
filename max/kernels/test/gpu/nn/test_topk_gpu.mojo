@@ -17,7 +17,6 @@ from random import random_float64, seed
 
 from algorithm.reduction import max as reduce_max
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
@@ -126,12 +125,12 @@ fn test_case_batched[
         K_shape.flattened_length()
     )
     var K_host_ptr = UnsafePointer[Int64].alloc(K_shape.flattened_length())
-    # NDBuffer needed for reduce_max
-    var K_host_tensor = NDBuffer[DType.int64, 1](K_host_ptr, K_shape)
     for i in range(batch_size):
         K_host_ptr[i] = K
 
-    var max_k = Int(reduce_max(K_host_tensor))
+    var max_k = Int(
+        reduce_max(Span(ptr=K_host_ptr, length=K_shape.flattened_length()))
+    )
 
     ctx.enqueue_copy(K_device_buffer, K_host_ptr)
     ctx.synchronize()
@@ -438,8 +437,6 @@ fn test_case_multi_rank[
     # Create K buffers
     var K_shape = IndexList[1](batch_size)
     var K_host_ptr = UnsafePointer[Int64].alloc(K_shape.flattened_length())
-    # NDBuffer needed for reduce_max
-    var K_host_tensor = NDBuffer[DType.int64, 1](K_host_ptr, K_shape)
     for i in range(batch_size):
         K_host_ptr[i] = K
 
@@ -448,7 +445,9 @@ fn test_case_multi_rank[
     )
     ctx.enqueue_copy(K_device_buffer, K_host_ptr)
     ctx.synchronize()
-    var max_k = Int(reduce_max(K_host_tensor))
+    var max_k = Int(
+        reduce_max(Span(ptr=K_host_ptr, length=K_shape.flattened_length()))
+    )
 
     # Create layout tensors for kernel calls
     comptime out_vals_layout = Layout.row_major[rank]()
