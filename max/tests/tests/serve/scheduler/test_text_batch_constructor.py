@@ -138,8 +138,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_ce=5,
-        max_batch_size_tg=5,
+        max_batch_size=5,
         max_batch_context_length=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
@@ -256,8 +255,7 @@ def test_text_batch_constructor__batch_construction_no_requests(
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_ce=5,
-        max_batch_size_tg=5,
+        max_batch_size=5,
         max_batch_context_length=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
@@ -288,8 +286,7 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_ce=5,
-        max_batch_size_tg=5,
+        max_batch_size=5,
         max_batch_context_length=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
@@ -329,8 +326,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_ce=5,
-        max_batch_size_tg=5,
+        max_batch_size=5,
         max_batch_context_length=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
@@ -393,7 +389,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
 
     inputs = batch_constructor.construct_batch()
     # We only grab 2 new CE requests here, because we have 3 TG requests outstanding.
-    # Since max_batch_size_tg is 5, we can only have 5 requests outstanding at a time.
+    # Since max_batch_size is 5, we can only have 5 requests outstanding at a time.
     assert len(inputs.batches[0]) == 2
     assert list(inputs.batches[0].values())[-1].needs_ce is True
 
@@ -478,8 +474,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_ce=10,
-        max_batch_size_tg=10,
+        max_batch_size=10,
         max_batch_context_length=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=True,
@@ -560,8 +555,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_ce=10,
-        max_batch_size_tg=10,
+        max_batch_size=10,
         max_batch_context_length=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=True,
@@ -643,9 +637,8 @@ def test_single_lora_scheduling() -> None:
     paged_cache = create_mock_paged_cache()
 
     config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=4,
+        max_batch_size=4,
         max_forward_steps_tg=1,
-        max_batch_size_ce=4,
         target_tokens_per_batch_ce=100,
     )
 
@@ -673,9 +666,8 @@ def test_multi_lora_within_budget() -> None:
     paged_cache = create_mock_paged_cache()
 
     config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=4,
+        max_batch_size=4,
         max_forward_steps_tg=1,
-        max_batch_size_ce=4,
         target_tokens_per_batch_ce=200,
     )
 
@@ -708,9 +700,8 @@ def test_lora_preemption_over_budget() -> None:
     paged_cache = create_mock_paged_cache()
 
     config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=5,
+        max_batch_size=5,
         max_forward_steps_tg=1,
-        max_batch_size_ce=5,
         target_tokens_per_batch_ce=200,
     )
 
@@ -748,9 +739,8 @@ def test_age_based_scheduling_with_lora() -> None:
     paged_cache = create_mock_paged_cache()
 
     config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=4,
+        max_batch_size=4,
         max_forward_steps_tg=1,
-        max_batch_size_ce=2,
         target_tokens_per_batch_ce=40,
     )
 
@@ -784,9 +774,8 @@ def test_tg_batch_with_active_loras() -> None:
     paged_cache = create_mock_paged_cache()
 
     config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=5,
+        max_batch_size=5,
         max_forward_steps_tg=1,
-        max_batch_size_ce=4,
         target_tokens_per_batch_ce=100,
     )
 
@@ -822,9 +811,8 @@ def test_ce_lora_activation_within_budget() -> None:
     paged_cache = create_mock_paged_cache()
 
     config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=4,
+        max_batch_size=4,
         max_forward_steps_tg=1,
-        max_batch_size_ce=4,
         target_tokens_per_batch_ce=100,
     )
 
@@ -861,9 +849,8 @@ def test_tg_pure_age_based_preemption() -> None:
     )
 
     config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=4,
+        max_batch_size=4,
         max_forward_steps_tg=1,
-        max_batch_size_ce=4,
         target_tokens_per_batch_ce=100,
     )
 
@@ -898,9 +885,8 @@ def test_lora_swapping_ce_to_tg() -> None:
     paged_cache = create_mock_paged_cache()
 
     config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=4,
+        max_batch_size=4,
         max_forward_steps_tg=1,
-        max_batch_size_ce=4,
         target_tokens_per_batch_ce=100,
     )
 
@@ -941,9 +927,8 @@ def test_mixed_requests_scheduling() -> None:
     paged_cache = create_mock_paged_cache()
 
     config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=4,
+        max_batch_size=4,
         max_forward_steps_tg=1,
-        max_batch_size_ce=4,
         target_tokens_per_batch_ce=100,
     )
 

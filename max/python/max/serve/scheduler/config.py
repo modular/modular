@@ -22,14 +22,11 @@ from max.pipelines.lib import PipelineConfig
 class TokenGenerationSchedulerConfig:
     """Scheduler configuration."""
 
-    max_batch_size_tg: int
+    max_batch_size: int
     """The maximum number of requests that can be in the token generation batch."""
 
     max_forward_steps_tg: int
     """The number of tokens to generate for each request in the token generation iteration."""
-
-    max_batch_size_ce: int
-    """The maximum number of requests that can be in the context encoding batch."""
 
     target_tokens_per_batch_ce: int
     """The target total number of tokens to encode in the context encoding batch."""
@@ -55,13 +52,9 @@ class TokenGenerationSchedulerConfig:
     """The maximum percentage of total KVCache memory that can be used after allocating a CE request. This parameter was found empirically."""
 
     def __post_init__(self) -> None:
-        if self.max_batch_size_tg <= 0:
+        if self.max_batch_size <= 0:
             raise ValueError(
-                f"`max_batch_size_tg` must be greater than 0, found {self.max_batch_size_tg}"
-            )
-        if self.max_batch_size_ce <= 0:
-            raise ValueError(
-                f"`max_batch_size_ce` must be greater than 0, found {self.max_batch_size_ce}"
+                f"`max_batch_size` must be greater than 0, found {self.max_batch_size}"
             )
         if self.target_tokens_per_batch_ce <= 0:
             raise ValueError(
@@ -96,11 +89,10 @@ class TokenGenerationSchedulerConfig:
         assert pipeline_config.max_batch_size is not None
 
         return cls(
-            max_batch_size_tg=pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.max_batch_size,
             max_forward_steps_tg=pipeline_config.max_num_steps
             if pipeline_config.max_num_steps != -1
             else 1,
-            max_batch_size_ce=pipeline_config.max_ce_batch_size,
             target_tokens_per_batch_ce=pipeline_config.prefill_chunk_size,
             max_seq_len=pipeline_config.max_length,
             max_batch_context_length=pipeline_config.max_batch_context_length,

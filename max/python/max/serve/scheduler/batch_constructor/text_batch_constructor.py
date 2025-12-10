@@ -252,10 +252,7 @@ class TextBatchConstructor:
     Independently of token budgets, explicit batch-size caps ensure that no
     batch grows without bound:
 
-    - ``max_batch_size_ce`` limits the number of requests in a CE batch per
-      replica.
-    - ``max_batch_size_tg`` limits the number of requests in a TG batch per
-      replica.
+    - ``max_batch_size`` limits the number of requests in a batch per replica.
 
     Once a batch reaches its respective maximum size, no further requests are
     considered for that iteration, even if token budgets or cache capacity
@@ -587,19 +584,19 @@ class TextBatchConstructor:
 
     def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
         replica_requests = self.replicas[replica_idx]
-        max_batch_size_ce = self.scheduler_config.max_batch_size_ce
+        max_batch_size = self.scheduler_config.max_batch_size
 
         # If there is anything in the batch, we can assume its TG, and the requests
         # are also counted in the tg_reqs.
         starting_tg_reqs_count = len(batch)
-        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
+        max_batch_size = self.scheduler_config.max_batch_size
         while (
-            len(batch) < max_batch_size_ce
+            len(batch) < max_batch_size
             # At a high level, active ce requests + tg_requests should not exceed the total max batch size.
             and len(batch)
             + len(replica_requests.tg_reqs)
             - starting_tg_reqs_count
-            < max_batch_size_tg
+            < max_batch_size
             and len(replica_requests.ce_reqs) > 0
         ):
             # Pop new request off the queue.
@@ -682,10 +679,10 @@ class TextBatchConstructor:
         replica_requests = self.replicas[replica_idx]
 
         # If we do not have a paged cache, assume we can add all items
-        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
+        max_batch_size = self.scheduler_config.max_batch_size
         if self.paged_cache is None:
             tg_request_ids = tuple(replica_requests.tg_reqs.keys())
-            for request_id in tg_request_ids[:max_batch_size_tg]:
+            for request_id in tg_request_ids[:max_batch_size]:
                 ctx = replica_requests.tg_reqs[request_id]
                 batch.batch[request_id] = ctx
 
@@ -694,7 +691,7 @@ class TextBatchConstructor:
         # Add based on the oldest request, respecting KV cache limits and token budgets.
         candidate_ids = deque(replica_requests.tg_reqs.keys())
         max_seq_len = self.scheduler_config.max_seq_len
-        while len(batch) < max_batch_size_tg and len(candidate_ids) > 0:
+        while len(batch) < max_batch_size and len(candidate_ids) > 0:
             # Pop the oldest request
             candidate_id = candidate_ids.popleft()
             candidate_context = replica_requests.tg_reqs[candidate_id]

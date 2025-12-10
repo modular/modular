@@ -63,9 +63,8 @@ def create_mock_pipeline() -> Mock:
 
 def create_scheduler(
     dp: int = 1,
-    max_batch_size_tg: int = 4,
+    max_batch_size: int = 4,
     max_forward_steps_tg: int = 8,
-    max_batch_size_ce: int = 4,
     target_tokens_per_batch_ce: int = 32,
     kvcache_ce_watermark: float = 0.95,
 ) -> tuple[
@@ -75,9 +74,8 @@ def create_scheduler(
     MAXPushQueue[list[RequestID]],
 ]:
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=max_batch_size_tg,
+        max_batch_size=max_batch_size,
         max_forward_steps_tg=max_forward_steps_tg,
-        max_batch_size_ce=max_batch_size_ce,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         data_parallel_degree=dp,
         kvcache_ce_watermark=kvcache_ce_watermark,
@@ -306,7 +304,7 @@ def test_should_schedule_ce_empty_queue() -> None:
 
 def test_should_schedule_ce_full_batch() -> None:
     scheduler, request_push_socket, _, _ = create_scheduler()
-    for _ in range(scheduler.scheduler_config.max_batch_size_tg):
+    for _ in range(scheduler.scheduler_config.max_batch_size):
         mock_request = create_mock_request(is_tg=True)
         scheduler.batch_constructor.enqueue_new_request(mock_request)
     mock_request_ce = create_mock_request()
@@ -339,8 +337,7 @@ def test_scheduler_dp(dp: int) -> None:
     """Check that DP works in basic cases."""
     scheduler, _, _, _ = create_scheduler(
         dp=dp,
-        max_batch_size_tg=512,
-        max_batch_size_ce=512,
+        max_batch_size=512,
         max_forward_steps_tg=10,
         target_tokens_per_batch_ce=8192,
     )

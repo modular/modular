@@ -117,7 +117,7 @@ class DecodeScheduler(Scheduler):
                 TextContext | TextAndVisionContext
             ](
                 self.request_queue,
-                max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,
+                max_items_per_drain=self.scheduler_config.max_batch_size * 2,
             )
 
     @traced
@@ -202,7 +202,7 @@ class DecodeScheduler(Scheduler):
         else:
             items = drain_queue(
                 self.request_queue,
-                max_items=self.scheduler_config.max_batch_size_tg * 2,
+                max_items=self.scheduler_config.max_batch_size * 2,
             )
 
         for context in items:
@@ -213,7 +213,7 @@ class DecodeScheduler(Scheduler):
             and (
                 len(self.batch_constructor.all_tg_reqs) + len(self.prefill_reqs)
             )
-            < self.scheduler_config.max_batch_size_tg
+            < self.scheduler_config.max_batch_size
             and (
                 self.paged_manager is None
                 or self.paged_manager.free_blocks_pct > 0.1
