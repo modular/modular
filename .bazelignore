@@ -1,2 +1,3 @@
 bazel/lint/node_modules
 max/python/max/_core/internal
+max/internal

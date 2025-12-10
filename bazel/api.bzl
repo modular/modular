@@ -16,6 +16,7 @@ load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_fi
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:py_repl.bzl", _py_repl = "py_repl")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 lit_tests = _lit_tests
@@ -32,6 +33,7 @@ mojo_filecheck_test = _mojo_filecheck_test
 mojo_test_environment = _mojo_test_environment
 pkg_files = _pkg_files
 pkg_filegroup = _pkg_filegroup
+py_repl = _py_repl
 requirement = _requirement
 strip_prefix = _strip_prefix
 
