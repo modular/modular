@@ -989,7 +989,6 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ) if transpose_b else Index(
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
-        is_k_major=transpose_b,
         swizzle_mode = config.b_swizzle,
     ](ctx, b_device)
 
@@ -3244,7 +3243,6 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         ) if transpose_b else Index(
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
-        is_k_major=transpose_b,
         swizzle_mode = config.b_swizzle,
     ](ctx, b_device)
 
@@ -3702,7 +3700,6 @@ fn matmul_sm100_fallback[
     a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
     b_tma_op = create_tma_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
 

@@ -645,7 +645,6 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ) if transpose_b else Index(
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
-        is_k_major=transpose_b,
         swizzle_mode = config.b_swizzle,
     ](ctx, b_device)
 

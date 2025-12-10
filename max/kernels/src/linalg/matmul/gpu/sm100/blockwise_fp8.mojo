@@ -710,7 +710,6 @@ fn matmul_sm100_blockwise_scaled_fp8[
 
     var b_tma_op = create_tma_tile[
         b_tile_shape,
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
         __tile_layout = Layout.row_major(b_tile_shape),
     ](ctx, b_3D)

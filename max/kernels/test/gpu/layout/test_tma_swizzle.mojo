@@ -101,7 +101,6 @@ def test_tma_swizzle[
     var tma_tensor = create_tma_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
-        is_k_major=is_k_major,
     ](ctx, src.device_tensor())
 
     # print test info

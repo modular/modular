@@ -2071,7 +2071,6 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
-        is_k_major=transpose_b,
         swizzle_mode = config.b_swizzle,
     ](ctx, b_2d)
 

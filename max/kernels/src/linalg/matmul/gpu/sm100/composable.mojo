@@ -142,7 +142,6 @@ struct TMALoadOp[
             Self.block_tile_shape[0] // Self.cluster_shape[0],
             Self.block_tile_shape[2],
         ),
-        True,
         Self.a_swizzle,
     ]()
     comptime b_tma_desc_layout = _tma_desc_tile_layout[
@@ -152,7 +151,6 @@ struct TMALoadOp[
             Self.block_tile_shape[1] // Self.cluster_shape[1],
             Self.block_tile_shape[2],
         ),
-        True,
         Self.b_swizzle,
     ]()
 

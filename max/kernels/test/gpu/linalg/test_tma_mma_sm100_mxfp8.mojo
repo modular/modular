@@ -537,7 +537,6 @@ fn sm100_block_scaled_mxfp8[
     a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
     b_tma_op = create_tma_tile[
         Index(BN, BK),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
 

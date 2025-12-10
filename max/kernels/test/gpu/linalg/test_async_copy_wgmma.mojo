@@ -27,7 +27,7 @@ from gpu.memory import (
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout_tensor import cp_async_k_major, cp_async_mn_major
+from layout.layout_tensor import cp_async_k_major
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import (
     TensorCoreAsync,
@@ -124,11 +124,7 @@ fn cpasync_wgmma_kernel[
 
     for i in range(num_iters):
         cp_async_k_major(a_smem_tile, a_gmem_iter[])
-
-        if transpose_b:
-            cp_async_k_major(b_smem_tile, b_gmem_iter[])
-        else:
-            cp_async_mn_major(b_smem_tile, b_gmem_iter[])
+        cp_async_k_major(b_smem_tile, b_gmem_iter[])
 
         async_copy_commit_group()
         async_copy_wait_group(0)

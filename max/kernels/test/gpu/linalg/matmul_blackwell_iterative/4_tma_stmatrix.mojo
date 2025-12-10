@@ -434,7 +434,6 @@ fn blackwell_kernel_4[
     a_tma_op = create_tma_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
     b_tma_op = create_tma_tile[
         Index(BN, 64) if transpose_b else Index(64, BN),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
     c_tma_op = create_tma_tile[BM, 64, swizzle_mode=c_swizzle](ctx, c)

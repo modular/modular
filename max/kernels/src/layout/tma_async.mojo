@@ -94,7 +94,6 @@ fn _tma_desc_tile_layout[
     dtype: DType,
     rank: Int,
     tile_shape: IndexList[rank],
-    is_k_major: Bool = True,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ]() -> Layout:
     constrained[
@@ -111,32 +110,13 @@ fn _tma_desc_tile_layout[
         comptime dim0 = tile_shape[0]
         comptime dim1 = tile_shape[1]
 
-        @parameter
-        if is_k_major:
-            # TMA copies BM x `swizzle_mode.bytes()` Bytes each time.
-            return Layout.row_major(
-                dim0, swizzle_mode.bytes() // size_of[dtype]()
-            )
-        else:
-            comptime swizzle_granularity = swizzle_mode.bytes() // size_of[
-                dtype
-            ]()
-
-            @parameter
-            if dim1 == swizzle_granularity:
-                return Layout.row_major(dim0, swizzle_granularity)
-            else:
-                comptime core_matrix_num_rows = 8
-                return Layout.row_major(
-                    core_matrix_num_rows, swizzle_granularity
-                )
+        # TMA copies BM x `swizzle_mode.bytes()` Bytes each time.
+        return Layout.row_major(dim0, swizzle_mode.bytes() // size_of[dtype]())
 
     elif rank == 3:
         comptime dim0 = tile_shape[0]
         comptime dim1 = tile_shape[1]
         comptime dim2 = tile_shape[2]
-
-        constrained[is_k_major, "Only K-Major is supported!"]()
 
         return Layout(
             [dim0, dim1, swizzle_mode.bytes() // size_of[dtype]()],
@@ -149,8 +129,6 @@ fn _tma_desc_tile_layout[
         comptime dim2 = tile_shape[2]
         comptime dim3 = tile_shape[3]
 
-        constrained[is_k_major, "Only K-Major is supported!"]()
-
         return Layout(
             [dim0, dim1, dim2, swizzle_mode.bytes() // size_of[dtype]()],
             [1, 1, 1, 1],
@@ -162,8 +140,6 @@ fn _tma_desc_tile_layout[
         comptime dim2 = tile_shape[2]
         comptime dim3 = tile_shape[3]
         comptime dim4 = tile_shape[4]
-
-        constrained[is_k_major, "Only K-Major is supported!"]()
 
         return Layout(
             [dim0, dim1, dim2, dim3, swizzle_mode.bytes() // size_of[dtype]()],
@@ -1858,12 +1834,11 @@ def create_tma_tile[
     rank: Int, //,
     tile_shape: IndexList[rank],
     /,
-    is_k_major: Bool = True,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     *,
     __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1]),
     __desc_layout: Layout = _tma_desc_tile_layout[
-        dtype, rank, tile_shape, is_k_major, swizzle_mode
+        dtype, rank, tile_shape, swizzle_mode
     ](),
 ](ctx: DeviceContext, tensor: LayoutTensor[dtype, *_, **_]) -> TMATensorTile[
     dtype, __tile_layout, __desc_layout
@@ -1882,10 +1857,6 @@ def create_tma_tile[
             The dimensionality of the tensor (must be 2, 3, 4, or 5).
         tile_shape: IndexList[rank]
             The shape of the tile to be transferred.
-        is_k_major: Bool = True
-            Whether the tensor layout is K-major (True) or MN-major (False).
-            K-major is typically used for weight matrices, while MN-major is used for
-            activation matrices in matrix multiplication operations.
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE
             The swizzling mode to use for memory access optimization.
         __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1])
@@ -2088,29 +2059,6 @@ def create_tma_tile[
         )
 
 
-comptime RaggedTMALoadTensorTile[
-    dtype: DType,
-    tile_0: Int,
-    tile_1: Int,
-    tile_2: Int,
-    tile_4: Int,
-    swizzle_mode: TensorMapSwizzle,
-    is_k_major: Bool,
-] = TMATensorTile[
-    dtype,
-]
-"""TMA tensor tile type for ragged tensor loads.
-
-Parameters:
-    dtype: The data type of the tensor elements.
-    tile_0: Size of tile dimension 0.
-    tile_1: Size of tile dimension 1.
-    tile_2: Size of tile dimension 2.
-    tile_4: Size of tile dimension 4.
-    swizzle_mode: The swizzle pattern for memory access.
-    is_k_major: Whether the layout is K-major.
-"""
-
 comptime TMANestedTensorTile[
     dtype: DType,
     tile_m: Int,
@@ -2125,7 +2073,7 @@ comptime TMANestedTensorTile[
         dtype, tile_n, tile_m, swizzle_mode=swizzle_mode
     ](),
     _tma_desc_tile_layout[
-        dtype, 2, IndexList[2](tile_m, tile_n), is_k_major, swizzle_mode
+        dtype, 2, IndexList[2](tile_m, tile_n), swizzle_mode
     ](),
     is_k_major,
 ]
@@ -2238,12 +2186,11 @@ def create_tma_tile_template[
     rank: Int,
     tile_shape: IndexList[rank],
     /,
-    is_k_major: Bool = True,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     *,
     __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1]),
     __desc_layout: Layout = _tma_desc_tile_layout[
-        dtype, rank, tile_shape, is_k_major, swizzle_mode
+        dtype, rank, tile_shape, swizzle_mode
     ](),
 ]() -> TMATensorTile[dtype, __tile_layout, __desc_layout]:
     """
@@ -2259,10 +2206,6 @@ def create_tma_tile_template[
             The dimensionality of the tensor (must be 2 or 3).
         tile_shape: IndexList[rank]
             The shape of the tile to be transferred.
-        is_k_major: Bool = True
-            Whether the tensor layout is K-major (True) or MN-major (False).
-            K-major is typically used for weight matrices, while MN-major is used for
-            activation matrices in matrix multiplication operations.
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE
             The swizzling mode to use for memory access optimization.
         __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1])

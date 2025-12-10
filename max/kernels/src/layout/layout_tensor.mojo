@@ -6231,7 +6231,6 @@ fn cp_async_k_major[
         dtype,
         2,
         Index(src_shape0, src_shape1),
-        is_k_major=True,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
     ]()
     comptime desc_shape0 = desc_layout.shape[0].value()
@@ -6258,129 +6257,6 @@ fn cp_async_k_major[
 
         copy_dram_to_sram_async[
             thread_layout, swizzle=True, eviction_policy=eviction_policy
-        ](
-            dst_tile.vectorize[1, simd_size](),
-            src_tile.vectorize[1, simd_size](),
-        )
-
-
-@always_inline("nodebug")
-fn cp_async_mn_major[
-    dtype: DType,
-    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](
-    dst: LayoutTensor[
-        mut=True,
-        dtype,
-        _,
-        address_space = gpu_memory.AddressSpace.SHARED,
-        *_, **_,
-    ],
-    src: LayoutTensor[
-        dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
-    ],
-):
-    """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory
-    Accelerator) with MN-major layout.
-
-    This function performs an asynchronous copy operation from global memory
-    (DRAM) to shared memory (SRAM) using NVIDIA's Tensor Memory Accelerator
-    (TMA) hardware. It optimizes for MN-major memory access patterns, which is
-    particularly beneficial for tensor operations where the outer dimensions (M,
-    N) are accessed contiguously.
-
-    The function automatically determines the optimal tile size and thread
-    distribution based on the tensor shapes and hardware capabilities,
-    leveraging TMA's efficient memory transfer mechanisms.
-
-    Constraints:
-        - Requires NVIDIA GPUs with TMA support (compute capability 9.0+).
-        - Source tensor must be in `GENERIC` or `GLOBAL` address space.
-        - Destination tensor must be in `SHARED` address space.
-        - Both tensors must have the same data type.
-        - Source and destination tensors must be 2D.
-
-    Parameters:
-        dtype: The data type of the tensor elements.
-        eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
-
-    Args:
-        dst: The destination tensor, which must be in shared memory (SRAM).
-        src: The source tensor, which must be in global or generic memory
-            (DRAM).
-
-    Performance:
-
-    - Uses TMA hardware acceleration for optimal memory transfer performance.
-    - Optimizes for MN-major access patterns, which can significantly improve
-        performance for certain tensor operations where outer dimensions are accessed
-        contiguously.
-    - Performs asynchronous transfers, allowing computation to overlap with memory operations.
-    - Automatically determines optimal tile sizes based on tensor dimensions.
-    - Uses hardware-accelerated swizzling to reduce shared memory bank conflicts.
-
-    Notes:
-
-    - This function requires NVIDIA GPUs with TMA support (compute capability 9.0+).
-    - The source tensor must be in `GENERIC` or `GLOBAL` address space (DRAM).
-    - The destination tensor must be in `SHARED` address space (SRAM).
-    - Both tensors must have the same data type.
-    - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
-        or
-        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
-        to ensure the copy has completed before using the data.
-    - MN-major layout is particularly beneficial for operations where the outer
-        dimensions are accessed contiguously, such as certain convolution operations.
-    """
-    comptime dst_layout = dst.layout
-
-    comptime src_layout = src.layout
-    comptime src_shape0 = src_layout.shape[0].value()
-    comptime src_shape1 = src_layout.shape[1].value()
-
-    # we can't use the tma desc layout, as if swizzle_granularity ==
-    # `src_shape1`, the tma will want to fuse the rows into a large
-    # description. We need to partition the copy among the 4 warps
-    # of the warp group. Thus, we use the minimal desc layout.
-    comptime core_matrix_num_rows = 8
-    comptime swizzle_bytes = 128  # assume 128B swizzle
-    comptime swizzle_granularity = swizzle_bytes // size_of[dtype]()
-    comptime desc_layout = Layout.row_major(
-        core_matrix_num_rows, swizzle_granularity
-    )
-    comptime desc_shape0 = desc_layout.shape[0].value()
-    comptime desc_shape1 = desc_layout.shape[1].value()
-    comptime desc_size = desc_layout.size()
-
-    comptime num_tiles0 = src_shape0 // desc_shape0
-    comptime num_tiles1 = src_shape1 // desc_shape1
-    comptime num_warps = 4  # single warp group
-    comptime num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
-
-    comptime simd_size = simd_width_of[dtype]()
-    comptime thread_layout_per_warp = Layout.row_major(
-        gpu_memory.WARP_SIZE * simd_size // desc_shape1,
-        desc_shape1 // simd_size,
-    )
-
-    warp_id = thread_idx.x // UInt(gpu_memory.WARP_SIZE)
-
-    @parameter
-    for tile_id_per_warp in range(num_tiles_per_warp):
-        tile_id = warp_id + UInt(tile_id_per_warp) * num_warps
-        tile_coord0, tile_coord1 = divmod(tile_id, UInt(num_tiles1))
-        src_tile = src.tile[desc_shape0, desc_shape1](
-            Int(tile_coord0), Int(tile_coord1)
-        )
-        dst_tile = LayoutTensor[
-            dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
-        ](dst.ptr + tile_id * UInt(desc_size))
-
-        copy_dram_to_sram_async[
-            thread_layout_per_warp,
-            swizzle=True,
-            eviction_policy=eviction_policy,
         ](
             dst_tile.vectorize[1, simd_size](),
             src_tile.vectorize[1, simd_size](),

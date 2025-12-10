@@ -34,8 +34,6 @@ from layout.layout import UNKNOWN_VALUE, Layout
 from layout.layout_tensor import (
     LayoutTensor,
     copy_local_to_shared,
-    cp_async_k_major,
-    cp_async_mn_major,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import Swizzle

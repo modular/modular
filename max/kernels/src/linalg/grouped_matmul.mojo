@@ -627,7 +627,6 @@ fn grouped_matmul_sm100[
     ](b.data)
     b_tma_op = create_tma_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b_tensor)
     c_tensor = from_ndbuffer_row_major(c)
