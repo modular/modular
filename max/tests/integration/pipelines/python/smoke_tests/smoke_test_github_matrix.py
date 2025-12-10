@@ -51,7 +51,7 @@ MODELS = {
         "sglang",
         "multi",
         "max",  # Wait for 26.1
-        "max-ci@MI355",  # TODO(GEX-2814)
+        "max-ci@MI355",  # TODO(KERN-2272)
     ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
     "deepseek-ai/deepseek-v2-lite-chat": ["max-ci", "max", "multi"],
@@ -65,7 +65,7 @@ MODELS = {
     "opengvlab/internvl3-8b-instruct": [
         "sglang@B200",
         "multi",
-        "MI355",  # TODO(KERN-2196)
+        "MI355",  # Times out
     ],
     "opengvlab/internvl3_5-8b-instruct": [
         "multi",
@@ -74,9 +74,9 @@ MODELS = {
         "max",
     ],
     "qwen/qwen2.5-7b-instruct": ["multi"],
-    "qwen/qwen2.5-vl-7b-instruct": ["multi", "MI355"],  # TODO(KERN-2196)
+    "qwen/qwen2.5-vl-7b-instruct": ["multi", "MI355"],  # Times out
     "qwen/qwen3-8b": ["multi"],
-    "redhatai/gemma-3-27b-it-fp8-dynamic": ["MI355"],
+    "redhatai/gemma-3-27b-it-fp8-dynamic": [],
     "unsloth/gpt-oss-20b-bf16": [
         "max-ci@H100",
         "max@H100",
