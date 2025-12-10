@@ -15,7 +15,7 @@
 from hashlib import Hasher, default_hasher
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
-
+from compile.reflection import get_type_name
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
     Boolable,
@@ -307,6 +307,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             The string representation of the set.
         """
         var output = String()
+        # print(self.T)
         self.write_to(output)
         return output
 
@@ -335,7 +336,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Args:
             writer: The object to write to.
         """
-        writer.write("{")
+        writer.write("Set[",get_type_name[U](),"]{")
         var written = 0
         for item in self:
             writer.write(repr(item))
