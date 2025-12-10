@@ -19,7 +19,7 @@ bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf"
 bazel_dep(name = "rules_cc", version = "0.2.14")
 bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_java", version = "9.0.3")
-bazel_dep(name = "rules_mojo", version = "0.5.0")
+bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
@@ -45,10 +45,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-w7hPwnIRS1yyx0j6nZCD/yGqM0AZiFfJiF9U9DxIr5k=",
-    strip_prefix = "rules_mojo-87f860f96f73ce624d51fe8e836978888e14344c",
+    integrity = "sha256-GZi9PM4t3Mii56OTG/5eZ7q8IEfpt7XgMrSOBu+Awjw=",
+    strip_prefix = "rules_mojo-f2bda941410fb67b394ba43373f1eca294bf8cd7",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/87f860f96f73ce624d51fe8e836978888e14344c.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/f2bda941410fb67b394ba43373f1eca294bf8cd7.tar.gz",
     ],
 )
 

@@ -86,13 +86,7 @@ def _mojo_test_environment_implementation(ctx):
         transitive_runfiles.append(target[DefaultInfo].default_runfiles)
 
     shared_libs = []
-    transitive_files = [depset([mojo_toolchain.lld])]
-
-    # TODO: This also contains runfiles, it probably should not.
-    for tool in mojo_toolchain.all_tools:
-        if type(tool) == type(depset()):
-            transitive_files.append(tool)
-
+    transitive_files = [depset([mojo_toolchain.lld])] + mojo_toolchain.all_tools
     compilerrt = None
     cc_deps = mojo_toolchain.implicit_deps + ([ctx.attr._link_extra_lib] if ctx.attr._link_extra_lib else [])
     for lib in cc_deps:
