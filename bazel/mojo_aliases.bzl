@@ -31,6 +31,9 @@ _MAX_PACKAGES = {
     "_rocblas": "kernels/src/_rocblas",
 }
 
+# Packages that are marked testonly and cannot be used by production targets
+_TESTONLY_MAX_PACKAGES = ["testdata"]
+
 def _mojo_aliases_impl(rctx):
     alias_rules = []
     for name, target in _PACKAGES.items():
@@ -52,6 +55,12 @@ ALL_MOJOPKGS = [
 {max_packages}
 ]
 
+# PROD_MOJOPKGS excludes testonly packages and can be used by non-test targets
+PROD_MOJOPKGS = [
+{prod_packages}
+{prod_max_packages}
+]
+
 def max_aliases():
     for name, target in {max_packages_dict}.items():
         native.alias(
@@ -68,6 +77,16 @@ def max_aliases():
         max_packages = "\n".join([
             '    "//max:{}",'.format(name)
             for name in _MAX_PACKAGES.keys()
+        ]),
+        prod_packages = "\n".join([
+            '    "@mojo//:{}",'.format(name)
+            for name in _PACKAGES.keys()
+            if name not in ("python", "test_utils")
+        ]),
+        prod_max_packages = "\n".join([
+            '    "//max:{}",'.format(name)
+            for name in _MAX_PACKAGES.keys()
+            if name not in _TESTONLY_MAX_PACKAGES
         ]),
         max_packages_dict = _MAX_PACKAGES,
     ))
