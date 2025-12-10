@@ -13,6 +13,6 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
-from numpy.typing import ArrayLike
+from numpy.typing import NDArray
 
-def xxh3_64_intdigest(arg: ArrayLike, /) -> int: ...
+def xxh3_64_intdigest(arg: NDArray, /) -> int: ...

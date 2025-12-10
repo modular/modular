@@ -31,12 +31,14 @@ from max.interfaces import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
+from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    mrope_pos_ids_3d,
+)
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import smart_resize
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
     get_rope_index,
     get_seqlens,
-    mrope_pos_ids_3d,
 )
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig

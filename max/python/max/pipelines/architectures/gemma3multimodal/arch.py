@@ -24,7 +24,9 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-ENABLE_NEW_IMPL = os.environ.get("MAX_ENABLE_GEMMA3_VISION", "0").lower() in (
+ENABLE_NEW_IMPL = os.environ.get(
+    "MODULAR_MAX_ENABLE_GEMMA3_VISION", "0"
+).lower() in (
     "1",
     "true",
 )

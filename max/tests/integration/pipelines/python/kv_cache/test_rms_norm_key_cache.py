@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
@@ -92,8 +99,6 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -170,8 +175,6 @@ def test_partial_rms_norm_key_cache(
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -262,8 +265,6 @@ def test_rms_norm_new_key_cache(
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -366,8 +367,6 @@ def test_rms_norm_key_cache_dtype_mismatch(
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -415,8 +414,6 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=batch_size,
-        max_seq_len=max_seq_len,
         total_num_pages=8,
         devices=[CPU()],
         session=session,

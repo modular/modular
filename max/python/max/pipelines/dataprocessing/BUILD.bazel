@@ -5,6 +5,5 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "dataprocessing",
     srcs = glob(["**/*.py"]),
-    imports = ["../../.."],
     deps = [requirement("numpy")],
 )

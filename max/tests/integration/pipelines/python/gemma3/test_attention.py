@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 
@@ -204,8 +211,6 @@ def generate_max_outputs(
     # Set up blank KV cache.
     kv_manager = PagedKVCacheManager(
         params=kv_params,
-        max_batch_size=1,
-        max_seq_len=MAX_SEQ_LEN,
         devices=[device],
         total_num_pages=8,
         session=session,

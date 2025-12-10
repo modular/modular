@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 # ===----------------------------------------------------------------------=== #
@@ -800,7 +807,9 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
 
     # Simulate first decode step (single-token generation).
     # Mimic the pipeline's next iteration: move to decode phase with single active token.
-    ctx.set_token_indices(start_idx=L, active_idx=L + 1, end_idx=L + 1)
+    ctx.start_idx = L  # type: ignore
+    ctx.active_idx = L + 1  # type: ignore
+    ctx.end_idx = L + 1  # type: ignore
 
     step1_inputs = model.prepare_initial_token_inputs(
         replica_batches=[[ctx]],

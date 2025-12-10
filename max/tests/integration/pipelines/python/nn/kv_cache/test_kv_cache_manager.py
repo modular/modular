@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
@@ -32,8 +39,6 @@ async def test_step() -> None:
 
     kv_manager = PagedKVCacheManager(
         params=params,
-        max_batch_size=16,
-        max_seq_len=100,
         devices=[device],
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
@@ -67,7 +72,8 @@ async def test_step() -> None:
             orig_start_idx = ctx.start_idx
             for _ in range(prompt_lens[i] - 1):
                 ctx.update(42)
-            ctx.set_token_indices(start_idx=orig_start_idx)
+
+            ctx.rewind_processing(ctx.start_idx - orig_start_idx)
 
 
 @pytest.mark.asyncio
@@ -87,8 +93,6 @@ async def test_claim_and_release() -> None:
 
     dp_kv_manager = PagedKVCacheManager(
         params=params,
-        max_batch_size=16,
-        max_seq_len=100,
         devices=[device],
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
@@ -145,8 +149,6 @@ async def test_fetch_paged() -> None:
 
     kv_manager = PagedKVCacheManager(
         params=params,
-        max_batch_size=16,
-        max_seq_len=100,
         devices=[device],
         session=InferenceSession(devices=[device]),
         total_num_pages=8,

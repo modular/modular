@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 from __future__ import annotations
@@ -91,8 +98,6 @@ def create_paged_manager(
         params=kv_params,
         total_num_pages=num_blocks,
         total_num_host_pages=num_host_pages,
-        max_batch_size=max_batch_size,
-        max_seq_len=max_seq_len,
         devices=[CPU()],
         session=session,
         enable_runtime_checks=True,
@@ -142,7 +147,9 @@ def create_paged_scheduler(
         enable_prioritize_first_decode=enable_prioritize_first_decode,
     )
     token_pipeline = FakeAudioGeneratorPipeline(
-        paged_manager, max_num_steps=max_forward_steps_tg
+        paged_manager,
+        max_num_steps=max_forward_steps_tg,
+        max_seq_len=max_seq_len,
     )
 
     request_queue: queue.Queue[TTSContext] = queue.Queue()
@@ -166,10 +173,14 @@ def create_paged_scheduler(
 
 class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
     def __init__(
-        self, paged_manager: PagedKVCacheManager, max_num_steps: int
+        self,
+        paged_manager: PagedKVCacheManager,
+        max_num_steps: int,
+        max_seq_len: int,
     ) -> None:
         self.paged_manager = paged_manager
         self.max_num_steps = max_num_steps
+        self.max_seq_len = max_seq_len
         self._prev_num_steps: int | None = None
 
     def execute(
@@ -185,7 +196,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
         # Truncate num steps based on the max seq len
         for context in inputs.batch.values():
             num_available_steps = context.compute_num_available_steps(
-                self.paged_manager.max_seq_len
+                self.max_seq_len
             )
             assert num_available_steps > 0
             num_tokens = min(num_tokens, num_available_steps)

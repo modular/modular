@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 
@@ -70,7 +77,7 @@ def test_compute_scatter_gather_indices() -> None:
     assert scatter_indices.tolist() == [4, 5, 6, 7, 10, 11, 12, 13, 14]
 
     # Test prefix cache hit case: start_idx = 8
-    ctx.set_token_indices(start_idx=8)
+    ctx.skip_processing(8)
     scatter_indices, gather_indices = compute_scatter_gather_indices([ctx])
     # 5 img tokens (img1)
     # 0-3 are skipped as img0 is not included
@@ -81,8 +88,7 @@ def test_compute_scatter_gather_indices() -> None:
     # ctx0 (start_idx=0), ctx1 (start_idx=8)
     ctx0 = copy.deepcopy(ctx)
     ctx1 = copy.deepcopy(ctx)
-    ctx0.set_token_indices(start_idx=0)
-    ctx1.set_token_indices(start_idx=8)
+    ctx0.rewind_processing(ctx0.start_idx)
     scatter_indices, gather_indices = compute_scatter_gather_indices(
         [ctx0, ctx1]
     )

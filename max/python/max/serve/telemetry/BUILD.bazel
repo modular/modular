@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "telemetry",
     srcs = glob(["*.py"]),
-    imports = ["../../.."],
     deps = [
         "//max/python/max/serve:config",
         "//max/python/max/serve:process_control",

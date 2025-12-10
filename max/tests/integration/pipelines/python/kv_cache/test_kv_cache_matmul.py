@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 from __future__ import annotations
@@ -148,8 +155,6 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=2,
-        max_seq_len=100,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -339,8 +344,6 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=2,
-        max_seq_len=100,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -474,8 +477,6 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=2,
-        max_seq_len=100,
         total_num_pages=8,
         devices=[CPU()],
         session=session,
@@ -580,8 +581,6 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        max_batch_size=1,
-        max_seq_len=1,
         total_num_pages=8,
         devices=[CPU()],
         session=InferenceSession(devices=[CPU()]),

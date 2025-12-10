@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from sys import external_call, size_of
+from sys import external_call, size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -1489,6 +1489,32 @@ struct MoggAsyncPackHelper:
         Packs a buffer reference instance (modeled by NDBuffer[DType.int8, 1, MutAnyOrigin] for now) into the asynchronous context. Calls create_buffer_ref_async to handle the packing.
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
+
+    fn __init__(
+        out self, var data: Some[Movable], async_ptr: AnyAsyncValueRefPtr
+    ):
+        """
+        Packs a generic Movable value into the asynchronous context.
+        Used for opaque types like SIMDPair.
+        """
+        comptime Type = type_of(data)
+
+        # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
+        @always_inline("nodebug")
+        fn erased_destructor(ptr: UnsafePointer[UInt8]):
+            ptr.bitcast[Type]().destroy_pointee()
+
+        var dst_ptr = external_call[
+            "MGP_RT_MojoValueAllocateBuffer", UnsafePointer[UInt8]
+        ](size_of[Type](), align_of[Type]())
+
+        dst_ptr.bitcast[Type]().init_pointee_move(data^)
+
+        external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
+            dst_ptr,
+            erased_destructor,
+            async_ptr,
+        )
 
 
 @register_internal("mogg.async.pack")

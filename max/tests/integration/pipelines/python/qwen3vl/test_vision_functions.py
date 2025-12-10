@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 
@@ -9,10 +16,13 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
+from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    mrope_pos_ids_3d,
+    mrope_pos_ids_3d_inner,
+)
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
     get_seqlens,
-    mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_rope_index as get_rope_index_qwen3vl_np,
@@ -395,19 +405,25 @@ def test_mrope_pos_ids_3d() -> None:
         # Single frame, larger grid
         np.array([[1, 8, 8]], dtype=np.int64),
         # Multiple frames
-        np.array([[2, 4, 4], [1, 6, 6]], dtype=np.int64),
+        np.array([[2, 4, 4], [1, 6, 6], [3, 4, 4], [3, 6, 6]], dtype=np.int64),
         # Real-world example
-        np.array([[1, 98, 146], [1, 76, 114]], dtype=np.int64),
+        np.array([[1, 98, 146], [1, 76, 114], [1, 76, 114]], dtype=np.int64),
     ]
 
     spatial_merge_size = vision_config["spatial_merge_size"]
 
-    for grid_thw in test_cases:
+    expected_cache_hits = [0, 0, 3, 4]
+    for i, grid_thw in enumerate(test_cases):
         # Convert to torch tensor for torch implementations
         grid_thw_torch = torch.from_numpy(grid_thw)
 
-        # Get results from all implementations
-        pos_ids_numpy = mrope_pos_ids_3d(grid_thw, spatial_merge_size)
+        pos_ids_numpy = mrope_pos_ids_3d(
+            grid_thw=grid_thw, spatial_merge_size=spatial_merge_size
+        )
+        assert (
+            mrope_pos_ids_3d_inner.cache_info().hits == expected_cache_hits[i]
+        )
+
         pos_ids_torch = get_mrope_pos_ids_3d_torch(
             grid_thw_torch, spatial_merge_size
         )

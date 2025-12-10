@@ -900,7 +900,9 @@ struct TMATensorTile[
                     )
 
     @always_inline
-    fn async_copy_4d(
+    fn async_copy_4d[
+        cta_group: Int = 1
+    ](
         self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
@@ -914,6 +916,11 @@ struct TMATensorTile[
         This method initiates a hardware-accelerated asynchronous transfer of data from global memory
         to the specified destination in shared memory for 4D tensors. The transfer is tracked by the
         provided memory barrier.
+
+        Parameters:
+            cta_group: Int
+                If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -960,7 +967,9 @@ struct TMATensorTile[
                             i * num_copies_dim3 + j
                         ) * copy_size
 
-                        cp_async_bulk_tensor_shared_cluster_global(
+                        cp_async_bulk_tensor_shared_cluster_global[
+                            cta_group=cta_group
+                        ](
                             dst.ptr.mut_cast[True]() + copy_offset,
                             UnsafePointer(to=self.descriptor).bitcast[
                                 NoneType

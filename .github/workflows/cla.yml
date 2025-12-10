@@ -28,6 +28,7 @@ permissions:
 jobs:
   CLAAssistant:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
     steps:
       - uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e
         id: app-token

@@ -10,7 +10,6 @@ modular_py_library(
         "random.py",
         "tensor.py",
     ],
-    imports = ["../.."],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

@@ -83,11 +83,10 @@ def modular_run_binary_test(external_noop = False, **kwargs):
         **kwargs
     )
 
-def modular_generate_stubfiles(name, pyi_srcs, imports, deps = [], **_kwargs):
+def modular_generate_stubfiles(name, pyi_srcs, deps = [], **_kwargs):
     modular_py_library(
         name = name,
         pyi_srcs = pyi_srcs,
-        imports = imports,
         deps = deps + ["@modular_wheel//:wheel"],
     )
 

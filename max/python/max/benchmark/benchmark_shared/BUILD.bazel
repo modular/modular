@@ -8,7 +8,6 @@ modular_py_library(
     data = glob(["datasets/packaged_data/**/*"]) + [
         "//max/python/max/benchmark:benchmark_config_yaml_files",
     ],
-    imports = ["../../.."],
     deps = [
         "//max/python/max/config",
         "//max/python/max/pipelines/lib",

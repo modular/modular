@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "config",
     srcs = glob(["**/*.py"]),
-    imports = ["../.."],
     deps = [
         requirement("cyclopts"),
         requirement("pydantic"),

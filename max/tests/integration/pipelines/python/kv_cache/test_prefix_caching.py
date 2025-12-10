@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 from __future__ import annotations
@@ -58,8 +65,6 @@ def create_paged_manager(
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=num_blocks,
-        max_batch_size=512,
-        max_seq_len=4096,
         devices=[CPU()],
         session=session,
         enable_runtime_checks=True,
@@ -298,7 +303,8 @@ async def test_prefix_caching_with_random_prompts(
             orig_start_idx = context.start_idx
             for tok in prompt:
                 context.update(tok)
-            context.set_token_indices(start_idx=orig_start_idx)
+
+            context.rewind_processing(context.start_idx - orig_start_idx)
 
             # This fetch can trigger evictions from the tree.
             for ctx in batch:
@@ -602,7 +608,7 @@ async def test_prefix_caching_grouped_prefixes(
             orig_start_idx = ctx.start_idx
             for tok in extended:
                 ctx.update(tok)
-            ctx.set_token_indices(start_idx=orig_start_idx)
+            ctx.rewind_processing(ctx.start_idx - orig_start_idx)
 
         ctxs = list(batch.values())
         orig_request_ids_and_prompts = {
@@ -645,7 +651,7 @@ def run_forward(
     orig_start_idx = ctx.start_idx
     for tok in prompt:
         ctx.update(tok)
-    ctx.set_token_indices(start_idx=orig_start_idx)
+    ctx.rewind_processing(ctx.start_idx - orig_start_idx)
     if orig_start_idx == 0:
         ctx._prompt_len = len(prompt)
     batch = [ctx]

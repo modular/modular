@@ -20,7 +20,7 @@ from typing import Annotated, Any, overload
 import max._core.dtype
 import numpy
 import typing_extensions
-from numpy.typing import ArrayLike
+from numpy.typing import NDArray
 
 class Device:
     def can_access(self, other: Device) -> bool:
@@ -434,7 +434,7 @@ class Tensor:
     ) -> None: ...
     @overload
     def __init__(
-        self, shape: Annotated[ArrayLike, dict(writable=False)], device: Device
+        self, shape: Annotated[NDArray, dict(writable=False)], device: Device
     ) -> None: ...
     @property
     def device(self) -> Device:

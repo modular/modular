@@ -3480,7 +3480,6 @@ fn kv_cache_2m_iadd_dispatch[
 
         var cache: collection_t.CacheType
         var row_idx: Int
-        var major_idx: Int
 
         if idx[0] < m:
             cache = k_cache

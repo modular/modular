@@ -78,6 +78,11 @@ To build and test your changes to the Mojo standard library, run the following
 Be sure that you meet the
 [system requirements](https://docs.modular.com/mojo/manual/install#system-requirements).
 
+If you're developing on macOS, you need Xcode 16.0 or later and macOS 15.0 or
+later. You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
+downloads the Metal utilities required for GPU programming in later versions of
+Xcode.
+
 To build the standard library, you can run:
 
 ```bash

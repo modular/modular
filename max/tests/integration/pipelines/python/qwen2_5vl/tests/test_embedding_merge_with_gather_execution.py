@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 """Integration test for Qwen2.5VL multimodal embedding merging execution."""
@@ -164,7 +171,7 @@ def test_embeddings_merge_with_gather() -> None:
     empty_results = compiled.execute(
         Tensor.zeros(shape=(0, 0), dtype=DType.float32),
         Tensor.zeros(shape=(0, 0), dtype=DType.float32),
-        Tensor.zeros(shape=(0), dtype=DType.int32),
-        Tensor.zeros(shape=(0), dtype=DType.int64),
+        Tensor.zeros(shape=(0), dtype=DType.int32),  # type: ignore
+        Tensor.zeros(shape=(0), dtype=DType.int64),  # type: ignore
     )
     assert empty_results[0].shape == (0, 0)

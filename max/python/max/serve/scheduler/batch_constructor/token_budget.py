@@ -20,6 +20,8 @@ from max.interfaces.pipeline_variants import TextGenerationContext
 
 
 class RequestType(str, Enum):
+    """Enumeration of high-level request types handled by the scheduler."""
+
     TG = "text_generation"
     CE = "context_encoding"
     MIXED = "mixed"
@@ -27,6 +29,7 @@ class RequestType(str, Enum):
 
     @classmethod
     def all(cls) -> list[RequestType]:
+        """Return all known request types that participate in batching."""
         return [RequestType.TG, RequestType.CE, RequestType.MIXED]
 
 
@@ -89,6 +92,18 @@ class TokenBudget(ABC):
         allow_chunking: bool,
         applicable_types: list[RequestType],
     ) -> None:
+        """Initialize a generic token budget.
+
+        Args:
+            capacity: Maximum number of tokens that may be consumed by this
+                budget.
+            allow_chunking: Whether this budget is permitted to shrink
+                :class:`TextGenerationContext` instances via ``context.chunk`` in
+                order to fit within the remaining capacity.
+            applicable_types: Request types that this budget applies to. If the
+                active or incoming request type is not in this list, the budget
+                is effectively a no-op for that context.
+        """
         self.capacity = capacity
         self.allow_chunking = allow_chunking
         self.applicable_types = applicable_types
@@ -98,6 +113,7 @@ class TokenBudget(ABC):
 
     @property
     def remaining(self) -> int:
+        """Return the remaining token capacity for this budget."""
         return self.capacity - self.used
 
     @abstractmethod
@@ -107,6 +123,14 @@ class TokenBudget(ABC):
         request_type: RequestType,
         num_steps: int = 1,
     ) -> BudgetStatus:
+        """Compute this budget's status after hypothetically adding a context.
+
+        Subclasses must implement this to evaluate the effective token cost of
+        ``context`` (optionally taking ``num_steps`` into account) against the
+        remaining capacity and return an appropriate :class:`BudgetStatus`.
+        Implementations may mutate ``context`` (for example, via chunking) but
+        must not update :attr:`used`.
+        """
         pass
 
     @abstractmethod
@@ -116,6 +140,14 @@ class TokenBudget(ABC):
         request_type: RequestType,
         num_steps: int = 1,
     ) -> None:
+        """Apply a previously-evaluated context's token cost to this budget.
+
+        This method is called only after :meth:`status_after_context` has
+        returned a non-:data:`BudgetStatus.BUDGET_EXHAUSTED` result for the same
+        ``context`` and ``request_type``. Subclasses must update
+        :attr:`used` by the same effective token cost that was evaluated in
+        :meth:`status_after_context`.
+        """
         pass
 
 
@@ -139,6 +171,27 @@ class TokenBudgetCollection:
             token_budgets: The list of budgets to apply to each context.
         """
         self.token_budgets = token_budgets
+
+    @property
+    def remaining(self) -> int:
+        """Return the minimum remaining capacity across all underlying budgets.
+
+        The collection behaves as if constrained by the most restrictive budget,
+        so its remaining capacity is defined as the minimum ``remaining`` value
+        among its constituent budgets.
+        """
+        min_val = float("inf")
+        for token_budget in self.token_budgets:
+            remaining = token_budget.remaining
+            if min_val > remaining:
+                min_val = remaining
+
+        if min_val == float("inf"):
+            raise ValueError(
+                "remaining cannot be calculated without any token_budgets"
+            )
+
+        return int(min_val)
 
     def status_after_context(
         self,
@@ -204,6 +257,11 @@ class ActiveTokenBudget(TokenBudget):
     :attr:`used`, and :meth:`remaining`.
     """
 
+    @property
+    def remaining(self) -> int:
+        """Return the remaining active-token capacity for this budget."""
+        return self.capacity - self.used
+
     def status_after_context(
         self,
         context: TextGenerationContext,
@@ -259,6 +317,7 @@ class ActiveTokenBudget(TokenBudget):
 
         # Already at or beyond capacity - no more contexts can be accepted.
         if tokens_remaining <= 0:
+            print(f"no tokens remaining in budget: {tokens_remaining}.")
             return BudgetStatus.BUDGET_EXHAUSTED
 
         # Fits without any modification.
@@ -268,6 +327,7 @@ class ActiveTokenBudget(TokenBudget):
             return BudgetStatus.BUDGET_AVAILABLE
 
         # Would exceed the remaining capacity.
+        # This is a soft limit, so we return BUDGET_REACHED instead of BUDGET_EXHAUSTED
         if not self.allow_chunking:
             return BudgetStatus.BUDGET_REACHED
 
@@ -276,6 +336,7 @@ class ActiveTokenBudget(TokenBudget):
             context.chunk(tokens_remaining)
             return BudgetStatus.BUDGET_REACHED
         except ValueError:
+            print("failed to chunk!")
             return BudgetStatus.BUDGET_EXHAUSTED
 
     def add_to_budget(
@@ -316,6 +377,11 @@ class TotalContextTokenBudget(TokenBudget):
     ``max_batch_context_length`` that bound the total number of tokens resident
     in a batch across multiple steps.
     """
+
+    @property
+    def remaining(self) -> int:
+        """Return the remaining total-context capacity for this budget."""
+        return self.capacity - self.used
 
     def status_after_context(
         self,
@@ -375,6 +441,8 @@ class TotalContextTokenBudget(TokenBudget):
         elif total_length == tokens_remaining:
             return BudgetStatus.BUDGET_REACHED
 
+        # If we are not allowing chunking or the context has only 1 step, we return BUDGET_EXHAUSTED
+        # This is a hard limit, so we return BUDGET_EXHAUSTED instead of BUDGET_REACHED
         if not self.allow_chunking or context.active_length == 1:
             return BudgetStatus.BUDGET_EXHAUSTED
 
@@ -406,4 +474,3 @@ class TotalContextTokenBudget(TokenBudget):
             num_steps: Planned number of generation steps for this context.
         """
         self.used += context.current_length + (num_steps - 1)
-        print(f"Used: {self.used}")

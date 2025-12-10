@@ -24,6 +24,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
+    "test_ping_pong.mojo": ["//:amd_gpu"],
     "test_structured_kernel_components.mojo": ["//:amd_gpu"],
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
@@ -116,6 +117,7 @@ _B200_TESTS = [
     "test_tma_mma_sm100.mojo",
     "test_tma_pair_mma_sm100.mojo",
     "test_matmul_sm100_fallback.mojo",
+    "test_matmul_sm100_smoke.mojo",
     "test_matmul_sm100_composable.mojo",
     "test_matmul_sm100_blockwise_fp8.mojo",
     "test_grouped_matmul_dynamic_scaled_fp8.mojo",
@@ -132,6 +134,8 @@ _B200_TESTS = [
     "test_matmul_sm100_splitk_2sm_bf16.mojo",
     "test_tma_mma_sm100_mxfp8.mojo",
     "test_tma_pair_mma_sm100_mxfp8.mojo",
+    "test_matmul_sm100_block_scaled_mxfp8_1sm.mojo",
+    "test_matmul_sm100_block_scaled_mxfp8_2sm.mojo",
 ]
 
 _GPU_MEMORY = {

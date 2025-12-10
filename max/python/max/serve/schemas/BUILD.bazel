@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "schemas",
     srcs = glob(["*.py"]),
-    imports = ["../../.."],
     deps = [
         requirement("pydantic"),
         requirement("typing-extensions"),

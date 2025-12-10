@@ -209,6 +209,17 @@ comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArrayType[
 ]
 """Type alias for shared memory pipeline barrier array."""
 
+comptime SMemTileIter[
+    dtype: DType,
+    layout: Layout,
+] = LayoutTensorIter[
+    dtype,
+    layout,
+    MutAnyOrigin,
+    address_space = AddressSpace.SHARED,
+    alignment=128,
+]
+
 
 @register_passable("trivial")
 struct SMemTileArrayType[
@@ -351,6 +362,10 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
 
 comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
+
+comptime SMemPtr[type: AnyTrivialRegType] = UnsafePointer[
+    type, address_space = AddressSpace.SHARED
+]
 
 
 trait SharedMemoryBasePtr:

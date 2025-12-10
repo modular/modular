@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 
@@ -10,8 +17,31 @@ import pytest
 import torch
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     get_rope_index,
+    mrope_pos_ids_3d,
+    mrope_pos_ids_3d_inner,
 )
 from utils.config_loader import ConfigNames, get_config_loader
+
+
+def test_mrope_pos_ids_3d() -> None:
+    grid_thw = np.array([[1, 20, 20], [1, 20, 20], [1, 20, 20]], dtype=np.int64)
+    spatial_merge_size: int = 10
+
+    pos_ids = mrope_pos_ids_3d(
+        grid_thw=grid_thw, spatial_merge_size=spatial_merge_size
+    )
+    assert len(pos_ids) == 3 * 20 * 20
+    # First call should result in cache miss
+    assert mrope_pos_ids_3d_inner.cache_info().hits == 2
+    assert mrope_pos_ids_3d_inner.cache_info().misses == 1
+    assert mrope_pos_ids_3d_inner.cache_info().currsize == 1
+
+    _ = mrope_pos_ids_3d(
+        grid_thw=grid_thw, spatial_merge_size=spatial_merge_size + 10
+    )
+    assert mrope_pos_ids_3d_inner.cache_info().hits == 4
+    assert mrope_pos_ids_3d_inner.cache_info().misses == 2
+    assert mrope_pos_ids_3d_inner.cache_info().currsize == 2
 
 
 def get_rope_index_torch(

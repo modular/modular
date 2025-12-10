@@ -15,7 +15,7 @@ from sys.info import size_of
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import CopyCounter, DelRecorder, MoveCounter
-from testing import assert_equal, assert_true, TestSuite
+from testing import assert_equal, assert_true, assert_false, TestSuite
 
 
 def test_array_unsafe_get():
@@ -320,6 +320,16 @@ def test_move():
     assert_equal(len(del_counter_ptr[]), 1)
     _ = del_recorder
     _ = del_counter
+
+
+def test_inline_array_triviality():
+    assert_true(InlineArray[Int, 1].__del__is_trivial)
+    assert_true(InlineArray[Int, 1].__copyinit__is_trivial)
+    assert_true(InlineArray[Int, 1].__moveinit__is_trivial)
+
+    assert_false(InlineArray[String, 1].__del__is_trivial)
+    assert_false(InlineArray[String, 1].__copyinit__is_trivial)
+    assert_false(InlineArray[String, 1].__moveinit__is_trivial)
 
 
 def main():

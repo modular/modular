@@ -1,218 +1,259 @@
-# `kbench`: Benchmarking toolkit for Mojo kernels
+# `kbench`: A benchmarking toolkit for Mojo kernels
 
-`kbench` builds and executes through a grid of all the parameter combinations
- for a Mojo benchmark. This toolkit is used for benchmarking, tuning
- (finding optimal kernel parameters), and plotting Mojo kernels.
+`kbench` is a Python-based toolkit that builds and executes Mojo kernel
+benchmarks across a grid of parameter combinations. Use `kbench` for
+benchmarking, autotuning (finding optimal kernel parameters), and analyzing the
+performance of Mojo kernels.
 
-## Table of Contents
+## Table of contents
 
-- [Why is `kbench` written in Python?](#why-is-kbench-written-in-python)
-- [Setup for tuning](#setup-for-tuning)
+- [Prerequisites](#prerequisites)
+- [Quickstart](#quickstart)
 - [Usage](#usage)
-  - [Example](#example)
+  - [1. Create a Mojo benchmarking file](#1-create-a-mojo-benchmarking-file)
+  - [2. Create a configuration YAML file](#2-create-a-configuration-yaml-file)
+  - [3. Run the benchmark](#3-run-the-benchmark)
+  - [4. Enable object cache](#4-enable-object-cache)
+  - [5. Override parameters from the command line](#5-override-parameters-from-the-command-line)
+  - [6. Filter specific parameter values](#6-filter-specific-parameter-values)
+  - [7. Split build and run stages](#7-split-build-and-run-stages)
 - [Design](#design)
   - [`kbench` YAML format](#kbench-yaml-format)
-  - [Expanding spec's to get instances](#expanding-specs-to-get-instances)
-  - [`kbench` loop: Enumerating over instances](#kbench-loop-enumerating-over-instances)
-  - [`kbench` loop: Enumerating over instances with shapes](#kbench-loop-enumerating-over-instances-with-shapes)
-- [Output pickle `.pkl` files](#output-pickle-pkl-files)
-- [Compile-time Parameters vs. Runtime Variables](#compile-time-parameters-vs-runtime-variables)
-- [`kbench` Object Cache](#kbench-object-cache)
-  - [Enable object cache](#enable-object-cache)
-  - [Clear object cache](#clear-object-cache)
+  - [Expanding specs into instances](#expanding-specs-into-instances)
+  - [Enumerating over instances](#enumerating-over-instances)
+- [Output files](#output-files)
+- [Compile-time parameters vs. runtime variables](#compile-time-parameters-vs-runtime-variables)
+- [Running Python benchmarks](#running-python-benchmarks)
+- [FAQ](#faq)
+  - [Why is `kbench` written in Python?](#why-is-kbench-written-in-python)
+  - [Do I have to use Bazel?](#do-i-have-to-use-bazel)
+- [Modular employee workflows](#modular-employee-workflows)
 
-- [Running Python benchmarks (experimental)](#running-python-benchmarks)
+## Prerequisites
 
-## Why is `kbench` written in Python?
+Be sure you meet the MAX
+[system requirements](https://docs.modular.com/max/packages#system-requirements)
+before using `kbench`.
 
-In other words, why the driver cannot be in the same process as the entity that
-is autotuned?
+If you're developing on macOS, you need Xcode 16.0 or later and macOS 15.0 or
+later. You may need to run `xcodebuild -downloadComponent MetalToolchain`,
+which downloads the Metal utilities required for GPU programming in later
+versions of Xcode.
 
-- Not all parameters used for autotuning are valid. Invalid parameters may
-cause the process to crash which brings down the driver, so we need to have
-separation there.
-- Abundance of utilities and libraries (Pandas, Plotly, Rich progress bar/console)
+## Quickstart
 
-## Setup for tuning
+This quickstart walks you through setting up and running your first benchmark
+with `kbench`.
 
-Compile using `--config=production`:
-
-```bash
-br //:install --config=production
-```
-
-Lock the clock frequencies for consistent benchmarking:
+1. Clone the repository:
 
 ```bash
-sudo utils/setup-gpu-clock.sh
+git clone -b main https://github.com/modular/modular && cd modular
 ```
 
-### Setup kbench
-
-Before running you many need to export the `$KERNEL_BENCHMARKS_ROOT`
-environment variable. This is the root directory of the kbench repository.
+1. Set the environment variable for the kernel benchmarks directory:
 
 ```bash
 export KERNEL_BENCHMARKS_ROOT=$MODULAR_PATH/max/kernels/benchmarks
 ```
 
-There are two ways to run kbench:
+1. Set up the clock frequencies for consistent benchmarking:
 
-1. Using bazel:
-   Running with bazel should automatically build and install mojo
+```bash
+sudo utils/setup-gpu-clock.sh
+```
 
-    ```bash
-    br //max/kernels/benchmarks/autotune:kbench -- --help
+1. Verify your environment is set up correctly by running the following command
+from the top-level `modular` directory:
 
-    ```
+```bash
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- --help
+```
 
-    When running from bazel, note your .yaml files reference a mojo file,
-    you'll need to be in a directory where that file is accessible.
+> [!NOTE]
+> **Bazel**
+> The Modular repository uses [Bazel](https://bazel.build/), a fast, scalable
+  build and test tool to ensure reproducible builds through dependency tracking
+  and caching.
 
-    ```bash
-    br //max/kernels/benchmarks/autotune:kbench --  test.yaml --dryrun
-    ```
+1. Run a benchmark on our provided test file. The command must reference your
+benchmarking configuration file location.
 
-2. Using uv:
-    If you use uv, you'll need to install `modular` first, so that `mojo` will be
-    available.
+```bash
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  max/kernels/benchmarks/autotune/test.yaml
+```
 
-    ```bash
-    uv run kbench --help
-    ```
+For more information on creating your own benchmarks, see [usage](#usage).
+
+Your output should look similar to the following:
+
+```bash
+INFO     running binary [4/4] (100%)
+INFO     finished running all binaries
+INFO     Total elapsed time per step:
+         ╭─────────────────┬─────────────╮
+         │ Step            │   Total (s) │
+         ├─────────────────┼─────────────┤
+         │ build           │       0.023 │
+         ├─────────────────┼─────────────┤
+         │ benchmark       │       0.026 │
+         ├─────────────────┼─────────────┤
+         │ kbench overhead │       0.007 │
+         ├─────────────────┼─────────────┤
+         │ TOTAL           │       0.056 │
+         ╰─────────────────┴─────────────╯
+INFO     wrote results to [kbench-output/output.txt]
+INFO     wrote results to [kbench-output/output.csv]
+INFO     wrote results to [kbench-output/output.pkl]
+INFO     output-dir: [kbench-output]
+
+         ----------------------------------------------------------------------
+INFO     Number of shapes: 1
+```
+
+For more information on results, see [output files](#output-files).
 
 ## Usage
 
-0. Set the benchmark function properly
-    The benchmark should run exactly one case, import `Bench` following the
-    example in [`sample.mojo`](sample.mojo):
+Follow these steps to create and run your own benchmarks.
 
-    ```mojo
-    from sys import env_get_string, env_get_int
-    from internal_utils import env_get_dtype, env_get_shape, int_list_to_tuple
-    from benchmark import (
-        BenchConfig,
-        Bench,
-        Bencher,
-        BenchId,
-        BenchMetric,
-        ThroughputMeasure,
-        keep,
-    )
-    ```
+### 1. Create a Mojo benchmarking file
 
-1. Define your input params in Mojo using the following sys env functions:
+Your Mojo benchmarking file contains the actual Mojo code with parameterized
+kernel logic and defines how to benchmark.
 
-    ```mojo
-    fn main():
-        alias dtype = env_get_dtype["dtype", DType.float16]()
-        alias shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
-        alias shape = int_list_to_tuple[shape_int_list]()
-        alias stages = env_get_int["stages", 0]()
-    ```
+See [`sample.mojo`](sample.mojo) for a complete example template.
 
-2. Ensure the input params are captured properly.
+Within the Mojo file, you'll need to import the Mojo
+[`benchmark`](https://docs.modular.com/mojo/stdlib/benchmark/) package.
 
-3. Define a config yaml file following the example of [`test.yaml`](test.yaml):
-
-    ```yaml
-    name: multistage_gemm
-    file: sample.mojo
-    params:
-
-    - dtype: DType.float16
-      shape: [1024x512x256, 32x32x32]
-      stages: [4,8]
-
-    - dtype: DType.float32
-      shape: 64x64x64
-      stages: 2
-    ```
-
-4. Run `kbench.py` script as follows:
-    For simply running all the configs in the YAML file and store the results
-    on a pkl file (for later inspection)
-
-    ```bash
-    br -- //max/kernels/benchmarks/autotune:kbench YAML_FILE --output OUTPUT_FILE_NAME
-    ```
-
-5. Avoid recompilation by enabling `kbench` object cache:
-    Simply add `--cached` or `-c` to the of command.
-
-    Note:
-    - This doesn't check the changes in the source.
-    - Caching is persistent for follow-up calls unless `kbench --clear-cache`
-        or `kbench -cc` is invoked.
-
-6. To include parameters from CLI without adding them to YAML files use `--param`:
-
-    ```bash
-    kbench --param NAME:VALUE # single value
-    kbench --param NAME:[VALUE0, VALUE1] # Pythonic list of values
-    ```
-
-7. To filter out certain values without removing them from YAML files use
-`--filter` in CLI:
-
-    ```bash
-    kbench --filter NAME=VALUE # only show the instances where parameter NAME=VALUE.
-    ```
-
-8. You can split build and compilation stages re-using the .pkl cache
-
-  ```bash
-  # Build all the combinations from a given parameter file and create a
-  # cache file
-  $ kbench -c --build YAML_FILE.
-  # Run all the combinations previously created, requires an existing
-  # cache file and program binaries on the correct folders
-  $ kbench --run-only YAML_FILE
-  ```
-
-### Example
-
-Just running [`sample.mojo`](sample.mojo) with parameters in [`test.yaml`](test.yaml):
-
-```text
-build-run ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00 5/5
---------------------------------------------------------------------------------
-Tuning [multistage_gemm] from [sample.mojo]
---------------------------------------------------------------------------------
-Number of valid specs: 5
- mesh_idx                                           name  met (ms)  iters
-        0 gemm/dtype=float16/m=1024/n=512/k=512/stages=4  0.000046      2
-        1 gemm/dtype=float16/m=1024/n=512/k=512/stages=8  0.000037      2
-        2     gemm/dtype=float16/m=32/n=32/k=32/stages=4  0.000033      2
-        3     gemm/dtype=float16/m=32/n=32/k=32/stages=8  0.000034      2
-        4     gemm/dtype=float32/m=64/n=64/k=64/stages=2  0.000034      2
---------------------------------------------------------------------------------
-Elapsed tuning time: 22.5 (s)
-wrote results to [output.csv]
+```mojo
+from sys import env_get_string, env_get_int
+from internal_utils import env_get_dtype, env_get_shape, int_list_to_tuple
+from benchmark import (
+    BenchConfig,
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+    keep,
+)
 ```
 
-Now, tuning [`sample.mojo`](sample.mojo) with parameters in [`test.yaml`](test.yaml):
+Then, use the `sys` environment getter functions to define your benchmarking
+input parameters, such as datatype and shape:
 
-```text
-build-run ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00 5/5
---------------------------------------------------------------------------------
-Tuning [multistage_gemm] from [sample.mojo]
---------------------------------------------------------------------------------
-Number of valid specs: 5
- mesh_idx                                           name  met (ms)  iters
-        4     gemm/dtype=float32/m=64/n=64/k=64/stages=2  0.000031      2
-        1 gemm/dtype=float16/m=1024/n=512/k=512/stages=8  0.000034      2
-        2     gemm/dtype=float16/m=32/n=32/k=32/stages=4  0.000034      2
-        3     gemm/dtype=float16/m=32/n=32/k=32/stages=8  0.000034      2
-        0 gemm/dtype=float16/m=1024/n=512/k=512/stages=4  0.000034      2
-top_spec_idx: 4
---------------------------------------------------------------------------------
-Best Measured Time:
---------------------------------------------------------------------------------
-{'dtype': 'DType.float32', 'shape': '64x64x64', 'stages': 2}
---------------------------------------------------------------------------------
-Elapsed tuning time: 13.9 (s)
-wrote results to [output.csv]
+```mojo
+fn main():
+    alias dtype = env_get_dtype["dtype", DType.float16]()
+    alias shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
+    alias shape = int_list_to_tuple[shape_int_list]()
+    alias stages = env_get_int["stages", 0]()
+```
+
+Take care that your parameters are captured properly.
+
+### 2. Create a configuration YAML file
+
+Your configuration YAML file defines what values to pass to your benchmark and
+which parameter combinations to test.
+
+See [`test.yaml`](test.yaml) for an example template.
+
+The following is an example of the parameter grid:
+
+```yaml
+name: multistage_gemm
+file: sample.mojo
+params:
+
+- dtype: DType.float16
+  shape: [1024x512x256, 32x32x32]
+  stages: [4,8]
+
+- dtype: DType.float32
+  shape: 64x64x64
+  stages: 2
+```
+
+### 3. Run the benchmark
+
+To run all configurations in a YAML file, run the following Bazel command from
+the top-level `modular` directory.
+
+```bash
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  max/kernels/benchmarks/autotune/test.yaml --output results-test
+```
+
+Replace `test.yaml` with the path to your configuration file and
+`results-test.csv` with your desired output file name.
+
+The output file is created in a directory called `kbench-output` by default.
+You can override the default output folder with the `--output-dir` argument
+when running your benchmark.
+
+For more information, see [output files](#output-files).
+
+### 4. Enable object cache
+
+By default, `kbench` parses and recompiles on every run. To reuse previously
+compiled binaries and avoid this overhead, enable the object cache with
+`--cached` or `-c`:
+
+```bash
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  max/kernels/benchmarks/autotune/test.yaml --output results-test --cached
+```
+
+This creates a `kbench_cache.pkl` file in your working directory.
+
+> [!NOTE]
+> **When to enable caching**
+> The cache doesn't check for source changes, so use it only when the Mojo
+  source hasn't changed.
+
+To clear the cache, you can use the `--clear-cache` or `-cc` argument:
+
+```bash
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- --clear-cache
+```
+
+This deletes the `kbench_cache.pkl` file.
+
+### 5. Override parameters from the command line
+
+To override or add parameters without modifying your YAML file, use `--param`:
+
+```bash
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  max/kernels/benchmarks/autotune/test.yaml --param dtype:DType.bfloat16
+```
+
+### 6. Filter specific parameter values
+
+To run only a subset of configurations already defined in your YAML file, use
+`--filter`:
+
+```bash
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  max/kernels/benchmarks/autotune/test.yaml --filter dtype:DType.float16
+```
+
+### 7. Split build and run stages
+
+To build and run separately, use the cache to store compiled binaries:
+
+```bash
+# Build all configurations and create a cache file
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  max/kernels/benchmarks/autotune/test.yaml -c --build
+
+# Run previously built configurations from the cache
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  max/kernels/benchmarks/autotune/test.yaml --run-only
 ```
 
 ## Design
@@ -221,20 +262,25 @@ wrote results to [output.csv]
 
 ### `kbench` YAML format
 
-`kbench` compatible YAMLs should have the following structure:
+A `kbench` configuration file has the following structure:
 
-```YAML
+```yaml
 name: placeholder
-file: path-to-mojo source
+file: path/to/source.mojo
 params:
-    - spec #spec refers to a group of parameters, each with their own values.
-        param_name: value-set|single-value #Each parameter can have 1+ values.
+    - spec #  A spec is a group of parameters, each with one or more values
+        param_name: value | [value1, value2]
 ```
 
-### Expanding spec's to get instances
+See [`test.yaml`](test.yaml) and [`test_python.yaml`](test_python.yaml) for
+examples.
+
+### Expanding specs into instances
+
+Specs generate instances for all combinations of their parameter values.
 
 ```python
-instance_list = product(<params, values>) for all specs in yaml
+instance_list = product(params, values) for all specs in yaml
 ```
 
 For example, consider the following YAML:
@@ -245,16 +291,16 @@ file: sample.mojo
 params:
 
 - dtype: DType.float16
-    shape: [1024x512x256, 32x32x32]
-    stages: [4,8]
+  shape: [1024x512x256, 32x32x32]
+  stages: [4, 8]
 
 - dtype: DType.float32
-    shape: 64x64x64
-    stages: 2
+  shape: 64x64x64
+  stages: 2
 ```
 
-The first `spec` will be expanded into 4 separate instances, the last one
-remains as it is:
+The first spec expands into 4 instances (2 shapes × 2 stages). The second spec
+has only single values, so it remains as one instance:
 
 ```YAML
 - dtype: DType.float16
@@ -278,29 +324,20 @@ remains as it is:
   stages: 2
 ```
 
-### `kbench` loop: Enumerating over instances
+### Enumerating over instances
+
+By default, `kbench` compiles and runs each instance sequentially:
 
 ```python
 for inst in instance_list:
     compile_and_run_kernel(inst)
 ```
 
-For example:
-
-```bash
-kbench tuning_params.yaml
-```
-
-### `kbench` loop: Enumerating over instances with shapes
-
-In certain use cases, we need to have two levels of parameters that should be
-expanded separately. For example, when running a kernel with input shapes in
-set `S` over a set of tuning parameters `T`, would like to avoid mixing shape
-parameters and tuning parameters all at once, i.e., `expansion(SxT)`.
-Instead, we are interested in `expansion(S) x expansion(T)`, writing the
-results of each tuning step to `#S` separate output file
-
-The following loop nest shows how `kbench` enumerates over shapes and instances:
+In some cases, you may want to expand shape parameters and tuning parameters
+separately. For example, when benchmarking a kernel with input shapes `S` and
+tuning parameters `T`, you might want `expansion(S) × expansion(T)` rather than
+`expansion(S × T)`. This writes results for each shape to a separate output
+file.
 
 ```python
 for shape in shapes:
@@ -309,45 +346,46 @@ for shape in shapes:
     dump_results_for(shape)
 ```
 
-For example:
+Use the `--shapes` flag to specify a separate YAML file for input shapes.
+
+## Output files
+
+To run all configurations and save the results, use the following command:
 
 ```bash
-kbench tuning_params.yaml --shapes input_shapes.yaml
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  path/to/your-config.yaml --output output-file-name
 ```
 
-## Output pickle `.pkl` files
+This creates an intermediate `output-file-name.pkl` file.
 
-For simply running all the configs in the YAML file:
+See [README_kprofile.md](README_kprofile.md) for details on analyzing the `.pkl`
+files.
 
-```bash
-kbench YAML_FILE -o/--output OUTPUT_FILE_NAME
-```
+See [README_kplot.md](README_kplot.md) to plot `kbench` results for
+visualization.
 
-This will automatically store the intermediate output in `OUTPUT_PATH.pkl`.
-Please refer to [README_kprofile.md](README_kprofile.md) for details on how to
-analyze the data in `.pkl` files.
+> [!NOTE]
+> **Be mindful when moving machines**
+> The `.pkl` file stores paths to compiled binaries, not the binaries
+  themselves.
+> If moving between machines, you must copy both the `.pkl` file and the output
+  directory.
 
-`.pkl` files are also used for split compilation and runs.
-Note the `pkl` file contains the path to the binaries, but not the binaries
-themselves.
-If moving around machines, moving the pkl and all the output directory is
-required for running.
+## Compile-time parameters vs. runtime variables
 
-## Compile-time Parameters vs. Runtime Variables
+Building with multiple compile-time parameters increases compilation time
+because each combination requires a separate build. To reduce compilation time,
+consider replacing compile-time parameters with runtime variables.
 
-Building with various compile-time parameters does NOT hit Mojo-cache and
-increases compilation time. Therefore, it is essential to minimize the number
-of parameters, or simply replace them with runtime variables to reduce the time
-spent in (re)compilation.
-
-Following example shows how to define a runtime variable in Mojo using
-`arg_parse` utility function. Note that the name in YAML is now prefixed with
-`$`:
+To define a runtime variable in Mojo, use the `arg_parse` utility function and
+prefix the parameter name with `$` in your YAML:
 
 ```mojo
 from internal_utils import arg_parse
+
 fn main():
-var runtime_x = arg_parse("x", 0)
+  var runtime_x = arg_parse("x", 0)
 ```
 
 ```bash
@@ -361,64 +399,72 @@ file: sample.mojo
 params:
 - dtype: DType.float16
   shape: [1024x512x256, 32x32x32]
-  stages: [4,8]
-  $x: [0,1,2,3]
+  stages: [4, 8]
+  $x: [0, 1, 2, 3]
 ```
 
-## `kbench` Object Cache
+## Running Python benchmarks
 
-Recompiling with same set of parameters and hitting the mojo-cache requires
-parsing. The baseline cost of parsing is not quite negligible. Still, an
-unnecessary price.
-What if we want to keep track of the compiled binaries between
-various launches of kbench?
-To that end, we have implemented `kbench`
-object-cache available via `kbench --cached` or `kbench -c`.
+To run Python benchmarks with `kbench`:
 
-NOTE: This doesn't check the changes in the source.
+1. Create a YAML config file with a `.py` file in the `file` path. See
+[`test_python.yaml`](test_python.yaml) for an example template.
 
-### Enable object cache
+1. Create a Python script. See [`sample.py`](sample.py) for an example. In your
+Python script, import the required functions from
+[`bencher_utils`](bencher_utils.py):
+
+```python
+   from bencher_utils import Bench, ThroughputMeasure, arg_parse
+```
+
+1. Run with `kbench`:
 
 ```bash
-kbench --cached test.yaml
-kbench -c test.yaml
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  max/kernels/benchmarks/autotune/test_python.yaml --dryrun
 ```
 
-Note `--run-only` implies `-c`
+## FAQ
 
-### Clear object cache
+Common questions about `kbench` design decisions and usage.
+
+### Why is `kbench` written in Python?
+
+Running the benchmarking driver in a separate process from the code being
+autotuned provides two key benefits:
+
+- **Fault isolation**: Invalid autotuning parameters can crash the process.
+Running `kbench` separately prevents crashes from bringing down the driver.
+
+- **Rich ecosystem**: Python provides useful libraries for data analysis and
+visualization (Pandas, Plotly, Rich) that simplify development.
+
+This approach prioritizes simplicity and reliability over a more complex
+integrated solution.
+
+### Do I have to use Bazel?
+
+We recommend using Bazel for a consistent build environment and reproducible
+results. However, you can also use `uv` if you have Mojo installed via the
+`modular` package.
+
+For `uv` setup instructions, see the
+[MAX quickstart](https://docs.modular.com/max/get-started#set-up-your-project).
+
+After setup, verify your environment:
 
 ```bash
-kbench --clear-cache
-kbench -cc
+uv run kbench --help
 ```
 
-## Running Python Benchmarks
+## Modular internal workflow
 
-- Set up a kbench config yaml that has `.py` in its `file` path.
-- Follow the example in `max/kernels/benchmarks/autotune/sample.py`, importing
-  the relevant functions:
-  
-  ```python
-  from bencher_utils import Bench, ThroughputMeasure, arg_parse
-  ```
+If you are a Modular employee, you can use the following command to set up
+autotuning before running through the quickstart:
 
-- Run with `kbench`:
-  
-  ```python
-  kbench -f $KERNEL_BENCHMARKS_ROOT/autotune/test_python.yaml
-  ```
+```bash
+br //:install --config=production
+```
 
-- Output:
-  Result is saved to `ouput.pkl/csv/txt`:
-  
-  ```plaintext
-  ----------------------------------------------------------------------
-  Number of valid executed specs: 5 (out of 5)
-  mesh_idx                                                 name   iters   met (ms)   Arithmetic (GFLOPS/s)                                                        spec
-          0 gemm/dtype=DType.float16/m=1024/n=512/k=256/stages=4       1        0.1              2684.35456 sample/dtype=DType.float16/shape=1024x512x256/stages=4/$x=0
-          1 gemm/dtype=DType.float16/m=1024/n=512/k=256/stages=4       1        0.1              2684.35456 sample/dtype=DType.float16/shape=1024x512x256/stages=4/$x=1
-          2     gemm/dtype=DType.float16/m=32/n=32/k=32/stages=4       1        0.1                 0.65536     sample/dtype=DType.float16/shape=32x32x32/stages=4/$x=0
-          3     gemm/dtype=DType.float16/m=32/n=32/k=32/stages=4       1        0.1                 0.65536     sample/dtype=DType.float16/shape=32x32x32/stages=4/$x=1
-          4     gemm/dtype=DType.float32/m=64/n=64/k=64/stages=2       1        0.1                 5.24288          sample/dtype=DType.float32/shape=64x64x64/stages=2
-  ```
+Additionally, all `./bazelw run` commands can be shortened to `br`.
