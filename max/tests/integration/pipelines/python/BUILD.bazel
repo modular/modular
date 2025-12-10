@@ -26,6 +26,7 @@ modular_py_test(
     name = "test_debug_utils",
     size = "small",
     srcs = ["test_debug_utils.py"],
+    external_noop = True,  # FIXME: SDLC-2743
     deps = [
         "//max/tests/integration/tools:debugging_utils",
         requirement("torch"),
@@ -37,6 +38,7 @@ modular_py_test(
     name = "test_hf_repo_lock",
     size = "small",
     srcs = ["test_hf_repo_lock.py"],
+    external_noop = True,  # FIXME: SDLC-2743
     deps = [
         ":hf_repo_lock",
         "//max/tests/integration/pipelines/python/test_common",
