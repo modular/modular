@@ -995,9 +995,18 @@ class IfOp(max._core.Operation):
         location: Location,
         results: Sequence[max._core.Type],
         cond: max._core.Value,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
     def cond(self) -> max._core.Value: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
 
 class ShapeFromTensorOp(max._core.Operation):
     """
@@ -6940,6 +6949,7 @@ class YieldOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         operands: Sequence[max._core.Value[max._core.Type]],
+        parameters: max._core.dialects.kgen.ParameterExprArrayAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -6947,6 +6957,12 @@ class YieldOp(max._core.Operation):
     ) -> None: ...
     @property
     def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def parameters(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+    @parameters.setter
+    def parameters(
+        self, arg: max._core.dialects.kgen.ParameterExprArrayAttr, /
+    ) -> None: ...
 
 class WhileOp(max._core.Operation):
     """
