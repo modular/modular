@@ -242,6 +242,8 @@ module_versions(
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
 RUFF_VERSION = "0.14.0"
 
 [
@@ -501,4 +503,33 @@ http_archive(
     strip_prefix = "mistral-evals-02bbf53fea669323010bba74f1b9874472d0d47c",
     # Mirrored from https://github.com/mistralai/mistral-evals/archive/02bbf53fea669323010bba74f1b9874472d0d47c.tar.gz
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/mistral-evals/02bbf53fea669323010bba74f1b9874472d0d47c/d34c715e7a625a7acb392ffebca23da30693a992979d7c58f3c13e6000e9adc5/mistral-evals-02bbf53fea669323010bba74f1b9874472d0d47c.tar.gz",
+)
+
+# Blackwell (SM100) benchmark wheel dependencies for external baselines (DeepGEMM, FlashInfer, flash-attention).
+# These wheels are pre-built on a B200 machine and uploaded via:
+#   ./utils/upload-public-bazel-artifact.sh <name> sm100 <wheel_path>
+# To rebuild wheels, use: python Kernels/utils/setup_bench_env.py --build-wheels
+# NOTE: Filename has '+' replaced with '_' to avoid S3 URL encoding issues.
+# The '+' in PEP 440 local versions (e.g., 2.2.0+38f8ef7) requires URL encoding
+# as %2B, but Bazel's http_file doesn't encode, causing 403 errors.
+# setup_bench_env.py --build-wheels automatically sanitizes filenames.
+http_file(
+    name = "deepgemm_sm100_wheel",
+    downloaded_file_path = "deep_gemm-2.2.0_38f8ef7-cp312-cp312-linux_x86_64.whl",
+    sha256 = "91a898b8704b91726646e98403f6028b1e601603b2d34f8e4530370072e474cf",
+    urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/deep_gemm/sm100/91a898b8704b91726646e98403f6028b1e601603b2d34f8e4530370072e474cf/deep_gemm-2.2.0_38f8ef7-cp312-cp312-linux_x86_64.whl"],
+)
+
+http_file(
+    name = "flashinfer_sm100_wheel",
+    downloaded_file_path = "flashinfer_python-0.5.2-py3-none-any.whl",
+    sha256 = "0afdb8f536a3a101ac7f653d66a5f4f63991f820352daf64950dab89f9806c1c",
+    urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/flashinfer/sm100/0afdb8f536a3a101ac7f653d66a5f4f63991f820352daf64950dab89f9806c1c/flashinfer_python-0.5.2-py3-none-any.whl"],
+)
+
+http_file(
+    name = "flash_attn_sm100_wheel",
+    downloaded_file_path = "flash_attn-2.8.3-py3-none-any.whl",
+    sha256 = "3f4db99ab00437fb50c61da11d0647e5ab7aeab1b0b7337ae048dd8ee1b308b2",
+    urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/flash_attn/sm100/3f4db99ab00437fb50c61da11d0647e5ab7aeab1b0b7337ae048dd8ee1b308b2/flash_attn-2.8.3-py3-none-any.whl"],
 )
