@@ -26,7 +26,8 @@ from sys import (
 import linalg.matmul.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from gpu import global_idx, grid_dim, block_dim
+from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from random import Random
@@ -48,10 +49,57 @@ from linalg.fp4_utils import (
     MXFP8_SF_VECTOR_SIZE,
     MXFP8_SF_DTYPE,
 )
-from random import random_ui64
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
 from utils import IndexList
+
+
+# GPU kernel to initialize MXFP8 scale buffers with random exponents.
+# float8_e8m0fnu: exponent-only format, value = 2^(stored_value - 127).
+# Random exponents 127 + (0,1,2,3) -> scale values of 1, 2, 4, 8.
+# Each thread processes 4 elements for better memory throughput.
+fn _init_mxfp8_scales_gpu[
+    dtype: DType
+](x: UnsafePointer[Scalar[dtype]], len: Int):
+    var tid = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+
+    @parameter
+    fn apply(values: SIMD[dtype, 4]):
+        @parameter
+        for i in range(4):
+
+            @parameter
+            if i == 3:
+                if tid >= UInt(len):
+                    return
+            x[tid] = Scalar[dtype](values[i])
+            tid += stride
+
+    # Generate 4 random exponents per thread for better throughput.
+    # step_uniform returns SIMD[float32, 4] with values in [0, 1).
+    # Multiply by 4 and cast to get values 0, 1, 2, or 3.
+    # Then add 127 to get exponents -> scale values of 1, 2, 4, 8.
+    var rng = Random(offset=tid)
+    var rand_floats = rng.step_uniform() * 4
+    var rand_u8 = rand_floats.cast[DType.uint8]() & 3
+    var values = bitcast[dtype, 4](rand_u8 + 127)
+    apply(values)
+
+
+fn _init_mxfp8_scales_launch[
+    dtype: DType, block_dim: Int = 256
+](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext,) raises:
+    var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
+    # using num-threads = 1/4th of length to initialize the array
+
+    comptime kernel = _init_mxfp8_scales_gpu[dtype]
+    context.enqueue_function_checked[kernel, kernel](
+        out_device,
+        length,
+        grid_dim=(num_blocks),
+        block_dim=(block_dim),
+    )
 
 
 fn _get_run_name[
@@ -210,32 +258,19 @@ fn bench_matmul[
     var buffer_a_scales = ctx.enqueue_create_buffer[scales_type](a_scales_size)
     var buffer_b_scales = ctx.enqueue_create_buffer[scales_type](b_scales_size)
 
-    # Initialize scales for MXFP8 with random values for realistic benchmarking
+    # Initialize scales for MXFP8 with random values directly on GPU.
     # float8_e8m0fnu: exponent-only format, value = 2^(stored_value - 127). Note
     # that using constant 1 scale factors is not realistic for benchmarking and
     # does in fact result in artificially high performance, so random scale
     # factors are more realistic.
     @parameter
     if use_mxfp8_sf:
-        var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-            a_scales_size
+        _init_mxfp8_scales_launch[scales_type](
+            buffer_a_scales, a_scales_size, ctx
         )
-        var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-            b_scales_size
+        _init_mxfp8_scales_launch[scales_type](
+            buffer_b_scales, b_scales_size, ctx
         )
-        # Random exponents: 127 + random(0,3) -> scale values of 1, 2, 4, 8
-        for i in range(a_scales_size):
-            a_scales_host_ptr[i] = bitcast[scales_type](
-                UInt8(127 + random_ui64(0, 3))
-            )
-        for i in range(b_scales_size):
-            b_scales_host_ptr[i] = bitcast[scales_type](
-                UInt8(127 + random_ui64(0, 3))
-            )
-        ctx.enqueue_copy(buffer_a_scales, a_scales_host_ptr)
-        ctx.enqueue_copy(buffer_b_scales, b_scales_host_ptr)
-        a_scales_host_ptr.free()
-        b_scales_host_ptr.free()
 
     # Host allocations
     var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_a)
