@@ -295,6 +295,12 @@ def main():
             K=None,
         ](ctx, 0, 2, 2, 2)
 
+        # Test non-batch dispatch logic
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(1), dynamic(2), dynamic(2), dynamic(2))
+
         test[
             DType.bfloat16,
             transpose_b=False,
