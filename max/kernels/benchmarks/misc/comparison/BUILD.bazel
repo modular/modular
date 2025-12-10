@@ -1,0 +1,83 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+"""Benchmark targets comparing MAX kernels against external baselines.
+
+These benchmarks run on B200 GPUs and compare MAX's MHA/GEMM implementations
+against FlashInfer, flash-attention, and DeepGEMM baselines.
+
+Usage:
+    # Run locally on B200
+    br //max/kernels/benchmarks/misc/comparison:bench_prefill
+"""
+
+load("//bazel:api.bzl", "modular_py_binary", "requirement")
+load("//max/kernels/benchmarks/misc/blackwell_bench:wheels.bzl", "blackwell_bench_wheel")
+
+package(default_visibility = ["//max:consumers"])
+
+# MHA prefill benchmark: MAX vs FlashInfer vs flash-attention
+modular_py_binary(
+    name = "bench_prefill",
+    srcs = ["bench_blackwell_prefill.py"],
+    # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
+    # nvidia-cutlass-dsl uses a .pth file which Bazel doesn't process.
+    # Path is relative from _main/max/kernels/benchmarks/misc/comparison/ in runfiles:
+    imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl@4.3.0/site-packages/nvidia_cutlass_dsl/python_packages"],
+    main = "bench_blackwell_prefill.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        blackwell_bench_wheel("flash-attn"),
+        blackwell_bench_wheel("flashinfer"),
+        requirement("torch"),
+        "//max/python/max",
+    ],
+)
+
+# MHA decode benchmark: MAX vs FlashInfer (TensorRT-LLM backend)
+modular_py_binary(
+    name = "bench_decode",
+    srcs = ["bench_blackwell_decode.py"],
+    main = "bench_blackwell_decode.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        blackwell_bench_wheel("flashinfer"),
+        blackwell_bench_wheel("flash-attn"),
+        requirement("torch"),
+        "//max/python/max",
+    ],
+)
+
+# MLA (Multi-head Latent Attention) decode benchmark: MAX vs FlashInfer TRT-LLM MLA
+# Moved to kbench. Please run the following:
+# kbench bench_mla_decode.yaml --param engine:"[modular_max, flashinfer]"
+
+# Grouped GEMM benchmark using DeepGEMM baseline
+modular_py_binary(
+    name = "bench_grouped_gemm",
+    srcs = ["bench_blackwell_grouped_gemm.py"],
+    main = "bench_blackwell_grouped_gemm.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        blackwell_bench_wheel("deep-gemm"),
+        requirement("packaging"),
+        requirement("torch"),
+    ],
+)
