@@ -254,10 +254,11 @@ def fused_qkv_ragged_matmul_scaled_float8(
         )
 
     # Device check - all tensors must be on the same device
-    if not all(
-        t.device == input.device
-        for t in [wqkv, input_row_offsets, input_scale, weight_scale]
-    ):
+    tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
+    if bias is not None:
+        tensors_to_check.append(bias)
+
+    if not all(t.device == input.device for t in tensors_to_check):
         raise ValueError(
             f"expected all tensors to be on the same device as input ({input.device}), "
             f"but got:\n"
@@ -265,6 +266,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
             f"  input_row_offsets={input_row_offsets.device}\n"
             f"  input_scale={input_scale.device}\n"
             f"  weight_scale={weight_scale.device}"
+            + ("" if bias is None else f"\n  bias={bias.device}")
         )
 
     # layer_idx must be a scalar on CPU as it's used for indexing
@@ -288,19 +290,23 @@ def fused_qkv_ragged_matmul_scaled_float8(
     }
 
     op_name = "mo.fused_qkv_matmul.ragged.paged.scale"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        input_scale,
+        weight_scale,
+        *kv_collection,
+        layer_idx,
+    ]
+    if bias is not None:
+        op_name += ".bias"
+        values.append(bias)
 
     return ops.inplace_custom(
         op_name,
         device=input.device,
-        values=[
-            input,
-            input_row_offsets,
-            wqkv,
-            input_scale,
-            weight_scale,
-            *kv_collection,
-            layer_idx,
-        ],
+        values=values,
         out_types=[
             TensorType(
                 dtype=DType.bfloat16,

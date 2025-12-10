@@ -207,6 +207,7 @@ class FusedQKVRaggedMatmulScaledFloat8:
         layer_idx: TensorValue,
         input_scale: TensorValue,
         weight_scale: TensorValue,
+        bias: TensorValue | None = None,
     ) -> TensorValue:
         return fused_qkv_ragged_matmul_scaled_float8(
             self.kv_params,
@@ -218,6 +219,7 @@ class FusedQKVRaggedMatmulScaledFloat8:
             self.n_heads,
             input_scale,
             weight_scale,
+            bias,
         )
 
 
@@ -250,6 +252,8 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
             TensorType(DType.bfloat16, shape=(1, 1), device=device),
             # weight_scale
             TensorType(DType.bfloat16, shape=(1, 1), device=device),
+            # bias
+            TensorType(DType.bfloat16, shape=(1536,), device=device),
             # KV cache collection inputs
             # blocks: [num_pages, 2, n_kv_heads, page_size, head_dim]
             BufferType(
@@ -270,6 +274,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
             layer_idx,
             input_scale,
             weight_scale,
+            bias,
             blocks,
             cache_lengths,
             lookup_table,
@@ -294,6 +299,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
             32,  # n_heads
             input_scale.tensor,
             weight_scale.tensor,
+            bias.tensor,
         )
         assert output.shape == [10, 32 * 64]  # [seq_len, n_heads * head_dim]
         assert output.dtype == DType.bfloat16

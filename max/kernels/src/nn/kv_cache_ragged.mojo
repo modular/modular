@@ -332,6 +332,15 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
         mut=True, output_dtype, address_space = AddressSpace.GENERIC, **_
     ],
     ctx: DeviceContextPtr,
+    bias: OptionalReg[
+        LayoutTensor[
+            mut=False,
+            output_dtype,
+            Layout.row_major(UNKNOWN_VALUE),
+            MutAnyOrigin,
+            address_space = AddressSpace.GENERIC,
+        ]
+    ] = None,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -352,6 +361,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             projections are written in-place to k_cache and v_cache.
             Shape: (sum(seq_lens), num_heads * head_size).
         ctx: The call context pointer, passed by the graph compiler.
+        bias: Optional bias vector concatenated as [q, k, v].
     """
 
     @always_inline
@@ -399,6 +409,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             layer_idx,
             output,
             ctx,
+            bias,
         )
 
 
@@ -567,6 +578,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
         mut=True, output_dtype, address_space = AddressSpace.GENERIC, **_
     ],
     context: DeviceContextPtr,
+    bias: OptionalReg[
+        LayoutTensor[
+            mut=False,
+            output_dtype,
+            Layout.row_major(UNKNOWN_VALUE),
+            MutAnyOrigin,
+            address_space = AddressSpace.GENERIC,
+        ]
+    ] = None,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -587,6 +607,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
+        bias: Optional bias vector concatenated as [q, k, v].
     """
     var cuda_ctx: Optional[DeviceContext] = None
     var layer_idx_cast = Int(layer_idx)
@@ -607,6 +628,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
         v_cache,
         output,
         cuda_ctx,
+        bias,
     )
 
 
@@ -907,6 +929,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         mut=True, output_dtype, address_space = AddressSpace.GENERIC, **_
     ],
     context: Optional[DeviceContext],
+    bias: OptionalReg[
+        LayoutTensor[
+            mut=False,
+            output_dtype,
+            Layout.row_major(UNKNOWN_VALUE),
+            MutAnyOrigin,
+            address_space = AddressSpace.GENERIC,
+        ]
+    ] = None,
 ) raises:
     """Performs a fused QKV matmul on ragged tensors. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -927,6 +958,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             projections are written in-place to k_cache and v_cache.
             Shape is (sum(seq_lens), num_heads * head_size)
         context: The DeviceContext. This is unused if is_cpu[target]().
+        bias: Optional bias vector concatenated as [q, k, v].
     """
     comptime kv_type = cache_t.dtype
     comptime kv_params = cache_t.kv_params
@@ -957,7 +989,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     ]()
 
     @parameter
-    @__copy_capture(input_scale, weight_scale, q_dim, qk_offset, batch_size)
+    @__copy_capture(
+        input_scale, weight_scale, q_dim, qk_offset, batch_size, bias
+    )
     @always_inline
     fn write_to_cache[
         dtype: DType, width: Int, *, alignment: Int = 1
@@ -976,12 +1010,19 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             ]()
             output_val = val * (scale_a * scale_b)
 
+        var output_val_out: SIMD[output_dtype, width] = rebind[
+            SIMD[output_dtype, width]
+        ](output_val.cast[output_dtype]())
+
+        if bias:
+            output_val_out += bias.value().load[width=width](
+                IndexList[1](idx[1])
+            )
+
         if idx[1] < q_dim:
             output.store[width=width](
                 idx,
-                rebind[SIMD[output_dtype, width]](
-                    output_val.cast[output_dtype]()
-                ),
+                output_val_out,
             )
             return
 
@@ -1014,7 +1055,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             Int(h_idx),
             cache_token_idx,
             Int(hd_idx),
-            rebind[SIMD[kv_type, width]](output_val.cast[kv_type]()),
+            rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
         )
 
     constrained[

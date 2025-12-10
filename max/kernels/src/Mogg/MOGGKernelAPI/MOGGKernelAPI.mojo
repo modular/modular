@@ -6315,6 +6315,71 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
             layer_idx,
             output.to_layout_tensor(),
             ctx,
+            OptionalReg[
+                LayoutTensor[
+                    mut=False,
+                    output_type,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    ImmutAnyOrigin,
+                    address_space = AddressSpace.GENERIC,
+                ]
+            ](),
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale.bias")
+struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        scale_type: DType,
+        output_type: DType,
+        kv_type: DType, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2],
+        hidden_state: InputTensor[dtype=dtype, rank=2],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        weight: InputTensor[dtype=dtype, rank=2],
+        input_scale: InputTensor[dtype=scale_type, rank=2],
+        weight_scale: InputTensor[dtype=scale_type, rank=2],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        bias: InputTensor[dtype=output_type, rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        comptime ExpectedBiasType = LayoutTensor[
+            mut=False,
+            output_type,
+            Layout.row_major(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+            address_space = AddressSpace.GENERIC,
+        ]
+        var bias_tensor = bias.to_layout_tensor()
+        var rebound_bias = rebind[ExpectedBiasType](bias_tensor)
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
+            target=target
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            input_scale.to_layout_tensor(),
+            weight_scale.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            output.to_layout_tensor(),
+            ctx,
+            OptionalReg[ExpectedBiasType](rebound_bias),
         )
 
 
