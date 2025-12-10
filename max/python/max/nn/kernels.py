@@ -78,6 +78,7 @@ def fused_qkv_padded_matmul(
     wqkv: TensorValue,
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
+    valid_lengths: TensorValue,
     n_heads: int,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with padded input.
@@ -86,12 +87,15 @@ def fused_qkv_padded_matmul(
     different actual lengths but are padded to a uniform shape.
 
     Args:
-        kv_params: KV cache parameters
-        input: Input tensor with shape [batch_size, seq_len, hidden_dim]
-        wqkv: Weight tensor for Q, K, V projections
-        kv_collection: Paged KV cache collection
-        layer_idx: Layer index for cache lookup
-        n_heads: Number of attention heads
+        kv_params: KV cache parameters.
+        input: Input tensor with shape [batch_size, seq_len, hidden_dim].
+        wqkv: Weight tensor for Q, K, V projections.
+        kv_collection: Paged KV cache collection.
+        layer_idx: Layer index for cache lookup (must be uint32).
+        valid_lengths: Tensor of shape [batch] containing the valid length for each
+            sequence (must be uint32). K and V are only written to cache for
+            positions within these lengths.
+        n_heads: Number of attention heads.
 
     Returns:
         Query projections tensor. K and V projections are written to cache.
@@ -116,6 +120,16 @@ def fused_qkv_padded_matmul(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
+    if valid_lengths.dtype != DType.uint32:
+        raise ValueError(
+            f"expected valid_lengths to have dtype uint32, was {valid_lengths.dtype}"
+        )
+
+    if valid_lengths.rank != 1:
+        raise ValueError(
+            f"expected valid_lengths to have rank 1 [batch], was rank {valid_lengths.rank}"
+        )
+
     if kv_params.cache_strategy != KVCacheStrategy.PAGED:
         raise ValueError(
             f"unsupported cache strategy for fused_qkv_padded_matmul: {kv_params.cache_strategy}"
@@ -127,7 +141,7 @@ def fused_qkv_padded_matmul(
     return ops.inplace_custom(
         op_name,
         device=input.device,
-        values=[input, wqkv, *kv_collection, layer_idx],
+        values=[input, wqkv, *kv_collection, layer_idx, valid_lengths],
         out_types=[
             TensorType(
                 dtype=input.dtype,
@@ -851,6 +865,7 @@ def fused_qk_padded_rope(
     kv_collection: PagedCacheValues,
     freqs_cis: TensorValue,
     layer_idx: TensorValue,
+    valid_lengths: TensorValue,
     interleaved: bool = True,
 ) -> TensorValue:
     """Computes fused query-key RoPE with padded inputs and paged KV cache.
@@ -860,12 +875,15 @@ def fused_qk_padded_rope(
     fused_qk_ragged_rope.
 
     Args:
-        kv_params: KV cache parameters
-        input: Query tensor of shape [batch, seq_len, n_heads, head_dim]
-        kv_collection: Paged KV cache collection
-        freqs_cis: Frequency tensor of shape (max_seq_len * 2, head_dim)
-        layer_idx: Layer index for KV cache (must be uint32 on CPU)
-        interleaved: Whether to use interleaved RoPE pattern
+        kv_params: KV cache parameters.
+        input: Query tensor of shape [batch, seq_len, n_heads, head_dim].
+        kv_collection: Paged KV cache collection.
+        freqs_cis: Frequency tensor of shape (max_seq_len * 2, head_dim).
+        layer_idx: Layer index for KV cache (must be uint32 on CPU).
+        valid_lengths: Tensor of shape [batch] containing the valid length for each
+            sequence (must be uint32). RoPE is only applied to positions within
+            these lengths.
+        interleaved: Whether to use interleaved RoPE pattern.
 
     Returns:
         Query tensor with RoPE applied, same shape as input.
@@ -880,6 +898,11 @@ def fused_qk_padded_rope(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
+    if valid_lengths.dtype != DType.uint32:
+        raise ValueError(
+            f"expected valid_lengths to have dtype uint32, was {valid_lengths.dtype}"
+        )
+
     if kv_params.cache_strategy != KVCacheStrategy.PAGED:
         raise ValueError(
             f"unsupported cache strategy for fused_qk_padded_rope: {kv_params.cache_strategy}"
@@ -888,6 +911,11 @@ def fused_qk_padded_rope(
     if input.rank != 4:
         raise ValueError(
             f"expected input to have rank 4 [batch, seq_len, n_heads, head_dim], was rank {input.rank}"
+        )
+
+    if valid_lengths.rank != 1:
+        raise ValueError(
+            f"expected valid_lengths to have rank 1 [batch], was rank {valid_lengths.rank}"
         )
 
     parameters: dict[str, bool | int | str | DType] = {
@@ -905,6 +933,7 @@ def fused_qk_padded_rope(
             *kv_collection,
             freqs_cis,
             layer_idx,
+            valid_lengths,
         ],
         out_types=[
             TensorType(

@@ -166,14 +166,29 @@ def test_fused_qk_rope[dtype: DType]() -> None:
             q.runtime_layout.shape.value.canonicalize()
         ),
     )
+
+    # Create valid_lengths buffer - all sequences have full seq_len valid
+    var valid_lengths_buffer = List[UInt32](
+        length=batch_size, fill=UInt32(seq_len)
+    )
+    var valid_lengths = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ](
+        valid_lengths_buffer.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](batch_size)
+        ),
+    )
+
     fused_qk_rope[
         kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
     ](
         q_proj=q,
         kv_collection=kv_collection,
         freqs_cis=freqs_cis_table,
-        output=q_out,
         layer_idx=UInt32(0),
+        valid_lengths=valid_lengths,
+        output=q_out,
         context=Optional[DeviceContext](),
     )
 
@@ -200,6 +215,7 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     _ = q_buffer^
     _ = k_cache_input_buffer^
     _ = kv_cache_block_buffer^
+    _ = valid_lengths_buffer^
 
 
 def main() -> None:

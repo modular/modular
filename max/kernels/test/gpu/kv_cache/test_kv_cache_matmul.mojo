@@ -255,11 +255,33 @@ def execute_fused_qkv_matmul[
         RuntimeLayout[test_output_layout].row_major(test_output_shape),
     )
 
+    # Create valid_lengths - all sequences have full prompt_len valid
+    var valid_lengths_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
+        batch_size
+    )
+    for i in range(batch_size):
+        valid_lengths_host_ptr[i] = UInt32(prompt_len)
+
+    var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    ctx.enqueue_copy(valid_lengths_device, valid_lengths_host_ptr)
+
+    var valid_lengths_tensor = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ](
+        valid_lengths_device.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](batch_size)
+        ),
+    )
+
     _fused_qkv_matmul_kv_cache_impl[target="gpu"](
         hidden_state_device_tensor,
         weight_device_tensor,
         kv_collection_device,
         UInt32(layer_idx),
+        valid_lengths_tensor,
         test_output_device_tensor,
         ctx,
     )
@@ -338,6 +360,7 @@ def execute_fused_qkv_matmul[
     cache_lengths_host_ptr.free()
     kv_block_host_ptr.free()
     lookup_table_host_ptr.free()
+    valid_lengths_host_ptr.free()
 
     # Cleanup device buffers
     _ = hidden_state_device^
@@ -347,6 +370,7 @@ def execute_fused_qkv_matmul[
     _ = cache_lengths_dev^
     _ = kv_block_device^
     _ = lookup_table_device^
+    _ = valid_lengths_device^
 
 
 def execute_fused_matmul_suite(ctx: DeviceContext):
