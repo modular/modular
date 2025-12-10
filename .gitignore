@@ -8,6 +8,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+local.bazelrc
 /bazel-*
 /MODULE.bazel.lock
 /external
