@@ -1,4 +1,2 @@
 bazel/lint/node_modules
 max/python/max/_core/internal
-# TODO: Remove when these are open sourced
-max/tests

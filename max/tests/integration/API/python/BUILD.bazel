@@ -116,6 +116,7 @@ modular_py_test(
         "conftest.py",
         "test_logits_processor_gpu.py",
     ],
+    external_noop = True,  # FIXME: SDLC-2743
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [

@@ -17,6 +17,7 @@ def modular_py_test(
         env = {},
         args = [],
         data = [],
+        external_noop = False,  # buildifier: disable=unused-variable
         mojo_deps = [],
         tags = [],
         exec_properties = {},
@@ -34,6 +35,7 @@ def modular_py_test(
         env: Any environment variables that should be set during the test runtime
         args: Arguments passed to the test execution
         data: Runtime deps of the test target
+        external_noop: Ignored, for compatibility with the external repo
         mojo_deps: mojo_library targets the test depends on at runtime
         tags: Tags added to the py_test target
         exec_properties: https://bazel.build/reference/be/common-definitions#common-attributes

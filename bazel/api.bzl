@@ -23,6 +23,7 @@ modular_cc_binary = _cc_binary
 modular_cc_library = _cc_library
 modular_multi_py_version_test = _modular_multi_py_version_test
 modular_py_binary = _modular_py_binary
+modular_py_library = _modular_py_library
 modular_py_venv = _modular_py_venv
 mojo_binary = _mojo_binary
 mojo_library = _mojo_library
@@ -34,54 +35,13 @@ pkg_filegroup = _pkg_filegroup
 requirement = _requirement
 strip_prefix = _strip_prefix
 
-def _is_internal_reference(dep):
-    """Check if a dependency is an internal reference."""
-    return dep.startswith((
-        "//max/tests/integration:",
-        "//max/tests/integration/pipelines/python",
-    ))
+def modular_py_test(external_noop = False, **kwargs):
+    if not external_noop:
+        _modular_py_test(**kwargs)
 
-def _has_internal_reference(deps):
-    return any([_is_internal_reference(dep) for dep in deps])
-
-# buildifier: disable=function-docstring
-def modular_py_library(
-        name,
-        deps = [],
-        visibility = None,
-        **kwargs):
-    if _has_internal_reference(deps):
-        return
-
-    _modular_py_library(
-        name = name,
-        deps = deps,
-        visibility = visibility,
-        **kwargs
-    )
-
-# buildifier: disable=function-docstring
-def modular_py_test(
-        deps = [],
-        data = [],
-        **kwargs):
-    if _has_internal_reference(deps) or _has_internal_reference(data):
-        return
-
-    _modular_py_test(
-        data = data,
-        deps = deps,
-        **kwargs
-    )
-
-# buildifier: disable=function-docstring
 def modular_run_binary_test(external_noop = False, **kwargs):
-    if external_noop:
-        return
-
-    _modular_run_binary_test(
-        **kwargs
-    )
+    if not external_noop:
+        _modular_run_binary_test(**kwargs)
 
 def modular_generate_stubfiles(name, pyi_srcs, deps = [], **_kwargs):
     modular_py_library(

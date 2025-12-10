@@ -11,6 +11,8 @@ package(default_visibility = [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
+        # FIXME: SDLC-2743
+        external_noop = src in ["test_queues.py"],
         deps = [":common"],
     )
     for src in glob(
@@ -27,6 +29,8 @@ package(default_visibility = [
 modular_py_test(
     name = "test_di",
     srcs = ["test_di.py"],
+    # FIXME: SDLC-2743
+    external_noop = True,
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
