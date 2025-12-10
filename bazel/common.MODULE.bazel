@@ -488,3 +488,17 @@ SHELLCHECK_VERSION = "v0.10.0"
         ("darwin.aarch64", "sha256-u9LxSCYyju52edpyIfK8OvsBH2qSi4SMgMMh9gRt34E="),
     ]
 ]
+
+http_archive(
+    name = "mistral-evals",
+    build_file = "//bazel/public-patches:mistral-evals.BUILD",
+    patch_args = ["-p1"],
+    patches = [
+        "//bazel/public-patches:mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch",
+        "//bazel/public-patches:mistral-evals-0002-Increase-request-parallelism.patch",
+    ],
+    sha256 = "d34c715e7a625a7acb392ffebca23da30693a992979d7c58f3c13e6000e9adc5",
+    strip_prefix = "mistral-evals-02bbf53fea669323010bba74f1b9874472d0d47c",
+    # Mirrored from https://github.com/mistralai/mistral-evals/archive/02bbf53fea669323010bba74f1b9874472d0d47c.tar.gz
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/mistral-evals/02bbf53fea669323010bba74f1b9874472d0d47c/d34c715e7a625a7acb392ffebca23da30693a992979d7c58f3c13e6000e9adc5/mistral-evals-02bbf53fea669323010bba74f1b9874472d0d47c.tar.gz",
+)
