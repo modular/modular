@@ -105,7 +105,7 @@ def main():
     with DeviceContext() as ctx:
         print("Running AMD Ping-Pong Kernel Tests")
 
-        alias size = 4 * 1024
+        comptime size = 4 * 1024
 
         # Test without swizzle
         print("  Testing without swizzle...")

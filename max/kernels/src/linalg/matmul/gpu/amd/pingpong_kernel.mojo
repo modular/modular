@@ -98,13 +98,13 @@ fn _load_to_lds[
     *,
     scalar_offset: Int32 = 0,
 ):
-    alias bytes = size_of[dtype]() * width
-    alias aux = 0  # _cache_operation_to_amd_aux[cache_policy]()
+    comptime bytes = size_of[dtype]() * width
+    comptime aux = 0  # _cache_operation_to_amd_aux[cache_policy]()
     var vector_offset_bytes = vector_offset * size_of[dtype]()
     var scalar_offset_bytes = scalar_offset * size_of[dtype]()
 
-    alias alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
-    alias no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+    comptime alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+    comptime no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
 
     # Create a null pointer in address space 8 (BUFFER_RESOURCE)
     var desc_ptr_ = UnsafePointer[
@@ -162,25 +162,25 @@ struct TileLoaderLDS[
     """
 
     # Tile geometry (derived from src_tile_layout at compile time)
-    alias tile_rows = Self.src_tile_layout.shape[0].value()
-    alias tile_cols = Self.src_tile_layout.shape[1].value()
+    comptime tile_rows = Self.src_tile_layout.shape[0].value()
+    comptime tile_cols = Self.src_tile_layout.shape[1].value()
 
     # Thread layout geometry (derived from subtile organization)
     # Each warp covers a 16×32 subtile: 4 threads per row × 8 elements = 32 cols
-    alias subtile_cols = 32
-    alias threads_per_row = Self.subtile_cols // Self.load_width  # 4
-    alias thread_rows = WARP_SIZE // Self.threads_per_row  # 16
-    alias threads_per_warp = WARP_SIZE  # 64
+    comptime subtile_cols = 32
+    comptime threads_per_row = Self.subtile_cols // Self.load_width  # 4
+    comptime thread_rows = WARP_SIZE // Self.threads_per_row  # 16
+    comptime threads_per_warp = WARP_SIZE  # 64
 
     # Per-warp coverage
-    alias elements_per_warp = Self.threads_per_warp * Self.load_width
-    alias rows_per_warp = Self.elements_per_warp // Self.tile_cols
+    comptime elements_per_warp = Self.threads_per_warp * Self.load_width
+    comptime rows_per_warp = Self.elements_per_warp // Self.tile_cols
 
     # Multi-warp cooperative loading geometry
-    alias loading_threads = Self.num_loading_warps * Self.threads_per_warp
-    alias loads_per_row = Self.tile_cols // Self.load_width
-    alias rows_per_iteration = Self.loading_threads // Self.loads_per_row
-    alias num_iterations = Self.tile_rows // Self.rows_per_iteration
+    comptime loading_threads = Self.num_loading_warps * Self.threads_per_warp
+    comptime loads_per_row = Self.tile_cols // Self.load_width
+    comptime rows_per_iteration = Self.loading_threads // Self.loads_per_row
+    comptime num_iterations = Self.tile_rows // Self.rows_per_iteration
 
     # Instance state (pre-computed for efficient load_tile calls)
     var buffer: AMDBufferResource
@@ -189,7 +189,7 @@ struct TileLoaderLDS[
     var warp_id: Int
 
     # Stride derived from src_layout at compile time
-    alias stride = Self.src_layout.shape[1].value()
+    comptime stride = Self.src_layout.shape[1].value()
 
     @always_inline
     fn __init__(out self, src: LayoutTensor, warp_id: Int, lane_id: Int):
@@ -291,8 +291,8 @@ fn _load_from_lds[
     Returns:
         SIMD vector of `width` elements of type `dtype`.
     """
-    alias alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
-    alias no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+    comptime alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+    comptime no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
 
     # Convert to LLVM address space 3 (shared memory)
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
@@ -300,14 +300,14 @@ fn _load_from_lds[
     ](shared_ptr)
 
     # Compute alignment based on total load size
-    alias load_bytes = width * size_of[dtype]()
-    alias alignment = min(load_bytes, 16)  # Cap at 16-byte alignment
+    comptime load_bytes = width * size_of[dtype]()
+    comptime alignment = min(load_bytes, 16)  # Cap at 16-byte alignment
 
     # Generate the appropriate LLVM vector type and load
     # Using compile-time dispatch based on dtype and width
     @parameter
     if dtype == DType.bfloat16 and width == 8:
-        alias use_asm = False
+        comptime use_asm = False
 
         @parameter
         if use_asm:
@@ -374,9 +374,9 @@ fn load_lds_fragment[
     - smem must have enough elements for: num_iterations * WARP_SIZE * frag_width
     - frag must store: num_iterations * frag_width elements
     """
-    alias num_iterations = frag_layout.size()
-    alias frag_width = frag_element_layout.size()
-    alias FragElement = SIMD[dtype, frag_width]
+    comptime num_iterations = frag_layout.size()
+    comptime frag_width = frag_element_layout.size()
+    comptime FragElement = SIMD[dtype, frag_width]
 
     # =========================================================================
     # Compile-time layout compatibility validation
@@ -395,8 +395,8 @@ fn load_lds_fragment[
 
     # smem must have enough elements for all iterations
     # Each iteration: WARP_SIZE threads × frag_width elements per thread
-    alias smem_elements = smem_layout.size() * smem_element_layout.size()
-    alias required_smem = num_iterations * WARP_SIZE * frag_width
+    comptime smem_elements = smem_layout.size() * smem_element_layout.size()
+    comptime required_smem = num_iterations * WARP_SIZE * frag_width
     constrained[
         smem_elements >= required_smem,
         String(
@@ -415,8 +415,8 @@ fn load_lds_fragment[
     ]()
 
     # frag must hold all loaded elements
-    alias frag_elements = frag_layout.size() * frag_element_layout.size()
-    alias required_frag = num_iterations * frag_width
+    comptime frag_elements = frag_layout.size() * frag_element_layout.size()
+    comptime required_frag = num_iterations * frag_width
     constrained[
         frag_elements == required_frag,
         String(
@@ -548,15 +548,15 @@ struct MmaOp[
     """
 
     # Derived values (computed from other parameters)
-    alias num_m_mmas = Self.WM // Self.MMA_M
-    alias num_n_mmas = Self.WN // Self.MMA_N
-    alias num_k_mmas = Self.BK // Self.MMA_K
-    alias load_width = simd_width_of[Self.in_type]()
-    alias accum_width = (Self.MMA_M * Self.MMA_N) // WARP_SIZE
+    comptime num_m_mmas = Self.WM // Self.MMA_M
+    comptime num_n_mmas = Self.WN // Self.MMA_N
+    comptime num_k_mmas = Self.BK // Self.MMA_K
+    comptime load_width = simd_width_of[Self.in_type]()
+    comptime accum_width = (Self.MMA_M * Self.MMA_N) // WARP_SIZE
 
     # Quadrant dimensions (warp tile divided into 4 quadrants for MMA scheduling)
-    alias quadrant_m_mmas = Self.num_m_mmas // 2
-    alias quadrant_n_mmas = Self.num_n_mmas // 2
+    comptime quadrant_m_mmas = Self.num_m_mmas // 2
+    comptime quadrant_n_mmas = Self.num_n_mmas // 2
 
     # =========================================================================
     # Swizzle Configuration (received from kernel/TileBuffers)
@@ -564,7 +564,7 @@ struct MmaOp[
     # MmaOp receives swizzle parameters that match how TileBuffers loads data.
     # The element swizzle is used when reading from LDS to registers.
     # =========================================================================
-    alias elem_swizzle = OptionalReg(
+    comptime elem_swizzle = OptionalReg(
         Swizzle(1, Self.swizzle_elem_base, Self.swizzle_shift)
     ) if Self.enable_swizzle else OptionalReg[Swizzle]()
 
@@ -575,23 +575,23 @@ struct MmaOp[
     # load_a/load_b iterate `half_*_mmas * num_k_mmas` times.
     # These aliases enable precise lgkmcnt tracking in the optimized schedule.
     # =========================================================================
-    alias lgkm_per_load_a = Self.quadrant_m_mmas * Self.num_k_mmas  # ds_read ops per load_a[which]
-    alias lgkm_per_load_b = Self.quadrant_n_mmas * Self.num_k_mmas  # ds_read ops per load_b[which]
-    alias lgkm_per_load_ab = Self.lgkm_per_load_a + Self.lgkm_per_load_b  # Combined A+B load
+    comptime lgkm_per_load_a = Self.quadrant_m_mmas * Self.num_k_mmas  # ds_read ops per load_a[which]
+    comptime lgkm_per_load_b = Self.quadrant_n_mmas * Self.num_k_mmas  # ds_read ops per load_b[which]
+    comptime lgkm_per_load_ab = Self.lgkm_per_load_a + Self.lgkm_per_load_b  # Combined A+B load
 
     # Register tile type aliases
-    alias RegTileType[num_mmas: Int] = RegTileType[
+    comptime RegTileType[num_mmas: Int] = RegTileType[
         Self.in_type,
         Layout.row_major(num_mmas, Self.num_k_mmas * Self.load_width),
         alignment = Self.alignment,
     ]
-    alias ARegTileType = Self.RegTileType[Self.num_m_mmas]
-    alias BRegTileType = Self.RegTileType[Self.num_n_mmas]
+    comptime ARegTileType = Self.RegTileType[Self.num_m_mmas]
+    comptime BRegTileType = Self.RegTileType[Self.num_n_mmas]
 
     # Output layout: Four separate contiguous quadrants
     # Each quadrant is (quadrant_m_mmas, quadrant_n_mmas * accum_width) for MMA scheduling
     # This gives truly contiguous memory for each mma[which_a, which_b] operation.
-    alias OutQuadrantType = RegTileType[
+    comptime OutQuadrantType = RegTileType[
         Self.accum_type,
         Layout.row_major(
             Self.quadrant_m_mmas, Self.quadrant_n_mmas * Self.accum_width
@@ -612,7 +612,7 @@ struct MmaOp[
     #
     # RuntimeLayout[layout]() enables compile-time offset computation when
     # the layout has all known dimensions, avoiding GPU heap allocation.
-    alias mma_access_layout = Layout(
+    comptime mma_access_layout = Layout(
         IntTuple(16, 4), IntTuple(4 * Self.load_width, Self.load_width)
     )
 
@@ -708,7 +708,7 @@ struct MmaOp[
             smem_tile: B tile in LDS with shape (mma_tile_n, BK) = (N, K) order.
         """
         # Validate MMA shape supports load_b_nt
-        alias mma_shape = IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K)
+        comptime mma_shape = IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K)
         constrained[
             mma_shape in (IndexList[3](32, 32, 16), IndexList[3](16, 16, 32)),
             "load_b_with_transpose requires 16x16x32 or 32x32x16 MMA shape",
@@ -800,66 +800,66 @@ struct TileBuffers[
     """Double-buffered LDS tiles and TileLoaders for ping-pong matmul.
 
     a_layout and b_layout are infer-only parameters (note `//`), automatically
-    extracted from the input tensors passed to __init__. K is derived as an
-    alias from a_layout.shape[1].
+    extracted from the input tensors passed to __init__. K is derived as a
+    comptime from a_layout.shape[1].
     """
 
     # Swizzle derived from 16×4 thread layout
-    alias swizzle_subtile_rows = 16
-    alias swizzle_subtile_cols = 4 * Self.load_width
-    alias elem_size = size_of[Self.in_type]()
+    comptime swizzle_subtile_rows = 16
+    comptime swizzle_subtile_cols = 4 * Self.load_width
+    comptime elem_size = size_of[Self.in_type]()
 
-    alias swizzle_elem_base = log2_floor(Self.swizzle_subtile_cols // 2)
-    alias swizzle_byte_base = Self.swizzle_elem_base + log2_floor(
+    comptime swizzle_elem_base = log2_floor(Self.swizzle_subtile_cols // 2)
+    comptime swizzle_byte_base = Self.swizzle_elem_base + log2_floor(
         Self.elem_size
     )
-    alias swizzle_shift = log2_floor(Self.swizzle_subtile_rows)
-    alias byte_swizzle = OptionalReg(
+    comptime swizzle_shift = log2_floor(Self.swizzle_subtile_rows)
+    comptime byte_swizzle = OptionalReg(
         Swizzle(1, Self.swizzle_byte_base, Self.swizzle_shift)
     ) if Self.enable_swizzle else OptionalReg[Swizzle]()
 
     # Half-tile dimensions (each warp group loads/uses one half independently)
     # Note: half_BM == WM, so A half-tile == warp's A region
-    alias half_BM = Self.BM // 2
-    alias half_BN = Self.BN // 2
+    comptime half_BM = Self.BM // 2
+    comptime half_BN = Self.BN // 2
 
     # MMA tile dimensions (2 tiles per warp dimension for quadrant processing)
-    alias mma_tile_m = Self.WM // 2
-    alias mma_tile_n = Self.WN // 2
+    comptime mma_tile_m = Self.WM // 2
+    comptime mma_tile_n = Self.WN // 2
 
     # Type aliases for shared memory tiles
-    alias SMemTile[rows: Int, cols: Int] = SMemTileType[
+    comptime SMemTile[rows: Int, cols: Int] = SMemTileType[
         Self.in_type,
         Layout.row_major(rows, cols),
         alignment = Self.alignment,
     ]
 
     # Half-tile types - allocated directly (groups are staggered, independent)
-    alias AHalfTile = Self.SMemTile[Self.half_BM, Self.BK]
-    alias BHalfTile = Self.SMemTile[Self.half_BN, Self.BK]
-    alias HalfTile[rows: Int] = Self.SMemTile[rows, Self.BK]
+    comptime AHalfTile = Self.SMemTile[Self.half_BM, Self.BK]
+    comptime BHalfTile = Self.SMemTile[Self.half_BN, Self.BK]
+    comptime HalfTile[rows: Int] = Self.SMemTile[rows, Self.BK]
 
     # MMA tile types - views into half-tiles for quadrant processing
     # These are what MmaOp.load_a/load_b receive (validated via compile-time constraints)
-    alias AMmaTile = Self.AHalfTile.TileType[Self.mma_tile_m, Self.BK]
-    alias BMmaTile = Self.BHalfTile.TileType[Self.WN, Self.BK].TileType[
+    comptime AMmaTile = Self.AHalfTile.TileType[Self.mma_tile_m, Self.BK]
+    comptime BMmaTile = Self.BHalfTile.TileType[Self.WN, Self.BK].TileType[
         Self.mma_tile_n, Self.BK
     ]
 
     # Nested tuple type for [stage][idx] indexing (2 stages × 2 tiles)
-    alias AMmaTilePair = Tuple[Self.AMmaTile, Self.AMmaTile]
-    alias BMmaTilePair = Tuple[Self.BMmaTile, Self.BMmaTile]
+    comptime AMmaTilePair = Tuple[Self.AMmaTile, Self.AMmaTile]
+    comptime BMmaTilePair = Tuple[Self.BMmaTile, Self.BMmaTile]
 
     # Loading configuration constants
     # Configurable number of warps for cooperative loading (4 or 8)
-    alias total_warps = 8  # Total warps in the block (always 8 for ping-pong)
-    alias loading_threads = Self.loading_warps * WARP_SIZE  # 256 or 512 threads
-    alias elements_per_warp = WARP_SIZE * Self.load_width  # 64 * 8 = 512
-    alias rows_per_warp = Self.elements_per_warp // Self.BK  # 8 rows per warp
-    alias loads_per_row = Self.BK // Self.load_width  # 8
+    comptime total_warps = 8  # Total warps in the block (always 8 for ping-pong)
+    comptime loading_threads = Self.loading_warps * WARP_SIZE  # 256 or 512 threads
+    comptime elements_per_warp = WARP_SIZE * Self.load_width  # 64 * 8 = 512
+    comptime rows_per_warp = Self.elements_per_warp // Self.BK  # 8 rows per warp
+    comptime loads_per_row = Self.BK // Self.load_width  # 8
 
     # Derived loading geometry (depends on loading_warps)
-    alias rows_per_load_iteration = Self.loading_threads // Self.loads_per_row
+    comptime rows_per_load_iteration = Self.loading_threads // Self.loads_per_row
     # With 8 warps: 512/8 = 64 rows per iteration
     # With 4 warps: 256/8 = 32 rows per iteration
 
@@ -879,33 +879,35 @@ struct TileBuffers[
     #   - rows_per_iter_4warp = (4*64) / 8 = 32
     #   - iterations = 128 / 32 = 4 load_to_lds per half-tile
     # =========================================================================
-    alias vmcnt_per_load_a = (
+    comptime vmcnt_per_load_a = (
         Self.BM // 2
     ) // Self.rows_per_load_iteration  # 8-warp A half
-    alias vmcnt_per_load_b = (
+    comptime vmcnt_per_load_b = (
         Self.BN // 2
     ) // Self.rows_per_load_iteration  # 8-warp B half
-    alias vmcnt_per_load_ab = Self.vmcnt_per_load_a + Self.vmcnt_per_load_b  # Combined A+B
+    comptime vmcnt_per_load_ab = Self.vmcnt_per_load_a + Self.vmcnt_per_load_b  # Combined A+B
 
     # 4-warp loading counts (for load_a_as_group, load_b_as_group)
-    alias rows_per_iter_4warp = (4 * WARP_SIZE) // Self.loads_per_row  # 32 rows
-    alias vmcnt_per_load_a_4warp = (
+    comptime rows_per_iter_4warp = (
+        4 * WARP_SIZE
+    ) // Self.loads_per_row  # 32 rows
+    comptime vmcnt_per_load_a_4warp = (
         Self.BM // 2
     ) // Self.rows_per_iter_4warp  # 4 ops
-    alias vmcnt_per_load_b_4warp = (
+    comptime vmcnt_per_load_b_4warp = (
         Self.BN // 2
     ) // Self.rows_per_iter_4warp  # 4 ops
 
     # LDS pointer type aliases
-    alias smem_ptr = UnsafePointer[
+    comptime smem_ptr = UnsafePointer[
         Scalar[Self.in_type], address_space = AddressSpace.SHARED
     ]
 
     # =========================================================================
     # TileLoader Configuration
     # TileLoader parameterized on source layout (inferred from a_layout/b_layout)
-    alias half_tile_layout = Layout.row_major(Self.half_BM, Self.BK)
-    alias TileLoader[src_layout: Layout] = TileLoaderLDS[
+    comptime half_tile_layout = Layout.row_major(Self.half_BM, Self.BK)
+    comptime TileLoader[src_layout: Layout] = TileLoaderLDS[
         Self.in_type,
         src_layout,
         Self.half_tile_layout,
@@ -913,16 +915,16 @@ struct TileBuffers[
         Self.byte_swizzle,
         Self.load_width,
     ]
-    alias ATileLoader = Self.TileLoader[Self.a_layout]
-    alias BTileLoader = Self.TileLoader[Self.b_layout]
+    comptime ATileLoader = Self.TileLoader[Self.a_layout]
+    comptime BTileLoader = Self.TileLoader[Self.b_layout]
 
     # MMA tiles: [stage][half] for double-buffered compute
     var a_mma_tiles: Tuple[Self.AMmaTilePair, Self.AMmaTilePair]
     var b_mma_tiles: Tuple[Self.BMmaTilePair, Self.BMmaTilePair]
 
     # Load tiles: [stage][which] - LDS destinations
-    alias AHalfTilePair = Tuple[Self.AHalfTile, Self.AHalfTile]
-    alias BHalfTilePair = Tuple[Self.BHalfTile, Self.BHalfTile]
+    comptime AHalfTilePair = Tuple[Self.AHalfTile, Self.AHalfTile]
+    comptime BHalfTilePair = Tuple[Self.BHalfTile, Self.BHalfTile]
     var a_load_tiles: Tuple[Self.AHalfTilePair, Self.AHalfTilePair]
     var b_load_tiles: Tuple[Self.BHalfTilePair, Self.BHalfTilePair]
 
@@ -931,7 +933,7 @@ struct TileBuffers[
     var warp_id_m: Int
 
     # K derived from a_layout at compile time
-    alias K = Self.a_layout.shape[1].value()
+    comptime K = Self.a_layout.shape[1].value()
     var k_offset: Int
 
     # 4-warp loading: row shift to remap warps 4-7 → 0-3
@@ -1082,8 +1084,8 @@ struct TileBuffers[
         # Base column offset
         var col_offset = self.k_offset + loader.thread_col
 
-        alias rows_per_iter_4warp = 4 * Self.rows_per_warp  # 32 rows
-        alias num_iterations = half_data_rows // rows_per_iter_4warp
+        comptime rows_per_iter_4warp = 4 * Self.rows_per_warp  # 32 rows
+        comptime num_iterations = half_data_rows // rows_per_iter_4warp
 
         @parameter
         for i in range(num_iterations):
@@ -1158,7 +1160,7 @@ fn chiplet_transform_chunked[
     var xcd = workgroup_id % num_xcds
 
     # Largest full (NUM_XCDS * CHUNK_SIZE)-aligned block
-    alias block = num_xcds * chunk_size
+    comptime block = num_xcds * chunk_size
     var limit = (num_workgroups // block) * block
 
     # If beyond last full block, leave unchanged
@@ -1220,39 +1222,39 @@ struct AMDPingPongMatmul[
     """
 
     # Extract configuration
-    alias BM = Self.config.block_shape[0]
-    alias BN = Self.config.block_shape[1]
-    alias BK = Self.config.block_shape[2]
+    comptime BM = Self.config.block_shape[0]
+    comptime BN = Self.config.block_shape[1]
+    comptime BK = Self.config.block_shape[2]
 
-    alias WM = Self.config.warp_shape[0]
-    alias WN = Self.config.warp_shape[1]
-    alias WK = Self.config.warp_shape[2]
+    comptime WM = Self.config.warp_shape[0]
+    comptime WN = Self.config.warp_shape[1]
+    comptime WK = Self.config.warp_shape[2]
 
-    alias MMA_M = Self.config.mma_shape[0]
-    alias MMA_N = Self.config.mma_shape[1]
-    alias MMA_K = Self.config.mma_shape[2]
+    comptime MMA_M = Self.config.mma_shape[0]
+    comptime MMA_N = Self.config.mma_shape[1]
+    comptime MMA_K = Self.config.mma_shape[2]
 
     # Derived configuration
-    alias num_warps_m = Self.BM // Self.WM
-    alias num_warps_n = Self.BN // Self.WN
-    alias total_warps = Self.num_warps_m * Self.num_warps_n
+    comptime num_warps_m = Self.BM // Self.WM
+    comptime num_warps_n = Self.BN // Self.WN
+    comptime total_warps = Self.num_warps_m * Self.num_warps_n
 
-    alias num_m_mmas = Self.WM // Self.MMA_M
-    alias num_n_mmas = Self.WN // Self.MMA_N
-    alias num_k_mmas = Self.WK // Self.MMA_K
+    comptime num_m_mmas = Self.WM // Self.MMA_M
+    comptime num_n_mmas = Self.WN // Self.MMA_N
+    comptime num_k_mmas = Self.WK // Self.MMA_K
 
     # Memory configuration
-    alias load_width = simd_width_of[Self.a_type]()
-    alias ping_pong_stages = 2
-    alias total_smem_a = Self.ping_pong_stages * Self.BM * Self.BK
-    alias total_smem_b = Self.ping_pong_stages * Self.BN * Self.BK
+    comptime load_width = simd_width_of[Self.a_type]()
+    comptime ping_pong_stages = 2
+    comptime total_smem_a = Self.ping_pong_stages * Self.BM * Self.BK
+    comptime total_smem_b = Self.ping_pong_stages * Self.BN * Self.BK
 
     # Accumulator configuration
-    alias accum_dtype = get_accum_type[
+    comptime accum_dtype = get_accum_type[
         Self.c_type
     ]()  # FIXME: which one should this be?
-    alias accum_width = (Self.MMA_M * Self.MMA_N) // WARP_SIZE
-    alias num_accums = Self.num_m_mmas * Self.num_n_mmas
+    comptime accum_width = (Self.MMA_M * Self.MMA_N) // WARP_SIZE
+    comptime num_accums = Self.num_m_mmas * Self.num_n_mmas
 
     # =========================================================================
     # Async Load Counts for s_waitcnt
@@ -1269,28 +1271,28 @@ struct AMDPingPongMatmul[
     # =========================================================================
 
     # Quadrant MMA counts (used in load_a/load_b loops)
-    alias quadrant_m_mmas = Self.num_m_mmas // 2  # 4
-    alias quadrant_n_mmas = Self.num_n_mmas // 2  # 2
+    comptime quadrant_m_mmas = Self.num_m_mmas // 2  # 4
+    comptime quadrant_n_mmas = Self.num_n_mmas // 2  # 2
 
     # LDS → Registers (lgkmcnt): ds_read ops per mma_op.load_* call
-    alias LGKM_PER_LOAD_A = Self.quadrant_m_mmas * Self.num_k_mmas  # 4*2 = 8
-    alias LGKM_PER_LOAD_B = Self.quadrant_n_mmas * Self.num_k_mmas  # 2*2 = 4
-    alias LGKM_PER_LOAD_AB = Self.LGKM_PER_LOAD_A + Self.LGKM_PER_LOAD_B  # 12
+    comptime LGKM_PER_LOAD_A = Self.quadrant_m_mmas * Self.num_k_mmas  # 4*2 = 8
+    comptime LGKM_PER_LOAD_B = Self.quadrant_n_mmas * Self.num_k_mmas  # 2*2 = 4
+    comptime LGKM_PER_LOAD_AB = Self.LGKM_PER_LOAD_A + Self.LGKM_PER_LOAD_B  # 12
 
     # Global → LDS (vmcnt): load_to_lds ops per buffers.load_* call (8-warp)
-    alias loads_per_row = Self.BK // Self.load_width  # 8
-    alias loading_threads_8warp = 8 * WARP_SIZE  # 512
-    alias rows_per_iter_8warp = Self.loading_threads_8warp // Self.loads_per_row  # 64
-    alias VMCNT_PER_LOAD_A = (Self.BM // 2) // Self.rows_per_iter_8warp  # 2
-    alias VMCNT_PER_LOAD_B = (Self.BN // 2) // Self.rows_per_iter_8warp  # 2
+    comptime loads_per_row = Self.BK // Self.load_width  # 8
+    comptime loading_threads_8warp = 8 * WARP_SIZE  # 512
+    comptime rows_per_iter_8warp = Self.loading_threads_8warp // Self.loads_per_row  # 64
+    comptime VMCNT_PER_LOAD_A = (Self.BM // 2) // Self.rows_per_iter_8warp  # 2
+    comptime VMCNT_PER_LOAD_B = (Self.BN // 2) // Self.rows_per_iter_8warp  # 2
 
     # 4-warp loading (vmcnt): for load_a_as_group / load_b_as_group
-    alias loading_threads_4warp = 4 * WARP_SIZE  # 256
-    alias rows_per_iter_4warp = Self.loading_threads_4warp // Self.loads_per_row  # 32
-    alias VMCNT_PER_LOAD_A_4WARP = (
+    comptime loading_threads_4warp = 4 * WARP_SIZE  # 256
+    comptime rows_per_iter_4warp = Self.loading_threads_4warp // Self.loads_per_row  # 32
+    comptime VMCNT_PER_LOAD_A_4WARP = (
         Self.BM // 2
     ) // Self.rows_per_iter_4warp  # 4
-    alias VMCNT_PER_LOAD_B_4WARP = (
+    comptime VMCNT_PER_LOAD_B_4WARP = (
         Self.BN // 2
     ) // Self.rows_per_iter_4warp  # 4
 
@@ -1352,48 +1354,48 @@ struct AMDPingPongMatmul[
         var M = a.dim(0)
         # Makes enable_l2_cache_optimization useful
         # alias M = a.layout.shape[0].value()
-        alias N = b.layout.shape[0].value()
-        alias K = a.layout.shape[1].value()
+        comptime N = b.layout.shape[0].value()
+        comptime K = a.layout.shape[1].value()
 
         constrained[
             Self.a_type == Self.b_type, "A and B must have the same type"
         ]()
 
-        alias in_type = Self.a_type
+        comptime in_type = Self.a_type
 
         # Validate configuration
         Self.validate_config()
 
         # Use struct's configuration directly
-        alias BM = Self.BM
-        alias BN = Self.BN
-        alias BK = Self.BK
+        comptime BM = Self.BM
+        comptime BN = Self.BN
+        comptime BK = Self.BK
 
-        alias WM = Self.WM
-        alias WN = Self.WN
-        alias WK = Self.WK
+        comptime WM = Self.WM
+        comptime WN = Self.WN
+        comptime WK = Self.WK
 
-        alias MMA_M = Self.MMA_M
-        alias MMA_N = Self.MMA_N
-        alias MMA_K = Self.MMA_K
+        comptime MMA_M = Self.MMA_M
+        comptime MMA_N = Self.MMA_N
+        comptime MMA_K = Self.MMA_K
 
-        alias num_warps_m = Self.num_warps_m
-        alias num_warps_n = Self.num_warps_n
-        alias total_warps = Self.total_warps
+        comptime num_warps_m = Self.num_warps_m
+        comptime num_warps_n = Self.num_warps_n
+        comptime total_warps = Self.total_warps
 
-        alias num_m_mmas = Self.num_m_mmas
-        alias num_n_mmas = Self.num_n_mmas
-        alias num_k_mmas = Self.num_k_mmas
+        comptime num_m_mmas = Self.num_m_mmas
+        comptime num_n_mmas = Self.num_n_mmas
+        comptime num_k_mmas = Self.num_k_mmas
 
-        alias accum_dtype = Self.accum_dtype
-        alias accum_width = Self.accum_width
-        alias num_accums = Self.num_accums
+        comptime accum_dtype = Self.accum_dtype
+        comptime accum_width = Self.accum_width
+        comptime num_accums = Self.num_accums
 
-        alias load_width = Self.load_width
-        alias total_smem_a = Self.total_smem_a
-        alias total_smem_b = Self.total_smem_b
+        comptime load_width = Self.load_width
+        comptime total_smem_a = Self.total_smem_a
+        comptime total_smem_b = Self.total_smem_b
 
-        alias alignment = 128  # align_of[in_type]()
+        comptime alignment = 128  # align_of[in_type]()
 
         # AMD MI355: 64 LDS banks × 4 bytes each. With enable_swizzle=True (default),
         # the 16×32 subtile swizzle (XOR bit 9→5) breaks 4-way bank conflicts during MMA.
@@ -1410,8 +1412,8 @@ struct AMDPingPongMatmul[
             @parameter
             if Self.enable_l2_cache_optimization:
                 # Apply chiplet transform for better XCD locality
-                alias NUM_XCDS = 8  # MI355X has 8 XCDs
-                alias CHUNK_SIZE = 64  # Blocks per XCD chunk
+                comptime NUM_XCDS = 8  # MI355X has 8 XCDs
+                comptime CHUNK_SIZE = 64  # Blocks per XCD chunk
 
                 # If M is a compile-time constant
                 # alias grid_dim_x = ceildiv(N, Self.config.block_shape[1])
@@ -1424,10 +1426,10 @@ struct AMDPingPongMatmul[
                 )
 
                 # Further transform within XCD for L2 cache locality
-                alias WGM = 8  # 4, 8, 12, 16, 32  # Super-block size
+                comptime WGM = 8  # 4, 8, 12, 16, 32  # Super-block size
                 var num_pid_m = ceildiv(M, BM)
-                alias num_pid_n = ceildiv(N, BN)
-                alias num_wgid_in_group = WGM * num_pid_n
+                comptime num_pid_n = ceildiv(N, BN)
+                comptime num_wgid_in_group = WGM * num_pid_n
                 var group_id = wgid // num_wgid_in_group
                 var first_pid_m = group_id * WGM
                 var group_size_m = min(num_pid_m - first_pid_m, WGM)
@@ -1452,13 +1454,13 @@ struct AMDPingPongMatmul[
         # The loading pattern uses 16×4 threads per warp, each loading
         # load_width elements. This determines the swizzle parameters.
         # ================================================================
-        alias swizzle_subtile_rows = 16  # Loading thread layout rows
-        alias swizzle_subtile_cols = 4 * load_width  # Cols × SIMD width
-        alias swizzle_elem_base = log2_floor(swizzle_subtile_cols // 2)
-        alias swizzle_shift = log2_floor(swizzle_subtile_rows)
+        comptime swizzle_subtile_rows = 16  # Loading thread layout rows
+        comptime swizzle_subtile_cols = 4 * load_width  # Cols × SIMD width
+        comptime swizzle_elem_base = log2_floor(swizzle_subtile_cols // 2)
+        comptime swizzle_shift = log2_floor(swizzle_subtile_rows)
 
         # Type aliases - TileBuffers owns loading, MmaOp receives swizzle params
-        alias MmaOpType = MmaOp[
+        comptime MmaOpType = MmaOp[
             in_type,
             accum_dtype,
             WM,
@@ -1472,7 +1474,7 @@ struct AMDPingPongMatmul[
             swizzle_elem_base,  # From loading pattern
             swizzle_shift,  # From loading pattern
         ]
-        alias BuffersType = TileBuffers[
+        comptime BuffersType = TileBuffers[
             BM,
             BN,
             BK,
@@ -1632,7 +1634,7 @@ struct AMDPingPongMatmul[
         # ================================================================
 
         # Toggle to switch between simplified and optimized schedules
-        alias USE_SIMPLIFIED_SCHEDULE = False
+        comptime USE_SIMPLIFIED_SCHEDULE = False
 
         @parameter
         if USE_SIMPLIFIED_SCHEDULE:
@@ -1913,8 +1915,8 @@ struct AMDPingPongMatmul[
         c_resource = AMDBufferResource(c_block.ptr, count_m * N)
 
         # Quadrant dimensions for output storage
-        alias quadrant_m_mmas = num_m_mmas // 2
-        alias quadrant_n_mmas = num_n_mmas // 2
+        comptime quadrant_m_mmas = num_m_mmas // 2
+        comptime quadrant_n_mmas = num_n_mmas // 2
 
         # Store each quadrant separately
         # Quadrant (qa, qb) contains elements for:
@@ -1931,8 +1933,8 @@ struct AMDPingPongMatmul[
                 ]()
 
                 # Base output position for this quadrant
-                alias quad_m_offset = qa * quadrant_m_mmas * MMA_M
-                alias quad_n_offset = qb * quadrant_n_mmas * MMA_N
+                comptime quad_m_offset = qa * quadrant_m_mmas * MMA_M
+                comptime quad_n_offset = qb * quadrant_n_mmas * MMA_N
 
                 var quad_base_offset = (
                     (WM * warp_id_m + lane_id_m + quad_m_offset) * N
@@ -1982,7 +1984,7 @@ fn ping_pong_matmul[
     c_device_tensor: LayoutTensor[c_type, c_layout],
     ctx: DeviceContext,
 ) raises:
-    alias config = KernelConfig(
+    comptime config = KernelConfig(
         block_shape=Index(256, 256, 64),
         warp_shape=Index(128, 64, 64),
         mma_shape=Index(16, 16, 32),
@@ -1991,7 +1993,7 @@ fn ping_pong_matmul[
     var N = c_device_tensor.dim(1)
     var M = c_device_tensor.dim(0)
 
-    alias kernel = AMDPingPongMatmul[
+    comptime kernel = AMDPingPongMatmul[
         a_type,
         b_type,
         c_type,

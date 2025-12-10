@@ -222,13 +222,13 @@ fn bench_matmul[
                     transpose_b=transpose_b,
                 )
             else:
-                alias use_ping_pong_matmul = env_get_bool[
+                comptime use_ping_pong_matmul = env_get_bool[
                     "use_ping_pong_matmul", True
                 ]()
-                alias use_transpose_load = env_get_bool[
+                comptime use_transpose_load = env_get_bool[
                     "use_transpose_load", False
                 ]()
-                alias enable_swizzle = env_get_bool["enable_swizzle", True]()
+                comptime enable_swizzle = env_get_bool["enable_swizzle", True]()
 
                 @parameter
                 if use_ping_pong_matmul:
