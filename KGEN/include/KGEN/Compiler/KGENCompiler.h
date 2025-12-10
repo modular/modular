@@ -87,8 +87,8 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> initializeExecutionEngine(
 /// JITs and executes in-process.
 std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT();
 
-/// Return size of the \p type in bits.
-int64_t getTypeSizeInBits(TargetInfoAttr target, Type type);
+/// Return size of the \p type in bytes.
+int64_t getTypeSizeInBytes(TargetInfoAttr target, Type type);
 
 } // namespace M::KGEN
 

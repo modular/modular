@@ -131,43 +131,35 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   ReturnOp::create(b, call.getResults());
 }
 
-/// Return size of the \p type in bits.
+/// Return size of the \p type in bytes
 /// TODO: Consider to merge it with similar functionality in `LLVMDataLayout`.
-int64_t KGEN::getTypeSizeInBits(TargetInfoAttr target, Type type) {
-  return 8 * TypeSwitch<Type, int64_t>(type)
-                 .Case<KGEN::StringType>([&](KGEN::StringType strTy) {
-                   return *strTy.getTypeSize(target);
-                 })
-                 .Case<KGEN::VariadicType>([&](KGEN::VariadicType varTy) {
-                   return *varTy.getTypeSize(target);
-                 })
-                 .Case<KGEN::PointerType>([&](KGEN::PointerType ptrTy) {
-                   return *ptrTy.getTypeSize(target);
-                 })
-                 .Case<KGEN::StructType>([&](KGEN::StructType structTy) {
-                   return *structTy.getTypeSize(target);
-                 })
-                 .Case<KGEN::VariantType>([&](KGEN::VariantType varTy) {
-                   return *varTy.getTypeSize(target);
-                 })
-                 .Case<POP::ArrayType>([&](POP::ArrayType arrTy) {
-                   return *arrTy.getTypeSize(target);
-                 })
-                 .Case<POP::UnionType>([&](POP::UnionType unTy) {
-                   return *unTy.getTypeSize(target);
-                 })
-                 .Case<POP::SIMDType>([&](POP::SIMDType simdTy) {
-                   return *simdTy.getTypeSize(target);
-                 })
-                 .Case<IntegerType, FloatType>(
-                     [&](Type ty) { return ty.getIntOrFloatBitWidth() / 8; })
-                 .Case<IndexType>([&](IndexType idxTy) {
-                   return target.resolveIndexBitWidth() / 8;
-                 })
-                 .Default([](Type type) {
-                   llvm_unreachable("Cannot get size of the type.");
-                   return 0;
-                 });
+int64_t KGEN::getTypeSizeInBytes(TargetInfoAttr target, Type type) {
+  return TypeSwitch<Type, int64_t>(type)
+      .Case<KGEN::StringType>(
+          [&](KGEN::StringType strTy) { return *strTy.getTypeSize(target); })
+      .Case<KGEN::VariadicType>(
+          [&](KGEN::VariadicType varTy) { return *varTy.getTypeSize(target); })
+      .Case<KGEN::PointerType>(
+          [&](KGEN::PointerType ptrTy) { return *ptrTy.getTypeSize(target); })
+      .Case<KGEN::StructType>([&](KGEN::StructType structTy) {
+        return *structTy.getTypeSize(target);
+      })
+      .Case<KGEN::VariantType>(
+          [&](KGEN::VariantType varTy) { return *varTy.getTypeSize(target); })
+      .Case<POP::ArrayType>(
+          [&](POP::ArrayType arrTy) { return *arrTy.getTypeSize(target); })
+      .Case<POP::UnionType>(
+          [&](POP::UnionType unTy) { return *unTy.getTypeSize(target); })
+      .Case<POP::SIMDType>(
+          [&](POP::SIMDType simdTy) { return *simdTy.getTypeSize(target); })
+      .Case<IntegerType, FloatType>(
+          [&](Type ty) { return ty.getIntOrFloatBitWidth() / 8; })
+      .Case<IndexType>(
+          [&](IndexType idxTy) { return target.resolveIndexBitWidth() / 8; })
+      .Default([](Type type) {
+        llvm_unreachable("Cannot get size of the type.");
+        return 0;
+      });
 }
 
 /// HACK HACK HACK https://github.com/modularml/modular/issues/22959
@@ -238,7 +230,7 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
     Value gep = POP::OffsetOp::create(
         b, argPtrPtrs, ParamConstantOp::create(b, b.getIndexAttr(i)));
     Value opaque = POP::PointerBitcastOp::create(b, nonePtr, ptr);
-    typeSizes.push_back(KGEN::getTypeSizeInBits(target, type));
+    typeSizes.push_back(KGEN::getTypeSizeInBytes(target, type));
     POP::StoreOp::create(b, opaque, gep);
   }
   ReturnOp::create(
