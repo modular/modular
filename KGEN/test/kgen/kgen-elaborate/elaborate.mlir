@@ -2222,7 +2222,7 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
   // CHECK-NEXT: [[CAPTURE_SIZES:%.*]] = pop.stack_allocation 1 x i64
   // CHECK-NEXT: [[INDEX0:%.*]] = kgen.param.constant = <0>
   // CHECK-NEXT: [[GEP0:%.*]] = pop.offset [[CAPTURE_SIZES]][[[INDEX0]]] : !kgen.pointer<i64>
-  // CHECK-NEXT: [[CAPTURE_SIZE:%.*]] = kgen.param.constant: i64 = <64>
+  // CHECK-NEXT: [[CAPTURE_SIZE:%.*]] = kgen.param.constant: i64 = <8>
   // CHECK-NEXT: pop.store [[CAPTURE_SIZE]], [[GEP0]] : !kgen.pointer<i64>
   // CHECK-NEXT: [[OPAQUE_CAPTURE_SIZES:%.*]] = pop.pointer.bitcast [[CAPTURE_SIZES]] : !kgen.pointer<i64> to !kgen.pointer<none>
   // CHECK: kgen.struct.create([[STR]], [[STR1]], [[NUM_CAPTURES]], [[OPAQUE_CAPTURE_SIZES]]) : !kgen.struct<(string, string, index, pointer<none>)>
