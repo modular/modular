@@ -127,6 +127,13 @@ fn _open_file(path: String, mode: String) raises -> Int:
     # Open the file with libc open() syscall
     # Mode 0o666 allows read/write for owner, group, and others (modified by umask)
     var path_str = path
+
+    # TODO(MSTDL-2085): Remove this workaround once external_call supports
+    # C variadic functions correctly on ARM64 macOS.
+    # WORKAROUND: The variadic open() syscall doesn't correctly pass the mode
+    # argument on ARM64 macOS. We use a two-step approach:
+    # 1. Open/create the file (with potentially incorrect permissions)
+    # 2. Use fchmod to set the correct permissions after opening
     var fd = external_call["open", c_int](
         path_str.as_c_string_slice().unsafe_ptr(), c_int(flags), c_int(0o666)
     )
@@ -134,6 +141,16 @@ fn _open_file(path: String, mode: String) raises -> Int:
     if fd < 0:
         var err = get_errno()
         raise Error("Failed to open file '" + path + "': " + String(err))
+
+    # Fix permissions for newly created files.
+    # We use fchmod (non-variadic) because the variadic open() syscall doesn't
+    # correctly pass the mode argument on ARM64 macOS.
+    if flags & O_CREAT:
+        var chmod_result = external_call["fchmod", c_int](fd, c_int(0o666))
+        if chmod_result < 0:
+            _ = external_call["close", c_int](fd)
+            var err = get_errno()
+            raise Error("Failed to set file permissions: " + String(err))
 
     # For append mode, seek to end (though O_APPEND should handle this)
     if mode == "a":

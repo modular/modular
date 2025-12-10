@@ -130,6 +130,12 @@ def test_file_read_bytes_from_write_only():
         Path(gettempdir().value()) / "test_file_read_bytes_writeonly"
     )
 
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
+
     var f = open(temp_file, "w")
     # Should raise error with errno message (EBADF - Bad file descriptor)
     with assert_raises(contains="Bad file"):
@@ -318,6 +324,13 @@ def test_file_write():
 def test_file_write_span():
     var content: String = "The quick brown fox jumps over the lazy dog"
     var TEMP_FILE = Path(gettempdir().value()) / "test_file_write_span"
+
+    # Clean up any leftover file from previous runs
+    try:
+        remove(TEMP_FILE)
+    except:
+        pass
+
     with open(TEMP_FILE, "w") as f:
         f.write_bytes(content.as_bytes())
 
@@ -347,6 +360,12 @@ def test_file_rw_mode_preserves_content():
     """
     var temp_file = Path(gettempdir().value()) / "test_file_rw_mode"
 
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
+
     # First, create a file with some content using write mode
     var expected_content = "hello\nworld"
     with open(temp_file, "w") as f:
@@ -374,6 +393,12 @@ def test_file_rw_mode_preserves_content():
 def test_file_write_mode_truncates():
     """Test that opening a file in 'w' mode truncates existing content."""
     var temp_file = Path(gettempdir().value()) / "test_file_write_mode"
+
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
 
     # Create a file with some content
     with open(temp_file, "w") as f:
@@ -454,6 +479,12 @@ def test_file_append_mode():
     """Test that opening a file in 'a' mode appends to existing content."""
     var temp_file = Path(gettempdir().value()) / "test_file_append_mode"
 
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
+
     # Create a file with initial content
     var initial_content = "initial content"
     with open(temp_file, "w") as f:
@@ -513,6 +544,12 @@ def test_file_append_mode_creates_file():
 def test_file_append_mode_with_unicode():
     """Test that append mode works correctly with Unicode characters."""
     var temp_file = Path(gettempdir().value()) / "test_file_append_unicode"
+
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
 
     # Create a file with Unicode content
     with open(temp_file, "w") as f:
@@ -628,6 +665,12 @@ def test_file_read_from_closed_file():
     """
     var temp_file = Path(gettempdir().value()) / "test_file_read_closed"
 
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
+
     # Create a file with some content
     with open(temp_file, "w") as f:
         f.write("test content")
@@ -645,6 +688,12 @@ def test_file_read_from_write_only_file():
     """Test that reading from a write-only file raises an error with errno."""
     var temp_file = Path(gettempdir().value()) / "test_file_read_writeonly"
 
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
+
     # Open in write-only mode and try to read
     var f = open(temp_file, "w")
 
@@ -659,6 +708,12 @@ def test_file_seek_invalid_file():
     """Test that seeking on a closed file raises an error with proper message.
     """
     var temp_file = Path(gettempdir().value()) / "test_file_seek_closed"
+
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
 
     with open(temp_file, "w") as f:
         f.write("test content")
@@ -676,6 +731,12 @@ def test_file_read_bytes_to_span_from_closed():
     """
     var temp_file = Path(gettempdir().value()) / "test_file_read_span_closed"
 
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
+
     with open(temp_file, "w") as f:
         f.write("test content")
 
@@ -691,6 +752,12 @@ def test_file_read_bytes_to_span_from_closed():
 def test_file_multiple_close():
     """Test that closing a file multiple times is safe."""
     var temp_file = Path(gettempdir().value()) / "test_file_multiple_close"
+
+    # Clean up any leftover file from previous runs
+    try:
+        remove(temp_file)
+    except:
+        pass
 
     with open(temp_file, "w") as f:
         f.write("test")
