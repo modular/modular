@@ -15,7 +15,10 @@ mojo_library(
         "//max:compiler",
         "//max:tensor",
         "@mojo//:stdlib",
-    ],
+    ] + select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
 )
 
 mojo_library(
