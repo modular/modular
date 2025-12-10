@@ -166,3 +166,18 @@ modular_py_test(
         requirement("torchvision"),
     ],
 )
+
+modular_py_library(
+    name = "generate_utils",
+    testonly = True,
+    srcs = ["generate_utils.py"],
+    deps = [
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("requests"),
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("transformers"),
+    ],
+)

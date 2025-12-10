@@ -336,7 +336,6 @@ class Qwen3VLMoEDecoder(Module):
         Returns:
             Updated hidden states with visual embeddings added at visual positions. tensor of shape (seq_len, hidden_dim).
         """
-
         # Get indices where mask is True
         gather_indices_unsqueezed = ops.unsqueeze(gather_indices, -1)
         scatter_indices_unsqueezed = ops.unsqueeze(scatter_indices, -1)
@@ -409,10 +408,10 @@ class Qwen3VLMoEDecoder(Module):
             merge_multimodal_embeddings_with_gather(
                 inputs_embeds=h_device,
                 multimodal_embeddings=img_embed,
-                scatter_indices=scatter_indices,
-                gather_indices=gather_indices,
+                scatter_indices=scatter_indices_device,
+                gather_indices=gather_indices_device,
             )
-            for h_device, img_embed, scatter_indices, gather_indices in zip(
+            for h_device, img_embed, scatter_indices_device, gather_indices_device in zip(
                 h,
                 image_embeddings,
                 scatter_indices,
@@ -449,10 +448,10 @@ class Qwen3VLMoEDecoder(Module):
                 visual_embeds = deepstack_visual_embeds[layer_idx]
                 h = [
                     self._deepstack_process(
-                        h_device,
-                        visual_embeds_device,
-                        gather_indices_device,
-                        scatter_indices_device,
+                        hidden_states=h_device,
+                        visual_embeds=visual_embeds_device,
+                        gather_indices=gather_indices_device,
+                        scatter_indices=scatter_indices_device,
                     )
                     for h_device, visual_embeds_device, gather_indices_device, scatter_indices_device in zip(
                         h,

@@ -270,6 +270,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
             norm_method=norm_method,
             attention_bias=True,  # Qwen3VL uses Qwen2 which has attention_bias=True
         )
+        llm_config.interleaved_rope_weights = False
 
         text_config = huggingface_config.text_config
 
