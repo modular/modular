@@ -15,6 +15,12 @@ _AMD_ONLY_TESTS = [
     "test_fp8_conversion.py",
 ]
 
+# CPU-only tests that don't require GPU
+_CPU_ONLY_TESTS = [
+    "test_matmul_packed.py",
+    "test_reduce_add.py",
+]
+
 modular_py_library(
     name = "modular_graph_test",
     testonly = True,
@@ -35,7 +41,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + ["modular_graph_test.py"],
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + ["modular_graph_test.py"],
     ),
     data = [
         "//max/tests/integration:compile_config_ops",
@@ -101,5 +107,22 @@ modular_py_test(
     deps = [
         ":modular_graph_test",
         "//max/python/max",
+    ],
+)
+
+# CPU-only graph tests (can run without GPU)
+modular_py_test(
+    name = "cpu_tests",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "test_matmul_packed.py",
+        "test_reduce_add.py",
+    ],
+    deps = [
+        ":modular_graph_test",
+        "//max/python/max",
+        requirement("torch"),
+        requirement("numpy"),
     ],
 )
