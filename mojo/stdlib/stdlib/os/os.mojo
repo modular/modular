@@ -368,6 +368,9 @@ fn link[
     Args:
         oldpath: The exsting file.
         newpath: The new file.
+
+    Raises:
+        If the operation fails.
     """
     var oldpath_fspath = oldpath.__fspath__()
     var newpath_fspath = newpath.__fspath__()
