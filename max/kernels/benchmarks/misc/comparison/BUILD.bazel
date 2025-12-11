@@ -43,22 +43,8 @@ modular_py_binary(
 )
 
 # MHA decode benchmark: MAX vs FlashInfer (TensorRT-LLM backend)
-modular_py_binary(
-    name = "bench_decode",
-    srcs = ["bench_blackwell_decode.py"],
-    main = "bench_blackwell_decode.py",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        blackwell_bench_wheel("flashinfer"),
-        blackwell_bench_wheel("flash-attn"),
-        requirement("torch"),
-        "//max/python/max",
-    ],
-)
+# Moved to kbench. Please run the following:
+# kbench bench_decode.yaml --param engine:"[modular_max, flashinfer]"
 
 # MLA (Multi-head Latent Attention) decode benchmark: MAX vs FlashInfer TRT-LLM MLA
 # Moved to kbench. Please run the following:
@@ -82,6 +68,7 @@ modular_py_binary(
     ],
 )
 
+# TODO: This can be removed and `bench_decode` can be directly with `kbench`.
 # Parameter sweep for MHA decode benchmark
 # Note: This target depends on bench_decode at runtime for importing benchmark functions.
 # The sweep_decode.py uses sys.path to import from the same directory.

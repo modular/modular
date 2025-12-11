@@ -21,6 +21,7 @@ import math
 import os
 import sys
 import types
+from dataclasses import dataclass
 from typing import Any
 
 import torch
@@ -50,9 +51,6 @@ try:
 except ImportError as e:
     print(f"Error: flashinfer not available: {e}")
     _flashinfer = None
-
-
-from dataclasses import dataclass
 
 
 @dataclass
