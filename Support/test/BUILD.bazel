@@ -3,7 +3,13 @@ load("//bazel:api.bzl", "lit_tests", "modular_cc_binary", "modular_shared_librar
 
 # gazelle:default_visibility //visibility:private
 
-package(default_visibility = ["//visibility:private"])
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
 
 modular_shared_library(
     name = "binary_id_shared_library",

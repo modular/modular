@@ -1,6 +1,12 @@
 load("//bazel:api.bzl", "modular_cc_binary", "modular_py_test")
 
-package(default_visibility = ["//visibility:private"])
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
 
 modular_cc_binary(
     name = "env_test_cpp",
