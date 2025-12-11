@@ -2792,6 +2792,266 @@ def dynamic_scaled_matmul(
     return result
 
 
+def dynamic_block_scaled_matmul_fp4(
+    a: TensorValue,
+    b: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    tensor_sf: float,
+    sf_vector_size: int = 16,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """
+    Perform a matmul of two FP4 tensors with 1D-block scaled scaling factors.
+
+    Args:
+        a: The first tensor to multiply.
+        b: The second tensor to multiply, must be transposed.
+        a_scales: The scaling factors for the first tensor.
+        b_scales: The scaling factors for the second tensor.
+
+    Returns:
+        The result of the matmul operation.
+    """
+
+    if a.rank != 2 or b.rank != 2:
+        raise ValueError("Both a and b must be rank 2 tensors")
+    if a_scales.rank != 5 or b_scales.rank != 5:
+        raise ValueError("Both a_scales and b_scales must be rank 5 tensors")
+
+    if a.shape[1] != b.shape[1]:
+        raise ValueError(
+            "The second dimension of b must match the second dimension of a"
+        )
+
+    if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):
+        raise TypeError(
+            f"a and b dtypes {a.dtype}, {b.dtype} must match, "
+            f"as do a and b scales dtypes {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    if a.dtype != DType.uint8:
+        raise ValueError("A dtype must be uint8 (fp4-e2m1fnX2)")
+
+    if a_scales.dtype != DType.float8_e4m3fn:
+        raise ValueError("a_scales dtype must be float8_e4m3fn")
+
+    if sf_vector_size != 16:
+        raise ValueError("sf_vector_size must be 16 for NVFP4")
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
+
+    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
+    # a_scales_dim_0 = (a.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
+    a_scales_dim_1 = (
+        (a.shape[1] * 2) + SF_K_GROUP_SIZE - 1
+    ) // SF_K_GROUP_SIZE  # each output element (uint8) is 2 fp4-e2m1fn values
+    b_scales_dim_0 = (b.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
+    b_scales_dim_1 = (
+        (b.shape[1] * 2) + SF_K_GROUP_SIZE - 1
+    ) // SF_K_GROUP_SIZE  # each output element (uint8) is 2 fp4-e2m1fn values
+    scales_dim_2 = SF_ATOM_M[0]
+    scales_dim_3 = SF_ATOM_M[1]
+    scales_dim_4 = SF_ATOM_K
+
+    if (
+        a_scales.shape[1] != a_scales_dim_1
+        or a_scales.shape[2] != scales_dim_2
+        or a_scales.shape[3] != scales_dim_3
+        or a_scales.shape[4] != scales_dim_4
+    ):
+        raise ValueError(
+            f"a_scales shape must be {a_scales_dim_1, scales_dim_2, scales_dim_3, scales_dim_4}, but got {a_scales.shape}"
+        )
+
+    if (
+        b_scales.shape[0] != b_scales_dim_0
+        or b_scales.shape[1] != b_scales_dim_1
+        or b_scales.shape[2] != scales_dim_2
+        or b_scales.shape[3] != scales_dim_3
+        or b_scales.shape[4] != scales_dim_4
+    ):
+        raise ValueError(
+            f"b_scales shape must be {b_scales_dim_0, b_scales_dim_1, scales_dim_2, scales_dim_3, scales_dim_4}, but got {b_scales.shape}"
+        )
+
+    result = ops.custom(
+        "mo.matmul.dynamic.block.scaled",
+        device=a.device,
+        values=[
+            a,
+            b,
+            a_scales,
+            b_scales,
+            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
+            )
+        ],
+        parameters={
+            "SF_VECTOR_SIZE": sf_vector_size,
+        },
+    )[0].tensor
+
+    return result
+
+
+def quantize_dynamic_block_scaled_fp4(
+    input: TensorValue,
+    tensor_sf: float,
+    sf_vector_size: int = 16,
+    scales_type: DType = DType.float8_e4m3fn,
+    out_type: DType = DType.uint8,  # fp4-e2m1fnX2
+) -> tuple[TensorValue, TensorValue]:
+    """
+    Dynamically quantize the input tensor to fp4-e2m1fn.
+
+    Args:
+        input: The input tensor to quantize. Shape: [seq_len, hidden_size]
+        tensor_sf: The tensor-wise scale factor.
+        sf_vector_size: The block size for the scaling factors.
+        out_type: The type of the output tensor.
+        scales_type: The type of the scales tensor.
+
+    Returns:
+        The quantized tensor in [seq_len, hidden_size // 2] layout and the scales in [ceildiv(seq_len, 128), ceildiv(hidden_size, sf_vector_size * 4), 32, 4, 4] layout.
+    """
+
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2 tensor")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if out_type not in (DType.uint8,):
+        raise ValueError("out_type must be uint8 (fp4-e2m1fnX2)")
+
+    if scales_type not in (DType.float8_e4m3fn,):
+        raise ValueError("scales_type must be float8_e4m3fn for NVFP4")
+
+    if sf_vector_size != 16:
+        raise ValueError("sf_vector_size must be 16 for NVFP4")
+
+    if int(input.shape[1]) % (sf_vector_size // 2) != 0:
+        raise ValueError(
+            "input.shape[1] must be a multiple of (sf_vector_size // 2)"
+        )
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
+
+    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
+    scales_dim_0 = (input.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
+    scales_dim_1 = (input.shape[1] + SF_K_GROUP_SIZE - 1) // SF_K_GROUP_SIZE
+    scales_dim_2 = SF_ATOM_M[0]
+    scales_dim_3 = SF_ATOM_M[1]
+    scales_dim_4 = SF_ATOM_K
+
+    result = ops.custom(
+        "mo.quantize.dynamic.block.scaled",
+        device=input.device,
+        values=[
+            input,
+            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[
+                    input.shape[0],
+                    input.shape[1] // 2,
+                ],  # each output element (uint8) is 2 fp4-e2m1fn values
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=[
+                    scales_dim_0,
+                    scales_dim_1,
+                    scales_dim_2,
+                    scales_dim_3,
+                    scales_dim_4,
+                ],
+                device=input.device,
+            ),
+        ],
+        parameters={
+            "SF_VECTOR_SIZE": sf_vector_size,
+        },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def block_scales_interleave(
+    scales: TensorValue,
+    sf_vector_size: int = 16,
+    scales_type: DType = DType.float8_e4m3fn,
+) -> TensorValue:
+    """
+    Interleave the block scales tensor in [M, N] layout to [ceildiv(M, 128), ceildiv(N, sf_vector_size * 4), 32, 4, 4] layout.
+
+    Args:
+        scales: The scales tensor to interleave in [M, N] layout.
+        sf_vector_size: The block size for the scaling factors.
+
+    Returns:
+        The interleaved scales tensor in [ceildiv(M, 128), ceildiv(N, sf_vector_size * 4), 32, 4, 4] layout.
+    """
+
+    if scales.rank != 2:
+        raise ValueError("Both a and b must be rank 2 tensors")
+
+    if scales.dtype != DType.float8_e4m3fn:
+        raise ValueError("scales dtype must be float8_e4m3fn")
+
+    if sf_vector_size != 16:
+        raise ValueError("sf_vector_size must be 16 for NVFP4")
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
+
+    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
+    scales_dim_0 = (scales.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
+    scales_dim_1 = (scales.shape[1] + SF_K_GROUP_SIZE - 1) // SF_K_GROUP_SIZE
+    scales_dim_2 = SF_ATOM_M[0]
+    scales_dim_3 = SF_ATOM_M[1]
+    scales_dim_4 = SF_ATOM_K
+
+    result = ops.custom(
+        "mo.interleave.block.scales",
+        device=scales.device,
+        values=[scales],
+        out_types=[
+            TensorType(
+                dtype=scales_type,
+                shape=[
+                    scales_dim_0,
+                    scales_dim_1,
+                    scales_dim_2,
+                    scales_dim_3,
+                    scales_dim_4,
+                ],
+                device=scales.device,
+            ),
+        ],
+        parameters={
+            "SF_VECTOR_SIZE": sf_vector_size,
+        },
+    )[0].tensor
+
+    return result
+
+
 def matmul_static_scaled_float8(
     input: TensorValue,
     weight: TensorValue,

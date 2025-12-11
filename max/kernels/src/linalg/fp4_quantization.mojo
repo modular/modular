@@ -28,8 +28,6 @@ from math import recip
 from .fp4_utils import (
     cast_fp32_to_fp4e2m1,
     E2M1_TO_FLOAT32,
-    cast_uint32_to_fp4e2m1,
-    cast_fp_to_fp4e2m1,
     cast_f4e2m1x2_to_fp16x2,
     SF_ATOM_M,
     SF_ATOM_K,
@@ -42,8 +40,15 @@ from .fp4_utils import (
 from gpu.host.info import B200
 from utils import StaticTuple
 from collections import OptionalReg
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    elementwise_epilogue_type,
+    elementwise_compute_lambda_type,
+)
 from utils.index import Index, IndexList
+from linalg.matmul.vendor.blas import matmul
+from buffer import Dim, NDBuffer
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from memory import bitcast
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -81,8 +86,8 @@ fn quantize_dynamic_scaled_fp4[
         "input dtype should be bfloat16",
     ]()
     constrained[
-        out_dtype in (DType.uint32,),
-        "output dtype should be uint32",
+        out_dtype in (DType.uint8,),
+        "output dtype should be uint8 (fp4-e2m1fnX2)",
     ]()
     constrained[
         scales_dtype in (NVFP4_SF_DTYPE,),
@@ -199,8 +204,10 @@ fn quantize_dynamic_scaled_fp4_kernel[
                     col_idx >= num_col_threads
                     and col_idx < num_padded_col_threads
                 ):
-                    output[global_row_idx, col_idx] = rebind[Scalar[out_dtype]](
-                        Scalar[out_dtype](0)
+                    output.store[width=4](
+                        global_row_idx,
+                        col_idx * (ELEMENTS_PER_THREAD // 2),
+                        SIMD[out_dtype, 4](0),
                     )
 
                 if col_idx >= num_col_threads:
@@ -255,9 +262,12 @@ fn quantize_dynamic_scaled_fp4_kernel[
                         input_vector.cast[DType.float32]() * output_scale
                     )
                     var e2m1_vector = cast_fp32_to_fp4e2m1(input_f32)
+                    var e2m1_vector_uint8 = bitcast[out_dtype, 4](e2m1_vector)
 
-                    output[global_row_idx, col_idx] = rebind[Scalar[out_dtype]](
-                        e2m1_vector
+                    output.store[width=4](
+                        global_row_idx,
+                        col_idx * (ELEMENTS_PER_THREAD // 2),
+                        e2m1_vector_uint8,
                     )
 
 
@@ -563,3 +573,177 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
         )
     else:
         c[row_idx, col_idx] = accum.cast[c_type]()
+
+
+fn quantize_dynamic_block_scaled[
+    out_dtype: DType,
+    scales_dtype: DType,
+    in_dtype: DType, //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    target: StaticString = "cpu",
+](
+    output_device: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin, _],
+    scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
+    input_device: NDBuffer[in_dtype, 2, MutAnyOrigin, _],
+    tensor_sf: Float32,  # tensor-wise scale factor
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        ctx.default_device_info.compute == B200.compute,
+        "This kernel is only supported on SM100",
+    ]()
+    constrained[
+        in_dtype in (DType.bfloat16,),
+        "input dtype should be bfloat16",
+    ]()
+    constrained[
+        out_dtype in (DType.uint32,),
+        "output dtype should be uint32",
+    ]()
+    constrained[
+        scales_dtype in (NVFP4_SF_DTYPE,),
+        "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)",
+    ]()
+    constrained[
+        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE,
+        "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)",
+    ]()
+
+    var output = from_ndbuffer_row_major(output_device)
+    var scales = from_ndbuffer_row_major(scales_device)
+    var input = from_ndbuffer_row_major(input_device)
+
+    comptime input_layout = input.layout
+    comptime output_layout = output.layout
+    constrained[
+        input_layout.shape[1].value() % (SF_VECTOR_SIZE // 2) == 0,
+        "input.dim(1) must be a multiple of (SF_VECTOR_SIZE // 2)",
+    ]()
+    constrained[
+        output_layout.shape[1].value() == input_layout.shape[1].value() // 2,
+        (
+            "output.dim(1) must be equal to input.dim(1) // 2 (each output"
+            " element (uint8) is 2 fp4-e2m1fn values)"
+        ),
+    ]()
+
+    quantize_dynamic_scaled_fp4[
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        num_max_threads=512,
+    ](
+        ctx,
+        output,
+        scales,
+        input,
+        num_cols=input.dim(1),
+        num_cols_padded=input.dim(1),
+        tensor_sf=tensor_sf,
+    )
+
+
+fn block_scales_interleave[
+    scales_dtype: DType, //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    target: StaticString = "cpu",
+](
+    output_scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
+    input_scales_device: NDBuffer[scales_dtype, 2, MutAnyOrigin, _],
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        ctx.default_device_info.compute == B200.compute,
+        "This kernel is only supported on SM100",
+    ]()
+    constrained[
+        scales_dtype in (NVFP4_SF_DTYPE,),
+        "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn) for now.",
+    ]()
+
+    var output = from_ndbuffer_row_major(output_scales_device)
+    var input = from_ndbuffer_row_major(input_scales_device)
+
+    block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
+        ctx, input, output
+    )
+
+
+fn block_scaled_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType, //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool = True,
+    target: StaticString = "cpu",
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
+](
+    c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
+    a_device: NDBuffer[a_type, 2, MutAnyOrigin, _],
+    b_device: NDBuffer[b_type, 2, MutAnyOrigin, _],
+    a_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
+    b_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
+    tensor_sf: Float32,
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        ctx.default_device_info.compute == B200.compute,
+        "This kernel is only supported on SM100",
+    ]()
+
+    constrained[
+        transpose_b,
+        "Only support transposed B",
+    ]()
+
+    constrained[
+        scales_dtype == NVFP4_SF_DTYPE,
+        "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now.",
+    ]()
+
+    constrained[
+        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE,
+        "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)",
+    ]()
+
+    var c = from_ndbuffer_row_major(c_device)
+    var a = from_ndbuffer_row_major(a_device)
+    var b = from_ndbuffer_row_major(b_device)
+    var a_scales = from_ndbuffer_row_major(a_scales_device)
+    var b_scales = from_ndbuffer_row_major(b_scales_device)
+
+    comptime sfa_layout = a_scales.layout
+    comptime sfb_layout = b_scales.layout
+
+    constrained[
+        sfa_layout.shape[2].value()
+        == sfb_layout.shape[2].value()
+        == SF_ATOM_M[0],
+        "",
+    ]()
+    constrained[
+        sfa_layout.shape[3].value()
+        == sfb_layout.shape[3].value()
+        == SF_ATOM_M[1],
+        "",
+    ]()
+    constrained[
+        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K,
+        "",
+    ]()
+
+    matmul[scales_type=scales_dtype](
+        ctx,
+        c,
+        a,
+        b,
+        a_scales=a_scales,
+        b_scales=b_scales,
+        alpha=tensor_sf,
+        transpose_b=True,
+        c_row_major=True,
+    )

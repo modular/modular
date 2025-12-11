@@ -53,14 +53,17 @@ comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
 )
 
 
-fn cast_uint32_to_fp4e2m1[
+fn cast_uint_to_fp4e2m1[
     in_dtype: DType,
     in_width: Int, //,
     *,
     out_dtype: DType,
     out_width: Int,
 ](x: SIMD[in_dtype, in_width]) -> SIMD[out_dtype, out_width]:
-    constrained[in_dtype == DType.uint32, "input_dtype must be uint32"]()
+    constrained[
+        in_dtype in (DType.uint32, DType.uint16, DType.uint8),
+        "input_dtype must be uint32, uint16 or uint8",
+    ]()
 
     comptime FP4_E2M1_WIDTH = 4
     comptime FP4_E2M1_MASK = pow(2, FP4_E2M1_WIDTH) - 1
@@ -69,8 +72,8 @@ fn cast_uint32_to_fp4e2m1[
     constrained[
         in_width * num_fp4_values == out_width,
         (
-            "There are 8 FP4 values per input uint32, so output_dtype must be a"
-            " multiple of 8"
+            "size mismatch: input_width * num_fp4_values must be equal to"
+            " output_width"
         ),
     ]()
 

@@ -16,7 +16,6 @@ from linalg.fp4_utils import (
     E2M1_TO_FLOAT32,
     cast_fp_to_fp4e2m1,
     cast_f4e2m1x2_to_fp16x2,
-    cast_uint32_to_fp4e2m1,
 )
 from gpu.host import DeviceContext
 from math import nan, inf
