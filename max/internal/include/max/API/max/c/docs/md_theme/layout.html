@@ -1,0 +1,12 @@
+---
+title: {{ title }}
+subtitle: Preview
+{%- if meta and meta.description %}
+description: {{ meta.description }}
+{%- endif %}
+from: commonmark_x
+---
+
+<div class="sphinx-docs">
+{% block body %}{% endblock %}
+</div>

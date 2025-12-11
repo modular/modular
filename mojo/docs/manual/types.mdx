@@ -39,29 +39,59 @@ Mojo also has built-in types for integer, unsigned integer, and floating-point
 values of various precisions:
 
 <figure id="table-1">
+<figcaption><b>Table 1.</b> Mojo signed integer types</figcaption>
 
-| Type name | Description                                           |
-| --------- | ----------------------------------------------------- |
-| `Int8`    | 8-bit signed integer                                  |
-| `UInt8`   | 8-bit unsigned integer                                |
-| `Int16`   | 16-bit signed integer                                 |
-| `UInt16`  | 16-bit unsigned integer                               |
-| `Int32`   | 32-bit signed integer                                 |
-| `UInt32`  | 32-bit unsigned integer                               |
-| `Int64`   | 64-bit signed integer                                 |
-| `UInt64`  | 64-bit unsigned integer                               |
-| `Int128`  | 128-bit signed integer                                |
-| `UInt128` | 128-bit unsigned integer                              |
-| `Int256`  | 256-bit signed integer                                |
-| `UInt256` | 256-bit unsigned integer                              |
-| `Float16` | 16-bit floating point number (IEEE 754-2008 binary16) |
-| `Float32` | 32-bit floating point number (IEEE 754-2008 binary32) |
-| `Float64` | 64-bit floating point number (IEEE 754-2008 binary64) |
-
-<figcaption><b>Table 1.</b> Numeric types with specific precision</figcaption>
+| Type name | Description |
+| --------- | ----------- |
+| `Int8` | 8-bit signed integer |
+| `Int16` | 16-bit signed integer |
+| `Int32` | 32-bit signed integer |
+| `Int64` | 64-bit signed integer |
+| `Int128` | 128-bit signed integer |
+| `Int256` | 256-bit signed integer |
 </figure>
 
-The types in Table 1 are actually all aliases to a single type,
+<figure id="table-2">
+<figcaption><b>Table 2.</b> Mojo Unsigned Integer Types</figcaption>
+
+| Type name | Description |
+| --------- | ----------- |
+| `UInt8` | 8-bit unsigned integer |
+| `UInt16` | 16-bit unsigned integer |
+| `UInt32` | 32-bit unsigned integer |
+| `UInt64` | 64-bit unsigned integer |
+| `UInt128` | 128-bit unsigned integer |
+| `UInt256` | 256-bit unsigned integer |
+</figure>
+
+<figure id="table-3">
+<figcaption><b>Table 3.</b> Mojo Floating Point Types</figcaption>
+
+| Type name | Description |
+| --------- | ----------- |
+| `Float16` | 16-bit floating point<br />(IEEE 754-2008 binary16) |
+| `Float32` | 32-bit floating point<br />(IEEE 754-2008 binary32) |
+| `Float64` | 64-bit floating point<br />(IEEE 754-2008 binary64) |
+| `BFloat16` | 16-bit floating point<br />(16-bit version of IEEE 754 binary32) |
+| `Float4_e2m1fn` | 4-bit floating point<br />(e2m1 format from Open Compute MX specification) |
+| `Float8_e5m2` | 8-bit floating point<br />(OFP8 e5m2 format) |
+| `Float8_e5m2fnuz` | 8-bit floating point<br />(AMD-only e5m2fnuz format - finite values and NaN only, no infinities) |
+| `Float8_e4m3fn` | 8-bit floating point<br />(OFP8 e4m3fn format) |
+| `Float8_e4m3fnuz` | 8-bit floating point<br />(AMD-only e4m3fnuz format - finite values and NaN only, no infinities) |
+</figure>
+
+:::note Floating Points, Exponents, and Mantissas
+eXmX format (like `Float8_e5m2` and `Float8_e4m3fn` in table 3)
+refers to the number of bits allocated to a floating
+point number's exponent and mantissa.
+
+All IEEE 754 floating point
+use an implied leading 1. That means `Float32` is e8m23 but effectively e8m24,
+`Float16` is e5m10 but effectively e5m11, `BFloat16` is e8m7 but
+effectively e8m8, and `Float8_e4m3fn` is e4m3 but effectively e4m4.
+:::
+
+The types in tables 1, 2, and 3 are actually all aliases to a single type,
 [`SIMD`](/mojo/stdlib/builtin/simd/SIMD), which is discussed later.
 
 All of the numeric types support the usual numeric and bitwise operators. The
@@ -72,6 +102,27 @@ You may wonder when to use `Int` and when to use the other integer
 types. In general, `Int` is a good safe default when you need an integer type
 and you don't require a specific bit width. Using `Int` as the default integer
 type for APIs makes APIs more consistent and predictable.
+
+### AI-optimized floating point formats
+
+Several floating point types are specifically designed for AI and machine
+learning workloads, trading precision for memory efficiency and computational
+throughput.
+
+**BFloat16 (Brain Floating Point)** uses the same 8 exponent bits as
+`Float32`, preserving its dynamic range, but uses only 7 bits for the mantissa (compared to Float32's 23 bits).
+This makes it ideal for neural network training where gradient magnitudes
+vary widely but high precision is less critical.
+
+**8-bit formats** (`Float8_e5m2`, `Float8_e4m3fn`, and their `fnuz`
+variants) are ultra-compact formats for AI accelerators where memory
+bandwidth is the primary bottleneck. The naming indicates bit allocation:
+`e5m2` means 5 exponent bits and 2 mantissa bits. The `fnuz` suffix denotes
+variants that are finite-only (no infinities) and have unsigned zero (no -0), used in AMD hardware.
+
+**4-bit format** (`Float4_e2m1fn`) offers extreme compression with only 2
+exponent bits and 1 mantissa bit, used in specialized inference scenarios
+where accuracy can be traded for maximum throughput.
 
 ### Signed and unsigned integers
 
@@ -114,18 +165,17 @@ every value exactly.
 The floating-point types listed in Table 1—`Float64`, `Float32`, and
 `Float16`—follow the IEEE 754-2008 standard for representing floating-point
 values. Each type includes a sign bit, one set of bits representing an exponent,
-and another set representing the fraction or mantissa. Table 2 shows how each of
+and another set representing the fraction or mantissa. Table 4 shows how each of
 these types are represented in memory.
 
 <figure>
+<figcaption><b>Table 4.</b> Details of floating-point types</figcaption>
 
 | Type name | Sign  | Exponent | Mantissa |
 | --------- | ----- | -------- | -------- |
 | `Float64` | 1 bit | 11 bits  | 52 bits  |
 | `Float32` | 1 bit | 8 bits   | 23 bits  |
 | `Float16` | 1 bit | 5 bits   | 10 bits  |
-
-<figcaption><b>Table 2.</b> Details of floating-point types</figcaption>
 </figure>
 
 Numbers with exponent values of all ones or all zeros represent special values,
@@ -176,9 +226,10 @@ These literal types are used at compile time to represent literal numbers that
 appear in the code. In general, you should never instantiate these types
 yourself.
 
-Table 3 summarizes the literal formats you can use to represent numbers.
+Table 5 summarizes the literal formats you can use to represent numbers.
 
 <figure>
+<figcaption><b>Table 5.</b> Numeric literal formats</figcaption>
 
 | Format                 | Examples        | Notes                                                                                            |
 | ---------------------- | --------------- | ------------------------------------------------------------------------------------------------ |
@@ -187,8 +238,6 @@ Table 3 summarizes the literal formats you can use to represent numbers.
 | Octal literal          | `0o77`          | Integer literal, in octal format.                                                                |
 | Binary literal         | `0b0111`        | Integer literal, in binary format.                                                               |
 | Floating-point literal | `3.14`, `1.2e9` | Floating-point literal.<br />Must include the decimal point to be interpreted as floating-point. |
-
-<figcaption><b>Table 3.</b> Numeric literal formats</figcaption>
 </figure>
 
 At compile time, the literal types are arbitrary-precision (also called

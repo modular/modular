@@ -873,12 +873,19 @@ class Qwen3VLModel(
             assert len(vision_outputs) == len(self.devices) * (
                 1 + n_deepstack_layers
             )
+            # assert image embeddings and deepstack image embeddings have the same hidden size
+            for output in vision_outputs:
+                assert isinstance(output, Tensor)
+                assert (
+                    output.shape[1]
+                    == self.huggingface_config.text_config.hidden_size
+                )
 
             # Extract image embeddings (first len(self.devices) outputs)
             n_devices = len(self.devices)
             image_embeddings = [
                 output
-                for output in vision_outputs[: len(self.devices)]
+                for output in vision_outputs[:n_devices]
                 if isinstance(output, Tensor)
             ]
 

@@ -517,12 +517,44 @@ def bench_decode(
 
 
 if __name__ == "__main__":
-    # Decode benchmark: batch_size, cache_len, num_heads, num_kv_heads, head_dim, page_size
+    import argparse
+
+    parser = argparse.ArgumentParser(description="MHA Decode Benchmark")
+    parser.add_argument(
+        "--batch-size", type=int, default=128, help="Batch size"
+    )
+    parser.add_argument(
+        "--cache-len", type=int, default=1024, help="KV cache length"
+    )
+    parser.add_argument(
+        "--num-heads", type=int, default=4, help="Number of query heads"
+    )
+    parser.add_argument(
+        "--num-kv-heads", type=int, default=4, help="Number of KV heads"
+    )
+    parser.add_argument(
+        "--head-dim", type=int, default=128, help="Head dimension"
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="bfloat16",
+        choices=["float16", "bfloat16", "float32"],
+        help="Data type",
+    )
+    args = parser.parse_args()
+
+    dtype_map = {
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "float32": torch.float32,
+    }
+
     bench_decode(
-        batch_size=128,
-        cache_len=1024,
-        num_heads=4,
-        num_kv_heads=4,
-        head_dim=128,
-        dtype=torch.bfloat16,
+        batch_size=args.batch_size,
+        cache_len=args.cache_len,
+        num_heads=args.num_heads,
+        num_kv_heads=args.num_kv_heads,
+        head_dim=args.head_dim,
+        dtype=dtype_map[args.dtype],
     )

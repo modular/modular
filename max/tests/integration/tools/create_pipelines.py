@@ -42,6 +42,7 @@ from peft.peft_model import PeftModel
 
 # Tests
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
+from qwen3vl import generate_utils as qwen3vl_utils
 from test_common import (
     test_data,
     torch_utils,
@@ -451,6 +452,111 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         """Run text generation using Qwen2.5VL-specific preprocessing logic."""
 
         return qwen2_5vl_utils.run_text_generation(
+            model=torch_pipeline_and_tokenizer.model,
+            data_processor=torch_pipeline_and_tokenizer.data_processor,
+            device=device,
+            textgen_requests=self.inputs,
+            num_steps=num_steps,
+            print_outputs=True,
+            use_cache=self.use_cache,
+        )
+
+
+class Qwen3VLPipelineOracle(PipelineOracle):
+    """Pipeline oracle for Qwen3VL architectures."""
+
+    hf_repo_id: str
+    """ID of the Hugging Face repository."""
+
+    def __init__(self, hf_repo_id: str) -> None:
+        super().__init__()
+        self.hf_repo_id = hf_repo_id
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
+
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        """Input requests for Qwen3VL."""
+
+        multi_modal_requests = copy.deepcopy(qwen3vl_utils.INSTRUCT_REQUESTS)
+
+        # Download images from s3 and update the messages.
+        for request in multi_modal_requests:
+            for message in request.messages:
+                for content in message["content"]:
+                    if content["type"] == "image":
+                        content["image"] = load_image(content["image"])
+
+        # Torch model tries to return EOT for the default long text prompt,
+        # so add another bullet point to get it to generate more tokens.
+        long_prompt = test_data.LONG_TEXT_PROMPT + "\n    * "
+        text_only_prompts = [long_prompt] + list(test_data.SHORT_TEXT_PROMPTS)
+        text_only_requests = [
+            MockTextGenerationRequest.text_only(prompt)
+            for prompt in text_only_prompts
+        ]
+        return multi_modal_requests + text_only_requests
+
+    def create_max_pipeline(
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+    ) -> MaxPipelineAndTokenizer:
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+        max_length = 8192
+
+        config = pipelines.PipelineConfig(
+            device_specs=device_specs,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            cache_strategy=KVCacheStrategy.PAGED,
+            model_path=self.hf_repo_id,
+            huggingface_model_revision=revision,
+            max_length=max_length,
+            max_num_steps=1,
+            trust_remote_code=True,
+            # Chunked prefill is not supported for image prompts.
+            # (technically, this script doesn't go through the scheduler so
+            # it's not a problem, but it's a good idea to disable it anyway.)
+            enable_chunked_prefill=False,
+            # TODO(GEX-2365): Handle this in model memory estimation.
+            device_memory_utilization=0.4,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
+
+    def create_torch_pipeline(
+        self, *, encoding: str | None, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+        config = transformers.AutoConfig.from_pretrained(
+            self.hf_repo_id, revision=revision, trust_remote_code=True
+        )
+        processor = transformers.AutoProcessor.from_pretrained(
+            self.hf_repo_id, revision=revision, trust_remote_code=True
+        )
+        model = transformers.AutoModelForVision2Seq.from_pretrained(
+            self.hf_repo_id,
+            revision=revision,
+            config=config,
+            device_map=device,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
+            trust_remote_code=True,
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=processor)
+
+    def run_torch_text_generation(
+        self,
+        *,
+        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
+        device: torch.device,
+        num_steps: int,
+    ) -> list[dict[str, Any]]:
+        """Run text generation using Qwen3VL-specific preprocessing logic."""
+
+        return qwen3vl_utils.run_text_generation(
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
@@ -1130,6 +1236,9 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     # Qwen2.VL-FP8
     "allenai/olmOCR-2-7B-1025-FP8": Qwen2_5VLPipelineOracle(
         "allenai/olmOCR-2-7B-1025-FP8"
+    ),
+    "Qwen/Qwen3-VL-30B-A3B-Instruct": Qwen3VLPipelineOracle(
+        "Qwen/Qwen3-VL-30B-A3B-Instruct"
     ),
     "Qwen/Qwen3-8B": GenericOracle(
         model_path="Qwen/Qwen3-8B",

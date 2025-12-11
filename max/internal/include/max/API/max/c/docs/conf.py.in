@@ -1,0 +1,40 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# -- Project information -----------------------------------------------------
+
+project = "MAX Engine C APIs"
+copyright = "2023, Modular"
+author = "Modular"
+
+# The semantic version
+version = "@MODULAR_VERSION_MAJOR@.@MODULAR_VERSION_MINOR@.@MODULAR_VERSION_PATCH@"
+
+extensions = [
+    "breathe",  # Converts Doxygen XML to Sphinx stuff
+    "sphinx.ext.autosectionlabel",  # Allows sensible anchor linking in RST
+    "sphinx_markdown_builder",]
+
+markdown_anchor_signatures = True
+markdown_anchor_signatures_docusaurus = False
+markdown_first_heading_level = 3
+markdown_rubric_heading_level = 2
+markdown_short_heading_names = True
+markdown_meta_front_matter = True
+markdown_meta_wrapper_class = "sphinx-docs"
+
+# Breathe config
+breathe_projects = {
+    "modular": "@CMAKE_CURRENT_BINARY_DIR@/doxygen/xml"
+}
+breathe_default_project = "modular"
+breathe_order_parameters_first = True
+
+# templates_path = ['_templates']
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+
+# We use 'types' for multiple section names
+suppress_warnings = ["autosectionlabel.*"]

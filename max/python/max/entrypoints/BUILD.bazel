@@ -1,3 +1,4 @@
+load("@mojo//:mojo.bzl", "PROD_MOJOPKGS")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
@@ -75,6 +76,10 @@ modular_py_binary(
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
+    mojo_deps = select({
+        "//:emit_mojo_enabled": PROD_MOJOPKGS,
+        "//conditions:default": [],
+    }),
     deps = [
         ":_pipelines",
         requirement("click"),

@@ -1,0 +1,65 @@
+load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library", "pkg_files")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_cc_library(
+    name = "CAPI.headers",  # NOTE: Target only exists to run clang-tidy as C files
+    testonly = True,
+    srcs = glob(["include/max/API/max/c/*.h"]),
+    includes = ["include/max/API"],
+    tags = ["clang-tidy-is-c-tu"],
+    visibility = ["//visibility:private"],
+)
+
+pkg_files(
+    name = "API.c.headers",
+    srcs = glob(["include/max/API/max/c/*.h"]),
+)
+
+filegroup(
+    name = "doxygen-sources",
+    srcs = glob(["include/max/API/max/**"]),
+    visibility = [
+        "//max/internal/include/max/API/max/c/docs:__pkg__",
+        "//open-source/max/max/internal/include/max/API/max/c/docs:__pkg__",
+    ],
+)
+
+modular_cc_library(
+    name = "MOFDriver",
+    srcs = glob(["lib/MOF/Driver/**/*.cpp"]),
+    hdrs = [
+        "include/max/MOF/InitAllDialects.h",
+    ] + glob(["include/max/MOF/Driver/**/*.h"]),
+    deps = [
+        "//GenericML:GraphCompiler",
+        "//Support:Base",
+        "//Support:Buffer",
+    ],
+)
+
+modular_shared_library(
+    name = "max",
+    srcs = glob(
+        [
+            "lib/API/c/**/*.cpp",
+            "lib/MOF/API/**/*.cpp",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "include/max/API/**/*.h",
+            "include/max/MOF/API/**/*.h",
+        ],
+    ),
+    includes = ["include/max/API"],
+    deps = [
+        ":MOFDriver",
+        "//AsyncRT:NIXL",
+        "//GenericML:FrameworkFrontend",
+        "//GenericML:SafeTensor",
+        "//Kernels:WeightsRegistry",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIRBindingsPythonCAPIObjects",
+    ],
+)

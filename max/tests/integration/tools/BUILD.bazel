@@ -30,6 +30,7 @@ modular_py_library(
         "//max/tests/integration/pipelines/python/idefics3:torch_utils",
         "//max/tests/integration/pipelines/python/internvl:torch_utils",
         "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
+        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
         "//max/tests/integration/pipelines/python/test_common",
         requirement("einops"),  # Req'd by replit
         requirement("timm"),  # Required by InternVL.
@@ -65,6 +66,7 @@ modular_py_binary(
         "//max/tests/integration/pipelines/python/idefics3:torch_utils",
         "//max/tests/integration/pipelines/python/internvl:torch_utils",
         "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
+        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
         "//max/tests/integration/pipelines/python/test_common",
         requirement("click"),
         requirement("einops"),  # Req'd by replit

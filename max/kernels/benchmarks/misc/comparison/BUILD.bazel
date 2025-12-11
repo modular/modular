@@ -81,3 +81,24 @@ modular_py_binary(
         requirement("torch"),
     ],
 )
+
+# Parameter sweep for MHA decode benchmark
+# Note: This target depends on bench_decode at runtime for importing benchmark functions.
+# The sweep_decode.py uses sys.path to import from the same directory.
+modular_py_binary(
+    name = "sweep_decode",
+    srcs = ["sweep_decode.py"],
+    imports = ["."],
+    main = "sweep_decode.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        blackwell_bench_wheel("flashinfer"),
+        requirement("torch"),
+        "//max/python/max",
+    ],
+)

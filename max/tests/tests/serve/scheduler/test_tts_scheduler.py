@@ -135,9 +135,8 @@ def create_paged_scheduler(
     )
 
     scheduler_config = AudioGenerationSchedulerConfig(
-        max_batch_size_tg=max_batch_size,
+        max_batch_size=max_batch_size,
         max_forward_steps_tg=max_forward_steps_tg,
-        max_batch_size_ce=max_batch_size,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         max_seq_len=max_seq_len,
         enable_in_flight_batching=enable_in_flight_batching,
@@ -520,7 +519,7 @@ def test_paged_scheduler_max_queue_size_tg(
         )
 
     if max_queue_size_tg is None:
-        # Notice that max_queue_size_tg defaults to max_batch_size_tg. This causes
+        # Notice that max_queue_size_tg defaults to max_batch_size. This causes
         # CE batch size to be limited if it causes the resultant number of decode
         # requests to exceed 32.
         expected = [

@@ -121,9 +121,8 @@ def create_di_scheduler(
 
     # Create a scheduler with a paged manager
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=max_batch_size,
+        max_batch_size=max_batch_size,
         max_forward_steps_tg=max_forward_steps_tg,
-        max_batch_size_ce=max_batch_size,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         max_seq_len=max_seq_len,
         enable_chunked_prefill=enable_chunked_prefill,
