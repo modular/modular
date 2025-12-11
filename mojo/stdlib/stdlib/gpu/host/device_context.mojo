@@ -58,6 +58,7 @@ from gpu.host.compile import (
 )
 from memory import stack_allocation
 from memory.unsafe import bitcast
+from builtin.rebind import downcast
 
 from utils import Variant
 from utils._serialize import _serialize_elements
@@ -2623,6 +2624,15 @@ struct DeviceFunction[
             comptime declared_arg_type = Self.declared_arg_types.value()[i]
             comptime actual_arg_type = Ts[i]
 
+            fn declared_arg_type_name() -> String:
+                @parameter
+                if conforms_to(declared_arg_type, DevicePassable):
+                    return downcast[
+                        DevicePassable, declared_arg_type
+                    ].get_type_name()
+                else:
+                    return get_type_name[declared_arg_type]()
+
             # Now we'll check if the given argument's device_type is
             # what the kernel expects.
 
@@ -2635,12 +2645,13 @@ struct DeviceFunction[
                 __comptime_assert _type_is_eq[
                     declared_arg_type, actual_arg_type.device_type
                 ](), String(
-                    "Handed in wrong argument dtype for argument #",
-                    String(i),
-                    ", received a ",
+                    "argument #",
+                    i,
+                    " of type '",
                     actual_arg_type.get_type_name(),
-                    ", but actual type name is: ",
-                    get_type_name[declared_arg_type](),
+                    "' does not match the declared function argument type '",
+                    declared_arg_type_name(),
+                    "'",
                 )
             elif _is_pointer_convertible[
                 declared_arg_type, actual_arg_type.device_type
@@ -2657,13 +2668,13 @@ struct DeviceFunction[
                 __comptime_assert _type_is_eq[
                     declared_arg_type, actual_arg_type.device_type
                 ](), String(
-                    "Handed in wrong argument dtype for argument #",
-                    String(i),
-                    ", received a ",
+                    "argument #",
+                    i,
+                    " of type '",
                     actual_arg_type.get_type_name(),
-                    " (which became device dtype ",
-                    actual_arg_type.get_device_type_name(),
-                    ")",
+                    "' (which became device of type '",
+                    declared_arg_type_name(),
+                    "') does not match the declared function argument type",
                 )
             var aligned_type_size = align_up(
                 size_of[actual_arg_type.device_type](), 8
