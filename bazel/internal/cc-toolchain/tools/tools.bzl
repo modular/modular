@@ -74,6 +74,13 @@ def _declare_tools(platform):
     )
 
     native.alias(
+        name = "{}-resource_directory_filegroup".format(platform),
+        actual = "@clang-{}//:resource_directory_filegroup".format(platform),
+        tags = ["manual"],
+        visibility = ["//visibility:private"],
+    )
+
+    native.alias(
         name = "{}-resource_directory".format(platform),
         actual = "@clang-{}//:resource_directory".format(platform),
         tags = ["manual"],
