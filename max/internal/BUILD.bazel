@@ -19,7 +19,10 @@ pkg_files(
 filegroup(
     name = "doxygen-sources",
     srcs = glob(["include/max/API/max/**"]),
-    visibility = ["//max/internal/include/max/API/max/c/docs:__pkg__"],
+    visibility = [
+        "//max/internal/include/max/API/max/c/docs:__pkg__",
+        "//open-source/max/max/internal/include/max/API/max/c/docs:__pkg__",
+    ],
 )
 
 modular_cc_library(

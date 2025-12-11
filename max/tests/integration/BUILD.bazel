@@ -26,7 +26,6 @@ mojo_library(
     testonly = True,
     srcs = glob(["Inputs/counter_ops/*.mojo"]),
     validate_missing_docs = False,
-    visibility = [":__subpackages__"],
     deps = [
         "//max:compiler_internal",
         "//max:register",
@@ -40,7 +39,6 @@ mojo_library(
     testonly = True,
     srcs = glob(["Inputs/compile_config_ops/*.mojo"]),
     validate_missing_docs = False,
-    visibility = [":__subpackages__"],
     deps = [
         "//max:compiler",
         "//max:register",
@@ -54,7 +52,6 @@ mojo_library(
     testonly = True,
     srcs = glob(["Inputs/kernel_verification_ops/*.mojo"]),
     validate_missing_docs = False,
-    visibility = [":__subpackages__"],
     deps = [
         "//max:compiler_internal",
         "//max:register",

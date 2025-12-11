@@ -13,12 +13,10 @@ filegroup(
         "Inputs/scalar-input.mlir",
         "c/mo-model.api",
     ],
-    visibility = [":__subpackages__"],
 )
 
 filegroup(
     name = "inputs",
     testonly = True,
     srcs = glob(["**/*.mlir"]),
-    visibility = [":__subpackages__"],
 )
