@@ -31,7 +31,7 @@ if [[ $OSTYPE == darwin* ]]; then
   # This invalidates the crosstool if the Xcode version changes but the path to
   # it does not (when it is updated in place). Related:
   # https://github.com/bazelbuild/bazel/issues/8902
-  bazelrc_lines+=("common --repo_env=$xcode_build_number")
+  bazelrc_lines+=("common --repo_env=XCODE_VERSION=$xcode_build_number")
 fi
 
 if [[ -z "${GITHUB_REPOSITORY:-}" && $OSTYPE != darwin* && -d /dev/shm && ! -e /.dockerenv && -z "${KUBERNETES_SERVICE_HOST:-}" ]]; then
