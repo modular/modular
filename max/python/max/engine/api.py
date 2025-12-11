@@ -180,19 +180,17 @@ def _is_max_graph(obj: Any) -> bool:
 def _process_custom_extensions_object(
     custom_extension: CustomExtensionType,
 ) -> CustomExtensionType:
-    if isinstance(custom_extension, (Path, str)):
-        if is_mojo_source_package_path(Path(custom_extension)):
-            # Builds the source directory into a .mojopkg file.
-            return _build_mojo_source_package(Path(custom_extension))
+    if is_mojo_source_package_path(Path(custom_extension)):
+        # Builds the source directory into a .mojopkg file.
+        return _build_mojo_source_package(Path(custom_extension))
 
-        # Pass the path through as is.
-        return custom_extension
-    raise TypeError("Unsupported type for custom ops libraries.")
+    # Pass the path through as is.
+    return custom_extension
 
 
 def _process_custom_extensions_objects(
     custom_extensions: CustomExtensionsType,
-) -> CustomExtensionsType:
+) -> list[CustomExtensionType]:
     if not isinstance(custom_extensions, Iterable) or isinstance(
         custom_extensions, str
     ):
@@ -281,10 +279,7 @@ class InferenceSession:
               Supports paths to a `.mojopkg` custom ops library or a `.mojo`
               source file.
         """
-        config: dict[str, Any] = {}
         self.num_threads = num_threads
-        if num_threads:
-            config["num_threads"] = num_threads
 
         # Process the provided iterable `devices`.
         final_devices: list[Device] = []
@@ -295,14 +290,18 @@ class InferenceSession:
                 seen_devices.add(device)
         # If the user provided an empty iterable, final_devices remains empty.
 
-        # Assign the ordered, unique list to the config.
-        config["devices"] = final_devices
+        custom_extensions_final = []
 
-        if custom_extensions is not None:
-            config["custom_extensions"] = _process_custom_extensions_objects(
+        if custom_extensions:
+            custom_extensions_final = _process_custom_extensions_objects(
                 custom_extensions
             )
-        self._impl = _InferenceSession(config)
+
+        self._impl = _InferenceSession(
+            final_devices,
+            custom_extensions_final,
+            num_threads or 0,
+        )
 
         # Register async-safe Python stack trace handler
         # This enables Python stack traces in crash reports without GIL deadlocks
@@ -357,25 +356,22 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
-        options_dict: dict[str, Any] = {}
         weights_registry_real: Mapping[str, DLPackArray] = (
             weights_registry or {}
         )
 
+        custom_extensions_final = []
+
         if custom_extensions is not None:
-            options_dict["custom_extensions"] = (
-                _process_custom_extensions_objects(custom_extensions)
+            custom_extensions_final = _process_custom_extensions_objects(
+                custom_extensions
             )
         if custom_ops_path is not None:
-            if "custom_extensions" not in options_dict:
-                options_dict["custom_extensions"] = list()
-            options_dict["custom_extensions"].extend(
+            custom_extensions_final.extend(
                 _process_custom_extensions_objects(custom_ops_path)
             )
         if _is_max_graph(model):
-            if "custom_extensions" not in options_dict:
-                options_dict["custom_extensions"] = list()
-            options_dict["custom_extensions"].extend(
+            custom_extensions_final.extend(
                 _process_custom_extensions_objects(model.kernel_libraries_paths)  # type: ignore
             )
 
@@ -383,10 +379,10 @@ class InferenceSession:
             model = Path(str(model))
 
         if isinstance(model, Path):
-            _model = self._impl.compile_from_path(model, options_dict)
+            _model = self._impl.compile_from_path(
+                model, custom_extensions_final
+            )
         elif _is_max_graph(model):
-            options_dict["pipeline_name"] = model.name
-
             # TODO: if the model has been loaded from a serialized MLIR file, we don't have
             # the _weights attribute available to us
             if hasattr(model, "_weights"):
@@ -413,7 +409,8 @@ class InferenceSession:
                 try:
                     _model = self._impl.compile_from_object(
                         model._module._CAPIPtr,
-                        options_dict,
+                        custom_extensions_final,
+                        model.name,
                     )
                 except Exception as e:
                     raise RuntimeError(

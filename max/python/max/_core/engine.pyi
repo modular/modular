@@ -16,11 +16,12 @@
 import enum
 import inspect
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
+import typing_extensions
 from max import mlir
 from max._core.driver import Tensor
 from max._core_types.driver import DLPackArray
@@ -225,12 +226,22 @@ class Model:
     def _load(self, weights_registry: Mapping[str, Any]) -> None: ...
 
 class InferenceSession:
-    def __init__(self, config: dict = {}) -> None: ...
+    def __init__(
+        self,
+        devices: Sequence[max._core.driver.Device],
+        custom_extensions: Sequence[str | os.PathLike],
+        num_threads: int = 0,
+    ) -> None: ...
     def compile_from_path(
-        self, model_path: str | os.PathLike, config: dict = {}
+        self,
+        model_path: str | os.PathLike,
+        custom_extension_paths: Sequence[str | os.PathLike],
     ) -> Model: ...
     def compile_from_object(
-        self, model: object, config: dict = {}
+        self,
+        model: typing_extensions.CapsuleType,
+        custom_extensions: Sequence[str | os.PathLike],
+        pipeline_name: str,
     ) -> Model: ...
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str
