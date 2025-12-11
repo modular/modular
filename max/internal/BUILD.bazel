@@ -1,7 +1,5 @@
 load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library", "pkg_files")
 
-# gazelle:default_visibility //max:consumers
-
 package(default_visibility = ["//max:consumers"])
 
 modular_cc_library(
