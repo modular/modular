@@ -15,7 +15,6 @@ from math import exp, exp2, log
 from sys import simd_width_of
 
 from algorithm.functional import elementwise
-from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from testing import assert_almost_equal, assert_equal, TestSuite
@@ -32,8 +31,12 @@ def run_elementwise[
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
 
-    var in_buffer = NDBuffer[dtype, 1](in_device.unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[dtype, 1](out_device.unsafe_ptr(), Index(length))
+    var in_buffer = Span[Scalar[dtype]](
+        ptr=in_device.unsafe_ptr(), length=length
+    )
+    var out_buffer = Span[Scalar[dtype]](
+        ptr=out_device.unsafe_ptr(), length=length
+    )
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
@@ -42,9 +45,9 @@ def run_elementwise[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[1]](idx0)
-        var val = in_buffer.load[width=simd_width](idx)
+        var val = in_buffer.unsafe_ptr().load[width=simd_width](idx[0])
         var result = math_fn(val)
-        out_buffer.store[width=simd_width](idx, result)
+        out_buffer.unsafe_ptr().store[width=simd_width](idx[0], result)
 
     elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
 

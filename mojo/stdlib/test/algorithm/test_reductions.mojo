@@ -19,8 +19,6 @@ from algorithm import (
     variance,
 )
 from algorithm.reduction import _reduce_generator, max, min
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from builtin.math import max as _max
 from builtin.math import min as _min
 from testing import TestSuite
@@ -70,7 +68,7 @@ def test_fused_reductions_inner():
     comptime test_type = DType.float32
     comptime num_reductions = 3
     var vector_stack = InlineArray[Float32, size](fill=0)
-    var vector = NDBuffer[test_type, 1, _, size](vector_stack.unsafe_ptr())
+    var vector = Span(vector_stack)
 
     for i in range(size):
         vector[i] = i + 1
@@ -81,7 +79,7 @@ def test_fused_reductions_inner():
     fn input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
-        var loaded_val = vector.load[width=width](indices[0])
+        var loaded_val = vector.unsafe_ptr().load[width=width](indices[0])
         return loaded_val._refine[dtype]()
 
     var out = StaticTuple[Scalar[test_type], num_reductions]()
@@ -150,7 +148,7 @@ def test_fused_reductions_outer():
     comptime test_type = DType.float32
     comptime num_reductions = 3
     var vector_stack = InlineArray[Float32, size](fill=0)
-    var vector = NDBuffer[test_type, 1, _, size](vector_stack.unsafe_ptr())
+    var vector = Span(vector_stack)
 
     # COM: For the purposes of this test, we reinterpret this as a tensor
     # COM: of shape [50, 2] and reduce along the outer dimension.
@@ -165,7 +163,9 @@ def test_fused_reductions_outer():
     fn input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
-        var loaded_val = vector.load[width=width](indices[0] * 2 + indices[1])
+        var loaded_val = vector.unsafe_ptr().load[width=width](
+            indices[0] * 2 + indices[1]
+        )
         return loaded_val._refine[dtype]()
 
     @always_inline

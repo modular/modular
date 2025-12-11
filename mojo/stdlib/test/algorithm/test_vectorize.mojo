@@ -21,11 +21,13 @@ from testing import TestSuite
 def test_vectorize():
     # Create a mem of size 5
     var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
-    var vector = NDBuffer[DType.float32, 1, _, 5](vector_stack.unsafe_ptr())
+    var vector = Span(vector_stack)
 
     @always_inline
     fn add_two[width: Int](idx: Int) unified {var vector}:
-        vector.store[width=width](idx, vector.load[width=width](idx) + 2)
+        vector.unsafe_ptr().store[width=width](
+            idx, vector.unsafe_ptr().load[width=width](idx) + 2
+        )
 
     vectorize[2](len(vector), add_two)
 
@@ -37,9 +39,10 @@ def test_vectorize():
 
     @always_inline
     fn add[width: Int](idx: Int) unified {var vector}:
-        vector.store[width=width](
+        vector.unsafe_ptr().store[width=width](
             idx,
-            vector.load[width=width](idx) + vector.load[width=width](idx),
+            vector.unsafe_ptr().load[width=width](idx)
+            + vector.unsafe_ptr().load[width=width](idx),
         )
 
     vectorize[2](len(vector), add)
@@ -55,9 +58,9 @@ def test_vectorize_unroll():
     comptime buf_len = 23
 
     var vec_stack = InlineArray[Float32, buf_len](uninitialized=True)
-    var vec = NDBuffer[DType.float32, 1, _, buf_len](vec_stack.unsafe_ptr())
+    var vec = Span(vec_stack)
     var buf_stack = InlineArray[Float32, buf_len](uninitialized=True)
-    var buf = NDBuffer[DType.float32, 1, _, buf_len](buf_stack.unsafe_ptr())
+    var buf = Span(buf_stack)
 
     for i in range(buf_len):
         vec[i] = i
@@ -65,16 +68,18 @@ def test_vectorize_unroll():
 
     @always_inline
     fn double_buf[simd_width: Int](idx: Int) unified {var buf}:
-        buf.store[width=simd_width](
+        buf.unsafe_ptr().store[width=simd_width](
             idx,
-            buf.load[width=simd_width](idx) + buf.load[width=simd_width](idx),
+            buf.unsafe_ptr().load[width=simd_width](idx)
+            + buf.unsafe_ptr().load[width=simd_width](idx),
         )
 
     @always_inline
     fn double_vec[simd_width: Int](idx: Int) unified {var vec}:
-        vec.store[width=simd_width](
+        vec.unsafe_ptr().store[width=simd_width](
             idx,
-            vec.load[width=simd_width](idx) + vec.load[width=simd_width](idx),
+            vec.unsafe_ptr().load[width=simd_width](idx)
+            + vec.unsafe_ptr().load[width=simd_width](idx),
         )
 
     comptime simd_width = 4
@@ -83,7 +88,7 @@ def test_vectorize_unroll():
     vectorize[simd_width, unroll_factor=unroll_factor](len(vec), double_vec)
     vectorize[simd_width](len(buf), double_buf)
 
-    var err = memcmp(vec.data, buf.data, len(buf))
+    var err = memcmp(vec.unsafe_ptr(), buf.unsafe_ptr(), len(buf))
     assert_equal(err, 0)
 
 

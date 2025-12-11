@@ -15,7 +15,6 @@ from math import erf, exp, tanh
 from sys.info import simd_width_of
 
 from algorithm import elementwise
-from buffer import NDBuffer
 from testing import assert_almost_equal
 from testing import TestSuite
 
@@ -26,7 +25,7 @@ def test_elementwise_1d():
     comptime num_elements = 64
     var ptr = alloc[Float32](num_elements)
 
-    var vector = NDBuffer[DType.float32, 1, _, num_elements](ptr)
+    var vector = Span(ptr=ptr, length=num_elements)
 
     for i in range(len(vector)):
         vector[i] = i
@@ -37,9 +36,9 @@ def test_elementwise_1d():
     fn func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
-        var elem = vector.load[width=simd_width](idx[0])
+        var elem = vector.unsafe_ptr().load[width=simd_width](idx[0])
         var val = exp(erf(tanh(elem + 1)))
-        vector.store[width=simd_width](idx[0], val)
+        vector.unsafe_ptr().store[width=simd_width](idx[0], val)
 
     elementwise[func, simd_width_of[DType.float32]()](
         IndexList[1](num_elements)
