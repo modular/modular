@@ -14,19 +14,39 @@ Usage:
     br //max/kernels/benchmarks/misc/comparison:bench_prefill
 """
 
-load("//bazel:api.bzl", "modular_py_binary", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
 load("//max/kernels/benchmarks/misc/blackwell_bench:wheels.bzl", "blackwell_bench_wheel")
 
 package(default_visibility = ["//max:consumers"])
+
+# All dependencies and imports for baseline benchmarks
+modular_py_library(
+    name = "bench_baseline_lib",
+    srcs = [
+        "bench_blackwell_decode.py",
+        "bench_blackwell_mla_decode.py",
+    ],
+    # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
+    # nvidia-cutlass-dsl uses a .pth file which Bazel doesn't process.
+    # Path is relative from _main/max/kernels/benchmarks/misc/comparison/ in runfiles:
+    imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl@4.3.0/site-packages/nvidia_cutlass_dsl/python_packages"],
+    deps = [
+        blackwell_bench_wheel("flash-attn"),
+        blackwell_bench_wheel("flashinfer"),
+        blackwell_bench_wheel("deep-gemm"),
+        requirement("packaging"),
+        requirement("torch"),
+        "//max/kernels/benchmarks/autotune:bencher_utils",
+        "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        "//max/python/max",
+    ],
+)
 
 # MHA prefill benchmark: MAX vs FlashInfer vs flash-attention
 modular_py_binary(
     name = "bench_prefill",
     srcs = ["bench_blackwell_prefill.py"],
-    # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
-    # nvidia-cutlass-dsl uses a .pth file which Bazel doesn't process.
-    # Path is relative from _main/max/kernels/benchmarks/misc/comparison/ in runfiles:
-    imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl@4.3.0/site-packages/nvidia_cutlass_dsl/python_packages"],
     main = "bench_blackwell_prefill.py",
     tags = [
         "gpu",
@@ -34,11 +54,9 @@ modular_py_binary(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        blackwell_bench_wheel("flash-attn"),
-        blackwell_bench_wheel("flashinfer"),
         requirement("torch"),
-        "//max/python/max",
+        "//max/kernels/benchmarks/misc/comparison:bench_baseline_lib",
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
     ],
 )
 
@@ -61,10 +79,10 @@ modular_py_binary(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        blackwell_bench_wheel("deep-gemm"),
         requirement("packaging"),
         requirement("torch"),
+        "//max/kernels/benchmarks/misc/comparison:bench_baseline_lib",
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
     ],
 )
 

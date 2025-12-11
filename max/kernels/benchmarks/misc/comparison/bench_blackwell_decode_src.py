@@ -62,7 +62,7 @@ def bench_flashinfer(
     dtype: torch.dtype,
     use_tensor_cores: bool = True,
     backend: str = "fa",
-) -> tuple[float, float] | None:
+) -> tuple[float, int] | None:
     """Benchmark FlashInfer decode with paged KV cache.
 
     Args:
@@ -208,7 +208,7 @@ def bench_max(
     head_dim: int,
     page_size: int,
     dtype: torch.dtype,
-) -> tuple[float, float]:
+) -> tuple[float, int]:
     """Benchmark MAX flash_attention_ragged with paged KV cache.
 
     Args:
@@ -430,7 +430,7 @@ def bench_decode(
     head_dim: int,
     dtype: torch.dtype,
     engine: str,  # "modular_max" or "flashinfer"
-) -> None:
+) -> tuple[float, int] | None:
     """Run all MHA decode benchmarks and display results side-by-side.
 
     Args:
@@ -449,7 +449,7 @@ def bench_decode(
     )
     print("=" * 80)
 
-    result: tuple[float, float] | None = None
+    result: tuple[float, int] | None = None
     if engine == "flashinfer":
         # Run FlashInfer benchmark with TensorRT-LLM backend
         if _flashinfer is not None:
@@ -517,7 +517,7 @@ if __name__ == "__main__":
         engine=engine,
     )
 
-    met_ms, bytes = result
+    met_ms, bytes = result if result else [0, 0]
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 
     name = (
