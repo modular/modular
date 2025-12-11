@@ -48,8 +48,6 @@ fi
 
 # Pass a select group of environment variables to the `bazel` binary and to `bazel run`:
 passthrough_env=(
-  # Make sure user installed python modules don't make it in to the build
-  "PYTHONNOUSERSITE=affirmative"
   # Required for emojis to work in filenames
   "LANG=en_US.UTF-8"
   # This invalidates the crosstool if the Xcode version changes but the path to
