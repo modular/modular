@@ -688,7 +688,7 @@ class Tensor:
         """
 
     def __dlpack__(
-        self, *, stream: object | None = None
+        self, *, stream: int | None = None, **kwargs
     ) -> typing_extensions.CapsuleType:
         """Implements part of the dlpack contract."""
 
