@@ -26,6 +26,7 @@ lit_tests(
     ),
     data = [":fixtures"],
     mojo_deps = [
+        "//max:layout",
         "@mojo//:stdlib",
     ],
     tags = ["gpu"],
