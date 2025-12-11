@@ -661,6 +661,11 @@ class LoRAModel:
         scale = adapter_config["lora_alpha"] / adapter_config["r"]
         rank = adapter_config["r"]
 
+        if rank > self.max_lora_rank:
+            raise ValueError(
+                f"LoRA of rank {rank} exceeds maximum rank of {self.max_lora_rank}."
+            )
+
         # load all weights as numpy arrays
         for key, weight in weights.items():
             key = self._normalize_lora_key(key)
