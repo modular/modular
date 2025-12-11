@@ -56,7 +56,7 @@ static_assert(sizeof(std::thread::id) == 4 || sizeof(std::thread::id) == 8,
               "std::thread::id is expected to be either 4 or 8 bytes");
 
 using thread_id_t = std::thread::id;
-static const thread_id_t invalid_thread_id() {
+[[maybe_unused]] static const thread_id_t invalid_thread_id() {
   return thread_id_t();
 } // Default ctor creates invalid ID
 
