@@ -1,0 +1,52 @@
+diff --git a/cc/toolchains/args.bzl b/cc/toolchains/args.bzl
+index a852292..95cdf52 100644
+--- a/cc/toolchains/args.bzl
++++ b/cc/toolchains/args.bzl
+@@ -67,7 +67,7 @@ def _cc_args_impl(ctx):
+         )
+         files = nested.files
+     else:
+-        files = collect_files(ctx.attr.data + ctx.attr.allowlist_include_directories)
++        files = collect_files(ctx.attr.data)
+ 
+     requires = collect_provider(ctx.attr.requires_any_of, FeatureConstraintInfo)
+ 
+diff --git a/cc/toolchains/impl/legacy_converter.bzl b/cc/toolchains/impl/legacy_converter.bzl
+index 8f8a460..5e8a144 100644
+--- a/cc/toolchains/impl/legacy_converter.bzl
++++ b/cc/toolchains/impl/legacy_converter.bzl
+@@ -204,7 +204,7 @@ def convert_toolchain(toolchain):
+     ))
+ 
+     cxx_builtin_include_directories = [
+-        d.path
++        "%workspace%/" + d.path
+         for d in toolchain.allowlist_include_directories.to_list()
+     ]
+     cxx_builtin_include_directories += toolchain.allowlist_absolute_include_directories.to_list()
+diff --git a/cc/toolchains/impl/nested_args.bzl b/cc/toolchains/impl/nested_args.bzl
+index fa17d79..e59711d 100644
+--- a/cc/toolchains/impl/nested_args.bzl
++++ b/cc/toolchains/impl/nested_args.bzl
+@@ -99,7 +99,7 @@ def nested_args_provider_from_ctx(ctx, maybe_used_vars = []):
+         args = ctx.attr.args,
+         format = ctx.attr.format,
+         nested = collect_provider(ctx.attr.nested, NestedArgsInfo),
+-        files = collect_files(ctx.attr.data + getattr(ctx.attr, "allowlist_include_directories", [])),
++        files = collect_files(ctx.attr.data),
+         iterate_over = ctx.attr.iterate_over,
+         requires_not_none = _var(ctx.attr.requires_not_none),
+         requires_none = _var(ctx.attr.requires_none),
+diff --git a/cc/toolchains/tool.bzl b/cc/toolchains/tool.bzl
+index ee0a49b..51ba7c3 100644
+--- a/cc/toolchains/tool.bzl
++++ b/cc/toolchains/tool.bzl
+@@ -30,7 +30,7 @@ def _cc_tool_impl(ctx):
+     else:
+         fail("Expected cc_tool's src attribute to be either an executable or a single file")
+ 
+-    runfiles = collect_data(ctx, ctx.attr.data + [ctx.attr.src] + ctx.attr.allowlist_include_directories)
++    runfiles = collect_data(ctx, ctx.attr.data + [ctx.attr.src])
+     tool = ToolInfo(
+         label = ctx.label,
+         exe = exe,
