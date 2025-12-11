@@ -1,5 +1,7 @@
 """A repository rule for creating wheel accessors. Not enabled by default for compatibility with modular's internal repo."""
 
+load("@module_versions//:config.bzl", "PYTHON_VERSIONS_DOTTED")
+
 _PLATFORM_MAPPINGS = {
     "linux_aarch64": "manylinux_2_34_aarch64",
     "linux_x86_64": "manylinux_2_34_x86_64",
@@ -11,21 +13,13 @@ _WHEELS = [
     "mojo_compiler",
 ]
 
-PYTHON_VERSIONS = [
-    "310",
-    "311",
-    "312",
-    "313",
-    "314",
-]
-
 def _rebuild_wheel(rctx):
-    for py_version in PYTHON_VERSIONS:
+    for py_version in PYTHON_VERSIONS_DOTTED:
         rctx.download_and_extract(
             url = "{base_url}/max-{version}-cp{py}-cp{py}-{platform}.whl".format(
                 base_url = rctx.attr.base_url,
                 version = rctx.attr.version,
-                py = py_version,
+                py = py_version.replace(".", ""),
                 platform = _PLATFORM_MAPPINGS[rctx.attr.platform],
             ),
         )
