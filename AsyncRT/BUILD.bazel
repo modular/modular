@@ -2,8 +2,15 @@ load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
 
 # gazelle:default_visibility //AsyncRT:consumers
+# gazelle:default_features layering_check,parse_headers
 
-package(default_visibility = ["//AsyncRT:consumers"])
+package(
+    default_visibility = ["//AsyncRT:consumers"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
 
 package_group(
     name = "consumers",
@@ -185,6 +192,15 @@ modular_cc_library(
 
 modular_cc_library(
     name = "NIXL",
+    hdrs = glob(
+        [
+            "include/AsyncRT/NIXL/**/*.h",
+        ],
+        exclude = [
+            "include/AsyncRT/NIXL/plugins/ucx/**",
+            "include/AsyncRT/NIXL/utils/ucx/**",
+        ],
+    ),
     data = select({
         "//:linux_x86_64": [
             ":plugin_ucx_cpu",
@@ -195,9 +211,15 @@ modular_cc_library(
         ],
         "//conditions:default": [],
     }),
+    include_prefix = "",
+    strip_include_prefix = "include",
+    tags = ["no-clang-tidy"],  # Copied code doesn't conform to our style
     deps = [
         ":NIXLLibOnly",
         "//AsyncRT:DeviceContext",
+        "//Support:Base",
+        "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
     ],
 )
 

@@ -2,7 +2,13 @@ load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_test")
 
 # gazelle:default_visibility //visibility:private
 
-package(default_visibility = ["//visibility:private"])
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
 
 modular_cc_test(
     name = "QueueBenchmark",
@@ -22,6 +28,7 @@ modular_cc_binary(
     target_compatible_with = ["//:nvidia_gpu"],
     deps = [
         "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -34,5 +41,6 @@ modular_cc_binary(
     deps = [
         "//AsyncRT:DeviceContext",
         "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
     ],
 )
