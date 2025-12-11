@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: mojo/tools/notebooks.mdx
-
 
 # Compiler-parameterized function
 fn repeat[count: Int](msg: String):

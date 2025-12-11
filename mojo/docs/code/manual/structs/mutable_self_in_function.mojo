@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: mojo/manual/struct.mdx
-
 
 struct MyStruct:
     var value: Int

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: mojo/manual/decorators/fieldwise-init
 
 from math import Floorable, floor
 

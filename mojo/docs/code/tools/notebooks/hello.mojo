@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: mojo/tools/notebooks.mdx
-
 
 def main():
     print("Hello Mojo")

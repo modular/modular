@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Tested on T4 GPU 2 Dec 2025
-# DOC: mojo/tools/notebooks.mdx
+
 
 from gpu import thread_idx
 from gpu.host import DeviceContext
