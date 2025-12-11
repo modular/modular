@@ -697,7 +697,6 @@ fn test_ragged[
     print(msg)
 
     # Create variable length sequences
-    seq_lens = List[Int]()
     total_tokens = 0
 
     # Create cache row offsets
@@ -712,7 +711,8 @@ fn test_ragged[
     )
 
     # First pass: calculate sequence lengths and total tokens
-    for i in range(batch_size):
+    seq_lens = List[Int](capacity=batch_size)
+    for _ in range(batch_size):
         seq_len = Int(random_ui64(100, 500))
         seq_lens.append(seq_len)
         total_tokens += seq_len

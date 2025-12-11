@@ -98,7 +98,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
-    var nstime = 0.0
+    var nstime: Float64
     var kernelType: StaticString
     if N == 1:
         run_func_gemv(ctx)

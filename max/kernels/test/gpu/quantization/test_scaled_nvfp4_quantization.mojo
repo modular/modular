@@ -147,7 +147,7 @@ fn test_dynamic_fp4_quant[
 
                 for row_idx in range(0, m):
                     for col_idx in range(0, n, SF_VECTOR_SIZE):
-                        var vec_max = Scalar[DType.float32](0.0)
+                        var vec_max: Float32
                         # kernel support N shapes that are multiples of (SF_VECTOR_SIZE // 2).
                         # Here we handle the oob case by loading only the first half of the SF_VECTOR_SIZE.
                         if (n % SF_VECTOR_SIZE != 0) and (

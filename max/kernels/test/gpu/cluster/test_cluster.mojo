@@ -137,12 +137,11 @@ fn pipeline_test_kernel[
         block_id_in_cluster.x == 0 and block_id_in_cluster.y == 0
     )
     var wid = thread_idx.x // 32
-    var lane_predicate = elect_one_sync()
 
     var pipeline_state = PipelineState[num_stages]()
     var pipeline_state_write = PipelineState[num_stages](0, 1, 0)
 
-    if thread_idx.x == 0:
+    if elect_one_sync():
 
         @parameter
         for i in range(num_stages):

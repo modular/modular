@@ -43,7 +43,6 @@ fn fill_random_for_test[
     """Fill buffer with random values, optionally normalizing to probabilities.
 
     Parameters:
-        rank: Rank of the buffer.
         dtype: Data type of the buffer.
         normalized: If True, normalize each row to sum to 1.0 (probabilities).
                    If False, use raw random values (logits).
