@@ -38,10 +38,6 @@ from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
 from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
-
-# TODO(GEX-1846): Get rid of this include.
-from max.driver import CPU
-from max.engine import InferenceSession  # type: ignore
 from max.mlir.dialects import mo
 from mojo.paths import (
     _build_mojo_source_package,
@@ -154,6 +150,9 @@ class KernelLibrary:
     def __init__(self, context: mlir.Context, paths: list[Path] = []) -> None:  # noqa: B006
         # TODO(GEX-1846): This is a terrible workaround to initialize M::Context on the Graph API.
         # Get rid of this and properly setup the context instead.
+        from max.driver import CPU
+        from max.engine import InferenceSession  # type: ignore
+
         mock_session = InferenceSession(devices=[CPU()])
         mock_session._impl.register_runtime_context(context)
 

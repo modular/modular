@@ -19,7 +19,7 @@ import os
 import signal
 import sys
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
@@ -32,6 +32,7 @@ from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max.driver import Device, DLPackArray, Tensor
+from max.graph import Graph
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 
@@ -41,7 +42,7 @@ from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 
 InputShape = list[int | str | None] | None
 CustomExtensionType = str | Path
-CustomExtensionsType = list[CustomExtensionType] | CustomExtensionType
+CustomExtensionsType = Sequence[CustomExtensionType] | CustomExtensionType
 
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
 
@@ -164,17 +165,6 @@ def _is_torch_tensor(obj: Any) -> bool:
 def _is_torch_metadata_module(obj: Any) -> bool:
     """Checks if an object is an `TorchMetadata`."""
     return type(obj).__name__ == "TorchMetadata"
-
-
-def _is_max_graph(obj: Any) -> bool:
-    """Checks if an object is `max.graph.Graph`."""
-    # TODO(MSDK-677): We should use isinstance here once max.graph
-    # is available in nightlies.
-    object_kind = type(obj)
-    return (
-        object_kind.__name__ == "Graph"
-        and object_kind.__module__.startswith("max.graph")
-    )
 
 
 def _process_custom_extensions_object(
@@ -328,7 +318,7 @@ class InferenceSession:
 
     def load(
         self,
-        model: str | Path | Any,
+        model: str | Path | Graph,
         *,
         custom_extensions: CustomExtensionsType | None = None,
         custom_ops_path: str | None = None,
@@ -370,19 +360,16 @@ class InferenceSession:
             custom_extensions_final.extend(
                 _process_custom_extensions_objects(custom_ops_path)
             )
-        if _is_max_graph(model):
-            custom_extensions_final.extend(
-                _process_custom_extensions_objects(model.kernel_libraries_paths)  # type: ignore
-            )
 
-        if isinstance(model, str | bytes):
-            model = Path(str(model))
-
-        if isinstance(model, Path):
+        if isinstance(model, Path | str):
             _model = self._impl.compile_from_path(
                 model, custom_extensions_final
             )
-        elif _is_max_graph(model):
+        elif isinstance(model, Graph):
+            custom_extensions_final.extend(
+                _process_custom_extensions_objects(model.kernel_libraries_paths)
+            )
+
             # TODO: if the model has been loaded from a serialized MLIR file, we don't have
             # the _weights attribute available to us
             if hasattr(model, "_weights"):
@@ -408,7 +395,7 @@ class InferenceSession:
             with self._compilation_lock:
                 try:
                     _model = self._impl.compile_from_object(
-                        model._module._CAPIPtr,
+                        model._module._CAPIPtr,  # type: ignore
                         custom_extensions_final,
                         model.name,
                     )
@@ -423,9 +410,9 @@ class InferenceSession:
         else:
             raise RuntimeError("The model is not a valid path or module.")
 
-        for weight_name, weight in weights_registry_real.items():
+        for weight_name, weight_value in weights_registry_real.items():
             try:
-                _raise_if_not_contiguous(weight)
+                _raise_if_not_contiguous(weight_value)
             except ValueError as e:
                 raise ValueError(
                     f"Weight '{weight_name}' is not contiguous: {str(e)}"
