@@ -41,10 +41,11 @@ var s = String(c)  # "A"
 """
 
 
-from sys.intrinsics import likely
+from sys.intrinsics import likely, unlikely
 
 from bit import count_leading_zeros
 from bit._mask import splat
+from collections.string._utf8 import _is_valid_utf8
 
 
 @always_inline
@@ -194,22 +195,25 @@ struct Codepoint(
 
         return char
 
-    # TODO: add optimize_ascii and branchless optimization options like unsafe_write_utf8
     @staticmethod
-    fn unsafe_decode_utf8_codepoint(
-        s: Span[mut=False, UInt8, *_],
-    ) -> Tuple[Codepoint, Int]:
+    fn unsafe_decode_utf8_codepoint[
+        fallback_empty_codepoint: Bool = True
+    ](s: Span[mut=False, UInt8, *_],) -> Tuple[Codepoint, Int]:
         """Decodes a single `Codepoint` and number of bytes read from a given
         UTF-8 string pointer.
+
+        Parameters:
+            fallback_empty_codepoint: Whether to provide a fallback in case that
+                the buffer is empty (discouraged, but provided for safety).
+
+        Args:
+            s: Span to UTF-8 encoded data containing at least one valid
+                encoded codepoint.
 
         Safety:
             `_ptr` MUST point to the first byte in a **known-valid** UTF-8
             character sequence. This function MUST NOT be used on unvalidated
             input.
-
-        Args:
-            s: Span to UTF-8 encoded data containing at least one valid
-                encoded codepoint.
 
         Returns:
             The decoded codepoint `Codepoint`, as well as the number of bytes
@@ -224,11 +228,18 @@ struct Codepoint(
         var ptr = s.unsafe_ptr()
         var end = ptr + len(s)
 
-        if ptr == end:
-            return Codepoint(0), 0
+        @parameter
+        if fallback_empty_codepoint:
+            if unlikely(ptr == end):
+                debug_assert(
+                    False,
+                    "Cannot parse an empty string as a codepoint, using ",
+                    "NUL (0) as a safe fallback",
+                )
+                return Codepoint(0), 0
 
         var b1 = ptr[]
-        if (b1 >> 7) == 0:  # This is 1 byte ASCII char
+        if likely((b1 >> 7) == 0):  # This is 1 byte ASCII char
             return Codepoint(b1), 1
 
         # NOTE: _utf8_first_byte_sequence_length does the same + an op to check
@@ -236,6 +247,13 @@ struct Codepoint(
         var num_bytes = count_leading_zeros(~b1)
         debug_assert(
             1 < Int(num_bytes) < 5, "invalid UTF-8 byte ", b1, " at index 0"
+        )
+        # NOTE: This filters out worries about unpaired surrogate pairs at the
+        # end of a buffer that would cause OOB access. Also, the docstrings are
+        # clear enough that this should never be used for unvalidated input.
+        debug_assert(
+            _is_valid_utf8(Span(ptr=ptr, length=min(Int(num_bytes), len(s)))),
+            "expected valid utf-8. This function is unsafe otherwise.",
         )
 
         var shift = Int((6 * (num_bytes - 1)))
@@ -257,10 +275,6 @@ struct Codepoint(
         # SAFETY: Safe because the input bytes are required to be valid UTF-8,
         #   and valid UTF-8 will never decode to an out of bounds codepoint
         #   using the above algorithm.
-        # FIXME:
-        #   UTF-8 encoding algorithms that do not properly exclude surrogate
-        #   pair code points are actually relatively common (as I understand
-        #   it); the algorithm above does not check for that.
         var char = Codepoint(unsafe_unchecked_codepoint=result)
         return char, Int(num_bytes)
 
