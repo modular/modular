@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 import pytest
@@ -21,17 +19,19 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorType
 from rms_helpers import SHAPES, run_test_norm
 
-CPU_DTYPES = (DType.float32, DType.float64)
+# TODO(MAXPLAT-118): float64 and float16 is broken for GPU
+# GPU_DTYPES = (*CPU_DTYPES, DType.bfloat16)
+GPU_DTYPES = (DType.float32,)
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("dtype", CPU_DTYPES)
-def test_norm(
-    session: InferenceSession, shape: Sequence[int], dtype: DType
+@pytest.mark.parametrize("dtype", GPU_DTYPES)
+def test_norm_gpu(
+    gpu_session: InferenceSession, shape: Sequence[int], dtype: DType
 ) -> None:
     run_test_norm(
-        session,
-        TensorType(dtype, shape, device=DeviceRef.CPU()),
+        gpu_session,
+        TensorType(dtype, shape, device=DeviceRef.GPU()),
         rtol=1e-4,
         atol=1e-8,
     )
