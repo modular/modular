@@ -53,21 +53,21 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
-    TMANestedTensorTile,
 )
 from nn.mha_fa3_utils import (
+    _apply_mask,
+    _get_position,
+    get_q_head_idx,
+    KVTMATile,
     MHAPosition,
     NonNullPointer,
     NullPointer,
     OptionalPointer,
-    Pack,
-    QTMATile,
-    _apply_mask,
-    _get_position,
     output_reg_to_smem,
+    Pack,
     produce,
-    q_out_tma,
-    get_q_head_idx,
+    q_tma,
+    QTMATile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -198,27 +198,26 @@ fn mha_sm90_dispatch[
             KVType.dtype,
             swizzle_mode,
             BM = Int(new_config.block_m()),
-            depth = Int(new_config.padded_depth),
+            depth = Int(new_config.depth),
             group=group,
             decoding = _is_decoding[MaxPromptLenType](),
         ]
     ](
-        q_out_tma[
+        q_tma[
             swizzle_mode,
             BM = Int(BM),
             depth = Int(new_config.depth),
-            padded_depth = Int(new_config.padded_depth),
             q_num_heads = Int(new_config.num_heads),
             group=group,
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
-    k_tma_op = k.create_tma_tile[
-        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=True
-    ](ctx)
-    v_tma_op = v.create_tma_tile[
-        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=False
-    ](ctx)
+    k_tma_op = k.create_tma_tile[Int(BN), Int(new_config.depth), swizzle_mode](
+        ctx
+    )
+    v_tma_op = v.create_tma_tile[Int(BN), Int(new_config.depth), swizzle_mode](
+        ctx
+    )
 
     # materialize scheduler, call max prompt len
     @parameter
@@ -392,23 +391,21 @@ fn _mha_sm90_sink_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BM = Int(config.block_m()),
-        depth = Int(config.padded_depth),
+        depth = Int(config.depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=True,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=False,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -537,23 +534,21 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BM = Int(config.block_m()),
-        depth = Int(config.padded_depth),
+        depth = Int(config.depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=True,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=False,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -676,23 +671,21 @@ fn _mha_sm90_valid_length_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BM = Int(config.block_m()),
-        depth = Int(config.padded_depth),
+        depth = Int(config.depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=True,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=False,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -810,23 +803,21 @@ fn _mha_sm90_enqueue[
         KVLUTType.dtype,
         swizzle_mode,
         BM = Int(config.block_m()),
-        depth = Int(config.padded_depth),
+        depth = Int(config.depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=True,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=False,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -934,23 +925,21 @@ fn _mha_sm90[
         KVLUTType.dtype,
         swizzle_mode,
         BM = Int(config.block_m()),
-        depth = Int(config.padded_depth),
+        depth = Int(config.depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=True,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=False,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type]],
     kv_lut: KVLUTType,
@@ -1024,8 +1013,18 @@ fn _mha_sm90[
         Int(config.padded_depth),
         swizzle_mode=swizzle_mode,
     ]()
-    comptime k_smem_layout = k_tma_op.layout
-    comptime v_smem_layout = v_tma_op.layout
+    comptime k_smem_layout = tile_layout_k_major[
+        DType.bfloat16,
+        Int(BN),
+        Int(config.padded_depth),
+        swizzle_mode=swizzle_mode,
+    ]()
+    comptime v_smem_layout = tile_layout_mn_major[
+        DType.bfloat16,
+        Int(config.padded_depth),
+        Int(BN),
+        swizzle_mode=swizzle_mode,
+    ]()
     # for wgmma_0, we multiply BM x depth @ depth x BN -> BM x BN
     # for wgmma_1, we multiply BM x BN @ BN x depth -> BM x depth
     # For wgmma_0, we iterate over (depth//BK) tiles of size BKxBN
@@ -1188,7 +1187,8 @@ fn _mha_sm90[
     consumed_mbar_q = produced_mbar_q + 2
     block_idx_ptr = (consumed_mbar_q + 2).bitcast[UInt32]()
 
-    comptime USE_TMA = True
+    # comptime USE_TMA = True
+    comptime USE_TMA = False
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
     comptime num_producer_regs = 56 if num_consumer == 1 else (
         (24 if USE_TMA else 56) if num_consumer == 2 else 32
@@ -1334,6 +1334,7 @@ fn _mha_sm90[
         warpgroup_reg_dealloc[num_producer_regs]()
         if thread_idx.x == 0:
             produce[
+                swizzle_mode,
                 pipeline_stages=pipeline_stages,
                 ragged=ragged,
                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -1481,6 +1482,7 @@ fn _mha_sm90[
             k_smem_sub = k_tile(read_idx)
             var q_smem_sub = q_consumer(q_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
+
             warpgroup_fence(p_reg_tile)
             wgmma_0.arrive()
             wgmma_0.wgmma[

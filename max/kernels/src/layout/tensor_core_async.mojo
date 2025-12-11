@@ -1006,7 +1006,7 @@ struct TensorCoreAsync[
             ".\na_frag_tile.layout[0].shape[0].value() = ",
             String(a_frag_tile.layout[0].shape[0].value()),
             "\nnum_k_mmas = ",
-            String(num_k_mmas),
+            String(num_k_mmas) + "\nb_smem_layout = " + String(b_smem_layout),
         ]()
 
         b_desc = _wgmma_descriptor[

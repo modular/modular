@@ -76,13 +76,14 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
-    TMANestedTensorTile,
     RaggedTensorMap,
 )
 from logger import Logger
 from memory import bitcast
 from nn.mha_fa3_utils import (
     get_seq_info,
+    kv_coord,
+    KVTMATile,
     MHAPosition,
     NonNullPointer,
     NullPointer,
@@ -91,7 +92,8 @@ from nn.mha_fa3_utils import (
     Pack,
     PositionSummary,
     produce,
-    q_out_tma,
+    q_coord,
+    q_tma,
     QTMATile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus, MASK_VALUE
@@ -1334,21 +1336,16 @@ fn mha_sm100_dispatch[
         IndexList[1](out_depth),
     )
 
-    q_tma_op = q_out_tma[
+    q_tma_op = q_tma[
         swizzle_mode,
         BM = BM // 2,
         depth = fa4_config.depth,
-        padded_depth = fa4_config.BK0,
         q_num_heads = fa4_config.num_q_heads,
         group = fa4_config.group,
         decoding=False,
     ](ctx, q, num_rows_q)
-    k_tma_op = k.create_tma_tile[
-        BN, fa4_config.BK0, swizzle_mode, is_k_major=True
-    ](ctx)
-    v_tma_op = v.create_tma_tile[
-        fa4_config.BK1, fa4_config.padded_depth, swizzle_mode, is_k_major=False
-    ](ctx)
+    k_tma_op = k.create_tma_tile[BN, fa4_config.depth, swizzle_mode](ctx)
+    v_tma_op = v.create_tma_tile[BN, fa4_config.depth, swizzle_mode](ctx)
     constrained[BM == 256]()
     comptime SchedulerType = TransientScheduler[BM, fa4_config.num_q_heads]
     var scheduler: SchedulerType = SchedulerType()
@@ -1463,23 +1460,21 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BM = config.BM // 2,
-        depth = config.BK0,
+        depth = config.depth,
         group = config.group,
         decoding=False,
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        config.BN,
-        config.BK0,
         swizzle_mode,
-        is_k_major=True,
+        BN = config.BN,
+        depth = config.depth,
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        config.BK1,
-        config.padded_depth,
         swizzle_mode,
-        is_k_major=False,
+        BN = config.BN,
+        depth = config.depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1616,23 +1611,21 @@ fn _mha_sm100_valid_length_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BM = config.BM // 2,
-        depth = config.BK0,
+        depth = config.depth,
         group = config.group,
         decoding=False,
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        config.BN,
-        config.BK0,
         swizzle_mode,
-        is_k_major=True,
+        BN = config.BN,
+        depth = config.depth,
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        config.BK1,
-        config.padded_depth,
         swizzle_mode,
-        is_k_major=False,
+        BN = config.BN,
+        depth = config.depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1764,23 +1757,21 @@ fn _mha_sm100_enqueue[
         KVLUTType.dtype,
         swizzle_mode,
         BM = config.BM // 2,
-        depth = config.BK0,
+        depth = config.depth,
         group = config.group,
         decoding=False,
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        config.BN,
-        config.BK0,
         swizzle_mode,
-        is_k_major=True,
+        BN = config.BN,
+        depth = config.depth,
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        config.BK1,
-        config.padded_depth,
         swizzle_mode,
-        is_k_major=False,
+        BN = config.BN,
+        depth = config.depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -2446,9 +2437,6 @@ fn apply_mask[
 
         @parameter
         if masked:
-            # if thread_idx.x == 0:
-            #     print("score_row score_col n =", score_row, score_col, n)
-
             s = mask.mask(
                 IndexList[4, element_type = DType.uint32](
                     Int(prompt_idx),
@@ -2682,23 +2670,21 @@ struct SM100MHA2Q[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
             BM = Self.config.BM // 2,
-            depth = Self.config.BK0,
+            depth = Self.config.depth,
             group = Self.config.group,
             decoding=False,
         ],
-        k_tma_op: TMANestedTensorTile[
+        k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
-            Self.config.BN,
-            Self.config.padded_depth,
             Self.config.swizzle_mode,
-            is_k_major=True,
+            BN = Self.config.BN,
+            depth = Self.config.depth,
         ],
-        v_tma_op: TMANestedTensorTile[
+        v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
-            Self.config.BN,
-            Self.config.padded_depth,
             Self.config.swizzle_mode,
-            is_k_major=False,
+            BN = Self.config.BN,
+            depth = Self.config.depth,
         ],
         o_ptr_arg: UnsafePointer[Scalar[Self.output_type]],
         ragged_tma_store: RaggedTensorMap[
@@ -3243,14 +3229,10 @@ struct SM100MHA2Q[
             ) if has_remainder else batch_size
             s0 = TMemTile[Self.accum_type, BM, first_cols](s_tmem).load_async()
             tcgen05_load_wait()
-            # if thread_idx.x == 0:
-            #     print("s0[0:8] =", s0.vectorize[8]()[0])
             s1 = TMemTile[Self.accum_type, BM, batch_size](
                 s_tmem + first_cols
             ).load_async()
             mask_row[masked=masked, last_iter=last_iter](s0, kv_row)
-            # if thread_idx.x == 0:
-            #     print("m0[0:8] =", s0.vectorize[8]()[0])
             vrow_max = maximum[width = Self.simd_size](s0)
 
             s.ptr.store(s0.ptr.load[width=first_cols]())
@@ -3789,23 +3771,21 @@ struct SM100MHA2Q[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
             BM = Self.config.BM // 2,
-            depth = Self.config.BK0,
+            depth = Self.config.depth,
             group = Self.config.group,
             decoding=False,
         ],
-        k_tma_op: TMANestedTensorTile[
+        k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
-            Self.config.BN,
-            Self.config.padded_depth,
             Self.config.swizzle_mode,
-            is_k_major=True,
+            BN = Self.config.BN,
+            depth = Self.config.depth,
         ],
-        v_tma_op: TMANestedTensorTile[
+        v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
-            Self.config.BN,
-            Self.config.padded_depth,
             Self.config.swizzle_mode,
-            is_k_major=False,
+            BN = Self.config.BN,
+            depth = Self.config.depth,
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
@@ -3822,19 +3802,8 @@ struct SM100MHA2Q[
         comptime QType = SMemTensor[type_of(q_tma_op).layout]
         comptime KType = SMemTensor[type_of(k_tma_op).layout]
         comptime VType = SMemTensor[type_of(v_tma_op).layout]
-        constrained[
-            QType.layout
-            == tile_layout_k_major[
-                Self.qkv_type,
-                Self.config.BM // 2,
-                Self.config.BK0,
-                Self.config.swizzle_mode,
-            ]()
-        ]()
-        constrained[KType.layout == KVPipeType.KType.layout]()
-        constrained[VType.layout == KVPipeType.VType.layout]()
 
-        var kv_col: UInt32 = kv_lut.col_idx(seq_info.head_idx // Self.group)
+        var kv_head_idx: UInt32 = seq_info.head_idx // Self.group
 
         comptime q_elements = (Self.config.BM // 2) * Self.config.BK0
         comptime q_bytes = size_of[Self.qkv_type]() * q_elements
@@ -3848,7 +3817,7 @@ struct SM100MHA2Q[
         var q_gmem_row: UInt32 = Self.PositionType.get_q_gmem_row[
             ragged = Self.ragged
         ](seq_info, max_seq_len)
-        var q_col: UInt32 = seq_info.head_idx * Self.depth
+        var q_head_idx: UInt32 = seq_info.head_idx
         elect = elect() != 0
         # copy q0
         if elect:
@@ -3857,7 +3826,11 @@ struct SM100MHA2Q[
             q_tma_op.async_copy(
                 QType(q_smem),
                 mbark0.mbar[],
-                (UInt(q_col), UInt(q_gmem_row)),
+                q_coord[
+                    depth = Self.depth,
+                    swizzle_granularity = Self.swizzle_granularity,
+                    decoding=False,
+                ](q_gmem_row, q_head_idx),
             )
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
@@ -3875,7 +3848,10 @@ struct SM100MHA2Q[
             k_tma_op.async_copy(
                 mbark0.smem,
                 mbark0.mbar[],
-                (UInt(kv_col), UInt(kv_gmem_row)),
+                kv_coord[
+                    depth = Self.depth,
+                    swizzle_granularity = Self.swizzle_granularity,
+                ](kv_gmem_row, kv_head_idx),
             )
         pipeline_kv.commit_kv_step()
         if elect:
@@ -3885,10 +3861,11 @@ struct SM100MHA2Q[
             q_tma_op.async_copy(
                 QType(q_smem + q_elements),
                 q1_mbar,
-                (
-                    UInt(q_col),
-                    UInt(q_gmem_row + Self.config.BM // 2),
-                ),
+                q_coord[
+                    depth = Self.depth,
+                    swizzle_granularity = Self.swizzle_granularity,
+                    decoding=False,
+                ](q_gmem_row + Self.config.BM // 2, q_head_idx),
             )
         # copy v0
         if elect:
@@ -3896,7 +3873,10 @@ struct SM100MHA2Q[
             v_tma_op.async_copy(
                 mbarv0.smem,
                 mbarv0.mbar[],
-                (UInt(kv_col), UInt(kv_gmem_row)),
+                kv_coord[
+                    depth = Self.depth,
+                    swizzle_granularity = Self.swizzle_granularity,
+                ](kv_gmem_row, kv_head_idx),
             )
         pipeline_kv.commit_kv_step()
         comptime check_mask = mask.nonfull_sets[Self.BM, Self.BN]()[
@@ -3922,7 +3902,10 @@ struct SM100MHA2Q[
                 k_tma_op.async_copy(
                     mbarkn.smem,
                     mbarkn.mbar[],
-                    (UInt(kv_col), UInt(kv_gmem_row)),
+                    kv_coord[
+                        depth = Self.depth,
+                        swizzle_granularity = Self.swizzle_granularity,
+                    ](kv_gmem_row, kv_head_idx),
                 )
             pipeline_kv.commit_kv_step()
             pipeline_kv.acquire_kv()
@@ -3931,7 +3914,10 @@ struct SM100MHA2Q[
                 v_tma_op.async_copy(
                     mbarvn.smem,
                     mbarvn.mbar[],
-                    (UInt(kv_col), UInt(kv_gmem_row)),
+                    kv_coord[
+                        depth = Self.depth,
+                        swizzle_granularity = Self.swizzle_granularity,
+                    ](kv_gmem_row, kv_head_idx),
                 )
             pipeline_kv.commit_kv_step()
 
@@ -4011,6 +3997,7 @@ struct SM100MHA2Q[
         pipeline_kv.release_k(e)  # [kv0]->kv1
 
         vlatest = pipeline_kv.wait_v[mma_stage=0]()  # [kv1]
+
         # For the first V tile in the current KV stage buffer:
         # Use the SAME base pointer you used for K (no manual offset).
         _ = consumer_s0[].wait(0)

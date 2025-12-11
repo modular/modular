@@ -39,10 +39,13 @@ from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import st_matrix_n_layout, tile_layout_k_major
 from layout.tma_async import (
+    create_split_tma,
     PipelineState,
     SharedMemBarrier,
-    TMANestedTensorTile,
-    create_nested_tma_tile,
+    _should_split_last_dim,
+    SplitLastDimTMATensorTile,
+    _split_last_layout,
+    TMATensorTile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -65,6 +68,7 @@ from nn.mha_utils import (
 )
 
 from utils.index import Index, IndexList
+from utils.static_tuple import StaticTuple
 from builtin.device_passable import DevicePassable
 from utils import StaticTuple
 
@@ -666,15 +670,84 @@ fn _get_position[
     @parameter
     if _is_decoding[MaxSeqLenType]():
         # q matrix view is rows x depth
-        q_row = q_row * q_num_heads + seq_info.head_idx * group
         q_col = 0
-        q_offset = Int(depth) * Int(q_row)
+        q_offset = Int(depth) * Int(
+            q_row * q_num_heads + seq_info.head_idx * group
+        )
     else:  # head_idx is for q_heads
         # q matrix view is rows x (depth*q_num_heads)
         q_row += seq_info.prompt_offset
         q_col = seq_info.head_idx * depth
         q_offset = Int(depth * q_num_heads) * Int(q_row) + Int(q_col)
     ret = {q_row, q_col, q_offset, num_keys, start_pos, seq_info}
+
+
+fn q_smem_shape[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    group: Int,
+    depth: Int,
+    decoding: Bool,
+](
+    out res: IndexList[
+        3 if not decoding else (
+            5 if _should_split_last_dim[dtype](depth, swizzle_mode) else 4
+        )
+    ]
+):
+    comptime L = res.size
+    constrained[L in (3, 4, 5)]()
+
+    @parameter
+    if L == 3:  # prefill
+        return {BM, 1, depth}
+    else:
+        comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
+
+        @parameter
+        if L == 4:  # decoding, no split
+            return {1, 1, max(group, 8), swizzle_granularity}
+        else:  # decoding, split
+            return {1, 1, max(group, 8), 1, swizzle_granularity}
+
+
+fn q_gmem_shape[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    group: Int,
+    q_num_heads: Int,
+    depth: Int,
+    decoding: Bool,
+](
+    out res: IndexList[
+        3 if not decoding else (
+            5 if _should_split_last_dim[dtype](depth, swizzle_mode) else 4
+        )
+    ]
+):
+    comptime L = res.size
+    constrained[L in (3, 4, 5)]()
+
+    @parameter
+    if L == 3:  # prefill
+        return {UNKNOWN_VALUE, q_num_heads, depth}
+    else:
+        comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
+
+        @parameter
+        if L == 4:  # decoding, no split
+            return {UNKNOWN_VALUE, q_num_heads // group, group, depth}
+        else:  # decoding, split
+            return {
+                UNKNOWN_VALUE,
+                q_num_heads // group,
+                group,
+                depth // swizzle_granularity,
+                swizzle_granularity,
+            }
 
 
 comptime QTMATile[
@@ -685,23 +758,34 @@ comptime QTMATile[
     depth: Int,
     group: Int,
     decoding: Bool,
-] = TMANestedTensorTile[
+] = SplitLastDimTMATensorTile[
     dtype,
-    max(group, 8) if decoding else BM,
-    64 if decoding else depth,
+    q_smem_shape[
+        dtype, swizzle_mode, BM=BM, group=group, depth=depth, decoding=decoding
+    ](),
     swizzle_mode,
-    is_k_major=True,
+]
+
+comptime KVTMATile[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BN: Int,
+    depth: Int,
+] = SplitLastDimTMATensorTile[
+    dtype,
+    IndexList[3](BN, 1, depth),
+    swizzle_mode,
 ]
 
 
 @always_inline
-fn q_out_tma[
+fn q_tma[
     dtype: DType, //,
     swizzle_mode: TensorMapSwizzle,
     *,
     BM: Int,
     depth: Int,
-    padded_depth: Int,
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
@@ -709,28 +793,27 @@ fn q_out_tma[
     ctx: DeviceContext,
     ptr: UnsafePointer[Scalar[dtype]],
     rows: Int,
-    out res: QTMATile[
+) raises -> QTMATile[
+    dtype,
+    swizzle_mode,
+    BM=BM,
+    depth=depth,
+    group=group,
+    decoding=decoding,
+]:
+    comptime smem_dim = q_smem_shape[
+        dtype, swizzle_mode, BM=BM, group=group, depth=depth, decoding=decoding
+    ]()
+    comptime gmem_dim = q_gmem_shape[
         dtype,
         swizzle_mode,
-        BM=BM,
-        depth=padded_depth,
         group=group,
+        q_num_heads=q_num_heads,
+        depth=depth,
         decoding=decoding,
-    ],
-) raises:
-    comptime tile_cols: Int = 64 if decoding else padded_depth
-    comptime matrix_cols: Int = depth if decoding else depth * q_num_heads
-
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, matrix_cols)
-    rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, matrix_cols))
-    var tensor = LayoutTensor[dtype, layout, MutAnyOrigin](ptr, rt_layout)
-
-    res = create_nested_tma_tile[
-        max(group, 8) if decoding else BM,
-        tile_cols,
-        swizzle_mode,
-        is_k_major=True,
-    ](ctx, tensor)
+    ]()
+    # print("q_tma (rows = ", rows, "):", sep="")
+    return create_split_tma[smem_dim, gmem_dim, swizzle_mode](ctx, ptr, rows)
 
 
 @always_inline
@@ -868,6 +951,20 @@ fn _apply_mask[
                     for j in range(WN // 8):
                         score_col = mask_frag_col + j * 8
                         p = p_reg_tile[i, m_mma, j, n_mma]
+                        # if thread_idx.x % 128 == 0 and block_idx.y == 2:
+                        #     print(
+                        #         "p_reg_tile[",
+                        #         i,
+                        #         ", ",
+                        #         m_mma,
+                        #         ", ",
+                        #         j,
+                        #         ", ",
+                        #         n_mma,
+                        #         "] = ",
+                        #         p,
+                        #         sep="",
+                        #     )
 
                         @parameter
                         if masked:
@@ -950,49 +1047,100 @@ fn _apply_mask[
 
 
 @always_inline
+fn q_coord[
+    *,
+    depth: Int,
+    swizzle_granularity: Int,
+    decoding: Bool,
+](
+    row: UInt32,
+    head_idx: UInt32,
+    out res: StaticTuple[
+        UInt32,
+        (4 if decoding else 3)
+        + Int(_should_split_last_dim(depth, swizzle_granularity)),
+    ],
+):
+    """
+    Returns the coordinates for a tma load on the `Q` matrix.
+    This load can be 3D, 4D, or 5D.
+
+    Arguments:
+        row: the row to load from.
+        head_idx: q_head_idx if prefill, kv_head_idx if decoding.
+    """
+    comptime rank: Int = res.size
+    constrained[rank in (3, 4, 5)]()
+
+    res = {}
+
+    @parameter
+    for i in range(rank - 2):
+        res[i] = 0
+
+    res[rank - 2] = head_idx
+    res[rank - 1] = row
+
+
+@always_inline
+fn kv_coord[
+    *, depth: Int, swizzle_granularity: Int
+](
+    row: UInt32,
+    head_idx: UInt32,
+    out res: StaticTuple[
+        UInt32, 4 if _should_split_last_dim(depth, swizzle_granularity) else 3
+    ],
+):
+    @parameter
+    if res.size == 4:
+        return {0, 0, head_idx, row}
+    else:
+        return {0, head_idx, row}
+
+
+@always_inline
 fn produce[
     qkv_type: DType,
     BM: Int,
     BN: Int,
+    q_smem_layout: Layout,
+    q_desc_layout: Layout,
+    k_smem_layout: Layout,
+    k_desc_layout: Layout,
+    v_smem_layout: Layout,
+    v_desc_layout: Layout,
     depth: Int,
     padded_depth: Int,
     num_heads: Int,
     group: Int,
     PartitionType: MHAPartitionScheme,
-    swizzle_mode: TensorMapSwizzle,
-    q_tma_rows: Int,
-    q_tma_cols: Int,
     MaxSeqLenType: OptionallyStaticInt,
     SchedulerType: MHATileScheduler,
     KVLUTType: MHAOperand,
     MaskType: MHAMask,
     KVInputRowOffsetsType: OptionalPointer,
     ValidLengthType: OptionalPointer, //,
+    swizzle_mode: TensorMapSwizzle,
     *,
     pipeline_stages: Int,
     ragged: Bool,
     _is_cache_length_accurate: Bool,
 ](
-    q_tma_op: TMANestedTensorTile[
+    q_tma_op: TMATensorTile[
         qkv_type,
-        q_tma_rows,
-        q_tma_cols,
-        swizzle_mode,
-        is_k_major=True,
+        q_smem_layout,
+        q_desc_layout,
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: TMATensorTile[
         qkv_type,
-        BN,
-        padded_depth,
-        swizzle_mode,
-        is_k_major=True,
+        k_smem_layout,
+        k_desc_layout,
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: TMATensorTile[
         qkv_type,
-        BN,
-        padded_depth,
-        swizzle_mode,
-        is_k_major=False,
+        v_smem_layout,
+        v_desc_layout,
     ],
     q_smem: UnsafePointer[
         Scalar[qkv_type], address_space = AddressSpace.SHARED
@@ -1031,18 +1179,17 @@ fn produce[
     num_keys_arg: UInt32,
     kv_input_row_offsets: KVInputRowOffsetsType,
 ):
+    comptime swizzle_granularity = swizzle_mode.bytes() // size_of[qkv_type]()
+
     comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
     comptime PositionType = MHAPosition[
         BM, BN, depth, padded_depth, num_heads, group, decoding
     ]
     comptime persistent = SchedulerType.may_advance
 
-    comptime q_smem_layout_producer = q_tma_op.layout
     comptime q_smem_layout_consumer = tile_layout_k_major[
         DType.bfloat16, BM, padded_depth, swizzle_mode=swizzle_mode
     ]()
-    comptime k_smem_layout = k_tma_op.layout
-    comptime v_smem_layout = v_tma_op.layout
 
     comptime q_size = q_smem_layout_consumer.size()
     comptime q_smem_size = (2 * q_size if persistent else q_size)
@@ -1055,23 +1202,16 @@ fn produce[
 
     @parameter
     @always_inline("nodebug")
-    fn q_producer[
-        depth_idx: Int
-    ](
-        q_idx: UInt32,
+    fn q_producer(
+        q_idx: UInt32, offset: UInt32 = 0
     ) -> LayoutTensor[
         qkv_type,
-        q_smem_layout_producer,
+        q_smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]:
-        # alias stride = q_smem_layout_consumer.stride[1][1].value()
-        # alias depth_offset = depth_idx * stride
-        comptime depth_offset = q_smem_layout_consumer(
-            IntTuple(0, 64 * depth_idx)
-        ) if decoding else 0
-        return {q_smem + depth_offset + q_size * q_idx}
+        return {q_smem + q_size * q_idx + offset}
 
     @parameter
     @always_inline
@@ -1111,7 +1251,11 @@ fn produce[
     @always_inline("nodebug")
     fn produce_k[
         wait: Bool
-    ](mut state: PipelineState[pipeline_stages], row: UInt32, col: UInt32):
+    ](
+        mut state: PipelineState[pipeline_stages],
+        row: UInt32,
+        kv_head_idx: UInt32,
+    ):
         var write_idx: UInt32 = state.index()
         var write_phase: UInt32 = state.phase()
 
@@ -1123,13 +1267,21 @@ fn produce[
             consumed_mbar_kv[write_idx].wait(write_phase)
             comptime bytes = BN * padded_depth * size_of[qkv_type]()
             p_mbar.expect_bytes(bytes)
-        k_tma_op.async_copy(k_sub, p_mbar, (UInt(col), UInt(row)))
+        k_tma_op.async_copy(
+            k_sub,
+            p_mbar,
+            kv_coord[depth=depth, swizzle_granularity=swizzle_granularity](
+                row, kv_head_idx
+            ),
+        )
         state.step()
 
     @parameter
     @always_inline("nodebug")
     fn produce_v(
-        mut state: PipelineState[pipeline_stages], row: UInt32, col: UInt32
+        mut state: PipelineState[pipeline_stages],
+        row: UInt32,
+        kv_head_idx: UInt32,
     ):
         var write_idx: UInt32 = state.index()
         var write_phase: UInt32 = state.phase()
@@ -1139,7 +1291,13 @@ fn produce[
         consumed_mbar_kv[write_idx].wait(write_phase)
         comptime bytes = BN * padded_depth * size_of[qkv_type]()
         p_mbar.expect_bytes(bytes)
-        v_tma_op.async_copy(v_sub, p_mbar, (UInt(col), UInt(row)))
+        v_tma_op.async_copy(
+            v_sub,
+            p_mbar,
+            kv_coord[depth=depth, swizzle_granularity=swizzle_granularity](
+                row, kv_head_idx
+            ),
+        )
         state.step()
 
     @parameter
@@ -1180,11 +1338,50 @@ fn produce[
     produced_mbar_kv[0].expect_bytes(qk_bytes)
 
     @parameter
-    for d in range((padded_depth // 64) if decoding else 1):
+    if decoding:
+        ref q_mbar = produced_mbar_kv[0]
+        var q_idx: UInt32 = q_pipeline_state.index()
+
+        @parameter
+        for d_idx in range(ceildiv(depth, swizzle_granularity)):
+            comptime d: Int = d_idx * swizzle_granularity
+            comptime smem_offset = q_smem_layout_consumer(IntTuple(0, d))
+
+            @parameter
+            if _should_split_last_dim[qkv_type](depth, swizzle_mode):
+                q_tma_op.async_copy_5d(
+                    q_producer(q_idx, smem_offset),
+                    q_mbar,
+                    (
+                        UInt(0),
+                        UInt(d_idx),
+                        UInt(0),
+                        UInt(position.head_idx),
+                        UInt(position.q_row),
+                    ),
+                )
+            else:
+                # if thread_idx.x % 32 == 0:
+                #     print("Loading q[", position.q_row, ", ", position.head_idx, ", 0, " + String(d) + "]", sep="")
+                q_tma_op.async_copy_4d(
+                    q_producer(q_idx, smem_offset),
+                    q_mbar,
+                    (
+                        UInt(d),
+                        UInt(0),
+                        UInt(position.head_idx),
+                        UInt(position.q_row),
+                    ),
+                )
+    else:
         q_tma_op.async_copy(
-            q_producer[d](q_pipeline_state.index()),
+            q_producer(q_pipeline_state.index()),
             produced_mbar_kv[0],
-            (UInt(position.q_col + 64 * d), UInt(position.q_row)),
+            q_coord[
+                depth=depth,
+                swizzle_granularity=swizzle_granularity,
+                decoding=decoding,
+            ](position.q_row, position.head_idx),
         )
 
     @parameter
@@ -1193,7 +1390,6 @@ fn produce[
         start = startend[0]
         end = startend[1]
     var kv_tile_start_row: UInt32 = start
-    var kv_col: UInt32 = kv_lut.col_idx(position.kv_head_idx())
 
     while (
         position.mask_status(mask, kv_tile_start_row)
@@ -1202,12 +1398,12 @@ fn produce[
         kv_tile_start_row += BN
 
     var kv_row: UInt32 = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
+    var kv_head_idx: UInt32 = position.kv_head_idx()
 
-    produce_k[False](write_pipeline_states, kv_row, kv_col)
+    produce_k[False](write_pipeline_states, kv_row, kv_head_idx)
 
     var kv_row_prev: UInt32 = kv_row
-    var kv_col_prev: UInt32 = kv_col
-
+    var kv_head_idx_prev: UInt32 = kv_head_idx
     # wait to flip phase, but only bother after producing
     # there isn't any memory we can throttle
     # the order of the consumer's arrivals determines the
@@ -1249,16 +1445,51 @@ fn produce[
                 )
 
                 @parameter
-                for d in range((padded_depth // 64) if decoding else 1):
+                if not decoding:
                     q_tma_op.async_copy(
-                        q_producer[d](q_idx),
+                        q_producer(q_idx),
                         pq_mbar,
-                        (
-                            UInt(position.q_col + 64 * d),
-                            UInt(position.q_row),
-                        ),
+                        q_coord[
+                            depth=depth,
+                            swizzle_granularity=swizzle_granularity,
+                            decoding=decoding,
+                        ](position.q_row, position.head_idx),
                     )
-                kv_col = kv_lut.col_idx(position.kv_head_idx())
+
+                else:
+
+                    @parameter
+                    for d_idx in range(depth // 64):
+
+                        @parameter
+                        if _should_split_last_dim[qkv_type](
+                            depth, swizzle_mode
+                        ):
+                            q_tma_op.async_copy_5d(
+                                q_producer(q_idx),
+                                pq_mbar,
+                                (
+                                    UInt(0),
+                                    UInt(d_idx),
+                                    UInt(0),
+                                    UInt(position.head_idx),
+                                    UInt(position.q_row),
+                                ),
+                            )
+                        else:
+                            comptime d: UInt = UInt(d_idx * 64)
+                            q_tma_op.async_copy_4d(
+                                q_producer(q_idx),
+                                pq_mbar,
+                                (
+                                    d,
+                                    UInt(0),
+                                    UInt(position.head_idx),
+                                    UInt(position.q_row),
+                                ),
+                            )
+
+                kv_head_idx = position.kv_head_idx()
                 start, new_end = position.get_start_and_end_for_partitions(
                     partition
                 )
@@ -1273,12 +1504,12 @@ fn produce[
         ):
             continue
         kv_row = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
-        produce_k[True](write_pipeline_states, kv_row, kv_col)
-        produce_v(write_pipeline_states, kv_row_prev, kv_col_prev)
+        produce_k[True](write_pipeline_states, kv_row, kv_head_idx)
+        produce_v(write_pipeline_states, kv_row_prev, kv_head_idx_prev)
         kv_row_prev = kv_row
-        kv_col_prev = kv_col
+        kv_head_idx_prev = kv_head_idx
 
-    produce_v(write_pipeline_states, kv_row_prev, kv_col_prev)
+    produce_v(write_pipeline_states, kv_row_prev, kv_head_idx_prev)
 
 
 @always_inline

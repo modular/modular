@@ -26,7 +26,7 @@ from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, IntTuple
 from layout.runtime_layout import RuntimeLayout
-from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
+from layout.tma_async import SplitLastDimTMATensorTile, create_split_tma
 from memory import (
     LegacyOpaquePointer as OpaquePointer,
     LegacyUnsafePointer as UnsafePointer,
@@ -183,23 +183,12 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable):
         ...
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        ...
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+        BN: Int, swizzle_mode: TensorMapSwizzle
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        tile_m,
-        tile_n,
+        IndexList[3](BN, 1, Int(Self.kv_params.head_size)),
         swizzle_mode,
-        is_k_major=is_k_major,
     ]:
         """Creates a TMA tile for this KV cache."""
         ...
@@ -400,23 +389,13 @@ struct ContinuousBatchingKVCache[
         return block_idx * self._stride() + tok_idx
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        return head_idx * Self.kv_params.head_size
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
+        BN: Int,
         swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        tile_m,
-        tile_n,
+        IndexList[3](BN, 1, Int(Self.kv_params.head_size)),
         swizzle_mode,
-        is_k_major=is_k_major,
     ]:
         """Creates a TMA tile for this KV cache."""
         # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
@@ -430,21 +409,16 @@ struct ContinuousBatchingKVCache[
         # yields number of rows:
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
-        comptime cols = Self.kv_params.num_heads * Self.kv_params.head_size
 
-        comptime layout = Layout.row_major(UNKNOWN_VALUE, Int(cols))
-        rt_layout = RuntimeLayout[layout].row_major(
-            IndexList[2](Int(rows), Int(cols))
+        comptime smem_dim = IndexList[3](BN, 1, Int(Self.kv_params.head_size))
+        comptime gmem_dim = IndexList[3](
+            UNKNOWN_VALUE,
+            Int(Self.kv_params.num_heads),
+            Int(Self.kv_params.head_size),
         )
-
-        # Create a LayoutTensor view with compile-time shape
-        var tensor = LayoutTensor[Self.dtype, layout, MutAnyOrigin](
-            self.blocks.ptr, rt_layout
+        return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
+            ctx, self.blocks.ptr, Int(rows)
         )
-
-        return create_nested_tma_tile[
-            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
-        ](ctx, tensor)
 
     @always_inline
     fn block_paged_ptr[
@@ -601,23 +575,13 @@ struct PagedKVCache[
         return block_idx * self._stride() + tok_in_block_idx
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        return head_idx * Self.kv_params.head_size
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
+        BN: Int,
         swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        tile_m,
-        tile_n,
+        IndexList[3](BN, 1, Int(Self.kv_params.head_size)),
         swizzle_mode,
-        is_k_major=is_k_major,
     ]:
         """Creates a TMA tile for this KV cache."""
         # Paged cache collection is (where `$idx` means subsetting that idx):
@@ -634,21 +598,15 @@ struct PagedKVCache[
         # Create a view that accounts for the paged layout
         var total_blocks = self.blocks.dim[0]()
         var rows = (total_blocks - 1) * self._stride() + Self.page_size
-        comptime cols = Int(Self.kv_params.num_heads * Self.kv_params.head_size)
-        comptime layout = Layout.row_major(UNKNOWN_VALUE, cols)
-        rt_layout = RuntimeLayout[layout].row_major(
-            IndexList[2](Int(rows), cols)
+        comptime smem_dim = IndexList[3](BN, 1, Int(Self.kv_params.head_size))
+        comptime gmem_dim = IndexList[3](
+            UNKNOWN_VALUE,
+            Int(Self.kv_params.num_heads),
+            Int(Self.kv_params.head_size),
         )
-
-        var tensor = LayoutTensor[
-            Self.dtype,
-            layout,
-            MutAnyOrigin,
-        ](self.blocks.ptr, rt_layout)
-
-        return create_nested_tma_tile[
-            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
-        ](ctx, tensor)
+        return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
+            ctx, self.blocks.ptr, Int(rows)
+        )
 
     @always_inline
     fn _get_idx(

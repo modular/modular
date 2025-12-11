@@ -407,17 +407,15 @@ fn flash_attention[
 
 
 @always_inline
-fn q_num_matrix_view_rows[
-    dtype: DType, //, *, decoding: Bool, depth: Int
-](q: LayoutTensor[dtype, **_]) -> Int:
+fn q_num_matrix_view_rows[dtype: DType, //](q: LayoutTensor[dtype, **_]) -> Int:
     # for tma if decoding, we view q as a rows x depth matrix
     # otherwise, we view q as a rows x (depth*num_heads) matrix
     var num_rows: Int = q.dim[0]()
 
     @parameter
-    for i in range(1, q.rank - 1 if decoding else q.rank - 2):
+    for i in range(1, q.rank - 2):
         num_rows *= q.dim[i]()
-    return num_rows * (depth // 64) if decoding else num_rows
+    return num_rows
 
 
 @always_inline
@@ -516,9 +514,7 @@ fn flash_attention_dispatch[
                 and (ragged or not _use_valid_length)
                 and config.algorithm == FlashAttentionAlgorithm(3)
             ):
-                num_rows_q = q_num_matrix_view_rows[
-                    decoding=False, depth = Int(depth)
-                ](q)
+                num_rows_q = q_num_matrix_view_rows(q)
 
                 @parameter
                 if is_sm90:
@@ -769,9 +765,7 @@ fn flash_attention_dispatch[
 
                     @parameter
                     if use_fa3_kernel:
-                        num_rows_q = q_num_matrix_view_rows[
-                            decoding=True, depth = Int(depth)
-                        ](q)
+                        num_rows_q = q_num_matrix_view_rows(q)
 
                         @parameter
                         if is_sm90:
@@ -933,9 +927,7 @@ fn flash_attention_dispatch[
 
                     @parameter
                     if use_fa3_kernel:
-                        num_rows_q = q_num_matrix_view_rows[
-                            decoding=True, depth = Int(depth)
-                        ](q)
+                        num_rows_q = q_num_matrix_view_rows(q)
 
                         @parameter
                         if is_sm90:
