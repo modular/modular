@@ -3694,7 +3694,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
         Pinned memory is guaranteed to remain resident in the host's RAM, not be
         paged/swapped out to disk. Memory allocated normally (for example, using
-        [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_ptr/UnsafePointer#alloc))
+        [`alloc()`](/mojo/stdlib/memory/unsafe_pointer/alloc))
         is pageable—individual pages of memory can be moved to secondary storage
         (disk/SSD) when main memory fills up.
 
