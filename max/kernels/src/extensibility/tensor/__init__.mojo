@@ -39,7 +39,9 @@ from .managed_tensor_slice import (
     _output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
+    simd_load_from_tensor_pointer,
     simd_store_into_managed_tensor_slice,
+    simd_store_into_tensor_pointer,
     trace_slice_arg,
     view_copy_impl,
 )

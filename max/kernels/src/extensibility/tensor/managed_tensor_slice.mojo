@@ -141,6 +141,156 @@ fn simd_store_into_managed_tensor_slice[
 
 
 @doc_private
+@register_internal("simd_store_into_tensor_pointer")
+@no_inline
+fn simd_store_into_tensor_pointer[
+    dtype: DType, rank: Int, simd_width: Int, element_alignment: Int = 1
+](
+    ptr: UnsafePointer[Scalar[dtype]],
+    strides: IndexList[rank],
+    indices: IndexList[rank],
+    value: SIMD[dtype, simd_width],
+):
+    """Store a SIMD vector to raw tensor components.
+
+    This function is GPU-safe because it only takes trivial types (pointer,
+    IndexList) that can be properly captured in GPU kernel closures. Use this
+    instead of simd_store_into_managed_tensor_slice when generating code for
+    GPU kernels.
+
+    Parameters:
+        dtype: The data type of tensor elements.
+        rank: The rank (number of dimensions) of the tensor.
+        simd_width: The SIMD width for the load operation.
+        element_alignment: The element alignment for the load.
+
+    Args:
+        ptr: The raw pointer to tensor data.
+        strides: The runtime strides of the tensor.
+        indices: The indices to store into.
+        value: The value to store.
+    """
+    # Compute flat index from multi-dimensional indices and strides
+    var flat_index = 0
+
+    @parameter
+    for i in range(rank):
+        flat_index += Int(indices[i]) * Int(strides[i])
+
+    # Store alignment cannot exceed the data type's alignment.
+    comptime max_alignment = _gcd_pow2[
+        element_alignment, element_alignment * align_of[dtype]()
+    ]()
+
+    var last_stride = Int(strides[rank - 1]) if rank > 0 else 1
+
+    # Stride = 1
+    @parameter
+    @always_inline
+    fn store_stride1():
+        @parameter
+        if dtype is DType.bool:
+            var v = value.cast[DType.uint8]()
+            ptr.bitcast[UInt8]().store(flat_index, v)
+        else:
+            ptr.store[alignment=max_alignment](flat_index, value)
+
+    # Stride > 1
+    @parameter
+    @always_inline
+    fn store_strided(stride: Int):
+        @parameter
+        if dtype is DType.bool:
+            var v = value.cast[DType.uint8]()
+            strided_store(
+                v,
+                ptr.bitcast[UInt8]().offset(flat_index),
+                stride,
+            )
+        else:
+            return strided_store(value, ptr.offset(flat_index), stride)
+
+    # Handle different stride cases
+    if last_stride == 0:
+        # Broadcast case: load single value and splat
+        return ptr.store[alignment=max_alignment](0, value)
+    elif last_stride == 1:
+        store_stride1()
+    else:
+        store_strided(last_stride)
+
+
+# GPU-safe load function that takes raw components (pointer, strides) instead of
+# ManagedTensorSlice. This avoids capturing ManagedTensorSlice in GPU kernels,
+# which doesn't work correctly due to closure capture limitations.
+@doc_private
+@register_internal("simd_load_from_tensor_pointer")
+@always_inline
+fn simd_load_from_tensor_pointer[
+    dtype: DType,
+    rank: Int,
+    simd_width: Int,
+    element_alignment: Int = 1,
+](
+    ptr: UnsafePointer[Scalar[dtype]],
+    strides: IndexList[rank],
+    indices: IndexList[rank],
+) -> SIMD[dtype, simd_width]:
+    """Load a SIMD vector from raw tensor components.
+
+    This function is GPU-safe because it only takes trivial types (pointer,
+    IndexList) that can be properly captured in GPU kernel closures. Use this
+    instead of simd_load_from_managed_tensor_slice when generating code for
+    GPU kernels.
+
+    Parameters:
+        dtype: The data type of tensor elements.
+        rank: The rank (number of dimensions) of the tensor.
+        simd_width: The SIMD width for the load operation.
+        element_alignment: The element alignment for the load.
+
+    Args:
+        ptr: The raw pointer to tensor data.
+        strides: The runtime strides of the tensor.
+        indices: The indices to load from.
+
+    Returns:
+        A SIMD vector with the loaded values.
+    """
+    # Compute flat index from multi-dimensional indices and strides
+    var flat_index = 0
+
+    @parameter
+    for i in range(rank):
+        flat_index += Int(indices[i]) * Int(strides[i])
+
+    var last_stride = Int(strides[rank - 1]) if rank > 0 else 1
+
+    # Handle different stride cases
+    if last_stride == 0:
+        # Broadcast case: load single value and splat
+        return ptr.load(flat_index)
+    elif last_stride == 1:
+        # Contiguous case: direct SIMD load
+        @parameter
+        if dtype is DType.bool:
+            var v = ptr.bitcast[UInt8]().load[width=simd_width](flat_index)
+            return v.cast[dtype]()
+        else:
+            return ptr.load[width=simd_width](flat_index)
+    else:
+        # Strided case: gather load
+        @parameter
+        if dtype is DType.bool:
+            var v = strided_load[simd_width](
+                ptr.bitcast[UInt8]().offset(flat_index), last_stride
+            )
+            return v.cast[dtype]()
+        else:
+            return strided_load[simd_width](ptr.offset(flat_index), last_stride)
+
+
+@doc_private
 @register_internal("simd_load_from_managed_tensor_slice")
 @no_inline
 fn simd_load_from_managed_tensor_slice[
