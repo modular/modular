@@ -40,7 +40,7 @@ from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 # implements the protocol
 
 InputShape = list[int | str | None] | None
-CustomExtensionType = str | Path | Any
+CustomExtensionType = str | Path
 CustomExtensionsType = list[CustomExtensionType] | CustomExtensionType
 
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
@@ -187,8 +187,6 @@ def _process_custom_extensions_object(
 
         # Pass the path through as is.
         return custom_extension
-    if _is_torch_metadata_module(custom_extension):
-        return custom_extension._get_jit_functions()._c
     raise TypeError("Unsupported type for custom ops libraries.")
 
 
