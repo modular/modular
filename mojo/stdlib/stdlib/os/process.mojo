@@ -37,14 +37,49 @@ from sys._libc import (
     FcntlCommands,
     FcntlFDFlags,
     close,
+    WaitFlags,
 )
-from sys.ffi import c_char, c_int
+from sys.ffi import c_char, c_int, c_pid_t, get_errno
 from sys.os import sep
 
 
 # ===----------------------------------------------------------------------=== #
 # Process comm.
 # ===----------------------------------------------------------------------=== #
+
+
+struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
+    """Represents the termination status of a process.
+
+    This struct is returned by `poll()` and `wait_process_status()`.
+    """
+
+    var exit_code: Optional[Int]
+    """The exit code if the process terminated normally."""
+
+    var term_signal: Optional[Int]
+    """The signal number that terminated the process."""
+
+    fn __init__(
+        out self,
+        exit_code: Optional[Int] = None,
+        term_signal: Optional[Int] = None,
+    ):
+        """Initializes a new `ProcessStatus`."""
+        self.exit_code = exit_code
+        self.term_signal = term_signal
+
+    @staticmethod
+    fn running() -> Self:
+        """Creates a status for a running process."""
+        return Self()
+
+    fn has_exited(self) -> Bool:
+        """Returns true if the process has terminated, either normally or by a signal.
+        """
+        return Bool(self.exit_code) or Bool(self.term_signal)
+
+
 struct Pipe:
     """Create a pipe for interprocess communication.
 
@@ -169,10 +204,13 @@ struct Process:
     ```
     """
 
-    var child_pid: Int
+    var child_pid: c_pid_t
     """Child process id."""
 
-    fn __init__(out self, child_pid: Int):
+    var status: Optional[ProcessStatus]
+    """Cached status of the process. `None` if the process has not been waited on yet."""
+
+    fn __init__(out self, child_pid: c_pid_t):
         """Struct to manage metadata about child process.
         Use the `run` static method to create new process.
 
@@ -181,18 +219,68 @@ struct Process:
         """
 
         self.child_pid = child_pid
+        self.status = None
 
     fn __del__(deinit self):
-        """ """
-        print("IN DEINIT")
-        if not self.wait_process_status():
-            print("ERROR when waiting on subprocess")
+        try:
+            _ = self.wait()
+        except:
+            # Errors in __del__ should be suppressed.
+            pass
 
-    fn _kill(self, signal: Int) -> Bool:
+    fn _kill(mut self, signal: Int) -> Bool:
+        try:
+            if self.poll().has_exited():
+                # Process has already exited, no signal can be sent.
+                # This is consistent with `kill` failing with ESRCH.
+                return False
+        except:
+            # If poll fails, fall through and attempt to kill anyway.
+            pass
+
         # `kill` returns 0 on success and -1 on failure
         return kill(self.child_pid, signal) > -1
 
-    fn hangup(self) -> Bool:
+    fn _check_status(self, pid: c_pid_t, status: c_int) raises -> ProcessStatus:
+        """Helper to decode the result of a waitpid call.
+
+        The decoding logic is a direct implementation of the standard C macros
+        used to interpret the `status` integer returned by `waitpid`. These
+        macros are defined in `<sys/wait.h>` on POSIX systems.
+
+        This implementation is based on the definitions found in `musl` libc.:
+        https://git.musl-libc.org/cgit/musl/tree/include/sys/wait.h
+
+        The core logic relies on the following macro definitions:
+        - `#define WEXITSTATUS(s) (((s) & 0xff00) >> 8)`
+        - `#define WTERMSIG(s)    ((s) & 0x7f)`
+        - `#define WIFEXITED(s)   (WTERMSIG(s) == 0)`
+
+        Note on Endianness:
+        This logic is endianness-independent. The `waitpid` status is an integer
+        value provided by the kernel. All bitwise operations (`&`, `>>`) are
+        performed on this integer's numerical value, not its byte representation
+        in memory. The result is therefore consistent across architectures.
+        """
+        if pid == self.child_pid:
+            # Process has terminated. Decode the status.
+            if (status & 0x7F) == 0:
+                # Process exited normally. Extract the exit code.
+                var code = (status & 0xFF00) >> 8
+                return ProcessStatus(exit_code=Optional(Int(code)))
+            else:
+                # Process was terminated by a signal. Extract the signal number.
+                var signal = status & 0x7F
+                return ProcessStatus(term_signal=Optional(Int(signal)))
+        elif pid == 0:
+            # Process is still running (only for non-blocking calls).
+            return ProcessStatus.running()
+        else:
+            # An error occurred.
+            var err = get_errno()
+            raise Error("waitpid failed with errno " + String(err))
+
+    fn hangup(mut self) -> Bool:
         """Send the Hang up signal to the managed child process.
 
         Returns:
@@ -200,7 +288,7 @@ struct Process:
         """
         return self._kill(SignalCodes.HUP)
 
-    fn interrupt(self) -> Bool:
+    fn interrupt(mut self) -> Bool:
         """Send the Interrupt signal to the managed child process.
 
         Returns:
@@ -208,7 +296,7 @@ struct Process:
         """
         return self._kill(SignalCodes.INT)
 
-    fn kill(self) -> Bool:
+    fn kill(mut self) -> Bool:
         """Send the Kill signal to the managed child process.
 
         Returns:
@@ -216,17 +304,54 @@ struct Process:
         """
         return self._kill(SignalCodes.KILL)
 
-    fn wait_process_status(self) -> Bool:
-        """Wait on stuff.
+    fn poll(mut self) raises -> ProcessStatus:
+        """Check if the child process has terminated in a non-blocking way.
+
+        This method updates the internal state of the `Process` object.
+        If the process has terminated, the status is cached.
 
         Returns:
-          Upon successful completion, True is returned else False.
+            A `ProcessStatus` indicating the status of the process.
+
+        Raises:
+            Error: If `waitpid` fails.
         """
-        print("Start wait...")
+        if self.status:
+            return self.status.value()
+
         var status: c_int = 0
-        var chk_pid = waitpid(self.child_pid, UnsafePointer(to=status), 0)
-        print("Done wait ...", chk_pid, "==?", self.child_pid)
-        return self.child_pid == chk_pid
+        var pid = waitpid(
+            self.child_pid, UnsafePointer(to=status), WaitFlags.WNOHANG
+        )
+        var result = self._check_status(pid, status)
+        if result.has_exited():
+            self.status = result
+        return result
+
+    fn wait(mut self) raises -> ProcessStatus:
+        """Wait for the child process to terminate (blocking).
+
+        This method updates the internal state of the `Process` object.
+        If the process has terminated, the status is cached.
+
+        Returns:
+          A `ProcessStatus` indicating the process has exited and its status.
+
+        Raises:
+            Error: If `waitpid` fails or the process does not exit.
+        """
+        if self.status:
+            return self.status.value()
+
+        var status: c_int = 0
+        var pid = waitpid(self.child_pid, UnsafePointer(to=status), 0)
+        var result = self._check_status(pid, status)
+        if result.has_exited():
+            self.status = result
+        else:
+            # This should not be reachable with a blocking waitpid call.
+            raise Error("Blocking waitpid returned without process exiting.")
+        return result
 
     @staticmethod
     fn run(var path: String, argv: List[String]) raises -> Process:
@@ -239,8 +364,6 @@ struct Process:
         Returns:
           An instance of `Process` struct.
         """
-
-        print("Called run")
 
         @parameter
         if CompilationTarget.is_linux() or CompilationTarget.is_macos():
@@ -264,9 +387,7 @@ struct Process:
 
             var path_cptr = path.unsafe_cstr_ptr()
 
-            var pid: Int = 0
-
-            print("Before s")
+            var pid: c_pid_t = 0
 
             var has_error_code = posix_spawnp(
                 UnsafePointer(to=pid),
@@ -274,9 +395,6 @@ struct Process:
                 argv_array_ptr_cstr_ptr,
                 LegacyUnsafePointer[LegacyUnsafePointer[Int8, mut=False]](),
             )
-            print(has_error_code)
-
-            print("After s")
 
             if has_error_code > 0:
                 raise Error(
@@ -286,92 +404,11 @@ struct Process:
                     + String(has_error_code)
                 )
 
+            argv_array_ptr_cstr_ptr.free()
+
             return Process(child_pid=pid)
         else:
             constrained[
                 False, "Unknown platform process execution not implemented"
             ]()
             return abort[Process]()
-
-    # @staticmethod
-    # fn run_e(var path: String, argv: List[String]) raises -> Process:
-    #     """Spawn new process from file executable.
-    #
-    #     Args:
-    #       path: The path to the file.
-    #       argv: A list of string arguments to be passed to executable.
-    #
-    #     Returns:
-    #       An instance of `Process` struct.
-    #     """
-    #
-    #     @parameter
-    #     if CompilationTarget.is_linux() or CompilationTarget.is_macos():
-    #         var file_name = String(path.split(sep)[-1])
-    #         var pipe = Pipe(out_close_on_exec=True)
-    #         var exec_err_code = StaticString("EXEC_ERR")
-    #
-    #         var pid = vfork()
-    #
-    #         if pid == 0:
-    #             # Child process.
-    #             pipe.set_output_only()
-    #
-    #             var arg_count = len(argv)
-    #             var argv_array_ptr_cstr_ptr = LegacyUnsafePointer[
-    #                 LegacyUnsafePointer[c_char, mut=False]
-    #             ].alloc(arg_count + 2)
-    #             var offset = 0
-    #             # Arg 0 in `argv` ptr array should be the file name
-    #             argv_array_ptr_cstr_ptr[offset] = file_name.unsafe_cstr_ptr()
-    #             offset += 1
-    #
-    #             for var arg in argv:
-    #                 argv_array_ptr_cstr_ptr[offset] = arg.unsafe_cstr_ptr()
-    #                 offset += 1
-    #
-    #             # `argv` ptr array terminates with NULL PTR
-    #             argv_array_ptr_cstr_ptr[offset] = LegacyUnsafePointer[c_char]()
-    #
-    #             var path_cptr = path.unsafe_cstr_ptr()
-    #
-    #             _ = execvp(path_cptr, argv_array_ptr_cstr_ptr)
-    #
-    #             # This will only get reached if exec call fails to replace currently executing code
-    #             argv_array_ptr_cstr_ptr.free()
-    #
-    #             # Canonical fork/ exec error handling pattern of using a pipe that closes on exec is
-    #             # used to signal error to parent process `https://cr.yp.to/docs/selfpipe.html`
-    #             pipe.write_bytes(exec_err_code.as_bytes())
-    #
-    #             exit(1)
-    #
-    #         elif pid < 0:
-    #             raise Error("Unable to fork parent")
-    #
-    #         var err: Optional[StringSlice[MutAnyOrigin]] = None
-    #         var err_buff_data = InlineArray[Byte, ERR_STR_LEN](fill=0)
-    #
-    #         try:
-    #             pipe.set_input_only()
-    #             var buf = Span[Byte, MutAnyOrigin](
-    #                 ptr=err_buff_data.unsafe_ptr(), length=ERR_STR_LEN
-    #             )
-    #             var bytes_read = pipe.read_bytes(buf)
-    #             err = StringSlice(unsafe_from_utf8=buf)
-    #         except e:
-    #             raise Error(
-    #                 "Failed to read child process response from pipe, exception"
-    #                 " was: "
-    #                 + String(e)
-    #             )
-    #
-    #         if err and len(err.value()) > 0 and err.value() == exec_err_code:
-    #             raise Error("Failed to execute " + path)
-    #
-    #         return Process(child_pid=pid)
-    #     else:
-    #         constrained[
-    #             False, "Unknown platform process execution not implemented"
-    #         ]()
-    #         return abort[Process]()

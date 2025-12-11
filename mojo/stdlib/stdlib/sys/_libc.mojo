@@ -211,6 +211,12 @@ fn write(fd: c_int, buf: OpaquePointer, nbyte: c_size_t) -> c_int:
 # ===-----------------------------------------------------------------------===#
 
 
+struct WaitFlags:
+    """Flags for `waitpid`."""
+
+    alias WNOHANG: c_int = 1
+
+
 # pid_t waitpid(pid_t pid, int *wstatus, int options);
 @always_inline
 fn waitpid(
