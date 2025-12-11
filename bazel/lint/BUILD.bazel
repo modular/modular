@@ -162,6 +162,26 @@ command(
     run_from_workspace_root = True,
 )
 
+alias(
+    name = "shellcheck",
+    actual = select({
+        "//:linux_x86_64": "@shellcheck-linux.x86_64//:shellcheck",
+        "//:linux_aarch64": "@shellcheck-linux.aarch64//:shellcheck",
+        "@platforms//os:macos": "@shellcheck-darwin.aarch64//:shellcheck",
+    }),
+)
+
+sh_binary(
+    name = "shellcheck-wrapper",
+    srcs = ["shellcheck-wrapper.sh"],
+    data = [":shellcheck"],
+)
+
+command(
+    name = "shellcheck.check",
+    command = ":shellcheck-wrapper",
+)
+
 multirun(
     name = "lint",
     buffer_output = True,
@@ -171,6 +191,7 @@ multirun(
         ":markdownlint.check",
         ":mblack.check",
         ":ruff.check",
+        ":shellcheck.check",
     ],
     jobs = 0,
 )

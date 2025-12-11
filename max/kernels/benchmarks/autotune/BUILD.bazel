@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "pkg_files", "requirement")
+load("//max/kernels/benchmarks/misc/blackwell_bench:wheels.bzl", "blackwell_bench_wheel")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -49,6 +50,14 @@ modular_py_binary(
         requirement("scipy"),
         requirement("plotly"),
         requirement("tabulate"),
+        requirement("torch"),
+        requirement("packaging"),
+        blackwell_bench_wheel("flash-attn"),
+        blackwell_bench_wheel("flashinfer"),
+        blackwell_bench_wheel("deep-gemm"),
+        "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        "//max/python/max",
     ],
 )
 

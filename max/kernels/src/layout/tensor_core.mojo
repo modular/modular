@@ -104,18 +104,29 @@ fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
 
 # shapes
 comptime shape_null = IndexList[3](0, 0, 0)
+"""Null tensor core shape (0x0x0)."""
 comptime shape_16x8x4 = IndexList[3](16, 8, 4)
+"""Tensor core shape 16x8x4."""
 comptime shape_16x8x8 = IndexList[3](16, 8, 8)
+"""Tensor core shape 16x8x8."""
 comptime shape_16x8x16 = IndexList[3](16, 8, 16)
+"""Tensor core shape 16x8x16."""
 comptime shape_8x8x4 = IndexList[3](8, 8, 4)
+"""Tensor core shape 8x8x4."""
 comptime shape_16x8x32 = IndexList[3](16, 8, 32)
+"""Tensor core shape 16x8x32."""
 
 # AMDGPU shapes
 comptime shape_16x16x4 = IndexList[3](16, 16, 4)
+"""AMDGPU tensor core shape 16x16x4."""
 comptime shape_16x16x16 = IndexList[3](16, 16, 16)
+"""AMDGPU tensor core shape 16x16x16."""
 comptime shape_16x16x32 = IndexList[3](16, 16, 32)
+"""AMDGPU tensor core shape 16x16x32."""
 comptime shape_32x32x8 = IndexList[3](32, 32, 8)
+"""AMDGPU tensor core shape 32x32x8."""
 comptime shape_32x32x16 = IndexList[3](32, 32, 16)
+"""AMDGPU tensor core shape 32x32x16."""
 
 
 fn _get_a_k_group_size[a: Layout, shape: IndexList[3]]() -> Int:
@@ -186,11 +197,13 @@ struct TensorCore[
         == shape_16x8x8 if is_nvidia_gpu() else Self.shape
         == shape_16x16x4
     )
+    """Whether float32 is supported for this tensor core configuration."""
     comptime supported_half = Self.in_type.is_half_float() and (
         Self.shape
         == shape_16x8x16 if is_nvidia_gpu() else Self.shape
         in (shape_16x16x16, shape_16x16x32, shape_32x32x8, shape_32x32x16)
     )
+    """Whether half-precision float is supported for this configuration."""
     comptime supported_fp8 = (
         Self.in_type
         in (
@@ -206,20 +219,25 @@ struct TensorCore[
         )
         and Self.shape == shape_16x16x32
     )
+    """Whether float8 is supported for this tensor core configuration."""
     comptime supported_fp64 = Self.in_type is DType.float64 and Self.out_type is DType.float64 and (
         Self.shape in (shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16)
     ) if is_nvidia_gpu() else False
+    """Whether float64 is supported for this tensor core configuration."""
 
     # Operand register types.
     comptime a_reg_type = SIMD[
         Self.in_type, num_matrix_reg[Self.shape[0], Self.shape[2]]()
     ]
+    """SIMD type for the A operand registers."""
     comptime b_reg_type = SIMD[
         Self.in_type, num_matrix_reg[Self.shape[2], Self.shape[1]]()
     ]
+    """SIMD type for the B operand registers."""
     comptime c_reg_type = SIMD[
         Self.out_type, num_matrix_reg[Self.shape[0], Self.shape[1]]()
     ]
+    """SIMD type for the C/accumulator operand registers."""
 
     comptime c_reg_tile_type = LayoutTensor[
         Self.out_type,
@@ -227,6 +245,7 @@ struct TensorCore[
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
+    """LayoutTensor type for the C register tile."""
 
     fn __init__(out self):
         """
@@ -1569,6 +1588,7 @@ struct TiledTensorCore[
     comptime mma_op = TensorCore[
         Self.out_type, Self.in_type, Self.shape, Self.transpose_b
     ]()
+    """The underlying TensorCore instance for MMA operations."""
 
     @staticmethod
     @always_inline
@@ -1662,13 +1682,23 @@ struct TiledTensorCore[
 
 
 @always_inline
-fn _load_tr16_b64_row(
+fn _load_tr16_b64_row[
+    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+](
     tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> SIMD[tile.dtype, 4]:
-    # ds_read_tr16_b64 uses a set of 4x4 lanes (amd calls 16 lanes a "row")
-    # to load a 4x16 tile. Each lane loads 4 contiguous elements from the tile.
-    # Then they are exchanged such that at the end of this operation you get a
-    # SIMD[tile.dtype, 4], with each lane containing a column of the 4x16 tile.
+    """Load a 4x16 tile using ds_read_tr16_b64 with optional swizzle.
+
+    ds_read_tr16_b64 uses a set of 4x4 lanes (AMD calls 16 lanes a "row")
+    to load a 4x16 tile. Each lane loads 4 contiguous elements from the tile.
+    Then they are exchanged such that at the end of this operation you get a
+    SIMD[tile.dtype, 4], with each lane containing a column of the 4x16 tile.
+
+    Parameters:
+        swizzle: Optional swizzle pattern applied to LDS offsets. When provided,
+                 the offset is swizzled before the read. The swizzle must preserve
+                 8-byte contiguity (satisfied by Swizzle(1, 5, 4) for aligned tiles).
+    """
     constrained[
         size_of[tile.dtype]() == 2,
         String(
@@ -1690,6 +1720,18 @@ fn _load_tr16_b64_row(
         thread_layout
     ](lane_in_row)
     var offset = dist_result[2]
+
+    # Apply swizzle to the base offset if provided
+    # The 8-byte read remains contiguous because:
+    # - Swizzle(1, 5, 4) XORs bit 9 into bits 5-8
+    # - Within a 512-byte block (same bit 9), swizzle preserves contiguity
+    @parameter
+    if swizzle:
+        # Convert element offset to byte offset, swizzle, convert back
+        var byte_offset = Int(offset) * size_of[tile.dtype]()
+        var swizzled_bytes = swizzle.value()(byte_offset)
+        offset = swizzled_bytes // size_of[tile.dtype]()
+
     var ptr = tile.ptr.offset(offset)
     return ds_read_tr16_b64(ptr)
 
@@ -1697,6 +1739,7 @@ fn _load_tr16_b64_row(
 @always_inline
 fn _load_tr16_b64_warp[
     mma_shape: IndexList[3],
+    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
 ](
     tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> SIMD[tile.dtype, 4]:
@@ -1732,12 +1775,13 @@ fn _load_tr16_b64_warp[
 
     var coords = idx2crd[row_layout](Int(lane_id() // 16))
     var shared_b_tile = tile.tile[4, 16](Int(coords[0]), Int(coords[1]))
-    return _load_tr16_b64_row(shared_b_tile)
+    return _load_tr16_b64_row[swizzle](shared_b_tile)
 
 
 @always_inline
 fn load_b_tr[
-    mma_shape: IndexList[3]
+    mma_shape: IndexList[3],
+    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
 ](
     tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> SIMD[tile.dtype, 8]:
@@ -1751,6 +1795,7 @@ fn load_b_tr[
 
     Parameters:
         mma_shape: The MMA instruction tile shape (only 32x32x16 or 16x16x32 supported).
+        swizzle: Optional swizzle pattern for bank-conflict-free LDS access.
 
     Args:
         tile:      A `LayoutTensor`, residing in shared memory, with shape (mma_shape[2], mma_shape[1])
@@ -1809,6 +1854,93 @@ fn load_b_tr[
     # Typical usage: when fusing two MMAs, you can efficiently pass the
     # accumulator of the first (after downcasting to 2 bytes) as part of the input to the next.
     var tiles = tile.split[2]()
-    var part_1 = _load_tr16_b64_warp[mma_shape](tiles[0])
-    var part_2 = _load_tr16_b64_warp[mma_shape](tiles[1])
+    var part_1 = _load_tr16_b64_warp[mma_shape, swizzle](tiles[0])
+    var part_2 = _load_tr16_b64_warp[mma_shape, swizzle](tiles[1])
+    return part_1.join(part_2)
+
+
+@always_inline
+fn load_b_nt[
+    mma_shape: IndexList[3],
+    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+](
+    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+) -> SIMD[tile.dtype, 8]:
+    """Loads the b operand tile for AMD tensor core MFMA from (N, K) storage.
+
+    This function supports double-rate MFMA shapes (32x32x16, 16x16x32) with bfloat16 input.
+    Unlike load_b_tr which expects (K, N) storage, this function works with (N, K) storage
+    which is common when transpose_b=True and B is stored row-major.
+
+    The input tile (shape = (mma_shape[1], mma_shape[2])) is split along the K dimension into
+    two halves of shape (MMA_N, MMA_K//2). Each half is loaded using `_load_tr16_b64_warp`,
+    which performs a transposed (column-major) load from shared memory. The hardware transpose
+    effectively converts the (N, K) storage to (K, N) format needed by MMA.
+
+    Parameters:
+        mma_shape: The MMA instruction tile shape (only 32x32x16 or 16x16x32 supported).
+        swizzle: Optional swizzle pattern for bank-conflict-free LDS access.
+
+    Args:
+        tile:      A `LayoutTensor`, residing in shared memory, with shape (mma_shape[1], mma_shape[2])
+                   and dtype `DType.bfloat16`. This is (N, K) storage order.
+
+    Returns:
+        SIMD[tile.dtype, 8]: Concatenated transposed SIMD loads from both halves of the tile.
+
+    Example:
+        For 16x16x32 MMA with B stored as (N, K) = (16, 32) in LDS:
+        ```mojo
+        # B tile in LDS: shape (16, 32) = (MMA_N, MMA_K)
+        var b_tile = smem_b.tile[16, 32](n_idx, k_idx)
+        var b_reg = load_b_nt[IndexList[3](16, 16, 32)](b_tile)
+        # b_reg now contains 8 bf16 values ready for MFMA
+        ```
+    """
+    # only support double-rate mfma shapes for now
+    constrained[
+        mma_shape in (IndexList[3](32, 32, 16), IndexList[3](16, 16, 32)),
+        String(
+            "Unsupported mma_shape: ",
+            mma_shape[0],
+            "x",
+            mma_shape[1],
+            "x",
+            mma_shape[2],
+            ". Supported shapes: 32x32x16, 16x16x32",
+        ),
+    ]()
+    constrained[
+        tile.dtype == DType.bfloat16,
+        String(
+            "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
+        ),
+    ]()
+    # Note: shape is (N, K) = (mma_shape[1], mma_shape[2]) - opposite of load_b_tr
+    constrained[
+        tile.shape[0]() == mma_shape[1],
+        String(
+            "Expected tile.shape[0]() to be mma_shape[1]=",
+            mma_shape[1],
+            ", but got ",
+            tile.shape[0](),
+        ),
+    ]()
+    constrained[
+        tile.shape[1]() == mma_shape[2],
+        String(
+            "Expected tile.shape[1]() to be mma_shape[2]=",
+            mma_shape[2],
+            ", but got ",
+            tile.shape[1](),
+        ),
+    ]()
+
+    # Split along K dimension (dim 1) into two (N, K/2) tiles
+    # For 16x16x32: split (16, 32) into two (16, 16) tiles
+    # For 32x32x16: split (32, 16) into two (32, 8) tiles
+    # The transpose read converts (N, K/2) to (K/2, N) format for MMA
+    var tiles = tile.split[2, axis=1]()
+    var part_1 = _load_tr16_b64_warp[mma_shape, swizzle](tiles[0])
+    var part_2 = _load_tr16_b64_warp[mma_shape, swizzle](tiles[1])
     return part_1.join(part_2)

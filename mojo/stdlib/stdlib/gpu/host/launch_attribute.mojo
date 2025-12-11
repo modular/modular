@@ -466,7 +466,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
     ](
         out self,
         *,
-        base_ptr: UnsafePointer[T, MutAnyOrigin, **_],
+        base_ptr: UnsafePointer[T, *_, **_],
         count: Int,
         hit_ratio: Float32,
         hit_prop: AccessProperty = AccessProperty.NORMAL,

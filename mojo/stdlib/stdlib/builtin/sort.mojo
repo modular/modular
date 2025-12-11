@@ -26,6 +26,7 @@ from memory import Span
 # ===-----------------------------------------------------------------------===#
 
 comptime insertion_sort_threshold = 32
+"""Threshold below which insertion sort is used instead of quicksort."""
 
 
 @always_inline

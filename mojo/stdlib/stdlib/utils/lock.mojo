@@ -51,7 +51,7 @@ struct BlockingSpinLock(Defaultable):
     owner of the lock."""
 
     comptime UNLOCKED = -1
-    """non-zero means locked, -1 means unlocked."""
+    """Non-zero means locked, -1 means unlocked."""
 
     var counter: Atomic[DType.int64]
     """The atomic counter implementing the spin lock."""

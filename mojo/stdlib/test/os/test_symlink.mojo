@@ -12,17 +12,32 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+from os import remove
 from os.path import exists
 from pathlib import Path
-
+from tempfile import gettempdir
 from testing import TestSuite, assert_equal
 
 
 def test_create_symlink():
-    os.symlink("test_create_symlink", "test_create_symlink_symlink")
-    with open("test_create_symlink", "w") as f:
+    var tempdir = Path(gettempdir().value())
+    var src = tempdir / "test_create_symlink"
+    var link = tempdir / "test_create_symlink_symlink"
+
+    # Clean up any leftover files from previous runs
+    try:
+        remove(link)
+    except:
+        pass
+    try:
+        remove(src)
+    except:
+        pass
+
+    os.symlink(src, link)
+    with open(src, "w") as f:
         f.write("test_create_symlink")
-    with open("test_create_symlink_symlink", "r") as f:
+    with open(link, "r") as f:
         assert_equal(f.read(), "test_create_symlink")
 
 

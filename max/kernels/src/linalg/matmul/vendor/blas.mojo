@@ -159,6 +159,9 @@ fn _resolve_backend[
     @parameter
     if backend is not Backend.AUTOMATIC:
         return backend
+    # TODO: Remove this once we have a proper hipBLASLt backend for float32.
+    elif dtype is DType.float32 and has_amd_gpu_accelerator():
+        return Backend.ROCBLAS
     elif has_amd_gpu_accelerator():
         return Backend.HIPBLASLT
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.

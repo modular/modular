@@ -35,7 +35,6 @@ Performance features:
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
 from collections import OptionalReg
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
 
@@ -200,6 +199,7 @@ comptime _CM_ROW_BITS = 128
 
 # WGMMA's K dim has 32 bytes.
 comptime WGMMA_K_BYTES = 32
+"""Size of WGMMA K dimension in bytes."""
 
 comptime _CM_LAYOUT_BITS = Layout.row_major(_CM_NUM_ROWS, _CM_ROW_BITS)
 comptime _CM_TILE_STRIDE = IntTuple(1, _CM_ROW_BITS)
@@ -410,40 +410,7 @@ fn tile_layout_mn_major[
         This returns the "unit" layout; the actual shared memory layout can be a multiple of this unit.
         Currently only supports SWIZZLE_NONE and SWIZZLE_128B modes.
     """
-    constrained[
-        swizzle_mode
-        in (TensorMapSwizzle.SWIZZLE_NONE, TensorMapSwizzle.SWIZZLE_128B),
-        "Only support 128B and no swizzle",
-    ]()
-
-    @parameter
-    if swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
-        # See comments in file header.
-        comptime row_len = swizzle_mode.bytes() // size_of[dtype]()
-        return Layout(
-            [
-                [row_len, mn_dim // row_len],
-                [_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS],
-            ],
-            [
-                [1, _CM_NUM_ROWS * row_len],
-                [row_len, _CM_NUM_ROWS * mn_dim],
-            ],
-        )
-
-    # No swizzle
-    # Number of elements per row in core matrix
-    comptime _CM_ROW_LEN = _CM_ROW_BYTES // size_of[dtype]()
-    return Layout(
-        [
-            [_CM_ROW_LEN, mn_dim // _CM_ROW_LEN],
-            [_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS],
-        ],
-        [
-            [1, _CM_NUM_ROWS * _CM_ROW_LEN],
-            [_CM_ROW_LEN, _CM_NUM_ROWS * mn_dim],
-        ],
-    )
+    return tile_layout_k_major[dtype, k_dim, mn_dim, swizzle_mode]().transpose()
 
 
 fn wgmma_c_thread_layout[C: Layout]() -> Layout:

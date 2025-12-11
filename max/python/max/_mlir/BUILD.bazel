@@ -14,7 +14,6 @@ modular_py_library(
         ":ir_py",
         "//max/python/max/_mlir/dialects",
     ],
-    imports = ["../.."],
     tags = ["no-mypy"],  # Upstream files with violations
     deps = [
         "//max/python/max/_mlir/_mlir_libs:_mlir",

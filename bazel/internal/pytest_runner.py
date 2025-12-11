@@ -171,7 +171,18 @@ fi
         pytest_args.extend(["-k", namespace.k])
     elif namespace.n:  # Skip xdist when filtering
         pytest_args.extend(["-n", namespace.n])
-    return pytest.main(pytest_args + unknown_args)
+
+    exit_code = pytest.main(pytest_args + unknown_args)
+    # https://docs.pytest.org/en/6.2.x/usage.html#possible-exit-codes
+    if exit_code == 5:  # no tests were collected
+        # Print an error:
+        if namespace.k:
+            print(
+                f"\033[31mERROR\033[0m: No tests were run matching the filter: '{namespace.k}'"
+            )
+        else:
+            print("\033[31mERROR\033[0m: No tests were run.")
+    return exit_code
 
 
 if __name__ == "__main__":

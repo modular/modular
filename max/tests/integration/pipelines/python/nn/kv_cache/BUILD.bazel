@@ -1,0 +1,55 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "kvcache_tests",
+    srcs = glob(
+        ["*.py"],
+        exclude = ["*_gpu.py"],
+    ),
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "kvcache_gpu_tests",
+    srcs = glob(
+        ["*_gpu.py"],
+    ) + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1.2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:a10_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2564
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("torch"),
+    ],
+)

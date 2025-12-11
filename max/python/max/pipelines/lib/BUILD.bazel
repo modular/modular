@@ -1,14 +1,10 @@
-load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
     name = "lib",
     srcs = glob(["**/*.py"]),
-    data = [
-        ":base_max_config_yaml_files",
-    ],
-    imports = ["../../.."],
     deps = [
         "//max/python/max/config",
         "//max/python/max/driver",
@@ -30,11 +26,4 @@ modular_py_library(
         requirement("pillow"),
         requirement("transformers"),
     ],
-)
-
-pkg_files(
-    name = "base_max_config_yaml_files",
-    srcs = glob(["configs/**/*.yaml"]),
-    prefix = "lib",
-    strip_prefix = strip_prefix.from_pkg(""),
 )

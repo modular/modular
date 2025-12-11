@@ -70,7 +70,7 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod

@@ -155,9 +155,24 @@ fn fused_qk_rope[
     kv_collection: collection_t,
     freqs_cis: LayoutTensor[dtype, **_],
     layer_idx: UInt32,
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     output: LayoutTensor[mut=True, dtype, **_],
     context: Optional[DeviceContext],
 ) raises:
+    """Applies RoPE to query and key tensors.
+
+    Args:
+        q_proj: Query projection tensor of shape [batch, seq_len, n_heads, head_dim].
+        kv_collection: The KV cache collection containing the key cache.
+        freqs_cis: Frequency tensor for RoPE of shape [max_seq_len, head_dim].
+        layer_idx: The layer index for accessing the correct cache.
+        valid_lengths: Tensor of shape [batch] containing the valid length for each
+            sequence. RoPE is only applied to positions within these lengths.
+        output: Output tensor for Q with RoPE applied, same shape as q_proj.
+        context: Optional device context for GPU execution.
+    """
     constrained[q_proj.rank == 4]()
     constrained[freqs_cis.rank == 2]()
     constrained[output.rank == 4]()
@@ -174,7 +189,7 @@ fn fused_qk_rope[
 
     @always_inline
     @parameter
-    @__copy_capture(k_cache)
+    @__copy_capture(k_cache, valid_lengths)
     fn rope_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
@@ -186,9 +201,16 @@ fn fused_qk_rope[
         else:
             var idx = rebind[IndexList[4]](idx_arg)
             var bs_idx = idx[0]
+            var seq_idx = idx[1]
+
+            # Check if this position is within the valid length for this batch
+            var valid_len = Int(valid_lengths[bs_idx])
+            if seq_idx >= valid_len:
+                return
+
             # post_seq_idx: sum of start_pos (cache_lengths[batch_idx]) and
             # seq_idx (idx[1]).
-            var post_seq_idx = k_cache.cache_length(bs_idx) + idx[1]
+            var post_seq_idx = k_cache.cache_length(bs_idx) + seq_idx
             var head_idx = idx[2]
             var head_dim_idx = idx[3]
 

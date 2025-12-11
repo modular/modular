@@ -369,31 +369,37 @@ fn block_scaled_mxfp8_kernel[
             if k_iter == 0:
                 var runtime_desc = UMMAInsDescriptor[
                     UMMAKind.KIND_MXF8F6F4
-                ].update_desc_with_sf_id[0](idesc)
-                mma[c_scale=0](
+                ].update_desc_with_sf_id[0](
+                    idesc,
+                )
+                mma(
                     adesc,
                     bdesc,
                     tmem_addr,
                     runtime_desc,
                     a_scales_tmem_addr_start,
                     b_scales_tmem_addr_start,
+                    c_scale=0,
                 )
 
                 @parameter
                 for j in range(1, num_k_mmas):
                     runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
-                    ].update_desc_with_sf_id[j](idesc)
+                    ].update_desc_with_sf_id[j](
+                        idesc,
+                    )
                     comptime idx = IntTuple(0, MMA_K * j)
                     comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
                     comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
-                    mma[c_scale=1](
+                    mma(
                         adesc + a_offset,
                         bdesc + b_offset,
                         tmem_addr,
                         runtime_desc,
                         a_scales_tmem_addr_start,
                         b_scales_tmem_addr_start,
+                        c_scale=1,
                     )
             else:
 
@@ -401,17 +407,20 @@ fn block_scaled_mxfp8_kernel[
                 for j in range(num_k_mmas):
                     var runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
-                    ].update_desc_with_sf_id[j](idesc)
+                    ].update_desc_with_sf_id[j](
+                        idesc,
+                    )
                     comptime idx = IntTuple(0, MMA_K * j)
                     comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
                     comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
-                    mma[c_scale=1](
+                    mma(
                         adesc + a_offset,
                         bdesc + b_offset,
                         tmem_addr,
                         runtime_desc,
                         a_scales_tmem_addr_start,
                         b_scales_tmem_addr_start,
+                        c_scale=1,
                     )
 
             mma_arrive(mma_mbar)
@@ -528,7 +537,6 @@ fn sm100_block_scaled_mxfp8[
     a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
     b_tma_op = create_tma_tile[
         Index(BN, BK),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
 

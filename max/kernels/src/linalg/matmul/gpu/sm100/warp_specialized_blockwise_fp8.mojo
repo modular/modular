@@ -13,7 +13,6 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv, gcd
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of
 
 from bit import next_power_of_two, prev_power_of_two
@@ -1380,7 +1379,6 @@ fn sm100_warp_specialized_blockwise_fp8[
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
-        is_k_major=transpose_b,
         swizzle_mode = config.b_swizzle,
     ](ctx, b)
 

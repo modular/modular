@@ -223,11 +223,29 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
         "invalid expected k out init",
     )
 
+    # Create valid_lengths device buffer - all sequences have full seq_len valid
+    var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    with valid_lengths_device.map_to_host() as valid_lengths_host:
+        for i in range(batch_size):
+            valid_lengths_host[i] = UInt32(seq_len)
+
+    var valid_lengths_tensor = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ](
+        valid_lengths_device.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            Index(batch_size)
+        ),
+    )
+
     fused_qk_rope[kv_collection.CacheType, interleaved=True, target="gpu"](
         q_proj=q_tensor,
         kv_collection=kv_collection,
         freqs_cis=freqs_tensor,
         layer_idx=UInt32(0),
+        valid_lengths=valid_lengths_tensor,
         output=q_out_tensor,
         context=ctx,
     )
@@ -271,6 +289,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     _ = q_device^
     _ = freqs_device^
     _ = q_out_device^
+    _ = valid_lengths_device^
 
 
 def main() -> None:

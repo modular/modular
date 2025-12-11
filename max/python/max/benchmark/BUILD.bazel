@@ -14,7 +14,6 @@ modular_py_library(
     data = [
         ":benchmark_config_yaml_files",
     ],
-    imports = ["../.."],
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/diagnostics",

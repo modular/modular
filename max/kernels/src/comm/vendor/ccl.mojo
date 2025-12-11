@@ -28,6 +28,7 @@ from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 from comm.allreduce import MAX_GPUS, elementwise_epilogue_type
+from gpu.grid_controls import PDLLevel
 
 comptime ncclComm_t = OpaquePointer
 
@@ -264,11 +265,19 @@ fn allreduce[
     rank: Int,
     ngpus: Int,
     output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+    *,
+    use_multimem: Bool = False,
+    use_quickreduce: Bool = False,
 ](
-    input: NDBuffer[dtype, rank, MutAnyOrigin],
-    output: NDBuffer[dtype, rank, MutAnyOrigin],
-    gpu_rank: Int,
+    input_buffers: InlineArray[
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+    ],
+    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    rank_sigs: InlineArray[UnsafePointer[comm.allreduce.Signal], MAX_GPUS],
     ctx: DeviceContext,
+    _max_num_blocks: Optional[Int] = None,
+    iteration: Int = 0,
 ) raises:
     """Per-GPU allreduce for use in multi-threaded contexts.
 
@@ -279,19 +288,33 @@ fn allreduce[
         not output_lambda,
         "vendor_ccl allreduce does not support output epilogue lambdas yet",
     ]()
-    var count = input.num_elements()
+    constrained[
+        not use_multimem,
+        "vendor_ccl allreduce does not support multimem path",
+    ]()
+    constrained[
+        not use_quickreduce,
+        "vendor_ccl allreduce does not support quickreduce path",
+    ]()
+    # Determine this device's rank from its context id.
+    var device_rank = Int(ctx.id())
+    var count = input_buffers[0].num_elements()
     var dtype_ccl = _dtype_to_ccl[dtype]()
     var op = ncclRedOp_t.ncclSum
     var comms = _get_global_comms(ngpus)
 
+    var input_buffer = input_buffers[0] if use_multimem else input_buffers[
+        device_rank
+    ]
+
     _check_ccl_ok(
         _ccl_allreduce(
-            input.data.bitcast[NoneType](),
-            output.data.bitcast[NoneType](),
+            input_buffer.data.bitcast[NoneType](),
+            output_buffer.data.bitcast[NoneType](),
             count,
             dtype_ccl,
             op,
-            comms.comms[gpu_rank],
+            comms.comms[device_rank],
             ctx,
         )
     )

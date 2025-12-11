@@ -50,7 +50,14 @@ struct _SpanIter[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
+    """The iterator type for this span iterator.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
     comptime Element = Self.T
+    """The element type yielded by iteration."""
 
     var index: Int
     var src: Span[Self.T, Self.origin]
@@ -109,17 +116,24 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
         Self.T,
         Self.origin,
     ]
+    """The unsafe pointer type for this `Span`."""
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _SpanIter[Self.T, Self.origin]
-    """The UnsafePointer type that corresponds to this `Span`."""
+    """The iterator type for this `Span`.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
     # Fields
     var _data: Self.UnsafePointerType
     var _len: Int
 
     comptime device_type: AnyType = Self
+    """The device-side type for this `Span`."""
 
-    fn _to_device_type(self, target: LegacyOpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 

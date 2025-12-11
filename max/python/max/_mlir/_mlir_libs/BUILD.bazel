@@ -55,7 +55,6 @@ This is likely to occur when bumping LLVM, you can run
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 """,
-    imports = ["../../.."],
     pyi_srcs = glob(["**/*.pyi"]),
     tags = ["no-mypy"],
 )

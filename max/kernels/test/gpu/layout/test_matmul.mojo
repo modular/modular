@@ -70,7 +70,7 @@ struct test_matmul[
         var a_shape = IndexList[2](self.M, self.K)
         var b_shape = IndexList[2](self.K, self.N)
         var c_shape = IndexList[2](self.M, self.N)
-        alias layout_2d = Layout.row_major[2]()
+        comptime layout_2d = Layout.row_major[2]()
 
         self.a_device_buffer = ctx.enqueue_create_buffer[Self.dtype](
             a_shape.flattened_length()

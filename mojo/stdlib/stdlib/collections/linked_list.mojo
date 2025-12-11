@@ -153,6 +153,12 @@ struct LinkedList[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _LinkedListIter[Self.ElementType, iterable_origin]
+    """The iterator type for this linked list.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     var _head: Self._NodePointer
     """The first node in the list."""

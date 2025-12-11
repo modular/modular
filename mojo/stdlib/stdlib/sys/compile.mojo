@@ -141,4 +141,4 @@ comptime DebugLevel = _DebugLevel()
 comptime SanitizeAddress = is_defined["__SANITIZE_ADDRESS"]() and env_get_int[
     "__SANITIZE_ADDRESS"
 ]() == 1
-"""True if address sanitizer is enabled at compile-time"""
+"""True if address sanitizer is enabled at compile-time."""

@@ -59,15 +59,15 @@ fn test_scaled_mxfp8_cublaslt[
             cublaslt_version,
         )
 
-    alias scales_type = MXFP8_SF_DTYPE
-    alias ref_scales_type = DType.float32
+    comptime scales_type = MXFP8_SF_DTYPE
+    comptime ref_scales_type = DType.float32
 
     # Initialize reference scales
-    alias REF_BLOCK_SIZE = 128
-    alias static_ref_a_scales_shape = DimList(
+    comptime REF_BLOCK_SIZE = 128
+    comptime static_ref_a_scales_shape = DimList(
         ceildiv(Int(k.dim), REF_BLOCK_SIZE), m.dim
     )
-    alias static_ref_b_scales_shape = DimList(
+    comptime static_ref_b_scales_shape = DimList(
         ceildiv(Int(n.dim), REF_BLOCK_SIZE),
         ceildiv(Int(k.dim), REF_BLOCK_SIZE),
     )
@@ -130,14 +130,14 @@ fn test_scaled_mxfp8_cublaslt[
     var dynamic_b_shape = DimList(n.value, k.value)
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    alias static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
         Dim(SF_ATOM_M[0]),
         Dim(SF_ATOM_M[1]),
         Dim(SF_ATOM_K),
     )
-    alias static_b_scales_shape = DimList(
+    comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
         Dim(SF_ATOM_M[0]),

@@ -83,8 +83,18 @@ what we publish.
     parametric_raise_example(doesnt_raise)
   ```
 
-  This support should be reliable, but `with` blocks are still hard coded to
-  `Error`.
+  As part of this, context managers have been extended to support typed throws,
+  and can also infer an error type if they need to handle it, e.g.:
+
+  ```mojo
+  struct MyGenericExitCtxtMgr:
+    # Called on entry to the with block.
+    fn __enter__(self): ...
+    # Called on exit from the with block when no error is thrown.
+    fn __exit__(self): ...
+    # Called on exit from the with block if an error is thrown.
+    fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool: ...
+  ```
 
 - Mojo now allows implicit conversions between function types from a non-raising
   function to a raising function.  It also allows implicit conversions between
@@ -136,6 +146,10 @@ what we publish.
   struct method, but the argument type still must be of the enclosing struct
   type.
 
+- Context managers (used in `with` statements) can now define consuming exit
+  methods, i.e. `fn __exit__(var self)` which can be useful for linear context
+  managers. This also works with `deinit`.
+
 ### Language changes
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
@@ -147,6 +161,9 @@ what we publish.
           # Warning: unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead
           return my_param
   ```
+
+- The compiler will now warn on the use of `alias` keyword and suggest
+`comptime` instead.
 
 ### Library changes
 
@@ -310,6 +327,11 @@ what we publish.
    recursion. The default is `std::numeric_limits<unsigned>::max()`.
 - The Mojo Debugger `mojo break-on-raise` feature now works correctly with
   multiple targets in a debugger instance. The setting is per-target.
+- Docstring validation now includes `comptime` aliases. The
+  `--validate-doc-strings` and `--diagnose-missing-doc-strings` flags now check
+  that public aliases have properly formatted docstrings (summary ends with
+  period, starts with capital letter). Parametric aliases are also checked for
+  proper `Parameters:` sections.
 
 ### Experimental changes
 
@@ -358,7 +380,15 @@ or removed in future releases.
 
 ### 🛠️ Fixed
 
+- [Issue #1850](https://github.com/modular/modular/issues/1850): Mojo assumes
+  string literal at start of a function is a doc comment
+- [Issue #4501](https://github.com/modular/modular/issues/4501): Incorrect
+  parsing of incomplete assignment
 - [Issue #5578](https://github.com/modular/modular/issues/5578): ownership
   overloading not working when used with `ref`.
 - [Issue #5137](https://github.com/modular/modular/issues/5137): Tail call
-  optimization doesn't happen for tail recursive functions with raises
+  optimization doesn't happen for tail recursive functions with raises.
+- [Issue #5361](https://github.com/modular/modular/issues/5361): mojo doc
+  crashes on alias of parametrized function with origin.
+- [Issue #5618](https://github.com/modular/modular/issues/5618): Compiler crash
+  when should be implicit conversion error.

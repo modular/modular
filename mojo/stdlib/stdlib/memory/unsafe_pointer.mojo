@@ -93,7 +93,13 @@ comptime MutUnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = UnsafePointer[mut=True, type, origin, address_space=address_space]
-"""A mutable unsafe pointer."""
+"""A mutable unsafe pointer.
+
+Parameters:
+    type: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
 
 comptime ImmutUnsafePointer[
     type: AnyType,
@@ -101,7 +107,13 @@ comptime ImmutUnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = UnsafePointer[type, origin, address_space=address_space]
-"""An immutable unsafe pointer."""
+"""An immutable unsafe pointer.
+
+Parameters:
+    type: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
 
 comptime OpaquePointer[
     mut: Bool, //,
@@ -109,21 +121,37 @@ comptime OpaquePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = UnsafePointer[NoneType, origin, address_space=address_space]
-"""An opaque pointer, equivalent to the C `(const) void*` type."""
+"""An opaque pointer, equivalent to the C `(const) void*` type.
+
+Parameters:
+    mut: Whether the pointer is mutable.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
 
 comptime MutOpaquePointer[
     origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = OpaquePointer[origin, address_space=address_space]
-"""A mutable opaque pointer, equivalent to the C `void*` type."""
+"""A mutable opaque pointer, equivalent to the C `void*` type.
+
+Parameters:
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
 
 comptime ImmutOpaquePointer[
     origin: ImmutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = OpaquePointer[origin, address_space=address_space]
-"""An immutable opaque pointer, equivalent to the C `const void*` type."""
+"""An immutable opaque pointer, equivalent to the C `const void*` type.
+
+Parameters:
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
 
 
 @register_passable("trivial")

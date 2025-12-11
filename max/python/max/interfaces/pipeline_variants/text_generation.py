@@ -29,6 +29,7 @@ from typing import (
 import msgspec
 import numpy as np
 import numpy.typing as npt
+from max._core import xxhash
 from max.interfaces.context import BaseContext, SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
@@ -366,24 +367,6 @@ class TextGenerationContext(BaseContext, Protocol):
 
         Returns:
             A 1D NumPy array of int32 values containing all tokens including padding.
-        """
-        ...
-
-    def set_token_indices(
-        self,
-        start_idx: int | None = None,
-        active_idx: int | None = None,
-        end_idx: int | None = None,
-    ) -> None:
-        """Set token indices to specific absolute values.
-
-        This method provides direct control over token index positioning,
-        allowing precise management of the token array state.
-
-        Args:
-            start_idx: New absolute value for ``start_idx``, if provided.
-            active_idx: New absolute value for ``active_idx``, if provided.
-            end_idx: New absolute value for ``end_idx``, if provided.
         """
         ...
 
@@ -779,8 +762,13 @@ def hash_image(pixel_values: npt.NDArray[Any]) -> int:
 
     Supports any numpy array dtype (float32, uint16 for bfloat16 bits, etc.)
     since vision models may use different storage formats on CPU.
+
+    Uses xxhash for fast hashing. Ensures C-contiguous memory layout for
+    correct hashing (np.ascontiguousarray is a no-op if already contiguous).
     """
-    return hash(pixel_values.data.tobytes())
+    hash_val = xxhash.xxh3_64_intdigest(np.ascontiguousarray(pixel_values).data)  # type: ignore[arg-type]
+    # xxh3_64_intdigest returns unsigned 64-bit int; convert to signed for numpy compatibility
+    return int(np.uint64(hash_val).astype(np.int64))
 
 
 class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):

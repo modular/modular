@@ -1,8 +1,10 @@
 """A helper macro for running python tests with pytest"""
 
 load("@rules_python//python:defs.bzl", "py_test")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", requirement = "pip_requirement")
+load(":modular_py_library.bzl", "modular_py_library")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
@@ -15,12 +17,14 @@ def modular_py_test(
         env = {},
         args = [],
         data = [],
+        external_noop = False,  # buildifier: disable=unused-variable
         mojo_deps = [],
         tags = [],
         exec_properties = {},
         target_compatible_with = [],
         gpu_constraints = [],
         main = None,
+        imports = [],
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -31,12 +35,14 @@ def modular_py_test(
         env: Any environment variables that should be set during the test runtime
         args: Arguments passed to the test execution
         data: Runtime deps of the test target
+        external_noop: Ignored, for compatibility with the external repo
         mojo_deps: mojo_library targets the test depends on at runtime
         tags: Tags added to the py_test target
         exec_properties: https://bazel.build/reference/be/common-definitions#common-attributes
         target_compatible_with: https://bazel.build/extending/platforms#skipping-incompatible-targets
         gpu_constraints: GPU requirements for the tests
         main: If provided, this is the main entry point for the test. If not provided, pytest is used.
+        imports: Additional python import paths
         **kwargs: Extra arguments passed through to py_test
     """
 
@@ -136,6 +142,24 @@ def modular_py_test(
             "main": "pytest_runner.py",
         }
 
+    if "manual" in tags:
+        # TODO: Remove once we run mypy-style lints in a separate test target
+        modular_py_library(
+            name = name + ".mypy_library",
+            data = data + extra_data,
+            toolchains = toolchains,
+            tags = [ALLOW_UNUSED_TAG],
+            deps = deps + [
+                requirement("pytest"),
+                "@rules_python//python/runfiles",
+            ],
+            testonly = True,
+            srcs = srcs + ["//bazel/internal:pytest_runner"],
+            visibility = ["//visibility:private"],
+            imports = imports,
+            # NOTE: Intentionally exclude other attrs that shouldn't matter for mypy
+        )
+
     if len(test_srcs) > 1:
         test_names = []
         for src in test_srcs:
@@ -154,6 +178,7 @@ def modular_py_test(
                 exec_properties = default_exec_properties | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with,
                 tags = tags,
+                imports = imports,
                 **kwargs
             )
 
@@ -175,6 +200,7 @@ def modular_py_test(
             srcs = srcs + ["//bazel/internal:pytest_runner"],
             exec_properties = default_exec_properties | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
-            tags = tags + (["manual"] if len(test_srcs) > 1 else []),
+            tags = tags,
+            imports = imports,
             **kwargs
         )

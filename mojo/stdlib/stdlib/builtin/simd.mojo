@@ -129,8 +129,10 @@ comptime UInt256 = Scalar[DType.uint256]
 """Represents a 256-bit unsigned scalar integer."""
 
 comptime Float4_e2m1fn = Scalar[DType.float4_e2m1fn]
-"""Represents a 4-bit `e2m1` floating point format, encoded as
-`s.ee.m` and defined by the [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
+"""Represents a 4-bit `e2m1` floating point format.
+
+This type is encoded as `s.ee.m` and defined by the
+[Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
 
 - (s)ign: 1 bit
 - (e)xponent: 2 bits
@@ -138,7 +140,9 @@ comptime Float4_e2m1fn = Scalar[DType.float4_e2m1fn]
 - exponent_bias: 1
 """
 comptime Float8_e5m2 = Scalar[DType.float8_e5m2]
-"""Represents the 8-bit E5M2 floating point format from the [OFP8
+"""Represents the 8-bit E5M2 floating point format.
+
+This type is from the [OFP8
 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
 encoded as `seeeeemm`:
 - (s)ign: 1 bit
@@ -151,7 +155,9 @@ encoded as `seeeeemm`:
 - -0: 10000000
 """
 comptime Float8_e5m2fnuz = Scalar[DType.float8_e5m2fnuz]
-"""Represents an 8-bit floating point format, encoded as `seeeeemm`:
+"""Represents an 8-bit floating point format.
+
+This type is encoded as `seeeeemm`:
 - (s)ign: 1 bit
 - (e)xponent: 5 bits
 - (m)antissa: 2 bits
@@ -179,8 +185,9 @@ in the OFP8 standard above, encoded as `seeeemmm`:
 - fn: finite (no inf or -inf encodings)
 """
 comptime Float8_e4m3fnuz = Scalar[DType.float8_e4m3fnuz]
-"""Represents an 8-bit e4m3fnuz floating point format, encoded as
-`seeeemmm`:
+"""Represents an 8-bit e4m3fnuz floating point format.
+
+This type is encoded as `seeeemmm`:
 - (s)ign: 1 bit
 - (e)xponent: 4 bits
 - (m)antissa: 3 bits
@@ -279,14 +286,31 @@ struct FastMathFlag(ImplicitlyCopyable):
     var _value: UInt8
 
     comptime NONE = Self(0)
+    """No fast-math optimizations enabled."""
+
     comptime NNAN = Self(1)
+    """Assume no NaN values."""
+
     comptime NINF = Self(2)
+    """Assume no infinite values."""
+
     comptime NSZ = Self(3)
+    """Treat the sign of zero as insignificant."""
+
     comptime ARCP = Self(4)
+    """Allow reciprocal approximations."""
+
     comptime CONTRACT = Self(5)
+    """Allow floating-point contraction."""
+
     comptime AFN = Self(6)
+    """Allow approximate function implementations."""
+
     comptime REASSOC = Self(7)
+    """Allow reassociation of operations."""
+
     comptime FAST = Self(8)
+    """Enable all fast-math optimizations."""
 
     fn __is__(self, other: Self) -> Bool:
         """Compares two FastMathFlag values for identity.
@@ -504,7 +528,7 @@ struct SIMD[dtype: DType, size: Int](
     comptime device_type: AnyType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: LegacyOpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -3249,6 +3273,7 @@ struct SIMD[dtype: DType, size: Int](
 
 
 comptime U8x16 = SIMD[DType.uint8, 16]
+"""A 16-element vector of unsigned 8-bit integers."""
 
 
 fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:

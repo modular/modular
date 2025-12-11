@@ -434,14 +434,17 @@ fn blockscaled_pair_cta_mxfp8[
                     if elect_one_thread:
                         var runtime_desc = UMMAInsDescriptor[
                             UMMAKind.KIND_MXF8F6F4
-                        ].update_desc_with_sf_id[0](idesc)
-                        mma[cta_group, c_scale=0](
+                        ].update_desc_with_sf_id[0](
+                            idesc,
+                        )
+                        mma[cta_group,](
                             adesc,
                             bdesc,
                             tmem_addr,
                             runtime_desc,
                             a_scales_tmem_addr_start,
                             b_scales_tmem_addr_start,
+                            c_scale=0,
                         )
 
                     @parameter
@@ -451,14 +454,17 @@ fn blockscaled_pair_cta_mxfp8[
                         if elect_one_thread:
                             runtime_desc = UMMAInsDescriptor[
                                 UMMAKind.KIND_MXF8F6F4
-                            ].update_desc_with_sf_id[j](idesc)
-                            mma[cta_group, c_scale=1](
+                            ].update_desc_with_sf_id[j](
+                                idesc,
+                            )
+                            mma[cta_group](
                                 adesc,
                                 bdesc,
                                 tmem_addr,
                                 runtime_desc,
                                 a_scales_tmem_addr_start,
                                 b_scales_tmem_addr_start,
+                                c_scale=1,
                             )
                 else:
 
@@ -467,14 +473,17 @@ fn blockscaled_pair_cta_mxfp8[
                         if elect_one_thread:
                             var runtime_desc = UMMAInsDescriptor[
                                 UMMAKind.KIND_MXF8F6F4
-                            ].update_desc_with_sf_id[j](idesc)
-                            mma[cta_group, c_scale=1](
+                            ].update_desc_with_sf_id[j](
+                                idesc,
+                            )
+                            mma[cta_group](
                                 adesc,
                                 bdesc,
                                 tmem_addr,
                                 runtime_desc,
                                 a_scales_tmem_addr_start,
                                 b_scales_tmem_addr_start,
+                                c_scale=1,
                             )
                         adesc += mma_shape[2] * size_of[a_type]()
                         bdesc += b_k_stride
@@ -593,7 +602,6 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
 

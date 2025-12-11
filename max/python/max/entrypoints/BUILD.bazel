@@ -12,7 +12,6 @@ modular_py_library(
             "replay_recording.py",
         ],
     ),
-    imports = ["../.."],
     deps = [
         "//max/python/max/diagnostics",
         "//max/python/max/pipelines",
@@ -42,7 +41,6 @@ modular_py_library(
     srcs = [
         "pipelines.py",
     ],
-    imports = ["../.."],
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max/interfaces",
@@ -96,6 +94,5 @@ modular_py_binary(
 modular_py_library(
     name = "gpu-query",
     srcs = ["gpu_query.py"],
-    imports = ["../.."],
     deps = ["@mojo//:python"],
 )

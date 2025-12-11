@@ -100,6 +100,9 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.num_input_tokens": _meter.create_counter(
         "maxserve.num_input_tokens", description="Count of input tokens"
     ),  # type: ignore
+    "maxserve.num_input_characters": _meter.create_counter(
+        "maxserve.num_input_characters", description="Count of input characters"
+    ),  # type: ignore
     "maxserve.num_output_tokens": _meter.create_counter(
         "maxserve.num_output_tokens", description="Count of generated tokens"
     ),  # type: ignore
@@ -166,6 +169,16 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.tts.audio_output_length",
         unit="ms",
         description="Audio output length in milliseconds",
+    ),  # type: ignore
+    "maxserve.input_tokens_per_request": _meter.create_histogram(
+        "maxserve.input_tokens_per_request",
+        unit="tokens",
+        description="Distribution of input tokens per request",
+    ),  # type: ignore
+    "maxserve.output_tokens_per_request": _meter.create_histogram(
+        "maxserve.output_tokens_per_request",
+        unit="tokens",
+        description="Distribution of output tokens per request",
     ),  # type: ignore
 }
 
@@ -337,6 +350,12 @@ class _AsyncMetrics:
             MetricLevel.BASIC,
         )
 
+    def input_characters(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.num_input_characters", value),
+            MetricLevel.BASIC,
+        )
+
     def output_tokens(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.num_output_tokens", value),
@@ -429,6 +448,18 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement("maxserve.tts.audio_output_length", length_ms),
             MetricLevel.DETAILED,
+        )
+
+    def input_tokens_per_request(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.input_tokens_per_request", value),
+            MetricLevel.BASIC,
+        )
+
+    def output_tokens_per_request(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.output_tokens_per_request", value),
+            MetricLevel.BASIC,
         )
 
 

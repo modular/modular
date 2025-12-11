@@ -315,8 +315,9 @@ struct LayoutTensor[
 
     # `trait DevicePassable` implementation, to allow LayoutTensor to be passed directly to kernels
     comptime device_type: AnyType = Self
+    """The device-side type representation."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -374,12 +375,14 @@ struct LayoutTensor[
     and origin tracking for memory safety and performance optimization."""
 
     comptime storage_size = size_of[Self.dtype]() * Self.layout.size()
+    """Total storage size in bytes for the tensor data."""
 
     comptime RuntimeLayoutType = RuntimeLayout[
         Self.layout,
         element_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for the runtime layout."""
 
     var runtime_layout: Self.RuntimeLayoutType
     """Runtime representation of the tensor's memory layout.
@@ -393,6 +396,7 @@ struct LayoutTensor[
         element_type = DType.int32,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for the runtime element layout."""
 
     var runtime_element_layout: Self.RuntimeElementLayoutType
     """Runtime representation of each element's internal layout.
@@ -407,9 +411,15 @@ struct LayoutTensor[
     """The SIMD vector type used for vectorized operations on tensor elements."""
 
     comptime num_strides: Int = Self.RuntimeLayoutType.StrideType.scalar_length
+    """Number of stride values in the layout."""
     comptime idx_list_t[rank: Int = Self.rank] = IndexList[
         rank, element_type = Self.linear_idx_type
     ]
+    """Type alias for index lists of the tensor's rank.
+
+    Parameters:
+        rank: The number of dimensions in the index list.
+    """
 
     comptime GenericAddressSpaceLayoutTensor = LayoutTensor[
         mut = Self.mut,
@@ -423,6 +433,7 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """LayoutTensor variant using generic address space."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -603,6 +614,7 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """LayoutTensor type with generic address space."""
 
     @always_inline
     fn __init__(
@@ -856,6 +868,13 @@ struct LayoutTensor[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for bitcast result tensors.
+
+    Parameters:
+        new_dtype: The target data type to cast to.
+        address_space: The address space for the result tensor.
+        element_layout: The element layout for the result tensor.
+    """
 
     @always_inline
     fn bitcast[
@@ -900,8 +919,15 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """Type alias for origin-cast result tensors.
+
+    Parameters:
+        mut: Whether the result tensor is mutable.
+        origin: The origin for the result tensor.
+    """
 
     comptime MutableAnyType = Self.OriginCastType[True, MutAnyOrigin]
+    """Mutable LayoutTensor type with MutAnyOrigin."""
     comptime _AsMut = Self.OriginCastType[True, _]
 
     @always_inline("nodebug")
@@ -974,6 +1000,11 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """Type alias for address-space-cast result tensors.
+
+    Parameters:
+        address_space: The target address space for the result tensor.
+    """
 
     @always_inline("nodebug")
     fn address_space_cast[
@@ -2380,6 +2411,7 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """LayoutTensor type for stack-allocated tensors."""
 
     @always_inline
     fn to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
@@ -2771,6 +2803,11 @@ struct LayoutTensor[
         address_space = Self.address_space,
         element_layout=element_layout,
     ]
+    """Type alias for coalesced result tensors.
+
+    Parameters:
+        element_layout: The element layout for the coalesced tensor.
+    """
 
     @always_inline
     fn coalesce(self) -> Self.CoalesceType[Self.element_layout]:
@@ -3042,6 +3079,11 @@ struct LayoutTensor[
     comptime SIMDTileType[tile_size: Int] = Self.TileType[
         tile_size, simd_width_of[Self.dtype]()
     ]
+    """Type alias for SIMD-sized tile tensors.
+
+    Parameters:
+        tile_size: The size of the tile along the tiled axis.
+    """
 
     @always_inline
     fn simd_tile[
@@ -3065,6 +3107,7 @@ struct LayoutTensor[
         len(flatten(Self.layout.shape)),
         element_type = Self.layout_int_type,
     ]
+    """Index list type for corner coordinates."""
 
     @always_inline
     fn tile_with_offset[
@@ -3183,6 +3226,12 @@ struct LayoutTensor[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked or _tile_is_masked[Self.layout, *tile_sizes](),
     ]
+    """Type alias for tiled iterator types.
+
+    Parameters:
+        tile_sizes: The dimensions of each tile along each axis.
+        axis: The axis along which to iterate.
+    """
 
     @always_inline
     fn tiled_iterator[
@@ -3368,6 +3417,12 @@ struct LayoutTensor[
         element_layout = Self.element_layout,
         alignment = Self.alignment,
     ]
+    """Type alias for split element tensors.
+
+    Parameters:
+        count: Number of portions to split into.
+        axis: The axis along which to split.
+    """
 
     comptime StaticSplitType[
         count: Int,
@@ -3376,6 +3431,12 @@ struct LayoutTensor[
         Self.SplitElementType[count, axis],
         count,
     ]
+    """Type alias for static split result tuples.
+
+    Parameters:
+        count: Number of portions to split into.
+        axis: The axis along which to split.
+    """
 
     @always_inline
     fn split[
@@ -3441,6 +3502,11 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for dynamic split result tensors.
+
+    Parameters:
+        axis: The axis along which to split.
+    """
 
     @always_inline
     fn split[
@@ -3599,6 +3665,12 @@ struct LayoutTensor[
             or _distribute_is_masked[Self.layout, threads_layout, axis]()
         ) if is_nvidia_gpu() else False,
     ]
+    """Type alias for distributed tensor types.
+
+    Parameters:
+        threads_layout: The layout describing thread distribution.
+        axis: Optional axis to distribute along.
+    """
 
     @always_inline
     fn distribute[
@@ -4039,6 +4111,13 @@ struct LayoutTensor[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for shape-vectorized tensor types.
+
+    Parameters:
+        origin: The origin of the result tensor.
+        vector_shape: The shape of each vector unit.
+        linear_vectorize: Whether to vectorize in a linear manner.
+    """
 
     @always_inline
     fn _vectorize_2[
@@ -4187,6 +4266,11 @@ struct LayoutTensor[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for vectorized tensor types.
+
+    Parameters:
+        vector_shape: The shape of each vector unit along each axis.
+    """
 
     @always_inline
     fn vectorize[
@@ -4257,6 +4341,7 @@ struct LayoutTensor[
     comptime SIMDVectorizedType = Self.VectorizedType[
         1, simd_width_of[Self.dtype]()
     ]
+    """Result type for SIMD-width vectorization."""
 
     @always_inline
     fn vectorize(self) -> Self.SIMDVectorizedType:
@@ -4326,6 +4411,12 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for 2D slice result tensors.
+
+    Parameters:
+        d0_slice: Slice specification for the first dimension.
+        d1_slice: Slice specification for the second dimension.
+    """
 
     @always_inline
     fn slice[
@@ -4423,6 +4514,14 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for 2D slice result tensors from higher-rank tensors.
+
+    Parameters:
+        d0_slice: Slice specification for the first selected dimension.
+        d1_slice: Slice specification for the second selected dimension.
+        slice_indices: Indices of the two dimensions to slice.
+        __offset_dims: Number of fixed dimensions.
+    """
 
     @always_inline
     fn slice[
@@ -4540,6 +4639,13 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for 1D slice result tensors from higher-rank tensors.
+
+    Parameters:
+        d0_slice: Slice specification for the selected dimension.
+        slice_indices: Index of the dimension to slice.
+        __offset_dims: Number of fixed dimensions.
+    """
 
     # FIXME: Can't overload slice, hitting compiler issue.
     # https://linear.app/modularml/issue/MOCO-174
@@ -4645,6 +4751,7 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Result type for transpose operations."""
 
     @always_inline
     fn transpose(self) -> Self.TransposeType:
@@ -4710,6 +4817,11 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """Type alias for reshaped tensor types.
+
+    Parameters:
+        dst_layout: The target layout for the reshaped tensor.
+    """
 
     @always_inline
     fn reshape[
@@ -4771,6 +4883,12 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for composed layout tensor types.
+
+    Parameters:
+        rhs_layout: The layout to compose with.
+        dst_layout: The resulting composed layout.
+    """
 
     @always_inline
     fn composition[
@@ -6113,7 +6231,6 @@ fn cp_async_k_major[
         dtype,
         2,
         Index(src_shape0, src_shape1),
-        is_k_major=True,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
     ]()
     comptime desc_shape0 = desc_layout.shape[0].value()
@@ -6140,129 +6257,6 @@ fn cp_async_k_major[
 
         copy_dram_to_sram_async[
             thread_layout, swizzle=True, eviction_policy=eviction_policy
-        ](
-            dst_tile.vectorize[1, simd_size](),
-            src_tile.vectorize[1, simd_size](),
-        )
-
-
-@always_inline("nodebug")
-fn cp_async_mn_major[
-    dtype: DType,
-    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](
-    dst: LayoutTensor[
-        mut=True,
-        dtype,
-        _,
-        address_space = gpu_memory.AddressSpace.SHARED,
-        *_, **_,
-    ],
-    src: LayoutTensor[
-        dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
-    ],
-):
-    """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory
-    Accelerator) with MN-major layout.
-
-    This function performs an asynchronous copy operation from global memory
-    (DRAM) to shared memory (SRAM) using NVIDIA's Tensor Memory Accelerator
-    (TMA) hardware. It optimizes for MN-major memory access patterns, which is
-    particularly beneficial for tensor operations where the outer dimensions (M,
-    N) are accessed contiguously.
-
-    The function automatically determines the optimal tile size and thread
-    distribution based on the tensor shapes and hardware capabilities,
-    leveraging TMA's efficient memory transfer mechanisms.
-
-    Constraints:
-        - Requires NVIDIA GPUs with TMA support (compute capability 9.0+).
-        - Source tensor must be in `GENERIC` or `GLOBAL` address space.
-        - Destination tensor must be in `SHARED` address space.
-        - Both tensors must have the same data type.
-        - Source and destination tensors must be 2D.
-
-    Parameters:
-        dtype: The data type of the tensor elements.
-        eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
-
-    Args:
-        dst: The destination tensor, which must be in shared memory (SRAM).
-        src: The source tensor, which must be in global or generic memory
-            (DRAM).
-
-    Performance:
-
-    - Uses TMA hardware acceleration for optimal memory transfer performance.
-    - Optimizes for MN-major access patterns, which can significantly improve
-        performance for certain tensor operations where outer dimensions are accessed
-        contiguously.
-    - Performs asynchronous transfers, allowing computation to overlap with memory operations.
-    - Automatically determines optimal tile sizes based on tensor dimensions.
-    - Uses hardware-accelerated swizzling to reduce shared memory bank conflicts.
-
-    Notes:
-
-    - This function requires NVIDIA GPUs with TMA support (compute capability 9.0+).
-    - The source tensor must be in `GENERIC` or `GLOBAL` address space (DRAM).
-    - The destination tensor must be in `SHARED` address space (SRAM).
-    - Both tensors must have the same data type.
-    - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
-        or
-        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
-        to ensure the copy has completed before using the data.
-    - MN-major layout is particularly beneficial for operations where the outer
-        dimensions are accessed contiguously, such as certain convolution operations.
-    """
-    comptime dst_layout = dst.layout
-
-    comptime src_layout = src.layout
-    comptime src_shape0 = src_layout.shape[0].value()
-    comptime src_shape1 = src_layout.shape[1].value()
-
-    # we can't use the tma desc layout, as if swizzle_granularity ==
-    # `src_shape1`, the tma will want to fuse the rows into a large
-    # description. We need to partition the copy among the 4 warps
-    # of the warp group. Thus, we use the minimal desc layout.
-    comptime core_matrix_num_rows = 8
-    comptime swizzle_bytes = 128  # assume 128B swizzle
-    comptime swizzle_granularity = swizzle_bytes // size_of[dtype]()
-    comptime desc_layout = Layout.row_major(
-        core_matrix_num_rows, swizzle_granularity
-    )
-    comptime desc_shape0 = desc_layout.shape[0].value()
-    comptime desc_shape1 = desc_layout.shape[1].value()
-    comptime desc_size = desc_layout.size()
-
-    comptime num_tiles0 = src_shape0 // desc_shape0
-    comptime num_tiles1 = src_shape1 // desc_shape1
-    comptime num_warps = 4  # single warp group
-    comptime num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
-
-    comptime simd_size = simd_width_of[dtype]()
-    comptime thread_layout_per_warp = Layout.row_major(
-        gpu_memory.WARP_SIZE * simd_size // desc_shape1,
-        desc_shape1 // simd_size,
-    )
-
-    warp_id = thread_idx.x // UInt(gpu_memory.WARP_SIZE)
-
-    @parameter
-    for tile_id_per_warp in range(num_tiles_per_warp):
-        tile_id = warp_id + UInt(tile_id_per_warp) * num_warps
-        tile_coord0, tile_coord1 = divmod(tile_id, UInt(num_tiles1))
-        src_tile = src.tile[desc_shape0, desc_shape1](
-            Int(tile_coord0), Int(tile_coord1)
-        )
-        dst_tile = LayoutTensor[
-            dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
-        ](dst.ptr + tile_id * UInt(desc_size))
-
-        copy_dram_to_sram_async[
-            thread_layout_per_warp,
-            swizzle=True,
-            eviction_policy=eviction_policy,
         ](
             dst_tile.vectorize[1, simd_size](),
             src_tile.vectorize[1, simd_size](),
@@ -7895,6 +7889,7 @@ struct LayoutTensorIter[
         element_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for the runtime layout."""
 
     var runtime_layout: Self.RuntimeLayoutType
     """Runtime representation of the layout pattern used for mapping logical indices to memory locations."""
@@ -8060,6 +8055,7 @@ struct LayoutTensorIter[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """The LayoutTensor type returned by this iterator."""
 
     @always_inline
     fn get(self) -> Self.LayoutTensorType:
@@ -8283,6 +8279,11 @@ struct LayoutTensorIter[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for reshaped iterator types.
+
+    Parameters:
+        dst_layout: The target layout for the reshaped iterator.
+    """
 
     @always_inline
     fn reshape[dst_layout: Layout](self) -> Self.ReshapeType[dst_layout]:
@@ -8345,6 +8346,13 @@ struct LayoutTensorIter[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for bitcast iterator types.
+
+    Parameters:
+        new_type: The target data type.
+        address_space: The target address space.
+        alignment: The target memory alignment.
+    """
 
     @always_inline
     fn bitcast[

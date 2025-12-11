@@ -21,8 +21,6 @@ from sys.info import bit_width_of
 
 from builtin.math import Absable, DivModable
 from builtin.device_passable import DevicePassable
-from memory import LegacyOpaquePointer as OpaquePointer
-
 from utils._visualizers import lldb_formatter_wrapping_type
 
 
@@ -84,7 +82,7 @@ struct UInt(
     comptime device_type: AnyType = Self
     """UInt is remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 

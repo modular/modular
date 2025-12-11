@@ -746,12 +746,10 @@ def test_tma_umma[
 
     a_tma_op = create_tma_tile[
         Index(BK, BM) if transpose_a else Index(BM, BK),
-        is_k_major = not transpose_a,
         swizzle_mode=a_swizzle,
     ](ctx, a.device_tensor())
     b_tma_op = create_tma_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 

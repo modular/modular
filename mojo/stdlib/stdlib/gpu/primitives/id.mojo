@@ -350,8 +350,9 @@ struct _BlockDim(Defaultable):
 
 
 comptime block_dim = _BlockDim()
-"""Contains the dimensions of the block as `x`, `y`, and `z` values (for
-example, `block_dim.y`)"""
+"""Contains the dimensions of the block as `x`, `y`, and `z` values.
+
+For example: `block_dim.y`."""
 
 
 # ===-----------------------------------------------------------------------===#

@@ -26,9 +26,6 @@ from sys.info import align_of, simd_width_of, size_of
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
 from bit import log2_floor
-from buffer import NDBuffer
-from buffer.buffer import prod_dims
-from buffer.dimlist import Dim, DimList
 from builtin.math import max as _max
 from builtin.math import min as _min
 from gpu.host import DeviceContext
@@ -103,7 +100,6 @@ fn _get_nd_indices_from_flat_index(
 @parameter
 fn map_reduce[
     simd_width: Int,
-    size: Dim,
     dtype: DType,
     acc_type: DType,
     origins_gen: OriginSet,
@@ -117,7 +113,7 @@ fn map_reduce[
     reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int] (
         SIMD[dtype, width]
     ) -> Scalar[dtype],
-](dst: NDBuffer[mut=True, dtype, 1, _, size], init: Scalar[acc_type]) -> Scalar[
+](dst: Span[mut=True, Scalar[dtype]], init: Scalar[acc_type]) -> Scalar[
     acc_type
 ]:
     """Stores the result of calling input_gen_fn in dst and simultaneously
@@ -125,7 +121,6 @@ fn map_reduce[
 
     Parameters:
         simd_width: The vector width for the computation.
-        size: The buffer size.
         dtype: The buffer elements dtype.
         acc_type: The dtype of the reduction accumulator.
         origins_gen: The OriginSet of captured arguments by the input_gen_fn.
@@ -152,7 +147,7 @@ fn map_reduce[
     fn output_fn[
         _dtype: DType, width: Int, rank: Int
     ](idx: Int, val: SIMD[_dtype, width]):
-        dst.store(idx, rebind[SIMD[dtype, width]](val))
+        dst.unsafe_ptr().store(idx, rebind[SIMD[dtype, width]](val))
 
     return map_reduce[
         simd_width,
@@ -242,12 +237,14 @@ fn map_reduce[
 fn reduce[
     reduce_fn: fn[acc_type: DType, dtype: DType, width: Int] (
         SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[acc_type, width]
-](src: NDBuffer[rank=1], init: Scalar) raises -> Scalar[init.dtype]:
+    ) capturing [_] -> SIMD[acc_type, width],
+    dtype: DType,
+](src: Span[Scalar[dtype]], init: Scalar[dtype]) raises -> Scalar[dtype]:
     """Computes a custom reduction of buffer elements.
 
     Parameters:
         reduce_fn: The lambda implementing the reduction.
+        dtype: The dtype of the input.
 
     Args:
         src: The input buffer.
@@ -265,7 +262,7 @@ fn reduce[
     fn input_fn[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return src.load[width=width](idx[0])._refine[_dtype]()
+        return src.unsafe_ptr().load[width=width](idx[0])._refine[_dtype]()
 
     var out: Scalar[init.dtype] = 0
 
@@ -279,8 +276,10 @@ fn reduce[
     @always_inline
     @parameter
     fn reduce_fn_wrapper[
-        dtype: DType, width: Int
-    ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        _dtype: DType, width: Int
+    ](acc: SIMD[_dtype, width], val: SIMD[_dtype, width]) -> SIMD[
+        _dtype, width
+    ]:
         return reduce_fn(acc, val)
 
     var shape = Index(len(src))
@@ -302,7 +301,8 @@ fn reduce_boolean[
         _
     ] -> Bool,
     continue_fn: fn (Bool) capturing [_] -> Bool,
-](src: NDBuffer[rank=1], init: Bool) -> Bool:
+    dtype: DType,
+](src: Span[Scalar[dtype]], init: Bool) -> Bool:
     """Computes a bool reduction of buffer elements. The reduction will early
     exit if the `continue_fn` returns False.
 
@@ -314,6 +314,7 @@ fn reduce_boolean[
           processing the rest of the iterations. This takes the result of the
           reduce_fn and returns True to continue processing and False to early
           exit.
+        dtype: The dtype of the input.
 
     Args:
         src: The input buffer.
@@ -322,7 +323,7 @@ fn reduce_boolean[
     Returns:
         The computed reduction value.
     """
-    comptime simd_width = simd_width_of[src.type]()
+    comptime simd_width = simd_width_of[dtype]()
     comptime unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     comptime unrolled_simd_width = simd_width * unroll_factor
@@ -332,12 +333,12 @@ fn reduce_boolean[
     var vector_end = align_down(length, simd_width)
     var curr = init
     for i in range(0, unrolled_vector_end, unrolled_simd_width):
-        curr = reduce_fn(src.load[width=unrolled_simd_width](i))
+        curr = reduce_fn(src.unsafe_ptr().load[width=unrolled_simd_width](i))
         if not continue_fn(curr):
             return curr
 
     for i in range(unrolled_vector_end, vector_end, simd_width):
-        curr = reduce_fn(src.load[width=simd_width](i))
+        curr = reduce_fn(src.unsafe_ptr().load[width=simd_width](i))
         if not continue_fn(curr):
             return curr
 
@@ -346,145 +347,6 @@ fn reduce_boolean[
         if not continue_fn(curr):
             return curr
     return curr
-
-
-@parameter
-fn _reduce_3D[
-    map_fn: fn[acc_type: DType, dtype: DType, width: Int] (
-        SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[acc_type, width],
-    reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
-        dtype
-    ],
-](src: NDBuffer, dst: NDBuffer[mut=True, **_], init: Scalar[dst.type]) raises:
-    """Performs a reduction across axis 1 of a 3D input buffer."""
-
-    comptime simd_width = simd_width_of[dst.type]()
-
-    var h = src.dim[0]()
-    var w = src.dim[1]()
-    var c = src.dim[2]()
-
-    # If c is 1, we are reducing across the innermost axis, and we can launch H
-    # reductions that each reduce W elements of a contiguous buffer.
-    if c == 1:
-
-        @__copy_capture(h, w)
-        @parameter
-        fn reduce_inner_axis() raises:
-            comptime sz = src.shape.at[1]()
-            # TODO: parallelize
-            for i in range(h):
-                var offset = src._offset(IndexList[src.rank](i, 0, 0))
-                var input = NDBuffer[
-                    src.type,
-                    1,
-                    offset.origin,
-                    sz,
-                    address_space = src.address_space,
-                ](offset, w)
-                var val = reduce[map_fn](input, init)
-                dst[IndexList[dst.rank](i, 0)] = val
-
-        reduce_inner_axis()
-        return
-
-    # If c is not 1, the elements to reduce are not contiguous. If we reduce
-    # cache_line_size rows at once, then we get better reuse of the loaded data.
-
-    # The width of this should be a multiple of the cache line size in order to
-    # reuse the full cache line when an element of C is loaded.
-    @parameter
-    fn get_unroll_factor[simd_width: Int, dtype_size: Int]() -> Int:
-        comptime cache_line_size = 64
-        comptime unroll_factor = cache_line_size // (simd_width * dtype_size)
-        __comptime_assert unroll_factor > 0, "unroll_factor must be > 0"
-        return unroll_factor
-
-    comptime unroll_factor = get_unroll_factor[
-        simd_width, size_of[dst.type]()
-    ]()
-    comptime usimd_width = unroll_factor * simd_width
-    for i in range(h):
-
-        @always_inline
-        fn reduce_w_chunked[
-            simd_width: Int
-        ](idx: Int) unified {var w, read i, read src, read dst, read init}:
-            var accum = SIMD[init.dtype, simd_width](init)
-            for j in range(w):
-                var chunk = src.load[width=simd_width](
-                    IndexList[src.rank](i, j, idx)
-                )
-                accum = map_fn(accum, chunk)
-            dst.store(IndexList[dst.rank](i, idx), accum)
-
-        vectorize[usimd_width](c, reduce_w_chunked)
-
-
-@parameter
-fn reduce[
-    map_fn: fn[acc_type: DType, dtype: DType, width: Int] (
-        SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[acc_type, width],
-    reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
-        dtype
-    ],
-    reduce_axis: Int,
-](src: NDBuffer, dst: NDBuffer[mut=True, **_], init: Scalar[dst.type]) raises:
-    """Performs a reduction across reduce_axis of an NDBuffer (src) and stores
-    the result in an NDBuffer (dst).
-
-    First src is reshaped into a 3D tensor. Without loss of generality, the three
-    axes will be referred to as [H,W,C], where the axis to reduce across is W,
-    the axes before the reduce axis are packed into H, and the axes after the
-    reduce axis are packed into C. i.e. a tensor with dims [D1, D2, ..., Di, ..., Dn]
-    reducing across axis i gets packed into a 3D tensor with dims [H, W, C],
-    where H=prod(D1,...,Di-1), W = Di, and C = prod(Di+1,...,Dn).
-
-    Parameters:
-        map_fn: A mapping function. This function is used when to combine
-          (accumulate) two chunks of input data: e.g. we load two 8xfloat32 vectors
-          of elements and need to reduce them to a single 8xfloat32 vector.
-        reduce_fn: A reduction function. This function is used to reduce a
-          vector to a scalar. E.g. when we got 8xfloat32 vector and want to reduce
-          it to 1xfloat32.
-        reduce_axis: The axis to reduce across.
-
-    Args:
-        src: The input buffer.
-        dst: The output buffer.
-        init: The initial value to use in accumulator.
-
-    Raises:
-        If the operation fails.
-    """
-
-    var h_dynamic = prod_dims[0, reduce_axis](src)
-    var w_dynamic = src.dim[reduce_axis]()
-    var c_dynamic = prod_dims[reduce_axis + 1, src.rank](src)
-
-    comptime h_static = src.shape.product[reduce_axis]()
-    comptime w_static = src.shape.at[reduce_axis]()
-    comptime c_static = src.shape.product[reduce_axis + 1, src.rank]()
-
-    comptime input_3d_shape = DimList(h_static, w_static, c_static)
-    comptime output_2d_shape = DimList(h_static, c_static)
-
-    var input_3d = NDBuffer[
-        src.type,
-        3,
-        shape=input_3d_shape,
-        address_space = src.address_space,
-    ](src.data, Index(h_dynamic, w_dynamic, c_dynamic))
-    var output_2d = NDBuffer[
-        dst.type, 2, _, output_2d_shape, address_space = dst.address_space
-    ](
-        dst.data,
-        Index(h_dynamic, c_dynamic),
-    )
-
-    _reduce_3D[map_fn, reduce_fn](input_3d, output_2d, init)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1150,8 +1012,11 @@ fn _simd_max_elementwise[
     return _max(x, y.cast[acc_type]())
 
 
-fn max(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
+fn max[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
     """Computes the max element in a buffer.
+
+    Parameters:
+        dtype: The dtype of the input.
 
     Args:
         src: The buffer.
@@ -1162,27 +1027,7 @@ fn max(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     Raises:
         If the operation fails.
     """
-    return reduce[_simd_max_elementwise](src, Scalar[src.type].MIN)
-
-
-fn max[
-    reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[mut=True, src.type, src.rank, _, _]) raises:
-    """Computes the max across reduce_axis of an NDBuffer.
-
-    Parameters:
-        reduce_axis: The axis to reduce across.
-
-    Args:
-        src: The input buffer.
-        dst: The output buffer.
-
-    Raises:
-        If the operation fails.
-    """
-    return reduce[_simd_max_elementwise, _simd_max, reduce_axis](
-        src, dst, Scalar[src.type].MIN
-    )
+    return reduce[_simd_max_elementwise](src, Scalar[dtype].MIN)
 
 
 @always_inline
@@ -1282,8 +1127,11 @@ fn _simd_min_elementwise[
     return _min(x, y.cast[acc_type]())
 
 
-fn min(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
+fn min[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
     """Computes the min element in a buffer.
+
+    Parameters:
+        dtype: The dtype of the input.
 
     Args:
         src: The buffer.
@@ -1294,27 +1142,7 @@ fn min(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     Raises:
         If the operation fails.
     """
-    return reduce[_simd_min_elementwise](src, Scalar[src.type].MAX)
-
-
-fn min[
-    reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[mut=True, src.type, src.rank, _, _]) raises:
-    """Computes the min across reduce_axis of an NDBuffer.
-
-    Parameters:
-        reduce_axis: The axis to reduce across.
-
-    Args:
-        src: The input buffer.
-        dst: The output buffer.
-
-    Raises:
-        If the operation fails.
-    """
-    return reduce[_simd_min_elementwise, _simd_min, reduce_axis](
-        src, dst, Scalar[src.type].MAX
-    )
+    return reduce[_simd_min_elementwise](src, Scalar[dtype].MAX)
 
 
 @always_inline
@@ -1414,8 +1242,11 @@ fn _simd_sum_elementwise[
     return x + y.cast[acc_type]()
 
 
-fn sum(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
+fn sum[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
     """Computes the sum of buffer elements.
+
+    Parameters:
+        dtype: The dtype of the input.
 
     Args:
         src: The buffer.
@@ -1432,29 +1263,11 @@ fn sum(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     fn input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        return rebind[SIMD[dtype_, width]](src.load[width=width](idx))
+        return rebind[SIMD[dtype_, width]](
+            src.unsafe_ptr().load[width=width](idx)
+        )
 
-    return sum[src.type, input_fn_1d](len(src))
-
-
-fn sum[
-    reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[mut=True, src.type, src.rank, _, _]) raises:
-    """Computes the sum across reduce_axis of an NDBuffer.
-
-    Parameters:
-        reduce_axis: The axis to reduce across.
-
-    Args:
-        src: The input buffer.
-        dst: The output buffer.
-
-    Raises:
-        If the operation fails.
-    """
-    return reduce[_simd_sum_elementwise, _simd_sum, reduce_axis=reduce_axis](
-        src, dst, Scalar[src.type](0)
-    )
+    return sum[dtype, input_fn_1d](len(src))
 
 
 @always_inline
@@ -1620,8 +1433,11 @@ fn _simd_product_elementwise[
     return x * y.cast[acc_type]()
 
 
-fn product(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
+fn product[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
     """Computes the product of the buffer elements.
+
+    Parameters:
+        dtype: The dtype of the input.
 
     Args:
         src: The buffer.
@@ -1632,27 +1448,7 @@ fn product(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     Raises:
         If the operation fails.
     """
-    return reduce[_simd_product_elementwise](src, Scalar[src.type](1))
-
-
-fn product[
-    reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[mut=True, src.type, src.rank, _, _]) raises:
-    """Computes the product across reduce_axis of an NDBuffer.
-
-    Parameters:
-        reduce_axis: The axis to reduce across.
-
-    Args:
-        src: The input buffer.
-        dst: The output buffer.
-
-    Raises:
-        If the operation fails.
-    """
-    return reduce[_simd_product_elementwise, _simd_product, reduce_axis](
-        src, dst, Scalar[src.type](1)
-    )
+    return reduce[_simd_product_elementwise](src, Scalar[dtype](1))
 
 
 @always_inline
@@ -1673,7 +1469,6 @@ fn product[
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Computes the product across the input and output shape.
-
     This performs the product computation on the domain specified by `input_shape`,
     loading the inputs using the `input_fn`. The results are stored using
     the `output_fn`.
@@ -1690,7 +1485,6 @@ fn product[
         input_shape: The input shape.
         reduce_dim: The axis to perform the product on.
         context: The pointer to DeviceContext.
-
     Raises:
         If the operation fails.
     """
@@ -1730,8 +1524,11 @@ fn product[
 # ===-----------------------------------------------------------------------===#
 
 
-fn mean(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
+fn mean[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
     """Computes the mean value of the elements in a buffer.
+
+    Parameters:
+        dtype: The dtype of the input.
 
     Args:
         src: The buffer of elements for which the mean is computed.
@@ -1750,56 +1547,11 @@ fn mean(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     fn input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        return rebind[SIMD[dtype_, width]](src.load[width=width](idx))
+        return rebind[SIMD[dtype_, width]](
+            src.unsafe_ptr().load[width=width](idx)
+        )
 
-    return mean[src.type, input_fn_1d](len(src))
-
-
-fn mean[
-    reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[mut=True, src.dtype, src.rank, _, _]) raises:
-    """Computes the mean across reduce_axis of an NDBuffer.
-
-    Parameters:
-        reduce_axis: The axis to reduce across.
-
-    Args:
-        src: The input buffer.
-        dst: The output buffer.
-
-    Raises:
-        If the operation fails.
-    """
-    comptime simd_width = simd_width_of[dst.dtype]()
-    sum[reduce_axis](src, dst)
-
-    var n = src.dim[reduce_axis]()
-    var dst_1d = dst.flatten()
-
-    @parameter
-    if dst.type.is_integral():
-
-        @always_inline
-        fn normalize_integral[
-            simd_width: Int
-        ](idx: Int) unified {var dst_1d, var n}:
-            var elem = dst_1d.load[width=simd_width](idx)
-            var to_store = elem // n
-            dst_1d.store(idx, to_store)
-
-        vectorize[simd_width](len(dst_1d), normalize_integral)
-    else:
-        var n_recip = Scalar[dst.type](1) / n
-
-        @always_inline
-        fn normalize_floating[
-            simd_width: Int
-        ](idx: Int) unified {var dst_1d, var n_recip}:
-            var elem = dst_1d.load[width=simd_width](idx)
-            var to_store = elem * n_recip
-            dst_1d.store(idx, to_store)
-
-        vectorize[simd_width](len(dst_1d), normalize_floating)
+    return mean[dtype, input_fn_1d](len(src))
 
 
 @always_inline
@@ -1970,9 +1722,11 @@ fn mean[
 # ===-----------------------------------------------------------------------===#
 
 
-fn variance(
-    src: NDBuffer[rank=1], mean_value: Scalar[src.type], correction: Int = 1
-) raises -> Scalar[src.type]:
+fn variance[
+    dtype: DType
+](
+    src: Span[Scalar[dtype]], mean_value: Scalar[dtype], correction: Int = 1
+) raises -> Scalar[dtype]:
     """Given a mean, computes the variance of elements in a buffer.
 
     The mean value is used to avoid a second pass over the data:
@@ -1980,6 +1734,9 @@ fn variance(
     ```
     variance(x) = sum((x - E(x))^2) / (size - correction)
     ```
+
+    Parameters:
+        dtype: The dtype of the input.
 
     Args:
         src: The buffer.
@@ -2001,9 +1758,11 @@ fn variance(
     fn input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        return rebind[SIMD[dtype_, width]](src.load[width=width](idx))
+        return rebind[SIMD[dtype_, width]](
+            src.unsafe_ptr().load[width=width](idx)
+        )
 
-    return variance[src.type, input_fn_1d](len(src), mean_value, correction)
+    return variance[dtype, input_fn_1d](len(src), mean_value, correction)
 
 
 fn variance[
@@ -2085,14 +1844,17 @@ fn variance[
     return out / (length - correction)
 
 
-fn variance(
-    src: NDBuffer[rank=1], correction: Int = 1
-) raises -> Scalar[src.type]:
+fn variance[
+    dtype: DType
+](src: Span[Scalar[dtype]], correction: Int = 1) raises -> Scalar[dtype]:
     """Computes the variance value of the elements in a buffer.
 
     ```
     variance(x) = sum((x - E(x))^2) / (size - correction)
     ```
+
+    Parameters:
+        dtype: The dtype of the input.
 
     Args:
         src: The buffer.
@@ -2110,9 +1872,11 @@ fn variance(
     fn input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        return rebind[SIMD[dtype_, width]](src.load[width=width](idx))
+        return rebind[SIMD[dtype_, width]](
+            src.unsafe_ptr().load[width=width](idx)
+        )
 
-    return variance[src.type, input_fn_1d](len(src), correction)
+    return variance[dtype, input_fn_1d](len(src), correction)
 
 
 fn variance[
@@ -2144,123 +1908,27 @@ fn variance[
 
 
 # ===-----------------------------------------------------------------------===#
-# all_true
-# ===-----------------------------------------------------------------------===#
-
-
-fn all_true(src: NDBuffer[rank=1]) -> Bool:
-    """Returns True if all the elements in a buffer are True and False otherwise.
-
-    Args:
-        src: The buffer.
-
-    Returns:
-        True if all of the elements of the buffer are True and False otherwise.
-    """
-
-    @always_inline
-    @parameter
-    fn _reduce_fn[
-        dtype: DType, simd_width: Int
-    ](val: SIMD[dtype, simd_width]) -> Bool:
-        @parameter
-        if dtype is DType.bool:
-            return val.cast[DType.bool]().reduce_and()
-        return val.ne(0).reduce_and()
-
-    @always_inline
-    @parameter
-    fn _continue_fn(val: Bool) -> Bool:
-        return val
-
-    return reduce_boolean[_reduce_fn, _continue_fn](src, False)
-
-
-# ===-----------------------------------------------------------------------===#
-# any_true
-# ===-----------------------------------------------------------------------===#
-
-
-fn any_true(src: NDBuffer[rank=1]) -> Bool:
-    """Returns True if any the elements in a buffer are True and False otherwise.
-
-    Args:
-        src: The buffer.
-
-    Returns:
-        True if any of the elements of the buffer are True and False otherwise.
-    """
-
-    @always_inline
-    @parameter
-    fn _reduce_fn[
-        dtype: DType, simd_width: Int
-    ](val: SIMD[dtype, simd_width]) -> Bool:
-        @parameter
-        if dtype is DType.bool:
-            return val.cast[DType.bool]().reduce_or()
-        return val != 0
-
-    @always_inline
-    @parameter
-    fn _continue_fn(val: Bool) -> Bool:
-        return not val
-
-    return reduce_boolean[_reduce_fn, _continue_fn](src, False)
-
-
-# ===-----------------------------------------------------------------------===#
-# none_true
-# ===-----------------------------------------------------------------------===#
-
-
-fn none_true(src: NDBuffer[rank=1]) -> Bool:
-    """Returns True if none of the elements in a buffer are True and False
-    otherwise.
-
-    Args:
-        src: The buffer.
-
-    Returns:
-        True if none of the elements of the buffer are True and False otherwise.
-    """
-
-    @always_inline
-    @parameter
-    fn _reduce_fn[
-        dtype: DType, simd_width: Int
-    ](val: SIMD[dtype, simd_width]) -> Bool:
-        @parameter
-        if dtype is DType.bool:
-            return not val.cast[DType.bool]().reduce_or()
-        # TODO: simplify this implementation?
-        return val == 0
-
-    @always_inline
-    @parameter
-    fn _continue_fn(val: Bool) -> Bool:
-        return val
-
-    return reduce_boolean[_reduce_fn, _continue_fn](src, True)
-
-
-# ===-----------------------------------------------------------------------===#
 # cumsum function
 # ===-----------------------------------------------------------------------===#
 
 
 @always_inline
-fn _cumsum_small(
-    dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]
-):
+fn _cumsum_small[
+    dtype: DType
+](dst: Span[mut=True, Scalar[dtype]], src: Span[Scalar[dtype]]):
     dst[0] = src[0]
     for i in range(1, len(dst)):
         dst[i] = src[i] + dst[i - 1]
 
 
-fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
+fn cumsum[
+    dtype: DType
+](dst: Span[mut=True, Scalar[dtype]], src: Span[Scalar[dtype]]):
     """Computes the cumulative sum of all elements in a buffer.
        dst[i] = src[i] + src[i-1] + ... + src[0].
+
+    Parameters:
+        dtype: The dtype of the input.
 
     Args:
         dst: The buffer that stores the result of cumulative sum operation.
@@ -2270,7 +1938,7 @@ fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     debug_assert(len(src) != 0, "Input must not be empty")
     debug_assert(len(dst) != 0, "Output must not be empty")
 
-    comptime simd_width = simd_width_of[dst.type]()
+    comptime simd_width = simd_width_of[dtype]()
 
     # For length less than simd_width do serial cumulative sum.
     # Similarly, for the case when simd_width == 2 serial should be faster.
@@ -2280,7 +1948,7 @@ fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     # Stores the offset (i.e., last value of previous simd_width-elements chunk,
     # replicated across all simd lanes, to be added to all elements of next
     # chunk.
-    var offset = SIMD[dst.type, simd_width](0)
+    var offset = SIMD[dtype, simd_width](0)
 
     # Divide the buffer size to div_size chunks of simd_width elements,
     # to calculate using SIMD and do remaining (tail) serially.
@@ -2290,13 +1958,13 @@ fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     comptime rep = log2_floor(simd_width)
 
     for i in range(0, div_size, simd_width):
-        var x_simd = src.load[width=simd_width](i)
+        var x_simd = src.unsafe_ptr().load[width=simd_width](i)
 
         @parameter
         for i in range(rep):
             x_simd += x_simd.shift_right[2**i]()
 
-        dst.store(i, x_simd)
+        dst.unsafe_ptr().store(i, x_simd)
 
     # e.g., Assuming input buffer 1, 2, 3, 4, 5, 6, 7, 8 and simd_width = 4
     # The first outer iteration of the above would be the following;
@@ -2316,9 +1984,9 @@ fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     # offset used in iteration 0: 0, 0, 0, 0
     # offset used in iteration 1: 10, 10, 10, 10
     for i in range(0, div_size, simd_width):
-        var x_simd = dst.load[width=simd_width](i) + offset
-        dst.store(i, x_simd)
-        offset = SIMD[dst.type, simd_width](x_simd[simd_width - 1])
+        var x_simd = dst.unsafe_ptr().load[width=simd_width](i) + offset
+        dst.unsafe_ptr().store(i, x_simd)
+        offset = SIMD[dtype, simd_width](x_simd[simd_width - 1])
 
     # Handles the tail, i.e., num of elements at the end that don't
     # fit within a simd_width-elements vector.

@@ -142,7 +142,6 @@ struct TMALoadOp[
             Self.block_tile_shape[0] // Self.cluster_shape[0],
             Self.block_tile_shape[2],
         ),
-        True,
         Self.a_swizzle,
     ]()
     comptime b_tma_desc_layout = _tma_desc_tile_layout[
@@ -152,7 +151,6 @@ struct TMALoadOp[
             Self.block_tile_shape[1] // Self.cluster_shape[1],
             Self.block_tile_shape[2],
         ),
-        True,
         Self.b_swizzle,
     ]()
 
@@ -174,7 +172,7 @@ struct TMALoadOp[
 
     comptime device_type = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -333,7 +331,7 @@ struct R2GOutputOp[
 
     comptime device_type = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -468,7 +466,7 @@ struct PipelineArgs[
 ](DevicePassable, OpArgs):
     comptime device_type = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 

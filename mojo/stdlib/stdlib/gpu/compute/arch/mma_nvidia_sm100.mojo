@@ -38,19 +38,19 @@ struct UMMAKind(Stringable, Writable):
     var _value: Int32
 
     comptime KIND_TF32 = Self(0)
-    """tf32 type"""
+    """TF32 type."""
 
     comptime KIND_F16 = Self(2)
-    """f16 type"""
+    """F16 type."""
 
     comptime KIND_F8F6F4 = Self(3)
-    """f8f6f4 type"""
+    """F8F6F4 type."""
 
     comptime KIND_I8 = Self(4)
-    """i8 type"""
+    """I8 type."""
 
-    alias KIND_MXF8F6F4 = Self(5)
-    """mxf8f6f4 type"""
+    comptime KIND_MXF8F6F4 = Self(5)
+    """MXF8F6F4 type."""
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
@@ -452,8 +452,8 @@ fn _get_mxf8f6f4_mma_shape[
     This function returns the shape of the MMA instruction for MXF8F6F4 MMA kind.
     """
 
-    alias mma_m = output_shape[0]
-    alias mma_n = output_shape[1]
+    comptime mma_m = output_shape[0]
+    comptime mma_n = output_shape[1]
 
     @parameter
     if not use_pair_cta:
@@ -741,12 +741,12 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        alias available_d_types = (DType.float32,)
-        alias available_operand_types = (
+        comptime available_d_types = (DType.float32,)
+        comptime available_operand_types = (
             DType.float8_e4m3fn,
             DType.float8_e5m2,
         )
-        alias available_scale_types = (DType.float8_e8m0fnu,)
+        comptime available_scale_types = (DType.float8_e8m0fnu,)
 
         constrained[
             d_type in available_d_types,
@@ -769,15 +769,15 @@ struct UMMAInsDescriptor[
             ),
         ]()
 
-        alias a_type_bit = Self._insert_bit[7](
+        comptime a_type_bit = Self._insert_bit[7](
             0x0, 1 if a_type == DType.float8_e5m2 else 0
         )
 
-        alias b_type_bit = Self._insert_bit[10](
+        comptime b_type_bit = Self._insert_bit[10](
             a_type_bit, 1 if b_type == DType.float8_e5m2 else 0
         )
 
-        alias desc = Self._insert_bit[23](b_type_bit, 1)
+        comptime desc = Self._insert_bit[23](b_type_bit, 1)
 
         return desc
 
@@ -874,13 +874,13 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the complete descriptor bit layout.
         """
 
-        alias M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
-        alias desc = Self._insert_bit[27](M_bit, output_shape[0] >> 7)
+        comptime M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
+        comptime desc = Self._insert_bit[27](M_bit, output_shape[0] >> 7)
 
-        alias transpose_a_bit = Self._insert_bit[15](
+        comptime transpose_a_bit = Self._insert_bit[15](
             0x0, 1 if transpose_a else 0
         )
-        alias transpose_bit = Self._insert_bit[16](
+        comptime transpose_bit = Self._insert_bit[16](
             transpose_a_bit, 0 if transpose_b else 1
         )
 
@@ -902,7 +902,7 @@ struct UMMAInsDescriptor[
     @staticmethod
     fn update_desc_with_sf_id[
         sf_id: UInt32
-    ](inst_desc: UMMAInsDescriptor[UMMAKind.KIND_MXF8F6F4],) -> Self:
+    ](inst_desc: UMMAInsDescriptor[Self.mma_kind],) -> Self:
         """Update the descriptor with the scale factor ID.
 
         Parameters:
@@ -915,8 +915,8 @@ struct UMMAInsDescriptor[
             The updated descriptor.
         """
 
-        alias sfa_bit = Self._insert_bit[4](0x0, sf_id)
-        alias sfb_bit = Self._insert_bit[29](sfa_bit, sf_id)
+        comptime sfa_bit = Self._insert_bit[4](0x0, sf_id)
+        comptime sfb_bit = Self._insert_bit[29](sfa_bit, sf_id)
 
         return Self(inst_desc.desc | sfb_bit)
 
@@ -956,6 +956,9 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
 
     var desc: UInt64
     """The 64-bit descriptor encodes shared memory operand information."""
+
+    comptime mask_14_bits: Int = (1 << 14) - 1
+    """Mask with the lower 14 bits set."""
 
     @always_inline
     fn __init__(out self, val: UInt64):
@@ -1028,11 +1031,11 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
 
         # Extract 18 bits and ignore 4 LSB.
         var base_ptr = UInt32(Int(smem_ptr))
-        var start_address = UInt64((base_ptr & 0x3FFFF) >> 4)
+        var start_address = UInt64((base_ptr >> 4) & Self.mask_14_bits)
 
         # Ignore 4 LSB.
-        var sbo = UInt64((stride_byte_offset & 0x3FFF) >> 4)
-        var lbo = UInt64((leading_byte_offset & 0x3FFF) >> 4)
+        var sbo = UInt64((stride_byte_offset >> 4) & Self.mask_14_bits)
+        var lbo = UInt64((leading_byte_offset >> 4) & Self.mask_14_bits)
 
         # Start from LSB. Mask out higher bits to avoid overwriting.
         var desc = Self(0)
@@ -1073,7 +1076,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         Returns:
             New descriptor with updated base address.
         """
-        return Self(self.desc + ((offset & 0x3FFFF) >> 4))
+        return Self(self.desc + ((offset >> 4) & Self.mask_14_bits))
 
 
 @register_passable("trivial")
@@ -1108,6 +1111,9 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
     """The low 32-bits of the descriptor."""
     var lo: UInt32
     """The high 32-bits of the descriptor."""
+
+    comptime mask_14_bits: UInt32 = (1 << 14) - 1
+    """Mask with the lower 14 bits set."""
 
     @always_inline
     fn __init__(out self, hi: UInt32, lo: UInt32):
@@ -1187,11 +1193,11 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
 
         # Extract 18 bits and ignore 4 LSB.
         var base_ptr = UInt32(Int(smem_ptr))
-        var start_address = UInt32((base_ptr & 0x3FFFF) >> 4)
+        var start_address = UInt32(base_ptr >> 4) & Self.mask_14_bits
 
         # Ignore 4 LSB.
-        var sbo = UInt32((stride_byte_offset & 0x3FFF) >> 4)
-        var lbo = UInt32((leading_byte_offset & 0x3FFF) >> 4)
+        var sbo = UInt32((stride_byte_offset >> 4) & Self.mask_14_bits)
+        var lbo = UInt32((leading_byte_offset >> 4) & Self.mask_14_bits)
 
         # Start from LSB. Mask out higher bits to avoid overwriting.
         var desc = Self(0, 0)
@@ -1232,7 +1238,7 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
         Returns:
             New descriptor with updated base address.
         """
-        return Self(self.hi, self.lo + ((offset & 0x3FFFF) >> 4))
+        return Self(self.hi, self.lo + ((offset >> 4) & Self.mask_14_bits))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1336,8 +1342,6 @@ fn mma[
     kind: UMMAKind, //,
     cta_group: Int = 1,
     /,
-    *,
-    c_scale: UInt32 = 1,
 ](
     a_desc: MMASmemDescriptor,
     b_desc: MMASmemDescriptor,
@@ -1345,13 +1349,13 @@ fn mma[
     inst_desc: UMMAInsDescriptor[kind],
     sfa_tmem: UInt32,
     sfb_tmem: UInt32,
+    c_scale: UInt32,
 ):
     """Perform a matrix multiply-accumulate operation using the tcgen05.mma instruction.
 
     Parameters:
         kind: Data type of the matrices.
         cta_group: Number of ctas used by MMA.
-        c_scale: Scale factor for the C matrix, 0 or 1.
 
     Args:
         a_desc: The descriptor for the A matrix.
@@ -1360,13 +1364,10 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         sfa_tmem: The address of the block scale factor A in the tensor memory.
         sfb_tmem: The address of the block scale factor B in the tensor memory.
+        c_scale: Scale factor for the C matrix, 0 or 1.
     """
     constrained[
         _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
-    ]()
-
-    constrained[
-        c_scale == 0 or c_scale == 1, String("Invalid c_scale: ", c_scale)
     ]()
 
     constrained[

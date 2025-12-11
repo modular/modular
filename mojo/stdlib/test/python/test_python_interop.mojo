@@ -62,7 +62,7 @@ fn _test_call(mut python: Python) -> String:
                 "carrot",
                 "bread",
                 "rice",
-                # PRECOMMIT: Don't include these cases
+                # TODO(MOCO-2945): Support variadic heterogenous kwargs
                 fruit=PythonObject("pear"),
                 protein=PythonObject("fish"),
                 cake=PythonObject("yes"),

@@ -80,6 +80,14 @@ class ReturnLogits(str, Enum):
     ALL = "all"
 
 
+class ReturnHiddenStates(str, Enum):
+    NONE = "none"
+    LAST = "last"
+    ALL = "all"
+    LAST_NORMALIZED = "last_normalized"
+    ALL_NORMALIZED = "all_normalized"
+
+
 Block = TypeVar("Block", bound=Module, covariant=True)
 
 
@@ -97,6 +105,7 @@ class Transformer(Module):
         kv_params: KVCacheParams,
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         embedding_multiplier: float = 1.0,
         logits_scaling: float = 1.0,
     ) -> None:
@@ -111,23 +120,16 @@ class Transformer(Module):
         self.embedding_multiplier = embedding_multiplier
         self.rope = rope
         self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states
         self.logits_scaling = logits_scaling
 
-    def __call__(
+    def _process_hidden_states(
         self,
-        tokens: TensorValueLike,
+        h: TensorValue,
         kv_collection: PagedCacheValues,
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
-        h = self.embed_tokens(tokens)
-
-        if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
-
-        # Create position embeddings shared across the decoder layers.
         freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
             h = layer(
@@ -178,8 +180,37 @@ class Transformer(Module):
             if logits is not None:
                 logits = logits / self.logits_scaling
 
+        ret_val: tuple[TensorValue, ...] = (last_logits,)
         if offsets is not None:
             assert logits is not None
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)
+            ret_val += (logits, offsets)
+
+        if self.return_hidden_states == ReturnHiddenStates.ALL:
+            ret_val += (h,)
+        elif self.return_hidden_states == ReturnHiddenStates.LAST:
+            ret_val += (last_h,)
+        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+            ret_val += (self.norm(h),)
+        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
+            ret_val += (self.norm(last_h),)
+
+        return ret_val
+
+    def __call__(
+        self,
+        tokens: TensorValueLike,
+        kv_collection: PagedCacheValues,
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
+        hidden_states: TensorValue | None = None,
+    ) -> tuple[TensorValue, ...]:
+        h = self.embed_tokens(tokens)
+
+        if self.embedding_multiplier != 1.0:
+            h = h * ops.constant(
+                self.embedding_multiplier, h.dtype, device=h.device
+            )
+
+        return self._process_hidden_states(
+            h, kv_collection, return_n_logits, input_row_offsets
+        )

@@ -103,12 +103,12 @@ struct TopK:
             @parameter
             for i in range(K):
                 var reduced = top_k_sram[tid]
-                alias limit = log2_floor(WARP_SIZE)
+                comptime limit = log2_floor(WARP_SIZE)
 
                 # TODO(KERN-1544): `gpu.shuffle.warp_max` support index/value
                 @parameter
                 for j in reversed(range(limit)):
-                    alias offset = 1 << j
+                    comptime offset = 1 << j
                     # Parallel reduction using warp shuffle. Each thread gets a
                     # value from a thread 'offset' positions higher, keeping the
                     # larger value.

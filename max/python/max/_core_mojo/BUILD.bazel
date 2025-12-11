@@ -8,7 +8,6 @@ modular_py_library(
     data = glob(["**/*.mojo"]) + [
         "@mojo//:stdlib",
     ],
-    imports = ["../.."],
     deps = [
         requirement("numpy"),
         "@mojo//:python",

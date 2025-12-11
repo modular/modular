@@ -19,7 +19,6 @@ from sys.param_env import env_get_int, is_defined
 
 import gpu.host._tracing as gpu_tracing
 import logger.logger as logger
-from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.host._tracing import Color
 from gpu.host._tracing import _end_range as _end_gpu_range
@@ -33,6 +32,7 @@ from utils import IndexList, Variant
 from os import abort
 
 comptime log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
+"""Logger instance for operation tracing with INFO level and [OP] prefix."""
 
 
 fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
@@ -84,10 +84,15 @@ struct TraceCategory(Equatable, Identifiable, Intable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     comptime OTHER = Self(0)
+    """Other or uncategorized trace events."""
     comptime ASYNCRT = Self(1)
+    """Asynchronous runtime trace events."""
     comptime MEM = Self(2)
+    """Memory-related trace events."""
     comptime Kernel = Self(3)
+    """Kernel execution trace events."""
     comptime MAX = Self(4)
+    """MAX framework trace events."""
 
     var value: Int
     """The integer value representing the trace category. Used for bitwise operations
@@ -149,8 +154,11 @@ struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
+    """Always trace at this level."""
     comptime OP = Self(1)
+    """Operation-level tracing."""
     comptime THREAD = Self(2)
+    """Thread-level tracing."""
 
     var value: Int
     """The integer value representing the trace level.
@@ -357,20 +365,6 @@ fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
         A string representation of the argument with its shape and data type.
     """
     return String(trace_arg(name, shape), "x", dtype)
-
-
-@always_inline
-fn trace_arg(name: String, buf: NDBuffer) -> String:
-    """Helper to stringify the type and shape of a kernel argument for tracing.
-
-    Args:
-        name: The name of the argument.
-        buf: The NDBuffer to trace.
-
-    Returns:
-        A string representation of the buffer with its shape and data type.
-    """
-    return trace_arg(name, buf.dynamic_shape, buf.type)
 
 
 # ===-----------------------------------------------------------------------===#

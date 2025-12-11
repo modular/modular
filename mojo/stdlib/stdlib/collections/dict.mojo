@@ -662,8 +662,19 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DictKeyIter[Self.K, Self.V, Self.H, iterable_origin]
+    """The iterator type for this dictionary.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
+
     comptime EMPTY = _EMPTY
+    """Marker for an empty slot in the hash table."""
+
     comptime REMOVED = _REMOVED
+    """Marker for a removed slot in the hash table."""
+
     comptime _initial_reservation = 8
 
     # ===-------------------------------------------------------------------===#
@@ -1323,11 +1334,19 @@ struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
 
     # Fields
     comptime key_type = String
+    """The key type for this dictionary (always String)."""
+
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DictKeyIter[
         Self.key_type, Self.V, default_comp_time_hasher, iterable_origin
     ]
+    """The iterator type for this dictionary.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     var _dict: Dict[Self.key_type, Self.V, default_comp_time_hasher]
 

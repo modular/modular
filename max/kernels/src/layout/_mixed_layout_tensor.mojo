@@ -503,10 +503,10 @@ struct MixedLayoutTensorIter[
     if needed for performance-critical operations.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Self.MixedLayoutTensorType
+    comptime Element = Self.MixedLayoutTensorType
 
     comptime linear_uint_type = Scalar[
         _unsigned_integral_type_of[Self.linear_idx_type]()

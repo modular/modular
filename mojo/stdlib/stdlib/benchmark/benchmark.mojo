@@ -183,11 +183,11 @@ struct Unit:
     """Time Unit used by Benchmark Report."""
 
     comptime ns = "ns"
-    """Nanoseconds"""
+    """Nanoseconds."""
     comptime ms = "ms"
-    """Milliseconds"""
+    """Milliseconds."""
     comptime s = "s"
-    """Seconds"""
+    """Seconds."""
 
     @staticmethod
     fn _divisor(unit: String) -> Int:

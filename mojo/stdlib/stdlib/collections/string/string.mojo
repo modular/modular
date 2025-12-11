@@ -138,13 +138,28 @@ struct String(
 
     # Useful string aliases.
     comptime ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
+    """All lowercase ASCII letters."""
+
     comptime ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    """All uppercase ASCII letters."""
+
     comptime ASCII_LETTERS = Self.ASCII_LOWERCASE + Self.ASCII_UPPERCASE
+    """All ASCII letters (lowercase and uppercase)."""
+
     comptime DIGITS = "0123456789"
+    """All decimal digit characters."""
+
     comptime HEX_DIGITS = Self.DIGITS + "abcdef" + "ABCDEF"
+    """All hexadecimal digit characters."""
+
     comptime OCT_DIGITS = "01234567"
+    """All octal digit characters."""
+
     comptime PUNCTUATION = """!"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"""
+    """All ASCII punctuation characters."""
+
     comptime PRINTABLE = Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
+    """All printable ASCII characters."""
 
     # ===------------------------------------------------------------------=== #
     # String Implementation Details
@@ -153,22 +168,35 @@ struct String(
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
     comptime INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
+    """Maximum bytes for inline (SSO) string storage."""
+
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
     comptime FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
+    """Flag indicating string has accessible nul terminator."""
+
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
     comptime FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
+    """Flag indicating string uses reference-counted storage."""
+
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
     comptime FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
+    """Flag indicating string uses inline (SSO) storage."""
+
     # gives us 5 bits for the length.
     comptime INLINE_LENGTH_START = Int.BITWIDTH - 8
+    """Bit position where inline length field starts."""
+
     comptime INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
+    """Bit mask for extracting inline string length."""
+
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
     comptime REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
+    """Size of the reference count prefix for heap strings."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods

@@ -837,24 +837,22 @@ class LoRAManager:
         grouped_ids = grouped_ids[:last_lora_idx]
         grouped_ranks = grouped_ranks[:last_lora_idx]
 
-        # For KV cache iadd optimization with shape [2M, N]
-        # We need offsets for both K (first M rows) and V (next M rows)
+        # For KV cache iadd optimization with shape [2m, N]
+        # We need offsets for both K (first m rows) and V (next m rows)
         # Create duplicate offsets: first for K portion, then for V portion
-        batch_end = input_row_offsets[-1]
+        lora_end_idx = grouped_offsets[-1]
         grouped_offsets_kv = []
         grouped_ids_kv = []
 
-        # Add K portion: G groups with G+1 offsets (includes batch_end)
-        for offset in grouped_offsets:  # Include all offsets
+        # Add K portion: G groups with G+1 offsets (includes lora_end_idx)
+        for offset in grouped_offsets:
             grouped_offsets_kv.append(offset)
         for id_ in grouped_ids:
             grouped_ids_kv.append(id_)
 
-        # Add V portion: G groups with G offsets (skip first to avoid duplicate batch_end)
-        for offset in grouped_offsets[
-            1:
-        ]:  # Skip first offset, start from second
-            grouped_offsets_kv.append(batch_end + offset)
+        # Add V portion: G groups with G offsets (skip first to avoid duplicate lora_end_idx)
+        for offset in grouped_offsets[1:]:
+            grouped_offsets_kv.append(lora_end_idx + offset)
         for id_ in grouped_ids:
             grouped_ids_kv.append(id_ + self.max_num_loras)
 
@@ -868,14 +866,22 @@ class LoRAManager:
         num_active_loras = Tensor.from_numpy(
             np.array([last_lora_idx], dtype=np.int64)
         )
-        lora_end_idx = Tensor.from_numpy(
-            np.array([grouped_offsets[-1]], dtype=np.int64)
-        )
+        # TODO: This is a hacky workaround for creating a dynamic shaped output
+        #  tensor inside of the graph and is a byproduct of not being able
+        #  to use TensorValues as shapes without slicing. Aka we can slice:
+        #  x[[slice(None, TensorValue), "dynamic"]] but incurs a slice which has overhead.
+        #  The approach below is working around slicing and just creating a
+        #  zero'd tensor of shape "dynamic" and setting the first element to
+        #  this "dynamic" value since we also need it for ops within the LoRA
+        #  computation.
+        lora_end_zeros = np.zeros([lora_end_idx], dtype=np.int64)
+        if lora_end_idx != 0:
+            lora_end_zeros[0] = lora_end_idx
+        lora_end = Tensor.from_numpy(lora_end_zeros)
         batch_seq_len = Tensor.from_numpy(
             np.array([input_row_offsets[-1]], dtype=np.int64)
         )
 
-        # KV-specific tensors for [2M, N] shape
         lora_ids_kv = Tensor.from_numpy(
             np.array(grouped_ids_kv, dtype=np.int32)
         ).to(device)
@@ -888,7 +894,7 @@ class LoRAManager:
             lora_ranks,
             lora_grouped_offsets,
             num_active_loras,
-            lora_end_idx,
+            lora_end,
             batch_seq_len,
             lora_ids_kv,
             lora_grouped_offsets_kv,
@@ -1202,7 +1208,7 @@ class LoRAManager:
             DType.int64, shape=[1], device=DeviceRef.CPU()
         )
         lora_end_idx_type = TensorType(
-            DType.int64, shape=[1], device=DeviceRef.CPU()
+            DType.int64, shape=["lora_end_idx"], device=DeviceRef.CPU()
         )
         batch_seq_len_type = TensorType(
             DType.int64, shape=[1], device=DeviceRef.CPU()

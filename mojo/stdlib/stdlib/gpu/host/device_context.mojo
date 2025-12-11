@@ -786,7 +786,7 @@ struct DeviceBuffer[dtype: DType](
     comptime device_type: AnyType = LegacyUnsafePointer[Scalar[Self.dtype]]
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: LegacyOpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
         """
         # TODO: Allow the low-level DeviceContext implementation to intercept
@@ -934,6 +934,60 @@ struct DeviceBuffer[dtype: DType](
         )
 
         self._device_ptr = ptr
+        self._handle = cpp_handle
+
+    @doc_private
+    fn __init__[
+        _dtype: DType,
+    ](
+        out self: DeviceBuffer[_dtype],
+        ctx: DeviceContext,
+        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
+        size: Int,
+        *,
+        owning: Bool,
+    ):
+        """Constructs a DeviceBuffer from any pointer.
+
+        This constructor accepts pointers with any origin and converts them
+        internally to MutAnyOrigin. This is a stepping stone API that allows
+        existing code using specific origins to work while the codebase
+        transitions to proper origin tracking.
+
+        Parameters:
+            _dtype: The element type of the buffer.
+
+        Args:
+            ctx: The device context.
+            ptr: Pointer to device memory with any origin.
+            size: Number of elements.
+            owning: Whether this buffer owns the memory.
+        """
+        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime elem_size = size_of[_dtype]()
+        var cpp_handle: _DeviceBufferPtr = {}
+        var device_ptr = rebind[UnsafePointer[Scalar[_dtype], MutAnyOrigin]](
+            ptr
+        )
+        external_call[
+            "AsyncRT_DeviceContext_createBuffer_owning",
+            NoneType,
+            UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
+            _DeviceContextPtr,
+            UnsafePointer[Scalar[_dtype], MutAnyOrigin],
+            _SizeT,
+            _SizeT,
+            Bool,
+        ](
+            UnsafePointer(to=cpp_handle),
+            ctx._handle,
+            device_ptr,
+            UInt(size),
+            UInt(elem_size),
+            owning,
+        )
+
+        self._device_ptr = device_ptr
         self._handle = cpp_handle
 
     fn __copyinit__(out self, existing: Self):
@@ -1467,7 +1521,7 @@ struct DeviceStream(ImplicitlyCopyable):
         Raises:
             If the wait operation fails.
         """
-        # const char *AsyncRT_DeviceStream_enqueue_enqueue_wait_for(const DeviceStream *stream, const DeviceEvent *event)
+        # const char *AsyncRT_DeviceStream_waitForEvent(const DeviceStream *stream, const DeviceEvent *event)
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_waitForEvent",
@@ -1511,7 +1565,7 @@ struct DeviceStream(ImplicitlyCopyable):
         default_stream.record_event(event)
         ```
         """
-        # const char *AsyncRT_DeviceStream_event_record(const DeviceStream *stream, const DeviceEvent *event)
+        # const char *AsyncRT_DeviceStream_eventRecord(const DeviceStream *stream, const DeviceEvent *event)
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_eventRecord",
@@ -1795,29 +1849,6 @@ struct DeviceEvent(ImplicitlyCopyable):
 
     var _handle: _DeviceEventPtr
     """Internal handle to the native event object."""
-
-    @doc_private
-    @always_inline
-    fn __init__(out self, stream: DeviceStream) raises:
-        """Creates a new event recorded on the given stream.
-
-        Args:
-            stream: The stream to record the event on.
-
-        Raises:
-            If event creation or recording fails.
-        """
-        var result: _DeviceEventPtr = {}
-        # const char *AsyncRT_DeviceStream_enqueue_event(const DeviceEvent **result, const DeviceStream *stream)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceStream_eventCreate",
-                _ConstCharPtr,
-                UnsafePointer[_DeviceEventPtr, origin_of(result)],
-                _DeviceStreamPtr,
-            ](UnsafePointer(to=result), stream._handle)
-        )
-        self._handle = result
 
     @doc_private
     @always_inline
@@ -3570,7 +3601,7 @@ struct DeviceContext(ImplicitlyCopyable):
             Maximum dynamic shared memory bytes to set, or 0 if not needed.
         """
         # NVIDIA GPUs have a 48KB default limit for dynamic shared memory
-        alias NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT = 48 * 1024
+        comptime NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT = 48 * 1024
 
         # Only set the attribute if we need more than the default limit
         if requested_bytes <= NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT:
@@ -5863,7 +5894,7 @@ struct DeviceContext(ImplicitlyCopyable):
         """
         # Not directly implemented on DeviceContext, wrap in buffers first
         # Cast to the DeviceBuffer's expected pointer type via address
-        alias _BufPtr = UnsafePointer[Scalar[dtype], MutAnyOrigin]
+        comptime _BufPtr = UnsafePointer[Scalar[dtype], MutAnyOrigin]
         var dst_buf = DeviceBuffer[dtype](
             self,
             _BufPtr(unsafe_from_address=Int(dst_ptr)),
@@ -6188,7 +6219,7 @@ struct DeviceContext(ImplicitlyCopyable):
         if interprocess:
             flags |= EventFlags.interprocess
 
-        # const char *AsyncRT_DeviceContext_event_create(const DeviceEvent **result, const DeviceContext *ctx, unsigned int flags)
+        # const char *AsyncRT_DeviceContext_eventCreate(const DeviceEvent **result, const DeviceContext *ctx, unsigned int flags)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_eventCreate",
@@ -6239,7 +6270,7 @@ struct DeviceContext(ImplicitlyCopyable):
         var flags: c_uint = 0 if blocking else 1
         var result = _DeviceStreamPtr()
 
-        # const char *AsyncRT_cuda_create_stream_with_priority(CUstream *stream, int priority, const DeviceContext *ctx)
+        # const char *AsyncRT_streamCreate(const DeviceStream **stream, const DeviceContext *ctx, unsigned int flags)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_streamCreate",
@@ -6275,7 +6306,7 @@ struct DeviceContext(ImplicitlyCopyable):
         var flags: c_uint = 0 if blocking else 1
         var result = _DeviceStreamPtr()
 
-        # const char *AsyncRT_cuda_create_stream_with_priority(CUstream *stream, int priority, const DeviceContext *ctx)
+        # const char *AsyncRT_streamCreateWithPriority(const DeviceStream **stream, unsigned int flags, int priority, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_streamCreateWithPriority",
@@ -6878,7 +6909,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr()
-        alias _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        comptime _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
         var buf_ptr: _BufPtr = {}
 
         _checked(
@@ -6905,7 +6936,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr()
-        alias _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        comptime _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
         var buf_ptr: _BufPtr = {}
 
         _checked(

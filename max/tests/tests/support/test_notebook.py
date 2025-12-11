@@ -1,0 +1,56 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from pathlib import Path
+
+import pytest
+from IPython.testing.globalipapp import start_ipython
+from IPython.utils.capture import capture_output
+from mojo.paths import MojoCompilationError
+
+
+@pytest.fixture(scope="session")
+def ipython():  # noqa: ANN201
+    ipython = start_ipython()
+    import mojo.notebook  # noqa
+
+    yield ipython
+
+
+def test_mojo_run_print(ipython) -> None:  # noqa: ANN001
+    with capture_output() as captured:
+        ipython.run_cell_magic(
+            magic_name="mojo",
+            line="",
+            cell="""
+def main():
+    print(1)
+""",
+        )
+    assert captured.stdout.strip() == "1"
+
+
+def test_compile_error(ipython) -> None:  # noqa: ANN001
+    with pytest.raises(MojoCompilationError):
+        ipython.run_cell_magic(
+            magic_name="mojo", line="", cell='''var i: Int = "hello"'''
+        )
+
+
+def test_mojo_package(ipython) -> None:  # noqa: ANN001
+    ipython.run_cell_magic(
+        magic_name="mojo",
+        line="package -o hello.mojopkg",
+        cell='''def hello() -> String: return "hello"''',
+    )
+    assert Path("hello.mojopkg").is_file()

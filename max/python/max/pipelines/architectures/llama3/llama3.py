@@ -234,6 +234,7 @@ class Llama3(Transformer):
             kv_params=config.kv_params,
             rope=rope,
             return_logits=config.return_logits,
+            return_hidden_states=config.return_hidden_states,
             embedding_multiplier=config.embedding_multiplier,
             logits_scaling=config.logits_scaling,
         )
@@ -242,6 +243,7 @@ class Llama3(Transformer):
         self,
         kv_manager: PagedKVCacheManager | NullKVCacheManager,
         lora_manager: LoRAManager | None,
+        needs_hidden_state_input: bool = False,
     ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
@@ -287,10 +289,24 @@ class Llama3(Transformer):
                 lora_grouped_offsets_kv,
                 *kv_inputs[0],
             )
-        else:
+        # hidden state input is for EAGLE-like spec decoding draft models
+        if needs_hidden_state_input:
+            hidden_states_type = TensorType(
+                self.config.dtype,
+                shape=["total_seq_len", self.config.hidden_size],
+                device=device_ref,
+            )
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
+                hidden_states_type,
                 *kv_inputs[0],
             )
+
+        return (
+            tokens_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+            *kv_inputs[0],
+        )

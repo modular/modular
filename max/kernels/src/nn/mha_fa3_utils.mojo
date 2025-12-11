@@ -34,8 +34,6 @@ from layout.layout import UNKNOWN_VALUE, Layout
 from layout.layout_tensor import (
     LayoutTensor,
     copy_local_to_shared,
-    cp_async_k_major,
-    cp_async_mn_major,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import Swizzle
@@ -144,7 +142,7 @@ struct Pack[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -210,7 +208,7 @@ struct MHAPosition[
     comptime split_gmem_layout = Layout(
         IntTuple(Self.BM // 2, Self.depth), IntTuple(Self.q_stride, 1)
     )
-    alias num_q_heads_per_thread: Int = min(
+    comptime num_q_heads_per_thread: Int = min(
         2, ceildiv(Self.group, 8)
     ) if Self.decoding else 1
 

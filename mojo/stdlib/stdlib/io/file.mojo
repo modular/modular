@@ -47,22 +47,25 @@ from memory import Span
 # ===----------------------------------------------------------------------=== #
 
 # File access modes
-alias O_RDONLY = 0x0000  # Open for reading only
-alias O_WRONLY = 0x0001  # Open for writing only
-alias O_RDWR = 0x0002  # Open for reading and writing
+comptime O_RDONLY = 0x0000
+"""Open file for reading only."""
+comptime O_WRONLY = 0x0001
+"""Open file for writing only."""
+comptime O_RDWR = 0x0002
+"""Open file for reading and writing."""
 
 # File creation flags
-alias O_CREAT = platform_map["O_CREAT", linux=0x0040, macos=0x0200]()
-"""Create file if it doesn't exist"""
+comptime O_CREAT = platform_map["O_CREAT", linux=0x0040, macos=0x0200]()
+"""Create file if it doesn't exist."""
 
-alias O_TRUNC = platform_map["O_TRUNC", linux=0x0200, macos=0x0400]()
-"""Truncate file to zero length"""
+comptime O_TRUNC = platform_map["O_TRUNC", linux=0x0200, macos=0x0400]()
+"""Truncate file to zero length."""
 
-alias O_APPEND = platform_map["O_APPEND", linux=0x0400, macos=0x0008]()
-"""Append mode: writes always go to end of file"""
+comptime O_APPEND = platform_map["O_APPEND", linux=0x0400, macos=0x0008]()
+"""Append mode: writes always go to end of file."""
 
-alias O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
-"""Close file descriptor on exec"""
+comptime O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
+"""Close file descriptor on exec."""
 
 # ===----------------------------------------------------------------------=== #
 # Helper functions
@@ -124,6 +127,13 @@ fn _open_file(path: String, mode: String) raises -> Int:
     # Open the file with libc open() syscall
     # Mode 0o666 allows read/write for owner, group, and others (modified by umask)
     var path_str = path
+
+    # TODO(MSTDL-2085): Remove this workaround once external_call supports
+    # C variadic functions correctly on ARM64 macOS.
+    # WORKAROUND: The variadic open() syscall doesn't correctly pass the mode
+    # argument on ARM64 macOS. We use a two-step approach:
+    # 1. Open/create the file (with potentially incorrect permissions)
+    # 2. Use fchmod to set the correct permissions after opening
     var fd = external_call["open", c_int](
         path_str.as_c_string_slice().unsafe_ptr(), c_int(flags), c_int(0o666)
     )
@@ -131,6 +141,16 @@ fn _open_file(path: String, mode: String) raises -> Int:
     if fd < 0:
         var err = get_errno()
         raise Error("Failed to open file '" + path + "': " + String(err))
+
+    # Fix permissions for newly created files.
+    # We use fchmod (non-variadic) because the variadic open() syscall doesn't
+    # correctly pass the mode argument on ARM64 macOS.
+    if flags & O_CREAT:
+        var chmod_result = external_call["fchmod", c_int](fd, c_int(0o666))
+        if chmod_result < 0:
+            _ = external_call["close", c_int](fd)
+            var err = get_errno()
+            raise Error("Failed to set file permissions: " + String(err))
 
     # For append mode, seek to end (though O_APPEND should handle this)
     if mode == "a":

@@ -75,26 +75,26 @@ fn test_block_scaled_nvfp4_cublaslt[
             cublaslt_version,
         )
 
-    alias scales_dtype = NVFP4_SF_DTYPE
+    comptime scales_dtype = NVFP4_SF_DTYPE
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
-    alias input_dtype = DType.uint8
+    comptime input_dtype = DType.uint8
 
-    alias static_a_shape = DimList(m.dim, k.dim // 2)
-    alias static_b_shape = DimList(n.dim, k.dim // 2)
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList(m.dim, k.dim // 2)
+    comptime static_b_shape = DimList(n.dim, k.dim // 2)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value // 2)
     var dynamic_b_shape = DimList(n.value, k.value // 2)
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    alias static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
         Dim(SF_ATOM_M[0]),
         Dim(SF_ATOM_M[1]),
         Dim(SF_ATOM_K),
     )
-    alias static_b_scales_shape = DimList(
+    comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
         Dim(SF_ATOM_M[0]),

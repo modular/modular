@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "recordreplay",
     srcs = glob(["**/*.py"]),
-    imports = ["../../.."],
     deps = [
         requirement("asgiref"),
         requirement("httpx"),

@@ -34,7 +34,9 @@ trait MaybeZeroSized:
 struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: LegacyOpaquePointer):
+    fn _to_device_type[
+        origin: MutOrigin
+    ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -61,7 +63,9 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
 struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: LegacyOpaquePointer):
+    fn _to_device_type[
+        origin: MutOrigin
+    ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod

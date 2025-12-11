@@ -13,7 +13,7 @@
 
 from algorithm import parallelize
 from collections.optional import OptionalReg
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import alloc
 from os import abort, getenv, setenv
 from builtin.variadics import Variadic
 from builtin.device_passable import DevicePassable
@@ -351,7 +351,7 @@ struct SHMEMContext(ImplicitlyCopyable):
             # ...
         ```
         """
-        var host_ptr = UnsafePointer[Scalar[dtype]].alloc(size)
+        var host_ptr = alloc[Scalar[dtype]](size)
         return HostBuffer[dtype](self._ctx, host_ptr, size, owning=True)
 
     @always_inline

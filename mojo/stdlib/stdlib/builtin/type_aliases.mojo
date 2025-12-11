@@ -93,6 +93,9 @@ struct Origin[mut: Bool]:
     rarely, typically when building low-level fundamental abstractions. Strongly
     consider alternatives before reaching for this "escape hatch".
 
+    Parameters:
+        o: The origin to cast.
+
     Safety:
         This is an UNSAFE operation if used to cast an immutable origin to
         a mutable origin.

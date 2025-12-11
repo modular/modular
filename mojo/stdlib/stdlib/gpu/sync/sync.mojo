@@ -43,6 +43,7 @@ comptime _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
 ]()
 
 comptime MaxHardwareBarriers = 16
+"""Maximum number of hardware barriers available per block."""
 
 
 @always_inline("nodebug")

@@ -14,6 +14,7 @@
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -87,7 +88,7 @@ class Bench:
         print(output_str)
 
 
-def arg_parse(handle: str, default: str = "", short_handle: str = "") -> str:
+def arg_parse(handle: str, default: Any = None, short_handle: str = "") -> str:
     # TODO: add constraints on dtype of return value
 
     handle = handle.lstrip("-")

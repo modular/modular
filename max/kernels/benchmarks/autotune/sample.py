@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from pathlib import Path
+
 from bencher_utils import Bench, ThroughputMeasure, arg_parse
 
 
@@ -29,7 +31,7 @@ def main() -> None:
         met=0.1,
         metric_list=[flops],
     )
-    b.dump_report(output_path=output_path)
+    b.dump_report(output_path=Path(output_path))
 
 
 if __name__ == "__main__":

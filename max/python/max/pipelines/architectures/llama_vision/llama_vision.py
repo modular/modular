@@ -174,11 +174,9 @@ class MultimodalKVCacheManager:
         # Always use paged KV cache for the vision KV projections.
         self.vision_kv_manager = PagedKVCacheManager(
             params=self.vision_kv_params,
-            max_batch_size=max_batch_size,
             # Set the number of pages to equal to the max batch size so that we
             # have exactly one page per sequence.
             total_num_pages=max_batch_size,
-            max_seq_len=vision_max_seq_len,
             devices=devices,
             session=session,
         )
@@ -220,6 +218,7 @@ class MultimodalKVCacheManager:
         self.enable_kvcache_swapping_to_host = (
             text_kv_manager_replica.enable_kvcache_swapping_to_host
         )
+        self.vision_max_seq_len = vision_max_seq_len
 
         # Store language kvcache attributes.
         self.text_kv_params = params
@@ -331,11 +330,9 @@ class MultimodalKVCacheManager:
             # TODO(bduke): pass the vision sequence lengths in from next_token.
 
             # Omit validity checks on seq ids, which are done in the text fetch.
-            cache_len = (
-                self.vision_kv_manager.max_seq_len if ctx.start_idx > 0 else 0
-            )
+            cache_len = self.vision_max_seq_len if ctx.start_idx > 0 else 0
             if cache_len == 0:
-                max_seq_length = self.vision_kv_manager.max_seq_len
+                max_seq_length = self.vision_max_seq_len
 
             cache_lengths_np[i] = cache_len
 

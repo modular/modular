@@ -510,7 +510,6 @@ fn blackwell_kernel_5[
         Index(
             BN // (cluster_shape[0] // cta_group), 64
         ) if transpose_b else Index(64, BN // (cluster_shape[0] // cta_group)),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
 

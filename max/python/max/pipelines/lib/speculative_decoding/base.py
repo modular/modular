@@ -40,7 +40,7 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
-from max.nn import ReturnLogits
+from max.nn import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig
@@ -134,6 +134,25 @@ class SpeculativeDecodingMetrics:
             f"bonus_tokens_used={stats['bonus_tokens_used']}, "
             f"draft_tokens_accepted={stats['draft_tokens_accepted']}/{stats['draft_tokens_generated']})"
         )
+
+
+def hidden_states_return_config(
+    pipeline_config: PipelineConfig, is_draft: bool = False
+) -> ReturnHiddenStates:
+    """Return the hidden states return config for the speculative config.
+
+    For Eagle and DeepSeek MTP, we share the embedding and lm_head weights between the target and draft models and only take the last hidden state from the target model.
+
+    """
+    assert pipeline_config._speculative_config is not None
+    if pipeline_config._speculative_config.is_eagle():
+        if is_draft:
+            return ReturnHiddenStates.LAST
+        else:
+            return ReturnHiddenStates.ALL_NORMALIZED
+
+    else:
+        return ReturnHiddenStates.NONE
 
 
 class SpeculativeDecodingPipelineBase(
@@ -239,6 +258,9 @@ class SpeculativeDecodingPipelineBase(
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format),
             return_logits=ReturnLogits.VARIABLE,
+            return_hidden_states=hidden_states_return_config(
+                self.pipeline_config, is_draft=False
+            ),
         )
 
         # Calculate Max Length
@@ -359,6 +381,9 @@ class SpeculativeDecodingPipelineBase(
             weights=draft_weights,
             adapter=actual_draft_weight_adapters.get(_draft_weights_format),
             return_logits=ReturnLogits.LAST_TOKEN,
+            return_hidden_states=hidden_states_return_config(
+                self.pipeline_config, is_draft=True
+            ),
         )
 
         # Load draft sampler

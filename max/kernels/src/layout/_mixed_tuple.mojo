@@ -19,8 +19,9 @@ from builtin.variadics import (
     Variadic,
     VariadicPack,
     _ReduceVariadicAndIdxToVariadic,
+    _ReduceValueAndIdxToVariadic,
+    _ReduceVariadicAndIdxToValue,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys.intrinsics import _type_is_eq_parse_time
 
 
@@ -214,6 +215,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     comptime STATIC_VALUE: Int = -1
     comptime IS_TUPLE = True
     comptime ALL_DIMS_KNOWN = _AllStatic[*Self.element_types]
+    comptime STATIC_PRODUCT = _StaticProduct[*Self.element_types]
 
     var _storage: Tuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
@@ -524,6 +526,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         Examples:
             ```mojo
+            from layout._mixed_tuple import MixedTuple, Idx
             var nested = MixedTuple(
                 Idx[5](),
                 MixedTuple(Idx[3](), Idx[2]()),
@@ -656,7 +659,51 @@ fn mixed_int_tuple_to_int_tuple[
     return result
 
 
-comptime _FlattenMapper[
+fn mixed_tuple[
+    dtype: DType, *element_types: Movable
+](var values: Tuple[*element_types]) -> MixedTuple[
+    *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
+] where _AllEqual[Int, *element_types]:
+    """Helper to create a MixedTuple from a variadic pack of integers.
+    Parameters:
+        dtype: The data type for the runtime integer values.
+        rank: The number of elements in the tuple.
+    Args:
+        values: The run-time integer values.
+    Returns:
+        A `MixedTuple` instance containing `ComptimeInt` elements for each value.
+    Usage: mixed_tuple[5, 3, 2]() creates MixedTuple(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+    """
+    var tuple: MixedTuple[
+        *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
+    ]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(tuple))
+
+    @parameter
+    for i in range(type_of(values).__len__()):
+        UnsafePointer(to=tuple[i]).init_pointee_copy(
+            rebind[type_of(tuple[i])](
+                RuntimeInt[dtype](Scalar[dtype](rebind[Int](values[i])))
+            )
+        )
+    return tuple^
+
+
+fn mixed_tuple[*values: Int]() -> MixedTuple[*_IntToComptimeInt[*values]]:
+    """Helper to create a MixedTuple from a variadic pack of integers.
+    Parameters:
+        values: The compile-time integer values.
+    Returns:
+        A `MixedTuple` instance containing `ComptimeInt` elements for each value.
+    Usage: mixed_tuple[5, 3, 2]() creates MixedTuple(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+    """
+    # values is a ZST since all elements are comptime
+    var tuple: MixedTuple[*_IntToComptimeInt[*values]]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(tuple))
+    return tuple^
+
+
+comptime _FlattenReducer[
     Prev: Variadic.TypesOfTrait[MixedTupleLike],
     From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
@@ -673,7 +720,7 @@ comptime _Flattened[
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal = Variadic.empty_of_trait[MixedTupleLike],
     VariadicType=element_types,
-    Reducer=_FlattenMapper,
+    Reducer=_FlattenReducer,
 ]
 
 comptime _NextOffset[
@@ -686,7 +733,7 @@ comptime _NextOffset[
 )
 
 
-comptime _FlattenOffsetMapper[
+comptime _FlattenOffsetReducer[
     Prev: Variadic.TypesOfTrait[MixedTupleLike],
     From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
@@ -710,7 +757,7 @@ comptime _FlattenedOffsets[
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal = Variadic.empty_of_trait[MixedTupleLike],
     VariadicType=element_types,
-    Reducer=_FlattenOffsetMapper,
+    Reducer=_FlattenOffsetReducer,
 ]
 
 
@@ -776,46 +823,80 @@ fn _get_flattened[
     return _get_flattened_helper[flat_idx, 0, 0](tuple)
 
 
-comptime _AllStaticMapper[
-    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+comptime _AllStaticReducer[
+    Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
-] = (
-    Variadic.types[T=MixedTupleLike, ComptimeInt[1]] if (
-        From[idx].STATIC_VALUE != -1 and Prev[0].STATIC_VALUE == 1
-    ) else Variadic.types[T=MixedTupleLike, ComptimeInt[0]]
-)
+] = (Variadic.values[From[idx].STATIC_VALUE != -1 and Prev[0]])
 
 
 comptime _AllStatic[
     *element_types: MixedTupleLike
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.types[T=MixedTupleLike, ComptimeInt[1]],
+] = _ReduceVariadicAndIdxToValue[
+    BaseVal = Variadic.values[True],
     VariadicType = _Flattened[*element_types],
-    Reducer=_AllStaticMapper,
+    Reducer=_AllStaticReducer,
 ][
     0
-].STATIC_VALUE == 1
+]
 
-comptime _AllEqualMapper[
+comptime _AllEqualReducer[
     T: AnyType,
-    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[AnyType],
     idx: Int,
 ] = (
-    Variadic.types[T=MixedTupleLike, ComptimeInt[1]] if (
-        _type_is_eq_parse_time[From[idx], T]()
-        and (Prev[0].STATIC_VALUE == 1 or idx == 0)
-    ) else Variadic.types[T=MixedTupleLike, ComptimeInt[0]]
+    Variadic.values[
+        _type_is_eq_parse_time[From[idx], T]() and (Prev[0] or idx == 0)
+    ]
 )
 
 
 comptime _AllEqual[
     T: AnyType, *element_types: AnyType
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.types[T=MixedTupleLike, ComptimeInt[0]],
+] = _ReduceVariadicAndIdxToValue[
+    BaseVal = Variadic.values[False],
     VariadicType=element_types,
-    Reducer = _AllEqualMapper[T],
+    Reducer = _AllEqualReducer[T],
 ][
     0
-].STATIC_VALUE == 1
+]
+
+comptime _StaticProductReducer[
+    Prev: Variadic.ValuesOfType[Int],
+    From: Variadic.TypesOfTrait[MixedTupleLike],
+    idx: Int,
+] = (Variadic.values[From[idx].STATIC_VALUE * Prev[0]])
+
+
+comptime _StaticProduct[
+    *element_types: MixedTupleLike
+] = _ReduceVariadicAndIdxToValue[
+    BaseVal = Variadic.values[1],
+    VariadicType = _Flattened[*element_types],
+    Reducer=_StaticProductReducer,
+][
+    0
+]
+
+comptime _IntToComptimeIntMapper[
+    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.ValuesOfType[Int],
+    idx: Int,
+] = Variadic.concat[Prev, Variadic.types[ComptimeInt[From[idx]]]]
+
+
+comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
+    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    VariadicType=values,
+    Reducer=_IntToComptimeIntMapper,
+]
+
+comptime _Splatted[T: MixedTupleLike, count: Int] = __mlir_attr[
+    `#kgen.variadic.splat<`,
+    T,
+    `,`,
+    count._mlir_value,
+    `> : `,
+    Variadic.TypesOfTrait[type_of(T)],
+]

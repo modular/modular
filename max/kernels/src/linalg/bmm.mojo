@@ -392,9 +392,9 @@ fn batched_matmul[
     fn description_fn() -> String:
         # fmt: off
         return String(
-            trace_arg("A", a_buf),
-            ";", trace_arg("B", b_buf),
-            ";", trace_arg("C", c_buf),
+            trace_arg("A", a_buf.dynamic_shape, a_buf.dtype),
+            ";", trace_arg("B", b_buf.dynamic_shape, b_buf.dtype),
+            ";", trace_arg("C", c_buf.dynamic_shape, c_buf.dtype),
             ";transpose_a=", transpose_a,
             ";transpose_b=", transpose_b,
         )
@@ -1333,7 +1333,6 @@ fn bmm_sm100_blockwise_scaled_fp8[
 
     var b_tma_op = create_tma_tile[
         b_tile_shape,
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
         __tile_layout = Layout.row_major(b_tile_shape),
     ](ctx, b)

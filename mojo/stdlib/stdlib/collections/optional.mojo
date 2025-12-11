@@ -39,7 +39,6 @@ from utils import Variant
 from builtin.constrained import _constrained_conforms_to
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
-from memory import LegacyOpaquePointer as OpaquePointer
 
 
 # TODO(27780): NoneType can't currently conform to traits
@@ -95,8 +94,15 @@ struct Optional[T: Copyable](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
+    """The iterator type for this optional.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     comptime Element = Self.T
+    """The element type of this optional."""
 
     # Fields
     # _NoneType comes first so its index is 0.
@@ -520,8 +526,9 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
     var _value: Self._mlir_type
 
     comptime device_type: AnyType = Self
+    """The device-side type for this optional register."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod

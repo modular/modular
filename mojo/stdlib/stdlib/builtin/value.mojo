@@ -184,6 +184,7 @@ trait ImplicitlyCopyable(Copyable):
     " longer implies implicit copyability."
 )
 comptime ExplicitlyCopyable = Copyable
+"""Deprecated alias for `Copyable`."""
 
 
 fn materialize[T: AnyType, //, value: T](out result: T):

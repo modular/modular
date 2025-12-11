@@ -31,6 +31,7 @@ from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
 comptime sep = "/"
+"""The path separator for the current platform."""
 
 
 # ===----------------------------------------------------------------------=== #
@@ -367,6 +368,9 @@ fn link[
     Args:
         oldpath: The exsting file.
         newpath: The new file.
+
+    Raises:
+        If the operation fails.
     """
     var oldpath_fspath = oldpath.__fspath__()
     var newpath_fspath = newpath.__fspath__()

@@ -24,12 +24,20 @@ struct Variadic:
     comptime ValuesOfType[type: AnyType] = __mlir_type[
         `!kgen.variadic<`, type, `>`
     ]
-    """Represents a raw variadic sequence of values of the specified type."""
+    """Represents a raw variadic sequence of values of the specified type.
+
+    Parameters:
+        type: The type of values in the variadic sequence.
+    """
 
     comptime TypesOfTrait[T: _AnyTypeMetaType] = __mlir_type[
         `!kgen.variadic<`, T, `>`
     ]
-    """Represents a raw variadic sequence of types that satisfy the specified trait."""
+    """Represents a raw variadic sequence of types that satisfy the specified trait.
+
+    Parameters:
+        T: The trait that types in the variadic sequence must conform to.
+    """
 
     @staticmethod
     @always_inline("builtin")
@@ -70,20 +78,38 @@ struct Variadic:
     comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
         `#kgen.variadic<>: !kgen.variadic<`, T, `>`
     ]
-    """Empty comptime variadic of type values."""
+    """Empty comptime variadic of type values.
+
+    Parameters:
+        T: The trait that types in the variadic sequence must conform to.
+    """
 
     comptime empty_of_type[T: AnyType] = __mlir_attr[
         `#kgen.variadic<>: !kgen.variadic<`, T, `>`
     ]
-    """Empty comptime variadic of values."""
+    """Empty comptime variadic of values.
+
+    Parameters:
+        T: The type of values in the variadic sequence.
+    """
 
     comptime types[T: type_of(AnyType), //, *Ts: T] = Ts
-    """Turn discrete type values (bound by `T`) into a single variadic."""
+    """Turn discrete type values (bound by `T`) into a single variadic.
+
+    Parameters:
+        T: The trait that the types must conform to.
+        Ts: The types to collect into a variadic sequence.
+    """
 
     comptime values[T: AnyType, //, *values_: T]: Variadic.ValuesOfType[
         T
     ] = values_
-    """Turn discrete value (bound by `T`) into a single variadic."""
+    """Turn discrete values (bound by `T`) into a single variadic.
+
+    Parameters:
+        T: The type of the values.
+        values_: The values to collect into a variadic sequence.
+    """
 
     # ===-----------------------------------------------------------------------===#
     # VariadicConcat
@@ -94,8 +120,11 @@ struct Variadic:
     ] = __mlir_attr[
         `#kgen.variadic.concat<`, Ts, `> :`, Variadic.TypesOfTrait[T]
     ]
-    """
-    Represents the concatenation of multiple variadic sequences of types.
+    """Represents the concatenation of multiple variadic sequences of types.
+
+    Parameters:
+        T: The trait that types in the variadic sequences must conform to.
+        Ts: The variadic sequences to concatenate.
     """
 
     comptime reverse[
@@ -106,8 +135,8 @@ struct Variadic:
     """A wrapper to reverse a variadic sequence of types.
 
     Parameters:
-         T: The trait that the types conform to.
-         element_types: The variadic sequence of types to reverse.
+        T: The trait that the types conform to.
+        element_types: The variadic sequence of types to reverse.
     """
 
     comptime splat[type: AnyType, count: Int] = __mlir_attr[
@@ -118,8 +147,8 @@ struct Variadic:
         `> : `,
         Variadic.TypesOfTrait[type_of(type)],
     ]
-    """
-    Splat a type into a variadic sequence.
+    """Splat a type into a variadic sequence.
+
     Parameters:
         type: The type to splat.
         count: The number of times to splat the type.
@@ -236,6 +265,12 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _VariadicListIter[Self.type]
+    """The iterator type for this variadic list.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     @always_inline
     @implicit
@@ -366,6 +401,8 @@ struct VariadicListMem[
     """
 
     comptime reference_type = Pointer[Self.element_type, Self.origin]
+    """The pointer type for references to elements."""
+
     comptime _mlir_type = Variadic.ValuesOfType[Self.reference_type._mlir_type]
 
     var value: Self._mlir_type
@@ -776,9 +813,11 @@ comptime _ReduceVariadicAndIdxToVariadic[
 type, one could reduce the input to a single element variadic instead.
 
 Parameters:
-    BaseVal: The initial value to reduce on
-    VariadicType: The variadic to be reduced
-    Reducer: A `[BaseVal: Variadic.TypesOfTrait[To], Ts: *From, idx: index] -> To` that does the reduction
+    From: The common trait bound for the input variadic types.
+    To: The common trait bound for the output variadic types.
+    BaseVal: The initial value to reduce on.
+    VariadicType: The variadic to be reduced.
+    Reducer: A `[BaseVal: Variadic.TypesOfTrait[To], Ts: *From, idx: index] -> To` that does the reduction.
 """
 
 comptime _ReduceValueIdxGeneratorTypeGenerator[
@@ -829,10 +868,13 @@ comptime _ReduceValueAndIdxToVariadic[
 ]
 """Construct a new variadic of types using a reducer. To reduce to a single
 type, one could reduce the input to a single element variadic instead.
+
 Parameters:
-    BaseVal: The initial value to reduce on
-    VariadicType: The variadic to be reduced
-    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction
+    From: The type of the input variadic values.
+    To: The common trait bound for the output variadic types.
+    BaseVal: The initial value to reduce on.
+    VariadicType: The variadic to be reduced.
+    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction.
 """
 
 
@@ -857,10 +899,13 @@ comptime _ReduceVariadicAndIdxToValue[
 ]
 """Construct a new variadic of types using a reducer. To reduce to a single
 type, one could reduce the input to a single element variadic instead.
+
 Parameters:
-    BaseVal: The initial value to reduce on
-    VariadicType: The variadic to be reduced
-    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction
+    To: The type of the output variadic values.
+    From: The common trait bound for the input variadic types.
+    BaseVal: The initial value to reduce on.
+    VariadicType: The variadic to be reduced.
+    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction.
 """
 
 # ===-----------------------------------------------------------------------===#
@@ -906,9 +951,10 @@ comptime _MapVariadicAndIdxToType[
 """Construct a new variadic of types using a type-to-type mapper.
 
 Parameters:
-    To: A common trait bound for the mapped type
-    VariadicType: The variadic to be mapped
-    Mapper: A `[Ts: *From, idx: index] -> To` that does the transform
+    From: The common trait bound for the input variadic types.
+    To: A common trait bound for the mapped type.
+    VariadicType: The variadic to be mapped.
+    Mapper: A `[Ts: *From, idx: index] -> To` that does the transform.
 """
 
 comptime _ReversedVariadic[
@@ -919,6 +965,7 @@ comptime _ReversedVariadic[
 """A generator that reverses a variadic sequence of types.
 
 Parameters:
+    T: The common trait bound for the variadic types.
     element_types: The variadic sequence of types to reverse.
     idx: The index of the type to generate in the reversed sequence.
 """

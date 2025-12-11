@@ -8,7 +8,6 @@ modular_py_library(
         "base_print_hook.py",
         "identity.py",
     ],
-    imports = ["../../.."],
     deps = [
         "//max/python/max/nn",
     ],
@@ -17,7 +16,6 @@ modular_py_library(
 modular_py_library(
     name = "print_hook",
     srcs = ["print_hook.py"],
-    imports = ["../../.."],
     deps = [
         ":base_print_hook",
         "//max/python/max/dtype",
@@ -30,7 +28,6 @@ modular_py_library(
     srcs = [
         "__init__.py",
     ],
-    imports = ["../../.."],
     deps = [
         ":print_hook",
     ],

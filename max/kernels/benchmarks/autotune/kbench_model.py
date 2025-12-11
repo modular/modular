@@ -22,6 +22,7 @@ import os
 import shutil
 import string
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from itertools import product
@@ -127,10 +128,7 @@ def mojo_binary() -> str:
 
 def python_binary() -> str:
     """Find python binary in PATH."""
-    # Fall back to searching in PATH
-    if python := shutil.which("python3"):
-        return python
-    raise FileNotFoundError("Could not find the `python` binary.")
+    return sys.executable
 
 
 class SupportedLangs:
