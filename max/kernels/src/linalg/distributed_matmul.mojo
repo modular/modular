@@ -13,7 +13,8 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from comm.allreduce import MAX_GPUS, Signal, allreduce, group_start, group_end
+from comm.allreduce import allreduce
+from comm import MAX_GPUS, Signal, group_start, group_end
 from gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
 from gpu.host import DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static

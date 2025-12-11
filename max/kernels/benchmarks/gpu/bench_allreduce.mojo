@@ -27,7 +27,9 @@ from benchmark import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
+from comm.sync import can_enable_p2p
+from comm.allreduce import allreduce
+from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from gpu.host import (
     DeviceBuffer,

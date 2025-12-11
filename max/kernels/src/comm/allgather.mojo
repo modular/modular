@@ -34,13 +34,13 @@ from sys import simd_width_of
 
 from buffer import NDBuffer
 from memory import LegacyUnsafePointer as UnsafePointer
-from gpu import WARP_SIZE, block_dim, global_idx, grid_dim
+from gpu import WARP_SIZE, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from utils import StaticTuple
 
 # Import P2P detection and synchronization from allreduce
-from .allreduce import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
+from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
 
 
 @always_inline

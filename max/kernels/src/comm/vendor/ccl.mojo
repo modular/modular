@@ -15,7 +15,7 @@ from memory import (
     LegacyOpaquePointer as OpaquePointer,
     LegacyUnsafePointer as UnsafePointer,
 )
-from sys import has_amd_gpu_accelerator, size_of
+from sys import has_amd_gpu_accelerator
 from pathlib import Path
 from sys.ffi import _get_global_or_null, external_call
 from sys.ffi import _find_dylib
@@ -23,11 +23,11 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import OwnedDLHandle, _Global
 from collections.optional import OptionalReg
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
-from comm.allreduce import MAX_GPUS, elementwise_epilogue_type
+from comm import MAX_GPUS
+from comm.allreduce import elementwise_epilogue_type
 from gpu.grid_controls import PDLLevel
 
 comptime ncclComm_t = OpaquePointer
@@ -274,7 +274,7 @@ fn allreduce[
         NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[comm.allreduce.Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[comm.Signal], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
     iteration: Int = 0,
