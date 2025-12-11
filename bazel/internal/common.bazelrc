@@ -91,6 +91,9 @@ common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiv
 # Always use llvm-ar which works fine for macOS
 common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 
+# Enable parse_headers when the feature is added (only applies to first party code)
+common --process_headers_in_dependencies
+
 build --remote_retries=2
 build --remote_timeout=10m
 # Buildbuddy cache optimization recommendations

@@ -70,6 +70,8 @@ single_version_override(
         # https://github.com/bazelbuild/rules_cc/pull/535
         # https://github.com/bazelbuild/rules_cc/pull/536
         "//bazel/public-patches:rules_cc_allowlists.patch",
+        # https://github.com/bazelbuild/rules_cc/pull/527
+        "//bazel/public-patches:rules_cc_textual_hdrs.patch",
     ],
 )
 
