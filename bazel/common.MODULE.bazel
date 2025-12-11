@@ -49,6 +49,19 @@ archive_override(
 )
 
 single_version_override(
+    module_name = "gazelle",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazel-contrib/bazel-gazelle/pull/2249
+        "//bazel/public-patches:gazelle-package-top.patch",
+        # https://github.com/bazel-contrib/bazel-gazelle/pull/2248
+        "//bazel/public-patches:gazelle-exports-files.patch",
+        # https://github.com/bazel-contrib/bazel-gazelle/pull/2247
+        "//bazel/public-patches:gazelle-default-features.patch",
+    ],
+)
+
+single_version_override(
     module_name = "rules_cc",
     patch_strip = 1,
     patches = [

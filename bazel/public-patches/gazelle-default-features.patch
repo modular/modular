@@ -1,0 +1,117 @@
+diff --git a/language/bazel/visibility/config.go b/language/bazel/visibility/config.go
+index 186ea4962..9bc2c189d 100644
+--- a/language/bazel/visibility/config.go
++++ b/language/bazel/visibility/config.go
+@@ -24,11 +24,13 @@ import (
+ )
+
+ const (
+-	_directiveName = "default_visibility"
++	_visibilityDirectiveName = "default_visibility"
++	_featureDirectiveName    = "default_features"
+ )
+
+ type visConfig struct {
+ 	visibilityTargets []string
++	features          []string
+ }
+
+ // getVisConfig directly returns the internal configuration struct rather
+@@ -52,7 +54,7 @@ func (*visibilityExtension) CheckFlags(fs *flag.FlagSet, c *config.Config) error
+
+ // KnownDirectives returns the only directive this extension operates on.
+ func (*visibilityExtension) KnownDirectives() []string {
+-	return []string{_directiveName}
++	return []string{_featureDirectiveName, _visibilityDirectiveName}
+ }
+
+ // Configure identifies the visibility targets from the directive value, if it exists.
+@@ -66,12 +68,17 @@ func (*visibilityExtension) Configure(c *config.Config, _ string, f *rule.File)
+ 	}
+
+ 	var newVisTargets []string
++	var newFeatures []string
+ 	for _, d := range f.Directives {
+ 		switch d.Key {
+-		case _directiveName:
++		case _visibilityDirectiveName:
+ 			for _, target := range strings.Split(d.Value, ",") {
+ 				newVisTargets = append(newVisTargets, target)
+ 			}
++		case _featureDirectiveName:
++			for _, feature := range strings.Split(d.Value, ",") {
++				newFeatures = append(newFeatures, feature)
++			}
+ 		}
+ 	}
+
+@@ -80,6 +87,10 @@ func (*visibilityExtension) Configure(c *config.Config, _ string, f *rule.File)
+ 		cfg.visibilityTargets = newVisTargets
+ 	}
+
++	if len(newFeatures) != 0 {
++		cfg.features = newFeatures
++	}
++
+ 	c.Exts[_extName] = cfg
+ }
+
+diff --git a/language/bazel/visibility/lang.go b/language/bazel/visibility/lang.go
+index 2971c4f66..bbf23655e 100644
+--- a/language/bazel/visibility/lang.go
++++ b/language/bazel/visibility/lang.go
+@@ -22,6 +22,7 @@ import (
+ 	"github.com/bazelbuild/bazel-gazelle/rule"
+ )
+
++// TODO: Rename this extension now that it handles multiple package() attributes.
+ type visibilityExtension struct{}
+
+ // NewLanguage constructs a new language.Language modifying visibility.
+@@ -36,6 +37,7 @@ func (*visibilityExtension) Kinds() map[string]rule.KindInfo {
+ 			MatchAny: true,
+ 			MergeableAttrs: map[string]bool{
+ 				"default_visibility": true,
++				"features":           true,
+ 			},
+ 		},
+ 	}
+@@ -55,7 +57,7 @@ func (*visibilityExtension) GenerateRules(args language.GenerateArgs) language.G
+ 	res := language.GenerateResult{}
+ 	cfg := getVisConfig(args.Config)
+
+-	if len(cfg.visibilityTargets) == 0 {
++	if len(cfg.visibilityTargets) == 0 && len(cfg.features) == 0 {
+ 		return res
+ 	}
+
+@@ -65,9 +67,27 @@ func (*visibilityExtension) GenerateRules(args language.GenerateArgs) language.G
+ 	}
+
+ 	r := rule.NewRule("package", "")
+-	r.SetAttr("default_visibility", cfg.visibilityTargets)
++	for _, er := range args.File.Rules {
++		if er.Kind() == "package" {
++			if vis := er.Attr("default_visibility"); vis != nil {
++				r.SetAttr("default_visibility", vis)
++			}
++			if feat := er.Attr("features"); feat != nil {
++				r.SetAttr("features", feat)
++			}
++			break
++		}
++	}
++
++	if len(cfg.visibilityTargets) > 0 {
++		r.SetAttr("default_visibility", cfg.visibilityTargets)
++	}
++	if len(cfg.features) > 0 {
++		r.SetAttr("features", cfg.features)
++	}
+
+-	insertIndex := 0
++	// Start after the first statements if no rules exist
++	insertIndex := len(args.File.File.Stmt)
+ 	for _, existingRule := range args.File.Rules {
+ 		if existingRule.Kind() != "package" {
+ 			insertIndex = existingRule.Index()
