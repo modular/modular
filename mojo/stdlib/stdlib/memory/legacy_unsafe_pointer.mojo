@@ -25,6 +25,9 @@ from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from os import abort
 from python import PythonObject
 
+from builtin.device_passable import DevicePassable
+from compile import get_type_name
+
 # ===----------------------------------------------------------------------=== #
 # LegacyUnsafePointer
 # ===----------------------------------------------------------------------=== #
@@ -57,6 +60,7 @@ struct LegacyUnsafePointer[
     Boolable,
     Comparable,
     Defaultable,
+    DevicePassable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
@@ -521,6 +525,50 @@ struct LegacyUnsafePointer[
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    # Implementation of `DevicePassable`
+    comptime device_type: AnyType = Self
+    """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
+
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
+        """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
+        """
+        # TODO: Allow the low-level DeviceContext implementation to intercept
+        # these translations.
+        target.bitcast[Self.device_type]()[] = self.address
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type name, for use in error messages when handing arguments
+        to kernels.
+        TODO: This will go away soon, when we get better error messages for
+        kernel calls.
+
+        Returns:
+            This name of the type.
+        """
+        return String(
+            "LegacyUnsafePointer[",
+            get_type_name[Self.type](),
+            ", address_space=",
+            Self.address_space,
+            ", mut=",
+            Self.mut,
+            ", origin=",
+            get_type_name[Self.origin](),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name.
+
+        Returns:
+            The device type's name.
+        """
+        return Self.get_type_name()
 
     @always_inline("builtin")
     fn as_unsafe_pointer(
