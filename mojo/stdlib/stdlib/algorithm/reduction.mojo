@@ -1485,6 +1485,7 @@ fn product[
         input_shape: The input shape.
         reduce_dim: The axis to perform the product on.
         context: The pointer to DeviceContext.
+
     Raises:
         If the operation fails.
     """
