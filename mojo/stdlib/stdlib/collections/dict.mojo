@@ -37,6 +37,7 @@ Value elements must be `Copyable`. As with `KeyElement`, the
 See the `Dict` docs for more details.
 """
 
+from builtin.constrained import _constrained_conforms_to
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
 from sys.intrinsics import likely
 
@@ -419,7 +420,14 @@ struct _DictIndex(Movable):
 
 
 struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
-    Boolable, Copyable, Defaultable, Iterable, Sized
+    Boolable,
+    Copyable,
+    Defaultable,
+    Iterable,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
 ):
     """A container that stores key-value pairs.
 
@@ -905,49 +913,74 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
         return len(self).__bool__()
 
     @no_inline
-    fn __str__[
-        T: KeyElement & Representable,
-        U: Copyable & Representable, //,
-    ](self: Dict[T, U]) -> String:
+    fn __repr__(self) -> String:
         """Returns a string representation of a `Dict`.
 
-        Parameters:
-            T: The type of the keys in the Dict. Must implement the
-                traits `Representable` and `KeyElement`.
-            U: The type of the values in the Dict. Must implement the
-                traits `Representable` and `Copyable`.
+        Returns:
+            A string representation of the Dict.
+        """
+        return self.__str__()
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns a string representation of a `Dict`.
 
         Returns:
             A string representation of the Dict.
 
-        Notes:
-            Since we can't condition methods on a trait yet, the way to call
-            this method is a bit special. Here is an example below:
+        Examples:
 
-            ```mojo
-            var my_dict = Dict[Int, Float64]()
-            my_dict[1] = 1.1
-            my_dict[2] = 2.2
-            dict_as_string = my_dict.__str__()
-            print(dict_as_string)
-            # prints "{1: 1.1, 2: 2.2}"
-            ```
-
-            When the compiler supports conditional methods, then a simple
-            `String(my_dict)` will be enough.
+        ```mojo
+        var my_dict = Dict[Int, Float64]()
+        my_dict[1] = 1.1
+        my_dict[2] = 2.2
+        dict_as_string = String(my_dict)
+        print(dict_as_string)
+        # prints "{1: 1.1, 2: 2.2}"
+        ```
         """
         var minimum_capacity = self._minimum_size_of_string_representation()
-        var result = String(capacity=minimum_capacity)
-        result += "{"
+        var output = String(capacity=minimum_capacity)
+        self.write_to(output)
+        return output^
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write `my_list.__str__()` to a `Writer`.
+
+        Constraints:
+            `K` must conform to `Representable`.
+            `V` must conform to `Representable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        _constrained_conforms_to[
+            conforms_to(Self.K, Representable),
+            Parent=Self,
+            Element = Self.K,
+            ParentConformsTo="Stringable",
+            ElementConformsTo="Representable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.V, Representable),
+            Parent=Self,
+            Element = Self.V,
+            ParentConformsTo="Stringable",
+            ElementConformsTo="Representable",
+        ]()
+
+        writer.write("{")
 
         var i = 0
-        for key_value in self.items():
-            result.write(repr(key_value.key), ": ", repr(key_value.value))
+        for key_entry in self.items():
+            ref key = trait_downcast[Representable](key_entry.key)
+            ref val = trait_downcast[Representable](key_entry.value)
+            writer.write(repr(key), ": ", repr(val))
             if i < len(self) - 1:
-                result += ", "
+                writer.write(", ")
             i += 1
-        result += "}"
-        return result
+        writer.write("}")
 
     # ===-------------------------------------------------------------------===#
     # Methods

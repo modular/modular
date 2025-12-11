@@ -273,6 +273,7 @@ what we publish.
 
   - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
     and `Representable`.
+  - `Dict` now conforms to `Writable`, `Stringable`, and `Representable`.
 
   - The following types no longer require their elements to be `Copyable`.
     - `Tuple`
