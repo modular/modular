@@ -50,7 +50,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 ```
 
 The code defines a type-specific `NodePointer` type alias built on
-[`UnsafePointer`](https://docs.modular.com/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/).
+[`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/).
 Add the comptime within the struct definition, as shown here.
 Including [`MutOrigin.external`](/mojo/manual/values/lifetimes/)
 lets the pointer represent dynamically-allocated memory that
@@ -154,7 +154,7 @@ that keeps users away from raw pointers. If you were putting together a
 complete linked-list type rather than a small demo of linkable 
 nodes, the parent list would handle node allocation and freeing for you. 
 It owns the nodes, so it also handles the cleanup in its 
-[destructor](https://docs.modular.com/mojo/manual/lifecycle/death/).
+[destructor](/mojo/manual/lifecycle/death/).
 
 Here’s a small example from the Mojo Standard Library that shows how to
 deinitialize `self`:
@@ -270,9 +270,9 @@ one one two three five eight
 ## What next?
 
 * Learn more about **pointers and memory safety** in Mojo’s
-  [UnsafePointer](https://docs.modular.com/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/)
-  and [lifetime and origin rules](https://docs.modular.com/mojo/manual/values/lifetimes/) guides.
+  [UnsafePointer](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/)
+  and [lifetime and origin rules](/mojo/manual/values/lifetimes/) guides.
 * Learn more about how to **manage cleanup** in the Mojo
-  [destructor](https://docs.modular.com/mojo/manual/lifecycle/death/) documentation.
-* Learn more about [generic structures with traits](https://docs.modular.com/mojo/manual/traits/#generic-structs-with-traits)
+  [destructor](/mojo/manual/lifecycle/death/) documentation.
+* Learn more about [generic structures with traits](/mojo/manual/traits/#generic-structs-with-traits)
   and how they let you build **reusable node and list types**.
