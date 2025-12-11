@@ -10,7 +10,6 @@ fi
 bazelrc_lines=("# Generated from tools/bazel, do not edit.")
 bazelrc_lines+=("build --build_metadata=USER=${GITHUB_ACTOR:-${USER:-unknown}}")
 
-xcode_build_number=""
 if [[ $OSTYPE == darwin* ]]; then
   if (( EUID == 0 )); then
     echo "error: bazel should not be run as with sudo." >&2
@@ -29,6 +28,10 @@ if [[ $OSTYPE == darwin* ]]; then
   bazelrc_lines+=("startup --host_jvm_args=-Xdock:name=$xcode_path")
   xcode_build_number=$(/usr/bin/xcodebuild -version 2>/dev/null | tail -1 | cut -d " " -f3)
   bazelrc_lines+=("build --xcode_version=$xcode_build_number")
+  # This invalidates the crosstool if the Xcode version changes but the path to
+  # it does not (when it is updated in place). Related:
+  # https://github.com/bazelbuild/bazel/issues/8902
+  bazelrc_lines+=("common --repo_env=$xcode_build_number")
 fi
 
 if [[ -z "${GITHUB_REPOSITORY:-}" && $OSTYPE != darwin* && -d /dev/shm && ! -e /.dockerenv && -z "${KUBERNETES_SERVICE_HOST:-}" ]]; then
@@ -50,47 +53,10 @@ fi
 passthrough_env=(
   # Required for emojis to work in filenames
   "LANG=en_US.UTF-8"
-  # This invalidates the crosstool if the Xcode version changes but the path to
-  # it does not (when it is updated in place). Related:
-  # https://github.com/bazelbuild/bazel/issues/8902
-  "XCODE_VERSION=$xcode_build_number"
 )
-
-allowed_vars=(
-  # This affects caching but is required for non-standard PATH setups
-  "PATH"
-  # Basic settings that shouldn't affect caching
-  "COLUMNS"
-  "HOME"
-  "TERM"
-  "USER"
-
-  # Buildbuddy reporting
-  "BB_DISABLE_SIDECAR"
-  "GITHUB_ACTOR"
-  "GITHUB_HEAD_REF"
-  "GITHUB_REF"
-  "GITHUB_REF_NAME"
-  "GITHUB_REPOSITORY"
-  "GITHUB_RUN_ID"
-  "GITHUB_SHA"
-  "HOST"
-
-    # Env vars used in some scripts that shouldn't generally invalidate things
-  "BAZEL"
-  "BAZELISK_SKIP_WRAPPER"
-  "HF_TOKEN"
-  "HOSTNAME"
-)
-
-for var in "${allowed_vars[@]}"; do
-  if [[ -n "${!var:-}" ]]; then
-    passthrough_env+=("${var}=${!var}")
-  fi
-done
 
 exit_code=0
-env -i \
+env \
   "${passthrough_env[@]}" \
   "$BAZEL_REAL" \
   "$@" || exit_code=$?
