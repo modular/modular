@@ -254,7 +254,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return_logits,
         )
 
-        # Initialize emtpy signal buffers
+        # Initialize empty signal buffers
         self.signal_buffers = [
             Tensor.zeros(
                 shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev

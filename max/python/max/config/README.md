@@ -234,7 +234,7 @@ input_len: 512
 1. **Always inherit from ConfigFileModel** for config classes that should
    support config files.
 2. **Always provide defaults** in your configuration classes to ensure
-   the app works without needing to speicify any configuration.
+   the app works without needing to specify any configuration.
 3. **Use name="*" in @Parameter** Add the `@Parameter` decorator to the top level
    ConfigFileModel to unroll / flatten the variables / would be CLI flags within
    the singleton config class.
