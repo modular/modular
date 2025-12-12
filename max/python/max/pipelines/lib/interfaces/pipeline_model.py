@@ -187,6 +187,9 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 kv_cache_config=kv_cache_config,
                 cache_dtype=encoding.cache_dtype,
             )
+            assert self.kv_cache_config._available_cache_memory is not None, (
+                "Available cache memory should have been set during memory estimation"
+            )
             self.kv_manager = self.load_kv_manager(
                 pipeline_config=pipeline_config,
                 huggingface_config=huggingface_config,

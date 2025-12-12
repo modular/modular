@@ -32,6 +32,7 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -89,7 +90,7 @@ class DeepseekV2Inputs(ModelInputs):
             self.return_n_logits = return_n_logits
 
 
-class DeepseekV2Model(PipelineModel[TextContext]):
+class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
     def __init__(
         self,
         pipeline_config: PipelineConfig,

@@ -75,6 +75,7 @@ from max.nn.layer import Layer
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -394,7 +395,7 @@ class LlamaVisionLanguageModel(Layer):
         return ops.cast(logits, DType.float32)
 
 
-class LlamaVision(PipelineModel[TextAndVisionContext]):
+class LlamaVision(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """The entire (multimodal) Llama3.2 vision model.
 
     A note on multi-step and vision inputs:
@@ -945,6 +946,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
 
     def load_kv_manager(
         self,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
         session: InferenceSession,
         available_cache_memory: int,
     ) -> PagedKVCacheManager | NullKVCacheManager:
@@ -953,16 +957,18 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         Note: text KV manager is returned; vision KV manager is stored privately.
         """
 
-        assert self.pipeline_config.max_batch_size, (
+        assert pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        num_cross_attn_layers = len(self.text_config.cross_attention_layers)
+        num_cross_attn_layers = len(
+            huggingface_config.text_config.cross_attention_layers
+        )
 
         text_kv_params = self.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
+            huggingface_config=huggingface_config,
+            devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
+            cache_dtype=encoding.cache_dtype,
         )
 
         # page_size must be aligned to 128 tokens
@@ -985,18 +991,19 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # Estimate vision cache size and reserve remaining memory for text.
         vision_memory_size = self.vision_kv_params.estimated_memory_size(
             available_cache_memory,
-            self.pipeline_config.max_batch_size,
+            pipeline_config.max_batch_size,
             self.vision_max_seq_len,
         )
+        assert available_cache_memory is not None
         remaining_memory = max(0, available_cache_memory - vision_memory_size)
 
         # Build and return the text KV manager.
         text_max_seq_len = self.calculate_max_seq_len(
-            self.pipeline_config, huggingface_config=self.huggingface_config
+            pipeline_config, huggingface_config=huggingface_config
         )
         text_kv_manager = load_kv_manager(
             params=text_kv_params,
-            max_batch_size=self.pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=text_max_seq_len,
             available_cache_memory=remaining_memory,
             session=session,
@@ -1006,7 +1013,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         if isinstance(text_kv_manager, PagedKVCacheManager):
             self.vision_kv_manager = PagedKVCacheManager(
                 params=self.vision_kv_params,
-                total_num_pages=self.pipeline_config.max_batch_size,
+                total_num_pages=pipeline_config.max_batch_size,
                 session=session,
             )
         elif isinstance(text_kv_manager, NullKVCacheManager):

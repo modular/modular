@@ -38,14 +38,13 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class KVCacheMixin(Protocol):
-    @classmethod
     def load_kv_manager(
-        cls,
+        self,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         session: InferenceSession,
-        available_cache_memory: int | None,
+        available_cache_memory: int,
     ) -> PagedKVCacheManager | NullKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
@@ -68,14 +67,14 @@ class KVCacheMixin(Protocol):
         device_refs = [DeviceRef.from_device(d) for d in devices]
 
         return load_kv_manager(
-            params=cls.get_kv_params(
+            params=self.get_kv_params(
                 huggingface_config=huggingface_config,
                 devices=device_refs,
                 kv_cache_config=model_config.kv_cache_config,
                 cache_dtype=encoding.cache_dtype,
             ),
             max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
+            max_seq_len=self.calculate_max_seq_len(
                 pipeline_config, huggingface_config
             ),
             available_cache_memory=available_cache_memory,
