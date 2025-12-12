@@ -181,6 +181,12 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         )
 
         if isinstance(self, KVCacheMixin):
+            self.kv_params = self.get_kv_params(
+                huggingface_config=huggingface_config,
+                devices=self.device_refs,
+                kv_cache_config=kv_cache_config,
+                cache_dtype=encoding.cache_dtype,
+            )
             self.kv_manager = self.load_kv_manager(
                 session, self.kv_cache_config._available_cache_memory
             )

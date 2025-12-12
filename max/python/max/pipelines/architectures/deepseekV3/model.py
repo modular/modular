@@ -382,7 +382,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # Create the graph
         with Graph(
             "deepseekV3_graph",
-            input_types=nn_model.input_types(self.kv_manager),
+            input_types=nn_model.input_types(self.kv_params),
         ) as graph:
             (
                 tokens,

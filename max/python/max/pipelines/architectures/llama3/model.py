@@ -548,7 +548,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         if model_config.data_parallel_degree > 1:
             graph, new_state_dict = create_data_parallel_graph(
-                model_config, self.kv_manager, state_dict
+                model_config, self.kv_params, state_dict
             )
             self.state_dict = new_state_dict
             return graph
@@ -569,7 +569,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
             with Graph(
                 getattr(self.huggingface_config, "model_type", "llama3"),
-                input_types=dist_model.input_types(self.kv_manager),
+                input_types=dist_model.input_types(self.kv_params),
             ) as graph:
                 tokens, input_row_offsets, return_n_logits, *variadic_args = (
                     graph.inputs
@@ -615,7 +615,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             with Graph(
                 "llama3",
                 input_types=single_model.input_types(
-                    self.kv_manager, self._lora_manager
+                    self.kv_params, self._lora_manager
                 ),
             ) as graph:
                 if self._lora_manager:

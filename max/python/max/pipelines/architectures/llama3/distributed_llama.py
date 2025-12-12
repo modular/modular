@@ -21,7 +21,6 @@ from collections import defaultdict
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import (
     MLP,
     ColumnParallelLinear,
@@ -33,6 +32,7 @@ from max.nn import (
     TensorParallelAttentionWithRope,
     VocabParallelEmbedding,
 )
+from max.nn.kv_cache import KVCacheParams
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config, create_rope_embedding
@@ -198,7 +198,7 @@ class DistributedLlama3(DistributedTransformer):
         )
 
     def input_types(
-        self, kv_manager: PagedKVCacheManager | NullKVCacheManager
+        self, kv_params: KVCacheParams
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
@@ -210,7 +210,7 @@ class DistributedLlama3(DistributedTransformer):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = kv_manager.params.get_symbolic_inputs()
+        kv_inputs = kv_params.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(

@@ -30,7 +30,6 @@ from max.graph import (
     ops,
 )
 from max.graph.ops.allreduce import matmul_allreduce
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import (
     MLP,
     ColumnParallelLinear,
@@ -50,7 +49,7 @@ from max.nn.attention.multi_latent_attention_fp8 import (
 from max.nn.comm.allreduce import Allreduce
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.moe import MoE, MoEFp8
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -637,7 +636,7 @@ class DeepseekV3(Module):
             return (last_logits,)
 
     def input_types(
-        self, kv_manager: PagedKVCacheManager | NullKVCacheManager
+        self, kv_params: KVCacheParams
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
@@ -662,7 +661,7 @@ class DeepseekV3(Module):
             device=DeviceRef.CPU(),
         )
 
-        kv_inputs = kv_manager.params.get_symbolic_inputs()
+        kv_inputs = kv_params.get_symbolic_inputs()
 
         # Flatten kv types for each device
         flattened_kv_types: list[TensorType] = [

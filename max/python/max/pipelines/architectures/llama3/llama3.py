@@ -20,7 +20,6 @@ from collections.abc import Callable, Sequence
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import (
     MLP,
     AttentionWithRope,
@@ -36,6 +35,7 @@ from max.nn import (
     Transformer,
     TransformerBlock,
 )
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib.lora import LoRAManager
 
 from .model_config import Llama3Config, create_rope_embedding
@@ -241,7 +241,7 @@ class Llama3(Transformer):
 
     def input_types(
         self,
-        kv_manager: PagedKVCacheManager | NullKVCacheManager,
+        kv_params: KVCacheParams,
         lora_manager: LoRAManager | None,
         needs_hidden_state_input: bool = False,
     ) -> tuple[TensorType, ...]:
@@ -255,7 +255,7 @@ class Llama3(Transformer):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = kv_manager.params.get_symbolic_inputs()
+        kv_inputs = kv_params.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(

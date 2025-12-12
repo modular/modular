@@ -75,7 +75,7 @@ class Qwen3Model(LlamaModelBase):
         nn_model = Qwen3(model_config)
 
         # Get Graph Inputs
-        graph_inputs = nn_model.input_types(self.kv_manager)
+        graph_inputs = nn_model.input_types(self.kv_params)
 
         # Load weights.
         nn_model.load_state_dict(

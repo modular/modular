@@ -82,7 +82,7 @@ def _create_kv_manager(
     gpu_session: InferenceSession,
 ) -> tuple[PagedKVCacheManager, KVCacheParams]:
     """Create and configure the KV cache manager."""
-    kv_cache_params = KVCacheParams(
+    kv_params = KVCacheParams(
         dtype=DType.bfloat16,
         page_size=128,
         n_kv_heads=num_kv_heads,
@@ -93,13 +93,13 @@ def _create_kv_manager(
     )
 
     manager = PagedKVCacheManager(
-        params=kv_cache_params,
+        params=kv_params,
         total_num_pages=8,
         devices=[device],
         session=gpu_session,
     )
 
-    return manager, kv_cache_params
+    return manager, kv_params
 
 
 def _create_attention_state_dict(
@@ -319,7 +319,7 @@ def test_attention_with_rope_fp8_amd_static(
         max_seq_len=seq_len * 2,
     )
 
-    kv_manager, kv_cache_params = _create_kv_manager(
+    kv_manager, kv_params = _create_kv_manager(
         batch_size, seq_len, num_kv_heads, head_dim, device, gpu_session
     )
 
@@ -329,7 +329,7 @@ def test_attention_with_rope_fp8_amd_static(
         num_attention_heads=num_heads,
         num_key_value_heads=num_kv_heads,
         hidden_size=hidden_size,
-        kv_params=kv_cache_params,
+        kv_params=kv_params,
         devices=[DeviceRef.GPU()],
         dtype=DType.float8_e4m3fn,
         float8_config=float8_config,
@@ -359,7 +359,7 @@ def test_attention_with_rope_fp8_amd_static(
         attention,
         rope,
         kv_manager,
-        kv_cache_params,
+        kv_params,
         batch_size,
         seq_len,
         hidden_size,
@@ -411,7 +411,7 @@ def test_attention_with_rope_fp8_amd_dynamic(
         max_seq_len=seq_len * 2,
     )
 
-    kv_manager, kv_cache_params = _create_kv_manager(
+    kv_manager, kv_params = _create_kv_manager(
         batch_size, seq_len, num_kv_heads, head_dim, device, gpu_session
     )
 
@@ -421,7 +421,7 @@ def test_attention_with_rope_fp8_amd_dynamic(
         num_attention_heads=num_heads,
         num_key_value_heads=num_kv_heads,
         hidden_size=hidden_size,
-        kv_params=kv_cache_params,
+        kv_params=kv_params,
         devices=[DeviceRef.GPU()],
         dtype=DType.float8_e4m3fn,
         float8_config=float8_config,
@@ -451,7 +451,7 @@ def test_attention_with_rope_fp8_amd_dynamic(
         attention,
         rope,
         kv_manager,
-        kv_cache_params,
+        kv_params,
         batch_size,
         seq_len,
         hidden_size,
