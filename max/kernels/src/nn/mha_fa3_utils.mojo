@@ -772,9 +772,10 @@ comptime KVTMATile[
     *,
     BN: Int,
     depth: Int,
+    BK: Int = depth,
 ] = SplitLastDimTMATensorTile[
     dtype,
-    IndexList[3](BN, 1, depth),
+    IndexList[3](BN, 1, BK),
     swizzle_mode,
 ]
 

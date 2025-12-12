@@ -581,7 +581,9 @@ fn test_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank, softmax_type = DType.float32](
+        flare_mla_prefill[
+            rank = q.rank, softmax_type = DType.float32, use_fa4=True
+        ](
             output_device,
             q_device,
             k_device,
@@ -1130,7 +1132,9 @@ fn test_cascade_prefill[
     )
 
     # create reference output
-    flare_mla_prefill[rank = q_device.rank, softmax_type = DType.float32](
+    flare_mla_prefill[
+        rank = q_device.rank, softmax_type = DType.float32, use_fa4=False
+    ](
         output_ref_device,
         q_device,
         k_device,
@@ -1264,7 +1268,7 @@ fn test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
-    ](140, 140, ctx)
+    ](120, 120, ctx)
     test_prefill[
         DType.bfloat16,
         depth=192,

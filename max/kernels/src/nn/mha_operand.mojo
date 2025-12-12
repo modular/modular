@@ -67,9 +67,10 @@ trait MHAOperand(DevicePassable):
         BN: Int,
         depth: Int,
         swizzle_mode: TensorMapSwizzle,
+        BK: Int = depth,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        IndexList[3](BN, 1, depth),
+        IndexList[3](BN, 1, BK),
         swizzle_mode,
     ]:
         """Creates a TMA tile for efficient GPU memory transfers."""
@@ -138,12 +139,13 @@ struct KVCacheMHAOperand[
         BN: Int,
         depth: Int,
         swizzle_mode: TensorMapSwizzle,
+        BK: Int = depth,
     ](
         self,
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             Self.dtype,
-            IndexList[3](BN, 1, depth),
+            IndexList[3](BN, 1, BK),
             swizzle_mode,
         ],
     ) raises where depth == Int(Self.cache_t.kv_params.head_size):
@@ -221,21 +223,20 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
         BN: Int,
         depth: Int,
         swizzle_mode: TensorMapSwizzle,
+        BK: Int = depth,
     ](
         self,
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             Self.dtype,
-            IndexList[3](BN, 1, depth),
+            IndexList[3](BN, 1, BK),
             swizzle_mode,
         ],
     ) raises:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
-        comptime smem_tile_shape = IndexList[3](BN, 1, depth)
-
-        comptime smem_shape = IndexList[3](BN, 1, depth)
+        comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
 
         tma = create_split_tma[
@@ -332,21 +333,20 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         BN: Int,
         depth: Int,
         swizzle_mode: TensorMapSwizzle,
+        BK: Int = depth,
     ](
         self,
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             Self.dtype,
-            IndexList[3](BN, 1, depth),
+            IndexList[3](BN, 1, BK),
             swizzle_mode,
         ],
     ) raises:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # View as [total_tokens, heads*head_dim]
         var rows = self.buffer.dim[0]()  # total tokens
-        comptime smem_tile_shape = IndexList[3](BN, 1, depth)
-
-        comptime smem_shape = IndexList[3](BN, 1, depth)
+        comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
 
         tma = create_split_tma[

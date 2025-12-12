@@ -97,7 +97,7 @@ from nn.mha_fa3_utils import (
     QTMATile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus, MASK_VALUE
-from nn.mha_operand import MHAOperand
+from nn.mha_operand import MHAOperand, LayoutTensorMHAOperand
 from nn.mha_score_mod import ScoreModTrait
 from nn.mha_tile_scheduler import (
     MHASchedulerSynchronization,
@@ -792,12 +792,13 @@ struct FA4Config:
         dtype_size: Int,
         swizzle_mode: TensorMapSwizzle,
         page_size: Int,
+        is_mla: Bool = False,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
         self.group = group
         self.depth = depth
-        self.split_m = depth > 128
+        self.split_m = depth > 128 and not is_mla
         if self.split_m:
             self.BM = 128
             self.MMA_M = 64
@@ -1959,6 +1960,18 @@ struct TMADestination[dtype: DType, layout: Layout]:
         self.mbar = mbar
         self.smem = smem
 
+    @always_inline
+    fn split_smem[
+        first: Layout, second: Layout
+    ](self) -> Tuple[
+        SharedMemTensor[Self.dtype, first], SharedMemTensor[Self.dtype, second]
+    ]:
+        comptime first_size = first.size()
+        return {
+            SharedMemTensor[Self.dtype, first](self.smem.ptr),
+            SharedMemTensor[Self.dtype, second](self.smem.ptr + first_size),
+        }
+
 
 @register_passable("trivial")
 struct KVProducerPipeline[dtype: DType, config: FA4Config]:
@@ -2167,12 +2180,7 @@ struct KVConsumerPipeline[dtype: DType, config: FA4Config]:
         mbar: MBarType,
         smem: SharedMemPointer[Scalar[Self.dtype]],
     ):
-        return self.__init__(
-            KVPipeline[Self.config.num_kv_stages, Self.config.num_mma_stages](
-                mbar
-            ),
-            smem,
-        )
+        return Self(type_of(self.kv_pipeline)(mbar), smem)
 
     @always_inline
     fn init(self):
