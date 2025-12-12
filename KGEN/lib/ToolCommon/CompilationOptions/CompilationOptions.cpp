@@ -131,6 +131,13 @@ void CompilationOptions::print(raw_ostream &os) const {
   os << " }";
 }
 
+void CompilationOptions::getDefaultCPU() {
+  // Set hexagon default CPU same as
+  // https://github.com/llvm/llvm-project/blob/8d59cca1ab9cf4e39e43bf695e415de9ccd41115/clang/lib/Driver/ToolChains/Hexagon.cpp#L804
+  if (isHexagonBackend(*this))
+    targetCpu = "hexagonv68";
+}
+
 bool M::KGEN::isGPUTriple(const llvm::Triple &triple) {
   // llvm::Triple defines isAMDGPU and isAMDGCN functions. The main difference
   // is that isAMDGPU checks for TeraScale muarch, which we don't support.
@@ -164,4 +171,9 @@ bool M::KGEN::isMetalBackend(const CompilationOptions &options) {
   // check compilation options for Metal backend
   return options.targetAccelerator == "metal" ||
          llvm::StringRef(options.targetTriple).starts_with("air64-");
+}
+
+bool M::KGEN::isHexagonBackend(const CompilationOptions &options) {
+  llvm::Triple triple(options.targetTriple);
+  return triple.getArch() == llvm::Triple::hexagon;
 }

@@ -163,11 +163,16 @@ public:
     std::optional<CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel != CompilationOptions::kDebugUnset)
       debugAt = debugAtLevel;
-    return CompilationOptions(
+    CompilationOptions options(
         optLevel, debugInfoLevel, debugAt, sanitizerOptions, targetTriple,
         targetCpu, targetFeatures, targetAccelerator, elaborationErrorLimit,
         elaborationErrorIncludePrelude, elaborationErrorVerbose,
         elaborationMaxDepth);
+
+    if (targetCpu.empty())
+      options.getDefaultCPU();
+
+    return options;
   }
 
   bool optLevel0{false};

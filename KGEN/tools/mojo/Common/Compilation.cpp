@@ -434,6 +434,9 @@ ErrorOrSuccess M::parseTargetOptions(
     compilationOptions.targetTriple = targetTriple.str();
   if (!targetCpu.empty())
     compilationOptions.targetCpu = targetCpu.str();
+  else
+    compilationOptions.getDefaultCPU();
+
   if (!targetFeatures.empty())
     compilationOptions.targetFeatures = targetFeatures.str();
   else {

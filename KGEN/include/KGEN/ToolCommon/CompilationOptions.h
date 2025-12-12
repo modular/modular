@@ -153,6 +153,8 @@ public:
   // false errors like a missing `execute` function on graph generated mojo
   // text.
   bool runMOGGPreElab = true;
+
+  void getDefaultCPU();
 };
 
 // Return true if target triple is `air64-`
@@ -164,6 +166,9 @@ bool isGPUBackend(const CompilationOptions &options);
 
 // Return true if target triple is `amdgcn`
 bool isAMDGPUBackend(const CompilationOptions &options);
+
+// Return true if target triple is `hexagon`
+bool isHexagonBackend(const CompilationOptions &options);
 
 // Return true if target triple is `nvptx`
 bool isNVPTXBackend(const CompilationOptions &options);

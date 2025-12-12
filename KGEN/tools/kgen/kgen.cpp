@@ -338,6 +338,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     }
     target = nullptr;
   }
+
   if (!target) {
     ErrorOr<TargetInfoAttr> targetOr = nullptr;
     if (!clOptions.march.empty() || !clOptions.mcpu.empty()) {
@@ -355,8 +356,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       // If the user provided the target triple without specifying a CPU,
       // default to `generic`.
       if (clOptions.targetTriple != llvm::sys::getDefaultTargetTriple()) {
-        if (clOptions.targetCpu == llvm::sys::getHostCPUName())
+        if (clOptions.targetCpu == llvm::sys::getHostCPUName()) {
           clOptions.targetCpu = "generic";
+          if (llvm::Triple(clOptions.targetTriple).getArch() ==
+              llvm::Triple::hexagon)
+            clOptions.targetCpu = "hexagonv68";
+        }
         if (clOptions.targetFeatures == getHostCPUFeatures())
           clOptions.targetFeatures = "";
       }
@@ -367,7 +372,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
         return failure(clOptions.reportError(featuresOr.takeError().get()));
 
       // TODO: This always overwrites any user-specified features
-      clOptions.targetFeatures = encodeFeatures(*featuresOr);
+      if (clOptions.targetFeatures.empty())
+        clOptions.targetFeatures = encodeFeatures(*featuresOr);
 
       // Use the full triple, specific CPU, and manually specified features to
       // get the target info.
@@ -375,6 +381,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
           getTargetInfoFor(ctx, clOptions.targetTriple, clOptions.targetCpu,
                            clOptions.targetFeatures);
     }
+
     if (targetOr.isError())
       return failure(clOptions.reportError(targetOr.getError()));
     target = targetOr.takeValue();
