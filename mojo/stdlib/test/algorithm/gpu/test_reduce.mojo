@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from algorithm._gpu.reduction import reduce_launch
-from buffer import NDBuffer
 from gpu.host import DeviceContext
 from testing import assert_equal, TestSuite
 
@@ -60,26 +59,36 @@ fn fused_reduce_inner_test[
 
     var res_device0 = ctx.enqueue_create_buffer[dtype](out_size)
     var res_device1 = ctx.enqueue_create_buffer[dtype](out_size)
-    var input_buf_device = NDBuffer[dtype, rank](vec_device.unsafe_ptr(), shape)
-    var output_buf_device0 = NDBuffer[dtype, rank](
-        res_device0.unsafe_ptr(), out_shape
+    var input_buf_device = Span[Scalar[dtype]](
+        ptr=vec_device.unsafe_ptr(), length=shape.flattened_length()
     )
-    var output_buf_device1 = NDBuffer[dtype, rank](
-        res_device1.unsafe_ptr(), out_shape
+    var output_buf_device0 = Span[Scalar[dtype]](
+        ptr=res_device0.unsafe_ptr(), length=out_shape.flattened_length()
+    )
+    var output_buf_device1 = Span[Scalar[dtype]](
+        ptr=res_device1.unsafe_ptr(), length=out_shape.flattened_length()
     )
 
-    @__copy_capture(input_buf_device)
+    @__copy_capture(input_buf_device, shape)
     @parameter
     fn input_fn[
         dtype: DType,
         width: Int,
         _rank: Int,
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var c = rebind[IndexList[rank]](coords)
+        var linear_idx = 0
+        var stride = 1
+
+        @parameter
+        for i in reversed(range(rank)):
+            linear_idx += c[i] * stride
+            stride *= shape[i]
         return rebind[SIMD[dtype, width]](
-            input_buf_device.load[width=width](rebind[IndexList[rank]](coords))
+            input_buf_device.unsafe_ptr().load[width=width](linear_idx)
         )
 
-    @__copy_capture(output_buf_device0, output_buf_device1)
+    @__copy_capture(output_buf_device0, output_buf_device1, out_shape)
     @parameter
     fn output_fn[
         _dtype: DType, width: Int, _rank: Int
@@ -87,11 +96,19 @@ fn fused_reduce_inner_test[
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        output_buf_device0.store[width=width](
-            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
+        var c = rebind[IndexList[rank]](coords)
+        var linear_idx = 0
+        var stride = 1
+
+        @parameter
+        for i in reversed(range(rank)):
+            linear_idx += c[i] * stride
+            stride *= out_shape[i]
+        output_buf_device0.unsafe_ptr().store[width=width](
+            linear_idx, rebind[SIMD[dtype, width]](val[0])
         )
-        output_buf_device1.store[width=width](
-            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[1])
+        output_buf_device1.unsafe_ptr().store[width=width](
+            linear_idx, rebind[SIMD[dtype, width]](val[1])
         )
 
     reduce_launch[num_reductions, input_fn, output_fn, reduce_fn, rank, dtype](
@@ -150,9 +167,11 @@ fn reduce_inner_test[
             vec_host[i] = i // shape[axis] + offset
 
     var res_device = ctx.enqueue_create_buffer[dtype](out_size)
-    var input_buf_device = NDBuffer[dtype, rank](vec_device.unsafe_ptr(), shape)
-    var output_buf_device = NDBuffer[dtype, rank](
-        res_device.unsafe_ptr(), out_shape
+    var input_buf_device = Span[Scalar[dtype]](
+        ptr=vec_device.unsafe_ptr(), length=shape.flattened_length()
+    )
+    var output_buf_device = Span[Scalar[dtype]](
+        ptr=res_device.unsafe_ptr(), length=out_shape.flattened_length()
     )
 
     @always_inline
@@ -166,18 +185,26 @@ fn reduce_inner_test[
 
         return reduce_fn[dtype, width](lhs, rhs)
 
-    @__copy_capture(input_buf_device)
+    @__copy_capture(input_buf_device, shape)
     @parameter
     fn input_fn[
         dtype: DType,
         width: Int,
         _rank: Int,
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var c = rebind[IndexList[rank]](coords)
+        var linear_idx = 0
+        var stride = 1
+
+        @parameter
+        for i in reversed(range(rank)):
+            linear_idx += c[i] * stride
+            stride *= shape[i]
         return rebind[SIMD[dtype, width]](
-            input_buf_device.load[width=width](rebind[IndexList[rank]](coords))
+            input_buf_device.unsafe_ptr().load[width=width](linear_idx)
         )
 
-    @__copy_capture(output_buf_device)
+    @__copy_capture(output_buf_device, out_shape)
     @parameter
     fn output_fn[
         _dtype: DType, width: Int, _rank: Int
@@ -185,8 +212,16 @@ fn reduce_inner_test[
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        output_buf_device.store[width=width](
-            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
+        var c = rebind[IndexList[rank]](coords)
+        var linear_idx = 0
+        var stride = 1
+
+        @parameter
+        for i in reversed(range(rank)):
+            linear_idx += c[i] * stride
+            stride *= out_shape[i]
+        output_buf_device.unsafe_ptr().store[width=width](
+            linear_idx, rebind[SIMD[dtype, width]](val[0])
         )
 
     reduce_launch[

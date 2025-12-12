@@ -15,7 +15,6 @@ from sys import simd_width_of
 
 from algorithm import elementwise
 from benchmark import Bench, BenchConfig, Bencher, BenchId
-from buffer import NDBuffer
 
 from utils.index import Index, IndexList
 
