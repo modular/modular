@@ -82,7 +82,6 @@ def max_flash_attention_with_sinks(
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=8,
-        devices=[cuda],
         session=session,
     )
 

@@ -25,12 +25,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
+from max.kv_cache import estimate_kv_cache_size
 from max.nn import ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
@@ -392,28 +387,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     ) -> int:
         return Llama3Config.calculate_max_seq_len(
             pipeline_config, huggingface_config
-        )
-
-    def load_kv_manager(
-        self,
-        session: InferenceSession,
-        available_cache_memory: int | None,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        return load_kv_manager(
-            params=Llama3Config.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in self.devices],
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-                data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
         )
 
     @classmethod

@@ -54,7 +54,6 @@ def test_mla_prefill_plan() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[Accelerator(0)],
         session=session,
     )
 
@@ -164,7 +163,6 @@ def test_mla_decompress_k_cache() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[Accelerator(0)],
         session=session,
     )
 
@@ -304,13 +302,6 @@ def test_mla_decompress_k_cache_only_k() -> None:
         DType.float32,
         [4096, 512],
         device=DeviceRef.GPU(),
-    )
-
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        devices=[Accelerator(0)],
-        session=session,
     )
 
     def construct() -> Graph:

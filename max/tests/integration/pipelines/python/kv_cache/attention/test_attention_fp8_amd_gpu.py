@@ -95,7 +95,6 @@ def _create_kv_manager(
     manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=8,
-        devices=[device],
         session=gpu_session,
     )
 

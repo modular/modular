@@ -33,12 +33,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
+from max.kv_cache import estimate_kv_cache_size
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
@@ -760,24 +755,4 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             input_row_offsets=next_row_offsets,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
-        )
-
-    def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        """Loads and initializes the PagedKVCacheManager for the Idefics3 model."""
-        return load_kv_manager(
-            params=Idefics3Config.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in self.devices],
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
         )

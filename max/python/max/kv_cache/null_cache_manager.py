@@ -24,8 +24,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Device, Tensor
-from max.engine import InferenceSession
+from max.driver import Tensor
 from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -48,20 +47,14 @@ class NullKVCacheManager:
     def __init__(
         self,
         params: KVCacheParams,
-        devices: Sequence[Device],
-        session: InferenceSession,
     ) -> None:
         """Initializes the null KV cache manager.
 
         Args:
             params: The KV cache parameters for the pipeline.
-            devices: The list of virtual devices.
             session: The inference session for graph operations.
-            available_cache_memory: The nominal available cache memory in bytes.
         """
         self.params = params
-        self.devices = devices
-        self.session = session
         self._metrics = KVCacheMetrics()
         self._request_to_replica_idx: dict[RequestID, int] = {}
 

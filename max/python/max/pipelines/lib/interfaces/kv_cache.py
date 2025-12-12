@@ -17,25 +17,35 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from max.driver import Device
+from max.driver import Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import Pipeline
-from max.kv_cache import NullKVCacheManager
-from max.kv_cache.paged_cache import PagedKVCacheManager
+from max.kv_cache import (
+    NullKVCacheManager,
+    PagedKVCacheManager,
+    load_kv_manager,
+)
 from max.nn.kv_cache import KVCacheParams
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
+    from ..config_enums import SupportedEncoding
     from ..kv_cache_config import KVCacheConfig
 
 
 @runtime_checkable
 class KVCacheMixin(Protocol):
+    @classmethod
     def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
+        session: InferenceSession,
+        available_cache_memory: int | None,
     ) -> PagedKVCacheManager | NullKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
@@ -48,6 +58,36 @@ class KVCacheMixin(Protocol):
             Either a single KV cache manager or a tuple of KV cache managers:
             one per input modality.
         """
+        model_config = pipeline_config.model_config
+
+        # This is absolutely cursed.
+        # We are converting from DeviceSpec -> Device -> DeviceRef.
+        # What even is the difference between DeviceSpec and DeviceRef?
+        device_specs = pipeline_config.model_config.device_specs
+        devices = load_devices(device_specs)
+        device_refs = [DeviceRef.from_device(d) for d in devices]
+
+        return load_kv_manager(
+            params=cls.get_kv_params(
+                huggingface_config=huggingface_config,
+                devices=device_refs,
+                kv_cache_config=model_config.kv_cache_config,
+                cache_dtype=encoding.cache_dtype,
+            ),
+            max_batch_size=pipeline_config.max_batch_size,
+            max_seq_len=cls.calculate_max_seq_len(
+                pipeline_config, huggingface_config
+            ),
+            available_cache_memory=available_cache_memory,
+            session=session,
+        )
+
+    @classmethod
+    @abstractmethod
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        """Calculates the maximum sequence length for the pipeline model."""
         ...
 
     # TODO(AITLIB-265): Remove this altogether from all PipelineModels.

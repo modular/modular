@@ -98,7 +98,6 @@ def create_paged_manager(
         params=kv_params,
         total_num_pages=num_blocks,
         total_num_host_pages=num_host_pages,
-        devices=[device] * dp,
         session=session,
         enable_runtime_checks=True,
     )

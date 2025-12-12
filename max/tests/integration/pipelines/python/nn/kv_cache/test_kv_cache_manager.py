@@ -41,7 +41,6 @@ async def test_step() -> None:
 
     kv_manager = PagedKVCacheManager(
         params=params,
-        devices=[device],
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
     )
@@ -96,7 +95,6 @@ async def test_claim_and_release() -> None:
 
     dp_kv_manager = PagedKVCacheManager(
         params=params,
-        devices=[device],
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
     )
@@ -153,7 +151,6 @@ async def test_fetch_paged() -> None:
 
     kv_manager = PagedKVCacheManager(
         params=params,
-        devices=[device],
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
     )

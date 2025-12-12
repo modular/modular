@@ -67,7 +67,6 @@ def create_paged_manager(
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=num_blocks,
-        devices=[CPU()],
         session=session,
         enable_runtime_checks=True,
     )

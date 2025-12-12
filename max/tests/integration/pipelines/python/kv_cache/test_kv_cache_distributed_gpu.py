@@ -43,7 +43,6 @@ async def test_kv_cache_multi_gpu() -> None:
         kv_manager = PagedKVCacheManager(
             params=kv_params,
             total_num_pages=8,
-            devices=list_of_devices,
             session=inference_session,
         )
         context = create_text_context(np.empty(1))
@@ -91,7 +90,6 @@ def create_paged_manager(
         params=kv_params,
         total_num_pages=num_blocks,
         total_num_host_pages=num_host_pages,
-        devices=devices,
         session=session,
         enable_runtime_checks=True,
     )

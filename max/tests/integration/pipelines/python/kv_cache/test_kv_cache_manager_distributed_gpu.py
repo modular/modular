@@ -48,7 +48,6 @@ def _create_kv_manager(
     )
     manager = PagedKVCacheManager(
         params=params,
-        devices=devices,
         session=InferenceSession(devices=devices),
         total_num_pages=8,
     )

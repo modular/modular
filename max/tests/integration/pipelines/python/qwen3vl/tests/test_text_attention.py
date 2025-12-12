@@ -277,7 +277,6 @@ def generate_qwen3_max_outputs(
         params=kv_params,
         max_batch_size=len(seq_lens),
         max_seq_len=MAX_SEQ_LEN,
-        devices=[device],
         available_cache_memory=30 * 1024 * 1024,
         session=session,
     )

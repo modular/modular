@@ -24,21 +24,10 @@ import numpy.typing as npt
 from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    Type,
-    Value,
-)
+from max.graph import DeviceRef, Graph, TensorType, Type, Value
 from max.graph.tensor_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
+from max.kv_cache import estimate_kv_cache_size
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -758,40 +747,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Create tensor and distribute to device
         return [Tensor.from_numpy(np_indices).to(dev) for dev in self.devices]
-
-    def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        """Loads and initializes the KVCacheManager for the Gemma3 model.
-
-        Configures the KV cache manager based on model parameters, pipeline settings,
-        and available memory.
-
-        Args:
-            session: The MAX Engine inference session.
-            available_cache_memory: The amount of memory available for the KV cache in bytes.
-
-        Returns:
-            An initialized :obj:`KVCacheManager` instance.
-        """
-        if available_cache_memory is not None:
-            available_cache_memory = int(available_cache_memory * 0.9)
-
-        return load_kv_manager(
-            params=Gemma3ForConditionalGenerationConfig.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in self.devices],
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
-        )
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]

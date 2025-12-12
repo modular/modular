@@ -68,7 +68,6 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[cuda],
         session=session,
     )
 

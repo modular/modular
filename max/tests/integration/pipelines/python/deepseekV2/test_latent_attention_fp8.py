@@ -278,7 +278,6 @@ def generate_max_outputs_fp8(
     latent_attention.load_state_dict(quantized_weights, strict=True)
 
     kv_manager = PagedKVCacheManager(
-        devices=[Accelerator(0)],
         params=kv_params,
         total_num_pages=8,
         session=session,

@@ -87,7 +87,6 @@ def test_kv_cache_radd_basic() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[device],
         session=session,
     )
 

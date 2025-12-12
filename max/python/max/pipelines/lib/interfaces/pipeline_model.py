@@ -188,7 +188,11 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 cache_dtype=encoding.cache_dtype,
             )
             self.kv_manager = self.load_kv_manager(
-                session, self.kv_cache_config._available_cache_memory
+                pipeline_config=pipeline_config,
+                huggingface_config=huggingface_config,
+                encoding=encoding,
+                session=session,
+                available_cache_memory=self.kv_cache_config._available_cache_memory,
             )
 
         self._lora_manager: LoRAManager | None = (

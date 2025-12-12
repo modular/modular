@@ -20,7 +20,7 @@ from collections.abc import Callable, Sequence
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Tensor
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -79,7 +79,6 @@ def test_kv_cache_ragged_attention(
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
 

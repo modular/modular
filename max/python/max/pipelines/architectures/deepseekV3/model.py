@@ -25,11 +25,6 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
@@ -539,26 +534,4 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
             data_parallel_splits=prev_model_inputs.data_parallel_splits,
-        )
-
-    def load_kv_manager(
-        self,
-        session: InferenceSession,
-        available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        return load_kv_manager(
-            params=DeepseekV3Config.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in self.devices],
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-                data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
         )

@@ -998,7 +998,6 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             params=text_kv_params,
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=text_max_seq_len,
-            devices=self.devices,
             available_cache_memory=remaining_memory,
             session=session,
         )
@@ -1008,14 +1007,11 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             self.vision_kv_manager = PagedKVCacheManager(
                 params=self.vision_kv_params,
                 total_num_pages=self.pipeline_config.max_batch_size,
-                devices=self.devices,
                 session=session,
             )
         elif isinstance(text_kv_manager, NullKVCacheManager):
             self.vision_kv_manager = NullKVCacheManager(
-                params=self.vision_kv_params,
-                devices=self.devices,
-                session=session,
+                params=self.vision_kv_params
             )
         else:
             raise ValueError("Unknown KV cache manager type")

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from max.driver import CPU, Tensor
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
@@ -101,7 +101,6 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
 
@@ -178,7 +177,6 @@ def test_partial_rms_norm_key_cache(
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
 
@@ -269,7 +267,6 @@ def test_rms_norm_new_key_cache(
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
 
@@ -358,8 +355,6 @@ def test_rms_norm_key_cache_dtype_mismatch(
 ) -> None:
     """Tests that a TypeError is raised when gamma dtype mismatches kv dtype."""
     seq_lens = [10]
-    batch_size = 1
-    max_seq_len = 16
     kv_params = KVCacheParams(
         dtype=kv_dtype,
         n_kv_heads=8,
@@ -368,12 +363,6 @@ def test_rms_norm_key_cache_dtype_mismatch(
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[DeviceRef.CPU()],
-    )
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        devices=[CPU()],
-        session=session,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -420,7 +409,6 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
 

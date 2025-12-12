@@ -68,9 +68,8 @@ class PagedKVCacheManager:
     def __init__(
         self,
         params: KVCacheParams,
-        total_num_pages: int,
-        devices: Sequence[Device],
         session: InferenceSession,
+        total_num_pages: int,
         total_num_host_pages: int = 0,
         enable_runtime_checks: bool = False,
     ) -> None:
@@ -78,21 +77,21 @@ class PagedKVCacheManager:
 
         Args:
             params: KV cache parameters including data parallelism settings
-            devices: The devices to use for the KV cache manager.  If data
-                parallelism is enabled, the devices will be split into
-                ``params.data_parallel_degree`` groups.
-            session: Inference session
+            session: The MAX Engine inference session
+            total_num_pages: The total number of pages to allocate
+            total_num_host_pages: The total number of host pages to allocate
             enable_runtime_checks: Whether to enable runtime checks
         """
         self.params = params
+        self.devices = [d.to_device() for d in params.devices]
 
-        # The effective total number of pages is .
         self.num_replicas = params.data_parallel_degree
-        assert len(devices) % self.num_replicas == 0, (
+        assert len(self.devices) % self.num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
-        self.devices = devices
-        self.devices_per_replica = split_into_groups(devices, self.num_replicas)
+        self.devices_per_replica = split_into_groups(
+            self.devices, self.num_replicas
+        )
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
         dp_1_params = params.copy_as_dp_1()

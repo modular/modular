@@ -105,7 +105,6 @@ def _single_gpu_baseline(
     attn.load_state_dict(attention_weights)
 
     kv_manager = PagedKVCacheManager(
-        devices=[Accelerator(0)],
         params=kv_params,
         total_num_pages=8,
         session=session,
@@ -363,7 +362,6 @@ def _run_distributed_dp(
     )
 
     kv_manager = PagedKVCacheManager(
-        devices=devices,
         params=_build_kv_params(config, dp_degree),
         total_num_pages=8,
         session=session,

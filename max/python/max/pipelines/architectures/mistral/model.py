@@ -30,12 +30,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
+from max.kv_cache import estimate_kv_cache_size
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
@@ -248,28 +243,6 @@ class MistralModel(PipelineModel[TextContext]):
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
-
-    def load_kv_manager(
-        self,
-        session: InferenceSession,
-        available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        assert self.devices, "devices must be provided to load kv manager."
-        return load_kv_manager(
-            params=MistralConfig.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in self.devices],
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
-        )
 
     @classmethod
     def estimate_kv_cache_size(

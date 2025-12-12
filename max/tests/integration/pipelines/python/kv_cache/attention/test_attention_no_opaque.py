@@ -178,7 +178,6 @@ def test_compare_attention_with_rope_no_opaque() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=32,
-        devices=[device],
         session=session,
     )
 
