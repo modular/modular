@@ -114,6 +114,14 @@ class SchedulerLogger:
             batch_execution_time_s
         )
 
+        # Num cache tokens
+        max_batch_context_length = sch_config.max_batch_context_length
+        if max_batch_context_length is not None:
+            num_context_tokens = inputs.context_tokens
+            context_tokens_str = f"Context Tokens: {num_context_tokens}/{max_batch_context_length} toks | "
+        else:
+            context_tokens_str = ""
+
         # Prompt cache hit info
         prefill_chunk_size = sch_config.target_tokens_per_batch_ce
 
@@ -130,6 +138,7 @@ class SchedulerLogger:
                     f"Terminated: {terminated_reqs} reqs, "
                     f"Pending: {num_pending_reqs} reqs | "
                     f"Input Tokens: {num_input_tokens}/{prefill_chunk_size} toks | "
+                    f"{context_tokens_str}"
                     f"Prompt Tput: {prompt_throughput_str}, "
                     f"Generation Tput: {generation_throughput_str} | "
                     f"Batch creation: {batch_creation_latency_str}, "
@@ -181,6 +190,7 @@ class SchedulerLogger:
                 f"Terminated: {terminated_reqs} reqs, "
                 f"Pending: {num_pending_reqs} reqs | "
                 f"Input Tokens: {num_input_tokens}/{prefill_chunk_size} toks | "
+                f"{context_tokens_str}"
                 f"Prompt Tput: {prompt_throughput_str}, "
                 f"Generation Tput: {generation_throughput_str} | "
                 f"Batch creation: {batch_creation_latency_str}, "
