@@ -1078,6 +1078,21 @@ struct LayoutTensor[
             )
         )
 
+    @always_inline("nodebug")
+    fn ptr_at_offset(
+        self, coords: IndexList
+    ) -> UnsafePointer[Scalar[Self.dtype], address_space = Self.address_space]:
+        """Get a pointer offset at the given flattened coordinates.
+
+        Args:
+            coords: A flattened list of the offset coordinates.
+
+        Returns:
+           A pointer offset at the given flattened coordinates.
+        """
+
+        return self.ptr + self._offset(coords)
+
     @always_inline
     fn _elementwise_unary[
         func: fn (Self.element_type) capturing -> (Self.element_type),
@@ -2631,6 +2646,28 @@ struct LayoutTensor[
             Self.layout.shape, Self.layout_int_type
         ]()
         return shape[idx]
+
+    @always_inline("nodebug")
+    fn get_shape(self) -> IndexList[Self.rank]:
+        """Get the flattened shape of a LayoutTensor.
+
+        Returns:
+           The flattened shape of a LayoutTensor.
+        """
+        return rebind[IndexList[Self.rank]](
+            self.runtime_layout.shape.value.canonicalize()
+        )
+
+    @always_inline("nodebug")
+    fn get_stride(self) -> IndexList[Self.rank]:
+        """Get the flattened stride of a LayoutTensor.
+
+        Returns:
+           The flattened shape of a LayoutTensor.
+        """
+        return rebind[IndexList[Self.rank]](
+            self.runtime_layout.stride.value.canonicalize()
+        )
 
     @always_inline
     @staticmethod
@@ -4870,6 +4907,87 @@ struct LayoutTensor[
             not Self.masked, "Masked tensor does not support reshape."
         ]()
         return Self.ReshapeType[dst_layout](self.ptr)
+
+    @always_inline
+    fn reshape[
+        dst_layout: Layout,
+    ](self, runtime_layout: RuntimeLayout[dst_layout]) -> Self.ReshapeType[
+        dst_layout
+    ]:
+        """Create a view of the tensor with a different shape.
+
+        This method creates a view of the tensor with a new shape, without changing
+        the underlying data. The total number of elements must remain the same.
+
+        Constraints:
+            - Cannot reshape masked tensors.
+            - The total number of elements must be the same in both layouts.
+
+        Parameters:
+            dst_layout: The target layout for the reshaped tensor. Must have the same
+                       total number of elements as the original tensor.
+
+        Args:
+            runtime_layout: The target RuntimeLayout for the reshaped tensor.
+
+        Returns:
+            A view of the tensor with the new shape specified by dst_layout.
+
+        Example:
+
+        Given a 2x6 row-major tensor, `reshape[Layout.col_major(3, 4)]()`
+        produces a 3x4 tensor with the same elements in column-major order.
+
+        Performance:
+
+        - Creates a view without copying data, making it very efficient.
+        - The operation is zero-cost at runtime as it only changes the layout
+            information.
+        - Memory access patterns may change, potentially affecting performance
+            depending on the original and target layouts.
+
+        Notes:
+
+        - The reshaped tensor shares the same memory as the original tensor,
+            so modifications to one will affect the other.
+        - The total number of elements must remain the same after reshaping.
+        - The reshape operation assumes a row-major (C-style) memory layout.
+        - For tensors with complex strides or non-contiguous memory, reshaping
+            may not produce the expected results.
+        - Masked tensors cannot be reshaped.
+        """
+        constrained[
+            not Self.masked, "Masked tensor does not support reshape."
+        ]()
+        return Self.ReshapeType[dst_layout](self.ptr, runtime_layout)
+
+    comptime FlattenedType = LayoutTensor[
+        Self.dtype,
+        Layout(UNKNOWN_VALUE),
+        Self.origin,
+        address_space = Self.address_space,
+        element_layout = Self.element_layout,
+        layout_int_type = Self.layout_int_type,
+        linear_idx_type = Self.linear_idx_type,
+        masked = Self.masked,
+        alignment = Self.alignment,
+    ]
+    """Type alias for flattened tensor types.
+    """
+
+    @always_inline("nodebug")
+    fn flatten(self) -> Self.FlattenedType:
+        """Convert a LayoutTensor to a flattened dynamic layout.
+
+        Returns:
+            A LayoutTensor to a flattened dynamic layout.
+        """
+        return Self.FlattenedType(
+            self.ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                IndexList[1](self.size())
+            ),
+        )
 
     comptime CompositionType[
         rhs_layout: Layout,
