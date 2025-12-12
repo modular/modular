@@ -7,6 +7,7 @@ _PACKAGES = {
 }
 
 _MAX_PACKAGES = {
+    "buffer": "kernels/src/buffer",
     "kv_cache": "kernels/src/kv_cache",
     "layout": "kernels/src/layout",
     "linalg": "kernels/src/linalg",
