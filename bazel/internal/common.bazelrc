@@ -4,6 +4,8 @@ startup --digest_function=blake3
 # https://github.com/aspect-build/rules_js/issues/1408
 startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 
+startup --experimental_remote_repo_contents_cache
+
 # Enable --config=(macos|windows|linux) based on the host OS
 # TODO: This should be 'common', currently blocked on buildbuddy cli changes
 # TODO: '=true' is required because of a buildbuddy cli bug
