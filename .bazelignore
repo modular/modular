@@ -1,3 +1,5 @@
 bazel/lint/node_modules
 max/python/max/_core/internal
 max/internal
+max/tests/internal
+max/examples/internal
