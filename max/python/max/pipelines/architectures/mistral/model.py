@@ -36,6 +36,7 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -83,7 +84,7 @@ class MistralInputs(ModelInputs):
         self.kv_cache_inputs = kv_cache_inputs
 
 
-class MistralModel(PipelineModel[TextContext]):
+class MistralModel(PipelineModel[TextContext], KVCacheMixin):
     model: Model
     """Compiled and initialized model ready for inference."""
 
@@ -333,17 +334,10 @@ class MistralModel(PipelineModel[TextContext]):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = MistralConfig.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            devices=self.device_refs,
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
-        n_devices = kv_params.n_devices
         fetch_types = self.kv_params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
+        for i in range(self.kv_params.n_devices):
             start_idx = i * len_of_kv_tuple_per_dev
             kv_caches_per_dev.append(
                 PagedCacheValues(
@@ -362,26 +356,16 @@ class MistralModel(PipelineModel[TextContext]):
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
 
-        kv_params = MistralConfig.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            devices=self.device_refs,
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
-        device_refs = [
-            DeviceRef(spec.device_type, spec.id)
-            for spec in self.pipeline_config.model_config.device_specs
-        ]
         model_config = MistralConfig(
             hidden_size=self.huggingface_config.hidden_size,
             num_attention_heads=self.huggingface_config.num_attention_heads,
-            num_key_value_heads=kv_params.n_kv_heads,
+            num_key_value_heads=self.kv_params.n_kv_heads,
             num_hidden_layers=self.huggingface_config.num_hidden_layers,
             vocab_size=self.huggingface_config.vocab_size,
             dtype=self.dtype,
-            kv_params=kv_params,
+            kv_params=self.kv_params,
             return_logits=self.return_logits,
-            attention_multiplier=math.sqrt(1 / kv_params.head_dim),
+            attention_multiplier=math.sqrt(1 / self.kv_params.head_dim),
             head_dim=self.huggingface_config.head_dim,
             rope_theta=self.huggingface_config.rope_theta,
             max_seq_len=self.calculate_max_seq_len(
@@ -389,7 +373,7 @@ class MistralModel(PipelineModel[TextContext]):
             ),
             rms_norm_eps=self.huggingface_config.rms_norm_eps,
             feed_forward_length=self.huggingface_config.intermediate_size,
-            devices=device_refs,
+            devices=self.device_refs,
         )
 
         # Get Graph Inputs

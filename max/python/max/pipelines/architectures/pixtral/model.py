@@ -36,6 +36,7 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -98,7 +99,7 @@ class PixtralInputs(ModelInputs):
         return self._attention_mask
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext]):
+class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """The overall interface to the Pixtral model."""
 
     model: Model
@@ -399,16 +400,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
 
-        kv_params = PixtralConfig.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            devices=self.device_refs,
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
-        device_refs = [
-            DeviceRef(spec.device_type, spec.id)
-            for spec in self.pipeline_config.model_config.device_specs
-        ]
         model_config = PixtralConfig(
             image_token_index=self.huggingface_config.image_token_index,
             vocab_size=self.huggingface_config.text_config.vocab_size,
@@ -425,16 +416,16 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             image_size=self.huggingface_config.vision_config.image_size,
             num_channels=self.huggingface_config.vision_config.num_channels,
             vision_hidden_size=self.huggingface_config.vision_config.hidden_size,
-            attention_multiplier=math.sqrt(1 / kv_params.head_dim),
+            attention_multiplier=math.sqrt(1 / self.kv_params.head_dim),
             vision_num_attention_heads=self.huggingface_config.vision_config.num_attention_heads,
             vision_rope_theta=self.huggingface_config.vision_config.rope_theta,
             vision_num_hidden_layers=self.huggingface_config.vision_config.num_hidden_layers,
             vision_intermediate_size=self.huggingface_config.vision_config.intermediate_size,
             vision_head_dim=self.huggingface_config.vision_config.head_dim,
             dtype=self.dtype,
-            devices=device_refs,
+            devices=self.device_refs,
             return_logits=self.return_logits,
-            kv_params=kv_params,
+            kv_params=self.kv_params,
         )
 
         # Get Graph Inputs
