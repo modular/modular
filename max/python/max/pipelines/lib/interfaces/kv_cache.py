@@ -17,7 +17,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from max.driver import Device, load_devices
+from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -32,7 +32,6 @@ from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
-    from ..config_enums import SupportedEncoding
     from ..kv_cache_config import KVCacheConfig
 
 
@@ -40,43 +39,29 @@ if TYPE_CHECKING:
 class KVCacheMixin(Protocol):
     def load_kv_manager(
         self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
+        kv_params: KVCacheParams,
+        max_batch_size: int,
+        max_seq_len: int,
         session: InferenceSession,
         available_cache_memory: int,
     ) -> PagedKVCacheManager | NullKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
+            kv_params: KV cache parameters.
+            max_batch_size: Maximum batch size of the model.
+            max_seq_len: Maximum sequence length of the model.
             session: Inference session to compile and init the KV cache.
             available_cache_memory: Amount of memory available to the KV cache,
                 in bytes.
 
         Returns:
-            Either a single KV cache manager or a tuple of KV cache managers:
-            one per input modality.
+            A single KV cache manager.
         """
-        model_config = pipeline_config.model_config
-
-        # This is absolutely cursed.
-        # We are converting from DeviceSpec -> Device -> DeviceRef.
-        # What even is the difference between DeviceSpec and DeviceRef?
-        device_specs = pipeline_config.model_config.device_specs
-        devices = load_devices(device_specs)
-        device_refs = [DeviceRef.from_device(d) for d in devices]
-
         return load_kv_manager(
-            params=self.get_kv_params(
-                huggingface_config=huggingface_config,
-                devices=device_refs,
-                kv_cache_config=model_config.kv_cache_config,
-                cache_dtype=encoding.cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                pipeline_config, huggingface_config
-            ),
+            params=kv_params,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
             available_cache_memory=available_cache_memory,
             session=session,
         )

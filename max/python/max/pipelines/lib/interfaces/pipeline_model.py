@@ -190,10 +190,13 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             assert self.kv_cache_config._available_cache_memory is not None, (
                 "Available cache memory should have been set during memory estimation"
             )
+            assert pipeline_config.max_batch_size is not None, (
+                "max_batch_size should have been set during memory estimation"
+            )
             self.kv_manager = self.load_kv_manager(
-                pipeline_config=pipeline_config,
-                huggingface_config=huggingface_config,
-                encoding=encoding,
+                kv_params=self.kv_params,
+                max_batch_size=pipeline_config.max_batch_size,
+                max_seq_len=self.max_seq_len,
                 session=session,
                 available_cache_memory=self.kv_cache_config._available_cache_memory,
             )

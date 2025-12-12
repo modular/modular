@@ -27,7 +27,12 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Type, Value
 from max.graph.tensor_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache import estimate_kv_cache_size
+from max.kv_cache import (
+    NullKVCacheManager,
+    PagedKVCacheManager,
+    estimate_kv_cache_size,
+    load_kv_manager,
+)
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -747,6 +752,24 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Create tensor and distribute to device
         return [Tensor.from_numpy(np_indices).to(dev) for dev in self.devices]
+
+    def load_kv_manager(
+        self,
+        kv_params: KVCacheParams,
+        max_batch_size: int,
+        max_seq_len: int,
+        session: InferenceSession,
+        available_cache_memory: int,
+    ) -> PagedKVCacheManager | NullKVCacheManager:
+        return load_kv_manager(
+            params=kv_params,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
+            # FIXME: Decrease KVCache memory usage by 10% to leave headroom for
+            # vision processing.
+            available_cache_memory=int(available_cache_memory * 0.9),
+            session=session,
+        )
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
