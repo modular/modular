@@ -1468,13 +1468,6 @@ fn _mha_sm90[
             or MaskType.apply_log2e_after_mask else scale.cast[accum_type]()
             * log2e
         )
-        constrained[
-            depth % UInt(wgmma_0.mma_shape[2]) == 0,
-            "depth: "
-            + String(depth)
-            + "is not divisible by mma_shape: "
-            + String(wgmma_0.mma_shape),
-        ]()
 
         @parameter
         @always_inline
@@ -1489,7 +1482,7 @@ fn _mha_sm90[
                 Int(num_consumer),
                 scale_c=0,
                 num_k_iters = OptionalReg[Int](
-                    Int(depth // UInt(wgmma_0.mma_shape[2]))
+                    Int(ceildiv(depth, UInt(wgmma_0.mma_shape[2])))
                 ),
             ](
                 q_smem_sub,

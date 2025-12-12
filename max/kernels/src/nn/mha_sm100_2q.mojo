@@ -386,7 +386,7 @@ struct TMemTile[
             accum_type_size = Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
-        constrained[Self.dtype_size <= 4]()
+        __comptime_assert Self.dtype_size <= 4
         ptr = src.ptr.bitcast[UInt32]()
         comptime st_mat_layout = STMatrixLayout[
             Self.BM,
@@ -394,7 +394,7 @@ struct TMemTile[
             num_threads=num_threads,
             accum_type_size = Self.dtype_size,
         ]
-        constrained[st_mat_layout.bits == 128 or st_mat_layout.bits == 256]()
+        __comptime_assert st_mat_layout.bits == 128 or st_mat_layout.bits == 256
 
         @parameter
         @always_inline
@@ -459,23 +459,22 @@ struct TMemTile[
             accum_type_size = Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
-        constrained[
-            Self.dtype_size <= 4,
-            "Loading for st matrix requires elements to be <= 4 bytes.",
-        ]()
+        __comptime_assert (
+            Self.dtype_size <= 4
+        ), "Loading for st matrix requires elements to be <= 4 bytes."
         comptime st_mat_layout = STMatrixLayout[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
             accum_type_size = Self.dtype_size,
         ]()
-        constrained[
-            (st_mat_layout.num_m_tiles == 1)
-            or (st_mat_layout.num_m_tiles == 2),
+        __comptime_assert (st_mat_layout.num_m_tiles == 1) or (
+            st_mat_layout.num_m_tiles == 2
+        ), (
             "Only 1 or 2 m tiles are supported, but"
             " st_mat_layout.num_m_tiles == "
-            + String(st_mat_layout.num_m_tiles),
-        ]()
+            + String(st_mat_layout.num_m_tiles)
+        )
         comptime repeat = st_mat_layout.repeat
         comptime frag_size_b32 = st_mat_layout.frag_size * Self.dtype_size // 4
 
@@ -630,7 +629,7 @@ struct SM100TensorAccumulatorSS[
     comptime operand_size = size_of[Self.operand_t]()
     comptime accum_t = Self.accum_type
     comptime MMA_K = 16
-    comptime num_k_mmas = Self.BK // Self.MMA_K
+    comptime num_k_mmas = ceildiv(Self.BK, Self.MMA_K)
     comptime swizzle_granularity = max(
         Self.swizzle_a.bytes(), Self.swizzle_b.bytes()
     ) // size_of[Self.operand_t]()
@@ -752,7 +751,7 @@ struct FA4Config:
     var BK0: Int  # BK for MMA0
     var BK1: Int  # BK for MMA1
     var depth: Int
-    var padded_depth: Int
+    var padded_depth: Int  # align_up(depth, 64)
     var group: Int
     var num_q_heads: Int
     var num_kv_heads: Int
@@ -834,7 +833,8 @@ struct FA4Config:
             self.BN = min(
                 256,
                 align_down(
-                    (Self.sm100_tmem_cols // 2 - self.padded_depth), Self.MMA_K
+                    (Self.sm100_tmem_cols // 2 - self.padded_depth),
+                    Self.MMA_K,
                 ),
             )
             # TODO : delete this as soon as we define spliting BN across the pages
@@ -1294,12 +1294,6 @@ fn mha_sm100_dispatch[
     )
     comptime swizzle_mode = fa4_config.swizzle_mode
     comptime BM = fa4_config.BM
-    comptime BK = fa4_config.padded_depth
-    constrained[
-        BK % 64 == 0,
-        "B200 requires BK%64 as it uses 128B swizzles, but BK==",
-        String(BK),
-    ]()
     comptime BN = fa4_config.BN
     comptime num_threads = fa4_config.num_threads
     q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
@@ -2624,7 +2618,7 @@ struct SM100MHA2Q[
         Self.accum_type,
         MMA_M = Self.MMA_M,  # generally 128
         MMA_N = Self.BN,
-        BK = Self.depth,  # BK in memory depth
+        BK = align_up(Self.depth, Self.config.MMA_K),  # BK in memory depth
         swizzle_a = Self.config.swizzle_mode,
         swizzle_b = Self.config.swizzle_mode,
         transpose_b=True,
@@ -2716,10 +2710,9 @@ struct SM100MHA2Q[
             Self.PartitionType,
         ],
     ):
-        constrained[Self.MMA_M == 64 or Self.MMA_M == 128]()
-        constrained[_is_decoding[Self.MaxSeqLenType]() == False]()
-        constrained[
-            Self.config.supported(),
+        __comptime_assert Self.MMA_M == 64 or Self.MMA_M == 128
+        __comptime_assert _is_decoding[Self.MaxSeqLenType]() == False
+        __comptime_assert Self.config.supported(), (
             "depth = "
             + String(Self.config.depth)
             + "\nBN = "
@@ -2729,13 +2722,11 @@ struct SM100MHA2Q[
             + "\ntmem_used = "
             + String(Self.config.tmem_used)
             + "\nsmem_used = "
-            + String(Self.config.smem_used),
-        ]()
-        constrained[
-            not Self.SchedulerType.may_advance,
-            "Persistent kernels not yet supported with FA4",
-        ]()
-        constrained[Self.UMMA0Type.num_stages == Self.UMMA1Type.num_stages]()
+            + String(Self.config.smem_used)
+        )
+        __comptime_assert (
+            not Self.SchedulerType.may_advance
+        ), "Persistent kernels not yet supported with FA4"
 
         mask = pack.mask
         score_mod = pack.score_mod
@@ -2748,10 +2739,9 @@ struct SM100MHA2Q[
 
         comptime num_qo = Self.config.num_qo()
         # TODO: We may want to support num_qo>2 for depth=64?
-        constrained[
-            num_qo == 1 or num_qo == 2,
-            "Currently only support num_qo == 1 or 2",
-        ]()
+        __comptime_assert (
+            num_qo == 1 or num_qo == 2
+        ), "Currently only support num_qo == 1 or 2"
         q_smem = external_memory[
             Scalar[Self.qkv_type],
             address_space = AddressSpace.SHARED,
@@ -2966,7 +2956,7 @@ struct SM100MHA2Q[
             Self.descriptor_shape,
             swizzle_mode = Self.config.swizzle_mode,
         ],
-        warp_group_idx: UInt32,
+        warp_idx: UInt32,
         consumer_mbar: MBarType,
         current_seq: Int,
         num_output_rows: Int32,
@@ -3037,7 +3027,6 @@ struct SM100MHA2Q[
             smem_blocked_layout,
             address_space = AddressSpace.SHARED,
         ](o_smem)
-        var warpy = local_row // 32
 
         @parameter
         for i in range(2):
@@ -3053,7 +3042,7 @@ struct SM100MHA2Q[
                 )  # all the repeats across n and m
 
                 accum_smem_warp_tile = accum_smem_tile.tile[16, last_dim](
-                    Int(2 * warpy + i), j
+                    Int(2 * (warp_idx & 3) + i), j
                 )
 
                 output_reg_to_smem_st_matrix[
@@ -3074,13 +3063,13 @@ struct SM100MHA2Q[
                         ]
                     ](accum_smem_warp_tile),
                 )
-        named_barrier[WARPGROUP_SIZE](Int32(warp_group_idx))
+        named_barrier[WARPGROUP_SIZE](Int32(warp_idx >> 2))
 
         ragged_tma_store.prefetch_descriptor()
         fence_async_view_proxy()
 
         # # first thread of each warp_group
-        if thread_idx.x % 128 == 0:
+        if local_row == 0:
 
             @parameter
             for itr in range(iters):
@@ -3203,19 +3192,6 @@ struct SM100MHA2Q[
             - Int32(warp_group_idx) * splitBM,
         )
 
-        gmem_row = Self.PositionType.get_q_gmem_row[ragged = Self.ragged](
-            seq_info, max_seq_len
-        )
-        gmem_col = seq_info.head_idx * Self.depth
-        output_offset = Int(Self.depth * Self.num_q_heads) * Int(
-            gmem_row
-        ) + Int(gmem_col)
-        var o_ptr: UnsafePointer[Scalar[Self.output_type]] = (
-            o_ptr_arg
-            + output_offset
-            + warp_group_idx * (Self.PositionType.q_stride * splitBM)
-        )
-
         pipeline_s.wait()
         tcgen05_fence_after()
         s = LocalTensor[
@@ -3311,7 +3287,7 @@ struct SM100MHA2Q[
                 comptime offset1 = first_cols + batch_size * (2 * i + 1)
                 comptime offset2 = first_cols + batch_size * (2 * i + 2)
 
-                tcgen05_load_wait()
+                tcgen05_load_wait()  # s1
 
                 @parameter
                 if offset1 >= Self.config.BN:
@@ -3329,7 +3305,7 @@ struct SM100MHA2Q[
                     )
                     vrow_max = maximum(s1, vrow_max)
                     s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
-                    tcgen05_load_wait()
+                    tcgen05_load_wait()  # s2
 
                     @parameter
                     if offset2 < Self.config.BN:
@@ -3599,7 +3575,7 @@ struct SM100MHA2Q[
                 o_tile,
                 o_ptr_arg,
                 ragged_tma_store,
-                warp_group_idx,
+                warp_idx,
                 o_mbar + 2 + warp_group_idx,  # consumer arrive
                 wg_seq,
                 num_output_rows,
@@ -3639,10 +3615,15 @@ struct SM100MHA2Q[
             - 1
         )
 
-        comptime batch_size = 16
+        comptime batch_size = 16 if Self.config.depth % 16 == 0 else 8
+        __comptime_assert Self.config.depth % batch_size == 0
         # output is BM x depth
         comptime load_iters = Self.config.depth // (2 * batch_size)
         comptime load_remainder = Self.config.depth % (2 * batch_size)
+        __comptime_assert load_iters > 1
+        __comptime_assert (load_remainder == batch_size) or (
+            load_remainder == 0
+        )
 
         while iter_count != 0:
             iter_count -= 1
@@ -3681,8 +3662,6 @@ struct SM100MHA2Q[
                 if change:
                     # TODO: experiment with different batch sizes.
                     # The idea here is to both pipeline, and reduce peak register use.
-                    constrained[load_iters > 1]()
-                    constrained[Self.config.depth % batch_size == 0]()
 
                     var o_tmem: UInt32
 

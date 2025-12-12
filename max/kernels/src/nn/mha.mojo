@@ -237,7 +237,7 @@ fn depth_supported_by_gpu[
             or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)
         )
     ) or (
-        depth == 80
+        depth in (72, 80)
         and is_sm90or100
         and config.algorithm == FlashAttentionAlgorithm(3)
     )

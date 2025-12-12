@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, exp2, recip
+from math import ceildiv, exp2, recip, align_up
 from math.constants import log2e
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of
@@ -2055,7 +2055,7 @@ fn _mha_sm100[
         BM=BM,  # 128
         BN=BN,  # BN
         BK=BK,  # depth
-        compute_BK=depth,
+        compute_BK = align_up(depth, 16),
         num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,

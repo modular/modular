@@ -288,33 +288,6 @@ struct MHAPosition[
     fn __ne__(self, other: Self) -> Bool:
         return self.q_out_offset != other.q_out_offset
 
-    @staticmethod
-    @always_inline
-    fn split_out_gmem_tensor[
-        dtype: DType, //, ragged: Bool
-    ](
-        ptr: UnsafePointer[Scalar[dtype]],
-        num_rows: UInt32,
-        out gmem_block: LayoutTensor[
-            dtype,
-            Self.split_gmem_layout,
-            MutAnyOrigin,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked=True,
-        ],
-    ):
-        constrained[not Self.decoding]()
-        gmem_block = {
-            ptr,
-            type_of(gmem_block.runtime_layout)(
-                type_of(gmem_block.runtime_layout.shape)(
-                    Int(num_rows), Self.depth
-                ),
-                type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
-            ),
-        }
-
     @always_inline
     fn q_out_gmem_tensor[
         dtype: DType
