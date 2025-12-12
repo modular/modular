@@ -806,19 +806,19 @@ fn get_q_head_idx[
     lane: UInt32,
     out indices: StaticTuple[UInt32, type_of(position).num_q_heads_per_thread],
 ):
-    var fragment_row: UInt32 = lane // 4
-
-    indices = {}
-
     @parameter
-    for i in range(position.num_q_heads_per_thread):
-        var q_head_idx: UInt32 = position.head_idx
+    if decoding:
+        var q_head_idx_0: UInt32 = group * position.head_idx + lane // 4
+
+        indices = {}
+        indices[0] = q_head_idx_0
 
         @parameter
-        if decoding:
-            group_idx = i * 8 + fragment_row
-            q_head_idx = group * q_head_idx + group_idx
-        indices[i] = q_head_idx
+        for i in range(1, position.num_q_heads_per_thread):
+            indices[i] = q_head_idx_0 + 8 * i
+
+    else:
+        indices = {position.head_idx}
 
 
 @always_inline

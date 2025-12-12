@@ -2720,18 +2720,22 @@ fn _mha_sm100[
         ):  # we may have an empty partition
             if kv_tile_start_row >= end:
                 if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
-                    4 * group + 128
+                    4 * min(group, 8) + 128
                 ):
                     exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                         partition, batch_size
                     )
-                    var q_head_idx = position.head_idx * group + lane // 4
-                    exp_sum_ptr[q_head_idx] = Scalar[PartitionType.accum_dtype](
-                        0
-                    )
-                    qk_max_ptr[q_head_idx] = min_or_neg_inf[
-                        PartitionType.accum_dtype
-                    ]()
+                    var q_heads = get_q_head_idx(position, lane)
+
+                    @parameter
+                    for i in range(q_heads.size):
+                        var q_head_idx = q_heads[i]
+                        exp_sum_ptr[q_head_idx] = Scalar[
+                            PartitionType.accum_dtype
+                        ](0)
+                        qk_max_ptr[q_head_idx] = min_or_neg_inf[
+                            PartitionType.accum_dtype
+                        ]()
 
                 write_output(position, rowsum, vectorize_o_reg_tile().fill(0))
                 return
@@ -2922,17 +2926,24 @@ fn _mha_sm100[
 
         @parameter
         if decoding and PartitionType.do_partition:
-            if thread_idx.x % 4 == 0 and thread_idx.x < UInt(4 * group + 128):
+            # Only the first thread of each row
+            if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+                4 * min(group, 8) + 128
+            ):
                 exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                     partition, batch_size
                 )
-                var q_head_idx = position.head_idx * group + lane // 4
-                exp_sum_ptr[q_head_idx] = rebind[
-                    Scalar[PartitionType.accum_dtype]
-                ](rowsum[0])
-                qk_max_ptr[q_head_idx] = rebind[
-                    Scalar[PartitionType.accum_dtype]
-                ](rowmax[0])
+                var q_heads = get_q_head_idx(position, lane)
+
+                @parameter
+                for i in range(q_heads.size):
+                    var q_head_idx = q_heads[i]
+                    exp_sum_ptr[q_head_idx] = rebind[
+                        Scalar[PartitionType.accum_dtype]
+                    ](rowsum[i])
+                    qk_max_ptr[q_head_idx] = rebind[
+                        Scalar[PartitionType.accum_dtype]
+                    ](rowmax[i])
 
         @parameter
         for row in range(num_rows_per_warp):

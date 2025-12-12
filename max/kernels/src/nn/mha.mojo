@@ -201,7 +201,7 @@ fn get_mha_decoding_num_partitions[
 ](batch_size: Int, num_keys: Int, ctx: DeviceContext) -> Int:
     comptime sm_count = ctx.default_device_info.sm_count
     # TODO: This is dumb, make it more granular as a follow up
-    if num_keys > 512 and group <= 8:
+    if num_keys > 512:
         return min(
             next_power_of_two(
                 min(
