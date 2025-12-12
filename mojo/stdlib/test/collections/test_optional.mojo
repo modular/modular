@@ -15,6 +15,7 @@ from collections import OptionalReg
 
 from testing import *
 from testing import TestSuite
+from test_utils import MoveOnly
 
 
 def test_basic():
@@ -228,6 +229,21 @@ def test_optional_iter_empty():
     for _value in o2:
         called = True
     assert_false(called)
+
+
+def test_optional_of_move_only_type():
+    var opt1 = Optional(MoveOnly[Int](5))
+    # Test moving the optional
+    var opt2 = opt1^
+    # Test moving out of the optional
+    var val: MoveOnly[Int] = opt2.take()
+
+    assert_equal(val.data, 5)
+    assert_false(opt2)
+
+    # Test move-only default value
+    val = opt2^.or_else(MoveOnly(10))
+    assert_equal(val.data, 10)
 
 
 def main():
