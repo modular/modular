@@ -45,7 +45,12 @@ from max.pipelines.lib.interfaces import (
 from max.profiler import traced
 
 from ..sampling import token_sampler
+from .accepted_hidden_states_extractor import (
+    accepted_hidden_states_extractor,
+    compute_extractor_inputs,
+)
 from .base import SpeculativeDecodingPipelineBase
+from .hidden_states_filter import compute_filter_indices, filter_hidden_states
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -99,6 +104,19 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
 
         self._draft_kv_start_idx: dict[RequestID, int] = {}
+        self._last_verified_token: dict[RequestID, int] = {}
+
+        self._accepted_hidden_states_extractor = self._target_session.load(
+            accepted_hidden_states_extractor(
+                device=DeviceRef.from_device(self.target_devices[0])
+            )
+        )
+
+        self._hidden_states_filter = self._target_session.load(
+            filter_hidden_states(
+                device=DeviceRef.from_device(self.target_devices[0])
+            )
+        )
 
     @traced
     def sample_target_token(
@@ -522,9 +540,30 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         # We keep the hidden states for the target sampled token and the accepted draft tokens
         assert target_outputs.hidden_states is not None
-        self._draft_input_hidden_states = target_outputs.hidden_states[
-            : 1 + first_rejected_tokens_np[0].item(), :
-        ]
+        assert target_outputs.logit_offsets is not None
+
+        # Compute inputs for the extractor graph
+        total_range_np, output_offsets_np = compute_extractor_inputs(
+            first_rejected_tokens_np
+        )
+
+        # Convert to GPU tensors
+        total_range_tensor = Tensor.from_numpy(total_range_np).to(
+            self.target_devices[0]
+        )
+        output_offsets_tensor = Tensor.from_numpy(output_offsets_np).to(
+            self.target_devices[0]
+        )
+
+        # Extract accepted hidden states using the graph
+        (accepted_hidden_states,) = self._accepted_hidden_states_extractor(
+            target_outputs.hidden_states,
+            target_outputs.logit_offsets,
+            total_range_tensor,
+            output_offsets_tensor,
+        )
+        assert isinstance(accepted_hidden_states, Tensor)
+        self._draft_input_hidden_states = accepted_hidden_states
 
         return first_rejected_tokens_np, recovered_tokens_np, bonus_tokens_np
 
@@ -549,6 +588,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         total_bonus_used = 0
         acceptance_lengths = []
 
+        active_context_indices = []
         for idx, context in enumerate(context_batch):
             rejected_token_idx = int(first_rejected_tokens[idx].item())
 
@@ -568,6 +608,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     token = int(bonus_tokens[idx, 0])
                     total_bonus_used += 1
                 context.update(token)
+                if not context.is_done:
+                    active_context_indices.append(idx)
+                self._last_verified_token[context.request_id] = token
 
             total_draft_accepted += rejected_token_idx
             acceptance_lengths.append(rejected_token_idx)
@@ -578,6 +621,22 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             total_bonus_used,
             acceptance_lengths,
         )
+
+        # Filter hidden states to remove terminated sequences
+        keep_indices_np, offsets = compute_filter_indices(
+            first_rejected_tokens, active_context_indices
+        )
+
+        # Only filter if some sequences terminated
+        if len(keep_indices_np) < int(offsets[-1]):
+            keep_tensor = Tensor.from_numpy(keep_indices_np).to(
+                self.target_devices[0]
+            )
+            (filtered_hidden_states,) = self._hidden_states_filter(
+                self._draft_input_hidden_states, keep_tensor
+            )
+            assert isinstance(filtered_hidden_states, Tensor)
+            self._draft_input_hidden_states = filtered_hidden_states
 
     def _target_extend(
         self, inputs: TextGenerationInputs[TextContext]
@@ -633,10 +692,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         4. Update contexts and build response
         """
         context_batch = list(inputs.batch.values())
-        # The logic to slice the target hidden states for bs > 1 will require a new graph to extract indices based on the accepted token indices
-        assert len(context_batch) == 1, (
-            "EAGLE pipeline only supports batch size 1"
-        )
 
         needs_ce = context_batch[0].needs_ce
         if needs_ce:
@@ -667,15 +722,17 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         if needs_ce:
             draft_input_tokens = target_sampled_tokens
         else:
-            # TODO: Add additional logic here to handle batch size > 1.
-            # We need to skip the first element in each batch
-            assert len(context_batch) == 1, (
-                "Need to handle batch size > 1 logic"
+            # Use the last verified tokens from the previous iteration
+            last_tokens = np.array(
+                [
+                    self._last_verified_token[context.request_id]
+                    for context in context_batch
+                ],
+                dtype=np.int64,
             )
-
-            draft_input_tokens = draft_inputs.tokens  # type: ignore[attr-defined]
-            if draft_inputs.tokens.num_elements > 1:  # type: ignore[attr-defined]
-                draft_input_tokens = draft_input_tokens[-1:]
+            draft_input_tokens = Tensor.from_numpy(last_tokens).to(
+                self.target_devices[0]
+            )
 
         draft_input_offsets_np = np.cumsum(
             [0] + [1 for _ in context_batch],
@@ -730,3 +787,4 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         """
         super().release(request_id)
         self._draft_kv_start_idx.pop(request_id, None)
+        self._last_verified_token.pop(request_id, None)
