@@ -15,6 +15,7 @@
 """Utilities for serving api server with model worker."""
 
 import logging
+import os
 
 import uvloop
 from max.interfaces import PipelineTask
@@ -31,6 +32,9 @@ from max.serve.api_server import (
     validate_port_is_free,
 )
 from max.serve.config import Settings
+from max.serve.pipelines.echo_gen import (
+    EchoTokenGenerator,
+)
 from uvicorn import Server
 
 logger = logging.getLogger("max.entrypoints")
@@ -61,6 +65,14 @@ def serve_api_server_and_model_worker(
         task=pipeline_task,
         override_architecture=override_architecture,
     )
+
+    # Dummy model is for diagnostics and overhead benchmarking
+    if os.getenv("MAX_SERVE_DUMMY_MODEL"):
+        assert pipeline_task == PipelineTask.TEXT_GENERATION, (
+            "dummy model only implemented for text gen models"
+        )
+        logging.warning("Replacing pipeline model with dummy model!")
+        pipeline_factory = EchoTokenGenerator
 
     pipeline_settings = ServingTokenGeneratorSettings(
         model_factory=pipeline_factory,
