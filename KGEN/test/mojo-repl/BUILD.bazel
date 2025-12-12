@@ -15,6 +15,7 @@ lit_tests(
     ],
     force_strip = True,  # TODO(MOTO-1190): Debug and fix this duplicate symbol issue
     mojo_deps = [
+        "//max:buffer",
         "@mojo//:stdlib",
     ],
     target_compatible_with = select({
