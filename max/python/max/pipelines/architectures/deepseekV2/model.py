@@ -26,7 +26,6 @@ from max.engine.api import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.kv_cache import estimate_kv_cache_size
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
@@ -234,31 +233,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 f"model's max_seq_len "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the kv cache in bytes."""
-        return estimate_kv_cache_size(
-            params=cls.get_kv_params(
-                huggingface_config=huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in devices],
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-        )
 
     def graph_inputs(self) -> tuple[TensorType]:
         # Generate DeviceRef

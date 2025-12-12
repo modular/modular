@@ -17,7 +17,6 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -25,6 +24,7 @@ from max.interfaces import Pipeline
 from max.kv_cache import (
     NullKVCacheManager,
     PagedKVCacheManager,
+    estimate_kv_cache_size,
     load_kv_manager,
 )
 from max.nn.kv_cache import KVCacheParams
@@ -67,6 +67,23 @@ class KVCacheMixin(Protocol):
         )
 
     @classmethod
+    def estimate_kv_cache_size(
+        cls,
+        huggingface_config: AutoConfig,
+        params: KVCacheParams,
+        max_batch_size: int,
+        max_seq_len: int,
+        available_cache_memory: int,
+    ) -> int:
+        """Estimates the size of the kv cache in bytes."""
+        return estimate_kv_cache_size(
+            params=params,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
+            available_cache_memory=available_cache_memory,
+        )
+
+    @classmethod
     @abstractmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
@@ -92,20 +109,6 @@ class KVCacheMixin(Protocol):
     @abstractmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         """Returns the number of layers for the pipeline model."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the kv cache in bytes."""
         ...
 
 

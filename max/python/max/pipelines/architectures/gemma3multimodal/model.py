@@ -30,7 +30,6 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.kv_cache import (
     NullKVCacheManager,
     PagedKVCacheManager,
-    estimate_kv_cache_size,
     load_kv_manager,
 )
 from max.nn import ReturnLogits, Signals
@@ -291,47 +290,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         """Gets the number of hidden layers from the HuggingFace configuration."""
         return Gemma3ForConditionalGenerationConfig.get_num_layers(
             huggingface_config
-        )
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the KV cache required for the Gemma 3 model in bytes.
-
-        Args:
-            pipeline_config: The configuration for the pipeline.
-            available_cache_memory: The total memory available for the KV cache
-                in bytes.
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) the
-                model will run on.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-            kv_cache_config: Configuration settings for the KV cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The estimated size of the KV cache in bytes.
-        """
-        return estimate_kv_cache_size(
-            params=Gemma3ForConditionalGenerationConfig.get_kv_params(
-                huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in devices],
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=Gemma3_MultiModalModel.calculate_max_seq_len(
-                pipeline_config, huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
         )
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:

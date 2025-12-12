@@ -76,11 +76,10 @@ def load_kv_manager(
 
 def estimate_kv_cache_size(
     params: KVCacheParams,
-    max_batch_size: int | None,
+    max_batch_size: int,
     max_seq_len: int,
     available_cache_memory: int,
 ) -> int:
-    assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
 
     return params.estimated_memory_size(

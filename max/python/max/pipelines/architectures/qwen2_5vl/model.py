@@ -34,7 +34,6 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.kv_cache import estimate_kv_cache_size
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.nn.parallel import ParallelArrayOps
@@ -203,31 +202,6 @@ class Qwen2_5VLModel(
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         """Gets the number of hidden layers from the HuggingFace configuration."""
         return Qwen2_5VLConfig.get_num_layers(huggingface_config)
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the KV cache required for the Qwen2.5VL model in bytes."""
-        return estimate_kv_cache_size(
-            params=Qwen2_5VLConfig.get_kv_params(
-                huggingface_config=huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in devices],
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-        )
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]

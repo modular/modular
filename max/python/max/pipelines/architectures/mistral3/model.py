@@ -83,22 +83,3 @@ class Mistral3Model(MistralModel):
         return super().calculate_max_seq_len(
             pipeline_config, huggingface_config
         )
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        return super().estimate_kv_cache_size(
-            pipeline_config,
-            available_cache_memory,
-            devices,
-            huggingface_config.text_config,
-            kv_cache_config,
-            cache_dtype,
-        )

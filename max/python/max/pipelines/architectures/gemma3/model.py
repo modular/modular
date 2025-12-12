@@ -25,7 +25,6 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.kv_cache import estimate_kv_cache_size
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -226,47 +225,6 @@ class Gemma3Model(
             The number of hidden layers.
         """
         return Gemma3Config.get_num_layers(huggingface_config)
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the KV cache required for the Gemma 3 model in bytes.
-
-        Args:
-            pipeline_config: The configuration for the pipeline.
-            available_cache_memory: The total memory available for the KV cache
-                in bytes.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) the
-                model will run on.
-            kv_cache_config: Configuration settings for the KV cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The estimated size of the KV cache in bytes.
-        """
-        return estimate_kv_cache_size(
-            params=Gemma3Config.get_kv_params(
-                huggingface_config=huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in devices],
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-        )
 
     def load_model(self, session: InferenceSession) -> Model:
         """Loads the compiled Gemma 3 model into the MAX Engine session.

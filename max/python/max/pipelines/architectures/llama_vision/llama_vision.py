@@ -1029,25 +1029,15 @@ class LlamaVision(PipelineModel[TextAndVisionContext], KVCacheMixin):
     @classmethod
     def estimate_kv_cache_size(
         cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
         huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
+        params: KVCacheParams,
+        max_batch_size: int,
+        max_seq_len: int,
+        available_cache_memory: int,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
-        assert pipeline_config.max_batch_size is not None
 
-        params = cls.get_kv_params(
-            huggingface_config=huggingface_config,
-            devices=[DeviceRef.from_device(d) for d in devices],
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
         num_cross_attn_layers = cls.get_vision_num_layers(huggingface_config)
-        assert pipeline_config.max_batch_size is not None
-        max_batch_size = pipeline_config.max_batch_size
         max_vision_seq_len = cls._calculate_vision_max_seq_len(
             huggingface_config
         )
@@ -1063,12 +1053,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext], KVCacheMixin):
         remaining_memory = available_cache_memory - vision_model_memory_size
         if remaining_memory < 0:
             return available_cache_memory
-        max_seq_len = cls.calculate_max_seq_len(
-            pipeline_config, huggingface_config=huggingface_config
-        )
         language_model_memory_size = params.estimated_memory_size(
             remaining_memory,
-            pipeline_config.max_batch_size,
+            max_batch_size,
             max_seq_len,
         )
         return language_model_memory_size + vision_model_memory_size

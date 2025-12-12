@@ -15,15 +15,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
-from max.driver import Device, Tensor
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask, TextGenerationContext
-from max.kv_cache import (
-    estimate_kv_cache_size,
-)
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from max.pipelines import (
     KVCacheConfig,
@@ -179,32 +176,6 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             page_size=kv_cache_config.kv_cache_page_size,
             devices=devices,
-        )
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int | None,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the kv cache in bytes."""
-        assert available_cache_memory is not None
-        assert pipeline_config.max_length is not None
-
-        return estimate_kv_cache_size(
-            params=cls.get_kv_params(
-                huggingface_config=huggingface_config,
-                devices=[DeviceRef.from_device(d) for d in devices],
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=pipeline_config.max_length,
-            available_cache_memory=available_cache_memory,
         )
 
     def load_model(
