@@ -321,7 +321,6 @@ class InferenceSession:
         model: str | Path | Graph,
         *,
         custom_extensions: CustomExtensionsType | None = None,
-        custom_ops_path: str | None = None,
         weights_registry: Mapping[str, DLPackArray] | None = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
@@ -331,9 +330,6 @@ class InferenceSession:
 
             custom_extensions: The extensions to load for the model.
               Supports paths to `.mojopkg` custom ops.
-
-            custom_ops_path: The path to your custom ops Mojo package.
-              Deprecated, use ``custom_extensions`` instead.
 
             weights_registry: A mapping from names of model weights' names to
               their values. The values are currently expected to be dlpack
@@ -355,10 +351,6 @@ class InferenceSession:
         if custom_extensions is not None:
             custom_extensions_final = _process_custom_extensions_objects(
                 custom_extensions
-            )
-        if custom_ops_path is not None:
-            custom_extensions_final.extend(
-                _process_custom_extensions_objects(custom_ops_path)
             )
 
         if isinstance(model, Path | str):
