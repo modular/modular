@@ -161,3 +161,6 @@ examples/models/*
 
 # Magic cache
 .magic
+# pixi environments
+.pixi/*
+!.pixi/config.toml
