@@ -41,6 +41,20 @@ modular_py_library(
     ],
 )
 
+modular_py_library(
+    name = "run_models",
+    testonly = True,
+    srcs = ["run_models.py"],
+    imports = ["."],
+    deps = [
+        ":create_pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("requests"),
+    ],
+)
+
 modular_py_binary(
     name = "generate_llm_logits",
     testonly = True,
@@ -78,6 +92,7 @@ modular_py_binary(
         requirement("peft"),  # Required for LoRA support
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
         ":create_pipelines",
+        ":run_models",
     ] + select({
         "//:has_gpu": [
             requirement("gptqmodel"),
