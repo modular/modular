@@ -45,21 +45,7 @@ from sys.intrinsics import likely
 
 from bit import count_leading_zeros
 from bit._mask import splat
-
-
-@always_inline
-fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
-    """Returns True if `codepoint` is a valid Unicode scalar value.
-
-    Args:
-        codepoint: The codepoint integer value to check.
-
-    Returns:
-        True if `codepoint` is a valid Unicode scalar value; False otherwise.
-    """
-    return codepoint <= 0xD7FF or (
-        codepoint >= 0xE000 and codepoint <= 0x10FFFF
-    )
+from collections.string._unicode import _is_unicode_scalar_value
 
 
 struct Codepoint(
