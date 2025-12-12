@@ -400,7 +400,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             ]
 
             # Unmarshal the KV cache arguments.
-            fetch_types = self.kv_manager.params.get_symbolic_inputs()[0]
+            fetch_types = self.kv_params.get_symbolic_inputs()[0]
             len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
             kv_caches_per_dev = self._unflatten_kv_inputs(
                 [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]

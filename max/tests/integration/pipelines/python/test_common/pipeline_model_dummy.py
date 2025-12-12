@@ -241,7 +241,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         session: InferenceSession,
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
-        kv_inputs = self.kv_manager.params.get_symbolic_inputs()[0]
+        kv_inputs = self.kv_params.get_symbolic_inputs()[0]
         with Graph(
             "dummy",
             input_types=[

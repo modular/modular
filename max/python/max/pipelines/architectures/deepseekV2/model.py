@@ -294,7 +294,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             DType.int64, shape=["return_n_logits"], device=device_ref
         )
 
-        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref

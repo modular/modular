@@ -562,7 +562,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         cross_row_offsets_type = input_row_offsets_type
 
         assert self.vision_kv_params is not None
-        kv_params = self.kv_manager.params
+        kv_params = self.kv_params
         vision_kv_params = self.vision_kv_params
 
         # Unpack text and vision KV inputs.

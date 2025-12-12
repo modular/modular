@@ -238,7 +238,7 @@ class Qwen2_5VLModel(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
         """Unflatten KV cache inputs from flat list to per-device structure."""
-        fetch_types = self.kv_manager.params.get_symbolic_inputs()[0]
+        fetch_types = self.kv_params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         n_devices = len(self.devices)
 
@@ -565,7 +565,7 @@ class Qwen2_5VLModel(
             device=device_ref,
         )
 
-        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]

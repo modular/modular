@@ -397,7 +397,7 @@ class Gemma3Model(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]

@@ -388,7 +388,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         input_ids_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()

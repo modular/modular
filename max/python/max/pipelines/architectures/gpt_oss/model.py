@@ -309,7 +309,7 @@ class GptOssModel(
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.params.get_symbolic_inputs()[0]
+        fetch_types = self.kv_params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):
@@ -384,7 +384,7 @@ class GptOssModel(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
