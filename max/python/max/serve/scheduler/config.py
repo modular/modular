@@ -79,6 +79,10 @@ class TokenGenerationSchedulerConfig:
             raise ValueError(
                 f"`max_batch_context_length` must be greater than or equal to `max_seq_len`, found {self.max_batch_context_length} < {self.max_seq_len}"
             )
+        if self.max_batch_size > self.target_tokens_per_batch_ce:
+            raise ValueError(
+                f"`max_batch_size` must be less than or equal to `target_tokens_per_batch_ce`, found {self.max_batch_size} > {self.target_tokens_per_batch_ce}"
+            )
 
     @classmethod
     def from_pipeline_config(

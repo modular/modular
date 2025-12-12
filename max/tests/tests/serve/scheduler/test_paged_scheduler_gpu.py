@@ -44,7 +44,7 @@ def test_paged_scheduler_paging_to_host(
         enable_prefix_caching=True,
         num_blocks=num_gpu_blocks,
         page_size=page_size,
-        max_batch_size=999,
+        max_batch_size=200,
         target_tokens_per_batch_ce=200,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
         max_seq_len=prompt_len + num_new_tokens,

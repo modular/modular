@@ -17,12 +17,7 @@ import logging
 import os
 import time
 
-from max.interfaces import (
-    BatchType,
-    MAXPullQueue,
-    RequestID,
-    TextGenerationInputs,
-)
+from max.interfaces import MAXPullQueue, RequestID, TextGenerationInputs
 from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
@@ -120,11 +115,7 @@ class SchedulerLogger:
         )
 
         # Prompt cache hit info
-        target_tokens_str = (
-            f"{sch_config.target_tokens_per_batch_ce}"
-            if batch_type == BatchType.CE
-            else "INF"
-        )
+        prefill_chunk_size = sch_config.target_tokens_per_batch_ce
 
         METRICS.batch_size(batch_size)
         METRICS.batch_execution_time(
@@ -138,7 +129,7 @@ class SchedulerLogger:
                     f"Executed {batch_type.value} batch with {batch_size} reqs | "
                     f"Terminated: {terminated_reqs} reqs, "
                     f"Pending: {num_pending_reqs} reqs | "
-                    f"Input Tokens: {num_input_tokens}/{target_tokens_str} toks | "
+                    f"Input Tokens: {num_input_tokens}/{prefill_chunk_size} toks | "
                     f"Prompt Tput: {prompt_throughput_str}, "
                     f"Generation Tput: {generation_throughput_str} | "
                     f"Batch creation: {batch_creation_latency_str}, "
@@ -189,7 +180,7 @@ class SchedulerLogger:
                 f"Executed {batch_type.value} batch with {batch_size} reqs | "
                 f"Terminated: {terminated_reqs} reqs, "
                 f"Pending: {num_pending_reqs} reqs | "
-                f"Input Tokens: {num_input_tokens}/{target_tokens_str} toks | "
+                f"Input Tokens: {num_input_tokens}/{prefill_chunk_size} toks | "
                 f"Prompt Tput: {prompt_throughput_str}, "
                 f"Generation Tput: {generation_throughput_str} | "
                 f"Batch creation: {batch_creation_latency_str}, "

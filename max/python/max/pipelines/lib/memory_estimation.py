@@ -293,6 +293,13 @@ class MemoryEstimator:
                 cache_dtype=model_config.quantization_encoding.cache_dtype,
             )
 
+        assert pipeline_config.max_batch_size is not None
+        if pipeline_config.max_batch_size > pipeline_config.prefill_chunk_size:
+            logger.info(
+                f"max_batch_size of {pipeline_config.max_batch_size} cannot be larger than prefill_chunk_size of {pipeline_config.prefill_chunk_size}, overriding max_batch_size to {pipeline_config.prefill_chunk_size}"
+            )
+            pipeline_config.max_batch_size = pipeline_config.prefill_chunk_size
+
         actual_kv_cache_size = cls._calculate_kv_cache_size(
             pipeline_model,
             pipeline_config,
