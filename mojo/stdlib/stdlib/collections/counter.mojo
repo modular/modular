@@ -506,7 +506,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.pop(value)
 
-    fn pop(mut self, value: Self.V, var default: Int) raises -> Int:
+    fn pop(mut self, value: Self.V, var default: Int) -> Int:
         """Remove a value from the `Counter` by value.
 
         Args:
@@ -517,10 +517,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             The value associated with the key, if it was in the `Counter`.
             If it wasn't, return the provided default value instead.
-
-        Raises:
-            "KeyError" if the key was not present in the `Counter` and no
-            default value was provided.
         """
         return self._data.pop(value, default)
 

@@ -465,6 +465,9 @@ def test_pop():
     assert_equal(b, 2)
     assert_equal(c, 3)
 
+    with assert_raises(contains="KeyError"):
+        _ = counter.pop("not_a_key")
+
 
 def test_popitem():
     var counter = Counter[String]()
