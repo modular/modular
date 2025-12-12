@@ -9,7 +9,7 @@
 # COM: Verify generated trait and struct structure.
 
 # CHECK-DAG: [[PARENT:!Int_AnyType_Movable_UnknownDestructibility.*]] = !lit.trait<@"fn(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Movable, @{{.*}}::@UnknownDestructibility>
-# CHECK-DAG: [[IMPL_PARENT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(y: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[IMPL_PARENT:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(y: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 # CHECK-DAG: [[TRAIT:!.*]] = !lit.trait<@"fn(y: Int) -> Int">
 # CHECK-DAG: [[INT:!.*]] = !lit.struct<@{{.*}}::@Int>
@@ -46,7 +46,6 @@
 
 # CHECK: lit.fn @"__del__({{.*}})"[mut *"[[L1:.*]]`"](%self: !lit.ref<{{.*}}<:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L1]]`"> deinit_mem, |) -> !kgen.none
 # CHECK: lit.ownership.mark_destroyed %self
-
 
 fn make_closure(x: Int):
     fn my_closure(y: Int) unified {var x} -> Int:
@@ -156,7 +155,7 @@ trait MyInterface:
         ...
 
 
-# CHECK: [[TRAIT:!None_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn[T: MyInterface](a: T) -> None", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK: [[TRAIT:!None_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn[T: MyInterface](a: T) -> None", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
 # CHECK: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[TRAIT]] impl, mut *"impl`"> owned_in_mem, |, ?, %self: !lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> byref_result)
@@ -180,7 +179,7 @@ fn make_closure(x: Int) -> Int:
 # COM: Verify the closure instance is created correctly.
 
 # CHECK: [[INT:!Int.*]] = !lit.struct<@{{.*}}::@Int>
-# CHECK: [[TRAIT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(y: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK: [[TRAIT:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(y: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
 fn make_closure(x: Int):
@@ -279,7 +278,7 @@ fn nested[
 # COM: Check that the struct generator of the lit op is generated correctly.
 
 
-# CHECK: [[TRAIT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(z: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK: [[TRAIT:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(z: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
 # CHECK: kgen.struct.generator @"bindIt({{.*}})::myclosure"
@@ -318,7 +317,7 @@ fn bindIt() -> Int:
 
 # COM: Verify Conformance tables of the Wrapper are generated correctly
 
-# CHECK: [[TRAIT:!None_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK: [[TRAIT:!None_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
 # CHECK: lit.struct.decl @"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_{{.*}}"
@@ -351,7 +350,7 @@ fn make_closure(x: Int) -> Int:
 
 # COM: Check that the origin set is bound to the wrapper
 
-# CHECK: [[TRAIT:!None_Movable_AnyType_Copyable_ImplicitlyCopyable*.]] = !lit.trait<@"fn() -> None", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK: [[TRAIT:!None_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable*.]] = !lit.trait<@"fn() -> None", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
 fn nonemptyOriginSet(mut byRefMut: String):
@@ -364,8 +363,8 @@ fn nonemptyOriginSet(mut byRefMut: String):
 
 # COM: Verify that closures can be rebound to compatible traits
 
-# CHECK-DAG: [[TRAIT1:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
-# CHECK-DAG: [[TRAIT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
+# CHECK-DAG: [[TRAIT1:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[TRAIT:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
 
 # CHECK: lit.struct.decl @"fn(x: Int) -> Int_{{.*}}"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
@@ -388,8 +387,8 @@ fn bindIt(z: Int):
 
 # COM: Verify that closures can be rebound even when traits are combined
 
-# CHECK-DAG: [[TRAIT1:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
-# CHECK-DAG: [[TRAIT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
+# CHECK-DAG: [[TRAIT1:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[TRAIT:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
 
 # CHECK: lit.struct.decl @"fn(x: Int) -> Int_{{.*}}"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
@@ -450,8 +449,8 @@ fn bindIt(z: Int):
 
 # COM: Verify that closures can be rebound with differing parameter names
 
-# CHECK-DAG: [[TRAIT1:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
-# CHECK-DAG: [[TRAIT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"fn[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
+# CHECK-DAG: [[TRAIT1:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[TRAIT:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"fn[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@UnknownDestructibility, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
 
 # CHECK: lit.struct.decl @"fn[a: Int](b: Int) -> Int_{{.*}}"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
@@ -488,10 +487,11 @@ struct custom(fn (x: Int) unified -> Int):
 
 # COM: The wrapper conforms to copyable
 
-# CHECK: [[CANONICAL_TRAIT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable*.]] = !lit.trait<
+# CHECK: [[CANONICAL_TRAIT:!Int_Movable_AnyType_UnknownDestructibility_Copyable_ImplicitlyCopyable*.]] = !lit.trait<
 # CHECK-SAME: @"fn(x: Int) -> Int"
 # CHECK-SAME:, @{{.*}}::@Movable
 # CHECK-SAME:, @{{.*}}::@AnyType
+# CHECK-SAME:, @{{.*}}::@UnknownDestructibility
 # CHECK-SAME:, @{{.*}}::@Copyable
 # CHECK-SAME:, @{{.*}}::@ImplicitlyCopyable>
 
