@@ -24,6 +24,8 @@ common --experimental_objc_fastbuild_options=
 # Don't inherit magic copts for objc_library rules
 common --incompatible_avoid_hardcoded_objc_compilation_flags
 
+common --experimental_collect_system_network_usage=false
+
 # https://github.com/aspect-build/tools_telemetry
 common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
 
