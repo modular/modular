@@ -20,7 +20,7 @@ deepseek-v2-commons: &deepseek-v2-commons
   $qk_rope_head_dim: 64
   $kv_lora_rank: 512
   $q_len_per_request: 1
-  # engine: ["flashinfer", "modular_max"]
+  $engine: ["flashinfer", "modular_max"]
   model: "deepseek-v2"
 
 params:
