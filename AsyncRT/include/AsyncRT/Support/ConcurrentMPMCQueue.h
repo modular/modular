@@ -109,7 +109,9 @@ struct thread_id_converter<thread_id_t> {
 namespace MoodyCamel {
 namespace Details {
 using thread_id_t = std::uintptr_t;
-static thread_id_t invalid_thread_id() { return 0; } // Address can't be nullptr
+[[maybe_unused]] static thread_id_t invalid_thread_id() {
+  return 0;
+} // Address can't be nullptr
 static const thread_id_t invalid_thread_id2 =
     1; // Member accesses off a null pointer are also generally invalid. Plus
        // it's not aligned.
