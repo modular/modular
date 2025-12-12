@@ -99,7 +99,7 @@ public:
   /// The precedence of how configuration options affect the data folder path:
   ///
   /// 1. When MODULAR_HOME is set: $MODULAR_HOME
-  /// 2. When MODULAR_DERIVED_DIR is set: $MODULAR_DERIVED_DIR
+  /// 2. When MODULAR_DERIVED_PATH is set: $MODULAR_DERIVED_PATH
   /// 3. When TEST_TMPDIR is set: $TEST_TMPDIR
   /// 4. If $HOME/.modular directory exists: $HOME/.modular
   /// 5. Otherwise, follow the XDG Base Directory Specification on systems that
@@ -117,7 +117,7 @@ public:
   /// The precedence of how configuration options affect the data folder path:
   ///
   /// 1. When MODULAR_HOME is set: $MODULAR_HOME
-  /// 2. When MODULAR_DERIVED_DIR is set: $MODULAR_DERIVED_DIR
+  /// 2. When MODULAR_DERIVED_PATH is set: $MODULAR_DERIVED_PATH
   /// 3. When TEST_TMPDIR is set: $TEST_TMPDIR
   /// 4. If $HOME/.modular directory exists: $HOME/.modular
   /// 5. Otherwise, follow the XDG Base Directory Specification on systems that
@@ -134,7 +134,7 @@ public:
   /// 1. When the global `cache_dir` config file option or MODULAR_CACHE_DIR is
   ///    set, use that
   /// 2. When MODULAR_HOME is set: $MODULAR_HOME/cache
-  /// 3. When MODULAR_DERIVED_DIR is set: $MODULAR_DERIVED_DIR/cache
+  /// 3. When MODULAR_DERIVED_PATH is set: $MODULAR_DERIVED_PATH/cache
   /// 4. When TEST_TMPDIR is set: $TEST_TMPDIR
   /// 5. If $HOME/.modular directory exists: $HOME/.modular
   /// 6. Otherwise, follow the XDG Base Directory Specification on systems that
