@@ -929,7 +929,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         """
         var minimum_capacity = self._minimum_size_of_string_representation()
         var result = String(capacity=minimum_capacity)
-        result += "{"
+        result += "Dict{"
 
         var i = 0
         for key_value in self.items():
@@ -937,6 +937,40 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             if i < len(self) - 1:
                 result += ", "
             i += 1
+        result += "}"
+        return result
+
+    @no_inline
+    fn __repr__[
+        T: KeyElement & Representable,
+        U: Copyable & Movable & Representable, //,
+    ](self: Dict[T, U]) -> String:
+        """Return the repr() representation of Dict[K, V].
+
+        Uses repr(key) and repr(value) on each pair.
+        """
+
+        var count = len(self)
+        if count == 0:
+            return "Dict{}"  # Updated empty dict
+
+        var estimated = self._minimum_size_of_string_representation()
+        var result = String(capacity=estimated)
+
+        result += "Dict{"  # Added "Dict" type name
+
+        var i = 0
+        for entry in self.items():
+            result.write(
+                repr(entry.key),
+                ": ",
+                repr(entry.value)
+            )
+
+            if i < count - 1:
+                result += ", "
+            i += 1
+
         result += "}"
         return result
 
@@ -949,7 +983,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         # in the string representation, we assume that String(key) and String(value)
         # will be both at least one char.
         return (
-            2  # '{' and '}'
+            6  # Changed from 2 to 6 for "Dict{" and '}' (4 + 1 + 1)
             + len(self) * 6  # String(key), String(value) ": " and ", "
             - 2  # remove the last ", "
         )

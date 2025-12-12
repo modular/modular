@@ -663,28 +663,19 @@ struct List[T: Copyable & Movable](
     fn __repr__[
         U: Representable & Copyable & Movable, //
     ](self: List[U, *_]) -> String:
-        """Returns a string representation of a `List`.
+        """Return the repr() representation of List[U]."""
 
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-              trait `Representable`.
+        var l = len(self)
+        if l == 0:
+            return "List[]"  # Include type name even for empty list
 
-        Returns:
-            A string representation of the list.
+        var parts = List[String]()
+        parts.reserve(l)
 
-        Notes:
-            Note that since we can't condition methods on a trait yet, the way
-            to call this method is a bit special. Here is an example below:
+        for elem in self:
+            parts.append(repr(elem))
 
-            ```mojo
-            var my_list = [1, 2, 3]
-            print(my_list.__repr__())
-            ```
-
-            When the compiler supports conditional methods, then a simple
-            `repr(my_list)` will be enough.
-        """
-        return self.__str__()
+        return "List[" + ", ".join(parts) + "]"  # Include "List" type name
 
     # ===-------------------------------------------------------------------===#
     # Methods

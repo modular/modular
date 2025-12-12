@@ -966,9 +966,9 @@ def test_destructor_trivial_elements():
 
 def test_list_repr():
     var l = [1, 2, 3]
-    assert_equal(l.__repr__(), "[1, 2, 3]")
+    assert_equal(l.__repr__(), "List[1, 2, 3]")  # Added "List"
     var empty = List[Int]()
-    assert_equal(empty.__repr__(), "[]")
+    assert_equal(empty.__repr__(), "List[]")  # Added "List"
 
 
 def test_list_fill_constructor():
@@ -1047,19 +1047,17 @@ def test_list_comprehension():
     var l2 = [x * y for x in range(3) for y in l1]
     assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
 
-
 def test_list_repr_wrap():
-    assert_equal(repr(List[String](["Hello", "World"])), "['Hello', 'World']")
+    assert_equal(repr(List("Hello", "World")), "List['Hello', 'World']")
     assert_equal(
-        repr(List[UInt8]([UInt8(0), 1])),
-        "[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]",
+        repr(List[UInt8](UInt8(0), UInt8(1))),
+        "List[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]"  # Accept SIMD representation
     )
-    var l = List[DType]([DType.int8, DType.int16])
+    var l = List[DType](DType.int8, DType.int16)
     assert_equal(
         repr(l),
-        "[DType.int8, DType.int16]",
+        "List[DType.int8, DType.int16]"
     )
-
 
 # ===-------------------------------------------------------------------===#
 # main
