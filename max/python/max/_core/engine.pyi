@@ -213,7 +213,7 @@ class Model:
 
     def __repr__(self) -> str: ...
     def _execute_device_tensors(
-        self, *tensors: list[max._core.driver.Tensor]
+        self, tensors: Sequence[max._core.driver.Tensor]
     ) -> list[max._core.driver.Tensor]: ...
     def _export_mef(self, path: str) -> None:
         """
