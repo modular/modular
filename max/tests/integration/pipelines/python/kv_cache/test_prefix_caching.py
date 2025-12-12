@@ -21,6 +21,7 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.interfaces import ImageMetadata, RequestID
 from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, RaggedKVCacheInputs
@@ -58,6 +59,7 @@ def create_paged_manager(
         cache_strategy=KVCacheStrategy.PAGED,
         enable_prefix_caching=True,
         page_size=page_size,
+        devices=[DeviceRef.CPU()],
     )
 
     session = InferenceSession(devices=[CPU()])

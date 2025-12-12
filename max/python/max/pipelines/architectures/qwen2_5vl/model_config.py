@@ -178,7 +178,7 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -188,7 +188,7 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
         )
         return Llama3Config.get_kv_params(
             huggingface_config=llm_config,
-            n_devices=n_devices,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -236,7 +236,7 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
             llm_state_dict: Model weights dictionary.
             vision_state_dict: Vision model weights dictionary.
             dtype: Data type for model parameters.
-            n_devices: Number of devices.
+            n_devices: Number of devices for distributed inference.
             cache_dtype: KV cache data type.
             kv_cache_config: KV cache configuration.
             return_logits: Return logits configuration.

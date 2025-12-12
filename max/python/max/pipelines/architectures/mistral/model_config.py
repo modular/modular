@@ -62,7 +62,7 @@ class MistralConfig(MAXModelConfig, MistralConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -82,7 +82,7 @@ class MistralConfig(MAXModelConfig, MistralConfigBase):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            n_devices=n_devices,
+            devices=devices,
         )
 
     @staticmethod

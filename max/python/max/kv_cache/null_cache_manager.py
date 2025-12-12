@@ -25,13 +25,9 @@ from typing import Any
 
 import numpy as np
 from max.driver import Device, Tensor
-from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, TensorType
 from max.interfaces import RequestID, TextGenerationContext
-from max.kv_cache.paged_cache import PagedCacheInputSymbols
-from max.nn.kv_cache.cache_params import KVCacheParams
-from max.nn.kv_cache.manager import RaggedKVCacheInputs
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 logger = logging.getLogger("max.pipelines")
@@ -150,73 +146,6 @@ class NullKVCacheManager:
                 max_lengths=dummy_max_lengths,
             )
         ]
-
-    def get_symbolic_inputs(
-        self,
-        devices: Sequence[Device] | None = None,
-        num_layers: int | None = None,
-    ) -> Sequence[PagedCacheInputSymbols]:
-        """Get input symbols for graph construction.
-
-        Args:
-            devices: Devices to use (defaults to self.devices)
-            num_layers: Number of layers (defaults to self.num_layers)
-
-        Returns:
-            Sequence of PagedCacheInputSymbols for graph construction
-        """
-        if devices is None:
-            devices = self.devices
-        if num_layers is None:
-            num_layers = self.params.num_layers
-
-        # Create symbolic tensor types for graph construction
-        # Block shape: [total_num_pages, kv_dim, num_layers, page_size, n_kv_heads_per_device, head_dim]
-        kv_dim = 2 if not self.params.is_mla else 1
-
-        result = []
-        for device in devices:
-            kv_blocks = BufferType(
-                dtype=self.params.dtype,
-                shape=[
-                    "total_num_pages",  # dynamic parameter
-                    kv_dim,  # K and V (or just 1 for MLA)
-                    num_layers,
-                    self.params.page_size,
-                    self.params.n_kv_heads_per_device,
-                    self.params.head_dim,
-                ],
-                device=DeviceRef(device.label, device.id),
-            )
-
-            cache_lengths = TensorType(
-                DType.uint32,
-                shape=["batch_size"],
-                device=DeviceRef(device.label, device.id),
-            )
-
-            lookup_table = TensorType(
-                DType.uint32,
-                shape=["batch_size", "max_num_pages"],
-                device=DeviceRef(device.label, device.id),
-            )
-
-            max_lengths = TensorType(
-                DType.uint32,
-                shape=["batch_size", "num_steps"],
-                device=DeviceRef(device.label, device.id),
-            )
-
-            result.append(
-                PagedCacheInputSymbols(
-                    kv_blocks=kv_blocks,
-                    cache_lengths=cache_lengths,
-                    lookup_table=lookup_table,
-                    max_lengths=max_lengths,
-                )
-            )
-
-        return result
 
     def release(self, request_id: RequestID) -> None:
         """Release cache blocks (no-op for null manager).

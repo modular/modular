@@ -189,6 +189,7 @@ def test_cross_attention(
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
+        devices=[DeviceRef.CPU()],
     )
     kv_manager = PagedKVCacheManager(
         params=kv_params,
@@ -210,7 +211,7 @@ def test_cross_attention(
             hidden_max_seq_len_type,
             cross_attention_states_type,
             input_row_offsets_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 

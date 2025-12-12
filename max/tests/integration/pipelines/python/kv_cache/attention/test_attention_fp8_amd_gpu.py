@@ -89,6 +89,7 @@ def _create_kv_manager(
         head_dim=head_dim,
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
+        devices=[DeviceRef.GPU()],
     )
 
     manager = PagedKVCacheManager(
@@ -171,7 +172,7 @@ def _build_and_execute_attention_graph(
     attention: AttentionWithRope,
     rope: RotaryEmbedding,
     kv_manager: PagedKVCacheManager,
-    kv_cache_params: KVCacheParams,
+    kv_params: KVCacheParams,
     batch_size: int,
     seq_len: int,
     hidden_size: int,
@@ -181,7 +182,7 @@ def _build_and_execute_attention_graph(
 ) -> torch.Tensor:
     """Build graph, execute model, and return results."""
     blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_manager.get_symbolic_inputs()[0]
+        kv_params.get_symbolic_inputs()[0]
     )
 
     # Prepare input data

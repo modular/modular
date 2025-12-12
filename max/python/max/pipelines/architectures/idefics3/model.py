@@ -262,13 +262,13 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Idefics3."""
         return Idefics3Config.get_kv_params(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
+            huggingface_config, devices, kv_cache_config, cache_dtype
         )
 
     @classmethod
@@ -290,7 +290,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return estimate_kv_cache_size(
             params=Idefics3Config.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=len(devices),
+                devices=[DeviceRef.from_device(d) for d in devices],
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
@@ -338,7 +338,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             huggingface_config=self.huggingface_config,
             llm_state_dict=llm_weights_dict,
             dtype=self.dtype,
-            n_devices=len(self.devices),
+            devices=[DeviceRef.from_device(d) for d in self.devices],
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
@@ -453,7 +453,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(
@@ -497,12 +497,12 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> list[PagedCacheValues]:
         kv_params = Idefics3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
+            devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
+        fetch_types = self.kv_manager.params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):
@@ -769,7 +769,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return load_kv_manager(
             params=Idefics3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
+                devices=[DeviceRef.from_device(d) for d in self.devices],
                 kv_cache_config=self.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
             ),

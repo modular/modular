@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from max.driver import Device
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 
@@ -169,7 +170,7 @@ class MemoryEstimator:
 
         params = kv_cache_model.get_kv_params(
             huggingface_config=model_config.huggingface_config,
-            n_devices=len(devices),
+            devices=[DeviceRef.from_device(d) for d in devices],
             kv_cache_config=model_config.kv_cache_config,
             cache_dtype=model_config.quantization_encoding.cache_dtype,
         )

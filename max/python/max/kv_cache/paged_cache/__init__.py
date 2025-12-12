@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from .block_utils import InsufficientBlocksError
 from .cache_manager import PagedKVCacheManager
-from .tp_cache_manager import PagedCacheInputSymbols
 from .transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -26,7 +25,6 @@ __all__ = [
     "InsufficientBlocksError",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
-    "PagedCacheInputSymbols",
     "PagedKVCacheManager",
     "TransferReqData",
     "available_port",

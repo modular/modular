@@ -17,6 +17,7 @@ import pytest
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
@@ -37,7 +38,7 @@ async def test_kv_cache_multi_gpu() -> None:
             num_layers=32,
             cache_strategy=KVCacheStrategy.PAGED,
             page_size=128,
-            n_devices=num_devices,
+            devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         )
         kv_manager = PagedKVCacheManager(
             params=kv_params,
@@ -78,7 +79,7 @@ def create_paged_manager(
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
         host_kvcache_swap_space_gb=999,
-        n_devices=len(devices),
+        devices=[DeviceRef.GPU(i) for i in range(len(devices))],
         data_parallel_degree=1,
     )
 

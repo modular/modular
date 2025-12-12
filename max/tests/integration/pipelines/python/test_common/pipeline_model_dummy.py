@@ -164,7 +164,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -181,7 +181,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             page_size=kv_cache_config.kv_cache_page_size,
-            n_devices=n_devices,
+            devices=devices,
         )
 
     def load_kv_manager(
@@ -191,12 +191,13 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
     ) -> PagedKVCacheManager | NullKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, load the kv manager."""
         assert available_cache_memory is not None
-        devices = load_devices(self.pipeline_config.model_config.device_specs)
+        device_specs = self.pipeline_config.model_config.device_specs
+        devices = load_devices(device_specs)
 
         return load_kv_manager(
             params=self.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
+                devices=[DeviceRef.from_device(d) for d in devices],
                 kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
             ),
@@ -226,7 +227,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=len(devices),
+                devices=[DeviceRef.from_device(d) for d in devices],
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
@@ -240,7 +241,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         session: InferenceSession,
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
-        kv_inputs = self.kv_manager.get_symbolic_inputs()[0]
+        kv_inputs = self.kv_manager.params.get_symbolic_inputs()[0]
         with Graph(
             "dummy",
             input_types=[

@@ -42,7 +42,7 @@ class Gemma3VisionConfig:
 
     hidden_act: str
     """The non-linear activation function (function or string) in the encoder and pooler.
-    `"gelu"`, `"gelu_tanh"`, `"relu"`, `"sigmoid"`, `"silu"`, and `"tanh"` 
+    `"gelu"`, `"gelu_tanh"`, `"relu"`, `"sigmoid"`, `"silu"`, and `"tanh"`
     are supported."""
 
     hidden_size: int
@@ -175,7 +175,7 @@ class Gemma3ForConditionalGenerationConfig(
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -191,7 +191,7 @@ class Gemma3ForConditionalGenerationConfig(
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            n_devices=n_devices,
+            devices=devices,
         )
 
     @staticmethod
@@ -273,7 +273,7 @@ class Gemma3ForConditionalGenerationConfig(
 
         kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )

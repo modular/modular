@@ -33,6 +33,8 @@ from transformers import AutoConfig
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
+from max.graph import DeviceRef
+
 from ..config_enums import SupportedEncoding
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
@@ -166,6 +168,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self.huggingface_config = huggingface_config
         self.encoding = encoding
         self.devices = devices
+        self.device_refs = [DeviceRef.from_device(d) for d in devices]
         self.kv_cache_config = kv_cache_config
         self.weights = weights
         self.adapter = adapter
@@ -304,7 +307,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         kv_params = cls.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=len(devices),
+            devices=[DeviceRef.from_device(d) for d in devices],
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )

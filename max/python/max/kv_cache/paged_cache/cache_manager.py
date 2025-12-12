@@ -24,15 +24,14 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.kv_cache.cache_params import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.nn.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
 )
-from max.nn.kv_cache.manager import RaggedKVCacheInputs
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
-from .tp_cache_manager import PagedCacheInputSymbols, _TPPagedKVCacheManager
+from .tp_cache_manager import _TPPagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 
@@ -219,19 +218,6 @@ class PagedKVCacheManager:
             )
         return ret_list
 
-    def get_symbolic_inputs(
-        self,
-        devices: Sequence[Device] | None = None,
-        num_layers: int | None = None,
-    ) -> Sequence[PagedCacheInputSymbols]:
-        input_symbols: list[PagedCacheInputSymbols] = []
-        for i, devices in enumerate(self.devices_per_replica):
-            symbols = self._replica_managers[i]._input_symbols(
-                devices, num_layers, dynamic_dim_prefix=f"replica_{i}_"
-            )
-            input_symbols.extend(symbols)
-        return input_symbols
-
     def release(self, request_id: RequestID) -> None:
         replica_idx = self._request_to_replica_idx.pop(request_id)
         self._request_count_per_replica[replica_idx] -= 1
@@ -283,7 +269,7 @@ class PagedKVCacheManager:
             manager.reset_metrics()
 
     def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
-        input_symbols = self.get_symbolic_inputs()
+        input_symbols = self.params.get_symbolic_inputs()
         cache_lengths_types = [
             input_symbols[i][1] for i in range(len(self.devices))
         ]

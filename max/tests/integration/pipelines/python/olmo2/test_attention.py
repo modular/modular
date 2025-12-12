@@ -12,17 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections.abc import Sequence
-
 import numpy as np
 import pytest
 import torch
 from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+from max.nn.kv_cache import KVCacheStrategy, PagedCacheValues
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.olmo2.layers.attention import (
@@ -101,25 +99,6 @@ def generate_torch_outputs(
     return layer(input_tensor, position_embeddings, attention_mask)[0]
 
 
-def unflatten_kv_inputs(
-    kv_manager: PagedKVCacheManager,
-    kv_params: KVCacheParams,
-    kv_inputs_flat: Sequence[TensorValue],
-) -> list[tuple[TensorValue, ...]]:
-    n_devices = kv_params.n_devices
-    fetch_types = kv_manager.get_symbolic_inputs()[0]
-    len_of_kv_tuple_per_dev = len(list(fetch_types))
-    kv_caches_per_dev = [
-        tuple(
-            kv_inputs_flat[
-                i * len_of_kv_tuple_per_dev : (i + 1) * len_of_kv_tuple_per_dev
-            ]
-        )
-        for i in range(n_devices)
-    ]
-    return kv_caches_per_dev
-
-
 def generate_max_outputs(
     text_config: Olmo2Config,
     input_tensor: torch.Tensor,
@@ -143,8 +122,8 @@ def generate_max_outputs(
 
     kv_cache_config = KVCacheConfig(cache_strategy=KVCacheStrategy.PAGED)
     kv_params = MaxOlmo2Config.get_kv_params(
-        text_config,
-        n_devices=1,
+        huggingface_config=text_config,
+        devices=[device_ref],
         kv_cache_config=kv_cache_config,
         cache_dtype=dtype,
     )
@@ -198,7 +177,7 @@ def generate_max_outputs(
         ["total_seq_len"],
         device=device_ref,
     )
-    kv_cache_args = kv_manager.get_symbolic_inputs()
+    kv_cache_args = kv_params.get_symbolic_inputs()
     flattened_kv_types = [
         kv_type for sublist in kv_cache_args for kv_type in sublist
     ]

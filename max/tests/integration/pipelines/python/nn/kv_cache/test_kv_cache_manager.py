@@ -16,6 +16,7 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.interfaces import RequestID
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
@@ -35,6 +36,7 @@ async def test_step() -> None:
         num_layers=num_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.from_device(device)],
     )
 
     kv_manager = PagedKVCacheManager(
@@ -89,6 +91,7 @@ async def test_claim_and_release() -> None:
         num_layers=10,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
 
     dp_kv_manager = PagedKVCacheManager(
@@ -145,6 +148,7 @@ async def test_fetch_paged() -> None:
         num_layers=10,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
 
     kv_manager = PagedKVCacheManager(

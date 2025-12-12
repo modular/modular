@@ -16,6 +16,7 @@ from __future__ import annotations
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -58,13 +59,13 @@ class Mistral3Model(MistralModel):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return super().get_kv_params(
             huggingface_config.text_config,
-            n_devices,
+            devices,
             kv_cache_config,
             cache_dtype,
         )

@@ -113,17 +113,17 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return DeepseekV3Config.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
             # DP should always set to the number of devices.
-            data_parallel_degree=n_devices,
+            data_parallel_degree=len(devices),
         )
 
     def _create_model_config(
@@ -141,7 +141,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         kv_params = DeepseekV3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
+            devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
             data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
@@ -400,7 +400,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             ]
 
             # Unmarshal the KV cache arguments.
-            fetch_types = self.kv_manager.get_symbolic_inputs()[0]
+            fetch_types = self.kv_manager.params.get_symbolic_inputs()[0]
             len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
             kv_caches_per_dev = self._unflatten_kv_inputs(
                 [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
@@ -549,7 +549,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         return load_kv_manager(
             params=DeepseekV3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
+                devices=[DeviceRef.from_device(d) for d in self.devices],
                 kv_cache_config=self.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
                 data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,

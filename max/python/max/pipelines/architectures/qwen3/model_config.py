@@ -18,6 +18,7 @@ import math
 from typing import Literal
 
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn import ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -38,7 +39,7 @@ class Qwen3Config(Llama3Config):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         data_parallel_degree: int = 1,
@@ -50,7 +51,7 @@ class Qwen3Config(Llama3Config):
 
         Args:
             huggingface_config: The HuggingFace configuration object.
-            n_devices: Number of devices for distributed inference.
+            devices: Devices to use for the KV cache.
             kv_cache_config: Configuration for KV cache.
             cache_dtype: Data type for the cache.
 
@@ -69,14 +70,14 @@ class Qwen3Config(Llama3Config):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            n_devices=n_devices,
+            devices=devices,
             data_parallel_degree=data_parallel_degree,
         )
 
     @staticmethod
     def calculate_attention_multiplier(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> float:
@@ -86,7 +87,7 @@ class Qwen3Config(Llama3Config):
 
         Args:
             huggingface_config: The HuggingFace configuration object.
-            n_devices: Number of devices for distributed inference.
+            devices: Devices for distributed inference.
             kv_cache_config: Configuration for KV cache.
             cache_dtype: Data type for the cache.
 
@@ -101,7 +102,7 @@ class Qwen3Config(Llama3Config):
                 / float(
                     Qwen3Config.get_kv_params(
                         huggingface_config=huggingface_config,
-                        n_devices=n_devices,
+                        devices=devices,
                         kv_cache_config=kv_cache_config,
                         cache_dtype=cache_dtype,
                     ).head_dim
@@ -160,10 +161,15 @@ class Qwen3Config(Llama3Config):
             data_parallel_degree=data_parallel_degree,
         )
 
+        device_refs = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in pipeline_config.model_config.device_specs[:n_devices]
+        ]
+
         # Override the KV parameters and attention multiplier with Qwen3-specific calculations
         qwen3_kv_params = Qwen3Config.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
             data_parallel_degree=data_parallel_degree,
@@ -171,7 +177,7 @@ class Qwen3Config(Llama3Config):
 
         qwen3_attention_multiplier = Qwen3Config.calculate_attention_multiplier(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )

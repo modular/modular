@@ -19,6 +19,7 @@ import numpy as np
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, RaggedKVCacheInputs
 from test_common.context_utils import create_text_context
@@ -42,7 +43,7 @@ def _create_kv_manager(
         num_layers=10,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=32,
-        n_devices=num_devices,
+        devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         data_parallel_degree=data_parallel_degree,
     )
     manager = PagedKVCacheManager(

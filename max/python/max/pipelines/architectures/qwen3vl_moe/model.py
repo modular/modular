@@ -92,7 +92,7 @@ class Qwen3VLInputs(ModelInputs):
 
     scatter_indices: list[Tensor] | None = None
     """Per-device pre-computed scatter indices for the image embeddings.
-    
+
     These are the locations of the image_token_id in the input_ids fed to the model."""
 
     gather_indices: list[Tensor] | None = None
@@ -199,13 +199,13 @@ class Qwen3VLModel(
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen3VL."""
         return Qwen3VLConfig.get_kv_params(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
+            huggingface_config, devices, kv_cache_config, cache_dtype
         )
 
     # TODO: Seems like a common pattern. Implement in a base class?
@@ -229,7 +229,7 @@ class Qwen3VLModel(
         return estimate_kv_cache_size(
             params=Qwen3VLConfig.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=len(devices),
+                devices=[DeviceRef.from_device(d) for d in devices],
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
@@ -245,7 +245,7 @@ class Qwen3VLModel(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
         """Unflatten KV cache inputs from flat list to per-device structure."""
-        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
+        fetch_types = self.kv_manager.params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         n_devices = len(self.devices)
 
@@ -553,7 +553,7 @@ class Qwen3VLModel(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -723,7 +723,7 @@ class Qwen3VLModel(
             variadic_args = variadic_args[len(self.devices) :]
 
             # Calculate how many KV cache inputs there are
-            kv_inputs = self.kv_manager.get_symbolic_inputs()
+            kv_inputs = self.kv_manager.params.get_symbolic_inputs()
             flattened_kv_types = [
                 kv_type for sublist in kv_inputs for kv_type in sublist
             ]
@@ -1227,7 +1227,7 @@ class Qwen3VLModel(
         return load_kv_manager(
             params=Qwen3VLConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
+                devices=[DeviceRef.from_device(d) for d in self.devices],
                 kv_cache_config=self.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
             ),

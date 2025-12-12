@@ -57,7 +57,6 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import TextGenerationContext
 from max.kv_cache import (
     NullKVCacheManager,
-    PagedCacheInputSymbols,
     PagedKVCacheManager,
     infer_optimal_batch_size,
     load_kv_manager,
@@ -97,18 +96,18 @@ _DO_PARALLEL_COMPILATION = False
 
 
 def _get_text_and_vision_symbolic_inputs(
-    kv_manager: PagedKVCacheManager | NullKVCacheManager,
-    vision_kv_manager: PagedKVCacheManager | NullKVCacheManager,
-) -> tuple[PagedCacheInputSymbols, PagedCacheInputSymbols]:
+    text_params: KVCacheParams,
+    vision_params: KVCacheParams,
+) -> tuple[PagedCacheValues, PagedCacheValues]:
     """Return symbolic inputs for text and vision KV managers with disambiguated dims."""
 
     text_symbols = cast(
-        PagedCacheInputSymbols,
-        kv_manager.get_symbolic_inputs()[0],
+        PagedCacheValues,
+        text_params.get_symbolic_inputs()[0],
     )
     vision_symbols = cast(
-        PagedCacheInputSymbols,
-        vision_kv_manager.get_symbolic_inputs()[0],
+        PagedCacheValues,
+        vision_params.get_symbolic_inputs()[0],
     )
 
     # Rename conflicting symbolic dimensions in text symbols.
@@ -562,12 +561,14 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         )
         cross_row_offsets_type = input_row_offsets_type
 
+        assert self.vision_kv_params is not None
+        kv_params = self.kv_manager.params
+        vision_kv_params = self.vision_kv_params
+
         # Unpack text and vision KV inputs.
         assert self.vision_kv_manager is not None
         text_kv_input_symbols, vision_kv_input_symbols = (
-            _get_text_and_vision_symbolic_inputs(
-                self.kv_manager, self.vision_kv_manager
-            )
+            _get_text_and_vision_symbolic_inputs(kv_params, vision_kv_params)
         )
 
         input_types = [
@@ -580,10 +581,6 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             *vision_kv_input_symbols,
         ]
         self.language_graph_input_size = len(input_types)
-
-        assert self.vision_kv_params is not None
-        kv_params = self.kv_manager.params
-        vision_kv_params = self.vision_kv_params
 
         return Graph(
             "llama3-vision-language-model-graph",
@@ -935,13 +932,13 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return LlamaVisionConfig.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -963,7 +960,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
 
         text_kv_params = self.get_kv_params(
             huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
+            devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
         )
@@ -982,7 +979,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             host_kvcache_swap_space_gb=text_kv_params.host_kvcache_swap_space_gb,
             cache_strategy=KVCacheStrategy.PAGED,
             page_size=vision_page_size,
-            n_devices=text_kv_params.n_devices,
+            devices=text_kv_params.devices,
         )
 
         # Estimate vision cache size and reserve remaining memory for text.
@@ -1051,7 +1048,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
 
         params = cls.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=len(devices),
+            devices=[DeviceRef.from_device(d) for d in devices],
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -1098,7 +1095,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
 
         kv_params = cls.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=len(devices),
+            devices=[DeviceRef.from_device(d) for d in devices],
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -1149,7 +1146,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             host_kvcache_swap_space_gb=kv_params.host_kvcache_swap_space_gb,
             cache_strategy=KVCacheStrategy.PAGED,
             page_size=aligned_vision_seq_len,
-            n_devices=kv_params.n_devices,
+            devices=kv_params.devices,
         )
         vision_batch_size = vision_params.compute_num_device_blocks(
             available_cache_memory=vision_cache_budget,

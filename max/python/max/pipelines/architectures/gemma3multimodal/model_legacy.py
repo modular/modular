@@ -18,6 +18,7 @@ import logging
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -113,7 +114,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -124,7 +125,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
         Args:
             huggingface_config: The HuggingFace model configuration object
                 (:obj:`transformers.AutoConfig`).
-            n_devices: The number of devices the model will run on.
+            devices: The list of devices the model will run on.
             kv_cache_config: The MAX Engine KV cache configuration settings
                 (:obj:`max.pipelines.max_config.KVCacheConfig`).
             cache_dtype: The desired data type for the KV cache
@@ -135,7 +136,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
         """
         return super().get_kv_params(
             huggingface_config.text_config,
-            n_devices,
+            devices,
             kv_cache_config,
             cache_dtype,
         )

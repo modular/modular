@@ -20,6 +20,7 @@ import numpy as np
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.interfaces import (
     BatchType,
     GenerationStatus,
@@ -85,7 +86,7 @@ def create_paged_manager(
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
         host_kvcache_swap_space_gb=999,
         data_parallel_degree=dp,
-        n_devices=dp,
+        devices=[DeviceRef.from_device(device) for i in range(dp)],
     )
 
     session = InferenceSession(devices=[device])

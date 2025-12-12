@@ -42,6 +42,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         num_layers=num_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.GPU()],
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -72,7 +73,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     )
 
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_manager.get_symbolic_inputs()[0]
+        kv_params.get_symbolic_inputs()[0]
     )
 
     def construct() -> Graph:

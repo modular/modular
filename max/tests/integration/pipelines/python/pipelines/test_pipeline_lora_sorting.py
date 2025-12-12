@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -118,7 +119,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[Device],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -130,7 +131,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
             num_layers=1,
             enable_prefix_caching=False,
             cache_strategy=KVCacheStrategy.PAGED,
-            n_devices=n_devices,
+            devices=[DeviceRef.from_device(d) for d in devices],
         )
 
     @classmethod

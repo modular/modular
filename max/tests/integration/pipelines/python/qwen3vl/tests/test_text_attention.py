@@ -236,7 +236,7 @@ def generate_qwen3_max_outputs(
         enable_prefix_caching=kv_cache_config.enable_prefix_caching,
         enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
         host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-        n_devices=1,
+        devices=[DeviceRef.GPU()],
         data_parallel_degree=1,
     )
 
@@ -290,7 +290,7 @@ def generate_qwen3_max_outputs(
         DType.uint32, shape=[len(seq_lens) + 1], device=device_ref
     )
 
-    kv_cache_args = kv_manager.get_symbolic_inputs()
+    kv_cache_args = kv_params.get_symbolic_inputs()
     flattened_kv_types = [
         kv_type for sublist in kv_cache_args for kv_type in sublist
     ]

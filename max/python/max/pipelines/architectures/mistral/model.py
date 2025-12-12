@@ -217,13 +217,13 @@ class MistralModel(PipelineModel[TextContext]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return MistralConfig.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -258,7 +258,7 @@ class MistralModel(PipelineModel[TextContext]):
         return load_kv_manager(
             params=MistralConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
+                devices=[DeviceRef.from_device(d) for d in self.devices],
                 kv_cache_config=self.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
             ),
@@ -286,7 +286,7 @@ class MistralModel(PipelineModel[TextContext]):
         return estimate_kv_cache_size(
             params=MistralConfig.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=len(devices),
+                devices=[DeviceRef.from_device(d) for d in devices],
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
@@ -325,7 +325,7 @@ class MistralModel(PipelineModel[TextContext]):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -362,12 +362,12 @@ class MistralModel(PipelineModel[TextContext]):
     ) -> list[PagedCacheValues]:
         kv_params = MistralConfig.get_kv_params(
             huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
+            devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
+        fetch_types = self.kv_manager.params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):
@@ -391,7 +391,7 @@ class MistralModel(PipelineModel[TextContext]):
 
         kv_params = MistralConfig.get_kv_params(
             huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
+            devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
         )

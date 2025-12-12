@@ -231,7 +231,7 @@ def generate_max_outputs_fp8(
         head_dim=576,
         num_layers=config.num_hidden_layers,
         cache_strategy=KVCacheStrategy.PAGED,
-        n_devices=1,
+        devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
     )
@@ -297,7 +297,7 @@ def generate_max_outputs_fp8(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_manager.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs()[0],
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor

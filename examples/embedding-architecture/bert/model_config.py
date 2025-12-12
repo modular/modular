@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.python.max.driver import DeviceSpec
 from transformers import AutoConfig
 
 
@@ -31,7 +32,7 @@ class BertConfig(MAXModelConfig):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceSpec],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -44,7 +45,7 @@ class BertConfig(MAXModelConfig):
             ),
             num_layers=BertConfig.get_num_layers(huggingface_config),
             cache_strategy=kv_cache_config.cache_strategy,
-            n_devices=n_devices,
+            devices=devices,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,

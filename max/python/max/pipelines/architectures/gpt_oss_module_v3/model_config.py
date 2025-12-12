@@ -147,7 +147,7 @@ class GptOssConfig(MAXModelConfig, GptOssConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -155,7 +155,7 @@ class GptOssConfig(MAXModelConfig, GptOssConfigBase):
 
         Args:
             huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-            n_devices: The number of devices the model will run on.
+            devices: The list of devices the model will run on.
             kv_cache_config: The MAX Engine KV cache configuration settings (:obj:`max.pipelines.max_config.KVCacheConfig`).
             cache_dtype: The desired data type for the KV cache (:obj:`max.dtype.DType`).
 
@@ -172,7 +172,7 @@ class GptOssConfig(MAXModelConfig, GptOssConfigBase):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            n_devices=n_devices,
+            devices=devices,
         )
 
     @staticmethod
@@ -360,7 +360,7 @@ class GptOssConfig(MAXModelConfig, GptOssConfigBase):
             return_logits=return_logits,
             kv_params=GptOssConfig.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=n_devices,
+                devices=device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),

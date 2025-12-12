@@ -195,13 +195,13 @@ class Qwen2_5VLModel(
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen2.5VL."""
         return Qwen2_5VLConfig.get_kv_params(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
+            huggingface_config, devices, kv_cache_config, cache_dtype
         )
 
     @classmethod
@@ -223,7 +223,7 @@ class Qwen2_5VLModel(
         return estimate_kv_cache_size(
             params=Qwen2_5VLConfig.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=len(devices),
+                devices=[DeviceRef.from_device(d) for d in devices],
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
@@ -238,7 +238,7 @@ class Qwen2_5VLModel(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
         """Unflatten KV cache inputs from flat list to per-device structure."""
-        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
+        fetch_types = self.kv_manager.params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         n_devices = len(self.devices)
 
@@ -565,7 +565,7 @@ class Qwen2_5VLModel(
             device=device_ref,
         )
 
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
@@ -1299,7 +1299,7 @@ class Qwen2_5VLModel(
         return load_kv_manager(
             params=Qwen2_5VLConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
+                devices=[DeviceRef.from_device(d) for d in self.devices],
                 kv_cache_config=self.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
             ),

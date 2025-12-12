@@ -113,7 +113,7 @@ class ConfigLoader:
             enable_prefix_caching=False,
             enable_kvcache_swapping_to_host=False,
             host_kvcache_swap_space_gb=0,
-            n_devices=1,
+            devices=[DeviceRef.GPU()],
         )
 
         return Llama3Config(

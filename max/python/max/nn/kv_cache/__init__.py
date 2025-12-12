@@ -12,10 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import KVCacheParams, KVCacheStrategy
-from .manager import KVCacheInputs, KVCacheInputsSequence, RaggedKVCacheInputs
+from .input_types import (
+    KVCacheInputs,
+    KVCacheInputsSequence,
+    NestedIterableDataclass,
+    PagedCacheValues,
+    RaggedKVCacheInputs,
+)
 from .metrics import KVCacheMetrics
-from .nested_iterable import NestedIterableDataclass
-from .paged_cache import PagedCacheValues
 from .utils import build_max_lengths_tensor
 
 __all__ = [
@@ -25,6 +29,7 @@ __all__ = [
     "KVCacheParams",
     "KVCacheStrategy",
     "NestedIterableDataclass",
+    "PagedCacheValues",
     "PagedCacheValues",
     "RaggedKVCacheInputs",
     "build_max_lengths_tensor",

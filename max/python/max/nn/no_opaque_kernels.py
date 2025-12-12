@@ -18,7 +18,7 @@ from dataclasses import dataclass, fields
 
 from max.dtype import DType
 from max.graph import BufferValue, TensorType, TensorValue, ops
-from max.nn.kv_cache.cache_params import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 
 from .attention.mask_config import MHAMaskVariant
 

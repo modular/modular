@@ -13,6 +13,7 @@
 
 import pytest
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 
 INF = 999999999
@@ -29,7 +30,7 @@ def create_params(
         num_layers=1,
         page_size=page_size,
         data_parallel_degree=dp,
-        n_devices=tp * dp,
+        devices=[DeviceRef.GPU(i) for i in range(tp * dp)],
     )
 
 
@@ -194,7 +195,7 @@ def test_bytes_per_block() -> None:
         num_layers=num_layers,
         page_size=page_size,
         data_parallel_degree=data_parallel_degree,
-        n_devices=n_devices,
+        devices=[DeviceRef.GPU()],
     )
 
     assert params.bytes_per_block == 417792

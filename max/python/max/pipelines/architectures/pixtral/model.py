@@ -286,13 +286,13 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return PixtralConfig.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -322,7 +322,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         return load_kv_manager(
             params=self.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
+                devices=self.device_refs,
                 kv_cache_config=self.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
             ),
@@ -349,7 +349,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=len(devices),
+                devices=[DeviceRef.from_device(d) for d in devices],
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
@@ -388,7 +388,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+        kv_inputs = self.kv_manager.params.get_symbolic_inputs()
 
         input_ids_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
@@ -427,7 +427,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
 
         kv_params = PixtralConfig.get_kv_params(
             huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
+            devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
         )

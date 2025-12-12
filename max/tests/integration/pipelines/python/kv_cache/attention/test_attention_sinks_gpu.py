@@ -71,6 +71,7 @@ def max_flash_attention_with_sinks(
         num_layers=num_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.GPU()],
     )
 
     # Create KV manager
@@ -120,7 +121,7 @@ def max_flash_attention_with_sinks(
                 input_type,
                 input_row_offsets_type,
                 sinks_type,
-                *kv_manager.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs()[0],
             ],
         ) as g:
             inputs = g.inputs

@@ -281,7 +281,7 @@ def bench_max(
         num_layers=1,  # Benchmarking a single layer
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
-        n_devices=1,
+        devices=[DeviceRef.GPU()],
         is_mla=True,
     )
 

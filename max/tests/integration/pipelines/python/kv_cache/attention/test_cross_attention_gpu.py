@@ -200,6 +200,7 @@ def test_cross_attention_gpu(
         num_layers=config.num_hidden_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
+        devices=[DeviceRef.GPU()],
     )
     kv_manager = PagedKVCacheManager(
         params=kv_params,
@@ -221,7 +222,7 @@ def test_cross_attention_gpu(
             hidden_max_seq_len_type,
             cross_attention_states_type,
             input_row_offsets_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 

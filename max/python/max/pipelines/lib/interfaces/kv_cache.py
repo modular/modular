@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.interfaces import Pipeline
 from max.kv_cache import NullKVCacheManager
 from max.kv_cache.paged_cache import PagedKVCacheManager
@@ -55,7 +56,7 @@ class KVCacheMixin(Protocol):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:

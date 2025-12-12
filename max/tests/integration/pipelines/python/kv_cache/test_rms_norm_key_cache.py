@@ -96,6 +96,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
@@ -119,7 +120,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 
@@ -172,6 +173,7 @@ def test_partial_rms_norm_key_cache(
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
@@ -196,7 +198,7 @@ def test_partial_rms_norm_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 
@@ -262,6 +264,7 @@ def test_rms_norm_new_key_cache(
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
@@ -286,7 +289,7 @@ def test_rms_norm_new_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 
@@ -364,6 +367,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
@@ -391,7 +395,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
             input_types=[
                 gamma_type,
                 input_row_offsets_type,
-                *kv_manager.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs()[0],
             ],
         )
 
@@ -411,6 +415,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
@@ -441,7 +446,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 
