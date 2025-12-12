@@ -88,6 +88,7 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
       callFieldAttr(StringAttr::get(ctx, "call")),
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
       opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
+      unknownDestructibility("UnknownDestructibility", "", ClosureMethod::NONE),
       moveParent("Movable", "__moveinit__", ClosureMethod::MOVE),
       anyParent("AnyType", "__del__", ClosureMethod::DEL),
       copyParent("Copyable", "__copyinit__", ClosureMethod::COPY),
@@ -623,7 +624,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   SmallVector<ClosureParent> closureParents{
       ClosureParent(trait, getFnOpNamed(trait, "__call__"),
                     ClosureMethod::CALL),
-      moveParent, anyParent};
+      moveParent, anyParent, unknownDestructibility};
   if (isCopyable) {
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
@@ -1994,7 +1995,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   SmallVector<ClosureParent> closureParents{
       ClosureParent(trait, getFnOpNamed(trait, "__call__"),
                     ClosureMethod::CALL),
-      moveParent, anyParent};
+      moveParent, anyParent, unknownDestructibility};
   if (isCopyable) {
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);

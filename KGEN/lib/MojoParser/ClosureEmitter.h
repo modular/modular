@@ -194,6 +194,8 @@ private:
                                       StructFieldOp devicePassedField,
                                       ParamDeclAttr impl,
                                       ParamDeclAttr originSet);
+  /// UnknownDestructibility is the base metatype for all types.
+  ClosureParent unknownDestructibility;
   /// Movable trait is a parent of all closures. Cache its defining op.
   ClosureParent moveParent;
   /// Anytype trait is a parent of all closures. Cache its defining op.
