@@ -79,6 +79,7 @@ from builtin.simd import (
     Float8_e4m3fnuz,
     Float8_e5m2,
     Float8_e5m2fnuz,
+    Float8_e8m0fnu,
     Float16,
     Float32,
     Float64,
