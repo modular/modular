@@ -95,6 +95,7 @@ from .conv_utils import (
     reorder_padding,
 )
 from .shapes import get_sliding_window_out_dim
+from nn.pad_gpu import pad_constant as pad_constant_gpu
 
 
 @fieldwise_init
@@ -3467,11 +3468,109 @@ fn conv_gpu[
     output: LayoutTensor[mut=True, output_type, output_layout, MutAnyOrigin],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
-    padding: IndexList[conv_rank],
+    padding: IndexList[2 * conv_rank],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
     constrained[conv_rank == input.rank - 2]()
+
+    var has_asymmetric_padding = False
+    var pad_before = IndexList[conv_rank](0)
+
+    @parameter
+    for i in range(conv_rank):
+        pad_before[i] = padding[2 * i]
+        var after = padding[2 * i + 1]
+        if pad_before[i] != after:
+            has_asymmetric_padding = True
+
+    if has_asymmetric_padding:
+        # Pre-pad on GPU so downstream kernels (including cuDNN) can assume symmetric padding.
+        comptime full_rank = input_layout.rank()
+        var paddings_tensor = LayoutTensor[
+            DType.int, Layout(2 * full_rank), MutAnyOrigin
+        ].stack_allocation()
+
+        @parameter
+        for axis in range(full_rank):
+            paddings_tensor[2 * axis] = 0
+            paddings_tensor[2 * axis + 1] = 0
+
+        @parameter
+        for i in range(conv_rank):
+            var axis = i + 1  # skip batch axis
+            paddings_tensor[2 * axis] = padding[2 * i]  # before
+            paddings_tensor[2 * axis + 1] = padding[2 * i + 1]  # after
+
+        var input_shape = rebind[IndexList[full_rank]](
+            input.runtime_layout.shape.value.canonicalize()
+        )
+        var padded_shape = IndexList[full_rank]()
+
+        @parameter
+        for axis in range(full_rank):
+            var before = 0
+            var after = 0
+            if axis > 0 and axis < full_rank - 1:
+                var spatial_idx = axis - 1
+                before = padding[2 * spatial_idx]
+                after = padding[2 * spatial_idx + 1]
+            padded_shape[axis] = Int(input_shape[axis]) + before + after
+
+        var padded_elements = padded_shape.flattened_length()
+        var tmp_buffer = ctx.enqueue_create_buffer[input_type](padded_elements)
+        var padded_device_buffer = tmp_buffer.unsafe_ptr()
+        var zero_scalar = Scalar[input_type](0)
+
+        pad_constant_gpu[full_rank, input_type, DType.int](
+            padded_device_buffer,
+            padded_shape,
+            input.ptr,
+            input_shape,
+            paddings_tensor.ptr,
+            zero_scalar,
+            ctx,
+        )
+
+        var padded_input = LayoutTensor[
+            input_type,
+            Layout.row_major[full_rank](),
+            MutAnyOrigin,
+        ](
+            padded_device_buffer,
+            RuntimeLayout[Layout.row_major[full_rank]()].row_major(
+                padded_shape
+            ),
+        )
+
+        var zero_padding = IndexList[2 * conv_rank](0)
+
+        conv_gpu[
+            Layout.row_major[full_rank](),
+            filter_layout,
+            output_layout,
+            input_type,
+            filter_type,
+            output_type,
+            maybe_epilogue_func,
+            filter_is_fcrs,
+        ](
+            padded_input,
+            filter,
+            output,
+            stride,
+            dilation,
+            zero_padding,
+            num_groups,
+            ctx,
+        )
+
+        return
+
+    # We can now use pad_before (which is now confirmed equal to pad_after) as
+    # the symmetric padding.
+    var symmetric_padding = pad_before
+
     comptime block_size = 16
 
     comptime conv_gpu_n = conv2d_gpu_naive_nhwc_rscf[
@@ -3543,7 +3642,7 @@ fn conv_gpu[
                     ),
                     rebind[IndexList[2]](stride),
                     rebind[IndexList[2]](dilation),
-                    rebind[IndexList[2]](padding),
+                    rebind[IndexList[2]](symmetric_padding),
                     num_groups,
                     ctx,
                 )
@@ -3594,7 +3693,7 @@ fn conv_gpu[
                     ),
                     rebind[IndexList[2]](stride),
                     rebind[IndexList[2]](dilation),
-                    rebind[IndexList[2]](padding),
+                    rebind[IndexList[2]](symmetric_padding),
                     num_groups,
                     ctx,
                 )
@@ -3609,7 +3708,7 @@ fn conv_gpu[
                 output,
                 stride,
                 dilation,
-                padding,
+                symmetric_padding,
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -3624,7 +3723,7 @@ fn conv_gpu[
             output,
             stride,
             dilation,
-            padding,
+            symmetric_padding,
             grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
             block_dim=(block_size, block_size),
         )

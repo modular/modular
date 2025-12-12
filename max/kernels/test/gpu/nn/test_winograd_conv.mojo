@@ -195,7 +195,9 @@ fn winograd_conv2d_gpu_nhwc[
     ],
     stride: IndexList[2],
     dilation: IndexList[2],
-    padding: IndexList[2],
+    padding: IndexList[
+        4
+    ],  # Format: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
 ):
     """Implements Winograd F(2x2, 3x3) convolution algorithm for GPU.
     Winograd convolution is an optimization that reduces amount of muls by
@@ -331,7 +333,9 @@ fn winograd_conv2d_gpu_launcher[
     ],
     stride: IndexList[2],
     dilation: IndexList[2],
-    padding: IndexList[2],
+    padding: IndexList[
+        4
+    ],  # Format: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
@@ -354,7 +358,13 @@ fn winograd_conv2d_gpu_launcher[
     assert_true(
         dilation[0] == 1 and dilation[1] == 1, "Dilation not implemented"
     )
-    assert_true(padding[0] == 0 and padding[1] == 0, "Padding not implemented")
+    assert_true(
+        padding[0] == 0
+        and padding[1] == 0
+        and padding[2] == 0
+        and padding[3] == 0,
+        "Padding not implemented",
+    )
     assert_true(num_groups == 1, "Num groups not implemented")
     assert_true(
         input.dim[3]() == filter.dim[2](),
@@ -395,7 +405,9 @@ fn get_output_dim[
     filter_dim: IntTuple,
     stride: IndexList[2],
     dilation: IndexList[2],
-    pad: IndexList[2],
+    pad: IndexList[
+        4
+    ],  # Format: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
 ]() -> IndexList[4]:
     comptime N = Int(input_dim[0])
     comptime H = Int(input_dim[1])
@@ -406,8 +418,9 @@ fn get_output_dim[
     comptime S = Int(filter_dim[1])
     comptime F = Int(filter_dim[3])
 
-    comptime pad_h = IndexList[2](pad[0], pad[0])
-    comptime pad_w = IndexList[2](pad[1], pad[1])
+    # Extract padding values: pad format is [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
+    comptime pad_h = IndexList[2](pad[0], pad[1])
+    comptime pad_w = IndexList[2](pad[2], pad[3])
 
     comptime HO = (
         H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1
@@ -425,7 +438,9 @@ fn test_winograd_conv_gpu[
     filter_dim: IntTuple,
     stride: IndexList[2],
     dilation: IndexList[2],
-    pad: IndexList[2],
+    pad: IndexList[
+        4
+    ],  # Format: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
     num_groups: Int = 1,
 ](ctx: DeviceContext) raises:
     print("== test_conv_winograd_gpu")
@@ -517,7 +532,9 @@ def main():
             filter_dim = IntTuple(3, 3, 1, 1),
             stride = IndexList[2](1, 1),
             dilation = IndexList[2](1, 1),
-            pad = IndexList[2](0, 0),
+            pad = IndexList[4](
+                0, 0, 0, 0
+            ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
@@ -526,7 +543,9 @@ def main():
             filter_dim = IntTuple(3, 3, 1, 1),
             stride = IndexList[2](1, 1),
             dilation = IndexList[2](1, 1),
-            pad = IndexList[2](0, 0),
+            pad = IndexList[4](
+                0, 0, 0, 0
+            ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
@@ -535,7 +554,9 @@ def main():
             filter_dim = IntTuple(3, 3, 1, 1),
             stride = IndexList[2](1, 1),
             dilation = IndexList[2](1, 1),
-            pad = IndexList[2](0, 0),
+            pad = IndexList[4](
+                0, 0, 0, 0
+            ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
@@ -544,7 +565,9 @@ def main():
             filter_dim = IntTuple(3, 3, 1, 1),
             stride = IndexList[2](1, 1),
             dilation = IndexList[2](1, 1),
-            pad = IndexList[2](0, 0),
+            pad = IndexList[4](
+                0, 0, 0, 0
+            ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
@@ -553,5 +576,7 @@ def main():
             filter_dim = IntTuple(3, 3, 1, 1),
             stride = IndexList[2](1, 1),
             dilation = IndexList[2](1, 1),
-            pad = IndexList[2](0, 0),
+            pad = IndexList[4](
+                0, 0, 0, 0
+            ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)

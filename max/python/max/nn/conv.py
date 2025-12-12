@@ -62,7 +62,9 @@ class Conv2d(Module, Shardable):
     """Controls the stride for the cross-correlation."""
 
     padding: tuple[int, int, int, int]
-    """Controls the amount of padding applied before and after the input for height and width dimensions."""
+    """Controls the amount of padding applied before and after the input for height and width dimensions.
+
+    Format: (pad_top, pad_bottom, pad_left, pad_right)."""
 
     dilation: tuple[int, int]
     """Controls the dilation rate."""
@@ -104,7 +106,7 @@ class Conv2d(Module, Shardable):
             stride: Stride of the convolution for height and width dimensions.
                 Can be int (applied to both dimensions) or tuple (stride_h, stride_w). Default: 1
             padding: Padding added to input. Can be int (applied to all sides),
-                tuple of 2 ints (pad_h, pad_w), or tuple of 4 ints (pad_top, pad_bottom, pad_left, pad_right). Default: 0
+                tuple of 2 ints (pad_h, pad_w), or tuple of 4 ints (pad_top, pad_bottom, pad_left, pad_right) to support asymmetric padding. Default: 0
             dilation: Spacing between kernel elements for height and width dimensions.
                 Can be int (applied to both dimensions) or tuple (dilation_h, dilation_w). Default: 1
             num_groups: Number of blocked connections from input channels to output channels.
@@ -178,6 +180,7 @@ class Conv2d(Module, Shardable):
             # Convert (pad_h, pad_w) to (pad_top, pad_bottom, pad_left, pad_right)
             pad_h, pad_w = padding
             padding = (pad_h, pad_h, pad_w, pad_w)
+
         self.padding = padding
 
         if isinstance(dilation, int):
@@ -441,8 +444,12 @@ class Conv1D(Module):
     stride: int
     """Controls the stride for the cross-correlation."""
 
-    padding: int
-    """Controls the amount of padding applied before and after the input."""
+    padding: int | tuple[int, int]
+    """Controls the amount of padding applied to the input.
+
+    If int: symmetric padding applied to both sides (pad_left = pad_right = padding).
+    If tuple[int, int]: asymmetric padding as (pad_left, pad_right).
+    """
 
     dilation: int
     """Controls the dilation rate."""
@@ -466,7 +473,7 @@ class Conv1D(Module):
         out_channels: int,
         dtype: DType,
         stride: int = 1,
-        padding: int = 0,
+        padding: int | tuple[int, int] = 0,
         dilation: int = 1,
         num_groups: int = 1,
         device: DeviceRef | None = None,
@@ -482,7 +489,9 @@ class Conv1D(Module):
             out_channels: Number of channels produced by the convolution.
             dtype: The data type for both weights and bias.
             stride: Stride of the convolution. Controls the step size when sliding the kernel. Default: 1
-            padding: Padding added to both sides of the input sequence. Default: 0
+            padding: Padding added to the input sequence. Can be:
+                - int: symmetric padding applied to both sides (pad_left = pad_right = padding). Default: 0
+                - tuple[int, int]: asymmetric padding as (pad_left, pad_right) for causal convolutions.
             dilation: Spacing between kernel elements. Controls the kernel dilation rate. Default: 1
             num_groups: Number of blocked connections from input channels to output channels.
                 Input channels and output channels are divided into groups. Default: 1
@@ -527,7 +536,11 @@ class Conv1D(Module):
 
         self.kernel_size = kernel_size
         self.stride = stride
-        self.padding = padding
+        # Normalize padding to tuple format: (pad_left, pad_right)
+        if isinstance(padding, int):
+            self.padding = (padding, padding)
+        else:
+            self.padding = padding
         self.dilation = dilation
         self.num_groups = num_groups
 
@@ -575,12 +588,14 @@ class Conv1D(Module):
         # Reshape for Conv2dV1
         x = ops.unsqueeze(x, 1)  # [batch_size, height=1, length, in_channels]
 
+        # Convert padding tuple (pad_left, pad_right) to conv2d format (pad_top, pad_bottom, pad_left, pad_right)
+        pad_left, pad_right = self.padding  # type: ignore[misc]
         output = ops.conv2d(
             x,
             weight,
             (1, self.stride),
             (1, self.dilation),
-            (0, 0, self.padding, self.padding),
+            (0, 0, pad_left, pad_right),
             self.num_groups,
             self.bias,
             filter_layout=FilterLayout.FCRS
@@ -630,7 +645,7 @@ class Conv3DV1(Layer):
             x: a tensor of shape (batch_size, depth, height, width, in_channels)
 
         Returns:
-             a tensor of shape (batch_size, new_depth, new_height, new_width, out_channels)
+            a tensor of shape (batch_size, new_depth, new_height, new_width, out_channels)
         """
         # These need to be casted as the underlying ops.conv3d call
         # expects them to only be tuple types.
@@ -674,11 +689,11 @@ class Conv3D(Module):
         .. code-block:: python
 
             conv = nn.Conv3D(
-                depth=,
-                height=,
-                width=,
-                in_channels=,
-                out_channels=,
+                depth=3,
+                height=3,
+                width=3,
+                in_channels=64,
+                out_channels=128,
                 dtype=DType.float32,
                 stride=1,
                 padding=0,
@@ -696,10 +711,12 @@ class Conv3D(Module):
     Model init moves the weight to :obj:`device`."""
 
     stride: tuple[int, int, int]
-    """Controls the stride for the cross-correlation. """
+    """Controls the stride for the cross-correlation."""
 
     padding: tuple[int, int, int, int, int, int]
-    """Controls the amount of padding applied before and after the input for depth, height, and width dimensions."""
+    """Controls the amount of padding applied before and after the input for depth, height, and width dimensions.
+
+    Format: (pad_front, pad_back, pad_top, pad_bottom, pad_left, pad_right)."""
 
     dilation: tuple[int, int, int]
     """Controls the dilation rate for depth, height, and width dimensions."""
@@ -714,7 +731,7 @@ class Conv3D(Module):
     permute: bool = False
     """bool controls whether self.filter is permuted from PyTorch order to max order.
     PyTorch order is: (out_channels, in_channels / num_groups, depth, height, width)
-    Max API order: (depth, height, width, in_channels / num_groups, out_channels). """
+    Max API order: (depth, height, width, in_channels / num_groups, out_channels)."""
 
     def __init__(
         self,
@@ -725,7 +742,9 @@ class Conv3D(Module):
         out_channels: int,
         dtype: DType,
         stride: int | tuple[int, int, int] = 1,
-        padding: int | tuple[int, int, int, int, int, int] = 0,
+        padding: int
+        | tuple[int, int, int]
+        | tuple[int, int, int, int, int, int] = 0,
         dilation: int | tuple[int, int, int] = 1,
         num_groups: int = 1,
         device: DeviceRef | None = None,
@@ -744,9 +763,10 @@ class Conv3D(Module):
             dtype: The data type for both weights and bias.
             stride: Stride of the convolution for depth, height, and width dimensions.
                 Can be int (applied to all dimensions) or tuple of 3 ints. Default: 1
-            padding: Padding added to all six sides of the input in order:
+            padding: Padding added to the input in order:
                 (pad_front, pad_back, pad_top, pad_bottom, pad_left, pad_right).
-                Can be int (applied to all sides) or tuple of 6 ints. Default: 0
+                Can be int (applied to all sides), tuple of 3 ints (pad_d, pad_h, pad_w) expanded symmetrically,
+                or tuple of 6 ints (fully asymmetric). Default: 0
             dilation: Spacing between kernel elements for depth, height, and width dimensions.
                 Can be int (applied to all dimensions) or tuple of 3 ints. Default: 1
             num_groups: Number of blocked connections from input channels to output channels.
@@ -817,6 +837,10 @@ class Conv3D(Module):
                 padding,
                 padding,
             )
+        elif len(padding) == 3:
+            pad_d, pad_h, pad_w = padding
+            padding = (pad_d, pad_d, pad_h, pad_h, pad_w, pad_w)
+
         self.padding = padding
 
         if isinstance(dilation, int):
@@ -840,8 +864,8 @@ class Conv3D(Module):
             and will be permuted to match max's expected input shape.
 
         Returns:
-             a tensor of shape (batch_size, new_depth, new_height, new_width, out_channels).
-             if self.permute, then the output shape will be (batch_size, out_channels, new_depth, new_height, new_width)
+            a tensor of shape (batch_size, new_depth, new_height, new_width, out_channels).
+            if self.permute, then the output shape will be (batch_size, out_channels, new_depth, new_height, new_width)
         """
         weight: TensorValue = self.filter
         if self.permute:

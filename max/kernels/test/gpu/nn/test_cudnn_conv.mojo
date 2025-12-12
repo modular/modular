@@ -32,7 +32,9 @@ fn test_conv_cudnn[
     output_type: DType,
     stride_dim: IndexList[2],
     dilation_dim: IndexList[2],
-    pad_dim: IndexList[2],
+    pad_dim: IndexList[
+        4
+    ],  # Format: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
     num_groups: Int = 1,
 ](ctx: DeviceContext) raises:
     print(
@@ -167,13 +169,20 @@ fn test_conv_cudnn[
         ctx,
     )
 
+    # conv_cudnn is a lower-level API that directly calls cuDNN, which only
+    # supports symmetric padding. Since cuDNN doesn't support asymmetric
+    # padding, we extract the symmetric values. For symmetric padding:
+    # [pad_h_before, pad_h_after, pad_w_before, pad_w_after] -> [pad_h, pad_w].
+    # Note: This test only uses symmetric padding, so
+    # pad_h_before == pad_h_after and pad_w_before == pad_w_after.
+    var pad_for_cudnn = IndexList[2](pad_dim[0], pad_dim[2])
     conv_cudnn[input_type, filter_type, output_type](
         input_dev_tensor,
         filter_nchw_dev_tensor,
         output_dev_tensor,
         stride_dim,
         dilation_dim,
-        pad_dim,
+        pad_for_cudnn,
         num_groups,
         ctx,
     )
@@ -225,7 +234,9 @@ def main():
             DType.float32,
             IndexList[2](1, 1),  # stride
             IndexList[2](1, 1),  # dilation
-            IndexList[2](0, 3),  # pad
+            IndexList[4](
+                0, 0, 3, 3
+            ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after] (symmetric: pad_h=0, pad_w=3)
         ](ctx)
 
         # Test different data types.
@@ -242,7 +253,9 @@ def main():
                 dtype,
                 IndexList[2](1, 1),  # stride
                 IndexList[2](1, 1),  # dilation
-                IndexList[2](0, 0),  # pad
+                IndexList[4](
+                    0, 0, 0, 0
+                ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
             ](ctx)
 
         # Test grouped convolutions
@@ -274,7 +287,9 @@ def main():
             DType.float32,
             IndexList[2](1, 1),  # stride
             IndexList[2](1, 1),  # dilation
-            IndexList[2](0, 0),  # pad
+            IndexList[4](
+                0, 0, 0, 0
+            ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx1)
 
     if DeviceContext.number_of_devices() >= 2:
@@ -290,7 +305,9 @@ def main():
                 DType.float32,
                 IndexList[2](1, 1),  # stride
                 IndexList[2](1, 1),  # dilation
-                IndexList[2](0, 0),  # pad
+                IndexList[4](
+                    0, 0, 0, 0
+                ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
             ](ctx2)
 
         print("Multiple device context test completed successfully!")

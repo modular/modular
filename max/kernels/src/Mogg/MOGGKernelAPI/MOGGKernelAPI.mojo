@@ -4752,16 +4752,12 @@ struct Conv:
                 ]()
 
                 var cuda_ctx = ctx.get_device_context()
-                var pad_tuple = IndexList[input.rank - 2](0)
+
+                var pad_tuple = IndexList[2 * (input.rank - 2)](0)
 
                 @parameter
-                if input.rank == 4:
-                    pad_tuple[0] = pad_h_tuple[0]
-                    pad_tuple[1] = pad_w_tuple[0]
-                elif input.rank == 5:
-                    pad_tuple[0] = pad_d_tuple[0]
-                    pad_tuple[1] = pad_h_tuple[0]
-                    pad_tuple[2] = pad_w_tuple[0]
+                for i in range(2 * (input.rank - 2)):
+                    pad_tuple[i] = Int(paddings._ptr[i])
 
                 conv_gpu[
                     input_buf.layout,  # input shape
