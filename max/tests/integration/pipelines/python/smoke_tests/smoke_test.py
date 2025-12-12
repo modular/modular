@@ -220,6 +220,8 @@ def gracefully_stop_process(process: Popen) -> None:  # type: ignore
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             process.wait(5)
+        except ProcessLookupError:
+            pass  # process already dead
         except TimeoutExpired:
             logger.warning("Process did not terminate gracefully, forcing kill")
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
@@ -433,13 +435,12 @@ def smoke_test(
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
     all_samples = []
+    extra_env = {}
+    if model == "tbmod/gemma-3-4b-it":
+        extra_env = {"MODULAR_MAX_ENABLE_GEMMA3_VISION": "1"}
+
+    server_process, startup_time = start_server(cmd, extra_env)
     try:
-        extra_env = {}
-        if model == "tbmod/gemma-3-4b-it":
-            extra_env = {"MODULAR_MAX_ENABLE_GEMMA3_VISION": "1"}
-
-        server_process, startup_time = start_server(cmd, extra_env)
-
         logger.info(f"Server started in {startup_time:.2f} seconds")
         write_github_output("startup_time", f"{startup_time:.2f}")
 
