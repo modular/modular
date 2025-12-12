@@ -300,8 +300,12 @@ def print_samples(samples: LmEvalSamples, print_cot: bool) -> None:
         logger.info(f"{status} {extracted}")
 
 
-def start_server(cmd: list[str]) -> tuple[Popen, float]:  # type: ignore
+def start_server(
+    cmd: list[str], extra_env: dict[str, str]
+) -> tuple[Popen, float]:  # type: ignore
     env = os.environ.copy()
+    env.update(extra_env)
+
     if not _inside_bazel():
         # SGLang depends on ninja which is in the serve environment
         env["PYTHONSAFEPATH"] = "1"  # Avoids root dir `max` shadowing
@@ -419,6 +423,7 @@ def smoke_test(
             "idefics",
             "pixtral",
             "olmocr",
+            "tbmod/gemma-3-4b-it",
         )
     )
     tasks = ["gsm8k_cot_llama"]
@@ -429,7 +434,11 @@ def smoke_test(
     results = []
     all_samples = []
     try:
-        server_process, startup_time = start_server(cmd)
+        extra_env = {}
+        if model == "tbmod/gemma-3-4b-it":
+            extra_env = {"MODULAR_MAX_ENABLE_GEMMA3_VISION": "1"}
+
+        server_process, startup_time = start_server(cmd, extra_env)
 
         logger.info(f"Server started in {startup_time:.2f} seconds")
         write_github_output("startup_time", f"{startup_time:.2f}")

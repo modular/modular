@@ -80,6 +80,11 @@ MODELS = {
     "qwen/qwen2.5-vl-7b-instruct": ["multi", "MI355"],  # Memory access fault
     "qwen/qwen3-8b": ["multi"],
     "redhatai/gemma-3-27b-it-fp8-dynamic": [],
+    "tbmod/gemma-3-4b-it": [
+        "multi",
+        "H100",
+        "MI355",
+    ],  # B200 only, copy of gemma-3-4b
     "unsloth/gpt-oss-20b-bf16": [
         "max-ci@H100",
         "max@H100",
