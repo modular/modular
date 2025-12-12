@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 import numpy as np
+import pytest
 import torch
 from max.driver import CPU, Accelerator, Tensor, accelerator_api
 from max.dtype import DType
@@ -212,3 +212,26 @@ def test_d2h_inplace_copy_from_tensor_view() -> None:
         ]
     )
     assert np.array_equal(host_tensor.to_numpy(), expected)
+
+
+@pytest.mark.parametrize("is_pinned", [True, False])
+def test_to_numpy_inplace(is_pinned: bool) -> None:
+    if is_pinned:
+        tensor = Tensor(
+            shape=(4,), dtype=DType.int32, device=Accelerator(), pinned=True
+        )
+    else:
+        tensor = Tensor(shape=(4,), dtype=DType.int32, device=CPU())
+
+    # This should alias the existing memory.
+    # It must NOT copy the memory to another buffer.
+    tensor_np = tensor.to_numpy()
+
+    # Overwrite the numpy array.
+    for i in range(4):
+        tensor_np[i] = 2**i
+
+    # Check if the memory is aliased.
+    actual = tensor.to_numpy()
+    expected = np.array([1, 2, 4, 8])
+    assert np.array_equal(actual, expected)

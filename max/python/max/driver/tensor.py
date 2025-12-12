@@ -102,10 +102,15 @@ def _from_numpy(arr: npt.NDArray[Any]) -> Tensor:
 def _to_numpy(self: Tensor) -> npt.NDArray[Any]:
     """Converts the tensor to a numpy array.
 
-    If the tensor is not on the host, an exception is raised.
+    If the tensor is not on the host, a copy will be issued.
     """
+    if self.pinned or self.device.is_host:
+        cpu_buf = self
+    else:
+        cpu_buf = self.to(CPU())
+
     try:
-        return np.from_dlpack(self.to(CPU()))
+        return np.from_dlpack(cpu_buf)
     except RuntimeError as e:
         if str(e).startswith("Unsupported device in DLTensor"):
             raise RuntimeError(
