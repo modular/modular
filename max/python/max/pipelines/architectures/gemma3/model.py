@@ -120,6 +120,7 @@ class Gemma3Model(
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        text_huggingface_config: AutoConfig | None = None,
     ) -> None:
         """
         Args:
@@ -136,6 +137,8 @@ class Gemma3Model(
             weights: The model weights (:obj:`max.graph.weights.Weights`).
             adapter: An optional adapter to modify weights before loading
                 (:obj:`max.graph.weights.WeightsAdapter`).
+            text_huggingface_config: The text configuration loaded from HuggingFace
+                if it differs from the base huggingface_config (:obj:`transformers.AutoConfig`).
             return_logits: The number of top logits to return from the model
                 execution.
         """
@@ -150,6 +153,9 @@ class Gemma3Model(
             adapter,
             return_logits,
         )
+        # Override the huggingface_config to use the text huggingface_config if provided
+        if text_huggingface_config is not None:
+            self.huggingface_config = text_huggingface_config
 
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]

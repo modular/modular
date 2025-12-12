@@ -41,8 +41,6 @@ class Mistral3Model(MistralModel):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        huggingface_config = huggingface_config.text_config
-
         super().__init__(
             pipeline_config,
             session,
@@ -53,6 +51,7 @@ class Mistral3Model(MistralModel):
             weights,
             adapter,
             return_logits,
+            text_huggingface_config=huggingface_config.text_config,
         )
 
     @classmethod

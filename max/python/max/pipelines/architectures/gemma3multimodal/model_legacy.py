@@ -90,13 +90,14 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config.text_config,
+            huggingface_config,
             encoding,
             devices,
             kv_cache_config,
             weights,
             adapter,
             return_logits,
+            text_huggingface_config=huggingface_config.text_config,
         )
 
     @classmethod

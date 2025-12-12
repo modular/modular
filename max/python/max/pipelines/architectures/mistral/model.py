@@ -102,6 +102,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        text_huggingface_config: AutoConfig | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -114,6 +115,10 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             adapter,
             return_logits,
         )
+        # Override the huggingface_config to use the text huggingface_config if provided
+        if text_huggingface_config is not None:
+            self.huggingface_config = text_huggingface_config
+
         self.model = self.load_model(session)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
@@ -276,7 +281,6 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
     ) -> dict[str, WeightData]:
-        pipeline_config = self.pipeline_config
         huggingface_config = self.huggingface_config
         if self.adapter:
             state_dict = self.adapter(
