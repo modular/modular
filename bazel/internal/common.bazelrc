@@ -15,6 +15,9 @@ common --show_result=10
 # Only env vars passed with --repo_env are propagated to repository rules
 common --experimental_strict_repo_env
 
+# More resilient to network issues with the BCR URL
+common --module_mirrors=https://bcr.cloudflaremirrors.com
+
 # https://github.com/bazelbuild/bazel/pull/27030
 common --experimental_objc_fastbuild_options=
 
