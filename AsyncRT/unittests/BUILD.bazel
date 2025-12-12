@@ -68,6 +68,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//AsyncRT:DeviceContextImpl",
+        "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -92,6 +93,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//AsyncRT:DeviceContextImpl",
+        "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -191,6 +193,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//AsyncRT:DeviceContextImpl",
+        "@metal-cpp//:metal-cpp",
     ],
 )
 
