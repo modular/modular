@@ -878,7 +878,9 @@ fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
 
 
 @always_inline("nodebug")
-fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
+fn size_of[
+    type: UnknownDestructibility, target: _TargetType = _current_target()
+]() -> Int:
     """Returns the size of (in bytes) of the type.
 
     Parameters:
@@ -945,7 +947,9 @@ fn size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 
 @always_inline("nodebug")
-fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
+fn align_of[
+    type: UnknownDestructibility, target: _TargetType = _current_target()
+]() -> Int:
     """Returns the align of (in bytes) of the type.
 
     Parameters:

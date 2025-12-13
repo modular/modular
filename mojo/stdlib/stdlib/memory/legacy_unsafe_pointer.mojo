@@ -18,6 +18,7 @@ These APIs are imported automatically, just like builtins.
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
+from builtin.rebind import downcast
 from builtin.simd import _simd_construction_checks
 from memory import memcpy
 from memory.memory import _free, _malloc
@@ -51,7 +52,7 @@ fn _default_invariant[mut: Bool]() -> Bool:
 
 @register_passable("trivial")
 struct LegacyUnsafePointer[
-    type: AnyType,
+    type: UnknownDestructibility,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
@@ -196,10 +197,10 @@ struct LegacyUnsafePointer[
             other.address
         )
 
-    fn __init__(
-        out self: LegacyUnsafePointer[
-            Self.type, mut = Self.mut, origin = Self.origin
-        ],
+    fn __init__[
+        T: ImplicitlyDestructible, //
+    ](
+        out self: LegacyUnsafePointer[T, mut = Self.mut, origin = Self.origin],
         *,
         ref [Self.origin]unchecked_downcast_value: PythonObject,
     ):
@@ -208,13 +209,15 @@ struct LegacyUnsafePointer[
         This operation is only valid if the provided Python object contains
         an initialized Mojo object of matching type.
 
+        Parameters:
+            T: Pointee type that can be destroyed implicitly (without
+              deinitializer arguments).
+
         Args:
             unchecked_downcast_value: The Python object to downcast from.
         """
 
-        self = unchecked_downcast_value.unchecked_downcast_value_ptr[
-            Self.type
-        ]()
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[T]()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -1093,7 +1096,7 @@ struct LegacyUnsafePointer[
 
     @always_inline("builtin")
     fn bitcast[
-        T: AnyType = Self.type,
+        T: UnknownDestructibility = Self.type,
     ](self) -> LegacyUnsafePointer[
         T,
         address_space = Self.address_space,
@@ -1324,9 +1327,11 @@ struct LegacyUnsafePointer[
         ](self.address)
 
     @always_inline
-    fn destroy_pointee(
+    fn destroy_pointee[
+        T: ImplicitlyDestructible, //
+    ](
         self: LegacyUnsafePointer[
-            Self.type, mut=True, address_space = AddressSpace.GENERIC, **_
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
         ]
     ):
         """Destroy the pointed-to value.
@@ -1335,6 +1340,10 @@ struct LegacyUnsafePointer[
         to contain a valid initialized instance of `type`.  This is equivalent to
         `_ = self.take_pointee()` but doesn't require `Movable` and is
         more efficient because it doesn't invoke `__moveinit__`.
+
+        Parameters:
+            T: Pointee type that can be destroyed implicitly (without
+              deinitializer arguments).
 
         """
         _ = __get_address_as_owned_value(self.address)

@@ -13,6 +13,7 @@
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
+from builtin.rebind import downcast
 from builtin.simd import _simd_construction_checks
 from compile import get_type_name
 from memory import memcpy
@@ -160,7 +161,7 @@ Parameters:
 @register_passable("trivial")
 struct UnsafePointer[
     mut: Bool, //,
-    type: AnyType,
+    type: UnknownDestructibility,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -430,8 +431,10 @@ struct UnsafePointer[
         ]()
         abort()
 
-    fn __init__(
-        out self: UnsafePointer[Self.type, Self.origin],
+    fn __init__[
+        T: ImplicitlyDestructible, //
+    ](
+        out self: UnsafePointer[T, Self.origin],
         *,
         ref [Self.origin]unchecked_downcast_value: PythonObject,
     ):
@@ -440,12 +443,14 @@ struct UnsafePointer[
         This operation is only valid if the provided Python object contains
         an initialized Mojo object of matching type.
 
+        Parameters:
+            T: Pointee type that can be destroyed implicitly (without
+              deinitializer arguments).
+
         Args:
             unchecked_downcast_value: The Python object to downcast from.
         """
-        self = unchecked_downcast_value.unchecked_downcast_value_ptr[
-            Self.type
-        ]()
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[T]()
 
     # ===-------------------------------------------------------------------===#
     # V1 <-> V2 conversion
@@ -1407,7 +1412,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn bitcast[
-        T: AnyType
+        T: UnknownDestructibility
     ](self) -> UnsafePointer[
         T,
         Self.origin,
@@ -1595,15 +1600,19 @@ struct UnsafePointer[
         return self._as_legacy().address_space_cast[target_address_space]()
 
     @always_inline
-    fn destroy_pointee(
-        self: UnsafePointer[Self.type],
-    ) where type_of(self).mut:
+    fn destroy_pointee[
+        T: ImplicitlyDestructible, //
+    ](self: UnsafePointer[T]) where type_of(self).mut:
         """Destroy the pointed-to value.
 
         The pointer must not be null, and the pointer memory location is assumed
         to contain a valid initialized instance of `type`.  This is equivalent to
         `_ = self.take_pointee()` but doesn't require `Movable` and is
         more efficient because it doesn't invoke `__moveinit__`.
+
+        Parameters:
+            T: Pointee type that can be destroyed implicitly (without
+              deinitializer arguments).
 
         """
         _ = __get_address_as_owned_value(self.address)

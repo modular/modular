@@ -32,7 +32,12 @@ from io.file import FileHandle, open
 from io.file_descriptor import FileDescriptor
 from io.io import input, print
 
-from builtin.anytype import AnyType, Some, UnknownDestructibility
+from builtin.anytype import (
+    AnyType,
+    Some,
+    UnknownDestructibility,
+    ImplicitlyDestructible,
+)
 from builtin.bool import Bool, Boolable, all, any
 from builtin.breakpoint import breakpoint
 from builtin.builtin_slice import Slice, slice
