@@ -1114,6 +1114,47 @@ def test_repr_wrap():
     assert_equal(repr(s), "Deque('a', 'b', 'c')")
 
 
+fn test_issue_5635_shrink_realloc() raises:
+    """Test that pop/append cycles don't lose values when capacity > min_capacity.
+
+    Regression test for https://github.com/modular/modular/issues/5635
+    When a deque has capacity > min_capacity (64), popping all elements and
+    re-adding them would incorrectly set _tail during shrink reallocation.
+    """
+    # Test pop/append cycle with capacity > min_capacity (64)
+    var dq1 = Deque[Int](capacity=100)
+    dq1.append(0)
+    for _ in range(100):
+        dq1.append(dq1.pop() + 1)
+    assert_equal(dq1.pop(), 100)
+
+    # Test popleft/appendleft cycle
+    var dq2 = Deque[Int](capacity=100)
+    dq2.appendleft(0)
+    for _ in range(100):
+        dq2.appendleft(dq2.popleft() + 1)
+    assert_equal(dq2.popleft(), 100)
+
+    # Test with different capacities that trigger shrinking
+    var dq3 = Deque[Int](capacity=65)
+    dq3.append(0)
+    for _ in range(50):
+        dq3.append(dq3.pop() + 1)
+    assert_equal(dq3.pop(), 50)
+
+    var dq4 = Deque[Int](capacity=128)
+    dq4.append(0)
+    for _ in range(50):
+        dq4.append(dq4.pop() + 1)
+    assert_equal(dq4.pop(), 50)
+
+    var dq5 = Deque[Int](capacity=256)
+    dq5.append(0)
+    for _ in range(50):
+        dq5.append(dq5.pop() + 1)
+    assert_equal(dq5.pop(), 50)
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
