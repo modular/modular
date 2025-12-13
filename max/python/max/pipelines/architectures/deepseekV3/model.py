@@ -243,13 +243,61 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         weights_size = model_config.weights_size()
         n_gpus_per_node = len(model_config.device_specs)
 
-        # If the model is running with multi-node expert parallelism.
-        if pipeline_config.ep_size > n_gpus_per_node:
-            assert pipeline_config.ep_size % n_gpus_per_node == 0
-            n_nodes = pipeline_config.ep_size // n_gpus_per_node
-            weights_size //= n_nodes
+        encoding = pipeline_config.model_config.quantization_encoding
+        assert encoding is not None
+        dtype = encoding.dtype.size_in_bytes
+        config = model_config.huggingface_config
+        n_sparse_layers = (
+            config.num_hidden_layers - config.first_k_dense_replace
+        )
+        n_mtp_layers = config.num_nextn_predict_layers
 
-        return weights_size
+        # Note: All the following calculations are not exact, but they are
+        # better than directly using the raw weights size.
+
+        # First, Calculate the lm_head/embed_tokens size.
+        lm_head_size = config.vocab_size * config.hidden_size * dtype
+        embed_tokens_size = lm_head_size
+
+        # Subtract the lm_head/embed_tokens size from the weights size
+        weights_size -= lm_head_size + embed_tokens_size
+        weights_size -= (lm_head_size + embed_tokens_size) * n_mtp_layers
+
+        # We don't use the MTP module for now, so subtract the MTP attn/moe size.
+        # Estimate the MTP module size by assuming the MTP layer is of the same
+        # size as a sparse model layer.
+        weights_size *= n_sparse_layers / (n_sparse_layers + n_mtp_layers)
+
+        # Calculate the routing experts and the shared experts size.
+        expert_size = (
+            config.moe_intermediate_size * config.hidden_size * 3 * dtype
+        )  # A factor of 3 accounts for the gate/up/down proj weights.
+        routing_experts_size = (
+            n_sparse_layers * config.n_routed_experts * expert_size
+        )
+        shared_experts_size = (
+            n_sparse_layers * config.n_shared_experts * expert_size
+        )
+
+        # Estimate the size of the attention weights.
+        attn_weights_size = (
+            weights_size - routing_experts_size - shared_experts_size
+        )
+
+        # If we use DP attention, attention weights are duplicated on each DP rank.
+        total_size = attn_weights_size * model_config.data_parallel_degree
+
+        # The shared experts are duplicated on each device.
+        total_size += shared_experts_size * n_gpus_per_node
+
+        # The routing experts are split across the nodes.
+        n_nodes = pipeline_config.ep_size // n_gpus_per_node
+        total_size += routing_experts_size // n_nodes
+
+        # Add back the lm_head/embed_tokens size, they will never be duplicated.
+        total_size += lm_head_size + embed_tokens_size
+
+        return total_size
 
     @classmethod
     def estimate_activation_memory(
@@ -342,6 +390,12 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         max_batch_size = self.pipeline_config.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
+
+        # `_input_row_offsets_prealloc_cpu` tensor needs to reserve space for
+        # `max_batch_size` of requests on each DP rank.
+        dp_size = self.pipeline_config.model_config.data_parallel_degree
+        max_batch_size *= dp_size
+
         self._input_row_offsets_prealloc_cpu = Tensor.from_numpy(
             np.arange(max_batch_size + 1, dtype=np.uint32)
         )
