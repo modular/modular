@@ -159,5 +159,5 @@ cython_debug/
 examples/models/*
 !examples/models/README.md
 
-# Magic cache
-.magic
+# Kgen trace
+kgen.trace.*
