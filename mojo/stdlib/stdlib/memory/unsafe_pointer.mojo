@@ -959,8 +959,6 @@ struct UnsafePointer[
         return String(
             "UnsafePointer[",
             get_type_name[Self.type](),
-            ",",
-            get_type_name[Self.origin](),
             ", address_space=",
             Self.address_space,
             "]",

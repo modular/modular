@@ -555,8 +555,6 @@ struct LegacyUnsafePointer[
             Self.address_space,
             ", mut=",
             Self.mut,
-            ", origin=",
-            get_type_name[Self.origin](),
             "]",
         )
 
