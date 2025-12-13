@@ -21,6 +21,8 @@ import math
 import os
 import sys
 import types
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -52,9 +54,6 @@ except ImportError as e:
     _flashinfer = None
 
 
-from dataclasses import dataclass
-
-
 @dataclass
 class Config:
     num_q_heads: int
@@ -68,9 +67,8 @@ def calculate_mla_memory_bytes(
     q_len_per_request: int,
     cache_len: int,
     dtype: torch.dtype,
-    # time_s: float,
     model_config: Config,
-) -> float:
+) -> int:
     """Calculate memory throughput for MLA operations.
 
     Args:
@@ -130,7 +128,7 @@ def bench_flashinfer_trtllm(
     model_config: Config,
     q_len_per_request: int = 1,
     enable_pdl: bool | None = None,
-) -> tuple[float, float] | None:
+) -> tuple[float, int] | None:
     """Benchmark FlashInfer MLA decode with paged KV cache.
 
     Args:
@@ -250,7 +248,7 @@ def bench_max(
     dtype: torch.dtype,
     model_config: Config,
     q_len_per_request: int = 1,
-) -> tuple[float, float]:
+) -> tuple[float, int]:
     """Benchmark MAX MLA decode with paged KV cache.
 
     Args:
@@ -283,7 +281,7 @@ def bench_max(
         num_layers=1,  # Benchmarking a single layer
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
-        n_devices=1,
+        devices=[DeviceRef.GPU()],
         is_mla=True,
     )
 
@@ -476,7 +474,7 @@ def bench_mla_decode(
     q_len_per_request: int = 1,
     backend: str = "trtllm-gen",
     enable_pdl: bool | None = None,
-) -> dict:
+) -> tuple[float, int] | None:
     """Run all MLA decode benchmarks and return results.
 
     Args:
@@ -494,7 +492,7 @@ def bench_mla_decode(
     flashinfer_page_size = 64  # FlashInfer TRT-LLM tested with 32 and 64
     max_page_size = 128  # MAX only supports 128
 
-    result: tuple[float, float] | None = None
+    result: tuple[float, int] | None = None
     if engine == "flashinfer":
         # Run FlashInfer benchmark with TensorRT-LLM MLA backend
         if _flashinfer is not None:
@@ -553,7 +551,7 @@ if __name__ == "__main__":
     qk_rope_head_dim = int(arg_parse("qk_rope_head_dim", cfg.qk_rope_head_dim))
     kv_lora_rank = int(arg_parse("num_q_heads", cfg.kv_lora_rank))
 
-    output_path = arg_parse("output", "output.csv", short_handle="o")
+    output_path = Path(arg_parse("output", "output.csv", short_handle="o"))
 
     print("MLA Decode Benchmark (DeepSeek V2/V3)")
     print(
@@ -579,7 +577,7 @@ if __name__ == "__main__":
         enable_pdl=True,
     )
 
-    met_ms, bytes = result
+    met_ms, bytes = result if result else [0, 0]
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 
     name = (

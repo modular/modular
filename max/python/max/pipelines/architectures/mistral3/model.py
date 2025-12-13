@@ -16,6 +16,7 @@ from __future__ import annotations
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -40,8 +41,6 @@ class Mistral3Model(MistralModel):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        huggingface_config = huggingface_config.text_config
-
         super().__init__(
             pipeline_config,
             session,
@@ -52,19 +51,20 @@ class Mistral3Model(MistralModel):
             weights,
             adapter,
             return_logits,
+            text_huggingface_config=huggingface_config.text_config,
         )
 
     @classmethod
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return super().get_kv_params(
             huggingface_config.text_config,
-            n_devices,
+            devices,
             kv_cache_config,
             cache_dtype,
         )
@@ -82,23 +82,4 @@ class Mistral3Model(MistralModel):
         )
         return super().calculate_max_seq_len(
             pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        return super().estimate_kv_cache_size(
-            pipeline_config,
-            available_cache_memory,
-            devices,
-            huggingface_config.text_config,
-            kv_cache_config,
-            cache_dtype,
         )

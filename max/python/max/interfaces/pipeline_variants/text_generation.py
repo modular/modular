@@ -719,6 +719,7 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         self.input_tokens = sum(
             ctx.active_length for ctx in self.batch.values()
         )
+        self.context_tokens = sum(ctx.start_idx for ctx in self.batch.values())
         self.batch_type = BatchType.TG
         for req in self.batch.values():
             if req.needs_ce:

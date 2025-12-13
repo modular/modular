@@ -19,7 +19,7 @@ import os
 import signal
 import sys
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
@@ -32,6 +32,7 @@ from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max.driver import Device, DLPackArray, Tensor
+from max.graph import Graph
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 
@@ -40,8 +41,8 @@ from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 # implements the protocol
 
 InputShape = list[int | str | None] | None
-CustomExtensionType = str | Path | Any
-CustomExtensionsType = list[CustomExtensionType] | CustomExtensionType
+CustomExtensionType = str | Path
+CustomExtensionsType = Sequence[CustomExtensionType] | CustomExtensionType
 
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
 
@@ -166,35 +167,20 @@ def _is_torch_metadata_module(obj: Any) -> bool:
     return type(obj).__name__ == "TorchMetadata"
 
 
-def _is_max_graph(obj: Any) -> bool:
-    """Checks if an object is `max.graph.Graph`."""
-    # TODO(MSDK-677): We should use isinstance here once max.graph
-    # is available in nightlies.
-    object_kind = type(obj)
-    return (
-        object_kind.__name__ == "Graph"
-        and object_kind.__module__.startswith("max.graph")
-    )
-
-
 def _process_custom_extensions_object(
     custom_extension: CustomExtensionType,
 ) -> CustomExtensionType:
-    if isinstance(custom_extension, (Path, str)):
-        if is_mojo_source_package_path(Path(custom_extension)):
-            # Builds the source directory into a .mojopkg file.
-            return _build_mojo_source_package(Path(custom_extension))
+    if is_mojo_source_package_path(Path(custom_extension)):
+        # Builds the source directory into a .mojopkg file.
+        return _build_mojo_source_package(Path(custom_extension))
 
-        # Pass the path through as is.
-        return custom_extension
-    if _is_torch_metadata_module(custom_extension):
-        return custom_extension._get_jit_functions()._c
-    raise TypeError("Unsupported type for custom ops libraries.")
+    # Pass the path through as is.
+    return custom_extension
 
 
 def _process_custom_extensions_objects(
     custom_extensions: CustomExtensionsType,
-) -> CustomExtensionsType:
+) -> list[CustomExtensionType]:
     if not isinstance(custom_extensions, Iterable) or isinstance(
         custom_extensions, str
     ):
@@ -283,10 +269,7 @@ class InferenceSession:
               Supports paths to a `.mojopkg` custom ops library or a `.mojo`
               source file.
         """
-        config: dict[str, Any] = {}
         self.num_threads = num_threads
-        if num_threads:
-            config["num_threads"] = num_threads
 
         # Process the provided iterable `devices`.
         final_devices: list[Device] = []
@@ -297,14 +280,18 @@ class InferenceSession:
                 seen_devices.add(device)
         # If the user provided an empty iterable, final_devices remains empty.
 
-        # Assign the ordered, unique list to the config.
-        config["devices"] = final_devices
+        custom_extensions_final = []
 
-        if custom_extensions is not None:
-            config["custom_extensions"] = _process_custom_extensions_objects(
+        if custom_extensions:
+            custom_extensions_final = _process_custom_extensions_objects(
                 custom_extensions
             )
-        self._impl = _InferenceSession(config)
+
+        self._impl = _InferenceSession(
+            final_devices,
+            custom_extensions_final,
+            num_threads or 0,
+        )
 
         # Register async-safe Python stack trace handler
         # This enables Python stack traces in crash reports without GIL deadlocks
@@ -331,10 +318,9 @@ class InferenceSession:
 
     def load(
         self,
-        model: str | Path | Any,
+        model: str | Path | Graph,
         *,
         custom_extensions: CustomExtensionsType | None = None,
-        custom_ops_path: str | None = None,
         weights_registry: Mapping[str, DLPackArray] | None = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
@@ -344,9 +330,6 @@ class InferenceSession:
 
             custom_extensions: The extensions to load for the model.
               Supports paths to `.mojopkg` custom ops.
-
-            custom_ops_path: The path to your custom ops Mojo package.
-              Deprecated, use ``custom_extensions`` instead.
 
             weights_registry: A mapping from names of model weights' names to
               their values. The values are currently expected to be dlpack
@@ -359,35 +342,25 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
-        options_dict: dict[str, Any] = {}
         weights_registry_real: Mapping[str, DLPackArray] = (
             weights_registry or {}
         )
 
+        custom_extensions_final = []
+
         if custom_extensions is not None:
-            options_dict["custom_extensions"] = (
-                _process_custom_extensions_objects(custom_extensions)
-            )
-        if custom_ops_path is not None:
-            if "custom_extensions" not in options_dict:
-                options_dict["custom_extensions"] = list()
-            options_dict["custom_extensions"].extend(
-                _process_custom_extensions_objects(custom_ops_path)
-            )
-        if _is_max_graph(model):
-            if "custom_extensions" not in options_dict:
-                options_dict["custom_extensions"] = list()
-            options_dict["custom_extensions"].extend(
-                _process_custom_extensions_objects(model.kernel_libraries_paths)  # type: ignore
+            custom_extensions_final = _process_custom_extensions_objects(
+                custom_extensions
             )
 
-        if isinstance(model, str | bytes):
-            model = Path(str(model))
-
-        if isinstance(model, Path):
-            _model = self._impl.compile_from_path(model, options_dict)
-        elif _is_max_graph(model):
-            options_dict["pipeline_name"] = model.name
+        if isinstance(model, Path | str):
+            _model = self._impl.compile_from_path(
+                model, custom_extensions_final
+            )
+        elif isinstance(model, Graph):
+            custom_extensions_final.extend(
+                _process_custom_extensions_objects(model.kernel_libraries_paths)
+            )
 
             # TODO: if the model has been loaded from a serialized MLIR file, we don't have
             # the _weights attribute available to us
@@ -414,8 +387,9 @@ class InferenceSession:
             with self._compilation_lock:
                 try:
                     _model = self._impl.compile_from_object(
-                        model._module._CAPIPtr,
-                        options_dict,
+                        model._module._CAPIPtr,  # type: ignore
+                        custom_extensions_final,
+                        model.name,
                     )
                 except Exception as e:
                     raise RuntimeError(
@@ -428,9 +402,9 @@ class InferenceSession:
         else:
             raise RuntimeError("The model is not a valid path or module.")
 
-        for weight_name, weight in weights_registry_real.items():
+        for weight_name, weight_value in weights_registry_real.items():
             try:
-                _raise_if_not_contiguous(weight)
+                _raise_if_not_contiguous(weight_value)
             except ValueError as e:
                 raise ValueError(
                     f"Weight '{weight_name}' is not contiguous: {str(e)}"

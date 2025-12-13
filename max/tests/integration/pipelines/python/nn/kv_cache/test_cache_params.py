@@ -13,7 +13,8 @@
 
 import pytest
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheParams
+from max.graph import DeviceRef
+from max.nn.kv_cache import KVCacheParams
 
 
 def test_single_device_compatible() -> None:
@@ -23,7 +24,7 @@ def test_single_device_compatible() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        n_devices=1,
+        devices=[DeviceRef.GPU()],
         data_parallel_degree=1,
         page_size=16,
     )
@@ -37,7 +38,7 @@ def test_tensor_parallel_compatible_divisible_heads() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        n_devices=2,
+        devices=[DeviceRef.GPU(i) for i in range(2)],
         data_parallel_degree=1,
         page_size=16,
     )
@@ -51,7 +52,7 @@ def test_tensor_parallel_compatible_multiple_devices() -> None:
         n_kv_heads=16,
         head_dim=128,
         num_layers=1,
-        n_devices=4,
+        devices=[DeviceRef.GPU(i) for i in range(4)],
         data_parallel_degree=1,
         page_size=16,
     )
@@ -65,7 +66,7 @@ def test_tensor_parallel_compatible_large_heads() -> None:
         n_kv_heads=32,
         head_dim=128,
         num_layers=1,
-        n_devices=8,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
         data_parallel_degree=1,
         page_size=16,
     )
@@ -79,7 +80,7 @@ def test_data_parallel_compatible_equal_devices() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        n_devices=4,
+        devices=[DeviceRef.GPU(i) for i in range(4)],
         data_parallel_degree=4,
         page_size=16,
     )
@@ -94,7 +95,7 @@ def test_data_parallel_compatible_multiple_devices() -> None:
         n_kv_heads=12,
         head_dim=64,
         num_layers=1,
-        n_devices=2,
+        devices=[DeviceRef.GPU(i) for i in range(2)],
         data_parallel_degree=2,
         page_size=16,
     )
@@ -116,7 +117,7 @@ def test_data_parallel_exceeds_devices_fails() -> None:
             n_kv_heads=8,
             head_dim=128,
             num_layers=1,
-            n_devices=2,
+            devices=[DeviceRef.GPU(i) for i in range(2)],
             data_parallel_degree=4,
             page_size=16,
         )
@@ -133,7 +134,7 @@ def test_data_parallel_exceeds_devices_large_degree_fails() -> None:
             n_kv_heads=16,
             head_dim=128,
             num_layers=1,
-            n_devices=1,
+            devices=[DeviceRef.GPU()],
             data_parallel_degree=8,
             page_size=16,
         )
@@ -150,7 +151,7 @@ def test_mixed_dp_tp_not_supported_fails() -> None:
             n_kv_heads=8,
             head_dim=128,
             num_layers=1,
-            n_devices=4,
+            devices=[DeviceRef.GPU(i) for i in range(4)],
             data_parallel_degree=2,
             page_size=16,
         )
@@ -167,7 +168,7 @@ def test_mixed_dp_tp_another_combination_fails() -> None:
             n_kv_heads=12,
             head_dim=64,
             num_layers=1,
-            n_devices=6,
+            devices=[DeviceRef.GPU(i) for i in range(6)],
             data_parallel_degree=3,
             page_size=16,
         )
@@ -184,7 +185,7 @@ def test_tensor_parallel_non_divisible_heads_fails() -> None:
             n_kv_heads=8,
             head_dim=128,
             num_layers=1,
-            n_devices=3,
+            devices=[DeviceRef.GPU(i) for i in range(3)],
             data_parallel_degree=1,
             page_size=16,
         )
@@ -201,7 +202,7 @@ def test_tensor_parallel_non_divisible_heads_small_fails() -> None:
             n_kv_heads=2,
             head_dim=128,
             num_layers=1,
-            n_devices=4,
+            devices=[DeviceRef.GPU(i) for i in range(4)],
             data_parallel_degree=1,
             page_size=16,
         )
@@ -218,7 +219,7 @@ def test_tensor_parallel_odd_division_fails() -> None:
             n_kv_heads=7,
             head_dim=128,
             num_layers=1,
-            n_devices=2,
+            devices=[DeviceRef.GPU(i) for i in range(2)],
             data_parallel_degree=1,
             page_size=16,
         )
@@ -234,7 +235,7 @@ def test_copy_as_dp_1_basic() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        n_devices=4,
+        devices=[DeviceRef.GPU(i) for i in range(4)],
         data_parallel_degree=4,
         page_size=16,
         enable_prefix_caching=True,
@@ -267,8 +268,8 @@ def test_copy_as_dp_1_preserves_all_parameters() -> None:
         enable_kvcache_swapping_to_host=True,
         host_kvcache_swap_space_gb=10.5,
         page_size=32,
-        n_devices=8,
         is_mla=True,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
         data_parallel_degree=8,
     )
 
@@ -300,7 +301,7 @@ def test_copy_as_dp_1_runs_post_init_validation() -> None:
         n_kv_heads=7,
         head_dim=128,
         num_layers=1,
-        n_devices=8,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
         data_parallel_degree=8,
         page_size=16,
     )
@@ -318,7 +319,7 @@ def test_copy_as_dp_1_from_dp_1() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        n_devices=2,
+        devices=[DeviceRef.GPU(i) for i in range(2)],
         data_parallel_degree=1,
         page_size=16,
     )
@@ -338,14 +339,14 @@ def test_copy_as_dp_1_non_divisible_devices_fails() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        n_devices=5,
+        devices=[DeviceRef.GPU(i) for i in range(5)],
         data_parallel_degree=5,
         page_size=16,
     )
 
     # Manually set n_devices to a non-divisible value to test the check
     # (This is a bit contrived since __post_init__ would normally prevent this)
-    params.n_devices = 7
+    params.devices = [DeviceRef.GPU(i) for i in range(7)]
 
     with pytest.raises(
         ValueError,
@@ -361,24 +362,24 @@ def test_copy_as_dp_1_does_not_modify_original() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        n_devices=4,
+        devices=[DeviceRef.GPU(i) for i in range(4)],
         data_parallel_degree=4,
         page_size=16,
     )
 
-    original_n_devices = params.n_devices
+    original_devices = params.devices
     original_dp = params.data_parallel_degree
     original_heads_per_device = params.n_kv_heads_per_device
 
     copied = params.copy_as_dp_1()
 
     # Verify original is unchanged
-    assert params.n_devices == original_n_devices
+    assert params.devices == original_devices
     assert params.data_parallel_degree == original_dp
     assert params.n_kv_heads_per_device == original_heads_per_device
 
     # Verify n_devices and data_parallel_degree changed in the copy
-    assert copied.n_devices == 1
+    assert copied.devices == [DeviceRef.GPU()]
     assert copied.data_parallel_degree == 1
     assert copied.n_kv_heads_per_device == 8
 
@@ -391,7 +392,7 @@ def test_mla_bypasses_divisibility_check() -> None:
         n_kv_heads=1,
         head_dim=576,
         num_layers=1,
-        n_devices=4,
+        devices=[DeviceRef.GPU(i) for i in range(4)],
         data_parallel_degree=1,
         page_size=128,
         is_mla=True,
@@ -407,7 +408,7 @@ def test_mla_with_data_parallel_compatible() -> None:
         n_kv_heads=1,
         head_dim=576,
         num_layers=1,
-        n_devices=4,
+        devices=[DeviceRef.GPU(i) for i in range(4)],
         data_parallel_degree=4,
         page_size=128,
         is_mla=True,

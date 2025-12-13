@@ -15,13 +15,22 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from functools import reduce
 from operator import mul
 
 from max.dtype import DType
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    TensorType,
+)
 from max.support.human_readable_formatter import to_human_readable_bytes
+
+from .data_parallelism_utils import split_into_groups
+from .input_types import PagedCacheInputSymbols
 
 logger = logging.getLogger("max.pipelines")
 
@@ -76,6 +85,9 @@ class KVCacheParams:
     num_layers: int
     """Number of layers in the model."""
 
+    devices: Sequence[DeviceRef]
+    """Devices to use for the KV cache."""
+
     enable_prefix_caching: bool = False
     """Whether to enable prefix caching for efficient reuse of common prompt prefixes."""
 
@@ -97,9 +109,6 @@ class KVCacheParams:
     Current constraints: the page size must be a multiple of 128 and at least 128.
     Required when ``cache_strategy`` is ``KVCacheStrategy.PAGED``.
     """
-
-    n_devices: int = 1
-    """Total number of devices (GPUs/accelerators) available for inference."""
 
     is_mla: bool = False
     """Whether the model uses Multi-Latent Attention (MLA) architecture."""
@@ -178,6 +187,15 @@ class KVCacheParams:
             and self.cache_strategy == KVCacheStrategy.PAGED
         ):
             raise ValueError("Page size is required for paged cache strategy")
+
+    @property
+    def n_devices(self) -> int:
+        """Returns the number of devices.
+
+        Returns:
+            The number of devices.
+        """
+        return len(self.devices)
 
     @property
     def tensor_parallel_degree(self) -> int:
@@ -403,7 +421,9 @@ class KVCacheParams:
                 f"by data parallel degree ({self.data_parallel_degree})"
             )
 
-        new_n_devices = self.n_devices // self.data_parallel_degree
+        devices_per_replica = split_into_groups(
+            self.devices, self.data_parallel_degree
+        )
 
         return KVCacheParams(
             dtype=self.dtype,
@@ -415,7 +435,70 @@ class KVCacheParams:
             host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
             cache_strategy=self.cache_strategy,
             page_size=self.page_size,
-            n_devices=new_n_devices,
+            devices=devices_per_replica[0],
             is_mla=self.is_mla,
             data_parallel_degree=1,
         )
+
+    def _get_symbolic_inputs_for_replica(
+        self, devices: Sequence[DeviceRef], replica_idx: int
+    ) -> list[PagedCacheInputSymbols]:
+        """Computes the symbolic inputs for a single replica.
+
+        Returns:
+            The symbolic inputs for the KV cache.
+        """
+
+        dynamic_dim_prefix = f"replica_{replica_idx}_"
+        return [
+            PagedCacheInputSymbols(
+                kv_blocks=BufferType(
+                    self.dtype,
+                    shape=[
+                        "total_num_pages",
+                        *self.shape_per_block,
+                    ],
+                    device=device,
+                ),
+                cache_lengths=TensorType(
+                    DType.uint32,
+                    shape=[dynamic_dim_prefix + "batch_size"],
+                    device=device,
+                ),
+                lookup_table=TensorType(
+                    DType.uint32,
+                    shape=[
+                        dynamic_dim_prefix + "batch_size",
+                        dynamic_dim_prefix + "max_num_pages",
+                    ],
+                    device=device,
+                ),
+                max_lengths=TensorType(
+                    DType.uint32,
+                    shape=[dynamic_dim_prefix + "steps_remaining", 2],
+                    device=DeviceRef.CPU(),
+                ),
+            )
+            for device in devices
+        ]
+
+    def get_symbolic_inputs(self) -> list[PagedCacheInputSymbols]:
+        """Computes the symbolic inputs for the KV cache.
+
+        This method returns a list of PagedCacheInputSymbols for each replica.
+        This is used when constructing the model graph.
+
+        Returns:
+            The symbolic inputs for the KV cache.
+        """
+        devices_per_replica = split_into_groups(
+            self.devices, self.data_parallel_degree
+        )
+        input_symbols: list[PagedCacheInputSymbols] = []
+        for replica_idx, devices in enumerate(devices_per_replica):
+            symbols = self._get_symbolic_inputs_for_replica(
+                devices,
+                replica_idx,
+            )
+            input_symbols.extend(symbols)
+        return input_symbols

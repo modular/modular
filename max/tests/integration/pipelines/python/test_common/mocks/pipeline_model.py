@@ -20,6 +20,7 @@ import numpy as np
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
@@ -119,7 +120,7 @@ class MockPipelineModel(PipelineModel):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -130,7 +131,7 @@ class MockPipelineModel(PipelineModel):
             num_layers=1,
             enable_prefix_caching=False,
             cache_strategy=KVCacheStrategy.PAGED,
-            n_devices=n_devices,
+            devices=devices,
         )
 
     @classmethod

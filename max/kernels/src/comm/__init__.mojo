@@ -16,5 +16,4 @@ This package includes functions for sending and receiving data between GPUs,
 as well as for synchronizing threads across GPUs.
 """
 
-from .allgather import allgather
-from .allreduce import allreduce
+from .sync import Signal, MAX_GPUS, group_start, group_end

@@ -27,8 +27,6 @@ from max.pipelines.lib.lora import LoRAModel
 from safetensors.numpy import save_file
 
 LoRAWeights = dict[str, npt.NDArray[Any]]
-TempLoRAAdapterFactory = Callable[..., str]
-
 
 TEST_RANK = 8
 TEST_MAX_RANK = 16
@@ -114,7 +112,7 @@ def create_lora_weights(
 
 
 @pytest.fixture
-def temp_lora_adapter() -> TempLoRAAdapterFactory:
+def temp_lora_adapter() -> Callable[..., str]:
     """Create a temporary LoRA adapter directory with config and weights."""
 
     def _create_adapter(
@@ -144,7 +142,7 @@ def temp_lora_adapter() -> TempLoRAAdapterFactory:
 
 
 def test_load_basic_qkv_adapter(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test loading a basic adapter with Q, K, V weights."""
     adapter_path = temp_lora_adapter()
@@ -165,7 +163,7 @@ def test_load_basic_qkv_adapter(
 
 
 def test_load_adapter_with_o_proj(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test loading adapter with Q, K, V, and O projection weights."""
     config = create_adapter_config(
@@ -190,7 +188,7 @@ def test_load_adapter_with_o_proj(
 
 
 def test_adapter_config_properties(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that adapter config is properly loaded."""
     config = create_adapter_config(rank=4, lora_alpha=32)
@@ -217,7 +215,7 @@ def test_adapter_config_properties(
 
 
 def test_qkv_weights_are_combined(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that Q, K, V weights are combined into qkv_lora keys."""
     adapter_path = temp_lora_adapter()
@@ -242,7 +240,7 @@ def test_qkv_weights_are_combined(
 
 
 def test_combined_lora_a_shape(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that combined LoRA A has correct shape [3*max_rank, in_features]."""
     adapter_path = temp_lora_adapter()
@@ -265,7 +263,7 @@ def test_combined_lora_a_shape(
 
 
 def test_combined_lora_b_q_shape(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that combined LoRA B_q has correct shape [q_out_features, max_rank]."""
     adapter_path = temp_lora_adapter()
@@ -288,7 +286,7 @@ def test_combined_lora_b_q_shape(
 
 
 def test_combined_lora_b_kv_shape(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that combined LoRA B_kv has correct shape [2, kv_out_features, max_rank]."""
     adapter_path = temp_lora_adapter()
@@ -316,7 +314,7 @@ def test_combined_lora_b_kv_shape(
 
 
 def test_missing_k_projection(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test handling when K projection is missing - should create zeros."""
     config = create_adapter_config(target_modules=["q_proj", "v_proj"])
@@ -349,7 +347,7 @@ def test_missing_k_projection(
 
 
 def test_missing_v_projection(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test handling when V projection is missing - should create zeros."""
     config = create_adapter_config(target_modules=["q_proj", "k_proj"])
@@ -382,7 +380,7 @@ def test_missing_v_projection(
     assert not np.allclose(k_portion_b, 0.0)
 
 
-def test_only_q_projection(temp_lora_adapter: TempLoRAAdapterFactory) -> None:
+def test_only_q_projection(temp_lora_adapter: Callable[..., str]) -> None:
     """Test handling when only Q projection exists."""
     config = create_adapter_config(target_modules=["q_proj"])
     weights = create_lora_weights(include_k=False, include_v=False)
@@ -416,7 +414,7 @@ def test_only_q_projection(temp_lora_adapter: TempLoRAAdapterFactory) -> None:
 
 
 def test_padding_when_rank_less_than_max(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that weights are padded when rank < max_lora_rank."""
     small_rank = 4
@@ -450,7 +448,7 @@ def test_padding_when_rank_less_than_max(
 
 
 def test_no_padding_when_rank_equals_max(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that no extra padding when rank == max_lora_rank."""
     config = create_adapter_config(rank=TEST_MAX_RANK)
@@ -478,7 +476,7 @@ def test_no_padding_when_rank_equals_max(
 # =============================================================================
 
 
-def test_lora_b_is_scaled(temp_lora_adapter: TempLoRAAdapterFactory) -> None:
+def test_lora_b_is_scaled(temp_lora_adapter: Callable[..., str]) -> None:
     """Test that LoRA B weights are pre-multiplied by scale = alpha/rank."""
     rank = 8
     alpha = 16
@@ -537,7 +535,7 @@ def test_lora_b_is_scaled(temp_lora_adapter: TempLoRAAdapterFactory) -> None:
 
 
 def test_weights_cast_to_base_dtype(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that weights are cast to base_dtype."""
     weights = create_lora_weights(dtype=np.float32)
@@ -563,7 +561,7 @@ def test_weights_cast_to_base_dtype(
 # =============================================================================
 
 
-def test_multiple_layers(temp_lora_adapter: TempLoRAAdapterFactory) -> None:
+def test_multiple_layers(temp_lora_adapter: Callable[..., str]) -> None:
     """Test loading adapter with weights for multiple layers."""
     config = create_adapter_config()
 
@@ -605,7 +603,7 @@ def test_multiple_layers(temp_lora_adapter: TempLoRAAdapterFactory) -> None:
 
 
 def test_unsupported_target_module_raises(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that unsupported target modules raise ValueError."""
     config = create_adapter_config(
@@ -627,7 +625,7 @@ def test_unsupported_target_module_raises(
 
 
 def test_bias_not_none_raises(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that bias != 'none' raises ValueError."""
     config = create_adapter_config(bias="all")
@@ -667,12 +665,34 @@ def test_missing_config_raises() -> None:
             )
 
 
+def test_greater_than_max_rank_raises(
+    temp_lora_adapter: Callable[..., str],
+) -> None:
+    """Test that missing adapter_config.json raises ValueError."""
+    weights = create_lora_weights(rank=17)
+    config = create_adapter_config(rank=17)
+    adapter_path = temp_lora_adapter(config=config, weights=weights)
+
+    with pytest.raises(
+        ValueError, match="LoRA of rank 17 exceeds maximum rank"
+    ):
+        LoRAModel(
+            name="test_lora",
+            path=adapter_path,
+            base_dtype=DType.float32,
+            max_lora_rank=TEST_MAX_RANK,
+            n_heads=TEST_N_HEADS,
+            n_kv_heads=TEST_N_KV_HEADS,
+            head_dim=TEST_HEAD_DIM,
+        )
+
+
 # =============================================================================
 # Get Method Tests
 # =============================================================================
 
 
-def test_get_existing_weight(temp_lora_adapter: TempLoRAAdapterFactory) -> None:
+def test_get_existing_weight(temp_lora_adapter: Callable[..., str]) -> None:
     """Test getting an existing weight."""
     adapter_path = temp_lora_adapter()
 
@@ -691,7 +711,7 @@ def test_get_existing_weight(temp_lora_adapter: TempLoRAAdapterFactory) -> None:
 
 
 def test_get_nonexistent_weight_returns_none(
-    temp_lora_adapter: TempLoRAAdapterFactory,
+    temp_lora_adapter: Callable[..., str],
 ) -> None:
     """Test that getting a nonexistent weight returns None."""
     adapter_path = temp_lora_adapter()

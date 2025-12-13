@@ -24,15 +24,14 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.kv_cache.cache_params import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.nn.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
 )
-from max.nn.kv_cache.manager import RaggedKVCacheInputs
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
-from .tp_cache_manager import PagedCacheInputSymbols, _TPPagedKVCacheManager
+from .tp_cache_manager import _TPPagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 
@@ -69,9 +68,8 @@ class PagedKVCacheManager:
     def __init__(
         self,
         params: KVCacheParams,
-        total_num_pages: int,
-        devices: Sequence[Device],
         session: InferenceSession,
+        total_num_pages: int,
         total_num_host_pages: int = 0,
         enable_runtime_checks: bool = False,
     ) -> None:
@@ -79,21 +77,21 @@ class PagedKVCacheManager:
 
         Args:
             params: KV cache parameters including data parallelism settings
-            devices: The devices to use for the KV cache manager.  If data
-                parallelism is enabled, the devices will be split into
-                ``params.data_parallel_degree`` groups.
-            session: Inference session
+            session: The MAX Engine inference session
+            total_num_pages: The total number of pages to allocate
+            total_num_host_pages: The total number of host pages to allocate
             enable_runtime_checks: Whether to enable runtime checks
         """
         self.params = params
+        self.devices = [d.to_device() for d in params.devices]
 
-        # The effective total number of pages is .
         self.num_replicas = params.data_parallel_degree
-        assert len(devices) % self.num_replicas == 0, (
+        assert len(self.devices) % self.num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
-        self.devices = devices
-        self.devices_per_replica = split_into_groups(devices, self.num_replicas)
+        self.devices_per_replica = split_into_groups(
+            self.devices, self.num_replicas
+        )
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
         dp_1_params = params.copy_as_dp_1()
@@ -219,19 +217,6 @@ class PagedKVCacheManager:
             )
         return ret_list
 
-    def get_symbolic_inputs(
-        self,
-        devices: Sequence[Device] | None = None,
-        num_layers: int | None = None,
-    ) -> Sequence[PagedCacheInputSymbols]:
-        input_symbols: list[PagedCacheInputSymbols] = []
-        for i, devices in enumerate(self.devices_per_replica):
-            symbols = self._replica_managers[i]._input_symbols(
-                devices, num_layers, dynamic_dim_prefix=f"replica_{i}_"
-            )
-            input_symbols.extend(symbols)
-        return input_symbols
-
     def release(self, request_id: RequestID) -> None:
         replica_idx = self._request_to_replica_idx.pop(request_id)
         self._request_count_per_replica[replica_idx] -= 1
@@ -283,7 +268,7 @@ class PagedKVCacheManager:
             manager.reset_metrics()
 
     def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
-        input_symbols = self.get_symbolic_inputs()
+        input_symbols = self.params.get_symbolic_inputs()
         cache_lengths_types = [
             input_symbols[i][1] for i in range(len(self.devices))
         ]

@@ -124,7 +124,7 @@ three bits, making room for the flags.
 If the string is pointing to static constant memory, the `_capacity_or_data`
 field can be one of two bitpatterns: 0 with no flags set, or 0 with
 `FLAG_HAS_NULL_TERMINATOR` set. When attempting to get a mutable pointer to
-static constant memory the implementation will decide wether to inline the
+static constant memory the implementation will decide whether to inline the
 string, or reallocate it to the heap based on the requested capacity. This
 avoids having to allocate when initializing from a `StringLiteral` or
 `StaticString`.

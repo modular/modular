@@ -8,12 +8,17 @@ cc_args(
         "@rules_cc//cc/toolchains/actions:compile_actions",
         "@rules_cc//cc/toolchains/actions:link_actions",
     ],
-    args = [
-        "-resource-dir={resource_dir}/lib/clang/20",
+    allowlist_include_directories = [
+        "//bazel/internal/cc-toolchain/tools:resource_directory",
     ],
-    data = ["//bazel/internal/cc-toolchain/tools:resource_directory"],
+    args = [
+        "-resource-dir={resource_dir}",
+    ],
+    data = [
+        "//bazel/internal/cc-toolchain/tools:resource_directory_filegroup",
+    ],
     format = {
-        "resource_dir": "//bazel/internal/cc-toolchain/tools:resource_directory",
+        "resource_dir": "//bazel/internal/cc-toolchain/tools:resource_directory_filegroup",
     },
 )
 

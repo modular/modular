@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: mojo/manual/structs/reference.mdx
 
 from os import abort
 

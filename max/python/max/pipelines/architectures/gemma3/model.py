@@ -25,12 +25,6 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -125,6 +119,7 @@ class Gemma3Model(
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        text_huggingface_config: AutoConfig | None = None,
     ) -> None:
         """
         Args:
@@ -141,6 +136,8 @@ class Gemma3Model(
             weights: The model weights (:obj:`max.graph.weights.Weights`).
             adapter: An optional adapter to modify weights before loading
                 (:obj:`max.graph.weights.WeightsAdapter`).
+            text_huggingface_config: The text configuration loaded from HuggingFace
+                if it differs from the base huggingface_config (:obj:`transformers.AutoConfig`).
             return_logits: The number of top logits to return from the model
                 execution.
         """
@@ -155,6 +152,9 @@ class Gemma3Model(
             adapter,
             return_logits,
         )
+        # Override the huggingface_config to use the text huggingface_config if provided
+        if text_huggingface_config is not None:
+            self.huggingface_config = text_huggingface_config
 
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
@@ -187,7 +187,7 @@ class Gemma3Model(
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -198,7 +198,7 @@ class Gemma3Model(
         Args:
             huggingface_config: The HuggingFace model configuration object
                 (:obj:`transformers.AutoConfig`).
-            n_devices: The number of devices the model will run on.
+            devices: The list of devices the model will run on.
             kv_cache_config: The MAX Engine KV cache configuration settings
                 (:obj:`max.pipelines.max_config.KVCacheConfig`).
             cache_dtype: The desired data type for the KV cache
@@ -208,7 +208,7 @@ class Gemma3Model(
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
         return Gemma3Config.get_kv_params(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
+            huggingface_config, devices, kv_cache_config, cache_dtype
         )
 
     @classmethod
@@ -225,47 +225,6 @@ class Gemma3Model(
             The number of hidden layers.
         """
         return Gemma3Config.get_num_layers(huggingface_config)
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the KV cache required for the Gemma 3 model in bytes.
-
-        Args:
-            pipeline_config: The configuration for the pipeline.
-            available_cache_memory: The total memory available for the KV cache
-                in bytes.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) the
-                model will run on.
-            kv_cache_config: Configuration settings for the KV cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The estimated size of the KV cache in bytes.
-        """
-        return estimate_kv_cache_size(
-            params=Gemma3Config.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=len(devices),
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-        )
 
     def load_model(self, session: InferenceSession) -> Model:
         """Loads the compiled Gemma 3 model into the MAX Engine session.
@@ -316,15 +275,14 @@ class Gemma3Model(
     ) -> list[PagedCacheValues]:
         kv_params = Gemma3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
+            devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
         )
-        n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
+        fetch_types = kv_params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
+        for i in range(len(self.devices)):
             start_idx = i * len_of_kv_tuple_per_dev
             kv_caches_per_dev.append(
                 PagedCacheValues(
@@ -398,7 +356,7 @@ class Gemma3Model(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
@@ -585,35 +543,4 @@ class Gemma3Model(
             return_n_logits=prev_model_inputs.return_n_logits,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
-    def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        """Loads and initializes the KVCacheManager for the Gemma 3 model.
-
-        Configures the KV cache manager based on model parameters, pipeline settings,
-        and available memory.
-
-        Args:
-            session: The MAX Engine inference session.
-            available_cache_memory: The amount of memory available for the KV cache in bytes.
-
-        Returns:
-            An initialized :obj:`KVCacheManager` instance.
-        """
-        return load_kv_manager(
-            params=Gemma3Config.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
         )

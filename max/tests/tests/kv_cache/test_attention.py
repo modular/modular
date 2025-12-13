@@ -34,6 +34,7 @@ def create_kv_params(n_kv_heads: int = 8) -> KVCacheParams:
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         dtype=DType.float32,
+        devices=[DeviceRef.GPU()],
     )
 
 
@@ -53,6 +54,7 @@ def test_attention_with_rope_stacked_qkv_bias_validation() -> None:
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         dtype=DType.float32,
+        devices=[DeviceRef.GPU()],
     )
 
     # Test that stacked_qkv=True with has_bias=True raises ValueError.

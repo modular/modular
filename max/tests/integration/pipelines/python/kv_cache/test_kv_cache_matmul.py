@@ -128,6 +128,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -156,11 +157,10 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_manager.get_symbolic_inputs()[0]
+        kv_params.get_symbolic_inputs()[0]
     )
 
     def construct() -> Graph:
@@ -317,6 +317,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -345,7 +346,6 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
 
@@ -357,7 +357,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
             hidden_state_type,
             input_row_offsets_type,
             wkv_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 
@@ -451,6 +451,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
+        devices=[DeviceRef.CPU()],
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -478,7 +479,6 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
 
@@ -489,7 +489,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
             hidden_state_type,
             input_row_offsets_type,
             wk_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 
@@ -557,6 +557,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
 
     # Set MLIR types for the graph.
@@ -582,7 +583,6 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=InferenceSession(devices=[CPU()]),
     )
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -593,7 +593,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
             hidden_state_type,
             input_row_offsets_type,
             wkv_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
     matmul_kv_cache_op = [

@@ -11,7 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from max.engine.api import InferenceSession
-from shared_conv_impl import conv1d_impl, conv2d_impl, conv3d_impl
+from shared_conv_impl import (
+    conv1d_impl,
+    conv1d_tuple_padding_impl,
+    conv1d_tuple_padding_nonfcrs_impl,
+    conv2d_impl,
+    conv2d_tuple_padding_impl,
+    conv3d_impl,
+    conv3d_tuple_padding_impl,
+)
 from test_common.numerics import pytorch_disable_tf32_dtype
 
 
@@ -28,3 +36,25 @@ def test_conv1d_gpu(gpu_session: InferenceSession) -> None:
 @pytorch_disable_tf32_dtype
 def test_conv2d_gpu(gpu_session: InferenceSession) -> None:
     conv2d_impl(gpu_session)
+
+
+@pytorch_disable_tf32_dtype
+def test_conv2d_tuple_padding_gpu(gpu_session: InferenceSession) -> None:
+    conv2d_tuple_padding_impl(gpu_session)
+
+
+@pytorch_disable_tf32_dtype
+def test_conv1d_tuple_padding_gpu(gpu_session: InferenceSession) -> None:
+    conv1d_tuple_padding_impl(gpu_session)
+
+
+@pytorch_disable_tf32_dtype
+def test_conv1d_tuple_padding_nonfcrs_gpu(
+    gpu_session: InferenceSession,
+) -> None:
+    conv1d_tuple_padding_nonfcrs_impl(gpu_session)
+
+
+@pytorch_disable_tf32_dtype
+def test_conv3d_tuple_padding_gpu(gpu_session: InferenceSession) -> None:
+    conv3d_tuple_padding_impl(gpu_session)

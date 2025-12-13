@@ -143,7 +143,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
     @staticmethod
     def calculate_attention_multiplier(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> float:
@@ -163,7 +163,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 / float(
                     Llama3Config.get_kv_params(
                         huggingface_config=huggingface_config,
-                        n_devices=n_devices,
+                        devices=devices,
                         kv_cache_config=kv_cache_config,
                         cache_dtype=cache_dtype,
                     ).head_dim
@@ -178,7 +178,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         data_parallel_degree: int = 1,
@@ -200,7 +200,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            n_devices=n_devices,
+            devices=devices,
             data_parallel_degree=data_parallel_degree,
         )
 
@@ -355,7 +355,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
 
         # Calculate base attention multiplier
         base_attention_multiplier = Llama3Config.calculate_attention_multiplier(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
+            huggingface_config, device_refs, kv_cache_config, cache_dtype
         )
 
         # Apply LongRoPE attention scaling if needed
@@ -402,7 +402,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             ),
             kv_params=Llama3Config.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=n_devices,
+                devices=device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
                 data_parallel_degree=data_parallel_degree,

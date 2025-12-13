@@ -2570,6 +2570,14 @@ def test_bool_init():
     assert_false(mixed_bool[3])
 
 
+def test_float8_e8m0fnu_type_alias():
+    # Test that the Float8_e8m0fnu type alias correctly maps to the expected DType.
+    assert_equal(Float8_e8m0fnu.dtype, DType.float8_e8m0fnu)
+
+    # Test that the size is 1 byte.
+    assert_equal(size_of[Float8_e8m0fnu](), 1)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
     # TODO: add tests for __and__, __or__, and comparison operators

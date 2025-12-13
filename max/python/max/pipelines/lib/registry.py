@@ -19,13 +19,14 @@ import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
+    Pipeline,
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
@@ -59,14 +60,7 @@ from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
-PipelineTypes = Union[  # noqa: UP007 (This breaks a mypy check, unsure why)
-    TextGenerationPipeline[TextContext],
-    EmbeddingsPipeline,
-    AudioGeneratorPipeline,
-    StandaloneSpeculativeDecodingPipeline,
-    SpeechTokenGenerationPipeline,
-    EAGLESpeculativeDecodingPipeline,
-]
+PipelineTypes: TypeAlias = Pipeline[Any, Any]
 
 
 def get_pipeline_for_task(

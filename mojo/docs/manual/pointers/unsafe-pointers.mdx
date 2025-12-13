@@ -357,9 +357,10 @@ s_ptr = UnsafePointer(to=s)
 
 When allocating memory with the `alloc()` function, the returned pointer has
 an `origin` value of `MutOrigin.external`. This value represents an origin that
-is mutable and does not _alias_ any existing value. (For example, it does not
-point to the memory allocated for any other variable.) This memory isn't tracked
-by Mojo's lifetime checker, so you're responsible for freeing it.
+is mutable and doesn't _alias_ existing values. For example, it doesn't
+point to the memory allocated for any other variable. That means the compiler
+won't unnecessarily extend the lifetimes of unrelated values. This memory isn't tracked
+by Mojo's lifetime checker and you're responsible for freeing it.
 
 If you're using a pointer in the implementation of a struct, you usually don't
 have to worry about the origin, as long as the pointer isn't exposed outside of

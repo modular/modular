@@ -52,7 +52,7 @@ struct _NoneType(ImplicitlyCopyable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Optional[T: Copyable](
+struct Optional[T: Movable](
     Boolable,
     Defaultable,
     ImplicitlyCopyable,

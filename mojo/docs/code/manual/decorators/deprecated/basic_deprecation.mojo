@@ -11,20 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""PagedCacheValues"""
 
-from dataclasses import dataclass
-
-from max.graph import (
-    BufferValue,
-    TensorValue,
-)
-from max.nn.kv_cache.nested_iterable import NestedIterableDataclass
+# Mark function `a` as deprecated with a custom message
+@deprecated("Ignore. Deprecation test. Sunsetting a")
+fn a():
+    pass
 
 
-@dataclass
-class PagedCacheValues(NestedIterableDataclass):
-    kv_blocks: BufferValue
-    cache_lengths: TensorValue
-    lookup_table: TensorValue
-    max_lengths: TensorValue
+# Mark function `b` as deprecated with alternative
+@deprecated(use=c)
+fn b():
+    pass
+
+
+# `c` is `b`'s recommended replacement after deprecation
+fn c():
+    pass
+
+
+fn main():
+    a()  # custom warning
+    b()  # warning with recommended replacement
+    c()  # no warning
+
+    # Demonstrate that only warnings are issued
+    print("This is a functioning app")

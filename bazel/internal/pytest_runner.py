@@ -12,15 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 import argparse
+import faulthandler
 import importlib
 import os
 import platform
 import shlex
+import signal
 import sys
 import sysconfig
 from pathlib import Path
 
 import pytest
+
+# dumps stack traces when bazel kills a hung / slow test
+faulthandler.register(signal.SIGTERM)
 
 
 def __build_parser() -> argparse.ArgumentParser:
@@ -161,11 +166,8 @@ fi
         f"junit_suite_name={os.environ['TEST_TARGET']}",
     ]
 
-    try:
-        _ = importlib.import_module("pytest_asyncio")
+    if importlib.util.find_spec("pytest_asyncio"):
         pytest_args.append("--asyncio-mode=auto")
-    except ModuleNotFoundError:
-        pass
 
     if namespace.k:
         pytest_args.extend(["-k", namespace.k])

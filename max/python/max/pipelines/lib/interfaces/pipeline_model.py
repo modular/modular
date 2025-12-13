@@ -33,6 +33,8 @@ from transformers import AutoConfig
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
+from max.graph import DeviceRef
+
 from ..config_enums import SupportedEncoding
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
@@ -166,6 +168,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self.huggingface_config = huggingface_config
         self.encoding = encoding
         self.devices = devices
+        self.device_refs = [DeviceRef.from_device(d) for d in devices]
         self.kv_cache_config = kv_cache_config
         self.weights = weights
         self.adapter = adapter
@@ -178,8 +181,24 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         )
 
         if isinstance(self, KVCacheMixin):
+            self.kv_params = self.get_kv_params(
+                huggingface_config=huggingface_config,
+                devices=self.device_refs,
+                kv_cache_config=kv_cache_config,
+                cache_dtype=encoding.cache_dtype,
+            )
+            assert self.kv_cache_config._available_cache_memory is not None, (
+                "Available cache memory should have been set during memory estimation"
+            )
+            assert pipeline_config.max_batch_size is not None, (
+                "max_batch_size should have been set during memory estimation"
+            )
             self.kv_manager = self.load_kv_manager(
-                session, self.kv_cache_config._available_cache_memory
+                kv_params=self.kv_params,
+                max_batch_size=pipeline_config.max_batch_size,
+                max_seq_len=self.max_seq_len,
+                session=session,
+                available_cache_memory=self.kv_cache_config._available_cache_memory,
             )
 
         self._lora_manager: LoRAManager | None = (
@@ -304,7 +323,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         kv_params = cls.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=len(devices),
+            devices=[DeviceRef.from_device(d) for d in devices],
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )

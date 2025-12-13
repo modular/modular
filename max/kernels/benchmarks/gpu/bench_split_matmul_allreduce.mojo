@@ -16,7 +16,7 @@ from sys import env_get_bool, env_get_dtype, env_get_int, size_of
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList, NDBuffer
-from comm.allreduce import MAX_GPUS, Signal
+from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, initialize, static

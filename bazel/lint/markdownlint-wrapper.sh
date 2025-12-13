@@ -31,8 +31,10 @@ else
     paths="."
 fi
 
+# Intentionally disable this, we want $paths to split into multiple args
+# shellcheck disable=SC2086
 JS_BINARY__CHDIR="$BUILD_WORKSPACE_DIRECTORY" \
   "$binary" --config "$config" \
   --ignore-path "$BUILD_WORKSPACE_DIRECTORY/.gitignore" \
   --ignore "$BUILD_WORKSPACE_DIRECTORY/third-party" \
-  "$@" "$paths" 2>&1 | sed 's/^/error: /'
+  "$@" $paths 2>&1 | sed 's/^/error: /'

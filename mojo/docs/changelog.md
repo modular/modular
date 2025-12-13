@@ -273,10 +273,13 @@ what we publish.
 
   - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
     and `Representable`.
+  - `Dict` now conforms to `Writable`, `Stringable`, and `Representable`.
 
   - The following types no longer require their elements to be `Copyable`.
+    - `Iterator`
     - `Tuple`
     - `Variant`
+    - `Optional`
 
 - Basic file I/O operations in the `io` module are now implemented natively in
   Mojo using direct `libc` system calls (`open`, `close`, `read`, `write`,

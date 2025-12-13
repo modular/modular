@@ -81,12 +81,12 @@ def test_kv_cache_radd_basic() -> None:
         cache_strategy=KVCacheStrategy.PAGED,
         num_layers=num_layers,
         page_size=128,
+        devices=[DeviceRef.GPU()],
     )
 
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[device],
         session=session,
     )
 
@@ -116,7 +116,7 @@ def test_kv_cache_radd_basic() -> None:
             a_type,
             input_row_offsets_type,
             batch_offset_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 

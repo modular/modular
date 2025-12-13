@@ -32,12 +32,6 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.nn.parallel import ParallelArrayOps
@@ -92,7 +86,7 @@ class Qwen3VLInputs(ModelInputs):
 
     scatter_indices: list[Tensor] | None = None
     """Per-device pre-computed scatter indices for the image embeddings.
-    
+
     These are the locations of the image_token_id in the input_ids fed to the model."""
 
     gather_indices: list[Tensor] | None = None
@@ -199,13 +193,13 @@ class Qwen3VLModel(
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen3VL."""
         return Qwen3VLConfig.get_kv_params(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
+            huggingface_config, devices, kv_cache_config, cache_dtype
         )
 
     # TODO: Seems like a common pattern. Implement in a base class?
@@ -215,37 +209,11 @@ class Qwen3VLModel(
         return Qwen3VLConfig.get_num_layers(huggingface_config)
 
     # TODO: Seems like a common pattern. Implement in a base class?
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the KV cache required for the Qwen3VL model in bytes."""
-        return estimate_kv_cache_size(
-            params=Qwen3VLConfig.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=len(devices),
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-        )
-
-    # TODO: Seems like a common pattern. Implement in a base class?
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
         """Unflatten KV cache inputs from flat list to per-device structure."""
-        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
+        fetch_types = self.kv_params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         n_devices = len(self.devices)
 
@@ -553,7 +521,7 @@ class Qwen3VLModel(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -723,7 +691,7 @@ class Qwen3VLModel(
             variadic_args = variadic_args[len(self.devices) :]
 
             # Calculate how many KV cache inputs there are
-            kv_inputs = self.kv_manager.get_symbolic_inputs()
+            kv_inputs = self.kv_params.get_symbolic_inputs()
             flattened_kv_types = [
                 kv_type for sublist in kv_inputs for kv_type in sublist
             ]
@@ -1218,24 +1186,4 @@ class Qwen3VLModel(
             max_seqlen=None,
             max_grid_size=None,
             grid_thw=None,
-        )
-
-    def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        """Loads and initializes the PagedKVCacheManager for the Qwen3VL model."""
-        return load_kv_manager(
-            params=Qwen3VLConfig.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
         )

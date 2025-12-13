@@ -106,7 +106,7 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         page_size: int = 128,
@@ -121,7 +121,7 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
             + huggingface_config.qk_rope_head_dim,
             num_layers=DeepseekV3Config.get_num_layers(huggingface_config),
             cache_strategy=KVCacheStrategy.PAGED,
-            n_devices=n_devices,
+            devices=devices,
             page_size=page_size,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,

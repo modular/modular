@@ -80,26 +80,6 @@ fn repr[T: Representable](value: T) -> String:
     return value.__repr__()
 
 
-fn repr[
-    K: KeyElement & Representable,
-    V: Copyable & Representable,
-](value: Dict[K, V]) -> String:
-    """Returns the string representation of a `Dict[K,V]`.
-
-    Args:
-        value: A `Dict` of keys `K` and elements `V`.
-
-    Parameters:
-        K: A type that implements `KeyElement` and `Representable`.
-        V: A type that implements `Copyable` and `Representable`.
-
-    Returns:
-        The string representation of `Dict[K,V]`.
-    """
-    # TODO: remove when `Dict` can conform conditionally to `Representable`.
-    return value.__str__()
-
-
 fn repr[U: KeyElement & Representable](value: Set[U]) -> String:
     """Returns the string representation of an `Set[U]`.
 

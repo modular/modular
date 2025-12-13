@@ -235,6 +235,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[device],
     )
 
     with Graph(
@@ -372,6 +373,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_device_mismatch(
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[get_device(wqkv_dev)],
     )
 
     kv_collection = Mock(spec=PagedCacheValues)
@@ -427,6 +429,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device() -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[device],
     )
 
     kv_collection = Mock(spec=PagedCacheValues)
@@ -472,6 +475,7 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[device],
     )
 
     with Graph(
@@ -546,6 +550,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[device],
     )
 
     def get_valid_input_types() -> list[TensorType | BufferType]:
@@ -665,6 +670,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.MODEL_DEFAULT,  # Invalid strategy
         page_size=128,
+        devices=[device],
     )
 
     with Graph(

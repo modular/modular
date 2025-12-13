@@ -164,7 +164,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -175,7 +175,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
         ConfigCls = _select_llm_config_class(llm_hf_cfg)
         return ConfigCls.get_kv_params(
             huggingface_config=llm_hf_cfg,
-            n_devices=n_devices,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )

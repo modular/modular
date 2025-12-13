@@ -216,9 +216,9 @@ use a parameterized struct. In this case, when you create an instance of
 passing in this case is a *type*. That's OK: a Mojo type is a valid compile-time
 value.)
 
-You'll see that `ElementType` is used throughout the struct where you'd usually
-see a type name. For example, as the formal type for the `elements` in the
-constructor, and the return type of the `__getitem__()` method.
+You'll see that `Self.ElementType` is used throughout the struct where you'd
+usually see a type name. For example, as the formal type for the `elements` in
+the constructor, and the return type of the `__getitem__()` method.
 
 Here's an example of using `GenericArray`:
 
@@ -256,13 +256,42 @@ GenericArray[Float64].splat(8, 0)
 
 The method returns an instance of `GenericArray[Float64]`.
 
+### Referencing struct parameters
+
+As shown in the previous section, you reference a
+struct parameter using dot syntax, just like a struct method or field (for
+example, `Self.ElementType`).
+
+This struct parameter access works anywhere, not just inside a struct's methods.
+You can access parameters as attributes on the type itself:
+
+```mojo
+fn on_type():
+    print(SIMD[DType.float32, 2].size)  # prints 2
+```
+
+Or as attributes on an *instance* of the type:
+
+```mojo
+fn on_instance():
+    var x = SIMD[DType.int32, 2](4, 8)
+    print(x.dtype)  # prints int32
+```
+
+:::note Works for comptime members too
+
+Although you may not have seen [`comptime` members](#comptime-members) yet,
+they're another type of compile-time value attached to a struct,
+and they can be accessed the same way.
+
+:::
+
 ### Conditional conformance
 
 When creating a generic struct, you might want to define some methods that
 require extra features. For example, consider a collection like `GenericArray`
 that holds instances of a type that conforms to the
-[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait and therefore to the 
-[`Movable`](/mojo/stdlib/builtin/value/Movable) trait. This imposes a lot
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait. This imposes a lot
 of limitations: you can't implement a `sort()` method because you can't
 guarantee that the stored type supports the comparison operators; you can't
 write a useful `__str__()` or `__repr__()` dunder method because you can't
@@ -347,15 +376,15 @@ the SIMD vectors on any hardware.
 Here's a cut-down (non-functional) version of Mojo's `SIMD` type definition:
 
 ```mojo
-struct SIMD[type: DType, size: Int]:
+struct SIMD[dtype: DType, size: Int]:
     var value: … # Some low-level MLIR stuff here
 
     # Create a new SIMD from a number of scalars
-    fn __init__(out self, *elems: SIMD[Self.type, 1]):  ...
+    fn __init__(out self, *elems: SIMD[Self.dtype, 1]):  ...
 
     # Fill a SIMD with a duplicated scalar value.
     @staticmethod
-    fn splat(x: SIMD[Self.type, 1]) -> SIMD[Self.type, Self.size]: ...
+    fn splat(x: SIMD[Self.dtype, 1]) -> SIMD[Self.dtype, Self.size]: ...
 
     # Cast the elements of the SIMD to a different elt type.
     fn cast[target: DType](self) -> SIMD[target, Self.size]: ...
@@ -946,54 +975,40 @@ on.
     var half_floats = Floats[2, True](10.0, 12.0)
 ```
 
-### Comptime members
+### `comptime` members
 
-You can also define `comptime` values as members of a `struct` definition.
+You can also define `comptime` values as members of a `struct` or `trait`
+declaration:
+
+```
+struct Circle[radius: Float64]:
+    comptime pi = 3.14159265359
+    comptime circumference = 2 * Self.pi * Self.radius
+```
+
 These `comptime` members have a number of uses:
 
 - Constant values specific to the type.
 - Constant values calculated based on the struct's parameters.
-- Derived types based on the struct's parameters.
+- Associated types based on the struct's parameters.
 
-Derived types are a common use for `comptime` members. For example, a `List[T]`
-struct holds values of type `T`. The list's `__iter__()` method returns a list
-iterator that returns values of type `T`. `List` uses a `comptime` member,
-`IteratorType`, to define the type of the returned iterator.
+The difference between parameters and `comptime` members is that parameter values
+are specified by the user, but `comptime` members represent either constant
+values or values derived from the input parameters.
 
-The following code excerpt shows a simplified version of some of the `List`
-code, showing the `List` and its derived `IteratorType`:
+A trait can declare a `comptime` member, which must be defined by all conforming
+structs.
 
-```mojo
-@fieldwise_init
-struct _ListIter[
-    mut: Bool, //,
-    T: Copyable,
-    origin: Origin[mut],
-](ImplicitlyCopyable, Iterable, Iterator):
+:::note Referencing comptime members
 
-    comptime Element = Self.T  # Required by the Iterator trait
+Referencing `comptime` members works just like referencing parameters—you can
+reference a member using dot syntax (such as `Self.IteratorType`). For more
+information, see
+[Referencing struct parameters](#referencing-struct-parameters).
 
-    var index: Int
-    var src: Pointer[List[Self.Element], Self.origin]
+:::
 
-    ...
-
-struct List[T: Copyable](
-    Boolable, Copyable, Defaultable, Iterable, Sized
-):
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _ListIter[Self.T, iterable_origin]
-
-    ...
-
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return {0, Pointer(to=self)}
-    ...
-```
-
-The `IteratorType` `comptime` member is parameterized on an origin, so it can
-represent both mutable and immutable iterators.
+#### `comptime` members as enumerations
 
 Some Mojo types use `comptime` members to express enumerations. For example, the
 following code defines a `Sentiment` type that defines `comptime` constants
@@ -1027,6 +1042,48 @@ The [`DType`](/mojo/stdlib/builtin/dtype/DType) struct implements a simple enum
 using `comptime` members like this. This allows clients to use values like
 `DType.float32` in parameter expressions or runtime expressions.
 
+#### `comptime` members as associated types
+
+Associated types are a common use for `comptime` members. For example, a `List[T]`
+struct holds values of type `T`. The list's `__iter__()` method returns a list
+iterator that returns values of type `T`. `List` uses a `comptime` member,
+`IteratorType`, to define the type of the returned iterator.
+
+The following code excerpt shows a simplified version of some of the `List`
+code, showing the `List` and its associated `IteratorType`:
+
+```mojo
+@fieldwise_init
+struct _ListIter[
+    mut: Bool, //,
+    T: Copyable,
+    origin: Origin[mut],
+](ImplicitlyCopyable, Iterable, Iterator):
+
+    comptime Element = Self.T  # Required by the Iterator trait
+
+    var index: Int
+    var src: Pointer[List[Self.Element], Self.origin]
+
+    ...
+
+struct List[T: Copyable](
+    Boolable, Copyable, Defaultable, Iterable, Sized
+):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _ListIter[Self.T, iterable_origin]
+
+    ...
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return {0, Pointer(to=self)}
+    ...
+```
+
+The `IteratorType` member is parameterized on an origin, so it can
+represent both mutable and immutable iterators.
+
 ## Fully-bound, partially-bound, and unbound types
 
 A parametric type with its parameters specified is said to be *fully-bound*.
@@ -1047,7 +1104,7 @@ underscore `_` in the parameter list indicates that the second parameter,
 `V` (the value type), is unbound.
 You specify the `V` parameter later, when you use `StringKeyDict`.
 
-:::note Partially-bound types versus parametric `comptime` values
+:::note Partially-bound types versus parametric comptime values
 
 You may notice that this example is very similar to an example in the section on
 [parametric `comptime` values](#parametric-comptime-values). For simple type
@@ -1178,7 +1235,7 @@ function. This is easier to understand with an example:
 
 ```mojo
 fn print_params(vec: SIMD):
-    print(vec.type)
+    print(vec.dtype)
     print(vec.size)
 
 var v = SIMD[DType.float64, 4](1.0, 2.0, 3.0, 4.0)
@@ -1190,7 +1247,7 @@ float64
 4
 ```
 
-In the above example, the `print_params` function is automatically
+In the above example, the `print_params()` function is automatically
 parameterized. The `vec` argument takes an argument of type `SIMD[*_]`. This is
 an [unbound parameterized
 type](#fully-bound-partially-bound-and-unbound-types)—that is, it doesn't
@@ -1210,38 +1267,28 @@ When you call `print_params()` you must pass it a concrete instance of the
 values from the input argument.
 
 With a manually parameterized function, you can access the parameters by
-name (for example, `t` and `s` in the previous example). For an
-automatically parameterized function, you can access the parameters as
-attributes on the argument (for example, `vec.type`).
+name (for example, `t` and `s` in the previous example), which is not an option
+in an automatically parameterized function.
 
-This ability to access a type's parameters is not specific to
-automatically parameterized functions, you can use it anywhere. You can access
-the parameters of a parameterized type as attributes on the type itself:
-
-```mojo
-fn on_type():
-    print(SIMD[DType.float32, 2].size) # prints 2
-```
-
-Or as attributes on an *instance* of the type:
-
-```mojo
-fn on_instance():
-    var x = SIMD[DType.int32, 2](4, 8)
-    print(x.dtype)  # prints int32
-```
+However, you can always access a type's parameters and `comptime` members using
+dot syntax (for example, `vec.dtype`), as described in
+[Referencing struct parameters](#referencing-struct-parameters).
+This ability to access a type's parameters and `comptime` members is not
+specific to automatically parameterized functions, you can use it anywhere.
 
 You can even use this syntax in the function's signature to define a
-function's arguments and return type based on an argument's parameters.
+function's arguments and return type based on an argument's parameters or
+`comptime` members.
+
 For example, if you want your function to take two SIMD vectors with the same
 type and size, you can write code like this:
 
 ```mojo
-fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.type, v1.size*2]:
-    var result = SIMD[v1.type, v1.size*2]()
+fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size*2]:
+    var result = SIMD[v1.dtype, v1.size*2]()
     for i in range(v1.size):
-        result[i*2] = SIMD[v1.type, 1](v1[i])
-        result[i*2+1] = SIMD[v1.type, 1](v2[i])
+        result[i*2] = SIMD[v1.dtype, 1](v1[i])
+        result[i*2+1] = SIMD[v1.dtype, 1](v2[i])
     return result
 
 var a = SIMD[DType.int16, 4](1, 2, 3, 4)
@@ -1254,9 +1301,9 @@ print(c)
 [1, 0, 2, 0, 3, 0, 4, 0]
 ```
 
-As shown in the example, you can use the magic `type_of(x)` call if you just want to
-match the type of an argument. In this case, it's more convenient and compact that
-writing the equivalent `SIMD[v1.type, v1.size]`.
+As shown in the example, you can use the magic `type_of(x)` call if you just
+want to match the type of an argument. In this case, it's more convenient and
+compact than writing the equivalent `SIMD[v1.dtype, v1.size]`.
 
 ### Automatic parameterization of parameters
 

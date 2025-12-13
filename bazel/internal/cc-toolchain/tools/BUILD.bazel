@@ -35,17 +35,14 @@ cc_tool(
         "@clang-linux-aarch64//:bin/clang++",  # symlink to clang
         "@clang-linux-aarch64//:bin/dsymutil",
         "@clang-linux-aarch64//:ld",
-        "@clang-linux-aarch64//:lib",
         "@clang-linux-x86_64//:bin/clang",
         "@clang-linux-x86_64//:bin/clang++",  # symlink to clang
         "@clang-linux-x86_64//:bin/dsymutil",
         "@clang-linux-x86_64//:ld",
-        "@clang-linux-x86_64//:lib",
         "@clang-macos//:bin/clang",
         "@clang-macos//:bin/clang++",  # symlink to clang
         "@clang-macos//:bin/dsymutil",
         "@clang-macos//:ld",
-        "@clang-macos//:lib",
     ],
     tags = [
         "manual",
@@ -79,6 +76,7 @@ declare_tools()
         "llvm-objcopy",
         "llvm-otool",
         "resource_directory",
+        "resource_directory_filegroup",
     ]
 ]
 
@@ -87,15 +85,15 @@ builtin_module_map(
     include_directories = select({
         "//:linux_aarch64": [
             "@clang-linux-aarch64//:include_dir",
-            "@sysroot-jammy-aarch64//:root",
+            "@sysroot-jammy-aarch64//sysroot:root",
         ],
         "//:linux_x86_64": [
             "@clang-linux-x86_64//:include_dir",
-            "@sysroot-jammy-x86_64//:root",
+            "@sysroot-jammy-x86_64//sysroot:root",
         ],
         "@platforms//os:macos": [
             "@clang-macos//:include_dir",
-            "@sysroot-macos//:root",
+            "@sysroot-macos//sysroot:root",
         ],
     }),
     tags = ["manual"],

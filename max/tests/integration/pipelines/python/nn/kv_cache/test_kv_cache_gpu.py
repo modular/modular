@@ -17,6 +17,7 @@ import numpy as np
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from test_common.context_utils import create_text_context
@@ -35,10 +36,10 @@ async def _test_kv_cache_gpu() -> None:
         num_layers=32,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.GPU()],
     )
     kv_manager = PagedKVCacheManager(
         params=kv_params,
-        devices=[device],
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
     )

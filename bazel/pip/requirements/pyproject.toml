@@ -128,7 +128,7 @@ dependencies = [
   # in the wheel build.
   "pillow>=10.0.0",
   "locust",
-  "openai==1.52.2",
+  "openai==2.11.0",
   "librosa==0.10.2",
   "soundfile==0.12.1",
   "grpcio",

@@ -82,7 +82,7 @@ def _single_gpu_baseline(
         n_kv_heads=1,
         head_dim=576,
         cache_strategy=KVCacheStrategy.PAGED,
-        n_devices=1,
+        devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
     )
@@ -105,7 +105,6 @@ def _single_gpu_baseline(
     attn.load_state_dict(attention_weights)
 
     kv_manager = PagedKVCacheManager(
-        devices=[Accelerator(0)],
         params=kv_params,
         total_num_pages=8,
         session=session,
@@ -124,7 +123,7 @@ def _single_gpu_baseline(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_manager.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs()[0],
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
@@ -229,7 +228,7 @@ def _build_kv_params(config: DeepseekV2Config, dp_degree: int) -> KVCacheParams:
         head_dim=576,
         num_layers=config.num_hidden_layers,
         cache_strategy=KVCacheStrategy.PAGED,
-        n_devices=dp_degree,
+        devices=[DeviceRef.GPU(i) for i in range(dp_degree)],
         page_size=128,
         data_parallel_degree=dp_degree,
         is_mla=True,
@@ -285,7 +284,7 @@ def _build_graph_and_compile(
         )  # offsets
 
     # KV symbols across all devices
-    kv_syms = kv_manager.get_symbolic_inputs()
+    kv_syms = kv_manager.params.get_symbolic_inputs()
     for tup in kv_syms:
         input_types.extend(tup)
 
@@ -363,7 +362,6 @@ def _run_distributed_dp(
     )
 
     kv_manager = PagedKVCacheManager(
-        devices=devices,
         params=_build_kv_params(config, dp_degree),
         total_num_pages=8,
         session=session,

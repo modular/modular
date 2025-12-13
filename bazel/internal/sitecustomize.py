@@ -40,6 +40,16 @@ def __absolutize_path(value: str) -> str:
         if os.path.exists(rebased):
             return os.path.abspath(rebased)
 
+    if value.startswith("../"):
+        rebased = "external/" + value[len("../") :]
+        if os.path.exists(rebased):
+            return os.path.abspath(rebased)
+
+    if value.startswith("--sysroot="):
+        sysroot_value = value[len("--sysroot=") :]
+        abs_sysroot_value = __absolutize_path(sysroot_value)
+        return f"--sysroot={abs_sysroot_value}"
+
     return value
 
 
@@ -51,6 +61,8 @@ def __absolutize_env() -> None:
                 sorted(__absolutize_path(x) for x in value.split(","))
             )
         elif key == "MODULAR_MOJO_MAX_SHARED_LIBS":
+            value = ",".join(__absolutize_path(x) for x in value.split(","))
+        elif key == "MODULAR_MOJO_MAX_SYSTEM_LIBS":
             value = ",".join(__absolutize_path(x) for x in value.split(","))
         else:
             value = __absolutize_path(value)

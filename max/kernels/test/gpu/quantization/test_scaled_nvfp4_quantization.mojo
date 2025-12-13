@@ -22,7 +22,7 @@ from math import ceildiv, recip
 from utils.numerics import max_finite, min_finite
 from linalg.fp4_utils import (
     cast_fp_to_fp4e2m1,
-    cast_uint32_to_fp4e2m1,
+    cast_uint_to_fp4e2m1,
     SF_ATOM_M,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
@@ -31,6 +31,7 @@ from linalg.fp4_utils import (
     _get_scale_factor,
 )
 from utils import IndexList
+from memory import bitcast
 
 
 fn test_dynamic_fp4_quant[
@@ -46,7 +47,7 @@ fn test_dynamic_fp4_quant[
             " constraints"
         )
 
-    comptime out_dtype = DType.uint32
+    comptime out_dtype = DType.uint8
 
     # Input tensor layout and buffer
     comptime input_static_shape = Layout.row_major(
@@ -66,10 +67,10 @@ fn test_dynamic_fp4_quant[
     # Output tensor layout and buffer
     comptime output_static_shape = Layout.row_major(
         M.or_else(UNKNOWN_VALUE),
-        ceildiv(N.or_else(UNKNOWN_VALUE), SF_VECTOR_SIZE // 2),
+        ceildiv(N.or_else(UNKNOWN_VALUE), 2),
     )
     var output_dynamic_shape = IndexList[2](
-        M.or_else(m), ceildiv(N.or_else(n), SF_VECTOR_SIZE // 2)
+        M.or_else(m), ceildiv(N.or_else(n), 2)
     )
     var output_runtime_layout = RuntimeLayout[output_static_shape].row_major(
         output_dynamic_shape
@@ -146,7 +147,7 @@ fn test_dynamic_fp4_quant[
 
                 for row_idx in range(0, m):
                     for col_idx in range(0, n, SF_VECTOR_SIZE):
-                        var vec_max = Scalar[DType.float32](0.0)
+                        var vec_max: Float32
                         # kernel support N shapes that are multiples of (SF_VECTOR_SIZE // 2).
                         # Here we handle the oob case by loading only the first half of the SF_VECTOR_SIZE.
                         if (n % SF_VECTOR_SIZE != 0) and (
@@ -207,14 +208,10 @@ fn test_dynamic_fp4_quant[
                                 * output_scale
                             )
                             var ref_output_e2m1 = cast_fp_to_fp4e2m1(input_f32)
-                            var output_e2m1 = cast_uint32_to_fp4e2m1[
+                            var output_e2m1 = cast_uint_to_fp4e2m1[
                                 out_dtype = DType.float32,
                                 out_width = SF_VECTOR_SIZE // 2,
-                            ](
-                                output_tensor_host.load[1](
-                                    row_idx, col_idx // (SF_VECTOR_SIZE // 2)
-                                )
-                            )
+                            ](output_tensor_host.load[4](row_idx, col_idx // 2))
                             assert_almost_equal(
                                 ref_output_e2m1,
                                 output_e2m1,
@@ -229,14 +226,10 @@ fn test_dynamic_fp4_quant[
                                 * output_scale
                             )
                             var ref_output_e2m1 = cast_fp_to_fp4e2m1(input_f32)
-                            var output_e2m1 = cast_uint32_to_fp4e2m1[
+                            var output_e2m1 = cast_uint_to_fp4e2m1[
                                 out_dtype = DType.float32,
                                 out_width=SF_VECTOR_SIZE,
-                            ](
-                                output_tensor_host.load[2](
-                                    row_idx, col_idx // (SF_VECTOR_SIZE // 2)
-                                )
-                            )
+                            ](output_tensor_host.load[8](row_idx, col_idx // 2))
                             assert_almost_equal(
                                 ref_output_e2m1,
                                 output_e2m1,
