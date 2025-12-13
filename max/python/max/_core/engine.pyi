@@ -263,6 +263,6 @@ class PrintStyle(enum.Enum):
 
     BINARY = 2
 
-    BINARY_MAX_CHECKPOINT = 3
+    BINARY_MAX_CHECKPOINT = 4
 
-    NONE = 4
+    NONE = 3
