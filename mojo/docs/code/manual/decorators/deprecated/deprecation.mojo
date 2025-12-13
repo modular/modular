@@ -33,8 +33,8 @@ struct OtherStruct:
     var x: Int
     var y: Int
 
-    @deprecated("Don't touch this")
-    fn mchammer(self):
+    @deprecated("Ignore. Deprecation test.")
+    fn function(self):
         pass
 
     fn __init__(out self, x: Int):
@@ -42,14 +42,14 @@ struct OtherStruct:
         self.y = 0
 
 
-@deprecated("Use tau instead")
+@deprecated("Ignore. Deprecation test.")
 comptime pi = 3.141592
 
 
 fn main():
     _ = MyStruct(x=5)
 
-    OtherStruct(2).mchammer()
+    OtherStruct(2).function()
 
     print(pi)
 

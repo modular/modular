@@ -13,7 +13,7 @@
 
 
 # Mark function `a` as deprecated with a custom message
-@deprecated("Sunsetting a")
+@deprecated("Ignore. Deprecation test. Sunsetting a")
 fn a():
     pass
 
