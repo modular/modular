@@ -77,6 +77,8 @@ from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
+from collections.string._utf8 import _is_valid_utf8
+from collections.string._utf16 import _decode_utf16
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     CodepointSliceIter,
@@ -279,6 +281,76 @@ struct String(
         var length = len(bytes)
         self = Self(unsafe_uninit_length=length)
         memcpy(dest=self.unsafe_ptr_mut(), src=bytes.unsafe_ptr(), count=length)
+
+    fn __init__[
+        dtype: DType, //
+    ](
+        out self,
+        *,
+        from_utf16: Span[mut=False, Scalar[dtype], **_],
+        errors: type_of("strict") = "strict",
+    ) raises:
+        """Construct a new `String` from a buffer containing UTF-16 encoded
+        data.
+
+        Parameters:
+            dtype: The dtype of the buffer.
+
+        Args:
+            from_utf16: A span of bytes containing UTF-16 encoded data.
+            errors: The action to take when encountering a decoding error.
+
+        Raises:
+            An exception is raised if the provided buffer byte values do not
+            form valid UTF-16 encoded codepoints.
+        """
+        var result = _decode_utf16[strict=True](from_utf16=from_utf16)
+        # NOTE: the decoder should've already raised/replaced when invalid data
+        # was encountered
+        debug_assert(
+            _is_valid_utf8(result.as_bytes().get_immutable()),
+            "Buffer is not valid UTF-16.",
+        )
+        self = result^
+
+    fn __init__[
+        dtype: DType, //,
+        *,
+        replace: Codepoint = Codepoint.ord("�"),
+    ](
+        out self,
+        *,
+        from_utf16: Span[mut=False, Scalar[dtype], **_],
+        errors: type_of("replace"),
+    ):
+        """Construct a new `String` from a buffer containing UTF-16 encoded
+        data.
+
+        Parameters:
+            dtype: The dtype of the buffer.
+            replace: What codepoint to replace the invalid codepoints with.
+
+        Args:
+            from_utf16: A span of bytes containing UTF-16 encoded data.
+            errors: The action to take when encountering a decoding error.
+
+        Notes:
+            This constructor replaces invalid data with the specified codepoint.
+        """
+        # FIXME: once _decode_utf16's raises can be `Error if strict else Never`
+        try:
+            var result = _decode_utf16[strict=False, replace=replace](
+                from_utf16=from_utf16
+            )
+            # NOTE: the decoder should've already raised/replaced when invalid
+            # data was encountered
+            debug_assert(
+                _is_valid_utf8(result.as_bytes().get_immutable()),
+                "Buffer is not valid UTF-16.",
+            )
+            self = result^
+        except:
+            abort("This should never happen")
 
     fn __init__[T: Stringable](out self, value: T):
         """Initialize from a type conforming to `Stringable`.

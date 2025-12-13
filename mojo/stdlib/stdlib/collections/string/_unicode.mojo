@@ -15,6 +15,8 @@ from collections.string._unicode_lookups import *
 
 from memory import Span
 
+comptime BIGGEST_UNICODE_CODEPOINT = UInt32(0x10FFFF)
+
 
 fn _uppercase_mapping_index(rune: Codepoint) -> Int:
     """Return index for upper case mapping or -1 if no mapping is given."""
