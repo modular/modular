@@ -451,7 +451,7 @@ class TextTokenizer(
         tools: list[TextGenerationRequestTool] | None = None,
         chat_template_options: dict[str, Any] | None = None,
     ) -> tuple[str | list[int], npt.NDArray[np.integer[Any]]]:
-        if prompt and messages:
+        if prompt is not None and messages is not None:
             raise ValueError("both prompt and messages cannot be provided.")
 
         if isinstance(prompt, str):
