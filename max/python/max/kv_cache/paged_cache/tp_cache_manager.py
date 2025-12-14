@@ -134,8 +134,10 @@ class _TPPagedKVCacheManager:
         # Initialize the block buffers for each device.
         self.device_tensors = []
         for device in self.devices:
+            # Zero-initializing GPU device tensors does not introduce significant latency.
+            # Memory is initialized because OOB TMA reads of uninitialized memory on GPU can result in NaNs in downstream kernels.
             self.device_tensors.append(
-                Tensor(
+                Tensor.zeros(
                     shape=[total_num_pages, *params.shape_per_block],
                     dtype=self.params.dtype,
                     device=device,
@@ -151,6 +153,7 @@ class _TPPagedKVCacheManager:
                     raise ValueError(
                         "Host device detected. Paging to host is not supported when executing on CPU."
                     )
+                # Initializing the CPU host tensors introduces significant latency, and it's not expected that this memory will be accessed via TMA operations.
                 self.host_tensors.append(
                     Tensor(
                         shape=[total_num_host_pages, *params.shape_per_block],
