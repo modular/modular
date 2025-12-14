@@ -205,7 +205,9 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
   ssize_t intWidth = dtype->getWidthInBits();
   if (dtype->isIndex() || dtype->isUIndex()) {
     TargetInfoAttr target = lookupTargetInfo(op);
-    intWidth = target ? target.resolveIndexBitWidth() : 64;
+    if (!target)
+      return b.notifyMatchFailure(op, "target isn't resolved");
+    intWidth = target.resolveIndexBitWidth();
   }
   assert(intWidth > 0 && "Could not determine size of an integer");
 
@@ -893,7 +895,10 @@ static OpFoldResult bitcastSIMDIndex(ArrayRef<Attribute> operands,
                                      KGENDType outputDType,
                                      TargetInfoAttr target, OpsFns &&...ops) {
   if (inputDType.isIndex() || inputDType.isUIndex()) {
-    ssize_t indexWidth = target ? target.resolveIndexBitWidth() : 64;
+    if (!target)
+      return {};
+    ssize_t indexWidth = target.resolveIndexBitWidth();
+
     if (indexWidth == 64) {
       return foldSIMDOpResult<POP::k64BitResult>(operands, outputDType,
                                                  std::forward<OpsFns>(ops)...);
@@ -1250,8 +1255,10 @@ ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
   // A special case when the input is index type and output is 64-bit integer.
   // Currently, it's only one known case when folder can fail that makes
   // interpreter unhappy.
-  unsigned ptrWidth =
-      state.getTarget() ? state.getTarget().resolveIndexBitWidth() : 64;
+  if (!state.getTarget())
+    return ErrorTree(getLoc(), "target unknown");
+  unsigned ptrWidth = state.getTarget().resolveIndexBitWidth();
+
   unsigned width = 64;
   auto res = foldSIMDOpResult<POP::k64BitResult>(
       operands, *dtype,
@@ -1306,8 +1313,10 @@ CastOp::parametric_interpret(ArrayRef<Attribute> operands,
   // A special case when the input is index type and output is 64-bit integer.
   // Currently, it's only one known case when folder can fail that makes
   // interpreter unhappy.
-  unsigned ptrWidth =
-      state.getTarget() ? state.getTarget().resolveIndexBitWidth() : 64;
+  if (!state.getTarget())
+    return ErrorTree(getLoc(), "target unknown");
+
+  unsigned ptrWidth = state.getTarget().resolveIndexBitWidth();
   unsigned width = 64;
   auto res = foldSIMDOpResult<POP::k64BitResult>(
       operands, *dtype,
