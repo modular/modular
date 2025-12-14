@@ -1,5 +1,7 @@
 // RUN: kgen-opt -split-input-file %s -canonicalize | FileCheck %s
 
+// -----
+
 // CHECK-LABEL: @neg
 kgen.func @neg() -> (!pop.simd<2, si8>, !pop.simd<2, f32>) {
   // CHECK-DAG: <1, -1>
@@ -144,6 +146,9 @@ kgen.func @mul_zero_one(
                                !pop.simd<2, si32>, !pop.simd<2, si32>
 }
 
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="e-p:64:64", simd_bit_width = 128, index_bit_width = 64>} {
 // CHECK-LABEL: @div
 kgen.func @div(%arg0: !pop.scalar<si64>, %arg1: !pop.simd<2, si32>, %arg2: !pop.simd<4, index>) -> (
     !pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>,
@@ -210,6 +215,9 @@ kgen.func @div_zero() -> (!pop.scalar<si4>, !pop.scalar<f32>) {
   %3 = pop.div %1, %1 : !pop.scalar<f32>
   kgen.return %2, %3 : !pop.scalar<si4>, !pop.scalar<f32>
 }
+}
+
+// -----
 
 // CHECK-LABEL: @rem
 kgen.func @rem() -> (!pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>, !pop.scalar<f64>) {
@@ -314,6 +322,7 @@ kgen.func @fma() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
 
 // -----
 
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="e-p:64:64", simd_bit_width = 128, index_bit_width = 64>} {
 // CHECK-LABEL: @cmp_eq
 kgen.func @cmp_eq() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
   // CHECK-DAG: <false, true>
@@ -819,6 +828,9 @@ kgen.func @cast_uindex_index() -> (!pop.scalar<index>, !pop.scalar<uindex>) {
   // CHECK-NEXT: return %[[C0]], %[[C1]]
   kgen.return %0, %1 : !pop.scalar<index>, !pop.scalar<uindex>
 }
+}
+
+// -----
 
 // CHECK-LABEL: @cast_si64_ui64_index
 kgen.func @cast_si64_ui64_index(%in : !pop.scalar<si64>) -> !pop.scalar<index> {
@@ -1630,9 +1642,10 @@ kgen.func @unwrap_wrap_type(%arg0: i32) -> i64 {
   kgen.return %1 : i64
 }
 
+
 // -----
 
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:32:32">} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="e-p:32:32">} {
   // CHECK-LABEL: @cast_const_ui8_to_index_folding
   kgen.func @cast_const_ui8_to_index_folding() -> !pop.scalar<index> {
     // CHECK-NEXT: kgen.param.constant: scalar<index> = <128>
@@ -1769,7 +1782,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64">} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="e-p:64:64">} {
   // CHECK-LABEL: @cast_const_ui8_to_index_folding
   kgen.func @cast_const_ui8_to_index_folding() -> !pop.scalar<index> {
     // CHECK-NEXT: kgen.param.constant: scalar<index> = <128>
