@@ -176,13 +176,15 @@ struct Codepoint(
         """
         # Reconstruct the literal from the type parameter to force compile-time evaluation
         alias sl: StringLiteral[value] = {}
-        
+
         # Compile-time constraint - fails if literal isn't exactly 1 byte
-        constrained[len(sl) == 1, "StringLiteral must contain exactly one byte"]()
-        
+        constrained[
+            len(sl) == 1, "StringLiteral must contain exactly one byte"
+        ]()
+
         # Compute the codepoint at compile-time using alias
         alias cp = Codepoint.ord(StaticString(sl))
-        
+
         # Assign the computed value
         self = cp
 
