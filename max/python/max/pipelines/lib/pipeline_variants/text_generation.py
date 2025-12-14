@@ -696,10 +696,12 @@ class TextGenerationPipeline(
                     curr_step_inputs,
                 )
             )
-
-            curr_step_inputs = self._pipeline_model.prepare_next_token_inputs(
-                new_tokens, curr_step_inputs
-            )
+            with Tracer(f"prepare_next_token_inputs_{i}"):
+                curr_step_inputs = (
+                    self._pipeline_model.prepare_next_token_inputs(
+                        new_tokens, curr_step_inputs
+                    )
+                )
 
         # Return early if the batch is empty.
         if len(flat_batch) == 0:

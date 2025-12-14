@@ -30,6 +30,7 @@ from max.nn.kv_cache.data_parallelism_utils import (
     split_into_groups,
 )
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.profiler import traced
 
 from .tp_cache_manager import _TPPagedKVCacheManager
 
@@ -323,6 +324,7 @@ class PagedKVCacheManager:
 
         return graph
 
+    @traced
     def increment_cache_lengths(
         self,
         kv_cache_inputs: Sequence[RaggedKVCacheInputs],
