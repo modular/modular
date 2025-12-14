@@ -166,9 +166,9 @@ fn indirect_call[detail_fn: fn() -> MemExample]():
        # CHECK-NEXT: lit.call{{.*}}(%mem)
        var mem = detail_fn()
        # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mem
-       # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
+       # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
        mem.noop()
-       # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%mem)
+       # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%mem)
 
 # CHECK-LABEL: lit.struct.decl @Parameterized<level: !Int>
 struct Parameterized[level: Int]:
@@ -282,7 +282,7 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
   # CHECK-LABEL: lit.fn @"mutate
   fn mutate(mut self):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
-    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%0)
+    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%0)
 
     # CHECK-NEXT: %2 = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%2)
@@ -291,15 +291,15 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
 
   # CHECK-LABEL: lit.fn @"mutate2
   fn mutate2(deinit self):
-    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%self)
+    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%self)
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%self)
     self = FieldSensitiveMemExample()
 
     # This is a 'deinit' method, so both F1 and F2 need to be destroyed
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
-    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
+    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F1R]])
     # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %self[f2]
-    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
+    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F2R]])
 
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT: lit.ownership.mark_destroyed %self
@@ -308,9 +308,9 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
   # CHECK-LABEL: lit.fn @"disableDtor
   fn disableDtor(deinit x):
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %x[f1]
-    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
+    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F1R]])
     # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %x[f2]
-    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
+    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F2R]])
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: lit.ownership.mark_destroyed %x
     pass
@@ -318,9 +318,9 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
 
   # CHECK-LABEL: lit.fn @"__del__
   # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%0)
+  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%0)
   # CHECK-NEXT: %2 = lit.ref.struct.ger %self[f2]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%2)
+  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%2)
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
 
@@ -361,7 +361,7 @@ fn return_ref(mut a: FieldSensitiveMemExample) -> ref [a] FieldSensitiveMemExamp
 fn test_result_optimization():
   # CHECK-NEXT: %example = lit.var.decl "example"
   # CHECK-NEXT: lifetime.start %example
-  # CHECK-NEXT: lit.call @{{.*}}"__init__{{.*}}(%example)
+  # CHECK-NEXT: lit.call {{.*}}"__init__{{.*}}(%example)
   var example = FieldSensitiveMemExample()
 
   # Direct reuse of the result slot forces a temporary.
@@ -370,10 +370,10 @@ fn test_result_optimization():
   # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
   # CHECK-NEXT: lifetime.start %__call_result_tmp__
   # CHECK-NEXT: lit.call {{.*}}use_and_return{{.*}}([[IMMREF]], %__call_result_tmp__)
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
+  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%example)
   # CHECK-NEXT: lit.var.lifetime.end %example
   # CHECK-NEXT: lit.var.lifetime.start %example
-  # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}(%__call_result_tmp__, %example)
+  # CHECK-NEXT: lit.call {{.*}}@"__moveinit__{{.*}}(%__call_result_tmp__, %example)
   # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
   example = use_and_return(example)
 
@@ -386,8 +386,8 @@ fn test_result_optimization():
   # CHECK-NEXT: lit.call @ownership::@"use_and_return2{{.*}}([[IMMREF]], %__call_result_tmp___0)
   example.f1 = use_and_return2(example)
   # CHECK-NEXT: [[F1_2:%.*]] = lit.ref.struct.ger %example[f1]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1_2]])
-  # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}(%__call_result_tmp___0, [[F1]])
+  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F1_2]])
+  # CHECK-NEXT: lit.call {{.*}}@"__moveinit__{{.*}}(%__call_result_tmp___0, [[F1]])
   # CHECK-NEXT: lifetime.end %__call_result_tmp___0
 
   # Mutating self through a reference forces a temporary.
@@ -399,15 +399,15 @@ fn test_result_optimization():
 
   # Delete the old thing at the reference pointed-to-by return_ref before we
   # copy into it.
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[RETREF]])
+  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[RETREF]])
 
-  # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}([[TMPVAR]], [[RETREF]])
+  # CHECK-NEXT: lit.call {{.*}}@"__moveinit__{{.*}}([[TMPVAR]], [[RETREF]])
   # CHECK-NEXT: lifetime.end [[TMPVAR]]
   return_ref(example) = use_and_return(example)
 
-  # CHECK-NEXT: lit.call @{{.*}}@"mutate{{.*}}(%example)
+  # CHECK-NEXT: lit.call {{.*}}@"mutate{{.*}}(%example)
   example.mutate()
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
+  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%example)
   # CHECK-NEXT: lifetime.end %example
 
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
@@ -825,7 +825,7 @@ fn call_variadic_inout_mems():
 
 # CHECK-LABEL: lit.fn @"variadic_owned_mems
 fn variadic_owned_mems(var *mems: MemExample):
-    # CHECK: lit.call @{{.*}}::@VariadicListMem::@"__init__{{.*}}"[{{.*}}]<{{.*}}>({{.*}}) :
+    # CHECK: lit.call {{.*}}::@VariadicListMem::@"__init__{{.*}}"[{{.*}}]<{{.*}}>({{.*}}) :
     # CHECK-SAME: !lit.generator<[1]("value": !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">>
     # CHECK-SAME: "self": !lit.ref<{{.*}}#VariadicListMem <:!Bool {:i1 1},
     mems[0].x += 1
@@ -835,7 +835,7 @@ fn variadic_owned_mems(var *mems: MemExample):
 fn call_variadic_owned_mems(var c: MemExample, var d: MemExample):
     variadic_owned_mems(c^, d^)
     # COM: Ensure owned convention of callee is honored.
-    # CHECK:  lit.call @{{.*}}::@"variadic_owned_mems{{.*}}
+    # CHECK:  lit.call {{.*}}::@"variadic_owned_mems{{.*}}
     # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT: kgen.return %none : !kgen.none
 
@@ -972,7 +972,7 @@ fn destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`i1`,
      # CHECK:      hlcf.if %cond {
      # CHECK-NEXT:   hlcf.yield
      # CHECK-NEXT: } else {
-     # CHECK-NEXT:   lit.call @{{.*}}::@MemPair::@"__del__({{.*}}(%memPair)
+     # CHECK-NEXT:   lit.call {{.*}}::@MemPair::@"__del__({{.*}}(%memPair)
      # CHECK-NEXT:   hlcf.break "_loop_0"
      # CHECK-NEXT: }
      if cond:
@@ -984,14 +984,14 @@ fn overwrite(y: MemExample, x: Bool) raises:
    var foo = MemPair()
    if x:
    # CHECK: } then {
-   # CHECK-NEXT: lit.call @{{.*}}::@MemPair::@"__del__
+   # CHECK-NEXT: lit.call {{.*}}::@MemPair::@"__del__
       raise Error()
    # CHECK: } else {
    # CHECK-NEXT: [[V7:%.*]] = lit.ref.struct.ger %foo[a]
-   # CHECK-NEXT: lit.call @{{.*}}@MemExample::@"__del__
+   # CHECK-NEXT: lit.call {{.*}}@MemExample::@"__del__
    # CHECK-NEXT: hlcf.yield
    # CHECK-NEXT: }
-   # CHECK: lit.call @{{.*}}::@MemPair::@"__del__{{.*}}(%foo)
+   # CHECK: lit.call {{.*}}::@MemPair::@"__del__{{.*}}(%foo)
    foo.a = MemExample()
 
 

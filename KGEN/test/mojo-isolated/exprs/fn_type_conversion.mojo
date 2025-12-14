@@ -27,11 +27,11 @@ fn func_with_default(a: Int = 0):
 
 # CHECK-LABEL: lit.fn @"test_passing_funcs
 fn test_passing_funcs():
-    # CHECK: lit.call @{{.*}}::@"take_func_without_arg_name{{.*}}"<
+    # CHECK: lit.call tail @{{.*}}::@"take_func_without_arg_name{{.*}}"<
     # CHECK-SAME: :!lit.generator<(!Int, |) -> !kgen.none> rebind(:!lit.generator<("a": !Int) -> !kgen.none>
     take_func_without_arg_name[func_with_arg_name]()
 
-    # CHECK: lit.call @{{.*}}::@"take_func_without_default{{.*}}"<
+    # CHECK: lit.call {{.*}}::@"take_func_without_default{{.*}}"<
     # CHECK-SAME: :!lit.generator<("a": !Int) -> !kgen.none> rebind(:!lit.generator<("a": !Int = {0}) -> !kgen.none>
     take_func_without_default[func_with_default]()
 

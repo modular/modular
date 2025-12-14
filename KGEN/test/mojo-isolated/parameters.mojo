@@ -34,7 +34,7 @@ fn fancy_signature[dt: DType, size: Int](
   # CHECK: %[[TMP1:.*]] = kgen.param.constant: !Int = <size>
   # CHECK: %[[TMP2:.*]] = kgen.param.constant: !Int = <size>
   # CHECK: %[[TMP3:.*]] = kgen.param.constant: !Int = <size>
-  # CHECK: %[[RES:.*]] = lit.call @parameters::@"take_3index{{.*}}(%[[TMP1]], %[[TMP2]], %[[TMP3]])
+  # CHECK: %[[RES:.*]] = lit.call {{.*}}@"take_3index{{.*}}(%[[TMP1]], %[[TMP2]], %[[TMP3]])
   # CHECK: %local = lit.var.decl "local" var
   # CHECK: lit.ref.store %[[RES]], %local
   var local = take_3index(size, size, size)
@@ -50,11 +50,11 @@ fn generic_fn[a: DType, b: Int, c: __mlir_type.`!kgen.type`](d : Int):
 # CHECK: lit.fn @"call_generic{{.*}}"<dt: !DType>()
 fn call_generic[dt: DType]():
   # CHECK: %[[C57:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {{.*}}42{{.*}}, :type !DType>(%[[C57]])
+  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {{.*}}42{{.*}}, :type !DType>(%[[C57]])
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type {{.*}}#SIMD <:!DType dt, :!Int {4}>{{.*}}>(%[[C57_2]])
+  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type {{.*}}#SIMD <:!DType dt, :!Int {4}>{{.*}}>(%[[C57_2]])
   generic_fn[dt, 13, SIMD[dt, 4]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -188,7 +188,7 @@ fn fnToCall[size: Int, arr: __mlir_type[`!pop.array<`, size._mlir_value, `, f32>
 
 # CHECK: lit.fn @"fnWithCall{{.*}}"<array: array<10, f32>
 fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
-   # CHECK: lit.call @parameters::@"fnToCall{{.*}}"<:!Int {10}, :array<10, f32> array>()
+   # CHECK: lit.call {{.*}}@"fnToCall{{.*}}"<:!Int {10}, :array<10, f32> array>()
    fnToCall[10, array]()
 
 # CHECK-LABEL: lit.fn @"meta_str{{.*}}"<["value`"]*"value`": string, +, type: !lit.struct<#StringLiteral <:string *"value`">>>() -> !kgen.none
@@ -197,7 +197,7 @@ fn meta_str[type: StringLiteral]():
 
 # CHECK-LABEL: lit.fn @"str_input_param()"() -> !kgen.none
 fn str_input_param():
-  # CHECK: %0 = lit.call @parameters::@"meta_str{{.*}}"<{{.*}}!lit.struct<#StringLiteral <:string "123">>{{.*}}>()
+  # CHECK: %0 = lit.call {{.*}}@"meta_str{{.*}}"<{{.*}}!lit.struct<#StringLiteral <:string "123">>{{.*}}>()
   meta_str["123"]()
 
 @fieldwise_init
@@ -540,7 +540,7 @@ fn call_take_nonmat():
 fn takeCallable[
      callable: fn(Int) -> Int
    ](a: Int) -> Int:
-  # CHECK-NEXT: %0 = lit.call [!lit.generator<(!Int, |) -> !Int>: callable](%a)
+  # CHECK-NEXT: %0 = lit.call tail[!lit.generator<(!Int, |) -> !Int>: callable](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
@@ -555,7 +555,7 @@ fn passFunction(a: Int) -> Int:
   # CHECK: rebind(:!lit.generator<("x": !Int, |) -> !kgen.none> {{.*}}posOnlyArg
   comptime changeKw: fn(x: Int) -> None = posOnlyArg
 
-  # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.generator<(!Int, |) -> !Int>
+  # CHECK: lit.call {{.*}}@"takeCallable{{.*}}<:!lit.generator<(!Int, |) -> !Int>
   # CHECK-SAME: rebind(:!lit.generator<("x": !Int) -> !Int> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
 
@@ -571,7 +571,7 @@ fn takeCallable2[
 
 # CHECK-LABEL: lit.fn @"passFunctionParam2
 fn passFunctionParam2():
-  # CHECK: lit.call @parameters::@"takeCallable2{{.*}}"<
+  # CHECK: lit.call {{.*}}@"takeCallable2{{.*}}"<
   # CHECK-SAME: :!lit.generator<<"dt": dtype>() -> !kgen.none> rebind(:!lit.generator<<"type": dtype>() -> !kgen.none> @parameters::@"callableWithParam
   takeCallable2[callableWithParam]()
 
@@ -692,12 +692,12 @@ struct StructWithVariadics[*b: Int]:
 
 # CHECK-LABEL: lit.fn @"useParamVariadics
 fn useParamVariadics():
-  # CHECK-NEXT: lit.call @parameters::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>()
+  # CHECK-NEXT: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:variadic<!Int> []>()
   fnWithVariadics()
 
-  # CHECK: lit.call @parameters::@"fnWithVariadics{{.*}}"<:variadic<!Int> [{1}]>()
+  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:variadic<!Int> [{1}]>()
   fnWithVariadics[1]()
-  # CHECK: lit.call @parameters::@"fnWithVariadics{{.*}}"<:variadic<!Int> [{1}, {2}]>()
+  # CHECK: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:variadic<!Int> [{1}, {2}]>()
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
@@ -744,9 +744,9 @@ fn dependent_variadic_parameter[
 
 # CHECK-LABEL: lit.fn @"pass_variadic{{.*}}"<elems: variadic<index>>
 fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
-    # CHECK-NEXT: lit.call @parameters::@"variadic_parameter{{.*}}"<:variadic<index> elems>
+    # CHECK-NEXT: lit.call {{.*}}@"variadic_parameter{{.*}}"<:variadic<index> elems>
     _ = variadic_parameter[elems]()
-    # CHECK: lit.call @parameters::@"dependent_variadic_parameter{{.*}}"<:type !Int, :variadic<!Int>
+    # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:type !Int, :variadic<!Int>
     _ = dependent_variadic_parameter[Int, 1, 2]()
 
 
@@ -827,17 +827,17 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
                                  b2: StaticVec[size+2],
                                  c: __mlir_type.`!pop.simd<17, f32>`,
                                  d: __mlir_type.`!kgen.pointer<f32>`):
-  # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<{{.*}}4{{.*}}>(%a)
+  # CHECK-NEXT: lit.call {{.*}}callee1{{.*}}<{{.*}}4{{.*}}>(%a)
   callee1(a)
-  # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int size>(%b)
+  # CHECK-NEXT: lit.call {{.*}}callee1{{.*}}<:!Int size>(%b)
   callee1(b)
-  # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int size, "_mlir_value">, 2)}{{.*}}(%b2)
+  # CHECK-NEXT: lit.call {{.*}}callee1{{.*}}<:!Int {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int size, "_mlir_value">, 2)}{{.*}}(%b2)
   callee1(b2)
-  # CHECK-NEXT: lit.call @{{.*}}callee2{{.*}}<:type {{.*}}StaticVec <:!Int size>{{.*}}>(%b)
+  # CHECK-NEXT: lit.call {{.*}}callee2{{.*}}<:type {{.*}}StaticVec <:!Int size>{{.*}}>(%b)
   callee2(b)
-  # CHECK-NEXT: lit.call @{{.*}}callee3{{.*}}<:!Int {17}, :dtype f32>(%c)
+  # CHECK-NEXT: lit.call {{.*}}callee3{{.*}}<:!Int {17}, :dtype f32>(%c)
   callee3[17](c)
-  # CHECK-NEXT: lit.call @{{.*}}callee4{{.*}}<:type f32>(%d)
+  # CHECK-NEXT: lit.call {{.*}}callee4{{.*}}<:type f32>(%d)
   callee4(d)
 
 # CHECK-LABEL: lit.struct.decl @Abstraction
@@ -876,7 +876,7 @@ fn testParameterEvaluator():
   # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <sugar_member_alias(!lit.struct<#Abstraction <:!Int {1}>>, "val", 1)>
   comptime x = Abstraction[1].val
   # CHECK-NEXT: %y = lit.var.decl "y"
-  # CHECK-NEXT: %0 = lit.call @parameters::@Abstraction::@"push{{.*}}"<:!Int {1}, :!Int {2}>
+  # CHECK-NEXT: %0 = lit.call {{.*}}@Abstraction::@"push{{.*}}"<:!Int {1}, :!Int {2}>
   # CHECK-NEXT: lit.ref.store %0, %y
   var y : Abstraction[3] = Abstraction[1].push[2]()
   # CHECK-NEXT: [[Y:%.*]] = lit.ref.load %y : {{.*}}Abstraction <:!Int {3}>>,
@@ -935,12 +935,12 @@ fn infer_with_default_arg[T: AnyTrivialRegType](a: T, b: Int = 7):
 
 # CHECK-LABEL: lit.fn @"test_infer_with_default_arg()"
 fn test_infer_with_default_arg():
-    # lit.call @{{.*}}::@"infer_with_default_arg[AnyTrivialRegType]($0,::Int)"<:type !Int>
+    # lit.call {{.*}}::@"infer_with_default_arg[AnyTrivialRegType]($0,::Int)"<:type !Int>
     infer_with_default_arg(128)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
 fn indirect_call_infer_params[callee: fn[x: Int](y: Abstraction[x])->None]():
-    # CHECK: lit.call [!lit.generator<("y": {{.*}}#Abstraction <:!Int {2}>
+    # CHECK: lit.call tail[!lit.generator<("y": {{.*}}#Abstraction <:!Int {2}>
     # CHECK-SAME: bind_params(:!lit.generator<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
     # CHECK-SAME: callee, :!Int {2}
     callee(Abstraction[2]())
@@ -1123,7 +1123,7 @@ struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType]:
         pass
 
 fn test_param_inference_contextual_fold():
-    # CHECK: lit.call @{{.*}}SomeWrapper::@"__init__
+    # CHECK: lit.call {{.*}}SomeWrapper::@"__init__
     # CHECK-SAME: <:!WithAnAlias !SomeStruct,
     # CHECK-SAME: :!AnyType sugar_member_alias(!SomeStruct, "A", !Int),
     # CHECK-SAME: :!AnyType sugar_member_alias(!SomeStruct, "A", !Int)>
@@ -1153,10 +1153,10 @@ fn reference_params_through_struct():
     var y = x.p1
 
     # CHECK: %[[P:.*]] = kgen.param.constant: {{.*}} <{9}
-    # CHECK-NEXT: lit.call @{{.*}}bar({{.*}})"(%[[P]])
+    # CHECK-NEXT: lit.call {{.*}}bar({{.*}})"(%[[P]])
     bar(x.p2)
 
-    # CHECK: lit.call @{{.*}}foo{{.*}}<:!Int {33}>
+    # CHECK: lit.call {{.*}}foo{{.*}}<:!Int {33}>
     foo[x.p3]()
 
     # CHECK: %[[Z:.*]] = lit.var.decl "z"
@@ -1165,10 +1165,10 @@ fn reference_params_through_struct():
     var z = MultiStruct[1, 2, 3].p1
 
     # CHECK: %[[P:.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: lit.call @{{.*}}bar({{.*}})"(%[[P]])
+    # CHECK-NEXT: lit.call {{.*}}bar({{.*}})"(%[[P]])
     bar(MultiStruct[1, 2, 3].p2)
 
-    # CHECK: lit.call @{{.*}}foo{{.*}}<:!Int {3}>
+    # CHECK: lit.call {{.*}}foo{{.*}}<:!Int {3}>
     foo[MultiStruct[1, 2, 3].p3]()
 
 
@@ -1194,15 +1194,15 @@ fn default_params[a: Int, b: Int = 7, c: String = "woof"]():
 
 # CHECK-LABEL: lit.fn @"test_default_params()"
 fn test_default_params():
-    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::String]()"
+    # CHECK: lit.call {{.*}}@"default_params[::Int,::Int,::String]()"
     # CHECK-SAME: <:!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     default_params[1]()
 
-    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::String]()"
+    # CHECK: lit.call {{.*}}@"default_params[::Int,::Int,::String]()"
     # CHECK-SAME: <:!Int {2}, :!Int {8}, {{.*}}#StringLiteral <:string "woof">
     default_params[2, 8]()
 
-    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::String]()"
+    # CHECK: lit.call {{.*}}@"default_params[::Int,::Int,::String]()"
     # CHECK-SAME: <:!Int {4}, :!Int {9}, {{.*}}#StringLiteral <:string "meow">
     default_params[4, 9, "meow"]()
 
@@ -1210,15 +1210,15 @@ fn test_default_params():
 fn test_indirect_default_params[
     callee: fn[a: Int, b: Int = 7, c: String = "woof"]()->None]():
 
-    # CHECK: lit.call [!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
+    # CHECK: lit.call tail[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof"
     callee[1]()
 
-    # CHECK: lit.call [!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
+    # CHECK: lit.call tail[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: :!Int {2}, :!Int {8}, {{.*}}#StringLiteral <:string "woof"
     callee[2, 8]()
 
-    # CHECK: lit.call [!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
+    # CHECK: lit.call tail[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: :!Int {4}, :!Int {9}, {{.*}}#StringLiteral <:string "meow"
     callee[4, 9, "meow"]()
 
@@ -1230,8 +1230,8 @@ fn inferred_default_param[dt: DType, w: Int = 8](a: SIMD[dt, w]):
 
 
 # CHECK: lit.fn @"test_inferred_default_param{{.*}}"<x: !Int>
-# CHECK: lit.call @{{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!Int {4}>
-# CHECK: lit.call @{{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!Int x>
+# CHECK: lit.call {{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!Int {4}>
+# CHECK: lit.call {{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!Int x>
 fn test_inferred_default_param[
     x: Int
 ](concrete: SIMD[DType.float32, 4], p: SIMD[DType.float32, x]):
@@ -1250,7 +1250,7 @@ fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
     pass
 
 # CHECK-LABEL: lit.fn @"test_mem_only_default_param()"
-# CHECK: lit.call @{{.*}}@"mem_only_default_param[{{.*}}MemoryOnlyType::@"__init__()
+# CHECK: lit.call {{.*}}@"mem_only_default_param[{{.*}}MemoryOnlyType::@"__init__()
 fn test_mem_only_default_param():
     mem_only_default_param()
 
@@ -1308,7 +1308,7 @@ fn test_default_param_struct():
     comptime T = DefaultParams[1]
     # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#DefaultParams <
     # CHECK-SAME:   :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
-    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
+    # CHECK-NEXT: lit.call {{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     _ = DefaultParams[1]()
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
@@ -1316,7 +1316,7 @@ fn test_default_param_struct():
     comptime U = DefaultParams[2, 3]
     # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<{{.*}}DefaultParams <
     # CHECK-SAME:   :!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
-    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
+    # CHECK-NEXT: lit.call {{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
     _ = DefaultParams[2, 3]()
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
@@ -1324,7 +1324,7 @@ fn test_default_param_struct():
     comptime S = DefaultParams[4, 5, "meow"]
     # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#DefaultParams <
     # CHECK-SAME:   :!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
-    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
+    # CHECK-NEXT: lit.call {{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
     _ = DefaultParams[4, 5, "meow"]()
 
 
@@ -1341,7 +1341,7 @@ fn test_default_param_struct_all_default():
 
     # CHECK: %[[INIT:.*]] = lit.var.decl {{.*}} : !lit.ref<{{.*}}#AllDefaultParams <
     # CHECK-SAME:   :!Int {0}, :!MemoryOnlyType {{.*}}MemoryOnlyType::@"__init__()
-    # CHECK-NEXT: = lit.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}<:!Int {0}, :!MemoryOnlyType
+    # CHECK-NEXT: = lit.call {{.*}}::@AllDefaultParams::@"__init__({{.*}}<:!Int {0}, :!MemoryOnlyType
     _ = AllDefaultParams[]()
 
 
@@ -1629,7 +1629,7 @@ fn infer_variadic[
 
 # CHECK-LABEL:     lit.fn @"test_infer_variadic()"
 fn test_infer_variadic():
-    # CHECK: lit.call @parameters::@"infer_variadic{{.*}}"<:variadic<!AnyType>
+    # CHECK: lit.call {{.*}}@"infer_variadic{{.*}}"<:variadic<!AnyType>
     # CHECK-SAME: [!Int, !Bool]
     # CHECK-SAME: :meta<!lit.struct<#Tuple <:variadic<!AnyType>
     infer_variadic[Tuple[Int, Bool]]()
@@ -1689,5 +1689,5 @@ fn takeGenerator[
 # CHECK-LABEL: lit.fn @"myDriver()"()
 fn myDriver():
     # We should be able to infer From -> Copyable, To -> mt_Int
-    # CHECK: %0 = lit.call @parameters::@"takeGenerator{{.*}}"<:!lit.anytrait<!AnyType> !Copyable, :!lit.anytrait<!AnyType> !mt_Int, :!lit.generator<<"From": !Copyable>!mt_Int>
+    # CHECK: %0 = lit.call {{.*}}@"takeGenerator{{.*}}"<:!lit.anytrait<!AnyType> !Copyable, :!lit.anytrait<!AnyType> !mt_Int, :!lit.generator<<"From": !Copyable>!mt_Int>
     takeGenerator[Generator]()

@@ -12,20 +12,20 @@
 
 # CHECK-LABEL: lit.fn @"test_elif_chain
 # CHECK-NEXT:    hlcf.elif {
-# CHECK-NEXT:      [[TEST_A:%.*]] = lit.call @{{.*}}::@Bool::@"__mlir_i1__{{.*}}"(%a)
+# CHECK-NEXT:      [[TEST_A:%.*]] = lit.call {{.*}}::@Bool::@"__mlir_i1__{{.*}}"(%a)
 # CHECK-NEXT:      hlcf.elif.yield [[TEST_A]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_a = lit.var.decl "inside_a"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } {
-# CHECK-NEXT:      [[B_EQ:%.*]] = lit.call @{{.*}}::@"__eq__{{.*}}"(%b, %d) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool>
-# CHECK-NEXT:      [[TEST_B:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"([[B_EQ]]) : !lit.generator<("self": !Bool) -> i1>
+# CHECK-NEXT:      [[B_EQ:%.*]] = lit.call {{.*}}::@"__eq__{{.*}}"(%b, %d) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool>
+# CHECK-NEXT:      [[TEST_B:%.*]] = lit.call {{.*}}::@"__mlir_i1__{{.*}}"([[B_EQ]]) : !lit.generator<("self": !Bool) -> i1>
 # CHECK-NEXT:      hlcf.elif.yield [[TEST_B]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_b = lit.var.decl "inside_b"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } {
-# CHECK-NEXT:      [[TEST_C:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"(%c)
+# CHECK-NEXT:      [[TEST_C:%.*]] = lit.call {{.*}}::@"__mlir_i1__{{.*}}"(%c)
 # CHECK-NEXT:      hlcf.elif.yield [[TEST_C]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_c = lit.var.decl "inside_c"
@@ -68,21 +68,21 @@ fn test_constant(a: Bool) -> Bool:
 # CHECK-LABEL: lit.fn @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT: hlcf.elif {
-    # CHECK-NEXT:   %0 = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%a)
+    # CHECK-NEXT:   %0 = lit.call {{.*}}@"__mlir_i1__{{.*}}"(%a)
     # CHECK-NEXT:   hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   %inside_a = lit.var.decl "inside_a"
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.elif {
-    # CHECK-NEXT:     [[TEST_B:%.*]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%b)
+    # CHECK-NEXT:     [[TEST_B:%.*]] = lit.call {{.*}}@"__mlir_i1__{{.*}}"(%b)
     # CHECK-NEXT:     hlcf.elif.yield [[TEST_B]]
     # CHECK-NEXT:   } then {
     # CHECK-NEXT:     %inside_b = lit.var.decl "inside_b"  var : !lit.ref<!Int, mut *"inside_b`1">
     # CHECK-NEXT:     hlcf.yield
     # CHECK-NEXT:   } else {
     # CHECK-NEXT:     hlcf.elif {
-    # CHECK-NEXT:       [[TEST_C:%.*]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%c)
+    # CHECK-NEXT:       [[TEST_C:%.*]] = lit.call {{.*}}@"__mlir_i1__{{.*}}"(%c)
     # CHECK-NEXT:       hlcf.elif.yield [[TEST_C]]
     # CHECK-NEXT:     } then {
     # CHECK-NEXT:       %inside_c = lit.var.decl "inside_c"
@@ -157,7 +157,7 @@ fn param_if_and[a: Bool, b: Bool]():
 # CHECK-LABEL: lit.fn @"if_try
 fn if_try(p: Bool):
     # CHECK:      hlcf.elif {
-    # CHECK-NEXT:   [[TEST_P:%*.]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%p)
+    # CHECK-NEXT:   [[TEST_P:%*.]] = lit.call {{.*}}@"__mlir_i1__{{.*}}"(%p)
     # CHECK-NEXT:   hlcf.elif.yield [[TEST_P]]
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   %e = lit.var.decl {{.*}} !lit.ref<!Error,
@@ -216,7 +216,7 @@ fn constantTrue(cond: Bool, x: Int, y: Int) -> Int:
 # CHECK-LABEL: lit.fn @"constantFalse
 fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK:      hlcf.elif {
-    # CHECK-NEXT:   %0 = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%cond)
+    # CHECK-NEXT:   %0 = lit.call {{.*}}@"__mlir_i1__{{.*}}"(%cond)
     # CHECK-NEXT:   hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   lit.return %x : !Int
@@ -253,7 +253,7 @@ fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
 # CHECK-NEXT:    kgen.param.constant: {{.*}} = <{0}>
 # CHECK-NEXT:    lit.ref.store {{.+}}, %inside_a
 # CHECK-NEXT:    hlcf.elif {
-# CHECK-NEXT:      [[TEST_B:%*.]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%b)
+# CHECK-NEXT:      [[TEST_B:%*.]] = lit.call {{.*}}@"__mlir_i1__{{.*}}"(%b)
 # CHECK-NEXT:      hlcf.elif.yield [[TEST_B]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      kgen.param.constant: !Int = <{1}>
@@ -437,7 +437,7 @@ fn for_range_loop():
 
     # CHECK: %$RANGE = lit.var.decl "$RANGE" synth
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %value_iter_list
-    # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}([[IMMREF]], %$RANGE)
+    # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %$RANGE)
     for item in value_iter_list:
         # CHECK: lit.loop cond {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
@@ -470,7 +470,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
                       mut mut_list_ref_iter: ListWithRefIter):
 
     # CHECK-NEXT: %$RANGE = lit.var.decl "$RANGE" synth
-    # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$RANGE)
+    # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$RANGE)
     for ref item in mut_list_ref_iter:
         # CHECK: lit.loop cond {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE

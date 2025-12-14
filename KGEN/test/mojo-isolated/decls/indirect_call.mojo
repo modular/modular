@@ -13,7 +13,7 @@ fn mrvalue_indirect_callee():
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl
     # CHECK-NEXT: call {{.*}}return_function{{.*}}([[RESULT]])
     # CHECK-NEXT: [[CALLEE:%.*]] = lit.load.consume [[RESULT]]
-    # CHECK-NEXT: lit.call_indirect [[CALLEE]]()
+    # CHECK-NEXT: lit.call_indirect tail [[CALLEE]]()
     return_function[fn() -> None]()()
 
 fn indirect_callee() raises -> fn()->None:
@@ -24,5 +24,5 @@ fn call_it() raises:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl
     # CHECK-NEXT: call {{.*}}indirect_callee{{.*}}(%__error__, [[RESULT]])
     # CHECK-NEXT: [[CALLEE:%.*]] = lit.load.consume [[RESULT]]
-    # CHECK-NEXT: lit.call_indirect [[CALLEE]]()
+    # CHECK-NEXT: lit.call_indirect tail [[CALLEE]]()
     indirect_callee()()

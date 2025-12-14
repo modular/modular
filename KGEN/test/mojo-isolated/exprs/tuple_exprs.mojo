@@ -18,7 +18,7 @@ fn use[T: AnyType](a: T):
 # CHECK-LABEL: lit.fn @"tuples_rv
 fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}Tuple <:variadic<!AnyType> []>>,
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]])
+    # CHECK: lit.call {{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]])
     use(())
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
@@ -32,32 +32,32 @@ fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK-NEXT: [[BREBOUND:%.*]] = kgen.rebind [[BIMM]] : !lit.ref<!FloatDyn, muttoimm [[BLT]]> to !lit.ref<!FloatDyn, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
     # CHECK-NEXT: = lit.ref.pack.create([[AREBOUND]], [[BREBOUND]])
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}Tuple
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, [[TMPVAR]])
+    # CHECK: lit.call {{.*}}@Tuple::@"__init__({{.*}}({{.*}}, [[TMPVAR]])
     use((a, b))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK: = lit.ref.pack.create({{%[0-9]+}}, {{%[0-9]+}})
     # CHECK: %t3 = lit.var.decl "t3"
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %t3)
+    # CHECK: lit.call {{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %t3)
     var t3 = a, b
     use(t3)
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
+    # CHECK: lit.call {{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
     use((a,))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
+    # CHECK: lit.call {{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
     use((a,))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
     # CHECK: %t2 = lit.var.decl "t2"
-    # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %t2)
+    # CHECK: [[TUP2:%.*]] = lit.call {{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %t2)
     var t2 = (a,)
     use(t2)
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
@@ -152,14 +152,14 @@ fn swap_container_fields(mut v: Container[_]):
 # CHECK-LABEL: lit.fn @"returnTup0
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> []>
 fn returnTup0() -> Tuple:
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__{{.*}}(%__result__)
+    # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 
 
 # CHECK-LABEL: lit.fn @"returnTup0a
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> []>
 fn returnTup0a() -> ():
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__{{.*}}(%__result__)
+    # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 
 

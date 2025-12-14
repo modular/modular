@@ -67,7 +67,7 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
     # CHECK: %1 = lit.ref.struct.ger %arg[x]
     # CHECK: %2 = lit.ref.load %0
     # CHECK: %3 = lit.ref.load %1
-    # CHECK: %4 = lit.call @{{.*}}__add__{{.*}}"(%2, %3)
+    # CHECK: %4 = lit.call {{.*}}__add__{{.*}}"(%2, %3)
     _ = self.y+arg.x
 
 fn inferred_function_with_memory_result[
@@ -105,11 +105,11 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
   # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.var.decl {{.*}}!MemoryOnlyPair
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[IMMREF]], [[TMPPAIR]])
+  # CHECK-NEXT: lit.call {{.*}}@"__copyinit__{{.*}}([[IMMREF]], [[TMPPAIR]])
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %regX
   # CHECK-NEXT: [[TMPINT:%.*]] = lit.var.decl {{.*}}!MemoryOnlyInt
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[IMMREF]], [[TMPINT]])
-  # CHECK-NEXT: lit.call @{{.*}}@"method{{.*}}([[TMPPAIR]], [[TMPINT]])
+  # CHECK-NEXT: lit.call {{.*}}@"__copyinit__{{.*}}([[IMMREF]], [[TMPINT]])
+  # CHECK-NEXT: lit.call {{.*}}@"method{{.*}}([[TMPPAIR]], [[TMPINT]])
   a.method(regX)
 
   # Drill into rvalue without cloning intermediate values.
@@ -130,21 +130,21 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: [[SIMDVAL:%.*]] = lit.call {{.*}}SIMD::@"__init__{{.*}}()
 
   # CHECK: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
-  # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}([[SIMDVAL]], [[TMP]])
+  # CHECK-NEXT: lit.call {{.*}}inferred_function_with_memory_result{{.*}}([[SIMDVAL]], [[TMP]])
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
   # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # Memory-only default argument with memory-only result.
   # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{42}>
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%[[C42]], [[TMP]])
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%[[C42]], [[TMP]])
   _ = MemoryOnlyInt()
   # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # CHECK-NEXT: [[IMMREF1:%.*]] = lit.ref.immut %regX
   # CHECK-NEXT: [[IMMREF2:%.*]] = lit.ref.immut %regX
   # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [[[IMMREF1]], [[IMMREF2]]]
-  # CHECK-NEXT: lit.call @{{.*}}variadic{{.*}}([[VARIADIC]])
+  # CHECK-NEXT: lit.call {{.*}}variadic{{.*}}([[VARIADIC]])
   MemoryOnlyInt.variadic(regX, regX)
 
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %v2
@@ -560,7 +560,7 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   x = \
 z
 
-  # CHECK-NEXT: lit.call @{{.*}}noop()"()
+  # CHECK-NEXT: lit.call {{.*}}noop()"()
   noop()
 
   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
@@ -604,13 +604,13 @@ fn test_param_if_cond[cond: Bool]() -> Int:
 # CHECK-LABEL: lit.fn @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
 # CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call [!lit.generator<(!Int, |) -> !Int>: callable](%a)
+  # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !Int>: callable](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.fn @"callable_mv_inputs{{.*}})"<
 # CHECK-SAME: callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>, b: !Int>(%a: !Int) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call [!lit.generator<(!Int, |) -> !Int>: bind_params({{.*}}callable, :!Int b)](%a)
+  # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !Int>: bind_params({{.*}}callable, :!Int b)](%a)
   return callable[b](a)
 
 # CHECK-LABEL: lit.fn @"takeIndexParam{{.*}}"<a: !Int>() -> !Int
@@ -623,14 +623,14 @@ fn returnIndex() -> Int:
 
 # CHECK-LABEL: lit.fn @"returnIndex2()"() -> !Int
 fn returnIndex2() -> Int:
-  # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}"<:!Int apply({{.*}}@{{.*}}returnIndex()")>()
+  # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}"<:!Int apply({{.*}}@{{.*}}returnIndex()")>()
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.fn @"callInParam[fn[::Int](::Int, /) -> ::Int]()"
 # CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
-  # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, :!Int {1}), {1})>()
+  # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, :!Int {1}), {1})>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
@@ -691,7 +691,7 @@ fn byval_byref_function(a: Int, mut b: Int):
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
   # CHECK: [[TMP:%.*]] = lit.ref.load %b
-  # CHECK: = lit.call @{{.*}}::@"byval_byref_function{{.*}}([[TMP]], %b)
+  # CHECK: = lit.call {{.*}}::@"byval_byref_function{{.*}}([[TMP]], %b)
   byval_byref_function(b, b)
 
 # CHECK-LABEL: lit.fn @"lvaluesAndRValues()
@@ -901,7 +901,7 @@ fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryOn
 
   # Initialize in memory through a temp + setitem.
   # CHECK: [[ANON:%.*]] = lit.var.decl "__call_result_tmp__"
-  # CHECK: lit.call @{{.*}}__init__{{.*}}({{.*}}, [[ANON]])
+  # CHECK: lit.call {{.*}}__init__{{.*}}({{.*}}, [[ANON]])
   # CHECK: lit.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = MemoryOnlyInt(42)
 

@@ -6,7 +6,7 @@
 
 # RUN: %parse-mojo-isolated -debug-level full -O0 -mlir-print-debuginfo %s | FileCheck %s
 
-# CHECK: %2 = lit.call @stdlib::@builtin::@error::@"__mojo_debugger_raise_hook()"()
+# CHECK: %2 = lit.call tail @stdlib::@builtin::@error::@"__mojo_debugger_raise_hook()"()
 # CHECK-NEXT: debuginfo.line_table_loc
 # CHECK-NEXT: lit.raise
 

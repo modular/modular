@@ -19,5 +19,5 @@ fn use_trait[T: MyTrait & Copyable](value: T):
 
 # CHECK-LABEL: kgen.generator @"extension_composite::test
 fn test(var s: MyStruct):
-    # CHECK: kgen.call @"extension_composite::use_trait
+    # CHECK: kgen.call tail @"extension_composite::use_trait
     use_trait(s^)

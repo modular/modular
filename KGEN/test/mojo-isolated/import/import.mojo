@@ -39,15 +39,15 @@ from test_package.test_nested_package.module import nested_function
 from test_package import *
 
 # CHECK-LABEL: lit.fn @"test_function_calls
-# CHECK:  lit.call @test_package::@module::@"function()"
-# CHECK:  lit.call @test_package::@test_nested_package::@module::@"nested_function()"
-# CHECK:  lit.call @test_package::@__init__::@"method_defined_in_init()"()
+# CHECK:  lit.call tail @test_package::@module::@"function()"
+# CHECK:  lit.call tail @test_package::@test_nested_package::@module::@"nested_function()"
+# CHECK:  lit.call tail @test_package::@__init__::@"method_defined_in_init()"()
 
 # CHECK-LABEL: lit.package @test_package
 # CHECK:  lit.file_module @module
 # CHECK:    lit.fn @"function()"
 # CHECK:      lit.fn @"call_nested_function()"
-# CHECK:        lit.call @test_package::@test_nested_package::@module::@"nested_function()"
+# CHECK:        lit.call tail @test_package::@test_nested_package::@module::@"nested_function()"
 # CHECK:  lit.package @test_nested_package
 # CHECK:    lit.file_module @module
 # CHECK:      lit.fn @"nested_function()"

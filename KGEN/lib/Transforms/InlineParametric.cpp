@@ -306,6 +306,17 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
       return WalkResult::advance();
     }
 
+    // If we inlined a "tail" call into a caller,  we need to clear the "tail"
+    // marker.  This marker indicates that the callee doesn't access the
+    // parent-caller's frame, but it might access the grand-caller's frame.
+    TypeSwitch<Operation &>(*op).Case<CallOp, CallParamOp, CallIndirectOp>(
+        [&](auto op) {
+          auto cloned = cast<decltype(op)>(map.lookup(op));
+          if (cloned.getTailKind() == TailKind::Tail)
+            cloned.setTailKind(TailKind::None);
+          return WalkResult::advance();
+        });
+
     // Walk over nested functions. Control-flow does not cross them.
     if (isa<FuncInterface>(op))
       return WalkResult::skip();

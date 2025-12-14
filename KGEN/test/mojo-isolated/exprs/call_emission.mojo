@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+fn use_string(arg: String): pass
 
 fn has_default_args(a: Int, b: Int = 1, c: Int = 2):
     pass
@@ -37,10 +38,10 @@ fn test_kw_arg_passing(x: Int, y: Int, z: Int):
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing_indirect
 fn test_kw_arg_passing_indirect[callee: fn(a: Int, b: Int=1, c: Int=2)->None](x: Int, y: Int, z: Int):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: lit.call [{{.*}}](%x, %[[C1]], %z)
+    # CHECK-NEXT: lit.call tail[{{.*}}](%x, %[[C1]], %z)
     callee(x, c=z)
 
-    # CHECK-NEXT: lit.call [{{.*}}](%x, %y, %z)
+    # CHECK-NEXT: lit.call tail[{{.*}}](%x, %y, %z)
     callee(c=z, b=y, a=x)
 
 fn has_default_params[a: Int, b: Int = 1, c: Int = 2]():
@@ -49,22 +50,22 @@ fn has_default_params[a: Int, b: Int = 1, c: Int = 2]():
 
 # CHECK-LABEL: lit.fn @"test_kw_param_passing
 fn test_kw_param_passing[x: Int, y: Int, z: Int]():
-    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int {2}>
+    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int {2}>
     has_default_params[x, b=y]()
 
-    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
+    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
     has_default_params[x, b=y, c=z]()
 
-    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int {1}, :!Int z>
+    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int {1}, :!Int z>
     has_default_params[x, c=z]()
 
-    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
+    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
     has_default_params[x, c=z, b=y]()
 
-    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
+    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
     has_default_params[a=x, c=z, b=y]()
 
-    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
+    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
     has_default_params[c=z, b=y, a=x]()
 
 
@@ -133,11 +134,11 @@ fn test_kw_only_indirect[callee: fn(a: Int, b: Int = 1, *, c: Int, d: Int = 2)->
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: lit.call [{{.*}}](%x, %[[C1]], %x, %[[C2]])
+    # CHECK-NEXT: lit.call tail[{{.*}}](%x, %[[C1]], %x, %[[C2]])
     callee(x, c=x)
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: lit.call [{{.*}}](%x, %[[C1]], %x, %x)
+    # CHECK-NEXT: lit.call tail[{{.*}}](%x, %[[C1]], %x, %x)
     callee(x, d=x, c=x)
 
 
@@ -308,7 +309,7 @@ fn test_matrix_equal[
 # CHECK-LABEL: lit.fn @"partialBind
 fn partialBind(mut C: Matrix[1, 2]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
-    # CHECK-NEXT: lit.call @{{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
+    # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
     # CHECK-SAME: <:!lit.generator<<?, "rows`": !Int, "cols`1": !Int>[1](!lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut, |) -> !kgen.none>
     # CHECK-SAME: rebind(:!lit.generator<<?, "rows`": !Int, "cols`1": !Int>[1]("C": !lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut) -> !kgen.none>
     # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {0}, :!Int ?, :!Int ?>), :!Int {1}, :!Int {2}>(%C, %__error__, %exp)
@@ -384,7 +385,7 @@ fn test_byref_slot_closure_capture(var x: String):
         return x
 
     # CHECK: %__call_result_tmp__
-    # CHECK-NEXT: lit.call [{{.*}}: *"capture{{.*}}(%__call_result_tmp__)
+    # CHECK-NEXT: lit.call[{{.*}}: *"capture{{.*}}(%__call_result_tmp__)
     x = capture()
     # CHECK-NEXT: lit.call {{.*}}@String::@"__moveinit__{{.*}}(%__call_result_tmp__, %x)
 
@@ -513,7 +514,7 @@ struct Value(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"entry
 def entry(mut value: MyDict[String, Value], name: String):
-    # CHECK: lit.call @{{.*}}::@MyDict::@"__getitem__
+    # CHECK: lit.call {{.*}}::@MyDict::@"__getitem__
     # CHECK-NEXT: [[V1:%.*]] = lit.load.consume
     # CHECK-NEXT: [[V2:%.*]] = lit.ref.struct.ger [[V1]]
     # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !Int = <{12}>
@@ -529,10 +530,10 @@ struct MyMutGetItemCollection[T: AnyType]:
     fn __getitem__(ref self, idx: Int) -> ref [self] Self.T: pass
     fn __setitem__(mut self, idx: Int, var value: Self.T): pass
 
-# CHECK: lit.fn @"subscript_assignment_inplace
+# CHECK-LABEL: lit.fn @"subscript_assignment_inplace
 fn subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCollection[Int]]):
-    # CHECK: [[V0:%.*]] = lit.call @{{.*}}::@MyMutGetItemCollection::@"__getitem__
-    # CHECK-NEXT: lit.call @{{.*}}::@MyMutGetItemCollection::@"clear{{.*}}"[{{.*}}]<{{.*}}>([[V0]])
+    # CHECK: [[V0:%.*]] = lit.call {{.*}}::@MyMutGetItemCollection::@"__getitem__
+    # CHECK-NEXT: lit.call {{.*}}::@MyMutGetItemCollection::@"clear{{.*}}"[{{.*}}]<{{.*}}>([[V0]])
     list[0].clear()
 
     # Make sure this isn't copying 'state'.
@@ -563,12 +564,27 @@ struct MyImmutGetItemCollection[T: AnyType]:
     fn __getitem__(self, idx: Int) -> ref [self] Self.T: pass
     fn __setitem__(mut self, idx: Int, var value: Self.T): pass
 
-# CHECK: lit.fn @"subscript_assignment_writeback
+# CHECK-LABEL: lit.fn @"subscript_assignment_writeback
 fn subscript_assignment_writeback(mut list: MyImmutGetItemCollection[Value]):
     # This MUST perform a copy of the value, because getitem returns an
     # immutable ref.
 
-    # CHECK: lit.call @{{.*}}::@MyImmutGetItemCollection::@"__getitem__
+    # CHECK: lit.call {{.*}}::@MyImmutGetItemCollection::@"__getitem__
     # CHECK: lit.call {{.*}}Value::@"mutate
-    # CHECK: lit.call @{{.*}}::@MyImmutGetItemCollection::@"__setitem__
+    # CHECK: lit.call {{.*}}::@MyImmutGetItemCollection::@"__setitem__
     list[0].mutate()
+
+
+# CHECK-LABEL: lit.fn @"check_tail_call
+fn check_tail_call(str_arg: String, var var_str_arg: String):
+    var local_str = String()
+
+    # This touches the local stack temporary so can't be a tail call.
+    # CHECK: lit.call @{{.*}}@"use_string{{.*}}local_str
+    use_string(local_str)
+
+    # These touch memory that isn't in this frame, so they can be.
+    # CHECK: lit.call tail @{{.*}}@"use_string{{.*}}var_str_arg
+    use_string(var_str_arg)
+    # CHECK: lit.call tail @{{.*}}@"use_string{{.*}}(%str_arg)
+    use_string(str_arg)

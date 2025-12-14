@@ -304,40 +304,39 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
   ASTDecl *curDecl = shared.declResolver->getDeclCurrentlyProcessing();
 
   // Walk up the decl hierarchy to find the one that contains the parameter.
+  ssize_t paramIdx = -1;
   PogListAttr paramListAttr;
   ArrayRef<ParamDeclAttr> paramDecls;
-  ssize_t paramIdx = -1;
-  [[maybe_unused]] size_t numImplicitOrigins = 0;
-  while (curDecl) {
+  for (; curDecl; curDecl = curDecl->getParentDecl()) {
+    Operation *declOp = curDecl->getIfOperation();
+    if (!declOp)
+      continue;
+
+    [[maybe_unused]] size_t numImplicitOrigins = 0;
     // TODO: we need a decl interface to do this!
-    if (auto fnDecl =
-            dyn_cast_if_present<LIT::FnOp>(curDecl->getIfOperation())) {
+    if (auto fnDecl = dyn_cast<LIT::FnOp>(declOp)) {
       paramListAttr = fnDecl.getFuncTypeGenerator().getParamListAttrs();
       paramDecls = fnDecl.getParams();
       numImplicitOrigins =
           fnDecl.getFuncTypeGenerator().getNumImplicitOriginDecls();
-    }
-    if (auto structDecl =
-            dyn_cast_if_present<LIT::StructDeclOp>(curDecl->getIfOperation())) {
+    } else if (auto structDecl = dyn_cast<LIT::StructDeclOp>(declOp)) {
       paramListAttr = structDecl.getSignature().getParamListAttrs();
       paramDecls = structDecl.getParams();
       numImplicitOrigins = 0;
-    }
+    } else
+      continue;
 
-    if (paramListAttr) {
-      assert(paramListAttr.size() + numImplicitOrigins == paramDecls.size() &&
-             "Unexpected number of parameters");
+    assert(paramListAttr.size() + numImplicitOrigins == paramDecls.size() &&
+           "Unexpected number of parameters");
 
-      for (auto [idx, param] : llvm::enumerate(paramDecls)) {
-        if (param.getName() == declRef.getName()) {
-          paramIdx = idx;
-          break;
-        }
-      }
-      if (paramIdx != -1)
+    for (auto [idx, param] : llvm::enumerate(paramDecls)) {
+      if (param.getName() == declRef.getName()) {
+        paramIdx = idx;
         break;
+      }
     }
-    curDecl = curDecl->getParentDecl();
+    if (paramIdx != -1)
+      break;
   }
 
   // If this is an implicit parameter injected due to auto-parameterization,

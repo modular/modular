@@ -21,9 +21,9 @@ fn use(a:String, d:MoveMe):
 # CHECK:  lit.fn @"moveMeUser
 fn moveMeUser(byCopy:String, prefix:String, var byMove: MoveMe):
     # CHECK: [[V0:%.*]] = lit.var.decl "anonymous*"
-    # CHECK-NEXT: lit.call @{{.*}}::@String::@"__copyinit__(::String)"[{{.*}}](%byCopy, [[V0]])
+    # CHECK-NEXT: lit.call {{.*}}::@String::@"__copyinit__(::String)"[{{.*}}](%byCopy, [[V0]])
     # CHECK: [[V1:%.*]] = lit.var.decl "anonymous*"
-    # CHECK-NEXT: lit.call @{{.*}}::@MoveMe::@"__moveinit__({{.*}})"[{{.*}}](%byMove, [[V1]])
+    # CHECK-NEXT: lit.call {{.*}}::@MoveMe::@"__moveinit__({{.*}})"[{{.*}}](%byMove, [[V1]])
     # CHECK: [[V0]][@{{.*}}::@String::@"__copyinit__({{.*}})" !lit.generator<{{.*}}>, @{{.*}}::@String::@"__moveinit__({{.*}})" !lit.generator<{{.*}}>, @{{.*}}::@String::@"__del__({{.*}})" !lit.generator<{{.*}}>], [[V1]]
     fn myclosure(prefix: String) unified {var byCopy, var byMove^} -> String:
         use(byCopy, byMove)

@@ -433,7 +433,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
         # CHECK-NEXT:   hlcf.elif.yield %cond
         # CHECK-NEXT: } then {
         # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%self)
-        # CHECK-NEXT:   lit.call @{{.*}}::@Error::@"__init__
+        # CHECK-NEXT:   lit.call {{.*}}::@Error::@"__init__
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
         # CHECK-NEXT: } else {

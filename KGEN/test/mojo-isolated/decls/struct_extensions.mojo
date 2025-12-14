@@ -190,7 +190,7 @@ fn launch_flying[F: Flying](mut flying: F):
 
 # CHECK-LABEL: lit.fn @"launch_ship
 fn launch_ship(mut ship: Spaceship):
-    # CHECK: lit.call @struct_extensions::@"launch_flying[struct_extensions::Flying]
+    # CHECK: lit.call tail @struct_extensions::@"launch_flying[struct_extensions::Flying]
     # CHECK-SAME: <:!Flying !Spaceship>
     launch_flying(ship)
 

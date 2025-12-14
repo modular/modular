@@ -37,8 +37,8 @@ fn f1[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
 
 
 fn foo():
-    # CHECK: lit.call @{{.*}}::@"f0{{.*}}"[{{.*}}]<:variadic<!Copyable> [!SomeCopyable, !SomeCopyable]>
+    # CHECK: lit.call {{.*}}::@"f0{{.*}}"[{{.*}}]<:variadic<!Copyable> [!SomeCopyable, !SomeCopyable]>
     f0(SomeVA[SomeCopyable, SomeCopyable]())
 
-    # CHECK: lit.call @{{.*}}::@"f1{{.*}}"[{{.*}}]<:variadic<!mt_Int> [!Int, !Int]>
+    # CHECK: lit.call {{.*}}::@"f1{{.*}}"[{{.*}}]<:variadic<!mt_Int> [!Int, !Int]>
     f1(SomeVA[Int, Int]())
