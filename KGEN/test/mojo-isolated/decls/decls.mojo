@@ -1060,7 +1060,7 @@ fn topLevelFunction() -> Int:
 
     # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut *"a`"}:() capturing -> !Int> = <*"nestedFunction()">
     comptime b = nestedFunction
-    # CHECK: call[!lit.generator<:{mut *"a`"}:() capturing -> !Int>: *"nestedFunction()"]()
+    # CHECK: lit.call [!lit.generator<:{mut *"a`"}:() capturing -> !Int>: *"nestedFunction()"]()
     return nestedFunction()
 
 
@@ -1078,7 +1078,7 @@ struct SomeStruct:
 
         # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut [[A_LT:\*"a`.*"]]}:() capturing -> !Int> = <*"nestedFunction()">
         comptime b = nestedFunction
-        # CHECK: call[!lit.generator<:{mut [[A_LT]]}:() capturing -> !Int>: *"nestedFunction()"]()
+        # CHECK: lit.call [!lit.generator<:{mut [[A_LT]]}:() capturing -> !Int>: *"nestedFunction()"]()
         return nestedFunction()
 
 
@@ -1225,7 +1225,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 
     # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[index]()">
     comptime thinref = nestedFunction
-    # CHECK: call[{{.*}}: bind_params(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[index]()", 2)]()
+    # CHECK: lit.call [{{.*}}: bind_params(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[index]()", 2)]()
     nestedFunction[Int(2)._mlir_value]()
 
     var value = 0
@@ -1248,7 +1248,7 @@ struct SomeParamStruct[c_param: Int]:
 
         # CHECK: lit.alias.decl *"reff{{.*}}": !lit.generator<<"b_param": !Int>() -> !kgen.none> = <*"nestedFunction[{{.*}}Int]()">
         comptime reff = nestedFunction
-        # CHECK: call[{{.*}}: bind_params(:!lit.generator<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
+        # CHECK: lit.call [{{.*}}: bind_params(:!lit.generator<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
 

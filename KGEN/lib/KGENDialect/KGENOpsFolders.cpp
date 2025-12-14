@@ -638,7 +638,7 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
     return failure();
 
   rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
-                                      op.getOperands());
+                                      op.getOperands(), op.getTailKindAttr());
   return success();
 }
 

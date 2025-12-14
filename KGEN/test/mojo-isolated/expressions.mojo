@@ -604,13 +604,13 @@ fn test_param_if_cond[cond: Bool]() -> Int:
 # CHECK-LABEL: lit.fn @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
 # CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call[!lit.generator<(!Int, |) -> !Int>: callable](%a)
+  # CHECK-NEXT: lit.call [!lit.generator<(!Int, |) -> !Int>: callable](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.fn @"callable_mv_inputs{{.*}})"<
 # CHECK-SAME: callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>, b: !Int>(%a: !Int) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call[!lit.generator<(!Int, |) -> !Int>: bind_params({{.*}}callable, :!Int b)](%a)
+  # CHECK-NEXT: lit.call [!lit.generator<(!Int, |) -> !Int>: bind_params({{.*}}callable, :!Int b)](%a)
   return callable[b](a)
 
 # CHECK-LABEL: lit.fn @"takeIndexParam{{.*}}"<a: !Int>() -> !Int

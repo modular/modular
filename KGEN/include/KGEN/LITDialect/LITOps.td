@@ -193,13 +193,15 @@ def LIT_CallOp : LITOp<"call", [
   let arguments = (ins
     AttrOfType<LIT_FnTypeGeneratorType>:$callee,
     KGEN_ParameterExprArrayAttr:$implicitOrigins,
-    Variadic<AnyType>:$operands
+    Variadic<AnyType>:$operands,
+    DefaultValuedAttr<KGEN_TailKindAttr, "{}">:$tailKind
   );
   let results = (outs Variadic<AnyType>:$results);
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    `` custom<CallOp>($callee, $implicitOrigins, $operands,
+    `` custom<OptionalEnum>($tailKind, "symbolizeTailKind")
+    custom<CallOp>($callee, $implicitOrigins, $operands,
                       type($operands), type($results)) attr-dict
   }];
 
@@ -234,12 +236,14 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
   let arguments = (ins
     LIT_FnTypeGeneratorType:$callee,
     KGEN_ParameterExprArrayAttr:$implicitOrigins,
-    Variadic<AnyType>:$arguments
+    Variadic<AnyType>:$arguments,
+    DefaultValuedAttr<KGEN_TailKindAttr, "{}">:$tailKind
   );
   let results = (outs Variadic<AnyType>:$results);
   let hasVerifier = 1;
 
   let assemblyFormat = [{
+    `` custom<OptionalEnum>($tailKind, "symbolizeTailKind")
     $callee `` custom<OriginParams>($implicitOrigins) `(` $arguments `)` `:`
     custom<Generator>(type($callee)) attr-dict ``
     custom<CallOpTypes>(type($arguments), type($results), ref(type($callee)),

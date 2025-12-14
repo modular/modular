@@ -37,10 +37,10 @@ fn test_kw_arg_passing(x: Int, y: Int, z: Int):
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing_indirect
 fn test_kw_arg_passing_indirect[callee: fn(a: Int, b: Int=1, c: Int=2)->None](x: Int, y: Int, z: Int):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: lit.call[{{.*}}](%x, %[[C1]], %z)
+    # CHECK-NEXT: lit.call [{{.*}}](%x, %[[C1]], %z)
     callee(x, c=z)
 
-    # CHECK-NEXT: lit.call[{{.*}}](%x, %y, %z)
+    # CHECK-NEXT: lit.call [{{.*}}](%x, %y, %z)
     callee(c=z, b=y, a=x)
 
 fn has_default_params[a: Int, b: Int = 1, c: Int = 2]():
@@ -133,11 +133,11 @@ fn test_kw_only_indirect[callee: fn(a: Int, b: Int = 1, *, c: Int, d: Int = 2)->
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: lit.call[{{.*}}](%x, %[[C1]], %x, %[[C2]])
+    # CHECK-NEXT: lit.call [{{.*}}](%x, %[[C1]], %x, %[[C2]])
     callee(x, c=x)
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: lit.call[{{.*}}](%x, %[[C1]], %x, %x)
+    # CHECK-NEXT: lit.call [{{.*}}](%x, %[[C1]], %x, %x)
     callee(x, d=x, c=x)
 
 
@@ -384,7 +384,7 @@ fn test_byref_slot_closure_capture(var x: String):
         return x
 
     # CHECK: %__call_result_tmp__
-    # CHECK-NEXT: lit.call[{{.*}}: *"capture{{.*}}(%__call_result_tmp__)
+    # CHECK-NEXT: lit.call [{{.*}}: *"capture{{.*}}(%__call_result_tmp__)
     x = capture()
     # CHECK-NEXT: lit.call {{.*}}@String::@"__moveinit__{{.*}}(%__call_result_tmp__, %x)
 

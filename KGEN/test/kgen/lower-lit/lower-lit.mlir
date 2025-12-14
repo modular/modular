@@ -13,9 +13,14 @@ lit.fn @calls<f: !lit.generator<[2]() -> ()>>[imm a, mut b](%arg0: !lit.generato
   // CHECK: kgen.call @callee() : () -> ()
   lit.call @callee[imm a, mut b]() : !lit.generator<[2]() -> ()>
   // CHECK: kgen.call_param[() -> (): f]()
-  lit.call[!lit.generator<[2]() -> ()>: f][imm a, mut b]()
+  lit.call [!lit.generator<[2]() -> ()>: f][imm a, mut b]()
   // CHECK: kgen.call_indirect %arg0() : () -> ()
   lit.call_indirect %arg0[imm a, mut b]() : !lit.generator<[2]() -> ()>
+
+  // CHECK: kgen.call tail @callee() : () -> ()
+  lit.call tail @callee[imm a, mut b]() : !lit.generator<[2]() -> ()>
+  // CHECK: kgen.call_indirect musttail %arg0() : () -> ()
+  lit.call_indirect musttail %arg0[imm a, mut b]() : !lit.generator<[2]() -> ()>
   kgen.return
 }
 
@@ -476,7 +481,7 @@ lit.fn @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !kge
   }
   // CHECK: }
   // CHECK-NEXT: kgen.call_param[(!kgen.pointer<struct<() memoryOnly>> byref_result) capturing -> !kgen.none: localTest](%arg0)
-  %0 = lit.call[!lit.generator<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut abc](%res)
+  %0 = lit.call [!lit.generator<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut abc](%res)
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -629,7 +634,7 @@ lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x
 }
 
 lit.fn @direct<CT: !Closure>[mut Origin0](%c: !lit.ref<:!Closure CT, mut Origin0> read_mem, %x: index) -> !kgen.none {
-   %0 = lit.call[!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
+   %0 = lit.call [!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
         #kgen.get_witness<:!Closure CT, "Closure", "__call__">][mut Origin0](%c, %x)
    lit.end_fn
 }

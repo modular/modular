@@ -355,14 +355,17 @@ void LITLowerer::lowerLITOps(FnOp func) {
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
       if (auto symbolCst = dyn_cast<SymbolConstantAttr>(call.getCallee())) {
         b.replaceOpWithNewOp<KGEN::CallOp>(call, call.getResultTypes(),
-                                           symbolCst, call.getOperands());
+                                           symbolCst, call.getOperands(),
+                                           call.getTailKindAttr());
       } else {
         b.replaceOpWithNewOp<KGEN::CallParamOp>(
-            call, call.getResultTypes(), call.getCallee(), call.getOperands());
+            call, call.getResultTypes(), call.getCallee(), call.getOperands(),
+            call.getTailKindAttr());
       }
     } else if (auto call = dyn_cast<LIT::CallIndirectOp>(op)) {
       b.replaceOpWithNewOp<KGEN::CallIndirectOp>(
-          call, call.getResultTypes(), call.getCallee(), call.getArguments());
+          call, call.getResultTypes(), call.getCallee(), call.getArguments(),
+          call.getTailKindAttr());
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       b.replaceOpWithNewOp<CO::InvokeOp>(call, call.getCallee(),
                                          call.getOperands());
