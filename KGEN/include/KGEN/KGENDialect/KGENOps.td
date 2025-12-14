@@ -496,19 +496,23 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
   let arguments = (ins
     KGEN_SymbolConstantAttr:$callee,
-    Variadic<AnyType>:$operands
+    Variadic<AnyType>:$operands,
+    DefaultValuedAttr<KGEN_TailKindAttr, "{}">:$tailKind
   );
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
+    `` custom<OptionalEnum>($tailKind, "symbolizeTailKind")
     custom<CallOp>($callee, $operands, type($operands), type($results))
     attr-dict
   }];
 
   let builders = [
     OpBuilder<(ins "SymbolConstantAttr":$callee, "ValueRange":$operands), [{
+      auto tailKind = TailKindAttr::get($_builder.getContext(), TailKind::None);
       return build($_builder, $_state,
-        callee.getType().getBody().getValues().getResults(), callee, operands);
+        callee.getType().getBody().getValues().getResults(), callee,
+        operands, tailKind);
     }]>
   ];
 
