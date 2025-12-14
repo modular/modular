@@ -182,9 +182,9 @@ struct Codepoint(
         comptime sl: StringLiteral[value] = {}
 
         # Compile-time validation for proper UTF-8 codepoint
-        constrained[
-            sl.byte_length() > 0, "Cannot construct an empty codepoint"
-        ]()
+        __comptime_assert (
+            sl.byte_length() > 0
+        ), "Cannot construct an empty codepoint"
 
         # SAFETY:
         #   This is safe because `StringLiteral` is guaranteed to point to valid
@@ -193,10 +193,9 @@ struct Codepoint(
             sl.as_bytes()
         )
 
-        constrained[
-            sl.byte_length() == Int(num_bytes),
-            "input string must be one character",
-        ]()
+        __comptime_assert sl.byte_length() == Int(
+            num_bytes
+        ), "input string must be one character"
 
         self = char
 
