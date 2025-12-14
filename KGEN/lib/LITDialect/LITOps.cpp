@@ -20,6 +20,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "Support/Compiler/VerifyUtils.h"
+#include "Support/MDialect/ParserUtils.h"
 
 using namespace M;
 using namespace KGEN;
@@ -240,7 +241,7 @@ parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
   // Optionally parse the direct call syntax: `lit.call @abc`.
   OptionalParseResult optResult = p.parseOptionalAttribute(callee);
   if (!optResult.has_value()) {
-    // Otherwise, parse the parametric call syntax `lit.call[...: @abc]`
+    // Otherwise, parse the parametric call syntax `lit.call [...: @abc]`
     if (parseParametricCallee(p, calleeAttr))
       return failure();
   } else if (failed(*optResult)) {

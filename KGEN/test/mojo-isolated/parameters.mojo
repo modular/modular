@@ -540,7 +540,7 @@ fn call_take_nonmat():
 fn takeCallable[
      callable: fn(Int) -> Int
    ](a: Int) -> Int:
-  # CHECK-NEXT: %0 = lit.call[!lit.generator<(!Int, |) -> !Int>: callable](%a)
+  # CHECK-NEXT: %0 = lit.call [!lit.generator<(!Int, |) -> !Int>: callable](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
@@ -940,7 +940,7 @@ fn test_infer_with_default_arg():
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
 fn indirect_call_infer_params[callee: fn[x: Int](y: Abstraction[x])->None]():
-    # CHECK: call[!lit.generator<("y": {{.*}}#Abstraction <:!Int {2}>
+    # CHECK: lit.call [!lit.generator<("y": {{.*}}#Abstraction <:!Int {2}>
     # CHECK-SAME: bind_params(:!lit.generator<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
     # CHECK-SAME: callee, :!Int {2}
     callee(Abstraction[2]())
@@ -1210,15 +1210,15 @@ fn test_default_params():
 fn test_indirect_default_params[
     callee: fn[a: Int, b: Int = 7, c: String = "woof"]()->None]():
 
-    # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
+    # CHECK: lit.call [!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof"
     callee[1]()
 
-    # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
+    # CHECK: lit.call [!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: :!Int {2}, :!Int {8}, {{.*}}#StringLiteral <:string "woof"
     callee[2, 8]()
 
-    # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
+    # CHECK: lit.call [!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: :!Int {4}, :!Int {9}, {{.*}}#StringLiteral <:string "meow"
     callee[4, 9, "meow"]()
 

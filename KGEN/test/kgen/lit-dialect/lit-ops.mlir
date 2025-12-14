@@ -520,7 +520,7 @@ lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x
 
 
 lit.fn @direct<CT: !Closure>[mut Origin0](%c: !lit.ref<:!Closure CT, mut Origin0> read_mem, %x: index) -> !kgen.none {
-   %0 = lit.call[!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
+   %0 = lit.call [!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
         #kgen.get_witness<:!Closure CT, "Closure", "__call__">][mut Origin0](%c, %x)
    lit.end_fn
 }

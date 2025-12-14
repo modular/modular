@@ -36,7 +36,7 @@
 # CHECK:  lit.struct.field field0 : !kgen.param<:[[IMPL_PARENT]] impl>
 # CHECK: lit.fn @"__call__({{.*}})"[mut *"[[L0:.*]]`"](%0[*""]: !lit.ref<!lit.struct<[[T:#.*]] <:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L0]]`"> read_mem, |, %y: [[INT]]) capturing -> [[INT]]
 # CHECK-NEXT:  [[CLOSURE:%.*]] = lit.ref.struct.ger %{{.*}}[field0]
-# CHECK-NEXT:  [[RES:%.*]] = lit.call[!lit.generator<[1](!lit.ref<:[[IMPL_PARENT]] impl, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]>: #kgen.get_witness<:[[IMPL_PARENT]] impl, "fn(y: Int) -> Int", "__call__{{.*}}">][mut *"[[L0]]`"->field0]([[CLOSURE]], %y)
+# CHECK-NEXT:  [[RES:%.*]] = lit.call [!lit.generator<[1](!lit.ref<:[[IMPL_PARENT]] impl, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]>: #kgen.get_witness<:[[IMPL_PARENT]] impl, "fn(y: Int) -> Int", "__call__{{.*}}">][mut *"[[L0]]`"->field0]([[CLOSURE]], %y)
 # CHECK-NEXT:  lit.return [[RES]]
 # CHECK-NEXT:  lit.end_fn
 # CHECK-NEXT: }
@@ -129,7 +129,7 @@ fn make_closure(x: Int) -> Int:
 
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<lt: !lit.struct<#Origin <:!Bool {:i1 1}>>>[mut *"[[L1:.*]]`", imm *"[[L2:.*]]`"](%0[*""]: !lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"[[L1]]`"> read_mem, |, %a: !lit.ref<!String, {{.*}}>, %b: !lit.ref<!String, imm *"[[L2]]`"> read_mem)
 # CHECK-NEXT: [[V1:%.*]] = lit.ref.struct.ger %0[field0] : <!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"[[L1]]`"> -> :[[TRAIT]] impl
-# CHECK-NEXT: [[V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none>:
+# CHECK-NEXT: [[V2:%.*]] = lit.call [!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none>:
 # CHECK-SAME: bind_params(:!lit.generator<<"lt": !lit.struct<#Origin <:!Bool {:i1 1}>>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
 # CHECK-SAME:> #kgen.get_witness<:[[TRAIT]] impl, "fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None", "__call__{{.*}}">, :!lit.struct<#Origin <:!Bool {:i1 1}>> lt)][mut *"[[L1]]`"->field0, imm *"[[L2]]`"]([[V1]], %a, %b)
 # CHECK-NEXT: lit.return [[V2]] : !kgen.none
@@ -160,7 +160,7 @@ trait MyInterface:
 
 # CHECK: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[TRAIT]] impl, mut *"impl`"> owned_in_mem, |, ?, %self: !lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> byref_result)
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.struct.ger %self[field0] : <!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> -> :[[TRAIT]] impl
-# CHECK-NEXT: [[V1:%.*]] = lit.call[!lit.generator<[2]("existing": !lit.ref<:[[TRAIT]] impl, mut *[0,0]> deinit_mem, |, ?, "self": !lit.ref<:[[TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: #kgen.get_witness<:[[TRAIT]] impl, "{{.*}}::Movable", "__moveinit__{{.*}}">][mut *"impl`", mut *"self`"->field0](%impl, [[V0]])
+# CHECK-NEXT: [[V1:%.*]] = lit.call [!lit.generator<[2]("existing": !lit.ref<:[[TRAIT]] impl, mut *[0,0]> deinit_mem, |, ?, "self": !lit.ref<:[[TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: #kgen.get_witness<:[[TRAIT]] impl, "{{.*}}::Movable", "__moveinit__{{.*}}">][mut *"impl`", mut *"self`"->field0](%impl, [[V0]])
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %none : !kgen.none
 # CHECK-NEXT: lit.end_fn
@@ -205,7 +205,7 @@ fn make_closure(x: Int):
 
 
 # CHECK: lit.fn @"take_closure{{.*}}"<f: [[TRAIT]]>[imm *"myFunc`"](%myFunc: !lit.ref<:[[TRAIT]] f, imm *"myFunc`"> read_mem, %x: !Int1) capturing -> !kgen.none
-# CHECK-NEXT: %0 = lit.call[!lit.generator<[1](!lit.ref<:!Int f, mut *[0,0]> read_mem, |, "y": !Int1) capturing -> !Int1>: #kgen.get_witness<:!Int f, "fn(y: Int) -> Int", "__call__{{.*}}">][imm *"myFunc`"](%myFunc, %x)
+# CHECK-NEXT: %0 = lit.call [!lit.generator<[1](!lit.ref<:!Int f, mut *[0,0]> read_mem, |, "y": !Int1) capturing -> !Int1>: #kgen.get_witness<:!Int f, "fn(y: Int) -> Int", "__call__{{.*}}">][imm *"myFunc`"](%myFunc, %x)
 # CHECK-NEXT: lit.ownership.use %0
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 fn take_closure[f: fn (y: Int) unified -> Int](myFunc: f, x: Int):
@@ -548,7 +548,7 @@ fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # CHECK: lit.struct.field field0
 # CHECK-NEXT:      lit.fn @"__call__
 # CHECK-NEXT:        %1 = lit.ref.struct.ger
-# CHECK-NEXT:        %2 = lit.call[!lit.generator<[1]({{.*}}) capturing -> !kgen.param<{{.*}}T)
+# CHECK-NEXT:        %2 = lit.call [!lit.generator<[1]({{.*}}) capturing -> !kgen.param<{{.*}}T)
 fn makeIt[T: AnyTrivialRegType](a: T):
     fn parametric() unified {var a} -> T:
         return a

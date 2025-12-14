@@ -97,6 +97,15 @@ std::pair<Operation *, bool> KGEN::inlineRegion(mlir::RewriterBase &b,
     if (auto sourceLocOp = dyn_cast<SourceLocOp>(op))
       processSourceLocOp(sourceLocOp, call->getLoc(), b);
 
+    // If we inlined a "tail" call into a caller,  we need to clear the "tail"
+    // marker.  This marker indicates that the callee doesn't access the
+    // parent-caller's frame, but it might access the grand-caller's frame.
+    TypeSwitch<Operation &>(*op).Case<CallOp, CallParamOp, CallIndirectOp>(
+        [&](auto op) {
+          if (op.getTailKind() == TailKind::Tail)
+            op.setTailKind(TailKind::None);
+        });
+
     return WalkResult::advance();
   });
   b.replaceOp(call, scope->getResults());

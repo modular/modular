@@ -315,3 +315,23 @@ kgen.func @test_source_loc() {
 
   kgen.return
 }
+
+
+// -----
+
+kgen.func @not_inlined() no_inline {
+  kgen.return
+}
+
+kgen.func @middle() always_inline {
+  kgen.call tail @not_inlined() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @top
+kgen.func @top() {
+  // This shouldn't end up with a "tail" call.
+  // CHECK-NEXT: kgen.call @not_inlined
+  kgen.call @middle() : () -> ()
+  kgen.return
+}

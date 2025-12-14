@@ -299,10 +299,10 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
   # CHECK: [[ITEM:%.*]] = lit.call @stdlib::@builtin::@stubs::@VariadicPack::@"__getitem__
   # CHECK: %_x = lit.var.decl
-  # CHECK: lit.call[{{.*}}#kgen.get_witness<{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
+  # CHECK: lit.call [{{.*}}#kgen.get_witness<{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
   var _x = args[4]
 
-  # CHECK-NEXT: lit.call[{{.*}}#kgen.get_witness<{{.*}}__del__{{.*}}(%_x)
+  # CHECK-NEXT: lit.call [{{.*}}#kgen.get_witness<{{.*}}__del__{{.*}}(%_x)
 
 # Issue #37659: Parameter inference doesn't work with force-immut origins
 
@@ -450,7 +450,7 @@ fn test_parameter_closure_captures(var x: MemExample, var y: MemExample):
     _ = x^
     _ = y^
 
-  # CHECK: lit.call[!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
+  # CHECK: lit.call [!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   capture()

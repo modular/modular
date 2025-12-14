@@ -566,7 +566,7 @@ lit.fn @"foo()"() -> !kgen.none attributes {sourceName = "foo", specialFnKind = 
 }
 lit.fn @"ship_func_thunk"<[""]_0: !Bool, [""]callee: !lit.generator<<!Bool>[1](!lit.ref<@function_types::@Ship<42, :!Bool *(0,0)>, imm *[0,0]> read_mem, |) -> !kgen.none>>[mut *"0_unnamed`"](%0[*""]: !lit.ref<@function_types::@Ship<42, :!Bool _0>, mut *"0_unnamed`"> mut) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "...", specialFnKind = 0 : i8, thunkKey = [!kgen.generator<!lit.generator<<!Bool>[1](!lit.ref<@function_types::@Ship<42, :!Bool *(0,0)>, imm *[0,0]> read_mem, |) -> !kgen.none>>, !kgen.generator<!lit.generator<<!Bool>[1](!lit.ref<@function_types::@Ship<42, :!Bool *(0,0)>, mut *[0,0]> mut, |) -> !kgen.none>>]} {
     %1 = lit.ref.immut %0 : <@function_types::@Ship<42, :!Bool _0>, mut *"0_unnamed`">
-    %2 = lit.call[!lit.generator<[1](!lit.ref<@function_types::@Ship<42, :!Bool _0>, imm *[0,0]> read_mem, |) -> !kgen.none>: bind_signature(:!lit.generator<<!Bool>[1](!lit.ref<@function_types::@Ship<42, :!Bool *(0,0)>, imm *[0,0]> read_mem, |) -> !kgen.none> callee, _0)][muttoimm *"0_unnamed`"](%1)
+    %2 = lit.call [!lit.generator<[1](!lit.ref<@function_types::@Ship<42, :!Bool _0>, imm *[0,0]> read_mem, |) -> !kgen.none>: bind_signature(:!lit.generator<<!Bool>[1](!lit.ref<@function_types::@Ship<42, :!Bool *(0,0)>, imm *[0,0]> read_mem, |) -> !kgen.none> callee, _0)][muttoimm *"0_unnamed`"](%1)
     lit.return %2 : !kgen.none
     lit.end_fn
 }

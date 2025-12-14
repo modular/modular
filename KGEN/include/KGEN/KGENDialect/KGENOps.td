@@ -564,11 +564,13 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
 
   let arguments = (ins
     AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
-    Variadic<AnyType>:$operands
+    Variadic<AnyType>:$operands,
+    DefaultValuedAttr<KGEN_TailKindAttr, "{}">:$tailKind
   );
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
+    `` custom<OptionalEnum>($tailKind, "symbolizeTailKind")
     `` custom<ParametricCallee>($callee) `(` $operands `)` attr-dict
   }];
 

@@ -612,7 +612,7 @@ In the above snippet, you can see it in `my_func`'s argument:
 
 ```mlir
 lit.fn @"my_func[main::MyTrait]($0)"<T: !MyTrait>(%x: !kgen.param<:!MyTrait T>) -> !kgen.none attributes {sourceName = "my_func", specialFnKind = 0 : i8} {
-  %0 = lit.call[!lit.generator<("self": !kgen.param<:!MyTrait T>) -> !kgen.none>: get_witness(:!MyTrait T, "MyTrait", "bork")](%x)
+  %0 = lit.call [!lit.generator<("self": !kgen.param<:!MyTrait T>) -> !kgen.none>: get_witness(:!MyTrait T, "MyTrait", "bork")](%x)
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
   lit.end_fn
