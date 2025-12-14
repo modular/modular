@@ -1,0 +1,178 @@
+diff --git a/mojo/stdlib/stdlib/collections/dict.mojo b/mojo/stdlib/stdlib/collections/dict.mojo
+index 4494241bb5..14b8765517 100644
+--- a/mojo/stdlib/stdlib/collections/dict.mojo
++++ b/mojo/stdlib/stdlib/collections/dict.mojo
+@@ -929,7 +929,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
+         """
+         var minimum_capacity = self._minimum_size_of_string_representation()
+         var result = String(capacity=minimum_capacity)
+-        result += "{"
++        result += "Dict{"
+ 
+         var i = 0
+         for key_value in self.items():
+@@ -940,6 +940,40 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
+         result += "}"
+         return result
+ 
++    @no_inline
++    fn __repr__[
++        T: KeyElement & Representable,
++        U: Copyable & Movable & Representable, //,
++    ](self: Dict[T, U]) -> String:
++        """Return the repr() representation of Dict[K, V].
++
++        Uses repr(key) and repr(value) on each pair.
++        """
++
++        var count = len(self)
++        if count == 0:
++            return "Dict{}"  # Updated empty dict
++
++        var estimated = self._minimum_size_of_string_representation()
++        var result = String(capacity=estimated)
++
++        result += "Dict{"  # Added "Dict" type name
++
++        var i = 0
++        for entry in self.items():
++            result.write(
++                repr(entry.key),
++                ": ",
++                repr(entry.value)
++            )
++
++            if i < count - 1:
++                result += ", "
++            i += 1
++
++        result += "}"
++        return result
++
+     # ===-------------------------------------------------------------------===#
+     # Methods
+     # ===-------------------------------------------------------------------===#
+@@ -949,7 +983,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
+         # in the string representation, we assume that String(key) and String(value)
+         # will be both at least one char.
+         return (
+-            2  # '{' and '}'
++            6  # Changed from 2 to 6 for "Dict{" and '}' (4 + 1 + 1)
+             + len(self) * 6  # String(key), String(value) ": " and ", "
+             - 2  # remove the last ", "
+         )
+diff --git a/mojo/stdlib/stdlib/collections/list.mojo b/mojo/stdlib/stdlib/collections/list.mojo
+index 63bcaa0ed4..b0a38d1441 100644
+--- a/mojo/stdlib/stdlib/collections/list.mojo
++++ b/mojo/stdlib/stdlib/collections/list.mojo
+@@ -663,28 +663,19 @@ struct List[T: Copyable & Movable](
+     fn __repr__[
+         U: Representable & Copyable & Movable, //
+     ](self: List[U, *_]) -> String:
+-        """Returns a string representation of a `List`.
++        """Return the repr() representation of List[U]."""
+ 
+-        Parameters:
+-            U: The type of the elements in the list. Must implement the
+-              trait `Representable`.
++        var l = len(self)
++        if l == 0:
++            return "List[]"  # Include type name even for empty list
+ 
+-        Returns:
+-            A string representation of the list.
++        var parts = List[String]()
++        parts.reserve(l)
+ 
+-        Notes:
+-            Note that since we can't condition methods on a trait yet, the way
+-            to call this method is a bit special. Here is an example below:
+-
+-            ```mojo
+-            var my_list = [1, 2, 3]
+-            print(my_list.__repr__())
+-            ```
++        for elem in self:
++            parts.append(repr(elem))
+ 
+-            When the compiler supports conditional methods, then a simple
+-            `repr(my_list)` will be enough.
+-        """
+-        return self.__str__()
++        return "List[" + ", ".join(parts) + "]"  # Include "List" type name
+ 
+     # ===-------------------------------------------------------------------===#
+     # Methods
+diff --git a/mojo/stdlib/test/collections/test_dict.mojo b/mojo/stdlib/test/collections/test_dict.mojo
+index 52bbcd7e22..1cee2cdfa6 100644
+--- a/mojo/stdlib/test/collections/test_dict.mojo
++++ b/mojo/stdlib/test/collections/test_dict.mojo
+@@ -134,7 +134,7 @@ def test_dict_string_representation_string_int():
+         some_dict._minimum_size_of_string_representation()
+         <= len(dict_as_string)
+     )
+-    assert_equal(dict_as_string, "{'a': 1, 'b': 2}")
++    assert_equal(dict_as_string, "Dict{'a': 1, 'b': 2}")
+ 
+ 
+ def test_dict_string_representation_int_int():
+@@ -148,7 +148,7 @@ def test_dict_string_representation_int_int():
+     assert_equal(
+         some_dict._minimum_size_of_string_representation(), len(dict_as_string)
+     )
+-    assert_equal(dict_as_string, "{3: 1, 4: 2, 5: 3, 6: 4}")
++    assert_equal(dict_as_string, "Dict{3: 1, 4: 2, 5: 3, 6: 4}")
+ 
+ 
+ def test_compact():
+@@ -692,7 +692,7 @@ def test_dict_repr_wrap():
+     assert_equal(
+         repr(tmp_dict),
+         (
+-            "{'one': SIMD[DType.float64, 1](1.0), 'two': SIMD[DType.float64,"
++            "Dict{'one': SIMD[DType.float64, 1](1.0), 'two': SIMD[DType.float64,"
+             " 1](2.0)}"
+         ),
+     )
+diff --git a/mojo/stdlib/test/collections/test_list.mojo b/mojo/stdlib/test/collections/test_list.mojo
+index a5ad770050..cc50b0d390 100644
+--- a/mojo/stdlib/test/collections/test_list.mojo
++++ b/mojo/stdlib/test/collections/test_list.mojo
+@@ -966,9 +966,9 @@ def test_destructor_trivial_elements():
+ 
+ def test_list_repr():
+     var l = [1, 2, 3]
+-    assert_equal(l.__repr__(), "[1, 2, 3]")
++    assert_equal(l.__repr__(), "List[1, 2, 3]")  # Added "List"
+     var empty = List[Int]()
+-    assert_equal(empty.__repr__(), "[]")
++    assert_equal(empty.__repr__(), "List[]")  # Added "List"
+ 
+ 
+ def test_list_fill_constructor():
+@@ -1047,20 +1047,18 @@ def test_list_comprehension():
+     var l2 = [x * y for x in range(3) for y in l1]
+     assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
+ 
+-
+ def test_list_repr_wrap():
+-    assert_equal(repr(List[String](["Hello", "World"])), "['Hello', 'World']")
++    assert_equal(repr(List("Hello", "World")), "List['Hello', 'World']")
+     assert_equal(
+-        repr(List[UInt8]([UInt8(0), 1])),
+-        "[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]",
++        repr(List[UInt8](UInt8(0), UInt8(1))),
++        "List[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]"  # Accept SIMD representation
+     )
+-    var l = List[DType]([DType.int8, DType.int16])
++    var l = List[DType](DType.int8, DType.int16)
+     assert_equal(
+         repr(l),
+-        "[DType.int8, DType.int16]",
++        "List[DType.int8, DType.int16]"
+     )
+ 
+-
+ # ===-------------------------------------------------------------------===#
+ # main
+ # ===-------------------------------------------------------------------===#
