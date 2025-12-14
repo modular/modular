@@ -113,8 +113,16 @@ struct ParamDiffer {
 
     // Look through type<->attr conversions.
     if (auto lhsTypeParam = dyn_cast<TypeParamAttr>(lhs)) {
-      if (auto rhsTypeParam = dyn_cast<TypeParamAttr>(rhs))
-        return diff(lhsTypeParam.getTypeValue(), rhsTypeParam.getTypeValue());
+      if (auto rhsTypeParam = dyn_cast<TypeParamAttr>(rhs)) {
+        // Normally, the type values are inequal, so diff them.
+        if (!isEqualCanon(lhsTypeParam.getTypeValue(),
+                          rhsTypeParam.getTypeValue()))
+          return diff(lhsTypeParam.getTypeValue(), rhsTypeParam.getTypeValue());
+        if (!isEqualCanon(lhs.getType(), rhs.getType())) {
+          accessPath += ".metatype";
+          return diff(lhs.getType(), rhs.getType());
+        }
+      }
     }
 
     // Look through sugar to find problems.
