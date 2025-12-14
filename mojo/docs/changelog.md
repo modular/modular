@@ -303,6 +303,12 @@ what we publish.
   On AMD GPUs or for allocations ≤ 48KB, explicit `func_attribute` values
   should be provided when needed.
 
+- `String` can now decode UTF-32 input using the `String(from_utf32=...)`
+  constructor. It can also decode shorter unicode codepoint encodings like
+  ISO-8859-1 (aka. Latin-1) by using the `String(from_codepoints=...)`
+  constructor. PR [#5258](https://github.com/modular/modular/pull/5258) by
+  [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
