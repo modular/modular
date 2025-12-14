@@ -1,9 +1,0 @@
-[workspace]
-channels = ["conda-forge"]
-name = "modular"
-platforms = ["linux-64"]
-version = "0.1.0"
-
-[tasks]
-
-[dependencies]
