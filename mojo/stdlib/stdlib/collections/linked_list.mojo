@@ -14,7 +14,7 @@
 
 from collections._index_normalization import normalize_index
 from os import abort
-
+from compile.reflection import get_type_name
 
 struct Node[
     ElementType: Copyable,
@@ -783,7 +783,7 @@ struct LinkedList[
             Time Complexity: O(n) in len(self).
         """
         var writer = String()
-        self._write(writer, prefix="LinkedList(", suffix=")")
+        self._write(writer, prefix="LinkedList[" + get_type_name[Self.ElementType]() + "](", suffix=")")
         return writer
 
     fn write_to[
@@ -803,6 +803,7 @@ struct LinkedList[
         """
         self._write(writer)
 
+    
     @no_inline
     fn _write[
         W: Writer, _ElementType: Copyable & Writable
@@ -813,11 +814,8 @@ struct LinkedList[
         prefix: String = "[",
         suffix: String = "]",
     ):
-        if not self:
-            return writer.write(prefix, suffix)
-
-        var curr = self._head
         writer.write(prefix)
+        var curr = self._head
         for i in range(len(self)):
             if i:
                 writer.write(", ")

@@ -23,7 +23,7 @@ from collections import Deque
 
 
 from bit import next_power_of_two
-
+from compile.reflection import get_type_name
 # ===-----------------------------------------------------------------------===#
 # Deque
 # ===-----------------------------------------------------------------------===#
@@ -408,7 +408,7 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
         Args:
             writer: The object to write to.
         """
-        writer.write("Deque(")
+        writer.write("Deque[", get_type_name[T](), "](")
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
             writer.write(repr((self._data + offset)[]))

@@ -661,7 +661,7 @@ struct List[T: Copyable](
             ElementConformsTo="Representable",
         ]()
 
-        writer.write("[")
+        writer.write("List[", get_type_name[Self.T](), "][")
         for i in range(len(self)):
             ref elem = trait_downcast[Representable](self[i])
             writer.write(repr(elem))
