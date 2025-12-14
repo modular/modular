@@ -670,13 +670,22 @@ struct List[T: Copyable](
         writer.write("]")
 
     @no_inline
-    fn __repr__(self) -> String:
-        """Returns a string representation of a `List`.
+    fn __repr__[
+        U: Representable & Copyable & Movable, //
+    ](self: List[U, *_]) -> String:
+        """Return the repr() representation of List[U]."""
 
-        Returns:
-            A string representation of the list.
-        """
-        return self.__str__()
+        var l = len(self)
+        if l == 0:
+            return "List[]"  # Include type name even for empty list
+
+        var parts = List[String]()
+        parts.reserve(l)
+
+        for elem in self:
+            parts.append(repr(elem))
+
+        return "List[" + ", ".join(parts) + "]"  # Include "List" type name
 
     # ===-------------------------------------------------------------------===#
     # Methods

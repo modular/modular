@@ -940,37 +940,8 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
         ```
         """
         var minimum_capacity = self._minimum_size_of_string_representation()
-        var output = String(capacity=minimum_capacity)
-        self.write_to(output)
-        return output^
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
-        """Write `my_list.__str__()` to a `Writer`.
-
-        Constraints:
-            `K` must conform to `Representable`.
-            `V` must conform to `Representable`.
-
-        Args:
-            writer: The object to write to.
-        """
-        _constrained_conforms_to[
-            conforms_to(Self.K, Representable),
-            Parent=Self,
-            Element = Self.K,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.V, Representable),
-            Parent=Self,
-            Element = Self.V,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-
-        writer.write("{")
+        var result = String(capacity=minimum_capacity)
+        result += "Dict{"
 
         var i = 0
         for key_entry in self.items():
@@ -982,6 +953,40 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
             i += 1
         writer.write("}")
 
+    @no_inline
+    fn __repr__[
+        T: KeyElement & Representable,
+        U: Copyable & Movable & Representable, //,
+    ](self: Dict[T, U]) -> String:
+        """Return the repr() representation of Dict[K, V].
+
+        Uses repr(key) and repr(value) on each pair.
+        """
+
+        var count = len(self)
+        if count == 0:
+            return "Dict{}"  # Updated empty dict
+
+        var estimated = self._minimum_size_of_string_representation()
+        var result = String(capacity=estimated)
+
+        result += "Dict{"  # Added "Dict" type name
+
+        var i = 0
+        for entry in self.items():
+            result.write(
+                repr(entry.key),
+                ": ",
+                repr(entry.value)
+            )
+
+            if i < count - 1:
+                result += ", "
+            i += 1
+
+        result += "}"
+        return result
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -991,7 +996,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
         # in the string representation, we assume that String(key) and String(value)
         # will be both at least one char.
         return (
-            2  # '{' and '}'
+            6  # Changed from 2 to 6 for "Dict{" and '}' (4 + 1 + 1)
             + len(self) * 6  # String(key), String(value) ": " and ", "
             - 2  # remove the last ", "
         )
