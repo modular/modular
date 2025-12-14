@@ -311,6 +311,11 @@ def test_char_from_stringliteral():
     var c_null = Codepoint("\0")
     assert_equal(c_null.to_u32(), 0)
 
+    # Multi-byte UTF-8 codepoints
+    var c_emoji = Codepoint("🔥")
+    assert_equal(c_emoji, Codepoint.ord("🔥"))
+    assert_equal(c_emoji.to_u32(), 0x1F525)
+
     # Verify it works in compile-time contexts
     comptime c_comptime = Codepoint("X")
     assert_equal(c_comptime.to_u32(), 88)
