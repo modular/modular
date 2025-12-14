@@ -178,9 +178,9 @@ fn to_lowercase(s: StringSlice[mut=False]) -> String:
     var result = String(capacity=_estimate_needed_size(len(data)))
     var input_offset = 0
     while input_offset < len(data):
-        var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            data[input_offset:]
-        )
+        var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint[
+            fallback_empty_codepoint=False
+        ](data[input_offset:])
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
             result.write_bytes(
@@ -207,9 +207,9 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
     var result = String(capacity=_estimate_needed_size(len(data)))
     var input_offset = 0
     while input_offset < len(data):
-        var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            data[input_offset:]
-        )
+        var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint[
+            fallback_empty_codepoint=False
+        ](data[input_offset:])
         var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
 
         if uppercase_replacement_opt:
