@@ -138,6 +138,54 @@ struct Codepoint(
         """
         self._scalar_value = UInt32(Int(codepoint))
 
+    @always_inline("nodebug")
+    @implicit
+    fn __init__[
+        value: __mlir_type.`!kgen.string`
+    ](out self, lit: StringLiteral[value]):
+        """Construct a `Codepoint` from a single-character `StringLiteral`.
+
+        This constructor validates at compile-time that the literal contains
+        exactly one byte, and computes the codepoint value as a compile-time
+        constant. This provides an ergonomic and efficient way to create
+        codepoints from string literals without runtime overhead.
+
+        Parameters:
+            value: The compile-time string literal value.
+
+        Args:
+            lit: A string literal containing exactly one byte.
+
+        Constraints:
+            The string literal must have a byte length of exactly 1. Multi-byte
+            UTF-8 sequences are not currently supported.
+
+        Examples:
+
+        ```mojo
+        from collections.string import Codepoint
+        from testing import assert_equal
+
+        # Create codepoints from literals
+        var a = Codepoint("A")
+        assert_equal(a.to_u32(), 65)
+
+        var space = Codepoint(" ")
+        assert_equal(space, Codepoint.ord(" "))
+        ```
+        """
+        # Reconstruct the literal from the type parameter to force compile-time evaluation
+        alias sl: StringLiteral[value] = {}
+        
+        # Compile-time constraint - fails if literal isn't exactly 1 byte
+        constrained[len(sl) == 1, "StringLiteral must contain exactly one byte"]()
+        
+        # Compute the codepoint at compile-time using alias
+        alias cp = Codepoint.ord(StaticString(sl))
+        
+        # Assign the computed value
+        self = cp
+
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#

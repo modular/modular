@@ -275,5 +275,46 @@ def test_char_comptime():
     assert_equal(c1_bytes, 1)
 
 
+def test_char_from_stringliteral():
+    """Test the implicit constructor from StringLiteral."""
+    # Basic ASCII characters
+    var c_a = Codepoint("A")
+    assert_equal(c_a.to_u32(), 65)
+    assert_equal(c_a, Codepoint.ord("A"))
+    
+    var c_z = Codepoint("Z")
+    assert_equal(c_z.to_u32(), 90)
+    assert_equal(c_z, Codepoint.ord("Z"))
+    
+    var c_zero = Codepoint("0")
+    assert_equal(c_zero.to_u32(), 48)
+    assert_equal(c_zero, Codepoint.ord("0"))
+    
+    # Whitespace characters (motivation from issue #5490)
+    var c_space = Codepoint(" ")
+    assert_equal(c_space.to_u32(), 32)
+    assert_equal(c_space, Codepoint.ord(" "))
+    
+    var c_tab = Codepoint("\t")
+    assert_equal(c_tab.to_u32(), 9)
+    assert_equal(c_tab, Codepoint.ord("\t"))
+    
+    var c_newline = Codepoint("\n")
+    assert_equal(c_newline.to_u32(), 10)
+    assert_equal(c_newline, Codepoint.ord("\n"))
+    
+    var c_carriage = Codepoint("\r")
+    assert_equal(c_carriage.to_u32(), 13)
+    assert_equal(c_carriage, Codepoint.ord("\r"))
+    
+    # Special characters
+    var c_null = Codepoint("\0")
+    assert_equal(c_null.to_u32(), 0)
+    
+    # Verify it works in compile-time contexts
+    comptime c_comptime = Codepoint("X")
+    assert_equal(c_comptime.to_u32(), 88)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
