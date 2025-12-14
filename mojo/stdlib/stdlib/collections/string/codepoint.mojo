@@ -45,7 +45,6 @@ from sys.intrinsics import likely
 
 from bit import count_leading_zeros
 from bit._mask import splat
-from ._utf8 import _utf8_first_byte_sequence_length
 
 
 @always_inline
@@ -186,15 +185,20 @@ struct Codepoint(
         constrained[
             sl.byte_length() > 0, "Cannot construct an empty codepoint"
         ]()
+
+        # SAFETY:
+        #   This is safe because `StringLiteral` is guaranteed to point to valid
+        #   UTF-8.
+        comptime char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            sl.as_bytes()
+        )
+
         constrained[
-            sl.byte_length()
-            == Int(_utf8_first_byte_sequence_length(sl.as_bytes()[0])),
-            "StringLiteral must contain exactly one codepoint",
+            sl.byte_length() == Int(num_bytes),
+            "input string must be one character",
         ]()
 
-        # Compute the codepoint at compile-time
-        comptime cp = Codepoint.ord(sl)  # shift compute cost to compile-time
-        self = cp
+        self = char
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
