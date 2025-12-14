@@ -83,22 +83,22 @@ struct Son(Father):
 
 # CHECK: kgen.func [[TAKE_GRAND_FATHER:@.*take_grand_father.*]](%arg0
 fn take_grand_father[T: GrandFather](value: T):
-    # CHECK: call {{.*}}Son::bar
+    # CHECK: kgen.call {{.*}}Son::bar
     value.bar()
 
 
 # CHECK: kgen.func [[TAKE_FATHER:@.*take_father.*]](%arg0
 fn take_father[T: Father](value: T):
-    # CHECK: call {{.*}}Son::baz
+    # CHECK: kgen.call {{.*}}Son::baz
     value.baz()
-    # CHECK: call [[TAKE_GRAND_FATHER]]
+    # CHECK: kgen.call tail [[TAKE_GRAND_FATHER]]
     take_grand_father(value)
 
 
 # CHECK: kgen.func export @like_father_like
 @export
 fn like_father_like(value: Son):
-    # CHECK: call [[TAKE_FATHER]]
+    # CHECK: kgen.call tail [[TAKE_FATHER]]
     take_father(value)
 
 
@@ -111,7 +111,7 @@ struct SomeType(ImplicitlyCopyable):
 # CHECK-LABEL: kgen.func {{.*}}drop_copy
 fn drop_copy[T: ImplicitlyCopyable](value: T):
     # CHECK: [[V0:%.*]] = kgen.param.constant: struct<()> = <{ }>
-    # CHECK: call {{.*}}SomeType::__del__{{.*}}([[V0]])
+    # CHECK: kgen.call {{.*}}SomeType::__del__{{.*}}([[V0]])
     var _unused = value
 
 

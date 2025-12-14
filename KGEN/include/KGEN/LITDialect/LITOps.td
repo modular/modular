@@ -201,7 +201,7 @@ def LIT_CallOp : LITOp<"call", [
 
   let assemblyFormat = [{
     `` custom<OptionalEnum>($tailKind, "symbolizeTailKind")
-    custom<CallOp>($callee, $implicitOrigins, $operands,
+    `` custom<CallOp>($callee, $implicitOrigins, $operands,
                       type($operands), type($results)) attr-dict
   }];
 

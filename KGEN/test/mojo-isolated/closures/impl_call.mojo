@@ -19,17 +19,17 @@ struct MemType(ImplicitlyCopyable):
 # CHECK-NEXT: %[[V1REF:.*]] = kgen.rebind %[[V1]]
 # CHECK-NEXT: %[[V2:.*]] = lit.ref.load %[[V0REF]]
 # CHECK-NEXT: %[[V3:.*]] = lit.ref.load %[[V0REF]]
-# CHECK-NEXT: %[[V4:.*]] = lit.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]])
+# CHECK-NEXT: %[[V4:.*]] = lit.call tail @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]])
 # CHECK-NEXT: lit.ref.store %[[V4]], %[[V0REF]]
 # CHECK-NEXT: %[[V5:.*]] = lit.ref.load %[[V1REF]]
-# CHECK-NEXT: lit.call @{{.*}}@"use{{.*}}"(%[[V5]])
+# CHECK-NEXT: lit.call tail @{{.*}}@"use{{.*}}"(%[[V5]])
 # CHECK-NEXT: kgen.param.constant: none
 # CHECK-NEXT: lit.return
 
 # CHECK: lit.fn @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> read_mem, |, %p: !Int) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: %[[W0CAST:.*]] = kgen.rebind %[[W0]] : !lit.ref<!MemType, imm *"self`"->field0> to !lit.ref<!MemType, imm *"m`">
-# CHECK-NEXT: lit.call @{{.*}}::@"use{{.*}}(%[[W0CAST]])
+# CHECK-NEXT: lit.call tail @{{.*}}::@"use{{.*}}(%[[W0CAST]])
 # CHECK-NEXT: kgen.param.constant: none
 # CHECK-NEXT: lit.return
 
@@ -46,7 +46,7 @@ struct MemType(ImplicitlyCopyable):
 # CHECK: lit.fn @"__call__{{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> read_mem, |, %y: !lit.ref<{{.*}}> read_mem, ?, [[RESULT:%.*]]: !lit.ref<!MemType,{{.*}}> byref_result) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: %[[W0REF:.*]] = kgen.rebind %[[W0]]
-# CHECK-NEXT: lit.call @{{.*}}__add__{{.*}}(%[[W0REF]], %y, [[RESULT]])
+# CHECK-NEXT: lit.call tail @{{.*}}__add__{{.*}}(%[[W0REF]], %y, [[RESULT]])
 # CHECK-NEXT: kgen.param.constant: none
 # CHECK-NEXT: lit.return
 

@@ -28,7 +28,7 @@ fn stringInputParamInline[value: String]():
 
 
 fn instantiateElsewhere():
-    # ELABORATE: kgen.call @{{.*}}stringInputParam[[FUNC]]()
+    # ELABORATE: kgen.call {{.*}}stringInputParam[[FUNC]]()
     stringInputParam["thrice"]()
 
 
@@ -42,7 +42,7 @@ fn test_parameter_string():
 
     comptime strValue: String = "thrice"
     # CHECK-COUNT-4: thrice
-    # ELABORATE: kgen.call @{{.*}}stringInputParam[[FUNC]]()
+    # ELABORATE: kgen.call {{.*}}stringInputParam[[FUNC]]()
     stringInputParam[strValue]()
     instantiateElsewhere()
 

@@ -1253,7 +1253,7 @@ struct ExclusivityChecker : public SharedStateUser {
                      IREmitter &emitter)
       : SharedStateUser(emitter.shared), callee(callee), callExpr(callExpr),
         syntax(syntax), argumentValues(argumentValues),
-        builder(emitter.builder) {
+        builder(emitter.builder), declScope(emitter.declScope) {
 
     // Handle __unsafe_disable_nested_origin_exclusivity.
     isNestedOriginExclusivityCheckingDisabled =
@@ -1268,6 +1268,11 @@ struct ExclusivityChecker : public SharedStateUser {
   /// exclusivity violations.
   void checkArgument(Value val, unsigned argIdx, FnTypeGeneratorType signature);
 
+  /// This method takes a look at the origins accessed by the call.  If any of
+  /// them might be to the current caller's stack frame, it returns true. This
+  /// allows us to set the LLVM tailcall marker.
+  bool mayAccessCallerStack() const;
+
 private:
   RValue callee;
   const ExprNode *callExpr;
@@ -1275,10 +1280,13 @@ private:
   /// These are the arguments that are being emitted.
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues;
   std::optional<OpBuilder> builder;
+  ASTDecl &declScope;
 
   /// True if the __unsafe_disable_nested_origin_exclusivity decorator is
   /// on the callee.
   bool isNestedOriginExclusivityCheckingDisabled = false;
+  /// True if the call accesses AnyOriginAttr.
+  bool hasAnyOriginAccess = false;
 
   /// For each origin that is referenced, we keep track of what argIdx it came
   /// from, and whether it was potentially mutated.
@@ -1307,6 +1315,83 @@ private:
 };
 } // end anonymous namespace
 
+/// This method takes a look at the origins accessed by the call.  If any of
+/// them might be to the current caller's stack frame, it returns true. This
+/// allows us to set the LLVM tailcall marker.
+bool ExclusivityChecker::mayAccessCallerStack() const {
+  // Conservatively handle AnyOriginAttr.
+  if (hasAnyOriginAccess)
+    return true;
+
+  auto isParamDeclOutsideFunction = [&](ParamDeclRefAttr paramDecl) {
+    // Walk up the decl hierarchy to find the one that contains the parameter.
+    for (auto *curDecl = &declScope; curDecl;
+         curDecl = curDecl->getParentDecl()) {
+      Operation *declOp = curDecl->getIfOperation();
+      if (!declOp)
+        continue;
+
+      PogListAttr paramListAttr;
+      ArrayRef<ParamDeclAttr> paramDecls;
+      [[maybe_unused]] size_t numImplicitOrigins = 0;
+      // TODO: we need a decl interface to do this!
+      if (auto fnDecl = dyn_cast<LIT::FnOp>(declOp)) {
+        paramListAttr = fnDecl.getFuncTypeGenerator().getParamListAttrs();
+        paramDecls = fnDecl.getParams();
+        numImplicitOrigins =
+            fnDecl.getFuncTypeGenerator().getNumImplicitOriginDecls();
+      } else if (auto structDecl = dyn_cast<LIT::StructDeclOp>(declOp)) {
+        paramListAttr = structDecl.getSignature().getParamListAttrs();
+        paramDecls = structDecl.getParams();
+        numImplicitOrigins = 0;
+      } else
+        continue;
+
+      assert(paramListAttr.size() + numImplicitOrigins == paramDecls.size() &&
+             "Unexpected number of parameters");
+
+      for (auto [idx, param] : llvm::enumerate(paramDecls)) {
+        if (param.getName() == paramDecl.getName())
+          return true;
+      }
+    }
+    // Couldn't find it in a parent decl.
+    return false;
+  };
+
+  // At this point all the origins have been collected, just see if any are
+  // local references.
+  for (const auto &[origin, info] : originAccesses) {
+    // Static origins and subfields are ignorable.  Fields will have their bases
+    // included.
+    if (isa<StaticOriginAttr, OriginFieldAttr,
+            // TODO: Figure out IndirectOriginAttr semantics for this.
+            IndirectOriginAttr>(origin))
+      continue;
+
+    // If this is reading out of an Origin, be conservative, we have no idea
+    // what it could be.
+    // TODO: Fix Origin struct to use use dependent types instead of containing
+    // the origin.
+    if (isa<LIT::StructExtractAttr,
+            // TODO: This seems overly conservative, only used in capture lists?
+            OriginSetUnionAttr>(origin))
+      return true;
+
+    // Scan up our decl hierarchy to see if this parameter is defined on a
+    // function or struct.  If so, it can't be local to this function.
+    // This seems unfortunate, there should be a better way to do this.
+    auto paramDecl = dyn_cast<ParamDeclRefAttr>(origin);
+    if (!paramDecl)
+      origin.dump();
+    assert(paramDecl && "Unknown origin in mayAccessCallerStack");
+    if (!isParamDeclOutsideFunction(paramDecl))
+      return true;
+  }
+  // If we can't find any local accesses, then we're good to go.
+  return false;
+}
+
 void ExclusivityChecker::checkCaptureOrigins() {
   TypedAttr captureOrigins =
       sugarCast<FnTypeGeneratorType>(callee.getRValueType())
@@ -1323,6 +1408,14 @@ void ExclusivityChecker::checkCaptureOrigins() {
 void ExclusivityChecker::checkOriginAccess(
     Value val, std::optional<ArgConvention> convention,
     std::optional<unsigned> argIdx, TypedAttr rawOrigin) {
+
+  // Accesses to an origin union is an access to each of the members.
+  if (auto unionAttr = sugarDynCast<OriginUnionAttr>(rawOrigin)) {
+    for (auto elt : unionAttr.getOperands())
+      checkOriginAccess(val, convention, argIdx, elt);
+    return;
+  }
+
   // Determine whether the access was immutable.
   bool isImmut = OriginType::isMutableKnown(rawOrigin, false);
 
@@ -1330,8 +1423,10 @@ void ExclusivityChecker::checkOriginAccess(
   TypedAttr origin = OriginMutCastAttr::strip(rawOrigin);
 
   // Accesses to the global origin never conflict.
-  if (sugarIsa<AnyOriginAttr>(origin))
+  if (sugarIsa<AnyOriginAttr>(origin)) {
+    hasAnyOriginAccess = true;
     return;
+  }
 
   // Determine whether we've seen this leaf origin before.
   auto [it, isNew] =
@@ -1379,6 +1474,9 @@ void ExclusivityChecker::checkOriginAccess(
     // access to a write if our access is a write.
     it->second.isImmut &= isImmut;
   }
+
+  assert(!isa<OriginUnionAttr>(origin) &&
+         "unions are canonicalized to the outside");
 }
 
 /// As each argument is emitted, check against previous arguments for
@@ -1918,6 +2016,12 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                  implicitOrigins, callArgs);
       callResult = SRValue(call.getResult(0));
 
+      // Set the LLVM "tail" marker if the call may not access the caller's
+      // stack.  This flag doesn't force a tail call, it says the call is
+      // eligible because it doesn't access the current stack frame.
+      if (!exclusivityChecker.mayAccessCallerStack())
+        call.setTailKind(TailKind::Tail);
+
       // If there are any callee-specific warnings to emit, do so after
       // successfully emitting the call.
       callEmitter.emitDirectCallWarnings(call, callOperands);
@@ -1936,6 +2040,9 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     auto call = CallIndirectOp::create(*builder, loc, resultType, calleeVal,
                                        implicitOrigins, callArgs);
     callResult = SRValue(call.getResult(0));
+
+    if (!exclusivityChecker.mayAccessCallerStack())
+      call.setTailKind(TailKind::Tail);
   }
 
   // If there were any writebacks to handle, emit them before handling raised

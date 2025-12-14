@@ -17,5 +17,5 @@ struct PCall:
 # CHECK: lit.fn @"main()"
 fn main():
     var pc = PCall()
-    # CHECK: lit.call @{{.*}}::@PCall::@"__call__[::Int,{{.*}}]({{.*}}::PCall%,::Int)"
+    # CHECK: lit.call {{.*}}::@PCall::@"__call__[::Int,{{.*}}]({{.*}}::PCall%,::Int)"
     _ = pc[1](2)

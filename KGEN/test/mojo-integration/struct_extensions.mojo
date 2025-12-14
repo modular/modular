@@ -19,5 +19,5 @@ __extension PlainStruct:
 # CHECK-LABEL: kgen.generator @"struct_extensions::test
 fn test():
     var plainStruct = PlainStruct()
-    # CHECK: kgen.call @"struct_extensions::extension:PlainStruct::sparklebark
+    # CHECK: kgen.call {{.*}}PlainStruct::sparklebark
     var result = plainStruct.sparklebark()

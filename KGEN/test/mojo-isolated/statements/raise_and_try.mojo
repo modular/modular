@@ -188,7 +188,7 @@ fn call_raising():
         # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail{{.*}}(%e, %x)
         var x = fail()
         # CHECK: %y = lit.var.decl "y"
-        # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%e, %y)
+        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%e, %y)
         var y = S()
         # CHECK-NEXT: lit.try.yield
     except e:

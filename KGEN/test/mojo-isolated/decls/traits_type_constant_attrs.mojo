@@ -64,7 +64,7 @@ struct MainImplT(MainTraitT, MainTraitT2):
 
     fn doSomethingNonTraity(self) -> Int:
         # Verify the ImplT type is returned, not a type value of trait metatype.
-        # CHECK: lit.call @{{.*}}::@MainImplT::@"get{{.*}}"(%self) : !lit.generator<("self": !MainImplT)
+        # CHECK: lit.call tail @{{.*}}::@MainImplT::@"get{{.*}}"(%self) : !lit.generator<("self": !MainImplT)
         # CHECK-SAME:  -> !kgen.param<:!mt_ImplT sugar_member_alias(!MainImplT, "ret_type", !ImplT)>>
         var impl = self.get()
         var a = impl.BAR()

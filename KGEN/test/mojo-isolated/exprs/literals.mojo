@@ -397,10 +397,10 @@ fn useIt(expr: List[Int]):
 def comprehensionInForLoop(data: List[List[Int]], rows: Int, cols: Int):
     # CHECK: lit.loop cond
     # CHECK: } body {
-    # CHECK: lit.call @{{.*}}::@List::@"__init__
+    # CHECK: lit.call {{.*}}::@List::@"__init__
     # CHECK: lit.loop cond
     # CHECK: } body {
-    # CHECK: lit.call @{{.*}}::@List::@"append
+    # CHECK: lit.call {{.*}}::@List::@"append
     for row in IterRange(rows):
         var my_list = [
             1 if data[row][col] == 1 else 0 for col in IterRange(cols)

@@ -35,7 +35,7 @@ struct MyUnsafePointer[
 
 # CHECK-LABEL: lit.fn @"unsafe_ptr
 fn unsafe_ptr(s: __mlir_type.`!kgen.string`):
-    # CHECK:      lit.call @{{.*}}::@MyUnsafePointer::@"__init__{{.*}}"[mut *"{{.*}}"]
+    # CHECK:      lit.call {{.*}}::@MyUnsafePointer::@"__init__{{.*}}"[mut *"{{.*}}"]
     # CHECK-SAME: <:!AnyType #type_value,
     # CHECK-SAME: :!Int {3},
     # CHECK-SAME: :!AddressSpace {_value: !Int = {0}},

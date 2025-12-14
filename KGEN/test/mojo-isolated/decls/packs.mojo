@@ -75,7 +75,7 @@ fn test_owned_trait():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])
 
     # Create the VariadicPack
-    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]])
+    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call tail @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]])
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[PACKTMP]]
 
@@ -98,7 +98,7 @@ fn test_owned_trait():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V3C]], [[V4C]])
 
     # Create the VariadicPack
-    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]])
+    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call tail @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]])
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[PACKTMP]]
     # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[PACKTMP]])
@@ -128,7 +128,7 @@ fn test_inout():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])
 
     # Create the VariadicPack
-    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]])
+    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call tail @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[VARIADICPACK]]
 
@@ -144,7 +144,7 @@ fn test_inout():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create(%value3)
 
     # Create the VariadicPack
-    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]])
+    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call tail @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[VARIADICPACK]]
     # CHECK-NEXT: [[PACKIMM:%.*]] = lit.ref.immut [[VARIADICPACK]]

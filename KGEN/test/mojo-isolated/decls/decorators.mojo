@@ -61,7 +61,7 @@ fn math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
 # CHECK-LABEL: lit.fn @"use_math
 fn use_math(a: __mlir_type.index) -> __mlir_type.index:
     # CHECK: %index3 = kgen.param.constant = <3>
-    # CHECK: %0 = lit.call @decorators::@"math(
+    # CHECK: %0 = lit.call tail @decorators::@"math(
     # CHECK: lit.return %0 : index
     return math(
         a,

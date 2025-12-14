@@ -27,27 +27,27 @@ fn borrowed_generic[T: AnyType](x: T):
 # CHECK-LABEL: lit.fn @"test_owned{{.*}}(%x: !lit.ref<!RegPassable, mut *"x`"> owned_in_mem)
 fn test_owned(var x: RegPassable):
     # CHECK: [[XIMUT:%.*]] = lit.ref.immut %x : <!RegPassable, mut *"x`">
-    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XIMUT]])
+    # CHECK: lit.call {{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XIMUT]])
     borrowed_generic(x)
 
     # CHECK: [[XIMM:%.*]] = lit.ref.immut %x
     # CHECK: [[XCOPY:%.*]] = lit.var.decl
-    # CHECK: lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}([[XIMM]], [[XCOPY]])
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])
+    # CHECK: lit.call {{.*}}::@RegPassable::@"__copyinit__{{.*}}([[XIMM]], [[XCOPY]])
+    # CHECK: lit.call {{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])
     owned_generic(x)
 
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>(%x)
+    # CHECK: lit.call {{.*}}::@"owned_generic{{.*}}<{{.*}}>(%x)
     owned_generic(x^)
 
 
 # CHECK-LABEL: lit.fn @"test_borrowed{{.*}}(%x: !lit.ref<!RegPassable, imm *"x`"> read_mem)
 fn test_borrowed(x: RegPassable):
-    # CHECK-NEXT: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>(%x)
+    # CHECK-NEXT: lit.call {{.*}}::@"borrowed_generic{{.*}}<{{.*}}>(%x)
     borrowed_generic(x)
 
     # CHECK: [[XCOPY:%.*]] = lit.var.decl
-    # CHECK: lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}(%x, [[XCOPY]])
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])
+    # CHECK: lit.call {{.*}}::@RegPassable::@"__copyinit__{{.*}}(%x, [[XCOPY]])
+    # CHECK: lit.call {{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])
     owned_generic(x)
 
 

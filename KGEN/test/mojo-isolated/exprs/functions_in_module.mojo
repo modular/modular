@@ -25,15 +25,15 @@ comptime funcs = __functions_in_module()
 
 # CHECK-LABEL: lit.fn @"main
 fn main():
-    # CHECK-NEXT: lit.call @functions_in_module::@"take[::AnyType,$0]()"<:!AnyType [[TYPE1]],
+    # CHECK-NEXT: lit.call {{.*}}@"take[::AnyType,$0]()"<:!AnyType [[TYPE1]],
     take[funcs[0]]()
-    # CHECK-NEXT: lit.call @functions_in_module::@"take[::AnyType,$0]()"<:!AnyType [[TYPE2]],
+    # CHECK-NEXT: lit.call {{.*}}@"take[::AnyType,$0]()"<:!AnyType [[TYPE2]],
     take[funcs[1]]()
-    # CHECK-NEXT: lit.call @functions_in_module::@"take[::AnyType,$0]()"<:!AnyType [[TYPE3]],
+    # CHECK-NEXT: lit.call {{.*}}@"take[::AnyType,$0]()"<:!AnyType [[TYPE3]],
     take[funcs[2]]()
-    # CHECK-NEXT: lit.call @functions_in_module::@"take[::AnyType,$0]()"<:!AnyType [[TYPE4]],
+    # CHECK-NEXT: lit.call {{.*}}@"take[::AnyType,$0]()"<:!AnyType [[TYPE4]],
     take[funcs[3]]()
-    # CHECK-NEXT: lit.call @functions_in_module::@"take[::AnyType,$0]()"<:!AnyType [[TYPE5]],
+    # CHECK-NEXT: lit.call {{.*}}@"take[::AnyType,$0]()"<:!AnyType [[TYPE5]],
     take[funcs[4]]()
 
 fn bar(y: Int, z: Int): pass

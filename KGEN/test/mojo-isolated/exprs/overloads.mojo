@@ -98,7 +98,7 @@ fn test_static_overload():
     var a = StaticOverloadStruct()
     # CHECK-NEXT: %a = lit.var.decl
     # CHECK-NEXT: lit.call{{.*}}__init__{{.*}}(%a)
-    # CHECK-NEXT: lit.call @{{.*}}foo{{.*}}(%a)
+    # CHECK-NEXT: lit.call {{.*}}foo{{.*}}(%a)
     a.foo()
 
 
@@ -128,5 +128,5 @@ struct MyContainer[T: ImplicitlyCopyable]:
 
 # CHECK-LABEL: lit.fn @"test_impl
 fn test_impl(a: MyContainer[MyElement], b: Int):
-    # CHECK: lit.call @{{.*}}@MyContainer::@"foo{{.*}}, "index": !Int
+    # CHECK: lit.call {{.*}}@MyContainer::@"foo{{.*}}, "index": !Int
     _ = a.foo(b)

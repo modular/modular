@@ -73,7 +73,7 @@ fn useAny[T: AnyType](x: T):
 # CHECK-SAME: <T: !Trait1>
 # CHECK-SAME: (%x: !lit.ref<:!Trait1 T,
 fn use1[T: Trait1](x: T):
-    # CHECK: lit.call [{{.*}}"self": !lit.ref<:!Trait1 T,{{.*}} #kgen.get_witness<:!Trait1 T, "trait_composition::Trait1", "f1{{.*}}">][{{.*}}](%x)
+    # CHECK: lit.call tail[{{.*}}"self": !lit.ref<:!Trait1 T,{{.*}} #kgen.get_witness<:!Trait1 T, "trait_composition::Trait1", "f1{{.*}}">][{{.*}}](%x)
     x.f1()
 
 
@@ -82,68 +82,70 @@ fn use2[T: Trait2](x: T):
 
 
 # Use aliased trait composition.
-# CHECK: lit.fn @"use12
+# CHECK-LABEL: lit.fn @"use12
 # CHECK-SAME: <T: !Trait1_Trait2>
 # CHECK-SAME: (%x: !lit.ref<:!Trait1_Trait2 T,
 fn use12[T: Trait1 & Trait2](x: T):
-    # CHECK: lit.call @trait_composition::@"use1
+    # CHECK: lit.call tail @trait_composition::@"use1
     # CHECK-SAME: <:!Trait1 !kgen.param<:!Trait1_Trait2 T>>
     use1[T](x)
-    # CHECK: lit.call @trait_composition::@"use2
+    # CHECK: lit.call tail @trait_composition::@"use2
     # CHECK-SAME: <:!Trait2 !kgen.param<:!Trait1_Trait2 T>>
     use2[T](x)
 
 
 # Use direct trait composition.
+# CHECK-LABEL: lit.fn @"use23
 fn use23[T: Trait2 & Trait3](x: T):
-    # CHECK: lit.call [
+    # CHECK: lit.call tail[
     # CHECK-SAME: "self": !lit.ref<:!Trait2_Trait3 T,
     # CHECK-SAME: #kgen.get_witness<:!Trait3 !kgen.param<:!Trait2_Trait3 T>, "trait_composition::Trait3", "f3{{.*}}">
     x.f3()
 
 
+# CHECK-LABEL: lit.fn @"use123
 fn use123[T: Trait1 & Trait2 & Trait3](x: T):
-    # CHECK: lit.call @trait_composition::@"use23
+    # CHECK: lit.call {{.*}}@"use23
     # CHECK-SAME: "x": !lit.ref<:!Trait1_Trait2_Trait3 T,
     use23(x)
 
 
-# CHECK: lit.fn @"main_use()"
+# CHECK-LABEL: lit.fn @"main_use()"
 fn main_use():
     s123 = Struct123()
 
-    # CHECK: lit.call @trait_composition::@"useAny
+    # CHECK: lit.call {{.*}}@"useAny
     # CHECK-SAME: <:!AnyType !Struct123>
     useAny(s123)
-    # CHECK: lit.call @trait_composition::@"use1
+    # CHECK: lit.call {{.*}}@"use1
     # CHECK-SAME: <:!Trait1 !Struct123>
     use1(s123)
-    # CHECK: lit.call @trait_composition::@"use1
+    # CHECK: lit.call {{.*}}@"use1
     # CHECK-SAME: <:!Trait1 !Struct123>
     use1[Struct123](s123)
-    # CHECK: lit.call @trait_composition::@"use12
+    # CHECK: lit.call {{.*}}@"use12
     # CHECK-SAME: <:!Trait1_Trait2 !Struct123>
     use12(s123)
-    # CHECK: lit.call @trait_composition::@"use23
+    # CHECK: lit.call {{.*}}@"use23
     # CHECK-SAME: <:!Trait2_Trait3 !Struct123>
     use23(s123)
-    # CHECK: lit.call @trait_composition::@"use123
+    # CHECK: lit.call {{.*}}@"use123
     # CHECK-SAME: <:!Trait1_Trait2_Trait3 !Struct123>
     use123(s123)
 
     s12direct = Struct12Direct()
-    # CHECK: lit.call @trait_composition::@"use12
+    # CHECK: lit.call {{.*}}@"use12
     # CHECK-SAME: <:!Trait1_Trait2 !Struct12Direct>
     use12(s12direct)
-    # CHECK: lit.call @trait_composition::@"use12
+    # CHECK: lit.call {{.*}}@"use12
     # CHECK-SAME: <:!Trait1_Trait2 !Struct12Direct>
     use12[Struct12Direct](s12direct)
 
     s12alias = Struct12Alias()
-    # CHECK: lit.call @trait_composition::@"use12
+    # CHECK: lit.call {{.*}}@"use12
     # CHECK-SAME: <:!Trait1_Trait2 !Struct12Alias>
     use12(s12alias)
-    # CHECK: lit.call @trait_composition::@"use12
+    # CHECK: lit.call {{.*}}@"use12
     # CHECK-SAME: <:!Trait1_Trait2 !Struct12Alias>
     use12[Struct12Alias](s12alias)
 
@@ -209,7 +211,7 @@ trait IntConstructable:
 # CHECK-LABEL: lit.fn @"useIntConstructable
 fn useIntConstructable[T: Defaultable & IntConstructable]() -> T:
     # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{33}>
-    # CHECK: lit.call [
+    # CHECK: lit.call tail[
     # CHECK-SAME: #kgen.get_witness<:!IntConstructable !kgen.param<:!Defaultable_IntConstructable T>, "trait_composition::IntConstructable", "__init__{{.*}}">
     # CHECK-SAME: %[[INT33]]
     return T(33)

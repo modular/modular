@@ -20,7 +20,7 @@
 
 # COM: Check that the closure wrapper parameter is bound to the struct parameter:
 # CHECK-NEXT: %bar = lit.var.decl
-# CHECK-NEXT: lit.call @{{.*}}::@"fn{{.*}}"::@"__init__{{.*}}<:!Int B, :!Int A, :origin<0> [[SELFO]]>(%__call_result_tmp__, %bar)
+# CHECK-NEXT: lit.call {{.*}}::@"fn{{.*}}"::@"__init__{{.*}}<:!Int B, :!Int A, :origin<0> [[SELFO]]>(%__call_result_tmp__, %bar)
 # CHECK-SAME: !lit.generator<[2]({{.*}}"self": !lit.ref<{{.*}}<:!Int B, :!Int A>
 
 

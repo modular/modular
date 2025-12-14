@@ -392,12 +392,12 @@ fn test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
 
 # CHECK-LABEL: lit.fn @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
-    # CHECK:      [[CMP_A_B:%.*]] = lit.call @{{.*}}__lt__{{.*}}(%a, %b)
-    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = lit.call @{{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
+    # CHECK:      [[CMP_A_B:%.*]] = lit.call tail @{{.*}}__lt__{{.*}}(%a, %b)
+    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = lit.call tail @{{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
-    # CHECK-NEXT:   %[[CMP_B_C:.*]] = lit.call @{{.*}}__lt__{{.*}}(%b, %c)
+    # CHECK-NEXT:   %[[CMP_B_C:.*]] = lit.call tail @{{.*}}__lt__{{.*}}(%b, %c)
     # CHECK:        %[[IF_B_C:.*]] = hlcf.if
-    # CHECK-NEXT:     %[[CMP_C_D:.*]] = lit.call @{{.*}}__lt__{{.*}}(%c, %d)
+    # CHECK-NEXT:     %[[CMP_C_D:.*]] = lit.call tail @{{.*}}__lt__{{.*}}(%c, %d)
     # CHECK-NEXT:     hlcf.yield %[[CMP_C_D]]
     # CHECK-NEXT:   } else {
     # CHECK-NEXT:     hlcf.yield %[[CMP_B_C]]
@@ -411,17 +411,17 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     var res = a < b < c < d
 
     # COM: This checks the parsing precedence between `<` and `and`.
-    # CHECK:      %[[CMP_A_B:.*]] = lit.call @{{.*}}__lt__{{.*}}(%a, %b)
-    # CHECK:       %[[CMP_A_B_I1:.*]] = lit.call @{{.*}}__mlir_i1__{{.*}}(%[[CMP_A_B]])
+    # CHECK:      %[[CMP_A_B:.*]] = lit.call {{.*}}__lt__{{.*}}(%a, %b)
+    # CHECK:       %[[CMP_A_B_I1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
-    # CHECK:   %[[CMP_B_C:.*]] = lit.call @{{.*}}__lt__{{.*}}(
+    # CHECK:   %[[CMP_B_C:.*]] = lit.call {{.*}}__lt__{{.*}}(
     # CHECK-NEXT:   hlcf.yield %[[CMP_B_C]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: %[[CMP_I1:.*]] = lit.call @{{.*}}__mlir_i1__{{.*}}(%[[IF_A_B]])
+    # CHECK-NEXT: %[[CMP_I1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[IF_A_B]])
     # CHECK-NEXT: %[[IF:.*]] = hlcf.if %[[CMP_I1]]
-    # CHECK-NEXT:   %[[CMP_D_E:.*]] = lit.call @{{.*}}__lt__{{.*}}(%d, %e)
+    # CHECK-NEXT:   %[[CMP_D_E:.*]] = lit.call {{.*}}__lt__{{.*}}(%d, %e)
     # CHECK-NEXT:   hlcf.yield %[[CMP_D_E]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[IF_A_B]]

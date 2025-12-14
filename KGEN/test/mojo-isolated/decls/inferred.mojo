@@ -95,7 +95,7 @@ fn test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
 
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +>("z": !lit.struct<#ParamType <:!Int *(0,0)>>)
     comptime partially_bound = inferred_partial[1]
-    # CHECK: lit.call @inferred::@"inferred_partial{{.*}}"<:!Int x, :!Int {1}>(
+    # CHECK: lit.call tail @inferred::@"inferred_partial{{.*}}"<:!Int x, :!Int {1}>(
     partially_bound(y)
 
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +, "z": !lit.struct<#ParamType <:!Int *(0,0)>>
@@ -162,7 +162,7 @@ fn testMyOptional(a: MyOptional[MyFancyStruct]):
 
 
 # CHECK-LABEL: lit.fn @"findall
-# CHECK-NEXT: lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%self)
+# CHECK-NEXT: lit.call tail @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%self)
 struct DefBoxInference:
     def findall(self) -> DefBoxInferenceIter[origin_of(self)]:
         return DefBoxInferenceIter[origin_of(self)](Pointer(to=self))

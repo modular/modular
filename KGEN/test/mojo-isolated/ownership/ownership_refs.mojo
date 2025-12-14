@@ -71,10 +71,10 @@ fn testParametricMut(i: MemExample, mut m: MemExample):
 fn testUseConditional(cond: __mlir_type.i1):
   # CHECK-NOT: __del__
 
-  # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
+  # CHECK: lit.call {{.*}}__init__{{.*}}(%a)
   var a = MemExample()
 
-  # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
+  # CHECK: lit.call {{.*}}__init__{{.*}}(%b)
   var b = MemExample()
 
   # CHECK: %cptr = lit.var.decl "cptr"
@@ -86,10 +86,10 @@ fn testUseConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: lit.var.lifetime.end %cptr
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CV]])
   # CHECK-NEXT: lit.ref.immut [[MREF]]
-  # CHECK-NEXT: lit.call @{{.*}}noop
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call {{.*}}noop
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT: lifetime.end %a
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT: lifetime.end %b
 
 # CHECK-LABEL: lit.fn @"testDefConditional
@@ -107,39 +107,39 @@ fn testDefConditional(cond: __mlir_type.i1):
   # we know that both are live.
   cptr[].mutate()
   # CHECK: [[CP:%.*]] = lit.ref.load %cptr
-  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[CP]])
-  # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}([[MREF]])
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
+  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}([[MREF]])
 
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
   cptr[] = MemExample()
   # CHECK: [[CP:%.*]] = lit.ref.load %cptr
-  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[CP]])
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[MREF]])
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[MREF]])
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[MREF]])
 
   # Overwriting is eligible for copy => move optimization as well.
   var shouldBeMovedFrom = MemExample()
-  # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
+  # CHECK: lit.call {{.*}}__init__{{.*}}(%shouldBeMovedFrom)
   cptr[] = shouldBeMovedFrom
   # CHECK: [[CP:%.*]] = lit.ref.load %cptr
   # CHECK-NEXT: lit.var.lifetime.end %cptr
-  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[CP]])
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.ref.immut
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
-  # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}(%shouldBeMovedFrom, [[MREF]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[MREF]])
+  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%shouldBeMovedFrom, [[MREF]])
   # CHECK-NEXT: lifetime.end %shouldBeMovedFrom
 
   # The mutation above could either of A or B, so we needed to extend both of
   # their origins, but now we can say goodbye.
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT: lifetime.end %b
 
   # A use so the assignment isn't dead.
   a.noop()
   # CHECK-NEXT: [[ATMP:%.*]] = lit.ref.immut %a
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[ATMP]])
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[ATMP]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT: lifetime.end %a
 
 # ===----------------------------------------------------------------------=== #
@@ -150,7 +150,7 @@ fn testDefConditional(cond: __mlir_type.i1):
 
 fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK: %a = lit.var.decl {{.*}} : !lit.ref<!MemExample, mut *"a`1">
-  # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
+  # CHECK: lit.call {{.*}}__init__{{.*}}(%a)
 
   var a = MemExample()
 
@@ -188,7 +188,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   var aref2 = aref
 
   # Pointer can bind to immutable things as well, no problem.
-  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%imm)
+  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call {{.*}}@Pointer::@"__init__{{.*}}(%imm)
   # CHECK-NEXT: %immref = lit.var.decl "immref"
   # CHECK: lit.ref.store [[IMMRV]], %immref
   var immref = Pointer(to=imm)
@@ -297,12 +297,12 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 
 # CHECK-LABEL: lit.fn @"ref_copyability
 fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
-  # CHECK: [[ITEM:%.*]] = lit.call @stdlib::@builtin::@stubs::@VariadicPack::@"__getitem__
+  # CHECK: [[ITEM:%.*]] = lit.call {{.*}}@VariadicPack::@"__getitem__
   # CHECK: %_x = lit.var.decl
-  # CHECK: lit.call [{{.*}}#kgen.get_witness<{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
+  # CHECK: lit.call[{{.*}}#kgen.get_witness<{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
   var _x = args[4]
 
-  # CHECK-NEXT: lit.call [{{.*}}#kgen.get_witness<{{.*}}__del__{{.*}}(%_x)
+  # CHECK-NEXT: lit.call[{{.*}}#kgen.get_witness<{{.*}}__del__{{.*}}(%_x)
 
 # Issue #37659: Parameter inference doesn't work with force-immut origins
 
@@ -450,7 +450,7 @@ fn test_parameter_closure_captures(var x: MemExample, var y: MemExample):
     _ = x^
     _ = y^
 
-  # CHECK: lit.call [!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
+  # CHECK: lit.call tail[!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   capture()
