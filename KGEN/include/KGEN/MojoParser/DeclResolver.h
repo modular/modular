@@ -245,7 +245,7 @@ public:
                                    FnTypeGeneratorType signatureGen);
 
   /// Given a signature type that may contain references to parameter
-  /// declarations in a parent context, isolate it by creating a signatuer with
+  /// declarations in a parent context, isolate it by creating a signature with
   /// no external references by inserting an parameter for every captured
   /// parameter declaration. Return the captured parameter references.
   static std::pair<SmallVector<ParamDeclRefAttr>, FnTypeGeneratorType>

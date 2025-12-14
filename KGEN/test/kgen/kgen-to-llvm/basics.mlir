@@ -54,6 +54,13 @@ kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
   %1:2 = kgen.call @two_results(%arg0) : (!pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.simd<1, f32>)
   // CHECK: llvm.extractvalue %[[PACK]][0]
   // CHECK: llvm.extractvalue %[[PACK]][1]
+
+  // CHECK: llvm.call tail @trivial_simd(%[[ARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32) -> f32
+  kgen.call tail @trivial_simd(%arg0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
+
+  // CHECK: llvm.call musttail @trivial_simd(%[[ARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32) -> f32
+  kgen.call musttail @trivial_simd(%arg0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
+
   kgen.return
 }
 
