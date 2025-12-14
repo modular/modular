@@ -1,5 +1,7 @@
 """A repository rule for creating wheel accessors. Not enabled by default for compatibility with modular's internal repo."""
 
+load("@module_versions//:config.bzl", "PYTHON_VERSIONS_DOTTED")
+
 _PLATFORM_MAPPINGS = {
     "linux_aarch64": "manylinux_2_34_aarch64",
     "linux_x86_64": "manylinux_2_34_x86_64",
@@ -11,21 +13,13 @@ _WHEELS = [
     "mojo_compiler",
 ]
 
-PYTHON_VERSIONS = [
-    "310",
-    "311",
-    "312",
-    "313",
-    "314",
-]
-
 def _rebuild_wheel(rctx):
-    for py_version in PYTHON_VERSIONS:
+    for py_version in PYTHON_VERSIONS_DOTTED:
         rctx.download_and_extract(
             url = "{base_url}/max-{version}-cp{py}-cp{py}-{platform}.whl".format(
                 base_url = rctx.attr.base_url,
                 version = rctx.attr.version,
-                py = py_version,
+                py = py_version.replace(".", ""),
                 platform = _PLATFORM_MAPPINGS[rctx.attr.platform],
             ),
         )
@@ -63,9 +57,22 @@ py_library(
     ], exclude = [
         "modular/lib/mojo/*",
     ]),
+    pyi_srcs = glob([
+        "max/**/*.pyi",
+    ]),
     visibility = ["//visibility:public"],
     imports = ["."],
-)""",
+)
+
+filegroup(
+    name = "tblgen_python_srcs",
+    srcs = [
+        "max/_mlir/dialects/mo.py",
+        "max/_mlir/dialects/rmo.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
     )
 
 rebuild_wheel = repository_rule(
@@ -96,6 +103,16 @@ alias(
         "@//:linux_aarch64": "@module_platlib_linux_aarch64//:max",
         "@//:linux_x86_64": "@module_platlib_linux_x86_64//:max",
         "@platforms//os:macos": "@module_platlib_macos_arm64//:max",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "tblgen_python_srcs",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:tblgen_python_srcs",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:tblgen_python_srcs",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:tblgen_python_srcs",
     }),
     visibility = ["//visibility:public"],
 )

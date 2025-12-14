@@ -261,9 +261,9 @@ pointee's type; otherwise the function results in undefined behavior.
 Calling [`init_pointee_move_from(self, src)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/#init_pointee_move_from)
 moves the value pointed to by `src` into the memory location pointed to by `self`.
 After this operation, ownership of that value transfers from `src` to `self`
-and the memory at `src` is uninitialized: 
+and the memory at `src` is uninitialized:
 do not read from it, and do not invoke destructors on it.
-To make the memory valid again, initialize it with a new value using 
+To make the memory valid again, initialize it with a new value using
 one of the `init_pointee_*()` operations.
 
 :::note
@@ -357,9 +357,10 @@ s_ptr = UnsafePointer(to=s)
 
 When allocating memory with the `alloc()` function, the returned pointer has
 an `origin` value of `MutOrigin.external`. This value represents an origin that
-is mutable and does not _alias_ any existing value. (For example, it does not
-point to the memory allocated for any other variable.) This memory isn't tracked
-by Mojo's lifetime checker, so you're responsible for freeing it.
+is mutable and doesn't _alias_ existing values. For example, it doesn't
+point to the memory allocated for any other variable. That means the compiler
+won't unnecessarily extend the lifetimes of unrelated values. This memory isn't tracked
+by Mojo's lifetime checker and you're responsible for freeing it.
 
 If you're using a pointer in the implementation of a struct, you usually don't
 have to worry about the origin, as long as the pointer isn't exposed outside of
@@ -600,7 +601,7 @@ divisible by eight.)
 ```mojo
 def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
     # number of values loaded or stored at a time
-    alias simd_width = 8
+    comptime simd_width = 8
     # bytes per pixel, which is also the stride size
     bpp = 3
     for i in range(0, pixel_count * bpp, simd_width * bpp):

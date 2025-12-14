@@ -13,7 +13,7 @@
 
 
 trait Stacklike:
-    alias EltType: Copyable & Movable
+    comptime EltType: Copyable
 
     fn push(mut self, var item: Self.EltType):
         ...
@@ -22,11 +22,11 @@ trait Stacklike:
         ...
 
 
-struct MyStack[type: Copyable & Movable](Stacklike):
+struct MyStack[type: Copyable](Stacklike):
     """A simple Stack built using a List."""
 
-    alias EltType = Self.type
-    alias list_type = List[Self.EltType]
+    comptime EltType = Self.type
+    comptime list_type = List[Self.EltType]
 
     var list: Self.list_type
 
@@ -40,7 +40,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
         return self.list.pop()
 
     fn dump[
-        WritableEltType: Writable & Copyable & Movable
+        WritableEltType: Writable & Copyable
     ](self: MyStack[WritableEltType]):
         print("[", end="")
         for item in self.list:

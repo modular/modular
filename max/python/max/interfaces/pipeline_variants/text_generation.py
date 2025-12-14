@@ -29,6 +29,7 @@ from typing import (
 import msgspec
 import numpy as np
 import numpy.typing as npt
+from max._core import xxhash
 from max.interfaces.context import BaseContext, SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
@@ -369,42 +370,6 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
-    def bump_token_indices(
-        self,
-        start_idx: int = 0,
-        active_idx: int = 0,
-        end_idx: int = 0,
-    ) -> None:
-        """Increment token indices by the specified amounts.
-
-        This method provides fine-grained control over token index management,
-        allowing incremental updates to track token processing progress.
-
-        Args:
-            start_idx: Amount to increment the ``start_idx`` by.
-            active_idx: Amount to increment the ``active_idx`` by.
-            end_idx: Amount to increment the ``end_idx`` by.
-        """
-        ...
-
-    def set_token_indices(
-        self,
-        start_idx: int | None = None,
-        active_idx: int | None = None,
-        end_idx: int | None = None,
-    ) -> None:
-        """Set token indices to specific absolute values.
-
-        This method provides direct control over token index positioning,
-        allowing precise management of the token array state.
-
-        Args:
-            start_idx: New absolute value for ``start_idx``, if provided.
-            active_idx: New absolute value for ``active_idx``, if provided.
-            end_idx: New absolute value for ``end_idx``, if provided.
-        """
-        ...
-
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt.
         This method is used when a request is evicted, meaning that the context
@@ -612,6 +577,46 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def rewind_processing(self, n: int) -> None:
+        """Rewind the processing window start by n.
+
+        Use after rejecting a draft so future steps reprocess those tokens.
+        Args:
+            n (int): The number of tokens to rewind.
+        """
+        ...
+
+    def skip_processing(self, n: int) -> None:
+        """Advance the processing window start by n.
+
+        Use after committing tokens to cache or accepting a draft so future steps no
+        longer reprocess those tokens. Validates that start <= end.
+
+        Args:
+            n (int): The number of tokens to skip.
+        """
+        ...
+
+    def chunk(self, chunk_size: int) -> None:
+        """Optionally chunk the active token window to enforce a maximum size.
+
+        This method is typically used by the scheduler when performing chunked
+        prefill. If the number of active prompt tokens exceeds the per-batch
+        target, the context may be "chunked" by advancing indices so that only
+        a bounded number of active tokens remain.
+
+        Args:
+            chunk_size (int): The desired maximum number of active tokens to keep
+                in this context.
+
+        Raises:
+            ValueError: If ``chunk_size`` is negative or larger than the current
+                number of active tokens, indicating that the context cannot be
+                chunked appropriately.
+
+        """
+        ...
+
     @property
     def needs_ce(self) -> bool:
         """Returns whether this context needs context encoding (CE).
@@ -714,6 +719,7 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         self.input_tokens = sum(
             ctx.active_length for ctx in self.batch.values()
         )
+        self.context_tokens = sum(ctx.start_idx for ctx in self.batch.values())
         self.batch_type = BatchType.TG
         for req in self.batch.values():
             if req.needs_ce:
@@ -752,9 +758,18 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return [ctx.log_probabilities_echo for ctx in self.batch.values()]
 
 
-def hash_image(pixel_values: npt.NDArray[np.floating[Any]]) -> int:
-    """Compute the hash of an image."""
-    return hash(pixel_values.data.tobytes())
+def hash_image(pixel_values: npt.NDArray[Any]) -> int:
+    """Compute the hash of an image.
+
+    Supports any numpy array dtype (float32, uint16 for bfloat16 bits, etc.)
+    since vision models may use different storage formats on CPU.
+
+    Uses xxhash for fast hashing. Ensures C-contiguous memory layout for
+    correct hashing (np.ascontiguousarray is a no-op if already contiguous).
+    """
+    hash_val = xxhash.xxh3_64_intdigest(np.ascontiguousarray(pixel_values).data)  # type: ignore[arg-type]
+    # xxh3_64_intdigest returns unsigned 64-bit int; convert to signed for numpy compatibility
+    return int(np.uint64(hash_val).astype(np.int64))
 
 
 class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
@@ -769,8 +784,15 @@ class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     end_idx: int
     """One after the index of the last <vision_token_id> special token for the image"""
 
-    pixel_values: npt.NDArray[np.floating[Any]]
-    """Pixel values for the image"""
+    pixel_values: npt.NDArray[Any]
+    """Pixel values for the image.
+
+    Can be various dtypes depending on the vision model:
+
+    - float32: Original precision
+    - uint16: BFloat16 bits stored as uint16 (workaround for NumPy's lack of
+      native bfloat16 support). Reinterpreted as bfloat16 on GPU.
+    """
 
     image_hash: int = -1
     """Hash of the image, for use in prefix caching"""
@@ -784,7 +806,9 @@ class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             )
 
         # Compute the hash of the image in post init, overriding the default value of -1
-        self.image_hash = hash_image(self.pixel_values)
+        # This should serialize once, and not recompute, as the serialized hash differs from the default.
+        if self.image_hash == -1:
+            self.image_hash = hash_image(self.pixel_values)
 
     def __repr__(self):
         return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import external_call
 from gpu.host import DeviceContext, DeviceFunction, DeviceStream
 from gpu.host.device_context import (
@@ -40,10 +39,10 @@ struct _CUevent_st:
     pass
 
 
-comptime CUcontext = UnsafePointer[_CUctx_st]
-comptime CUstream = UnsafePointer[_CUstream_st]
-comptime CUmodule = UnsafePointer[_CUmod_st]
-comptime CUevent = UnsafePointer[_CUevent_st]
+comptime CUcontext = UnsafePointer[_CUctx_st, MutAnyOrigin]
+comptime CUstream = UnsafePointer[_CUstream_st, MutAnyOrigin]
+comptime CUmodule = UnsafePointer[_CUmod_st, MutAnyOrigin]
+comptime CUevent = UnsafePointer[_CUevent_st, MutAnyOrigin]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.
@@ -56,7 +55,7 @@ fn CUDA(ctx: DeviceContext) raises -> CUcontext:
         external_call[
             "AsyncRT_DeviceContext_cuda_context",
             _ConstCharPtr,
-            UnsafePointer[CUcontext],
+            UnsafePointer[CUcontext, origin_of(result)],
             _DeviceContextPtr,
         ](
             UnsafePointer(to=result),
@@ -76,7 +75,7 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
         external_call[
             "AsyncRT_DeviceStream_cuda_stream",
             _ConstCharPtr,
-            UnsafePointer[CUstream],
+            UnsafePointer[CUstream, origin_of(result)],
             _DeviceStreamPtr,
         ](
             UnsafePointer(to=result),
@@ -95,7 +94,7 @@ fn CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
         external_call[
             "AsyncRT_DeviceFunction_cuda_module",
             _ConstCharPtr,
-            UnsafePointer[CUmodule],
+            UnsafePointer[CUmodule, origin_of(result)],
             _DeviceFunctionPtr,
         ](
             UnsafePointer(to=result),

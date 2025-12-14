@@ -52,12 +52,12 @@ specify the type of each argument. If you wanted to write this example in Mojo
 
 ```mojo title="🔥 Mojo"
 @fieldwise_init
-struct Duck(Copyable, Movable):
+struct Duck(Copyable):
     fn quack(self):
         print("Quack")
 
 @fieldwise_init
-struct StealthCow(Copyable, Movable):
+struct StealthCow(Copyable):
     fn quack(self):
         print("Moo!")
 
@@ -107,25 +107,29 @@ trait Quackable:
 
 A trait looks a lot like a struct, except it's introduced by the `trait`
 keyword. Note that the `quack()` method signature is followed three dots
-(`...`), which indicates it isn't implemented. This is a *required method*
-that must be implemented by any conforming struct.
+(`...`). This indicates it isn't implemented within the trait. In this
+example, `quack` is a *required method* and must be implemented by
+any conforming struct.
 
-A trait can also supply a default implementation for a required method, so
-that conforming structs don't need to implement it. For more information, see
+A trait can supply a default implementation so conforming structs
+don’t need to implement the method themselves. You can provide a full
+implementation or use the `pass` keyword. Using `pass` creates a
+no-op method that does nothing. In your conforming struct, you
+can chose to override this default implementation:
+
+```mojo
+trait Quackable:
+    fn quack(self):
+        pass
+```
+
+For more information, see
 [Default method implementations](#default-method-implementations).
 
-A trait can also include associated aliases—compile-time constant values that
-must be defined by conforming structs. Associated aliases are useful for writing
+A trait can also include `comptime` members—compile-time constant values that
+must be defined by conforming structs. `comptime` members are useful for writing
 traits that describe generic types. For more information, see
-[Associated aliases for generics](#associated-aliases-for-generics).
-
-:::note
-
-Currently, Mojo treats a trait method as not implemented if the function body
-starts with `...` or `pass`. In the future only `...` will mark a trait method
-as not implemented.
-
-:::
+[`comptime` members for generics](#comptime-members-for-generics).
 
 ### Adding traits to structs
 
@@ -139,12 +143,12 @@ syntax.)
 
 ```mojo
 @fieldwise_init
-struct Duck(Copyable, Movable, Quackable):
+struct Duck(Copyable, Quackable):
     fn quack(self):
         print("Quack")
 
 @fieldwise_init
-struct StealthCow(Copyable, Movable, Quackable):
+struct StealthCow(Copyable, Quackable):
     fn quack(self):
         print("Moo!")
 ```
@@ -242,7 +246,7 @@ trait DefaultQuackable:
 
 
 @fieldwise_init
-struct DefaultDuck(Copyable, DefaultQuackable, Movable):
+struct DefaultDuck(Copyable, DefaultQuackable):
     pass
 ```
 
@@ -280,7 +284,7 @@ fn quack_and_go[type: Quackable & Flyable](quacker: type):
     quacker.fly()
 
 @fieldwise_init
-struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
+struct FlyingDuck(Copyable, Quackable, Flyable):
     fn quack(self):
         print("Quack")
 
@@ -288,11 +292,11 @@ struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
         print("Whoosh!")
 ```
 
-You can also use the `alias` keyword to create a shorthand name for a
+You can also use the `comptime` keyword to create a shorthand name for a
 trait composition:
 
 ```mojo
-alias DuckLike = Quackable & Flyable
+comptime DuckLike = Quackable & Flyable
 
 struct ToyDuck(DuckLike):
     # ... implementation omitted
@@ -309,13 +313,13 @@ trait DuckTrait(Quackable, Flyable):
 However, this is less flexible than using a trait composition and not
 recommended. The difference is that using the `trait` keyword defines a new,
 named trait. For a struct to conform to this trait, you need to *explicitly*
-include it in the struct's signature. On the other hand, the `DuckLike` alias
-represents a composition of two separate traits, `Quackable` and `Flyable`, and
-anything that conforms to those two traits conforms to `DuckLike`. For example,
-consider the `FlyingDuck` type shown above:
+include it in the struct's signature. On the other hand, the `DuckLike`
+`comptime` value represents a composition of two separate traits, `Quackable`
+and `Flyable`, and anything that conforms to those two traits conforms to
+`DuckLike`. For example, consider the `FlyingDuck` type shown above:
 
 ```mojo
-struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
+struct FlyingDuck(Copyable, Quackable, Flyable):
     # ... etc
 ```
 
@@ -366,7 +370,7 @@ requirements. If you simply want to express the union of two or more traits,
 you should use a simple trait composition instead:
 
 ```mojo
-alias NamedAnimal = Animal & Named
+comptime NamedAnimal = Animal & Named
 ```
 
 ## Traits and lifecycle methods
@@ -395,7 +399,7 @@ the `Defaultable` and `Movable` traits in comments for reference:
 # trait Movable
 #     fn __moveinit__(out self, deinit existing: Self): ...
 
-alias MassProducible = Defaultable & Movable
+comptime MassProducible = Defaultable & Movable
 
 fn factory[type: MassProducible]() -> type:
     return type()
@@ -431,7 +435,7 @@ decorator. These decorators add requirements for conforming structs:
 For the purpose of trait conformance, a trait or struct that's defined with
 `@register_passable` should automatically conform to the `Movable` trait, and a
 trait or struct that's defined with `@register_passable("trivial")` should
-automatically conform to the `Copyable` and `Movable` traits.
+automatically conform to the `Copyable` trait.
 
 :::note
 
@@ -465,8 +469,8 @@ own types. These standard library traits include:
 * [`Stringable`](/mojo/stdlib/builtin/str/Stringable)
 * [`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising)
 * [`Roundable`](/mojo/stdlib/builtin/math/Roundable)
-* [`Writable`](/mojo/stdlib/utils/write/Writable)
-* [`Writer`](/mojo/stdlib/utils/write/Writer)
+* [`Writable`](/mojo/stdlib/io/write/Writable)
+* [`Writer`](/mojo/stdlib/io/write/Writer)
 
 The API reference docs linked above include usage examples for each trait. The
 following sections discuss a few of these traits.
@@ -482,7 +486,7 @@ function. For example, if you're writing a custom list type, you could
 implement this trait so your type works with `len()`:
 
 ```mojo
-struct MyList(Copyable, Movable, Sized):
+struct MyList(Copyable, Sized):
     var size: Int
     # ...
 
@@ -547,7 +551,7 @@ method, which should compute the "official" string representation of a type. If
 at all possible, this should look like a valid Mojo expression that could be
 used to recreate a struct instance with the same value.
 
-The [`Writable`](/mojo/stdlib/utils/write/Writable) trait describes a
+The [`Writable`](/mojo/stdlib/io/write/Writable) trait describes a
 type that can be converted to a stream of UTF-8 encoded data by writing to a
 `Writer` object. The [`print()`](/mojo/stdlib/builtin/io/print) function
 requires that its arguments conform to the `Writable` trait. This enables
@@ -555,11 +559,11 @@ efficient stream-based writing by default, avoiding unnecessary intermediate
 String heap allocations.
 
 The `Writable` trait requires a type to implement a
-[`write_to()`](/mojo/stdlib/utils/write/Writable#write_to) method, which
+[`write_to()`](/mojo/stdlib/io/write/Writable#write_to) method, which
 is provided with an object that conforms to the
-[`Writer`](/mojo/stdlib/utils/write/Writer) as an argument. You then
+[`Writer`](/mojo/stdlib/io/write/Writer) as an argument. You then
 invoke the `Writer` instance's
-[`write()`](/mojo/stdlib/utils/write/Writer#write) method to write a
+[`write()`](/mojo/stdlib/io/write/Writer#write) method to write a
 sequence of `Writable` arguments constituting the `String` representation of
 your type.
 
@@ -646,10 +650,10 @@ needs to copy a value, the compiler needs to verify that the type can be copied.
 
 The [`List`](/mojo/stdlib/collections/list) type is an example of a
 generic container. A single `List` can only hold a single type of data.
-The list elements must conform to the `Copyable` and `Movable` traits:
+The list elements must conform to the `Copyable` trait:
 
 ```mojo
-struct List[T: Copyable & Movable]:
+struct List[T: Copyable]:
 ```
 
 For example, you can create a list of integer values like this:
@@ -668,7 +672,7 @@ for i in range(len(list)):
 You can use traits to define requirements for elements that are stored in a
 container. For example, `List` requires elements that can be moved and
 copied. To store a struct in a `List`, the struct needs to conform to
-the `Copyable` and `Movable` traits, which require a
+the `Copyable` trait, which require a
 [copy constructor](/mojo/manual/lifecycle/life#copy-constructor) and a
 [move constructor](/mojo/manual/lifecycle/life#move-constructor).
 
@@ -676,51 +680,51 @@ Building generic containers is an advanced topic. For an introduction, see the
 section on
 [parameterized structs](/mojo/manual/parameters/#parameterized-structs).
 
-### Associated aliases for generics
+### `comptime` members for generics
 
-In addition to methods, a trait can include _associated aliases_, which must be
+In addition to methods, a trait can include `comptime` members, which must be
 defined by any conforming struct. For example:
 
 ```mojo
 trait Repeater:
-    alias count: Int
+    comptime count: Int
 ```
 
-An implementing struct must define a concrete constant value for the alias,
-using any compile-time parameter value. For example, it can use a literal
+An implementing struct must define a concrete constant value for the `comptime`
+member, using any compile-time parameter value. For example, it can use a literal
 constant or a compile-time expression, including one that uses the struct's
 parameters.
 
 ```mojo
 struct Doublespeak(Repeater):
-    alias count: Int = 2
+    comptime count: Int = 2
 
 struct Multispeak[verbosity: Int](Repeater):
-    alias count: Int = Self.verbosity * 2 + 1
+    comptime count: Int = Self.verbosity * 2 + 1
 ```
 
-The `Doublespeak` struct has a constant value for the alias, but the `Multispeak`
+The `Doublespeak` struct has a constant value for `count`, but the `Multispeak`
 struct lets the user set the value using a parameter:
 
 ```mojo
 repeater = Multispeak[12]()
 ```
 
-Note that the alias is named `count`, and the `Multispeak` parameter is named
-`verbosity`. Parameters and aliases are in the same namespace, so the parameter
-can't have the same name as the associated alias.
+Note that the field is named `count`, and the `Multispeak` parameter is named
+`verbosity`. Parameters and `comptime` members are in the same namespace, so the
+parameter can't have the same name as the `comptime` member.
 
-Associated aliases are most useful for writing traits for generic types. For
+`comptime` members are most useful for writing traits for generic types. For
 example, imagine that you want to write a trait that describes a generic stack
-data structure that stores elements that conform to the `Copyable` and `Movable`
-traits.
+data structure that stores elements that conform to the `Copyable`
+trait.
 
-By adding the element type as an associated alias to the trait, you can specify
+By adding the element type as a `comptime` member on the trait, you can specify
 generic methods on the trait:
 
 ```mojo
 trait Stacklike:
-    alias EltType: Copyable & Movable
+    comptime EltType: Copyable
 
     fn push(mut self, var item: Self.EltType):
         ...
@@ -733,10 +737,10 @@ The following struct implements the `Stacklike` trait using a `List` as the
 underlying storage:
 
 ```mojo
-struct MyStack[type: Copyable & Movable](Stacklike):
+struct MyStack[type: Copyable](Stacklike):
     """A simple Stack built using a List."""
-    alias EltType = Self.type
-    alias list_type = List[Self.EltType]
+    comptime EltType = Self.type
+    comptime list_type = List[Self.EltType]
 
     var list: Self.list_type
 
@@ -750,7 +754,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
         return self.list.pop()
 
     fn dump[
-        WritableEltType: Writable & Copyable & Movable
+        WritableEltType: Writable & Copyable
     ](self: MyStack[WritableEltType]):
         print("[", end="")
         for item in self.list:
@@ -759,11 +763,11 @@ struct MyStack[type: Copyable & Movable](Stacklike):
 ```
 
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.
-Because a struct that conforms to `Copyable` and `Movable` is not necessarily
+Because a struct that conforms to `Copyable` is not necessarily
 printable, `MyStack` uses
 [conditional conformance](/mojo/manual/parameters/#conditional-conformance) to
 define a `dump()` method that works as long as the element type is
-[writable](/mojo/stdlib/utils/write/Writable/).
+[writable](/mojo/stdlib/io/write/Writable/).
 
 The following code exercises this new trait by defining a generic method,
 `add_to_stack()` that adds an item to any `Stacklike` type.

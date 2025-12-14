@@ -13,9 +13,12 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import logging
 import queue
+import threading
 import time
+from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
     Generic,
@@ -181,7 +184,15 @@ class BackgroundQueueDrainer(Generic[PullItemType]):
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="queue_drainer"
         )
+        # One-off background drain task used by start_draining.
         self._drain_future: Future[None] | None = None
+
+        # Continuous draining loop control. This is used by the
+        # drain_while_gpu context manager to drain the queue only while
+        # the main thread is in a GPU-bound section that releases the GIL.
+        self._gpu_window = threading.Event()
+        self._stop_event = threading.Event()
+        self._loop_future: Future[None] | None = None
 
         # Register cleanup on process exit
         atexit.register(self.stop_draining)
@@ -205,6 +216,18 @@ class BackgroundQueueDrainer(Generic[PullItemType]):
         # Start draining the queue in the background
         self._drain_future = self._executor.submit(self._drain_queue_background)
 
+    def _ensure_loop_running(self) -> None:
+        """
+        Ensure that the continuous draining loop is running.
+
+        This loop is intentionally very lightweight and only becomes active
+        while the GPU window is open (see drain_while_gpu).
+        """
+        if self._loop_future is not None and not self._loop_future.done():
+            return
+
+        self._loop_future = self._executor.submit(self._drain_loop)
+
     def _drain_queue_background(self) -> None:
         """
         Background task to drain the source queue and enqueue items.
@@ -222,6 +245,77 @@ class BackgroundQueueDrainer(Generic[PullItemType]):
         except Exception as e:
             logger.error(f"Error in background draining queue: {e}")
             raise
+
+    def _drain_loop(self) -> None:
+        """
+        Continuous draining loop.
+
+        This loop waits for the GPU window to be opened via drain_while_gpu()
+        and then drains items in small bursts while the main thread is in a
+        GPU-bound section that has released the GIL. When the window is
+        closed, the loop goes back to sleeping, minimizing GIL contention.
+        """
+        try:
+            while not self._stop_event.is_set():
+                # Wait until we are signalled that the GPU is running.
+                # A short timeout lets us react promptly to stop events.
+                self._gpu_window.wait(timeout=0.1)
+                if self._stop_event.is_set():
+                    break
+
+                if not self._gpu_window.is_set():
+                    # Timed out while window is closed.
+                    continue
+
+                try:
+                    new_items = drain_queue(
+                        self.source_queue, max_items=self.max_items_per_drain
+                    )
+                    for item in new_items:
+                        self._pending_items.put(item)
+                except Exception as e:  # pragma: no cover - defensive logging
+                    logger.error("Error in background draining loop: %s", e)
+                    # Surface the error via the future stored in _loop_future.
+                    raise
+
+                # If there was nothing to drain, back off briefly to avoid a
+                # busy-spin loop. A 0.5ms sleep keeps polling latency low while
+                # significantly reducing GIL/scheduler churn and CPU usage.
+                if not new_items:
+                    time.sleep(0.0005)
+        finally:
+            # Ensure the event is cleared so a restarted loop does not
+            # immediately start draining.
+            self._gpu_window.clear()
+
+    @contextlib.contextmanager
+    def drain_while_gpu(self) -> Iterator[None]:
+        """
+        Context manager that drains the source queue while the GPU is running.
+
+        Typical usage pattern:
+
+            with queue_drainer.drain_while_gpu():
+                # Call into a GPU-bound section that releases the GIL,
+                # e.g. pipeline.execute(...)
+                run_gpu_work()
+
+        While inside the context, a lightweight background loop will drain
+        items from ``source_queue`` into ``_pending_items`` in small bursts,
+        overlapping this work with GPU execution. When the context exits,
+        the loop goes back to sleeping, so regular Python code on the main
+        thread runs with minimal additional GIL contention.
+        """
+        self._ensure_loop_running()
+        # Open the "GPU window" so the background loop starts draining while
+        # the caller is inside this context. The try/finally ensures that the
+        # window is *always* closed again, even if the GPU work raises, so
+        # subsequent iterations do not continue draining unexpectedly.
+        self._gpu_window.set()
+        try:
+            yield
+        finally:
+            self._gpu_window.clear()
 
     def retrieve_item(self) -> PullItemType:
         """
@@ -256,6 +350,13 @@ class BackgroundQueueDrainer(Generic[PullItemType]):
         if self._drain_future is not None:
             self._drain_future.cancel()
             self._drain_future = None
+
+        # Stop the continuous draining loop if it was started.
+        self._stop_event.set()
+        self._gpu_window.set()  # Wake the loop so it can exit promptly.
+        if self._loop_future is not None:
+            self._loop_future.cancel()
+            self._loop_future = None
 
         # Shutdown the executor - this will stop accepting new tasks and wait for
         # the current task to complete (which should be quick since it's non-blocking)

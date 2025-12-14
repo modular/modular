@@ -39,9 +39,9 @@ fn get_gpu_target[
     Returns:
         Target type information for the specified GPU architecture.
     """
-    constrained[
-        target_arch != "", "target_arch must be a valid GPU architecture."
-    ]()
+    __comptime_assert (
+        target_arch != ""
+    ), "target_arch must be a valid GPU architecture."
     return GPUInfo.from_name[target_arch]().target()
 
 

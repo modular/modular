@@ -14,7 +14,6 @@
 from random import random_float64
 
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -23,6 +22,7 @@ from layout import (
     RuntimeTuple,
 )
 from layout.int_tuple import fill_like
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from testing import assert_equal
@@ -58,59 +58,97 @@ fn test_argmaxmin_gpu[
     else:
         raise Error("Test case doesn't support rank above 3 (just add it)")
 
-    var in_buffer = HostNDBuffer[dtype, rank](in_shape)
-    var out_idxs = HostNDBuffer[output_type, rank](out_shape)
+    # Compute sizes
+    var in_size = 1
+    var out_size = 1
+    for i in range(rank):
+        in_size *= in_shape[i]
+        out_size *= out_shape[i]
+
+    # Allocate host memory
+    comptime layout = Layout.row_major[rank]()
+    var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(in_size)
+    var in_host = LayoutTensor[dtype, layout](
+        in_host_ptr,
+        RuntimeLayout[layout].row_major(in_shape),
+    )
+    var out_idxs_host_ptr = UnsafePointer[Scalar[output_type]].alloc(out_size)
+    var out_idxs_host = LayoutTensor[output_type, layout](
+        out_idxs_host_ptr,
+        RuntimeLayout[layout].row_major(out_shape),
+    )
 
     # Fill the buffer with consecutive values
-    fill_fn[rank](in_buffer.to_layout_tensor())
+    fill_fn[rank](in_host)
 
-    var device_in = DeviceNDBuffer[dtype, rank](in_shape, ctx=ctx)
-    var device_out_idxs = DeviceNDBuffer[output_type, rank](out_shape, ctx=ctx)
+    # Allocate device buffers
+    var device_in = ctx.enqueue_create_buffer[dtype](in_size)
+    var device_out_idxs = ctx.enqueue_create_buffer[output_type](out_size)
 
-    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+    ctx.enqueue_copy(device_in, in_host_ptr)
+
+    # Create device LayoutTensors
+    var device_in_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
+        device_in.unsafe_ptr(),
+        RuntimeLayout[layout].row_major(in_shape),
+    )
+    var device_out_tensor = LayoutTensor[output_type, layout, MutAnyOrigin](
+        device_out_idxs.unsafe_ptr(),
+        RuntimeLayout[layout].row_major(out_shape),
+    )
 
     @parameter
     if largest:
         argmax_gpu(
             ctx,
-            device_in.to_layout_tensor(),
-            device_out_idxs.to_layout_tensor(),
+            device_in_tensor,
+            device_out_tensor,
         )
     else:
         argmin_gpu(
             ctx,
-            device_in.to_layout_tensor(),
-            device_out_idxs.to_layout_tensor(),
+            device_in_tensor,
+            device_out_tensor,
         )
 
-    ctx.enqueue_copy(out_idxs.to_layout_tensor().ptr, device_out_idxs.buffer)
+    ctx.enqueue_copy(out_idxs_host_ptr, device_out_idxs)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var out_idxs_cpu = HostNDBuffer[DType.int64, rank](out_shape)
+    var out_idxs_cpu_ptr = UnsafePointer[Scalar[DType.int64]].alloc(out_size)
+    var out_idxs_cpu = LayoutTensor[DType.int64, layout](
+        out_idxs_cpu_ptr,
+        RuntimeLayout[layout].row_major(out_shape),
+    )
 
     @parameter
     if largest:
         argmax(
-            in_buffer.to_layout_tensor(),
+            in_host,
             rank - 1,
-            out_idxs_cpu.to_layout_tensor(),
+            out_idxs_cpu,
         )
     else:
         argmin(
-            in_buffer.to_layout_tensor(),
+            in_host,
             rank - 1,
-            out_idxs_cpu.to_layout_tensor(),
+            out_idxs_cpu,
         )
 
-    for i in range(out_idxs_cpu.tensor.num_elements()):
+    for i in range(out_size):
         assert_equal(
-            out_idxs.tensor.data[i],
-            out_idxs_cpu.tensor.data[i].cast[output_type](),
+            out_idxs_host_ptr[i],
+            out_idxs_cpu_ptr[i].cast[output_type](),
         )
 
-    _ = device_in
-    _ = device_out_idxs
+    # Cleanup host memory
+    in_host_ptr.free()
+    out_idxs_host_ptr.free()
+    out_idxs_cpu_ptr.free()
+
+    # Cleanup device buffers
+    _ = device_in^
+    _ = device_out_idxs^
 
 
 fn _test_argmaxmin_gpu_helper_2[

@@ -28,18 +28,19 @@ from gpu import (
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host.dim import Dim
-from random import Random
+from gpu.memory import AddressSpace, external_memory
 from layout import (
     UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
 )
-from math import ceildiv, gcd
+from math import ceildiv, gcd, exp
 from memory import stack_allocation
 from memory import LegacyUnsafePointer as UnsafePointer
 from os import Atomic
-from sys import simd_width_of, size_of, bit_width_of
+from random import Random
+from sys import align_of, bit_width_of, simd_width_of, size_of
 
 
 @always_inline
@@ -412,7 +413,7 @@ fn device_sampling_from_prob[
 
 
 @register_passable("trivial")
-struct ValueCount[T: DType](Defaultable, ImplicitlyCopyable, Movable):
+struct ValueCount[T: DType](Defaultable, ImplicitlyCopyable):
     """A struct that holds a value and a count, used for block reductions.
 
     This is useful for computing both the sum of values and the count
@@ -852,3 +853,313 @@ fn topk_sampling_from_prob[
         dispatch_vec_size[True]()
     else:
         dispatch_vec_size[False]()
+
+
+fn TopKSoftmaxSampleKernel[
+    block_size: Int,
+    vec_size: Int,
+    dtype: DType,
+    out_idx_type: DType,
+    logits_layout: Layout,
+    sampled_indices_layout: Layout,
+](
+    logits: LayoutTensor[dtype, logits_layout, MutAnyOrigin],
+    sampled_indices: LayoutTensor[
+        mut=True, out_idx_type, sampled_indices_layout, MutAnyOrigin
+    ],
+    top_k_arr: UnsafePointer[Scalar[out_idx_type]],
+    top_k_val: Int,
+    temperature_val: Float32,
+    temperature: UnsafePointer[Float32],
+    seed_val: UInt64,
+    seed: UnsafePointer[UInt64],
+    d: Int,
+):
+    var bx = Int(block_idx.x)
+    var tx = Int(thread_idx.x)
+    var row_idx = bx
+
+    var logits_ptr = logits.ptr + bx * d
+
+    comptime row_layout = Layout.row_major(1, UNKNOWN_VALUE)
+    var logits_row = LayoutTensor[dtype, row_layout, MutAnyOrigin](
+        logits_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1})
+    )
+
+    var k = top_k_val
+    if top_k_arr:
+        k = Int(top_k_arr[bx])
+    var temp_val = temperature_val
+    if temperature:
+        temp_val = max(temperature[bx], 1e-6)
+
+    # Allocate shared memory for caching top-k elements.
+    # Round up to ensure proper alignment for Int array.
+    var k_rounded = ceildiv(k, WARP_SIZE) * WARP_SIZE
+
+    var s_vals = external_memory[
+        Float32,
+        address_space = AddressSpace.SHARED,
+        alignment = align_of[Float32](),
+    ]()
+    var s_idxs = (s_vals + k_rounded).bitcast[Int]()
+    var s_count = stack_allocation[
+        1, Int, address_space = AddressSpace.SHARED
+    ]()
+    if tx == 0:
+        s_count[0] = 0
+
+    # PHASE 1: Find pivot (k-th largest) via ternary search.
+    var pivot = Float64(Float32.MIN)
+    var max_logit = Float32.MIN
+    var logits_vec = SIMD[DType.float32, vec_size]()
+
+    if k < d:
+        var min_max = get_min_max_value[vec_size, block_size](
+            logits.ptr, Int(row_idx), d
+        )
+        var min_val, max_val = min_max[0], min_max[1]
+
+        max_logit = max_val
+
+        # Initialize ternary search bounds.
+        var low = Float64(
+            min_val - 1 if min_val != Float32.MIN else Float32.MIN
+        )
+        var high = Float64(max_val)
+
+        while True:
+            var pivot_0 = (high + 2 * low) / 3
+            var pivot_1 = (2 * high + low) / 3
+
+            var aggregate_gt_pivot_0: Int32 = 0
+            var aggregate_gt_pivot_1: Int32 = 0
+            var min_gt_low = Float32(high)
+            var max_le_high = Float32(low)
+
+            for i in range(ceildiv(d, block_size * vec_size)):
+                if (i * block_size + Int(tx)) * vec_size < d:
+                    logits_vec = logits_row.load[width=vec_size](
+                        0, i * block_size * vec_size + tx * vec_size
+                    ).cast[DType.float32]()
+
+                var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
+                var probs_gt_pivot_1_count = SIMD[DType.int32, vec_size]()
+
+                @parameter
+                for j in range(vec_size):
+                    var idx = (i * block_size + Int(tx)) * vec_size + j
+
+                    probs_gt_pivot_0_count[j] = 1 if (
+                        Float64(logits_vec[j]) > pivot_0 and idx < d
+                    ) else 0
+                    probs_gt_pivot_1_count[j] = 1 if (
+                        Float64(logits_vec[j]) > pivot_1 and idx < d
+                    ) else 0
+
+                    if Float64(logits_vec[j]) > low and idx < d:
+                        min_gt_low = min(min_gt_low, logits_vec[j])
+                    if Float64(logits_vec[j]) <= high and idx < d:
+                        max_le_high = max(max_le_high, logits_vec[j])
+
+                var thread_count_0 = probs_gt_pivot_0_count.reduce_add()
+                var thread_count_1 = probs_gt_pivot_1_count.reduce_add()
+
+                aggregate_gt_pivot_0 += block.sum[
+                    block_size=block_size, broadcast=True
+                ](thread_count_0)
+                aggregate_gt_pivot_1 += block.sum[
+                    block_size=block_size, broadcast=True
+                ](thread_count_1)
+
+            min_gt_low = block.min[block_size=block_size, broadcast=True](
+                min_gt_low
+            )
+            max_le_high = block.max[block_size=block_size, broadcast=True](
+                max_le_high
+            )
+
+            if aggregate_gt_pivot_1 >= k:
+                low = pivot_1
+            elif aggregate_gt_pivot_0 >= k:
+                low = pivot_0
+                high = min(pivot_1, Float64(max_le_high))
+            else:
+                high = min(pivot_0, Float64(max_le_high))
+
+            if min_gt_low == max_le_high:
+                break
+
+        pivot = low
+    else:
+        # If k >= d, include all elements.
+        var min_max = get_min_max_value[vec_size, block_size](
+            logits.ptr, Int(row_idx), d
+        )
+        max_logit = min_max[1]
+
+    barrier()
+
+    # PHASE 2: Compute softmax sum and cache top-k elements.
+
+    # All threads cooperatively collect elements > pivot.
+    var thread_sum = Float32(0.0)
+
+    # Use atomic counter in shared memory for write position.
+    var s_write_idx = stack_allocation[
+        1, Int32, address_space = AddressSpace.SHARED
+    ]()
+    if tx == 0:
+        s_write_idx[0] = Int32(0)
+
+    barrier()
+
+    # Each thread processes elements and atomically writes to shared memory.
+    for i in range(tx, d, block_size):
+        var logit = logits_row.load[width=1](0, i).cast[DType.float32]()
+        if Float64(logit) > pivot:
+            var exp_val = exp((logit - max_logit) / temp_val)
+
+            # Atomically get write position and store.
+            var pos = Int(Atomic.fetch_add(s_write_idx, Int32(1)))
+            if pos < k:
+                s_vals[pos] = exp_val
+                s_idxs[pos] = i
+                thread_sum += exp_val
+
+    var block_sum = block.sum[block_size=block_size, broadcast=True](thread_sum)
+
+    barrier()
+
+    if tx == 0:
+        s_count[0] = min(Int(s_write_idx[0]), k)
+
+    barrier()
+
+    # PHASE 3: Sampling.
+    if tx == 0:
+        var seed_val = seed_val
+        if seed:
+            seed_val = seed[bx]
+        var rng_state = Random(seed=seed_val)
+        var rng = rng_state.step_uniform()
+        var r = block_sum * rng[0]
+
+        var cached_count = s_count[0]
+        for ki in range(cached_count):
+            var exp_val = s_vals[ki]
+            r -= exp_val
+            if r <= 0.0 or ki == cached_count - 1:
+                sampled_indices[bx] = Scalar[out_idx_type](s_idxs[ki])
+                return
+
+
+fn topk_softmax_sample[
+    dtype: DType, out_idx_type: DType, block_size: Int = 1024
+](
+    ctx: DeviceContext,
+    logits: LayoutTensor[dtype, **_],
+    sampled_indices: LayoutTensor[mut=True, out_idx_type, **_],
+    top_k_val: Int,
+    temperature_val: Float32 = 1.0,
+    seed_val: UInt64 = 0,
+    top_k_arr: OptionalReg[
+        LayoutTensor[
+            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        ]
+    ] = None,
+    temperature: OptionalReg[
+        LayoutTensor[
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        ]
+    ] = None,
+    seed: OptionalReg[
+        LayoutTensor[
+            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        ]
+    ] = None,
+) raises:
+    """Samples token indices from top-K logits using softmax probabilities.
+
+    This kernel performs single-pass top-K selection and categorical sampling:
+    1. Finds the k-th largest logit via ternary search.
+    2. Computes softmax over top-K elements and caches them in shared memory.
+    3. Samples a single token index from the categorical distribution.
+
+    Parameters:
+        dtype: The data type of the input logits tensor.
+        out_idx_type: The data type of the output sampled indices.
+        block_size: The number of threads per block (default is 1024).
+
+    Args:
+        ctx: DeviceContext
+            The context for GPU execution.
+        logits:
+            Input logits tensor with shape [batch_size, vocab_size].
+        sampled_indices:
+            Output buffer for sampled token indices with shape [batch_size].
+        top_k_val: Int
+            Default number of top elements to sample from for each batch element.
+        temperature_val: Float32
+            Temperature for softmax scaling (default is 1.0).
+        seed_val: UInt64
+            Seed for the random number generator (default is 0).
+        top_k_arr:
+            Optional per-batch top-K values. If provided, overrides top_k_val
+            for each batch element.
+        temperature:
+            Optional per-batch temperature values. If provided, overrides
+            temperature_val for each batch element.
+        seed:
+            Optional per-batch seed values. If provided, overrides seed_val
+            for each batch element.
+    """
+    constrained[logits.rank == 2, "logits rank must be 2"]()
+    constrained[sampled_indices.rank == 1, "sampled_indices rank must be 1"]()
+
+    var shape = logits.runtime_layout.shape.value.canonicalize()
+    var batch_size = shape[0]
+    var d = shape[1]
+
+    var out_shape = sampled_indices.runtime_layout.shape.value.canonicalize()
+    if shape[0] != out_shape[0]:
+        raise Error("sampled_indices shape must be [batch_size]")
+
+    # Computes optimal vectorization width: find the largest vec_size that divides
+    # both max hardware vector size (16 bytes / element size) and dim d.
+    var vec_size = gcd(16 // size_of[dtype](), d)
+
+    var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
+    var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
+
+    @parameter
+    fn launch_kernel[vec_size: Int]() raises:
+        comptime kernel = TopKSoftmaxSampleKernel[
+            block_size,
+            vec_size,
+            dtype,
+            out_idx_type,
+            logits.layout,
+            sampled_indices.layout,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
+            logits,
+            sampled_indices,
+            top_k_arr.value().to_device_buffer(ctx),
+            top_k_val,
+            temperature_val,
+            temperature.value().to_device_buffer(ctx),
+            seed_val,
+            seed.value().to_device_buffer(ctx),
+            d,
+            grid_dim=batch_size,
+            block_dim=block_size,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=pdl_launch_attributes(),
+        )
+
+    # Runtime dispatch to compile-time parameter.
+    @parameter
+    for param_vec_size in [16, 8, 4, 2, 1]:
+        if vec_size == param_vec_size:
+            return launch_kernel[param_vec_size]()

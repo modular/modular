@@ -1,6 +1,8 @@
 load("@rules_mojo//mojo:mojo_shared_library.bzl", "mojo_shared_library")
 load("//bazel:api.bzl", "modular_py_test", "requirement")
 
+package(default_visibility = ["//visibility:private"])
+
 mojo_shared_library(
     name = "mojo_module",
     testonly = True,

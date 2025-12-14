@@ -51,7 +51,7 @@ fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
     return bitcast[DType.uint32, 2](res)
 
 
-struct Random[rounds: Int = 10](Copyable, Movable):
+struct Random[rounds: Int = 10](Copyable):
     """A high-performance random number generator using the Philox algorithm.
 
     The Philox algorithm is a counter-based random number generator designed for parallel
@@ -167,7 +167,7 @@ struct Random[rounds: Int = 10](Copyable, Movable):
         )
 
 
-struct NormalRandom[rounds: Int = 10](Copyable, Movable):
+struct NormalRandom[rounds: Int = 10](Copyable):
     """A high-performance random number generator using the Box-Muller transform.
 
     The Box-Muller transform is a method for generating pairs of independent standard normal

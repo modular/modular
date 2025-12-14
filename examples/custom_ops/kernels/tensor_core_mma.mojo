@@ -156,16 +156,16 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
-                    alias BM = 64
-                    alias BN = 64
-                    alias BK = 8
+                    comptime BM = 64
+                    comptime BN = 64
+                    comptime BK = 8
                     # # AMD supports 16x16x16 and 32x32x8 mma instructions for bf16
-                    alias MMA_M = 32
-                    alias MMA_N = 32
-                    alias MMA_K = 8
-                    alias NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
-                    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-                    alias native_kernel = naive_tensor[
+                    comptime MMA_M = 32
+                    comptime MMA_N = 32
+                    comptime MMA_K = 8
+                    comptime NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
+                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime native_kernel = naive_tensor[
                         a.dtype,
                         output.dtype,
                         a_layout.layout,
@@ -192,16 +192,16 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
-                    alias BM = 64
-                    alias BN = 64
-                    alias BK = 8
+                    comptime BM = 64
+                    comptime BN = 64
+                    comptime BK = 8
                     # # AMD supports 16x16x16 and 32x32x8 mma instructions for bf16
-                    alias MMA_M = 32
-                    alias MMA_N = 32
-                    alias MMA_K = 8
-                    alias NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
-                    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-                    alias basic_shared_mem_kernel = basic_shared_mem[
+                    comptime MMA_M = 32
+                    comptime MMA_N = 32
+                    comptime MMA_K = 8
+                    comptime NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
+                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime basic_shared_mem_kernel = basic_shared_mem[
                         a.dtype,
                         output.dtype,
                         a_layout.layout,
@@ -228,18 +228,18 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
-                    alias BM = 256
-                    alias BN = 256
-                    alias BK = 64
-                    alias WM = BM // 2
-                    alias WN = BN // 2
+                    comptime BM = 256
+                    comptime BN = 256
+                    comptime BK = 64
+                    comptime WM = BM // 2
+                    comptime WN = BN // 2
                     # # AMD supports 16x16x16 and 32x32x8 mma instructions for bf16
-                    alias MMA_M = 32
-                    alias MMA_N = 32
-                    alias MMA_K = 8
-                    alias NUM_WARPS = (BM // WM) * (BN // WN)
-                    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-                    alias multi_block_tiled_kernel = multi_block_tiled[
+                    comptime MMA_M = 32
+                    comptime MMA_N = 32
+                    comptime MMA_K = 8
+                    comptime NUM_WARPS = (BM // WM) * (BN // WN)
+                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime multi_block_tiled_kernel = multi_block_tiled[
                         a.dtype,
                         output.dtype,
                         a_layout.layout,
@@ -268,18 +268,18 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
-                    alias BM = 256
-                    alias BN = 256
-                    alias BK = 64
-                    alias WM = BM // 2
-                    alias WN = BN // 2
+                    comptime BM = 256
+                    comptime BN = 256
+                    comptime BK = 64
+                    comptime WM = BM // 2
+                    comptime WN = BN // 2
                     # # AMD supports 16x16x16 and 32x32x8 mma instructions for bf16
-                    alias MMA_M = 32
-                    alias MMA_N = 32
-                    alias MMA_K = 8
-                    alias NUM_WARPS = (BM // WM) * (BN // WN)
-                    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-                    alias scheduler_hints_kernel = scheduler_hints[
+                    comptime MMA_M = 32
+                    comptime MMA_N = 32
+                    comptime MMA_K = 8
+                    comptime NUM_WARPS = (BM // WM) * (BN // WN)
+                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime scheduler_hints_kernel = scheduler_hints[
                         a.dtype,
                         output.dtype,
                         a_layout.layout,
@@ -308,18 +308,18 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
-                    alias BM = 128
-                    alias BN = 128
-                    alias BK = 32
-                    alias WM = BM // 2
-                    alias WN = BN // 2
+                    comptime BM = 128
+                    comptime BN = 128
+                    comptime BK = 32
+                    comptime WM = BM // 2
+                    comptime WN = BN // 2
                     # # AMD supports 16x16x16 and 32x32x8 mma instructions for bf16
-                    alias MMA_M = 32
-                    alias MMA_N = 32
-                    alias MMA_K = 8
-                    alias NUM_WARPS = (BM // WM) * (BN // WN)
-                    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-                    alias double_buffer_kernel = double_buffer[
+                    comptime MMA_M = 32
+                    comptime MMA_N = 32
+                    comptime MMA_K = 8
+                    comptime NUM_WARPS = (BM // WM) * (BN // WN)
+                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime double_buffer_kernel = double_buffer[
                         a.dtype,
                         output.dtype,
                         a_layout.layout,
@@ -348,20 +348,20 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
-                    alias BM = 256
-                    alias BN = 256
-                    alias BK = 64
-                    alias WM = BM // 2
-                    alias WN = BN // 2
-                    alias WK = BK
+                    comptime BM = 256
+                    comptime BN = 256
+                    comptime BK = 64
+                    comptime WM = BM // 2
+                    comptime WN = BN // 2
+                    comptime WK = BK
                     # # AMD supports 16x16x16 and 32x32x8 mma instructions for bf16
-                    alias MMA_M = 32
-                    alias MMA_N = 32
-                    alias MMA_K = 8
+                    comptime MMA_M = 32
+                    comptime MMA_N = 32
+                    comptime MMA_K = 8
 
-                    alias NUM_WARPS = (BM // WM) * (BN // WN)
-                    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-                    alias mma_tile_buffers_kernel = mma_tile_buffers[
+                    comptime NUM_WARPS = (BM // WM) * (BN // WN)
+                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime mma_tile_buffers_kernel = mma_tile_buffers[
                         a.dtype,
                         output.dtype,
                         a_layout.layout,
@@ -400,17 +400,17 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                 gpu_ctx.synchronize()
 
-                alias BM = 32
-                alias BN = 32
-                alias BK = 32
-                alias WM = BM // 2
-                alias WN = BN // 2
-                alias MMA_M = 16
-                alias MMA_N = 16
-                alias MMA_K = 16
-                alias NUM_WARPS = (BM // WM) * (BN // WN)
-                alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-                alias naive_tensor_kernel = naive_tensor[
+                comptime BM = 32
+                comptime BN = 32
+                comptime BK = 32
+                comptime WM = BM // 2
+                comptime WN = BN // 2
+                comptime MMA_M = 16
+                comptime MMA_N = 16
+                comptime MMA_K = 16
+                comptime NUM_WARPS = (BM // WM) * (BN // WN)
+                comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                comptime naive_tensor_kernel = naive_tensor[
                     a.dtype,
                     output.dtype,
                     a_layout.layout,
@@ -492,14 +492,14 @@ fn naive_tensor[
     The kernel assumes that the input matrices A and B are compatible for matrix multiplication,
     i.e., the number of columns in A equals the number of rows in B.
     """
-    alias M = C.shape[0]()  # Number of rows in matrix C
-    alias N = C.shape[1]()  # Number of columns in matrix C
-    alias K = A.shape[1]()  # Number of columns in matrix A
+    comptime M = C.shape[0]()  # Number of rows in matrix C
+    comptime N = C.shape[1]()  # Number of columns in matrix C
+    comptime K = A.shape[1]()  # Number of columns in matrix A
 
     # Calculate thread configuration from compile-time constants
-    alias NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
-    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-    alias simd_width = simd_width_of[input_type]()
+    comptime NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
+    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+    comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
@@ -514,7 +514,7 @@ fn naive_tensor[
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    alias frag_size = MMA_M * MMA_N // WARP_SIZE
+    comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate only small register tile for accumulating partial results
     c_reg = (
@@ -552,7 +552,7 @@ fn naive_tensor[
 
     # Write the final accumulated results to the output matrix (f32 -> f32)
     # Manual store: copy register values directly to global memory
-    alias warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
+    comptime warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
 
     var dst = C_warp_tile.vectorize[4, 1]().distribute[warp_layout](lane_id())
     dst.copy_from(c_reg.vectorize[1, 4]())
@@ -608,14 +608,14 @@ fn basic_shared_mem[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    alias M = C.shape[0]()  # Number of rows in matrix C
-    alias N = C.shape[1]()  # Number of columns in matrix C
-    alias K = A.shape[1]()  # Number of columns in matrix A
+    comptime M = C.shape[0]()  # Number of rows in matrix C
+    comptime N = C.shape[1]()  # Number of columns in matrix C
+    comptime K = A.shape[1]()  # Number of columns in matrix A
 
     # Calculate thread configuration from compile-time constants
-    alias NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
-    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-    alias simd_width = simd_width_of[input_type]()
+    comptime NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
+    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+    comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
@@ -644,7 +644,7 @@ fn basic_shared_mem[
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    alias frag_size = MMA_M * MMA_N // WARP_SIZE
+    comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
     c_reg = (
@@ -663,8 +663,8 @@ fn basic_shared_mem[
         # Use separate optimized thread layouts for A and B tiles
         # A_sram_tile: 64x8, so use 32x8 thread layout (256 threads total)
         # B_sram_tile: 8x64, so use 8x32 thread layout (256 threads total)
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)  # 32x8
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)  # 8x32
+        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)  # 32x8
+        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)  # 8x32
 
         # Get the tiles of A and B for the current iteration
         A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
@@ -692,7 +692,7 @@ fn basic_shared_mem[
 
     # Write the final accumulated results to the output matrix (f32 -> f32)
     # Manual store: copy register values directly to global memory
-    alias warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
+    comptime warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
 
     var dst = C_warp_tile.vectorize[4, 1]().distribute[warp_layout](lane_id())
     dst.copy_from(c_reg.vectorize[1, 4]())
@@ -752,14 +752,14 @@ fn multi_block_tiled[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    alias M = C.shape[0]()  # Number of rows in matrix C
-    alias N = C.shape[1]()  # Number of columns in matrix C
-    alias K = A.shape[1]()  # Number of columns in matrix A
+    comptime M = C.shape[0]()  # Number of rows in matrix C
+    comptime N = C.shape[1]()  # Number of columns in matrix C
+    comptime K = A.shape[1]()  # Number of columns in matrix A
 
     # Calculate thread configuration from compile-time constants
-    alias NUM_WARPS = (BM // WM) * (BN // WN)
-    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-    alias simd_width = simd_width_of[input_type]()
+    comptime NUM_WARPS = (BM // WM) * (BN // WN)
+    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+    comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
@@ -794,7 +794,7 @@ fn multi_block_tiled[
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    alias frag_size = MMA_M * MMA_N // WARP_SIZE
+    comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
     c_reg = (
@@ -809,7 +809,7 @@ fn multi_block_tiled[
     )
 
     # Thread layout for memory transfers
-    alias load_layout = Layout.row_major(
+    comptime load_layout = Layout.row_major(
         16, 16
     )  # 256 threads - full utilization
 
@@ -865,7 +865,7 @@ fn multi_block_tiled[
             var c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
 
             # Manual store: copy register values directly to global memory
-            alias warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
+            comptime warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
 
             var dst = C_mma_tile.vectorize[4, 1]().distribute[warp_layout](
                 lane_id()
@@ -927,14 +927,14 @@ fn scheduler_hints[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    alias M = C.shape[0]()  # Number of rows in matrix C
-    alias N = C.shape[1]()  # Number of columns in matrix C
-    alias K = A.shape[1]()  # Number of columns in matrix A
+    comptime M = C.shape[0]()  # Number of rows in matrix C
+    comptime N = C.shape[1]()  # Number of columns in matrix C
+    comptime K = A.shape[1]()  # Number of columns in matrix A
 
     # Calculate thread configuration from compile-time constants
-    alias NUM_WARPS = (BM // WM) * (BN // WN)
-    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-    alias simd_width = simd_width_of[input_type]()
+    comptime NUM_WARPS = (BM // WM) * (BN // WN)
+    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+    comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
@@ -969,7 +969,7 @@ fn scheduler_hints[
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    alias frag_size = MMA_M * MMA_N // WARP_SIZE
+    comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -985,7 +985,7 @@ fn scheduler_hints[
     )
 
     # Thread layout for memory transfers
-    alias load_layout = Layout.row_major(
+    comptime load_layout = Layout.row_major(
         16, 16
     )  # 256 threads - full utilization
 
@@ -1064,7 +1064,7 @@ fn scheduler_hints[
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_tile = c_reg.tile[1, frag_size](mma_m, mma_n)
 
-            alias warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
+            comptime warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
 
             var dst = C_mma_tile.vectorize[4, 1]().distribute[warp_layout](
                 lane_id()
@@ -1126,14 +1126,14 @@ fn double_buffer[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    alias M = C.shape[0]()  # Number of rows in matrix C
-    alias N = C.shape[1]()  # Number of columns in matrix C
-    alias K = A.shape[1]()  # Number of columns in matrix A
+    comptime M = C.shape[0]()  # Number of rows in matrix C
+    comptime N = C.shape[1]()  # Number of columns in matrix C
+    comptime K = A.shape[1]()  # Number of columns in matrix A
 
     # Calculate thread configuration from compile-time constants
-    alias NUM_WARPS = (BM // WM) * (BN // WN)
-    alias NUM_THREADS = NUM_WARPS * WARP_SIZE
-    alias simd_width = simd_width_of[input_type]()
+    comptime NUM_WARPS = (BM // WM) * (BN // WN)
+    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+    comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
@@ -1180,7 +1180,7 @@ fn double_buffer[
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    alias frag_size = MMA_M * MMA_N // WARP_SIZE
+    comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -1195,7 +1195,7 @@ fn double_buffer[
         .fill(0)
     )
     # Thread layout for memory transfers
-    alias load_layout = Layout.row_major(
+    comptime load_layout = Layout.row_major(
         32, 8
     )  # 256 threads - full utilization
 
@@ -1307,7 +1307,7 @@ fn double_buffer[
             var c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
 
             # Manual store: copy register values directly to global memory
-            alias warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
+            comptime warp_layout = Layout.row_major(MMA_M // frag_size, MMA_N)
 
             var dst = C_mma_tile.vectorize[4, 1]().distribute[warp_layout](
                 lane_id()
@@ -1365,7 +1365,7 @@ fn mma_tile_buffers[
     and K-group processing.
     """
     # Validate input constraints
-    alias transpose_b = True
+    comptime transpose_b = True
     constrained[
         transpose_b, "Transpose b must be true for this implementation"
     ]()
@@ -1374,29 +1374,29 @@ fn mma_tile_buffers[
     var M = A.dim[0]()
     var N = B.dim[0 if transpose_b else 1]()
     var K = B.dim[1 if transpose_b else 0]()
-    alias stride = B.stride[0]()
+    comptime stride = B.stride[0]()
 
     # Type alias for accumulator type
-    alias accum_type = DType.float32
+    comptime accum_type = DType.float32
 
     # SIMD and vectorization parameters
-    alias simd_width = simd_width_of[input_type]()
+    comptime simd_width = simd_width_of[input_type]()
 
     # Warp organization
-    alias num_warps_m = UInt(BM // WM)
-    alias num_warps_n = UInt(BN // WN)
-    alias num_warps_k = UInt(BK // WK)
+    comptime num_warps_m = UInt(BM // WM)
+    comptime num_warps_n = UInt(BN // WN)
+    comptime num_warps_k = UInt(BK // WK)
 
-    alias warps_per_block = num_warps_m * num_warps_n * num_warps_k
+    comptime warps_per_block = num_warps_m * num_warps_n * num_warps_k
 
     # MMA instruction tiling
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    comptime num_m_mmas = WM // MMA_M
+    comptime num_n_mmas = WN // MMA_N
 
     # K dimension tiling
-    alias k_group_size = 16 // simd_width
-    alias k_tile_size = MMA_K * k_group_size
-    alias num_k_tiles = WK // k_tile_size
+    comptime k_group_size = 16 // simd_width
+    comptime k_tile_size = MMA_K * k_group_size
+    comptime num_k_tiles = WK // k_tile_size
 
     # Thread and warp indices
     var warp_id = warp_id()
@@ -1417,19 +1417,19 @@ fn mma_tile_buffers[
         # | T68 T69 T70 T71 | T84 T85 T86 T87 |
         # | T72 T73 T74 T75 | T88 T89 T90 T91 |
         # | T76 T77 T78 T79 | T92 T93 T94 T95 |
-        alias inner_block_size = 16
-        alias inner_block_cols = k_tile_size // simd_width  # 4/2
-        alias inner_block_rows = inner_block_size // inner_block_cols  # 4/8
+        comptime inner_block_size = 16
+        comptime inner_block_cols = k_tile_size // simd_width  # 4/2
+        comptime inner_block_rows = inner_block_size // inner_block_cols  # 4/8
 
-        alias base_layout = Layout.row_major(
+        comptime base_layout = Layout.row_major(
             inner_block_rows, inner_block_cols
         )  # (4, 4) or (8, 2)
 
-        alias num_repeats_col = BK // k_tile_size  # 2/4
-        alias outer_block_size = num_repeats_col * inner_block_size  # 32/64
-        alias num_repeats_row = 256 // outer_block_size  # 8/4
+        comptime num_repeats_col = BK // k_tile_size  # 2/4
+        comptime outer_block_size = num_repeats_col * inner_block_size  # 32/64
+        comptime num_repeats_row = 256 // outer_block_size  # 8/4
 
-        alias tiler_layout = Layout.row_major(  # (8, 2) or (4, 4)
+        comptime tiler_layout = Layout.row_major(  # (8, 2) or (4, 4)
             num_repeats_row,
             num_repeats_col,
         )
@@ -1466,16 +1466,16 @@ fn mma_tile_buffers[
         # └─────────────────────────────────────────────────────────────────────────┘
         # stride between blocks = block_rows x k_tile_size = 64 x 32 = 2048
 
-        alias base_layout = Layout.row_major(block_rows, k_tile_size)
-        alias num_repeats = BK // k_tile_size
-        alias tiler_layout = Layout.row_major(1, num_repeats)
+        comptime base_layout = Layout.row_major(block_rows, k_tile_size)
+        comptime num_repeats = BK // k_tile_size
+        comptime tiler_layout = Layout.row_major(1, num_repeats)
 
         # return blocked_product(base_layout, tiler_layout, coalesce_output=True)
         return blocked_product(base_layout, tiler_layout)
 
     # AMD TensorCore operator for matrix multiplication
-    alias mma_shape = IndexList[3](MMA_M, MMA_N, MMA_K)
-    alias amd_mma = AMD_MMA[
+    comptime mma_shape = IndexList[3](MMA_M, MMA_N, MMA_K)
+    comptime amd_mma = AMD_MMA[
         out_type=accum_type,
         in_type=input_type,
         shape=mma_shape,
@@ -1515,9 +1515,9 @@ fn mma_tile_buffers[
 
     # Calculate the correct number of accumulator registers based on MMA instruction shape
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    alias frag_size = (MMA_M * MMA_N) // WARP_SIZE
+    comptime frag_size = (MMA_M * MMA_N) // WARP_SIZE
 
-    alias c_reg_tile_type = LayoutTensor[
+    comptime c_reg_tile_type = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
         MutAnyOrigin,
@@ -1640,13 +1640,13 @@ fn mma_tile_buffers[
 
     @parameter
     if MMA_M == 16:
-        alias output_thread_layout = Layout.col_major(16, 4)
+        comptime output_thread_layout = Layout.col_major(16, 4)
         copy_local_to_dram[
             output_thread_layout, thread_scope = ThreadScope.WARP
         ](c_reg_tile.vectorize[1, 4](), c_reg_tile.vectorize[1, 4](), C)
 
     else:
-        alias output_thread_layout = Layout.col_major(32, 2)
+        comptime output_thread_layout = Layout.col_major(32, 2)
         copy_local_to_dram_32_32_8[
             output_thread_layout, thread_scope = ThreadScope.WARP
         ](c_warp_tile.vectorize[1, 4](), c_reg_tile.vectorize[1, 4](), C)

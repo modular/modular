@@ -318,7 +318,6 @@ def test_tma_wgmma[
     )
     b_tma_op = create_tma_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 

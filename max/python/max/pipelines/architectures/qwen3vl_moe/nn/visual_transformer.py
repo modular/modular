@@ -575,7 +575,6 @@ class VisionPatchMerger(Module, Shardable):
         self.input_dim = hidden_size * (spatial_merge_size**2)
         self.use_postshuffle_norm = use_postshuffle_norm
 
-        # Create RMSNorm layer
         self.norm = LayerNorm(
             dims=self.input_dim
             if self.use_postshuffle_norm
@@ -585,7 +584,6 @@ class VisionPatchMerger(Module, Shardable):
             eps=1e-6,
         )
 
-        # Create individual MLP layers
         self.linear_fc1 = Linear(
             in_dim=self.input_dim,
             out_dim=self.input_dim,
@@ -619,7 +617,7 @@ class VisionPatchMerger(Module, Shardable):
             self.linear_fc2.sharding_strategy = ShardingStrategy.replicate(
                 strategy.num_devices
             )
-        else:
+        elif strategy.is_tensor_parallel:
             self.norm.sharding_strategy = ShardingStrategy.replicate(
                 strategy.num_devices
             )
@@ -629,6 +627,10 @@ class VisionPatchMerger(Module, Shardable):
             )
             self.linear_fc2.sharding_strategy = ShardingStrategy.columnwise(
                 strategy.num_devices
+            )
+        else:
+            raise ValueError(
+                "Only replicate or tensor parallel sharding strategies are supported for VisionPatchMerger"
             )
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[VisionPatchMerger]:
@@ -654,14 +656,12 @@ class VisionPatchMerger(Module, Shardable):
             shards.append(sharded)
         return shards
 
-    def __call__(
-        self, x: TensorValue, signal_buffers: Sequence[BufferValue]
-    ) -> TensorValue:
+    def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a vision patch merger to the input tensor.
         Args:
             x: TensorValue of shape (n_patches, hidden_size)
-            signal_buffers: Communication buffers for distributed execution.
-            signal_buffers: Sequence[BufferValue]
+        Returns:
+            TensorValue of shape (n_patches // (spatial_merge_size^2), out_hidden_size)
         """
         n_patches, hidden_size = x.shape
         factor = self.input_dim // self.hidden_size
@@ -836,14 +836,17 @@ class VisionTransformer(Module):
 
         Returns:
             Sequence[TensorValue] : Image embeddings tensor, one per device, flattened for language model.
-            deepstack_feature_lists: List of deepstack feature lists, one per device.
+            deepstack_feature_lists: List of deepstack feature lists, one per layer.
+                deepstack_feature_lists[layer_idx] is a list of tensors (one per device) for that layer.
 
         Shapes:
             Input: pixel_values shape = (seq_len, in_channels * temporal_patch_size * patch_size * patch_size)
                 where seq_len = no. of patches in all images and videos.
-            Output: Sequence[TensorValue] each of shape (seq_len, hidden_size)
+            Output: Sequence[TensorValue] each of shape (seq_len // (spatial_merge_size^2), out_hidden_size)
+            deepstack_feature_lists: List of lists, where deepstack_feature_lists[layer_idx] contains
+                one tensor per device, each of shape (seq_len // (spatial_merge_size^2), out_hidden_size)
         """
-        # Pass input images or videos through a conv to obtain patch embeddings ordered by window_index.
+        # Pass input images or videos through a conv to obtain patch embeddings.
         hs = [
             embed(pixels)
             for embed, pixels in zip(
@@ -861,17 +864,17 @@ class VisionTransformer(Module):
         hs = [h + pos_embeds.to(h.device) for h in hs]
 
         # Compute rotary positional encodings to input patches.
-        position_embeddings_host = (
+        rotary_position_embeddings_host = (
             self.rotary_pos_emb.generate_rot_pos_embeddings(
                 rot_pos_ids=rot_pos_ids[0],
                 max_grid_size=max_grid_size[0],
                 seq_len=seq_len,
             )
         )
-        position_embeddings = [
+        rotary_position_embeddings = [
             (
-                position_embeddings_host[0].to(device),
-                position_embeddings_host[1].to(device),
+                rotary_position_embeddings_host[0].to(device),
+                rotary_position_embeddings_host[1].to(device),
             )
             for device in self.devices
         ]
@@ -881,40 +884,43 @@ class VisionTransformer(Module):
         for layer_num, blk in enumerate(self.blocks):
             hs = blk(
                 hs,
-                position_embeddings=position_embeddings,
+                position_embeddings=rotary_position_embeddings,
                 input_row_offsets=cu_seqlens,
                 max_seqlen=max_seqlen,
                 signal_buffers=signal_buffers,
             )
             if layer_num in self.deepstack_visual_indexes:
-                merger_shards = self.deepstack_merger_shards_list[
-                    self.deepstack_visual_indexes.index(layer_num)
+                deepstack_merger_idx = self.deepstack_visual_indexes.index(
+                    layer_num
+                )
+                deepstack_merger_shards = self.deepstack_merger_shards_list[
+                    deepstack_merger_idx
                 ]
-                merger_allreduce = self.deepstack_merger_allreduce_list[
-                    self.deepstack_visual_indexes.index(layer_num)
+                deepstack_merger_allreduce = (
+                    self.deepstack_merger_allreduce_list[deepstack_merger_idx]
+                )
+                deepstack_merger_outs = [
+                    deepstack_merger(h)
+                    for h, deepstack_merger in zip(
+                        hs, deepstack_merger_shards, strict=True
+                    )
                 ]
-                deepstack_feature = merger_allreduce(
-                    [
-                        merger(h, signal_buffers=signal_buffers)
-                        for h, merger in zip(hs, merger_shards, strict=True)
-                    ],
-                    signal_buffers,
+                deepstack_feature = deepstack_merger_allreduce(
+                    deepstack_merger_outs, signal_buffers
                 )
 
+                # Append the list of features (one tensor per device) for this layer.
+                # Each device's feature tensor shape = (seq_len // (spatial_merge_size^2), out_hidden_size) = (seq_len//4, 2048).
                 deepstack_feature_lists.append(deepstack_feature)
 
         # The merged features are projected via a linear layer to align with the language model's embedding space.
         # Apply per-device merger, then concatenate back in original order
-        merged = [
-            merger(h, signal_buffers=signal_buffers)
-            for merger, h in zip(self.merger_shards, hs, strict=True)
+        # h shape = (seq_len, hidden_size) = (seq_len, 1152).
+        merger_outs = [
+            merger(h) for merger, h in zip(self.merger_shards, hs, strict=True)
         ]
-        merged = self.merger_allreduce(merged, signal_buffers)
+        merger_outs = self.merger_allreduce(
+            merger_outs, signal_buffers
+        )  # (seq_len // (spatial_merge_size^2), out_hidden_size) = (seq_len//4, 2048).
 
-        # cast output to llm_dtype
-        merged = [h.cast(self.llm_dtype) for h in merged]
-
-        outputs: list[TensorValue] = []
-        for i in range(len(self.devices)):
-            outputs.append(merged[i].to(self.devices[i]))
-        return outputs, deepstack_feature_lists
+        return merger_outs, deepstack_feature_lists

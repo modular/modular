@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of
 
 # ===----------------------------------------------------------------------=== #
@@ -24,6 +23,7 @@ from sys import size_of
 
 
 comptime AnyCoroutine = __mlir_type.`!co.routine`
+"""The MLIR type representing a coroutine handle."""
 
 
 @always_inline
@@ -95,7 +95,9 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
     var _handle: AnyCoroutine
 
     @always_inline
-    fn _get_ctx[ctx_type: AnyType](self) -> UnsafePointer[ctx_type]:
+    fn _get_ctx[
+        ctx_type: AnyType
+    ](self) -> UnsafePointer[ctx_type, MutOrigin.external]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -104,16 +106,15 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         Returns:
             The coroutine context.
         """
-        constrained[
-            size_of[_CoroutineContext]() == size_of[ctx_type](),
-            "context size must be 16 bytes",
-        ]()
+        __comptime_assert (
+            size_of[_CoroutineContext]() == size_of[ctx_type]()
+        ), "context size must be 16 bytes"
         return __mlir_op.`co.get_callback_ptr`[
             _type = __mlir_type[`!kgen.pointer<`, ctx_type, `>`]
         ](self._handle)
 
     @always_inline
-    fn _set_result_slot(self, slot: UnsafePointer[Self.type, mut=True, **_]):
+    fn _set_result_slot(self, slot: UnsafePointer[mut=True, Self.type, **_]):
         __mlir_op.`co.set_byref_error_result`(self._handle, slot.address)
 
     @always_inline
@@ -179,7 +180,9 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
     var _handle: AnyCoroutine
 
     @always_inline
-    fn _get_ctx[ctx_type: AnyType](self) -> UnsafePointer[ctx_type]:
+    fn _get_ctx[
+        ctx_type: AnyType
+    ](self) -> UnsafePointer[ctx_type, MutOrigin.external]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -188,10 +191,9 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
         Returns:
             The coroutine context.
         """
-        constrained[
-            size_of[_CoroutineContext]() == size_of[ctx_type](),
-            "context size must be 16 bytes",
-        ]()
+        __comptime_assert (
+            size_of[_CoroutineContext]() == size_of[ctx_type]()
+        ), "context size must be 16 bytes"
         return __mlir_op.`co.get_callback_ptr`[
             _type = __mlir_type[`!kgen.pointer<`, ctx_type, `>`]
         ](self._handle)
@@ -199,8 +201,8 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
     @always_inline
     fn _set_result_slot(
         self,
-        slot: UnsafePointer[Self.type, mut=True, **_],
-        err: UnsafePointer[Error, mut=False, **_],
+        slot: UnsafePointer[mut=True, Self.type, **_],
+        err: UnsafePointer[mut=False, Error, **_],
     ):
         __mlir_op.`co.set_byref_error_result`(
             self._handle, slot.address, err.address
@@ -240,17 +242,16 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
         # Black magic! Internal implementation detail!
         # Don't you dare copy this code! 😤
         var handle = self^._take_handle()
+        var error: Error
         if __mlir_op.`co.await`[_type = __mlir_type.i1](
             handle,
             __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
-            __mlir_op.`lit.ref.to_pointer`(
-                __get_mvalue_as_litref(__get_nearest_error_slot())
-            ),
+            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
         ):
             __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(__get_nearest_error_slot())
+                __get_mvalue_as_litref(error)
             )
-            __mlir_op.`lit.raise`()
+            raise error^
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(result)
         )

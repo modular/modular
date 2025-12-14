@@ -82,7 +82,10 @@ benchmark_config:
   skip_test_prompt: false
   collect_gpu_stats: false  # Enable GPU stats collection for serving benchmarks
   collect_cpu_stats: true  # Enable CPU stats collection for serving benchmarks
-  collect_server_stats: false  # Enable server stats collection for serving benchmarks
+  collect_server_stats: true  # Enable server stats collection for serving benchmarks
+  trace: false  # Enable tracing of the benchmark run (currently NVIDIA GPUs only)
+  trace_file: null  # Path to save trace file
+  trace_session: null  # Optional session name to trace. If not specified, nsys traces the default session.
 
   # Result saving (serving-specific extensions)
   record_output_lengths: null  # Path to save output lengths in YAML format

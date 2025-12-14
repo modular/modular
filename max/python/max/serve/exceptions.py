@@ -15,17 +15,14 @@
 
 from __future__ import annotations
 
+import re
 
-class CUDAOOMError(RuntimeError):
-    """Custom exception for CUDA out-of-memory errors with helpful guidance."""
 
-    def __init__(self, original_error: Exception):
-        self.original_error = original_error
-        super().__init__(self._format_message())
+class OOMError(RuntimeError):
+    """Custom exception for out-of-memory errors with helpful guidance."""
 
-    def _format_message(self) -> str:
-        """Format a comprehensive error message with actionable solutions."""
-        return """
+    def __init__(self, _: str = ""):
+        super().__init__("""
 GPU ran out of memory during model execution.
 
 This typically happens when:
@@ -38,29 +35,29 @@ Suggested solutions:
 2. Reduce batch size with --max-batch-size parameter
 3. Reduce sequence length with --max-length parameter
 4. Reduce prefill chunk size with --prefill-chunk-size parameter
-"""
+""")
 
 
-def detect_and_wrap_cuda_oom(exception: Exception) -> Exception:
+# TODO: include other patterns (e.g. AMD) here
+_oom_message_pattern = re.compile(".*OUT_OF_MEMORY.*")
+
+
+def detect_and_wrap_oom(exception: Exception) -> None:
     """
-    Detect CUDA OOM errors and wrap them in a more helpful exception.
+    Detect  OOM errors and wrap them in a more helpful exception.
 
-    This function checks if the given exception is a CUDA out-of-memory error
-    and wraps it in a CUDAOOMError with helpful guidance if so.
+    This function checks if the given exception is a out-of-memory error
+    and wraps it in a OOMError with helpful guidance if so.
 
     Args:
         exception: The exception to check
 
     Returns:
-        CUDAOOMError if it's a CUDA OOM, otherwise the original exception
+        OOMError if it's OOM, otherwise the original exception
     """
-    # Check for the specific CUDA OOM error pattern in ValueError exceptions
     error_message = str(exception)
-    if (
-        isinstance(exception, ValueError)
-        and "CUDA call failed: CUDA_ERROR_OUT_OF_MEMORY" in error_message
-    ):
-        return CUDAOOMError(exception)
 
-    # Return the original exception if it's not a CUDA OOM
-    return exception
+    if isinstance(exception, ValueError) and _oom_message_pattern.match(
+        error_message
+    ):
+        raise OOMError() from exception

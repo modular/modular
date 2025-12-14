@@ -21,13 +21,7 @@ from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code, get_gpu_target
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
@@ -91,7 +85,7 @@ fn test_ptx[
     comptime a_tma_shape = Index(BM // cluster_shape[1], BK)
     comptime a_tma_layout = Layout.row_major(a_tma_shape[0], a_tma_shape[1])
     comptime a_tma_desc_layout = _tma_desc_tile_layout[
-        a_type, 2, a_tma_shape, True, a_swizzle
+        a_type, 2, a_tma_shape, a_swizzle
     ]()
 
     comptime b_tma_shape = Index(
@@ -99,7 +93,7 @@ fn test_ptx[
     )
     comptime b_tma_layout = Layout.row_major(b_tma_shape[0], b_tma_shape[1])
     comptime b_tma_desc_layout = _tma_desc_tile_layout[
-        b_type, 2, b_tma_shape, True, b_swizzle
+        b_type, 2, b_tma_shape, b_swizzle
     ]()
 
     comptime c_tma_tile_shape_mma128 = Index(
@@ -112,7 +106,7 @@ fn test_ptx[
     )
     comptime c_tma_layout = Layout.row_major(c_tma_shape[0], c_tma_shape[1])
     comptime c_tma_desc_layout = _tma_desc_tile_layout[
-        c_type, 2, c_tma_shape, True, config.c_swizzle
+        c_type, 2, c_tma_shape, config.c_swizzle
     ]()
 
     comptime kernel = blackwell_tma_umma_warp_specialized_kernel[

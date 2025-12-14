@@ -89,7 +89,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
 
 
 struct BitSet[size: Int](
-    Boolable, Copyable, Defaultable, Movable, Sized, Stringable, Writable
+    Boolable, Copyable, Defaultable, Sized, Stringable, Writable
 ):
     """A grow-only set storing non-negative integers efficiently using bits.
 
@@ -125,9 +125,9 @@ struct BitSet[size: Int](
         Args:
             init: A SIMD vector of booleans to initialize the bitset with.
         """
-        constrained[
+        __comptime_assert (
             max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
-        ]()
+        )
         self._words = type_of(self._words)(uninitialized=True)
         comptime step = min(init.size, _WORD_BITS)
 

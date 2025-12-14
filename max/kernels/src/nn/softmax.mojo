@@ -1112,11 +1112,11 @@ fn _online_softmax_iter_for_mma_output[
         1, 2
     ) if is_nvidia_gpu() else Layout.row_major(4, 1),
 ](
-    output_reg_tile: LayoutTensor[dtype, *_, **_],
-    score_reg_tile: LayoutTensor[dtype, *_, **_],
-    warp_scratch: LayoutTensor[dtype, *_, **_],
-    rowmax: UnsafePointer[Scalar[dtype], **_],
-    rowsum: UnsafePointer[Scalar[dtype], **_],
+    output_reg_tile: LayoutTensor[mut=True, dtype, *_, **_],
+    score_reg_tile: LayoutTensor[mut=True, dtype, *_, **_],
+    warp_scratch: LayoutTensor[mut=True, dtype, *_, **_],
+    rowmax: UnsafePointer[Scalar[dtype], mut=True, **_],
+    rowsum: UnsafePointer[Scalar[dtype], mut=True, **_],
 ):
     comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
@@ -1526,13 +1526,13 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         address_space = AddressSpace.LOCAL, **_,
     ],
     warp_scratch: LayoutTensor[
-        dtype, *_, address_space = AddressSpace.SHARED, **_
+        mut=True, dtype, *_, address_space = AddressSpace.SHARED, **_
     ],
     o_smem_ptr_base: UnsafePointer[
         Scalar[dtype], mut=True, address_space = AddressSpace.SHARED, **_
     ],
-    rowmax: UnsafePointer[Scalar[dtype], **_],
-    rowsum: UnsafePointer[Scalar[dtype], **_],
+    rowmax: UnsafePointer[Scalar[dtype], mut=True, **_],
+    rowsum: UnsafePointer[Scalar[dtype], mut=True, **_],
 ):
     # Here, we use naming conventions aligning with MHA's
     comptime num_m_mmas = score_layout_by_mma_unit.shape[0].value()

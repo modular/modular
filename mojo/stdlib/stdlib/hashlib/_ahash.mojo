@@ -183,7 +183,9 @@ struct AHasher[key: U256](Defaultable, Hasher):
             @parameter
             for i in range(new_data.size):
                 var v = new_data[i]
-                constrained[size_of[v.dtype]() > 8 and v.dtype.is_integral()]()
+                __comptime_assert (
+                    size_of[v.dtype]() > 8 and v.dtype.is_integral()
+                )
 
                 @parameter
                 for r in range(0, rounds, 2):

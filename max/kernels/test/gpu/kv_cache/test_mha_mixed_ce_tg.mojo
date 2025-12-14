@@ -15,17 +15,14 @@ from collections import Set
 from math import ceildiv, rsqrt
 from random import random_ui64
 
-from buffer import Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import memcpy
+from layout._fillers import random
+from memory import memcpy, LegacyUnsafePointer as UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -53,18 +50,19 @@ def execute_ragged_flash_attention(
 
     var batch_size = len(true_ce_prompt_lens)
 
-    var true_ce_row_offsets_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size + 1)
-    )
-    var true_ce_cache_lengths_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size)
-    )
-    var mixed_ce_row_offsets_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size + 1)
-    )
-    var mixed_ce_cache_lengths_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size)
-    )
+    # Allocate host memory for row offsets and cache lengths
+    var true_ce_row_offsets_host_ptr = UnsafePointer[
+        Scalar[DType.uint32]
+    ].alloc(batch_size + 1)
+    var true_ce_cache_lengths_host_ptr = UnsafePointer[
+        Scalar[DType.uint32]
+    ].alloc(batch_size)
+    var mixed_ce_row_offsets_host_ptr = UnsafePointer[
+        Scalar[DType.uint32]
+    ].alloc(batch_size + 1)
+    var mixed_ce_cache_lengths_host_ptr = UnsafePointer[
+        Scalar[DType.uint32]
+    ].alloc(batch_size)
 
     var true_ce_total_length = 0
     var mixed_ce_total_length = 0
@@ -73,10 +71,10 @@ def execute_ragged_flash_attention(
     var true_ce_max_prompt_length = 0
     var mixed_ce_max_prompt_length = 0
     for i in range(batch_size):
-        true_ce_row_offsets_host.tensor[i] = true_ce_total_length
-        mixed_ce_row_offsets_host.tensor[i] = mixed_ce_total_length
-        true_ce_cache_lengths_host.tensor[i] = true_ce_cache_lens[i]
-        mixed_ce_cache_lengths_host.tensor[i] = mixed_ce_cache_lens[i]
+        true_ce_row_offsets_host_ptr[i] = true_ce_total_length
+        mixed_ce_row_offsets_host_ptr[i] = mixed_ce_total_length
+        true_ce_cache_lengths_host_ptr[i] = true_ce_cache_lens[i]
+        mixed_ce_cache_lengths_host_ptr[i] = mixed_ce_cache_lens[i]
 
         true_ce_max_full_context_length = max(
             true_ce_max_full_context_length,
@@ -97,86 +95,168 @@ def execute_ragged_flash_attention(
         true_ce_total_length += true_ce_prompt_lens[i]
         mixed_ce_total_length += mixed_ce_prompt_lens[i]
 
-    true_ce_row_offsets_host.tensor[batch_size] = true_ce_total_length
-    mixed_ce_row_offsets_host.tensor[batch_size] = mixed_ce_total_length
-    true_ce_row_offsets_device = true_ce_row_offsets_host.copy_to_device(ctx)
-    mixed_ce_row_offsets_device = mixed_ce_row_offsets_host.copy_to_device(ctx)
-    true_ce_cache_lengths_device = true_ce_cache_lengths_host.copy_to_device(
-        ctx
-    )
-    mixed_ce_cache_lengths_device = mixed_ce_cache_lengths_host.copy_to_device(
-        ctx
-    )
-    true_ce_q_ragged_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](true_ce_total_length, num_q_heads, Int(kv_params.head_size)))
-    random(true_ce_q_ragged_host.tensor)
-    true_ce_q_ragged_device = true_ce_q_ragged_host.copy_to_device(ctx)
+    true_ce_row_offsets_host_ptr[batch_size] = true_ce_total_length
+    mixed_ce_row_offsets_host_ptr[batch_size] = mixed_ce_total_length
 
-    mixed_ce_q_ragged_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](
-        IndexList[3](
-            mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
-        )
+    # Create device buffers for row offsets and cache lengths
+    var true_ce_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size + 1
     )
+    var mixed_ce_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size + 1
+    )
+    var true_ce_cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    var mixed_ce_cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    ctx.enqueue_copy(true_ce_row_offsets_device, true_ce_row_offsets_host_ptr)
+    ctx.enqueue_copy(mixed_ce_row_offsets_device, mixed_ce_row_offsets_host_ptr)
+    ctx.enqueue_copy(
+        true_ce_cache_lengths_device, true_ce_cache_lengths_host_ptr
+    )
+    ctx.enqueue_copy(
+        mixed_ce_cache_lengths_device, mixed_ce_cache_lengths_host_ptr
+    )
+    # Q ragged tensors
+    comptime q_layout = Layout.row_major(
+        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+    )
+    var true_ce_q_size = (
+        true_ce_total_length * num_q_heads * Int(kv_params.head_size)
+    )
+    var mixed_ce_q_size = (
+        mixed_ce_total_length * num_q_heads * Int(kv_params.head_size)
+    )
+
+    var true_ce_q_ragged_host_ptr = UnsafePointer[Scalar[type]].alloc(
+        true_ce_q_size
+    )
+    var true_ce_q_ragged_host = LayoutTensor[type, q_layout](
+        true_ce_q_ragged_host_ptr,
+        RuntimeLayout[q_layout].row_major(
+            IndexList[3](
+                true_ce_total_length, num_q_heads, Int(kv_params.head_size)
+            )
+        ),
+    )
+    random(true_ce_q_ragged_host)
+
+    var true_ce_q_ragged_device = ctx.enqueue_create_buffer[type](
+        true_ce_q_size
+    )
+    ctx.enqueue_copy(true_ce_q_ragged_device, true_ce_q_ragged_host_ptr)
+
+    var mixed_ce_q_ragged_host_ptr = UnsafePointer[Scalar[type]].alloc(
+        mixed_ce_q_size
+    )
+    var mixed_ce_q_ragged_host = LayoutTensor[type, q_layout](
+        mixed_ce_q_ragged_host_ptr,
+        RuntimeLayout[q_layout].row_major(
+            IndexList[3](
+                mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+            )
+        ),
+    )
+
+    var head_stride = num_q_heads * Int(kv_params.head_size)
     for bs_idx in range(batch_size):
         true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
 
-        true_ce_row_offset = true_ce_row_offsets_host.tensor[bs_idx]
-        mixed_ce_row_offset = mixed_ce_row_offsets_host.tensor[bs_idx]
+        true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs_idx])
+        mixed_ce_row_offset = Int(mixed_ce_row_offsets_host_ptr[bs_idx])
 
         mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
 
-        true_ce_offset = true_ce_q_ragged_host.tensor._offset(
-            IndexList[3](Int(true_ce_row_offset + mixed_ce_cache_len), 0, 0)
+        true_ce_offset = (
+            true_ce_q_ragged_host_ptr
+            + (true_ce_row_offset + mixed_ce_cache_len) * head_stride
         )
-        mixed_ce_offset = mixed_ce_q_ragged_host.tensor._offset(
-            IndexList[3](Int(mixed_ce_row_offset), 0, 0)
+        mixed_ce_offset = (
+            mixed_ce_q_ragged_host_ptr + mixed_ce_row_offset * head_stride
         )
 
         memcpy(
             dest=mixed_ce_offset,
             src=true_ce_offset,
-            count=mixed_ce_prompt_len * num_q_heads * Int(kv_params.head_size),
+            count=mixed_ce_prompt_len * head_stride,
         )
 
-    mixed_ce_q_ragged_device = mixed_ce_q_ragged_host.copy_to_device(ctx)
-
-    # initialize reference output
-    mixed_ce_output_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](
-        IndexList[3](
-            mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
-        )
+    var mixed_ce_q_ragged_device = ctx.enqueue_create_buffer[type](
+        mixed_ce_q_size
     )
-    mixed_ce_output_device = mixed_ce_output_host.copy_to_device(ctx)
-    true_ce_output_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](true_ce_total_length, num_q_heads, Int(kv_params.head_size)))
-    true_ce_output_device = true_ce_output_host.copy_to_device(ctx)
+    ctx.enqueue_copy(mixed_ce_q_ragged_device, mixed_ce_q_ragged_host_ptr)
 
-    # initialize our KVCache
-    kv_block_paged_host = HostNDBuffer[type, 6](
-        IndexList[6](
-            num_paged_blocks,
-            2,
-            num_layers,
-            page_size,
-            Int(kv_params.num_heads),
-            Int(kv_params.head_size),
-        )
+    # Initialize output buffers
+    var mixed_ce_output_host_ptr = UnsafePointer[Scalar[type]].alloc(
+        mixed_ce_q_size
     )
-    random(kv_block_paged_host.tensor)
+    var mixed_ce_output_host = LayoutTensor[type, q_layout](
+        mixed_ce_output_host_ptr,
+        RuntimeLayout[q_layout].row_major(
+            IndexList[3](
+                mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+            )
+        ),
+    )
+    var mixed_ce_output_device = ctx.enqueue_create_buffer[type](
+        mixed_ce_q_size
+    )
 
-    paged_lut_host = HostNDBuffer[DType.uint32, 2](
-        IndexList[2](
-            batch_size,
-            ceildiv(true_ce_max_full_context_length, page_size),
-        )
+    var true_ce_output_host_ptr = UnsafePointer[Scalar[type]].alloc(
+        true_ce_q_size
     )
+    var true_ce_output_host = LayoutTensor[type, q_layout](
+        true_ce_output_host_ptr,
+        RuntimeLayout[q_layout].row_major(
+            IndexList[3](
+                true_ce_total_length, num_q_heads, Int(kv_params.head_size)
+            )
+        ),
+    )
+    var true_ce_output_device = ctx.enqueue_create_buffer[type](true_ce_q_size)
+
+    # Initialize KVCache
+    comptime kv_layout = Layout.row_major[6]()
+    var kv_block_size = (
+        num_paged_blocks
+        * 2
+        * num_layers
+        * page_size
+        * Int(kv_params.num_heads)
+        * Int(kv_params.head_size)
+    )
+    var kv_shape = IndexList[6](
+        num_paged_blocks,
+        2,
+        num_layers,
+        page_size,
+        Int(kv_params.num_heads),
+        Int(kv_params.head_size),
+    )
+    var kv_block_paged_host_ptr = UnsafePointer[Scalar[type]].alloc(
+        kv_block_size
+    )
+    var kv_block_paged_host = LayoutTensor[type, kv_layout](
+        kv_block_paged_host_ptr,
+        RuntimeLayout[kv_layout].row_major(kv_shape),
+    )
+    random(kv_block_paged_host)
+
+    var paged_lut_cols = ceildiv(true_ce_max_full_context_length, page_size)
+    var paged_lut_size = batch_size * paged_lut_cols
+    comptime paged_lut_layout = Layout.row_major[2]()
+    var paged_lut_shape = IndexList[2](batch_size, paged_lut_cols)
+    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
+        paged_lut_size
+    )
+    var paged_lut_host = LayoutTensor[DType.uint32, paged_lut_layout](
+        paged_lut_host_ptr,
+        RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
+    )
+
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         seq_len = true_ce_cache_lens[bs] + true_ce_prompt_lens[bs]
@@ -187,94 +267,99 @@ def execute_ragged_flash_attention(
                 randval = Int(random_ui64(0, num_paged_blocks - 1))
 
             paged_lut_set.add(randval)
-            paged_lut_host.tensor[bs, block_idx] = randval
+            paged_lut_host[bs, block_idx] = randval
 
-    paged_lut_device = paged_lut_host.copy_to_device(ctx)
-    kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
+    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+        paged_lut_size
+    )
+    ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
+    var kv_block_paged_device = ctx.enqueue_create_buffer[type](kv_block_size)
+    ctx.enqueue_copy(kv_block_paged_device, kv_block_paged_host_ptr)
+
+    # Create device LayoutTensors for KV cache
+    comptime cache_len_layout = Layout(UNKNOWN_VALUE)
+    var kv_block_runtime = RuntimeLayout[kv_layout].row_major(kv_shape)
+    var true_ce_cache_len_runtime = RuntimeLayout[cache_len_layout].row_major(
+        IndexList[1](batch_size)
+    )
+    var mixed_ce_cache_len_runtime = RuntimeLayout[cache_len_layout].row_major(
+        IndexList[1](batch_size)
+    )
+    var paged_lut_runtime = RuntimeLayout[paged_lut_layout].row_major(
+        paged_lut_shape
+    )
 
     true_ce_kv_collection_device = PagedCollectionType(
-        LayoutTensor[
-            kv_block_paged_device.dtype, Layout.row_major[6](), MutAnyOrigin
-        ](
-            kv_block_paged_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[type, kv_layout, MutAnyOrigin](
+            kv_block_paged_device.unsafe_ptr(),
+            kv_block_runtime,
         ),
-        LayoutTensor[
-            true_ce_cache_lengths_device.dtype,
-            Layout(UNKNOWN_VALUE),
-            ImmutAnyOrigin,
-        ](
-            true_ce_cache_lengths_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                true_ce_cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                true_ce_cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[DType.uint32, cache_len_layout, ImmutAnyOrigin](
+            true_ce_cache_lengths_device.unsafe_ptr(),
+            true_ce_cache_len_runtime,
         ),
-        LayoutTensor[
-            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
-        ](
-            paged_lut_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
-                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
+            paged_lut_device.unsafe_ptr(),
+            paged_lut_runtime,
         ),
         true_ce_max_prompt_length,
         true_ce_max_full_context_length,
     )
 
     mixed_ce_kv_collection_device = PagedCollectionType(
-        LayoutTensor[
-            kv_block_paged_device.dtype, Layout.row_major[6](), MutAnyOrigin
-        ](
-            kv_block_paged_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[type, kv_layout, MutAnyOrigin](
+            kv_block_paged_device.unsafe_ptr(),
+            kv_block_runtime,
         ),
-        LayoutTensor[
-            mixed_ce_cache_lengths_device.dtype,
-            Layout(UNKNOWN_VALUE),
-            ImmutAnyOrigin,
-        ](
-            mixed_ce_cache_lengths_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                mixed_ce_cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                mixed_ce_cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[DType.uint32, cache_len_layout, ImmutAnyOrigin](
+            mixed_ce_cache_lengths_device.unsafe_ptr(),
+            mixed_ce_cache_len_runtime,
         ),
-        LayoutTensor[
-            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
-        ](
-            paged_lut_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
-                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
+            paged_lut_device.unsafe_ptr(),
+            paged_lut_runtime,
         ),
         mixed_ce_max_prompt_length,
         mixed_ce_max_full_context_length,
     )
 
+    # Create device LayoutTensors for flash_attention
+    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
+    var true_ce_row_offsets_runtime = RuntimeLayout[
+        row_offsets_layout
+    ].row_major(IndexList[1](batch_size + 1))
+    var mixed_ce_row_offsets_runtime = RuntimeLayout[
+        row_offsets_layout
+    ].row_major(IndexList[1](batch_size + 1))
+    var true_ce_q_runtime = RuntimeLayout[q_layout].row_major(
+        IndexList[3](
+            true_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        )
+    )
+    var mixed_ce_q_runtime = RuntimeLayout[q_layout].row_major(
+        IndexList[3](
+            mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        )
+    )
+
     # "true CE" execution
     print("true")
     flash_attention[ragged=True](
-        true_ce_output_device.to_layout_tensor(),
-        true_ce_q_ragged_device.to_layout_tensor(),
+        LayoutTensor[type, q_layout, MutAnyOrigin](
+            true_ce_output_device.unsafe_ptr(),
+            true_ce_q_runtime,
+        ),
+        LayoutTensor[type, q_layout, ImmutAnyOrigin](
+            true_ce_q_ragged_device.unsafe_ptr(),
+            true_ce_q_runtime,
+        ),
         true_ce_kv_collection_device.get_key_cache(layer_idx),
         true_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            true_ce_row_offsets_device.tensor.data,
-            true_ce_row_offsets_device.tensor.get_shape(),
+        LayoutTensor[DType.uint32, row_offsets_layout, ImmutAnyOrigin](
+            true_ce_row_offsets_device.unsafe_ptr(),
+            true_ce_row_offsets_runtime,
         ),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -284,37 +369,34 @@ def execute_ragged_flash_attention(
     # "mixed CE" execution
     print("mixed")
     flash_attention[ragged=True](
-        mixed_ce_output_device.to_layout_tensor(),
-        mixed_ce_q_ragged_device.to_layout_tensor(),
+        LayoutTensor[type, q_layout, MutAnyOrigin](
+            mixed_ce_output_device.unsafe_ptr(),
+            mixed_ce_q_runtime,
+        ),
+        LayoutTensor[type, q_layout, ImmutAnyOrigin](
+            mixed_ce_q_ragged_device.unsafe_ptr(),
+            mixed_ce_q_runtime,
+        ),
         mixed_ce_kv_collection_device.get_key_cache(layer_idx),
         mixed_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            mixed_ce_row_offsets_device.tensor.data,
-            mixed_ce_row_offsets_device.tensor.get_shape(),
+        LayoutTensor[DType.uint32, row_offsets_layout, ImmutAnyOrigin](
+            mixed_ce_row_offsets_device.unsafe_ptr(),
+            mixed_ce_row_offsets_runtime,
         ),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
     ctx.synchronize()
-    ctx.enqueue_copy(
-        mixed_ce_output_host.tensor.data, mixed_ce_output_device.buffer
-    )
-    ctx.enqueue_copy(
-        true_ce_output_host.tensor.data, true_ce_output_device.buffer
-    )
+    ctx.enqueue_copy(mixed_ce_output_host_ptr, mixed_ce_output_device)
+    ctx.enqueue_copy(true_ce_output_host_ptr, true_ce_output_device)
     ctx.synchronize()
 
-    true_ce_out = true_ce_output_host.tensor
-    mixed_ce_out = mixed_ce_output_host.tensor
     for bs in range(batch_size):
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs]
-        mixed_ce_row_offset = mixed_ce_row_offsets_host.tensor[bs]
-        true_ce_row_offset = true_ce_row_offsets_host.tensor[bs]
+        mixed_ce_row_offset = Int(mixed_ce_row_offsets_host_ptr[bs])
+        true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs])
         mixed_ce_cache_len = mixed_ce_cache_lens[bs]
 
         true_ce_ragged_offset = Int(true_ce_row_offset + mixed_ce_cache_len)
@@ -322,10 +404,10 @@ def execute_ragged_flash_attention(
         for s in range(mixed_ce_prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
-                    true_ce_val = true_ce_out[
+                    true_ce_val = true_ce_output_host[
                         true_ce_ragged_offset + s, h, Int(hd)
                     ]
-                    mixed_ce_val = mixed_ce_out[
+                    mixed_ce_val = mixed_ce_output_host[
                         mixed_ce_ragged_offset + s, h, Int(hd)
                     ]
                     try:
@@ -343,23 +425,28 @@ def execute_ragged_flash_attention(
                         )
                         raise e
 
-    _ = true_ce_q_ragged_host^
-    _ = true_ce_q_ragged_device^
-    _ = mixed_ce_q_ragged_host^
-    _ = mixed_ce_q_ragged_device^
-    _ = kv_block_paged_host^
-    _ = kv_block_paged_device^
-    _ = paged_lut_host^
-    _ = paged_lut_device^
-    _ = true_ce_output_device^
-    _ = true_ce_output_host^
-    _ = mixed_ce_output_device^
-    _ = mixed_ce_output_host^
-    _ = true_ce_cache_lengths_host^
+    # Cleanup host memory
+    true_ce_row_offsets_host_ptr.free()
+    true_ce_cache_lengths_host_ptr.free()
+    mixed_ce_row_offsets_host_ptr.free()
+    mixed_ce_cache_lengths_host_ptr.free()
+    true_ce_q_ragged_host_ptr.free()
+    mixed_ce_q_ragged_host_ptr.free()
+    mixed_ce_output_host_ptr.free()
+    true_ce_output_host_ptr.free()
+    kv_block_paged_host_ptr.free()
+    paged_lut_host_ptr.free()
+
+    # Cleanup device buffers
+    _ = true_ce_row_offsets_device^
+    _ = mixed_ce_row_offsets_device^
     _ = true_ce_cache_lengths_device^
-    _ = mixed_ce_cache_lengths_host^
     _ = mixed_ce_cache_lengths_device^
-    _ = paged_lut_host^
+    _ = true_ce_q_ragged_device^
+    _ = mixed_ce_q_ragged_device^
+    _ = mixed_ce_output_device^
+    _ = true_ce_output_device^
+    _ = kv_block_paged_device^
     _ = paged_lut_device^
 
 

@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct MyType(Copyable, Movable):
+struct MyType(Copyable):
     var val: Int
 
     def __bool__(self) -> Bool:

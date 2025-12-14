@@ -1,14 +1,12 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
     name = "pipelines",
     srcs = [
         "__init__.py",
     ],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",

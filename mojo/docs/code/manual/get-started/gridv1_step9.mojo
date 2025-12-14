@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct Grid(Copyable, Movable, Stringable):
+struct Grid(Copyable, Stringable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]

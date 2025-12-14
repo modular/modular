@@ -1,6 +1,8 @@
 load("@module_versions//:config.bzl", "DEFAULT_PYTHON_VERSION", "PYTHON_VERSIONS_DOTTED")
 load("//bazel:api.bzl", "mojo_test", "requirement")
 
+package(default_visibility = ["//visibility:private"])
+
 _NUMPY_TESTS = [
     "test_python_to_mojo.mojo",
 ]

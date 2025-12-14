@@ -18,34 +18,14 @@ These are Mojo built-ins, so you don't need to import them.
 comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
 """Represents any register passable Mojo data type."""
 
-
-@deprecated(use=ImmutOrigin)
-comptime ImmutableOrigin = ImmutOrigin
-"""Immutable origin reference type."""
-
 comptime ImmutOrigin = Origin[False]
 """Immutable origin reference type."""
-
-
-@deprecated(use=MutOrigin)
-comptime MutableOrigin = MutOrigin
-"""Mutable origin reference type."""
 
 comptime MutOrigin = Origin[True]
 """Mutable origin reference type."""
 
-
-@deprecated(use=ImmutAnyOrigin)
-comptime ImmutableAnyOrigin = ImmutAnyOrigin
-"""The immutable origin that might access any memory value."""
-
 comptime ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
 """The immutable origin that might access any memory value."""
-
-
-@deprecated(use=MutAnyOrigin)
-comptime MutableAnyOrigin = MutAnyOrigin
-"""The mutable origin that might access any memory value."""
 
 comptime MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 """The mutable origin that might access any memory value."""
@@ -60,6 +40,10 @@ comptime StaticConstantOrigin = __mlir_attr[
 
 comptime OriginSet = __mlir_type.`!lit.origin.set`
 """A set of origin parameters."""
+
+comptime Never = __mlir_type.`!kgen.never`
+"""A type that can never have an instance constructed, used as a function result
+by functions that never return."""
 
 
 @register_passable("trivial")
@@ -88,6 +72,9 @@ struct Origin[mut: Bool]:
     This is a low-level way to coerce Origin mutability. This should be used
     rarely, typically when building low-level fundamental abstractions. Strongly
     consider alternatives before reaching for this "escape hatch".
+
+    Parameters:
+        o: The origin to cast.
 
     Safety:
         This is an UNSAFE operation if used to cast an immutable origin to

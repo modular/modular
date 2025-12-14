@@ -129,7 +129,6 @@ struct PyObjectPtr(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):
@@ -231,7 +230,7 @@ struct PyObjectPtr(
 
 @fieldwise_init
 @register_passable
-struct PythonVersion(ImplicitlyCopyable, Movable):
+struct PythonVersion(ImplicitlyCopyable):
     """Represents a Python version with major, minor, and patch numbers."""
 
     var major: Int
@@ -279,7 +278,7 @@ fn _py_get_version(lib: _DLHandle) -> StaticString:
 
 
 @fieldwise_init
-struct PyMethodDef(Defaultable, ImplicitlyCopyable, Movable):
+struct PyMethodDef(Defaultable, ImplicitlyCopyable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -417,26 +416,26 @@ comptime Py_tp_repr = 66
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
 comptime destructor = fn (PyObjectPtr) -> None
-"""`typedef void (*destructor)(PyObject*)`"""
+"""`typedef void (*destructor)(PyObject*)`."""
 comptime reprfunc = fn (PyObjectPtr) -> PyObjectPtr
-"""`typedef PyObject *(*reprfunc)(PyObject*)`"""
+"""`typedef PyObject *(*reprfunc)(PyObject*)`."""
 comptime Typed_initproc = fn (
     PyObjectPtr,
     PyObjectPtr,
     PyObjectPtr,  # NULL if no keyword arguments were passed
 ) -> c_int
-"""`typedef int (*initproc)(PyObject*, PyObject*, PyObject*)`"""
+"""`typedef int (*initproc)(PyObject*, PyObject*, PyObject*)`."""
 comptime Typed_newfunc = fn (
     PyTypeObjectPtr,
     PyObjectPtr,
     PyObjectPtr,
 ) -> PyObjectPtr
-"""`typedef PyObject *(*newfunc)(PyTypeObject*, PyObject*, PyObject*)`"""
+"""`typedef PyObject *(*newfunc)(PyTypeObject*, PyObject*, PyObject*)`."""
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct PyType_Slot(ImplicitlyCopyable, Movable):
+struct PyType_Slot(ImplicitlyCopyable):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
@@ -487,7 +486,6 @@ struct PyType_Slot(ImplicitlyCopyable, Movable):
 struct PyObject(
     Defaultable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
     Writable,
@@ -1214,15 +1212,11 @@ comptime Py_Is = ExternalFunction[
 
 
 fn _PyErr_GetRaisedException_dummy() -> PyObjectPtr:
-    return abort[PyObjectPtr](
-        "PyErr_GetRaisedException is not available in this Python version"
-    )
+    abort("PyErr_GetRaisedException is not available in this Python version")
 
 
 fn _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
-    return abort[PyObjectPtr](
-        "PyType_GetName is not available in this Python version"
-    )
+    abort("PyType_GetName is not available in this Python version")
 
 
 # ===-------------------------------------------------------------------===#
@@ -1483,9 +1477,7 @@ struct CPython(Defaultable, Movable):
                 # If the library is not present in the current process, try to load it from the environment variable.
                 self.lib = OwnedDLHandle(python_lib)
         except e:
-            self.lib = abort[OwnedDLHandle](
-                String("Failed to load libpython from", python_lib, ":\n", e)
-            )
+            abort(String("Failed to load libpython from", python_lib, ":\n", e))
 
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):
@@ -1580,35 +1572,21 @@ struct CPython(Defaultable, Movable):
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
-                upcast_from=self.lib.get_symbol[PyObject](
-                    "_Py_NoneStruct"
-                ).unsafe_mut_cast[True]()
+                upcast_from=self.lib.get_symbol[PyObject]("_Py_NoneStruct")
             )
         # Integer Objects
-        self._PyLong_Type = (
-            # PyTypeObject PyLong_Type
-            self.lib.get_symbol[PyTypeObject]("PyLong_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyLong_Type
+        self._PyLong_Type = self.lib.get_symbol[PyTypeObject]("PyLong_Type")
         self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib.borrow())
         self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib.borrow())
         self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib.borrow())
         # Boolean Objects
-        self._PyBool_Type = (
-            # PyTypeObject PyBool_Type
-            self.lib.get_symbol[PyTypeObject]("PyBool_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyBool_Type
+        self._PyBool_Type = self.lib.get_symbol[PyTypeObject]("PyBool_Type")
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
-        self._PyFloat_Type = (
-            # PyTypeObject PyFloat_Type
-            self.lib.get_symbol[PyTypeObject]("PyFloat_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyFloat_Type
+        self._PyFloat_Type = self.lib.get_symbol[PyTypeObject]("PyFloat_Type")
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib.borrow())
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib.borrow())
         # Unicode Objects and Codecs
@@ -1627,12 +1605,8 @@ struct CPython(Defaultable, Movable):
         self._PyList_GetItem = PyList_GetItem.load(self.lib.borrow())
         self._PyList_SetItem = PyList_SetItem.load(self.lib.borrow())
         # Dictionary Objects
-        self._PyDict_Type = (
-            # PyTypeObject PyDict_Type
-            self.lib.get_symbol[PyTypeObject]("PyDict_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyDict_Type
+        self._PyDict_Type = self.lib.get_symbol[PyTypeObject]("PyDict_Type")
         self._PyDict_New = PyDict_New.load(self.lib.borrow())
         self._PyDict_SetItem = PyDict_SetItem.load(self.lib.borrow())
         self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(
@@ -1730,7 +1704,7 @@ struct CPython(Defaultable, Movable):
         try:
             error = String(PythonObject(from_owned=err_ptr))
         except e:
-            return abort[Error](
+            abort(
                 "internal error: Python exception occurred but cannot be"
                 " converted to String"
             )
@@ -1792,7 +1766,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
         """
-        return self._PyRun_SimpleString(command.unsafe_cstr_ptr())
+        return self._PyRun_SimpleString(
+            command.as_c_string_slice().unsafe_ptr()
+        )
 
     fn PyRun_String(
         self,
@@ -1809,7 +1785,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
         """
-        return self._PyRun_String(str.unsafe_cstr_ptr(), start, globals, locals)
+        return self._PyRun_String(
+            str.as_c_string_slice().unsafe_ptr(), start, globals, locals
+        )
 
     fn Py_CompileString(
         self,
@@ -1826,8 +1804,8 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
         """
         return self._Py_CompileString(
-            str.unsafe_cstr_ptr(),
-            filename.unsafe_cstr_ptr(),
+            str.as_c_string_slice().unsafe_ptr(),
+            filename.as_c_string_slice().unsafe_ptr(),
             start,
         )
 
@@ -2062,7 +2040,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
         """
-        return self._PyImport_ImportModule(name.unsafe_cstr_ptr())
+        return self._PyImport_ImportModule(
+            name.as_c_string_slice().unsafe_ptr()
+        )
 
     fn PyImport_AddModule(self, var name: String) -> PyObjectPtr:
         """Return the module object corresponding to a module name.
@@ -2072,7 +2052,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
         """
-        return self._PyImport_AddModule(name.unsafe_cstr_ptr())
+        return self._PyImport_AddModule(name.as_c_string_slice().unsafe_ptr())
 
     # ===-------------------------------------------------------------------===#
     # Abstract Objects Layer
@@ -2092,7 +2072,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString
         """
-        return self._PyObject_HasAttrString(obj, name.unsafe_cstr_ptr())
+        return self._PyObject_HasAttrString(
+            obj, name.as_c_string_slice().unsafe_ptr()
+        )
 
     fn PyObject_GetAttrString(
         self, obj: PyObjectPtr, var name: String
@@ -2104,7 +2086,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
         """
-        return self._PyObject_GetAttrString(obj, name.unsafe_cstr_ptr())
+        return self._PyObject_GetAttrString(
+            obj, name.as_c_string_slice().unsafe_ptr()
+        )
 
     fn PyObject_SetAttrString(
         self, obj: PyObjectPtr, var name: String, value: PyObjectPtr
@@ -2115,7 +2099,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString
         """
-        return self._PyObject_SetAttrString(obj, name.unsafe_cstr_ptr(), value)
+        return self._PyObject_SetAttrString(
+            obj, name.as_c_string_slice().unsafe_ptr(), value
+        )
 
     fn PyObject_Str(self, obj: PyObjectPtr) -> PyObjectPtr:
         """Compute a string representation of object `obj`.
@@ -2601,7 +2587,7 @@ struct CPython(Defaultable, Movable):
         return self._PyUnicode_DecodeUTF8(
             s.unsafe_ptr().bitcast[c_char](),
             Py_ssize_t(s.byte_length()),
-            "strict".unsafe_cstr_ptr(),
+            "strict".as_c_string_slice().unsafe_ptr(),
         )
 
     # TODO: fix signature to take unicode and size as args
@@ -2909,7 +2895,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New
         """
-        return self._PyCapsule_New(pointer, name.unsafe_cstr_ptr(), destructor)
+        return self._PyCapsule_New(
+            pointer, name.as_c_string_slice().unsafe_ptr(), destructor
+        )
 
     fn PyCapsule_GetPointer(
         self,
@@ -2922,7 +2910,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_GetPointer
         """
-        var r = self._PyCapsule_GetPointer(capsule, name.unsafe_cstr_ptr())
+        var r = self._PyCapsule_GetPointer(
+            capsule, name.as_c_string_slice().unsafe_ptr()
+        )
         if self.PyErr_Occurred():
             raise self.get_error()
         return r

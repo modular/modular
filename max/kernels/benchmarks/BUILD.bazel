@@ -8,6 +8,8 @@ load(
     "strip_prefix",
 )
 
+package(default_visibility = ["//max:consumers"])
+
 _RUN_BENCHMARKS = [
     "algorithm/parallelize_overhead.mojo",
     "nn/bench_gather_reduce.mojo",
@@ -26,18 +28,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2412
-    "gpu/bench_pdl_copy.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2415
-    "gpu/bench_mha.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "gpu/bench_reduce.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "gpu/bench_kv_cache_ragged_qkv_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -162,7 +152,6 @@ pkg_files(
     ),
     prefix = "kernel-benchmark",
     strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )
 
 pkg_filegroup(
@@ -171,5 +160,4 @@ pkg_filegroup(
         ":kernel_benchmark_input_files",
         "//max/kernels/benchmarks/autotune:autotune_files",
     ],
-    visibility = ["//visibility:public"],
 )

@@ -19,8 +19,8 @@ from sys import argv
 from gpu import *
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, MaterializedMask
+from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
@@ -235,14 +235,19 @@ fn test[
         ),
     )
 
-    flash_attention(
-        output_device_ref,
+    mha_gpu_naive(
         q_device,
         k_device,
         v_device,
-        MaterializedMask(mask4d),
-        IdentityScoreMod(),
+        mask4d,
+        output_device_ref,
         scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
         ctx,
     )
 

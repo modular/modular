@@ -340,6 +340,34 @@ class ShardingStrategy:
         )
 
     @staticmethod
+    def axiswise(axis: int, num_devices: int) -> ShardingStrategy:
+        """Creates an axis-wise sharding strategy.
+
+        This strategy shards the weight along a given axis.
+
+        Args:
+            axis: The axis along which to shard the weight.
+            num_devices: The number of devices to shard the weight across.
+        """
+        empty_slices = [slice(None) for _ in range(axis)]
+
+        def _axis_sharding_strategy(
+            weight: Weight, i: int, num_devices: int
+        ) -> TensorValue:
+            start, end = _compute_shard_range(
+                shard_dim=int(weight.shape[axis]),
+                shard_idx=i,
+                num_devices=num_devices,
+            )
+            full_slices = tuple(empty_slices) + (slice(start, end),)
+            return weight[full_slices]
+
+        return ShardingStrategy(
+            num_devices=num_devices,
+            shard=_axis_sharding_strategy,
+        )
+
+    @staticmethod
     def replicate(num_devices: int) -> ShardingStrategy:
         """Creates a replication strategy.
 

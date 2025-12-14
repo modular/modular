@@ -45,8 +45,14 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target, DeviceBuffer
-from gpu.host.info import A100, H100
+from gpu.host import (
+    DeviceContext,
+    FuncAttribute,
+    get_gpu_target,
+    DeviceBuffer,
+    Dim as LaunchDim,
+)
+from gpu.host.info import A100, H100, B200
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -85,8 +91,10 @@ from nn.mha_utils import (
     MHAConfig,
     _copy_frag_to_smem,
     _kernel_mask,
+    DynamicInt,
 )
 from nn.softmax import _exp2_concrete
+from nn.mha_fa3_utils import NonNullPointer, NullPointer
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
@@ -96,6 +104,7 @@ from utils.static_tuple import StaticTuple
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
+from .mla_prefill_sm100 import mla_sm100_prefill
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -169,8 +178,12 @@ fn flare_mla_decoding[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -622,7 +635,7 @@ fn mla_decoding[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mla_decoding"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -1238,6 +1251,7 @@ fn flare_mla_prefill[
     use_score_mod: Bool = False,
     write_softmax_info: Bool = False,
     use_cascade_attention: Bool = False,
+    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, **_
@@ -1306,10 +1320,14 @@ fn flare_mla_prefill[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k.runtime_layout.shape.value),
-            trace_arg("v", v.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -1389,6 +1407,7 @@ fn flare_mla_prefill[
             config=mha_config,
             write_softmax_info=write_softmax_info,
             use_cascade_attention=use_cascade_attention,
+            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1420,6 +1439,7 @@ fn flare_mla_prefill[
     use_score_mod: Bool = False,
     write_softmax_info: Bool = False,
     use_cascade_attention: Bool = False,
+    use_fa4: Bool = False,  # TODO: remove this flag when we support ragged inputs
 ](
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, **_
@@ -1464,10 +1484,14 @@ fn flare_mla_prefill[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k.runtime_layout.shape.value),
-            trace_arg("v", v.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -1543,6 +1567,7 @@ fn flare_mla_prefill[
             write_softmax_info=write_softmax_info,
             use_cascade_attention=use_cascade_attention,
             _ndbuffer_mha_operand=True,
+            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1590,6 +1615,7 @@ fn flare_mla_prefill_dispatch[
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
     },
     _ndbuffer_mha_operand: Bool = False,
+    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, **_
@@ -1688,50 +1714,86 @@ fn flare_mla_prefill_dispatch[
         ctx, prev_softmax_info_ptr, prev_softmax_info_size, owning=False
     )
 
-    comptime kernel = mla_prefill[
-        config.dtype,
-        k_t,
-        v_t,
-        k_rope_t,
-        output.dtype,
-        softmax_type,
-        mask_t,
-        score_mod_t,
-        valid_length.layout,
-        config,
-        group = Int(group),
-        use_score_mod=use_score_mod,
-        q_depth=q_depth,
-        cache_depth=cache_depth,
-        write_softmax_info=write_softmax_info,
-        use_cascade_attention=use_cascade_attention,
-        _ndbuffer_mha_operand=_ndbuffer_mha_operand,
-    ]
-    ctx.enqueue_function_checked[kernel, kernel](
-        q_device,
-        k,
-        v,
-        k_rope,
-        output_device,
-        softmax_info_device,
-        prev_output_device,
-        prev_softmax_info_device,
-        scale,
-        batch_size,
-        max_prompt_len,
-        valid_length,
-        cache_offsets,
-        mask_functor,
-        score_mod_functor,
-        grid_dim=(
+    comptime is_sm100_available = ctx.default_device_info is B200 and use_fa4
+
+    @parameter
+    if is_sm100_available and (
+        not write_softmax_info and not use_cascade_attention
+    ):
+        mla_sm100_prefill[
+            config=config,
+            group = Int(group),
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            use_score_mod=use_score_mod,
+            _is_cache_length_accurate=True,
+        ](
+            output,
+            q,
+            k,
+            rebind[type_of(k)](v),
+            k_rope,
+            mask_functor,
+            score_mod_functor,
+            valid_length,
+            DynamicInt(max_prompt_len),
+            scale,
+            batch_size,
+            ctx,
+        )
+
+    else:
+        comptime kernel = mla_prefill[
+            config.dtype,
+            k_t,
+            v_t,
+            k_rope_t,
+            output.dtype,
+            softmax_type,
+            mask_t,
+            score_mod_t,
+            valid_length.layout,
+            config,
+            group = Int(group),
+            use_score_mod=use_score_mod,
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            write_softmax_info=write_softmax_info,
+            use_cascade_attention=use_cascade_attention,
+            _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+        ]
+        var grid_dim = LaunchDim(
             Int(ceildiv(max_prompt_len, Int(BM))),
             Int(config.num_heads),
             Int(batch_size),
-        ),
-        block_dim=(Int(config.num_threads()), 1, 1),
-        shared_mem_bytes=Int(smem_use),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
-    )
+        ) if has_nvidia_gpu_accelerator() else LaunchDim(
+            Int(config.num_heads),
+            Int(ceildiv(max_prompt_len, Int(BM))),
+            Int(batch_size),
+        )
+        ctx.enqueue_function_checked[kernel, kernel](
+            q_device,
+            k,
+            v,
+            k_rope,
+            output_device,
+            softmax_info_device,
+            prev_output_device,
+            prev_softmax_info_device,
+            scale,
+            batch_size,
+            max_prompt_len,
+            valid_length,
+            cache_offsets,
+            mask_functor,
+            score_mod_functor,
+            grid_dim=grid_dim,
+            block_dim=(Int(config.num_threads()), 1, 1),
+            shared_mem_bytes=Int(smem_use),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_use
+            ),
+        )
 
 
 @__llvm_metadata(
@@ -1807,7 +1869,15 @@ fn mla_prefill[
     end_of_seq = Int(valid_length[batch_idx + 1])
     seq_len = end_of_seq - start_of_seq
 
-    if seq_len < Int(block_idx.x * config.block_m()):
+    @always_inline
+    fn q_block_idx() -> UInt:
+        return block_idx.x if is_nvidia_gpu() else block_idx.y
+
+    @always_inline
+    fn head_idx() -> UInt:
+        return block_idx.y if is_nvidia_gpu() else block_idx.x
+
+    if seq_len < Int(q_block_idx() * config.block_m()):
         return
 
     num_keys = k.cache_length(Int(batch_idx))
@@ -1824,7 +1894,7 @@ fn mla_prefill[
 
     q_batch_offset = start_of_seq * q_depth * Int(config.num_heads)
     o_batch_offset = start_of_seq * Int(depth) * Int(config.num_heads)
-    softmax_info_offset = start_of_seq * 2 + total_seq_len * block_idx.y * 2
+    softmax_info_offset = start_of_seq * 2 + total_seq_len * head_idx() * 2
 
     @parameter
     if is_nvidia_gpu():
@@ -1877,7 +1947,7 @@ fn mla_prefill[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mla_prefill_single_batch"
+            operation = __get_current_function_name()
         ]()
 
 

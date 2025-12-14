@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from sys import external_call, size_of
+from sys import external_call, size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -111,8 +111,8 @@ fn create_error_async_values_and_destruct_error(
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
         async_len,
-        err.unsafe_cstr_ptr(),
-        err.byte_length(),
+        err.data.as_string_slice().unsafe_ptr(),
+        err.data.byte_length(),
     )
 
 
@@ -1340,7 +1340,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
 
 
 @register_passable("trivial")
-struct MyIntReg(ImplicitlyCopyable, Movable):
+struct MyIntReg(ImplicitlyCopyable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1354,7 +1354,7 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
 
 
 @register_passable
-struct MyIntReg2(ImplicitlyCopyable, Movable):
+struct MyIntReg2(ImplicitlyCopyable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1489,6 +1489,32 @@ struct MoggAsyncPackHelper:
         Packs a buffer reference instance (modeled by NDBuffer[DType.int8, 1, MutAnyOrigin] for now) into the asynchronous context. Calls create_buffer_ref_async to handle the packing.
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
+
+    fn __init__(
+        out self, var data: Some[Movable], async_ptr: AnyAsyncValueRefPtr
+    ):
+        """
+        Packs a generic Movable value into the asynchronous context.
+        Used for opaque types like SIMDPair.
+        """
+        comptime Type = type_of(data)
+
+        # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
+        @always_inline("nodebug")
+        fn erased_destructor(ptr: UnsafePointer[UInt8]):
+            ptr.bitcast[Type]().destroy_pointee()
+
+        var dst_ptr = external_call[
+            "MGP_RT_MojoValueAllocateBuffer", UnsafePointer[UInt8]
+        ](size_of[Type](), align_of[Type]())
+
+        dst_ptr.bitcast[Type]().init_pointee_move(data^)
+
+        external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
+            dst_ptr,
+            erased_destructor,
+            async_ptr,
+        )
 
 
 @register_internal("mogg.async.pack")
@@ -1626,8 +1652,8 @@ fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
     """Indicates to the C++ runtime that the kernel has failed."""
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
-        err.unsafe_cstr_ptr(),
-        err.byte_length(),
+        err.data.as_string_slice().unsafe_ptr(),
+        err.data.byte_length(),
     )
 
 
@@ -1674,27 +1700,35 @@ fn tmp_reshape_contiguous_buffer[
 # ===-----------------------------------------------------------------------===#
 
 
-fn mgp_get_buffer_handle_from_tensor_buffer_ref(
-    buffer: TensorBufferRefPtr, memStorageHandle: OpaquePointer
-):
-    external_call["MGP_RT_GetMemBufferHandleFromTensorBufferRef", NoneType](
-        buffer, memStorageHandle
-    )
-
-
 @register_internal("tmp.mgp.buffer.get_cached")
 @no_inline
 fn tmp_mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
-) -> TensorBufferRefPtr:
+) -> Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr]:
     """
-    Get a reference to the cached TensorBufferRef.
+    Get a reference to the cached tensor.
     """
-    return external_call["TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr](
+    var buffer_size: UInt64 = 0
+    var buffer_data = OpaquePointer()
+
+    var buffer_ref = external_call[
+        "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
+    ](
         buffer_slot,
         ctx,
+        UnsafePointer(to=buffer_size),
+        UnsafePointer(to=buffer_data),
     )
+
+    var buffer = NDBuffer[DType.int8, 1](
+        buffer_data.bitcast[Int8](), Index(buffer_size)
+    )
+    var res = Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr](
+        buffer, buffer_ref
+    )
+
+    return res
 
 
 @register_internal("tmp.mgp.buffer.remove_cached")
@@ -1811,3 +1845,20 @@ fn get_buffer_mem_storage_handle(
     external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
         buffer, type, memStorageHandle
     )
+
+
+@register_internal("pop.select")
+@always_inline
+fn select[T: AnyTrivialRegType](cond: Bool, true_case: T, false_case: T) -> T:
+    if cond:
+        return true_case
+
+    return false_case
+
+
+@register_internal("pop.simd.select")
+@always_inline
+fn simd_select[
+    T: AnyTrivialRegType
+](cond: Bool, true_case: T, false_case: T) -> T:
+    return select(cond, true_case, false_case)

@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _DATA = [
     "test_file_dummy_input.txt",
 ]

@@ -16,12 +16,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, no_type_check
 
+from max.driver import load_devices
 from max.interfaces import (
     AudioGenerationInputs,
     AudioGenerationOutput,
     Pipeline,
     RequestID,
 )
+from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import ReturnLogits
 from max.pipelines.core import TTSContext
 
@@ -43,6 +45,8 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
     This pipeline passes all of the work through to the PipelineModel.
     """
 
+    pipeline_model: PipelineModel[TTSContext]
+
     @no_type_check
     def __init__(
         self,
@@ -57,13 +61,14 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
             pipeline_model: The pipeline model to use.
         """
         # Create the pipeline model.
-        # None of the arguments are used except for the config.
+        # None of the arguments are used except for the config and devices.
+        devices = load_devices(pipeline_config.model_config.device_specs)
         self.pipeline_model = pipeline_model(
             pipeline_config=pipeline_config,
             session=None,
             huggingface_config=None,
             encoding=None,
-            devices=None,
+            devices=devices,
             kv_cache_config=None,
             weights=None,
             adapter=None,
@@ -79,14 +84,14 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
             sum(ctx.active_length for ctx in inputs.batch.values())
         )
 
-        next_chunk = getattr(self.pipeline_model, "next_chunk")  # type: ignore[has-type]  # noqa: B009
+        next_chunk = getattr(self.pipeline_model, "next_chunk")  # noqa: B009
         outputs = next_chunk(inputs.batch)
         METRICS.output_tokens(
             sum(output.steps_executed for output in outputs.values())
         )
 
-        if hasattr(self.pipeline_model, "tts_config"):  # type: ignore[has-type]
-            sample_rate = self.pipeline_model.tts_config.decoder_sample_rate  # type: ignore[has-type]
+        if hasattr(self.pipeline_model, "tts_config"):
+            sample_rate = self.pipeline_model.tts_config.decoder_sample_rate
             for output in outputs.values():
                 METRICS.audio_output_length(
                     output.audio_data.shape[0] / float(sample_rate) * 1000
@@ -95,5 +100,10 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         return outputs
 
     def release(self, request_id: RequestID) -> None:
-        release = getattr(self.pipeline_model, "release")  # type: ignore[has-type]  # noqa: B009
+        release = getattr(self.pipeline_model, "release")  # noqa: B009
         release(request_id)
+
+    @property
+    def kv_manager(self) -> PagedKVCacheManager | NullKVCacheManager:
+        assert hasattr(self.pipeline_model, "kv_manager")
+        return self.pipeline_model.kv_manager

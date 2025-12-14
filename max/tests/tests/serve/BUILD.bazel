@@ -1,0 +1,80 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+[
+    modular_py_test(
+        name = src.split(".")[0],
+        srcs = [
+            src,
+            "conftest.py",
+        ],
+        data = [
+            "//max/tests/tests/serve/testdata",
+        ],
+        env = {
+            "MAX_SERVE_DISABLE_TELEMETRY": "True",
+            "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
+        },
+        # FIXME: SDLC-2743
+        external_noop = src in [
+            "test_reset_prefix_cache.py",
+            "test_telemetry_worker.py",
+        ],
+        imports = ["../.."],
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),  # FIXME: MOCO-2411
+        deps = [
+            "//max/python/max/nn",
+            "//max/python/max/serve",
+            "//max/python/max/serve/pipelines",
+            "//max/python/max/serve/router",
+            "//max/python/max/serve/scheduler",
+            "//max/python/max/serve/schemas",
+            "//max/python/max/serve/telemetry",
+            requirement("async-asgi-testclient"),
+            requirement("fastapi"),
+            requirement("gguf"),
+            requirement("hypothesis"),
+            requirement("opentelemetry-sdk"),
+            requirement("pytest-asyncio"),
+            requirement("pytest-grpc"),
+            requirement("sse-starlette"),
+            requirement("sseclient-py"),
+            requirement("torch"),
+            requirement("transformers"),
+            requirement("pillow"),
+            requirement("pyzmq"),
+        ],
+    )
+    for src in glob(
+        [
+            "*.py",
+            "pipelines/*.py",
+        ],
+        exclude = ["conftest.py"],
+    )
+]
+
+modular_py_test(
+    name = "parser_tests",
+    srcs = glob(
+        [
+            "parser/*.py",
+        ],
+    ),
+    data = [],
+    env = {
+        "MAX_SERVE_DISABLE_TELEMETRY": "True",
+        "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
+    },
+    deps = [
+        "//max/python/max/serve/parser",
+    ],
+)

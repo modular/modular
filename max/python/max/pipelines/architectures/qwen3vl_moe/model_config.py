@@ -120,6 +120,9 @@ class Qwen3VLConfigBase:
     devices: list[DeviceRef]
     """Devices that the Qwen3VL model is parallelized over."""
 
+    dtype: DType
+    """DType of the Qwen3VL model weights."""
+
     # Multimodal parameters
     image_token_id: int
     """Token ID used for image placeholders in the input sequence."""
@@ -135,6 +138,24 @@ class Qwen3VLConfigBase:
 
     mrope_section: list[int]
     """List of indices for the mrope section."""
+
+    num_experts: int
+    """Number of experts in the MoE layer."""
+
+    num_experts_per_tok: int
+    """Number of experts per token in the MoE layer."""
+
+    moe_intermediate_size: int
+    """Intermediate size in the MoE layer."""
+
+    mlp_only_layers: list[int]
+    """List of indices for the MLP only layers."""
+
+    norm_topk_prob: bool
+    """Whether to use top-k probability normalization in the MoE layer."""
+
+    decoder_sparse_step: int
+    """Sparse step for the decoder."""
 
     # Vision encoder configuration.
     vision_config: VisionConfig
@@ -158,7 +179,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -168,7 +189,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
         )
         return Llama3Config.get_kv_params(
             huggingface_config=llm_config,
-            n_devices=n_devices,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -206,7 +227,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "layer_norm",
+        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
     ) -> Qwen3VLConfig:
         """Generate Qwen3VLConfig from pipeline and HuggingFace configs.
 
@@ -231,7 +252,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
             raise ValueError("vision_config not found in huggingface_config")
         vision_config = VisionConfig.generate(
             hf_vision_config,
-            vision_state_dict["patch_embed.proj.weight"].dtype,
+            vision_state_dict["vision_encoder.patch_embed.proj.weight"].dtype,
             llm_state_dict["language_model.embed_tokens.weight"].dtype,
             pipeline_config,
         )
@@ -249,8 +270,12 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
             norm_method=norm_method,
             attention_bias=True,  # Qwen3VL uses Qwen2 which has attention_bias=True
         )
+        llm_config.interleaved_rope_weights = False
+
+        text_config = huggingface_config.text_config
 
         return Qwen3VLConfig(
+            dtype=dtype,
             devices=[
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model_config.device_specs
@@ -260,9 +285,14 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
             video_token_id=huggingface_config.video_token_id,
             vision_start_token_id=huggingface_config.vision_start_token_id,
             spatial_merge_size=hf_vision_config.spatial_merge_size,
-            mrope_section=huggingface_config.text_config.rope_scaling[
-                "mrope_section"
-            ],
+            mrope_section=text_config.rope_scaling["mrope_section"],
+            # MoE parameters
+            num_experts=text_config.num_experts,
+            num_experts_per_tok=text_config.num_experts_per_tok,
+            moe_intermediate_size=text_config.moe_intermediate_size,
+            mlp_only_layers=text_config.mlp_only_layers,
+            norm_topk_prob=text_config.norm_topk_prob,
+            decoder_sparse_step=text_config.decoder_sparse_step,
             # Vision configuration
             vision_config=vision_config,
             # Composed language model configuration

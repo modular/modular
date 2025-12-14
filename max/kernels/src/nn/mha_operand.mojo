@@ -16,7 +16,7 @@ from kv_cache.types import KVCacheT
 from layout import Layout, LayoutTensor
 from layout.layout import UNKNOWN_VALUE, DimList
 from layout.runtime_layout import RuntimeLayout
-from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
+from layout.tma_async import SplitLastDimTMATensorTile, create_split_tma
 
 from memory import (
     LegacyOpaquePointer as OpaquePointer,
@@ -63,19 +63,15 @@ trait MHAOperand(DevicePassable):
         ...
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        ...
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
+        BN: Int,
+        depth: Int,
         swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
-        Self.dtype, tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
+        BK: Int = depth,
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
+        Self.dtype,
+        IndexList[3](BN, 1, BK),
+        swizzle_mode,
     ]:
         """Creates a TMA tile for efficient GPU memory transfers."""
         ...
@@ -97,7 +93,7 @@ struct KVCacheMHAOperand[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -139,29 +135,25 @@ struct KVCacheMHAOperand[
         return self.cache.row_idx(batch_idx, start_tok_idx)
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        return self.cache.col_idx(head_idx)
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
+        BN: Int,
+        depth: Int,
         swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
-        Self.dtype,
-        tile_m,
-        tile_n,
-        swizzle_mode,
-        is_k_major=is_k_major,
-    ]:
+        BK: Int = depth,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            Self.dtype,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises where depth == Int(Self.cache_t.kv_params.head_size):
         """Creates a TMA tile for efficient GPU memory transfers."""
         # Forward to the underlying cache's implementation
-        return self.cache.create_tma_tile[
-            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
-        ](ctx)
+        tma = rebind[type_of(tma)](
+            self.cache.create_tma_tile[BN, swizzle_mode](ctx)
+        )
 
 
 @register_passable("trivial")
@@ -174,7 +166,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -227,39 +219,31 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
         return batch_idx * self.buffer.dim[1]() + start_tok_idx
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        return head_idx * self.buffer.dim[self.layout.rank() - 1]()
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
+        BN: Int,
+        depth: Int,
         swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
-        Self.dtype,
-        tile_m,
-        tile_n,
-        swizzle_mode,
-        is_k_major=is_k_major,
-    ]:
+        BK: Int = depth,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            Self.dtype,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
-        var cols = self.buffer.dim[2]() * self.buffer.dim[3]()
-        comptime layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        comptime smem_shape = IndexList[3](BN, 1, BK)
+        comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
 
-        rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
-
-        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
-            self.buffer.ptr, rt_layout
-        )
-
-        return create_nested_tma_tile[
-            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
-        ](ctx, tensor)
+        tma = create_split_tma[
+            smem_shape,
+            gmem_shape,
+            swizzle_mode=swizzle_mode,
+        ](ctx, self.buffer.ptr, rows, self.buffer.dim[2]())
 
 
 @register_passable("trivial")
@@ -277,7 +261,7 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -345,36 +329,28 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         return self.cache_row_offsets[Int(batch_idx)][0] + start_tok_idx
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        return head_idx * self.buffer.dim[2]()
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
+        BN: Int,
+        depth: Int,
         swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
-        Self.dtype,
-        tile_m,
-        tile_n,
-        swizzle_mode,
-        is_k_major=is_k_major,
-    ]:
+        BK: Int = depth,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            Self.dtype,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # View as [total_tokens, heads*head_dim]
         var rows = self.buffer.dim[0]()  # total tokens
-        var cols = self.buffer.dim[1]() * self.buffer.dim[2]()
+        comptime smem_shape = IndexList[3](BN, 1, BK)
+        comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
 
-        comptime layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-
-        rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
-        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
-            self.buffer.ptr, rt_layout
-        )
-
-        return create_nested_tma_tile[
-            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
-        ](ctx, tensor)
+        tma = create_split_tma[
+            smem_shape,
+            gmem_shape,
+            swizzle_mode=swizzle_mode,
+        ](ctx, self.buffer.ptr, rows, self.buffer.dim[1]())

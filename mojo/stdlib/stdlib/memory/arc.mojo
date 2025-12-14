@@ -64,7 +64,7 @@ struct _ArcPointerInner[T: Movable]:
 
 
 @register_passable
-struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
+struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable):
     """Atomic reference-counted pointer.
 
     This smart pointer owns an instance of `T` indirectly managed on the heap.

@@ -35,7 +35,7 @@ from gpu._utils import (
 )
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import bitcast
 
 from utils import StaticTuple
 from utils.index import Index
@@ -233,7 +233,9 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif is_amd_gpu():
         _mma_amd[block_size](d, a, b, c)
     else:
-        return CompilationTarget.unsupported_target_error[operation="mma"]()
+        return CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 # ===------------------------------------------------------------------===#
@@ -244,7 +246,7 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 @always_inline
 fn ld_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
-](ptr: UnsafePointer[Scalar[dtype], **_],) -> SIMD[dtype, simd_width]:
+](ptr: UnsafePointer[mut=False, Scalar[dtype], **_]) -> SIMD[dtype, simd_width]:
     """Loads a matrix from shared memory into registers in a format suitable for tensor core operations.
 
     This function performs a warp-synchronized load from shared memory to registers, formatting the data
@@ -283,10 +285,9 @@ fn ld_matrix[
         ```
     """
 
-    constrained[
-        (transpose and dtype.is_half_float()) or (not transpose),
-        "Transposed ld_matrix is only for half precision.",
-    ]()
+    __comptime_assert (transpose and dtype.is_half_float()) or (
+        not transpose
+    ), "Transposed ld_matrix is only for half precision."
 
     # The register width is fixed at 4 Bytes (32 bits)
     comptime register_btypes = 4
@@ -325,10 +326,9 @@ fn ld_matrix[
         d = rebind[SIMD[dtype, simd_width]](r0.join(r1))
 
     else:
-        constrained[
-            num_registers == 4,
-            "no valid implementation of ldmatrix instruction",
-        ]()
+        __comptime_assert (
+            num_registers == 4
+        ), "no valid implementation of ldmatrix instruction"
         comptime ins = base + ".x4" + get_suffix()
         var r = llvm_intrinsic[
             ins, _RegisterPackType[UInt32, UInt32, UInt32, UInt32]
@@ -364,7 +364,9 @@ fn ld_matrix[
 fn st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
+    ptr: UnsafePointer[
+        mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
+    ],
     d: SIMD[DType.float32, simd_width],
 ):
     """Performs warp-synchronized copy from registers to shared memory.
@@ -394,7 +396,7 @@ fn st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    constrained[dtype in (DType.bfloat16, DType.float32), ""]()
+    __comptime_assert dtype in (DType.bfloat16, DType.float32), ""
 
     comptime num_matrices = simd_width
 
@@ -421,10 +423,9 @@ fn st_matrix[
         )
 
     else:
-        constrained[
-            num_matrices == 4,
-            "no valid implementation of stmatrix instruction",
-        ]()
+        __comptime_assert (
+            num_matrices == 4
+        ), "no valid implementation of stmatrix instruction"
 
         comptime ins = base + get_suffix() + ".x4.shared.b16 [$0], {$1, $2, $3, $4};\n"
         inlined_assembly[ins, NoneType, constraints="r,r,r,r,r"](
@@ -684,43 +685,35 @@ fn wgmma_async[
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
-    constrained[
-        (m * n // 128) * size_of[accum_type]() == width * size_of[c_dtype](),
+    __comptime_assert (m * n // 128) * size_of[accum_type]() == width * size_of[
+        c_dtype
+    ](), String(
         "Number of output registers ",
         String(width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
-    ]()
+    )
 
-    constrained[
-        scale_d == 1 or scale_d == 0,
-        "Invalid scale in value of scaled_d '",
-        String(scale_d),
-        (
-            "' which is not supported. Only 1 or 0 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_d == 1 or scale_d == 0, (
+        "Invalid scale in value of scaled_d '"
+        + String(scale_d)
+        + "' which is not supported. Only 1 or 0 is supported as the"
+        " scale in values."
+    )
 
-    constrained[
-        scale_a == 1 or scale_a == -1,
-        "Invalid scale in value of scaled_a '",
-        String(scale_a),
-        (
-            "' which is not supported. Only 1 or -1 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_a == 1 or scale_a == -1, (
+        "Invalid scale in value of scaled_a '"
+        + String(scale_a)
+        + "' which is not supported. Only 1 or -1 is supported as the"
+        " scale in values."
+    )
 
-    constrained[
-        scale_b == 1 or scale_b == -1,
-        "Invalid scale in value of scaled_b '",
-        String(scale_b),
-        (
-            "' which is not supported. Only 1 or -1 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_b == 1 or scale_b == -1, (
+        "Invalid scale in value of scaled_b '"
+        + String(scale_b)
+        + "' which is not supported. Only 1 or -1 is supported as the"
+        " scale in values."
+    )
 
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_a_desc.desc._mlir_value
@@ -820,43 +813,35 @@ fn wgmma_async[
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
-    constrained[
-        (m * n // 128) * size_of[accum_type]() == width * size_of[c_dtype](),
+    __comptime_assert (m * n // 128) * size_of[accum_type]() == width * size_of[
+        c_dtype
+    ](), String(
         "Number of output registers ",
         String(width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
-    ]()
+    )
 
-    constrained[
-        scale_d == 1 or scale_d == 0,
-        "Invalid scale in value of scaled_d '",
-        String(scale_d),
-        (
-            "' which is not supported. Only 1 or 0 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_d == 1 or scale_d == 0, (
+        "Invalid scale in value of scaled_d '"
+        + String(scale_d)
+        + "' which is not supported. Only 1 or 0 is supported as the"
+        " scale in values."
+    )
 
-    constrained[
-        scale_a == 1 or scale_a == -1,
-        "Invalid scale in value of scaled_a '",
-        String(scale_a),
-        (
-            "' which is not supported. Only 1 or -1 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_a == 1 or scale_a == -1, (
+        "Invalid scale in value of scaled_a '"
+        + String(scale_a)
+        + "' which is not supported. Only 1 or -1 is supported as the"
+        " scale in values."
+    )
 
-    constrained[
-        scale_b == 1 or scale_b == -1,
-        "Invalid scale in value of scaled_b '",
-        String(scale_b),
-        (
-            "' which is not supported. Only 1 or -1 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_b == 1 or scale_b == -1, (
+        "Invalid scale in value of scaled_b '"
+        + String(scale_b)
+        + "' which is not supported. Only 1 or -1 is supported as the"
+        " scale in values."
+    )
 
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_a_desc.desc._mlir_value
@@ -957,33 +942,34 @@ fn wgmma_async[
     - Row major matrix A.
     - Column major matrix B (or row major for BF16).
     """
-    constrained[
-        (m * n // 128) * size_of[accum_type]()
-        == frag_c_width * size_of[c_dtype](),
+    __comptime_assert (m * n // 128) * size_of[
+        accum_type
+    ]() == frag_c_width * size_of[c_dtype](), String(
         "Number of output registers ",
         String(frag_c_width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
-    ]()
+    )
 
-    constrained[
-        (m * k // 128) * size_of[a_type]() == frag_a_width * size_of[a_dtype](),
+    __comptime_assert (m * k // 128) * size_of[
+        a_type
+    ]() == frag_a_width * size_of[a_dtype](), String(
         "Number of input a registers ",
         String(frag_a_width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
-    ]()
+    )
     # for now, limited support
-    constrained[m == 64]()
-    constrained[k == 16]()
-    constrained[a_type is DType.bfloat16]()
-    constrained[b_type is DType.bfloat16]()
-    constrained[accum_type is DType.float32]()
-    constrained[c_dtype is DType.float32]()
-    constrained[layout_a == "row"]()
-    constrained[
-        layout_b == "col" or (layout_b == "row" and b_type is DType.bfloat16)
-    ]()
+    __comptime_assert m == 64
+    __comptime_assert k == 16
+    __comptime_assert a_type is DType.bfloat16
+    __comptime_assert b_type is DType.bfloat16
+    __comptime_assert accum_type is DType.float32
+    __comptime_assert c_dtype is DType.float32
+    __comptime_assert layout_a == "row"
+    __comptime_assert layout_b == "col" or (
+        layout_b == "row" and b_type is DType.bfloat16
+    )
 
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_b_desc.desc._mlir_value

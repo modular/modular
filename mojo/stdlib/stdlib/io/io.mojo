@@ -290,7 +290,7 @@ fn _printf[
             # If we aren't targeting either a known GPU vendor, or CPU, issue
             # a target error.
             return CompilationTarget.unsupported_target_error[
-                operation="_printf"
+                operation = __get_current_function_name()
             ]()
 
 
@@ -414,7 +414,7 @@ fn print[
                 _ = printf_append_string_n(msg, span, is_last=True)
             else:
                 return CompilationTarget.unsupported_target_error[
-                    operation="print"
+                    operation = __get_current_function_name()
                 ]()
         else:
             var buffer = _WriteBufferStack(file)
@@ -465,9 +465,3 @@ fn input(prompt: String = "") raises -> String:
     if prompt != "":
         print(prompt, end="")
     return _fdopen["r"](stdin).readline()
-
-
-fn _get_stdout_stream(out result: OpaquePointer[MutOrigin.external]):
-    result = external_call[
-        "KGEN_CompilerRT_IO_get_stdout_stream", type_of(result)
-    ]()

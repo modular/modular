@@ -22,8 +22,8 @@ from gpu import *
 from gpu.host import DeviceContext
 from gpu.host.info import A100, B200, H100
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, MaterializedMask
+from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
 from testing import assert_almost_equal, assert_equal
@@ -206,7 +206,7 @@ fn test[
 
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
+    @__copy_capture(q_device, k_device, v_device, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
         flash_attention[config=config](
             output_device,
@@ -254,14 +254,20 @@ fn test[
         num_pipeline_stages=2,
         algorithm=FlashAttentionAlgorithm(2),
     )
-    flash_attention[config=config_baseline](
-        output_device_ref,
+
+    mha_gpu_naive(
         q_device,
         k_device,
         v_device,
-        MaterializedMask(mask4d),
-        IdentityScoreMod(),
+        mask4d,
+        output_device_ref,
         scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
         ctx,
     )
 
@@ -353,6 +359,7 @@ fn test[
 fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
     var depths = [64, 128]
     if is_sm90orsm100:
+        depths.append(72)
         depths.append(80)
         depths.append(256)
     return depths^

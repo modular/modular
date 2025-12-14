@@ -23,7 +23,6 @@ from testing.testing import _assert_cmp_error
 
 from utils.numerics import FPUtils
 
-from ._utils import HostNDBuffer, TestTensor
 
 # ===----------------------------------------------------------------------=== #
 # assert_almost_equal
@@ -79,50 +78,6 @@ fn assert_almost_equal(
         )
 
 
-@always_inline
-fn assert_almost_equal(
-    x: HostNDBuffer,
-    y: type_of(x),
-    msg: String = "",
-    *,
-    location: OptionalReg[_SourceLocation] = None,
-    atol: Float64 = 1e-08,
-    rtol: Float64 = 1e-05,
-    equal_nan: Bool = False,
-) raises:
-    return assert_almost_equal(
-        x.tensor,
-        y.tensor,
-        msg=msg,
-        atol=atol,
-        rtol=rtol,
-        equal_nan=equal_nan,
-        location=location.or_else(__call_location()),
-    )
-
-
-@always_inline
-fn assert_almost_equal(
-    x: TestTensor,
-    y: type_of(x),
-    msg: String = "",
-    *,
-    location: OptionalReg[_SourceLocation] = None,
-    atol: Float64 = 1e-08,
-    rtol: Float64 = 1e-05,
-    equal_nan: Bool = False,
-) raises:
-    return assert_almost_equal(
-        x.ndbuffer,
-        y.ndbuffer,
-        msg=msg,
-        atol=atol,
-        rtol=rtol,
-        equal_nan=equal_nan,
-        location=location.or_else(__call_location()),
-    )
-
-
 # ===----------------------------------------------------------------------=== #
 # assert_equal
 # ===----------------------------------------------------------------------=== #
@@ -143,38 +98,6 @@ fn assert_equal(
             msg=String(msg, " at ", x.get_nd_index(i)),
             location=location.or_else(__call_location()),
         )
-
-
-@always_inline
-fn assert_equal(
-    x: HostNDBuffer,
-    y: type_of(x),
-    msg: String = "",
-    *,
-    location: OptionalReg[_SourceLocation] = None,
-) raises:
-    return assert_equal(
-        x.tensor,
-        y.tensor,
-        msg=msg,
-        location=location.or_else(__call_location()),
-    )
-
-
-@always_inline
-fn assert_equal(
-    x: TestTensor,
-    y: type_of(x),
-    msg: String = "",
-    *,
-    location: OptionalReg[_SourceLocation] = None,
-) raises:
-    return assert_equal(
-        x.ndbuffer,
-        y.ndbuffer,
-        msg=msg,
-        location=location.or_else(__call_location()),
-    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -236,55 +159,6 @@ fn assert_with_measure[
         x.data,
         y.data,
         x.num_elements(),
-        msg=msg,
-        location=location.or_else(__call_location()),
-        threshold=threshold,
-    )
-
-
-@always_inline
-fn assert_with_measure[
-    measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype], mut=False],
-        UnsafePointer[Scalar[dtype], mut=False],
-        Int,
-    ) -> Float64,
-](
-    x: HostNDBuffer,
-    y: type_of(x),
-    msg: String = "",
-    *,
-    location: OptionalReg[_SourceLocation] = None,
-    threshold: OptionalReg[Float64] = None,
-) raises:
-    _assert_with_measure_impl[measure](
-        x.tensor.data,
-        y.tensor.data,
-        x.tensor.num_elements(),
-        msg=msg,
-        location=location.or_else(__call_location()),
-        threshold=threshold,
-    )
-
-
-@always_inline
-fn assert_with_measure[
-    measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype], mut=False],
-        UnsafePointer[Scalar[dtype], mut=False],
-        Int,
-    ) -> Float64,
-](
-    x: TestTensor,
-    y: type_of(x),
-    msg: String = "",
-    *,
-    location: OptionalReg[_SourceLocation] = None,
-    threshold: OptionalReg[Float64] = None,
-) raises:
-    return assert_with_measure[measure](
-        x.ndbuffer,
-        y.ndbuffer,
         msg=msg,
         location=location.or_else(__call_location()),
         threshold=threshold,

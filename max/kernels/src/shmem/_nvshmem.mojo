@@ -66,7 +66,6 @@ fn _init_nvshmem_dylib() -> OwnedDLHandle:
         return OwnedDLHandle(path=lib)
     except e:
         abort(String("failed to load NVSHMEM library: ", e))
-        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline
@@ -80,7 +79,7 @@ fn _get_nvshmem_function[
             result_type,
         ]()
     except e:
-        return abort[result_type](String(e))
+        abort(String(e))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -292,7 +291,7 @@ fn _dtype_to_nvshmem_type[
         return get_static_string[prefix, "size", suffix, scope]()
     else:
         return CompilationTarget.unsupported_target_error[
-            StaticString, operation="_dtype_to_nvshmem_type"
+            StaticString, operation = __get_current_function_name()
         ]()
 
 

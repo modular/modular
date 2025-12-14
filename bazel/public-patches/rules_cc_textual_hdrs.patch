@@ -1,5 +1,5 @@
 diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/cc_compilation_helper.bzl
-index 01aa11f..b0251fe 100644
+index 01aa11fc..b0251fe9 100644
 --- a/cc/private/compile/cc_compilation_helper.bzl
 +++ b/cc/private/compile/cc_compilation_helper.bzl
 @@ -196,6 +196,7 @@ _ModuleMapInfo = provider(
@@ -56,7 +56,7 @@ index 01aa11f..b0251fe 100644
                  dependency_module_maps = dependency_module_maps,
                  private_headers = private_headers_for_module_map_action,
 diff --git a/cc/private/compile/compile.bzl b/cc/private/compile/compile.bzl
-index c92fa70..cf1b9a7 100644
+index c92fa70d..cf1b9a7a 100644
 --- a/cc/private/compile/compile.bzl
 +++ b/cc/private/compile/compile.bzl
 @@ -311,8 +311,7 @@ def compile(

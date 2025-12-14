@@ -19,7 +19,6 @@ from sys.param_env import env_get_int, is_defined
 
 import gpu.host._tracing as gpu_tracing
 import logger.logger as logger
-from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.host._tracing import Color
 from gpu.host._tracing import _end_range as _end_gpu_range
@@ -30,8 +29,10 @@ from gpu.host._tracing import _start_range as _start_gpu_range
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList, Variant
+from os import abort
 
 comptime log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
+"""Logger instance for operation tracing with INFO level and [OP] prefix."""
 
 
 fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
@@ -83,10 +84,15 @@ struct TraceCategory(Equatable, Identifiable, Intable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     comptime OTHER = Self(0)
+    """Other or uncategorized trace events."""
     comptime ASYNCRT = Self(1)
+    """Asynchronous runtime trace events."""
     comptime MEM = Self(2)
+    """Memory-related trace events."""
     comptime Kernel = Self(3)
+    """Kernel execution trace events."""
     comptime MAX = Self(4)
+    """MAX framework trace events."""
 
     var value: Int
     """The integer value representing the trace category. Used for bitwise operations
@@ -144,12 +150,15 @@ struct TraceCategory(Equatable, Identifiable, Intable):
 
 
 @register_passable("trivial")
-struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable, Movable):
+struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
+    """Always trace at this level."""
     comptime OP = Self(1)
+    """Operation-level tracing."""
     comptime THREAD = Self(2)
+    """Thread-level tracing."""
 
     var value: Int
     """The integer value representing the trace level.
@@ -358,20 +367,6 @@ fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
     return String(trace_arg(name, shape), "x", dtype)
 
 
-@always_inline
-fn trace_arg(name: String, buf: NDBuffer) -> String:
-    """Helper to stringify the type and shape of a kernel argument for tracing.
-
-    Args:
-        name: The name of the argument.
-        buf: The NDBuffer to trace.
-
-    Returns:
-        A string representation of the buffer with its shape and data type.
-    """
-    return trace_arg(name, buf.dynamic_shape, buf.type)
-
-
 # ===-----------------------------------------------------------------------===#
 # Trace
 # ===-----------------------------------------------------------------------===#
@@ -383,7 +378,7 @@ struct Trace[
     *,
     category: TraceCategory = TraceCategory.MAX,
     target: Optional[StaticString] = None,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """An object representing a specific trace.
 
     This struct provides functionality for creating and managing trace events
@@ -667,13 +662,10 @@ struct Trace[
         ](self.event_id)
 
     @always_inline
-    fn __exit__(self) raises:
+    fn __exit__(self):
         """Exits the trace context.
 
         This finishes recording of the trace event.
-
-        Raises:
-            If the operation fails.
         """
 
         @parameter
@@ -683,7 +675,10 @@ struct Trace[
 
         @parameter
         if _is_gpu_profiler_enabled[Self.category, Self.level]():
-            _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+            try:
+                _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+            except:
+                abort("GPU tracing failure")
             return
 
         @parameter

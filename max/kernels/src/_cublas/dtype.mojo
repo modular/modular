@@ -38,7 +38,7 @@ struct Property:
             return "MINOR_VERSION"
         if self == Self.PATCH_LEVEL:
             return "PATCH_LEVEL"
-        return abort[String]("invalid Property entry")
+        abort("invalid Property entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -61,8 +61,6 @@ struct DataType:
     comptime C_8U = Self(9)
     comptime R_32I = Self(10)
     comptime C_32I = Self(11)
-    comptime R_8F_E4M3 = Self(28)
-    comptime R_8F_E5M2 = Self(29)
     comptime R_4I = Self(16)
     comptime C_4I = Self(17)
     comptime R_4U = Self(18)
@@ -77,6 +75,13 @@ struct DataType:
     comptime C_64I = Self(25)
     comptime R_64U = Self(26)
     comptime C_64U = Self(27)
+    comptime R_8F_E4M3 = Self(28)
+    comptime R_8F_UE4M3 = Self.R_8F_E4M3
+    comptime R_8F_E5M2 = Self(29)
+    comptime R_8F_UE8M0 = Self(30)
+    comptime R_6F_E2M3 = Self(31)
+    comptime R_6F_E3M2 = Self(32)
+    comptime R_4F_E2M1 = Self(33)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -149,8 +154,18 @@ struct DataType:
             return "R_8F_E4M3"
         if self == Self.R_8F_E5M2:
             return "R_8F_E5M2"
+        if self == Self.R_8F_UE4M3:
+            return "R_8F_UE4M3"
+        if self == Self.R_8F_UE8M0:
+            return "R_8F_UE8M0"
+        if self == Self.R_6F_E2M3:
+            return "R_6F_E2M3"
+        if self == Self.R_6F_E3M2:
+            return "R_6F_E3M2"
+        if self == Self.R_4F_E2M1:
+            return "R_4F_E2M1"
 
-        return abort[String]("invalid DataType entry")
+        abort("invalid DataType entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)

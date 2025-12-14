@@ -13,7 +13,8 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from comm.allreduce import MAX_GPUS, Signal, allreduce
+from comm.allreduce import allreduce
+from comm import MAX_GPUS, Signal, group_start, group_end
 from gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
 from gpu.host import DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -66,6 +67,8 @@ fn _matmul_allreduce[
         )
 
     # Call allreduce for each GPU
+    group_start()
+
     @parameter
     for i in range(ngpus):
         allreduce[ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]](
@@ -76,6 +79,7 @@ fn _matmul_allreduce[
             rank_sigs,
             ctxs[i],
         )
+    group_end()
 
 
 @parameter
@@ -192,6 +196,8 @@ fn _matmul_allreduce_split_m[
             )
 
         # Call allreduce for each GPU
+        group_start()
+
         @parameter
         for i in range(ngpus):
             allreduce[
@@ -206,6 +212,7 @@ fn _matmul_allreduce_split_m[
                 rank_sigs,
                 ctxs[i],
             )
+        group_end()
 
 
 @parameter
@@ -321,6 +328,8 @@ fn _matmul_allreduce_split_n[
             )
 
         # Call allreduce for each GPU
+        group_start()
+
         @parameter
         for i in range(ngpus):
             allreduce[
@@ -335,6 +344,7 @@ fn _matmul_allreduce_split_n[
                 rank_sigs,
                 ctxs[i],
             )
+        group_end()
 
 
 @parameter

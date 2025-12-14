@@ -75,10 +75,6 @@ class PipelineConfig(MAXConfig):
     set higher based on server capacity.
     """
 
-    max_ce_batch_size: int = 192
-    """Maximum cache size to reserve for a single context encoding batch.
-    The actual limit is the lesser of this and `max_batch_size`."""
-
     max_queue_size_tg: int | None = None
     """Maximum number of requests in decode queue. By default, this is max-batch-size."""
 
@@ -328,6 +324,21 @@ class PipelineConfig(MAXConfig):
             if filtered_kwargs:
                 self._speculative_config = SpeculativeConfig(**filtered_kwargs)
                 assert self._draft_model_config is not None
+                # We need to set the architecture to EagleLlamaForCausalLM for Eagle speculative decoding
+                if self._speculative_config.is_eagle():
+                    assert (
+                        len(
+                            self._draft_model_config.huggingface_config.architectures
+                        )
+                        == 1
+                    )
+                    hf_arch = self._draft_model_config.huggingface_config.architectures[
+                        0
+                    ]
+                    if hf_arch == "LlamaForCausalLM":
+                        self._draft_model_config.huggingface_config.architectures[
+                            0
+                        ] = "EagleLlamaForCausalLM"
 
     def _process_remaining_config_classes(
         self, unmatched_kwargs: dict[str, Any]
@@ -864,7 +875,10 @@ class PipelineConfig(MAXConfig):
         arch.pipeline_model.finalize_pipeline_config(self)
 
         MemoryEstimator.estimate_memory_footprint(
-            self, arch.pipeline_model, model_config, devices
+            self,
+            arch.pipeline_model,
+            model_config,
+            devices,
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
@@ -877,6 +891,18 @@ class PipelineConfig(MAXConfig):
                     f"Clamping max_length from {self.max_length} to {clamped_max_seq_len} due to capacity of KV Cache"
                 )
                 self.max_length = clamped_max_seq_len
+
+        # Validate whether the architecture requires a max batch context length to be specified.
+        # This needs to be done after max_length is resolved.
+        if (
+            arch.requires_max_batch_context_length
+            and self.max_batch_context_length is None
+        ):
+            logger.warning(
+                f"Architecture '{arch.name}' requires max-batch-context-length to be specified but found None. "
+                f"Defaulting to the max sequence length of the model: {self.max_length}"
+            )
+            self.max_batch_context_length = self.max_length
 
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""
@@ -1009,7 +1035,6 @@ class PipelineConfig(MAXConfig):
         logger.info("=" * 60)
         logger.info(f"    max_seq_len            : {self.max_length}")
         logger.info(f"    max_batch_size         : {self.max_batch_size}")
-        logger.info(f"    max_ce_batch_size      : {self.max_ce_batch_size}")
         logger.info(
             f"    chunked_prefill        : {self.enable_chunked_prefill}"
         )
@@ -1103,7 +1128,6 @@ class PipelineConfig(MAXConfig):
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
             "max_batch_size": "Define the maximum batch size to execute with the model. When not specified (None), we determine this value dynamically. For users launching in a server scenario, the expectation is that this value should be set higher based on server capacity.",
-            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 192.",
             "max_queue_size_tg": "Maximum number of requests in decode queue. By default, this is max-batch-size.",
             "min_batch_size_tg": "Specifies a soft floor on the decode batch size. If the TG batch size is larger than this value, the scheduler will continue to run TG batches. If it falls below, the scheduler will prioritize CE. This is an experimental flag solely for the TTS scheduler.",
             "ce_delay_ms": "Duration of scheduler sleep prior to starting a prefill batch. This is an experimental flag solely for the TTS scheduler. Default is 0.0.",

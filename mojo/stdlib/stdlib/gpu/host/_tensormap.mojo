@@ -14,11 +14,7 @@
 from sys import external_call, size_of
 from gpu.host import DeviceBuffer
 from gpu.host.device_context import _checked, _ConstCharPtr, _DeviceBufferPtr
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    stack_allocation,
-)
+from memory import stack_allocation
 from utils import IndexList, StaticTuple
 
 
@@ -56,10 +52,11 @@ struct DataType:
         Returns:
             The DataType enum value corresponding to the input data type.
         """
-        constrained[
-            dtype in (DType.float32, DType.bfloat16, DType.float8_e4m3fn),
-            "Unsupported dtype",
-        ]()
+        __comptime_assert dtype in (
+            DType.float32,
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ), "Unsupported dtype"
 
         @parameter
         if dtype is DType.float32:
@@ -92,7 +89,6 @@ struct SwizzleMode(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):
@@ -335,14 +331,14 @@ fn create_tensormap[
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
             _ConstCharPtr,
-            OpaquePointer,  # tensorMap
+            OpaquePointer[MutAnyOrigin],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
             _DeviceBufferPtr,  #  globalAddress
-            UnsafePointer[Int64],  # globalDim
-            UnsafePointer[Int64],  # globalStrides
-            UnsafePointer[Int32],  # boxDim
-            UnsafePointer[Int32],  # elementStrides
+            UnsafePointer[Int64, MutAnyOrigin],  # globalDim
+            UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
+            UnsafePointer[Int32, MutAnyOrigin],  # boxDim
+            UnsafePointer[Int32, MutAnyOrigin],  # elementStrides
             Int32,  # interleave
             Int32,  # swizzle
             Int32,  # l2Promotion

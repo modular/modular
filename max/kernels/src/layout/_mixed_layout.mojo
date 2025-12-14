@@ -16,13 +16,8 @@ from os import abort
 from sys.intrinsics import _type_is_eq
 
 from builtin.variadics import (
-    VariadicOf,
+    Variadic,
     VariadicPack,
-    Concatenated,
-    Reversed,
-    MakeVariadic,
-    EmptyVariadic,
-    variadic_size,
     _MapVariadicAndIdxToType,
     _ReduceVariadicAndIdxToVariadic,
 )
@@ -37,15 +32,16 @@ from ._mixed_tuple import (
     crd2idx,
     mixed_int_tuple_to_int_tuple,
     _FlattenedOffsets,
+    _IntToComptimeInt,
 )
 from .int_tuple import IntTuple
 from .layout import LayoutTrait
 
 
 struct MixedLayout[
-    shape_types: VariadicOf[MixedTupleLike],
-    stride_types: VariadicOf[MixedTupleLike],
-](ImplicitlyCopyable, Movable):
+    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+](ImplicitlyCopyable):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions
@@ -63,7 +59,10 @@ struct MixedLayout[
     var stride: MixedTuple[*Self.stride_types]
     """The stride of the layout as a mixed tuple."""
 
-    comptime rank = variadic_size(Self.shape_types)
+    comptime rank = Variadic.size(Self.shape_types)
+    comptime ALL_DIMS_KNOWN = MixedTuple[
+        *Self.shape_types
+    ].ALL_DIMS_KNOWN and MixedTuple[*Self.stride_types].ALL_DIMS_KNOWN
 
     fn __init__(
         out self,
@@ -140,20 +139,20 @@ struct MixedLayout[
 comptime _RowMajor[
     *element_types: MixedTupleLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = EmptyVariadic[MixedTupleLike],
-    Variadic = Reversed[*_Flattened[*element_types]],
+    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    VariadicType = Variadic.reverse[*_Flattened[*element_types]],
     Reducer=_RowMajorMapper,
 ]
 
 
 comptime _RowMajorMapper[
-    Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[MixedTupleLike],
+    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
-] = Concatenated[
-    MakeVariadic[T=MixedTupleLike, ComptimeInt[1]] if idx
+] = Variadic.concat[
+    Variadic.types[T=MixedTupleLike, ComptimeInt[1]] if idx
     == 0 else (
-        MakeVariadic[
+        Variadic.types[
             T=MixedTupleLike,
             RuntimeInt[
                 From[idx - 1].DTYPE if From[idx - 1].STATIC_VALUE
@@ -162,7 +161,7 @@ comptime _RowMajorMapper[
         ] if From[idx - 1].STATIC_VALUE
         == -1
         or Prev[0].STATIC_VALUE
-        == -1 else MakeVariadic[
+        == -1 else Variadic.types[
             T=MixedTupleLike,
             ComptimeInt[From[idx - 1].STATIC_VALUE * Prev[0].STATIC_VALUE],
         ]
@@ -172,8 +171,8 @@ comptime _RowMajorMapper[
 
 
 fn unflatten[
-    structure_types: VariadicOf[MixedTupleLike],
-    flat_types: VariadicOf[MixedTupleLike],
+    structure_types: Variadic.TypesOfTrait[MixedTupleLike],
+    flat_types: Variadic.TypesOfTrait[MixedTupleLike],
 ](flat_tuple: MixedTuple[*flat_types]) -> MixedTuple[*structure_types]:
     """Unflatten a flat tuple back to match a nested structure.
 
@@ -199,7 +198,7 @@ fn unflatten[
     )
 
     @parameter
-    for i in range(variadic_size(structure_types)):
+    for i in range(Variadic.size(structure_types)):
         var result_ptr = UnsafePointer(to=result_tuple[i])
         comptime T = structure_types[i]
         comptime offset = Offsets[i].STATIC_VALUE
@@ -208,7 +207,7 @@ fn unflatten[
         if T.IS_TUPLE:
             # For nested tuples, we need to recursively unflatten
             # Extract the slice of flat_tuple that corresponds to this nested element
-            comptime count = variadic_size(_Flattened[*T.VariadicType])
+            comptime count = Variadic.size(_Flattened[*T.VariadicType])
 
             # Build a tuple containing just the elements for this nested structure
             var nested_flat: Tuple[*_Flattened[*T.VariadicType]]
@@ -248,7 +247,7 @@ fn row_major(
     var flat_shape = tuple.flatten()
     comptime FlatTypes = _Flattened[*tuple.element_types]
     comptime RowMajorTypes = _RowMajor[*tuple.element_types]
-    comptime flat_rank = variadic_size(FlatTypes)
+    comptime flat_rank = Variadic.size(FlatTypes)
 
     var flat_strides: Tuple[*RowMajorTypes]
 
@@ -290,3 +289,14 @@ fn row_major(
                 )
 
     return MixedLayout(flat_shape^, MixedTuple(flat_strides^))
+
+
+fn row_major[
+    *idxs: Int
+]() -> MixedLayout[
+    shape_types = _Flattened[*_IntToComptimeInt[*idxs]],
+    stride_types = _RowMajor[*_IntToComptimeInt[*idxs]],
+]:
+    var shape: MixedTuple[*_IntToComptimeInt[*idxs]]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(shape))
+    return row_major(shape^)

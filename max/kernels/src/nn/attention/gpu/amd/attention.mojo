@@ -112,6 +112,7 @@ trait AttentionConfig(ImplicitlyCopyable):
 @always_inline
 fn _mask_apply[
     masked: Bool,
+    attention_config_t: AttentionConfig,
     accum_type: DType,
     token_gen: Bool,
     mma_shape: IndexList[3],
@@ -133,7 +134,7 @@ fn _mask_apply[
     mask_warp_col: UInt32,
     scale: Float32,
     mask: mask_t,
-    p_reg_vectorized: LayoutTensor[accum_type, **_],
+    p_reg_vectorized: LayoutTensor[mut=True, accum_type, **_],
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,
 ):
@@ -195,10 +196,7 @@ fn _mask_apply[
                 @parameter
                 for j in range(output_frag_size):
                     comptime fragment_col = fragment_layout(j)
-                    var group_idx = lane_row
-                    var q_head_idx = (
-                        block_idx.y * UInt(group) + UInt(group_idx)
-                    ) if token_gen else block_idx.y
+                    var q_head_idx = attention_config_t.q_head_idx()
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
                         IndexList[4, element_type = DType.uint32](
                             Int(block_idx.z),
@@ -557,6 +555,7 @@ struct Attention[
         fn _mask_apply_impl[masked: Bool]():
             _mask_apply[
                 masked=masked,
+                attention_config_t = Self.attention_config_t,
                 accum_type = Self.accum_type,
                 token_gen = Self.token_gen,
                 mma_shape = Self.mma_shape,

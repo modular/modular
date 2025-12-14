@@ -23,6 +23,7 @@ from layout.runtime_tuple import (
     idx2crd,
     prefix_product,
     shape_div,
+    coalesce_nested_tuple,
 )
 from testing import assert_equal
 
@@ -88,16 +89,15 @@ def test_crd2idx():
 
     for i in range(4):
         for j in range(4):
-            assert_equal(
-                String(
-                    crd2idx(
-                        RuntimeTuple[unk_r2_t](i, j),
-                        RuntimeTuple[unk_r2_t](4, 4),
-                        RuntimeTuple[unk_r2_t](4, 1),
-                    )
-                ),
-                String(crd2idx_int_tuple(IntTuple(i, j), shape_t, stride_t)),
+            # Test RuntimeTuple version
+            var rt_result = crd2idx(
+                RuntimeTuple[unk_r2_t](i, j),
+                RuntimeTuple[unk_r2_t](4, 4),
+                RuntimeTuple[unk_r2_t](4, 1),
             )
+            # Compute expected result: i * stride[0] + j * stride[1] = i * 4 + j * 1
+            var expected = i * 4 + j
+            assert_equal(rt_result, expected)
 
 
 def test_shape_div():
@@ -123,6 +123,37 @@ def test_shape_div():
     assert_equal(String(shape_div(shape_a_r_2, shape_b_r_2).S), "(-1, -1)")
 
 
+def test_product_flatten():
+    print("== test_product_flatten")
+    var t1 = RuntimeTuple[
+        IntTuple(4, UNKNOWN_VALUE, IntTuple(7, UNKNOWN_VALUE))
+    ](4, 44, 7, 11)
+
+    var t2 = RuntimeTuple[IntTuple(4, 44, IntTuple(444, 4444))]()
+
+    var t3 = RuntimeTuple[
+        IntTuple(
+            UNKNOWN_VALUE, UNKNOWN_VALUE, IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        )
+    ](1, 2, 3, 4)
+
+    var t4 = RuntimeTuple[
+        IntTuple(
+            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE)
+        )
+    ](1, 2, 3, 4)
+
+    var t1_p = coalesce_nested_tuple(t1)
+    var t2_p = coalesce_nested_tuple(t2)
+    var t3_p = coalesce_nested_tuple(t3)
+    var t4_p = coalesce_nested_tuple(t4)
+
+    assert_equal(String(t2_p), "(4, 44, 1973136)")
+    assert_equal(String(t1_p), "(4, 44, 77)")
+    assert_equal(String(t3_p), "(1, 2, 12)")
+    assert_equal(String(t4_p), "24")
+
+
 def main():
     test_construct()
     test_concat()
@@ -131,3 +162,4 @@ def main():
     test_idx2crd()
     test_crd2idx()
     test_shape_div()
+    test_product_flatten()

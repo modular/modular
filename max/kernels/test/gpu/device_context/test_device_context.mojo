@@ -153,10 +153,10 @@ def test_print(ctx: DeviceContext):
 
 
 @fieldwise_init
-struct ToLegacyUnsafePointer(Copyable, DevicePassable, Movable):
+struct ToLegacyUnsafePointer(Copyable, DevicePassable):
     comptime device_type: AnyType = LegacyUnsafePointer[Float32]
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = Self.device_type()
 
     @staticmethod
@@ -169,10 +169,10 @@ struct ToLegacyUnsafePointer(Copyable, DevicePassable, Movable):
 
 
 @fieldwise_init
-struct ToUnsafePointer(Copyable, DevicePassable, Movable):
+struct ToUnsafePointer(Copyable, DevicePassable):
     comptime device_type: AnyType = UnsafePointerV2[Float32, MutAnyOrigin]
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = Self.device_type()
 
     @staticmethod

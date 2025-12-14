@@ -16,7 +16,7 @@ from python import Python, PythonObject
 
 
 def main():
-    var value1: PythonObject = 3.7
+    var value1 = PythonObject(3.7)
     value2 = Python.evaluate("10/3")
 
     # Compare values

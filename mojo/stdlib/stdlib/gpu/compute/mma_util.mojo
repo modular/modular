@@ -31,7 +31,6 @@ NVIDIA PTX: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#wa
 AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
 
 
@@ -39,7 +38,7 @@ from sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[mut=False, Float32],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -64,7 +63,7 @@ fn load_matrix_a[
         The tile dimensions must be m=16, n=8, k=8.
     """
 
-    constrained[m == 16 and n == 8 and k == 8]()
+    __comptime_assert m == 16 and n == 8 and k == 8
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
@@ -85,7 +84,7 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[Float16],
+    a_ptr: UnsafePointer[mut=False, Float16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -110,7 +109,7 @@ fn load_matrix_a[
         The tile dimensions must be m=16, n=8, k=8.
     """
 
-    constrained[m == 16 and n == 8 and k == 8]()
+    __comptime_assert m == 16 and n == 8 and k == 8
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
@@ -133,7 +132,7 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[BFloat16],
+    a_ptr: UnsafePointer[mut=False, BFloat16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -177,7 +176,7 @@ fn load_matrix_a[
             a_ptr[(tile_row + a23_row) * ldm + (tile_col + a3_col)],
         )
     else:
-        constrained[m == 16 and n == 8 and k == 16]()
+        __comptime_assert m == 16 and n == 8 and k == 16
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -210,7 +209,7 @@ fn load_matrix_a[
 fn load_matrix_a_amd[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[mut=False, Float32],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -235,7 +234,7 @@ fn load_matrix_a_amd[
         The tile dimensions must be m=16, n=16, k=4.
     """
 
-    constrained[m == 16 and n == 16 and k == 4]()
+    __comptime_assert m == 16 and n == 16 and k == 4
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4
@@ -246,7 +245,7 @@ fn load_matrix_a_amd[
 fn load_matrix_a_amd[
     m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    a_ptr: UnsafePointer[Float16],
+    a_ptr: UnsafePointer[mut=False, Float16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -274,7 +273,7 @@ fn load_matrix_a_amd[
 
     @parameter
     if m == 16 and n == 16 and k == 16 and n_blocks == 1:
-        constrained[m == 16 and n == 16 and k == 16]()
+        __comptime_assert m == 16 and n == 16 and k == 16
         var lane = lane_id()
         var thread_x = lane & 15
         var thread_y = lane >> 4
@@ -292,7 +291,7 @@ fn load_matrix_a_amd[
 
         return a
     else:
-        constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
+        __comptime_assert m == 4 and n == 4 and k == 4 and n_blocks == 16
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = lane & 3
@@ -319,7 +318,7 @@ fn load_matrix_a_amd[
 fn load_matrix_a_amd[
     m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    a_ptr: UnsafePointer[BFloat16],
+    a_ptr: UnsafePointer[mut=False, BFloat16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -364,7 +363,7 @@ fn load_matrix_a_amd[
 
         return a
     else:
-        constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
+        __comptime_assert m == 4 and n == 4 and k == 4 and n_blocks == 16
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = lane & 3
@@ -391,7 +390,7 @@ fn load_matrix_a_amd[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[mut=False, Float32],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -416,7 +415,7 @@ fn load_matrix_b[
         The tile dimensions must be m=16, n=8, k=8.
     """
 
-    constrained[m == 16 and n == 8 and k == 8]()
+    __comptime_assert m == 16 and n == 8 and k == 8
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
@@ -434,7 +433,7 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[Float16],
+    b_ptr: UnsafePointer[mut=False, Float16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -459,7 +458,7 @@ fn load_matrix_b[
         The tile dimensions must be m=16, n=8, k=8.
     """
 
-    constrained[m == 16 and n == 8 and k == 8]()
+    __comptime_assert m == 16 and n == 8 and k == 8
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
@@ -477,7 +476,7 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[mut=False, BFloat16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -516,7 +515,7 @@ fn load_matrix_b[
             b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
         )
     else:
-        constrained[m == 16 and n == 8 and k == 16]()
+        __comptime_assert m == 16 and n == 8 and k == 16
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -538,7 +537,7 @@ fn load_matrix_b[
 fn load_matrix_b_amd[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[Float32],
+    b_ptr: UnsafePointer[mut=False, Float32],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -570,7 +569,7 @@ fn load_matrix_b_amd[
 fn load_matrix_b_amd[
     m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    b_ptr: UnsafePointer[Float16],
+    b_ptr: UnsafePointer[mut=False, Float16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -622,7 +621,7 @@ fn load_matrix_b_amd[
 
         return b
     else:
-        constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
+        __comptime_assert m == 4 and n == 4 and k == 4 and n_blocks == 16
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = Int(lane & 3)
@@ -647,7 +646,7 @@ fn load_matrix_b_amd[
 fn load_matrix_b_amd[
     m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    b_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[mut=False, BFloat16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -699,7 +698,7 @@ fn load_matrix_b_amd[
 
         return b
     else:
-        constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
+        __comptime_assert m == 4 and n == 4 and k == 4 and n_blocks == 16
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = Int(lane & 3)
@@ -724,7 +723,7 @@ fn load_matrix_b_amd[
 fn _store_matrix_d_nvidia[
     dtype: DType, //, m: Int, n: Int, k: Int
 ](
-    d_ptr: UnsafePointer[Scalar[dtype]],
+    d_ptr: UnsafePointer[mut=True, Scalar[dtype]],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -775,7 +774,7 @@ fn _store_matrix_d_nvidia[
 fn _store_matrix_d_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    d_ptr: UnsafePointer[Scalar[dtype]],
+    d_ptr: UnsafePointer[mut=True, Scalar[dtype]],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -845,7 +844,7 @@ fn _store_matrix_d_amd[
 fn store_matrix_d[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    d_ptr: UnsafePointer[Scalar[dtype]],
+    d_ptr: UnsafePointer[mut=True, Scalar[dtype]],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -886,5 +885,5 @@ fn store_matrix_d[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="store_matrix_d"
+            operation = __get_current_function_name()
         ]()

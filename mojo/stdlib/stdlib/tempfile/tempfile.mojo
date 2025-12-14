@@ -27,6 +27,7 @@ from sys import CompilationTarget
 from memory import Span
 
 comptime TMP_MAX = 10_000
+"""Maximum number of attempts when generating unique temporary file names."""
 
 
 fn _get_random_name(size: Int = 8) -> String:

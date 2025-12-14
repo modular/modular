@@ -12,4 +12,4 @@
 # ===----------------------------------------------------------------------=== #
 """Provides Nvidia Blackwell architecture specific utility functions."""
 
-from .mma import MmaOpSM100_SS
+from .mma import MmaOpSM100_SS, MmaOpSM100_BlockScaled_SS

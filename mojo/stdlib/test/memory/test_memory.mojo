@@ -134,7 +134,7 @@ def test_memcmp_non_multiple_of_int32():
     var triple1 = SixByteStruct(0, 0, 0)
     var triple2 = SixByteStruct(0, 0, 1)
 
-    constrained[size_of[SixByteStruct]() == 6]()
+    __comptime_assert size_of[SixByteStruct]() == 6
 
     var ptr1 = UnsafePointer(to=triple1)
     var ptr2 = UnsafePointer(to=triple2)

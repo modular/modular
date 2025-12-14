@@ -22,17 +22,9 @@ import max._core.dialects.builtin
 import max._core.dialects.m
 from max.mlir import Context, Location
 
-# Many of the generated overloads for constructors are more specialized in
-# C++ than they are in Python. For example, `int32_t` and `int64_t` and `size_t`
-# all map to `int` in Python typing. It may not always be clear which of these
-# overloads will be run for a given set of inputs (though in most cases it's the first one)
-# but we disable mypy errors for shadowed overloads.
-#
+# C++ overloads on different int types look the same in Python, ignore these
 # mypy: disable-error-code="overload-cannot-match"
 
-# DiagnosticHandlers aren't a thing that Python can reasonably provided. In most cases
-# these are automatically provided, but there are a few custom verifiers not covered yet.
-# This binding prevents errors in those cases.
 DiagnosticHandler = Callable
 
 class ContextuallyEvaluatedAttrInterface(Protocol):
@@ -1813,6 +1805,8 @@ class FnEffects(enum.Enum):
 
     register_passable = 128
 
+    extern = 256
+
 class InlineLevel(enum.Enum):
     automatic = 0
 
@@ -1939,6 +1933,8 @@ class TailKind(enum.Enum):
 
     notail = 2
 
+    tail = 3
+
 class CallIndirectOp(max._core.Operation):
     """
     The `kgen.call_indirect` operation takes an SSA value of `!kgen.generator`
@@ -1996,6 +1992,7 @@ class CallParamOp(max._core.Operation):
         results: Sequence[max._core.Type],
         callee: max._core.dialects.builtin.TypedAttr,
         operands: Sequence[max._core.Value[max._core.Type]],
+        tail_kind: TailKindAttr,
     ) -> None: ...
     @property
     def callee(self) -> max._core.dialects.builtin.TypedAttr: ...
@@ -2003,6 +2000,10 @@ class CallParamOp(max._core.Operation):
     def callee(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
     @property
     def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def tail_kind(self) -> TailKind: ...
+    @tail_kind.setter
+    def tail_kind(self, arg: TailKindAttr, /) -> None: ...
 
 class CaptureListCopyOp(max._core.Operation):
     """
@@ -3814,7 +3815,16 @@ class UnreachableOp(max._core.Operation):
     """
 
     def __init__(
-        self, builder: max._core.OpBuilder, location: Location
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        is_after_unreachable_call: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def is_after_unreachable_call(self) -> bool: ...
+    @is_after_unreachable_call.setter
+    def is_after_unreachable_call(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
 class VariantCreateOp(max._core.Operation):
@@ -4191,6 +4201,17 @@ class GeneratorType(max._core.Type):
     def body(self) -> max._core.Type | None: ...
     @property
     def metadata(self) -> GeneratorMetadataAttrInterface: ...
+
+class NeverType(max._core.Type):
+    """
+    A `!kgen.never` type represents a type that cannot be
+    constructed. This is used to represent functions that never return or
+    generic thrown types that resolve to a concrete type of "not actually
+    thrown".
+    ```
+    """
+
+    def __init__(self) -> None: ...
 
 class NoneType(max._core.Type):
     """

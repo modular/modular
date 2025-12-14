@@ -29,7 +29,10 @@ from testing import (
     TestSuite,
 )
 from testing.prop import PropTest
-from testing.prop.strategy import List, SIMD
+
+# TODO(MOCO-522): Figure out desired behavior for importing files with only
+# extensions in them.
+from testing.prop.strategy import SIMD, List
 
 
 def test_mojo_issue_698():
@@ -876,7 +879,7 @@ def test_list_contains():
     assert_true(1 in x)
     assert_false(4 in x)
 
-    # TODO: implement List.__eq__ for Self[Copyable & Movable & Comparable]
+    # TODO: implement List.__eq__ for Self[Copyable & Comparable]
     # var y = List[List[Int]]()
     # y.append([1, 2])
     # assert_equal([1, 2] in y,True)
@@ -904,6 +907,19 @@ def test_list_eq_ne():
     assert_true(l6 == l7)
     assert_false(l6 != l7)
     assert_false(l6 == l8)
+
+
+struct NonEquatable(Copyable):
+    pass
+
+
+def test_list_conditional_conformances():
+    assert_true(conforms_to(List[Int], Equatable))
+    # TODO(MSTDL-2077):
+    #   This should pass, but does not due to Unconditional Conformances
+    # assert_false(conforms_to(List[NonEquatable], Equatable))
+
+    assert_true(conforms_to(List[Int], Writable))
 
 
 def test_list_init_span():

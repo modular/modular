@@ -13,16 +13,17 @@
 
 from sys import size_of
 
-from buffer.dimlist import DimList
 from gpu import barrier, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
 from gpu.memory import async_copy
 from gpu.sync import async_copy_arrive
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout.tma_async import PipelineState, SharedMemBarrier
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._fillers import random
+from memory import stack_allocation
 from testing import assert_equal
+from utils import IndexList
 
 
 fn producer_consumer_kernel[NUM_THREADS: Int]():
@@ -147,8 +148,10 @@ def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
 
 
 fn cpaysnc_producer_consumer_pipeline_kernel[
-    num_stages: Int
-](src: UnsafePointer[Float32], dst: UnsafePointer[Float32]):
+    num_stages: Int,
+    src_origin: ImmutOrigin,
+    dst_origin: MutOrigin,
+](src: Span[Float32, src_origin], dst: Span[Float32, dst_origin]):
     comptime size_per_copy = 16 // size_of[DType.float32]()
     comptime size_per_stage = size_per_copy * 128
 
@@ -200,7 +203,9 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             offset = i * size_per_stage + Int(thread_idx.x) * size_per_copy
             async_copy[16](
-                (src + offset).address_space_cast[AddressSpace.GLOBAL](),
+                (src.unsafe_ptr() + offset).address_space_cast[
+                    AddressSpace.GLOBAL
+                ](),
                 smem + offset,
             )
             async_copy_arrive(produced_mbar[i].unsafe_ptr())
@@ -235,37 +240,53 @@ def test_cpasync_producer_consumer_pipeline[
 ](ctx: DeviceContext):
     comptime size_per_stage = 128 * (16 // size_of[DType.float32]())
     comptime size = num_stages * size_per_stage
-    comptime shape1d = DimList(size)
+    comptime shape1d = IndexList[1](size)
 
-    src_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
-    random(src_host.tensor)
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
+    var src_device_buffer = ctx.enqueue_create_buffer[DType.float32](size)
+    var src_device = LayoutTensor[DType.float32, layout_1d](
+        src_device_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
+    )
+    with src_device_buffer.map_to_host() as src_host_buffer:
+        random(
+            LayoutTensor[DType.float32, layout_1d](
+                src_host_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
+            )
+        )
 
-    var src_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
-    ctx.enqueue_copy(src_device.buffer, src_host.tensor.data)
+    var dst_device_buffer = ctx.enqueue_create_buffer[DType.float32](size)
+    var dst_device = LayoutTensor[DType.float32, layout_1d](
+        dst_device_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
+    )
 
-    dst_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
-    var dst_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
-
-    comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[num_stages]
+    comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[
+        num_stages, origin_of(src_device), origin_of(dst_device)
+    ]
     ctx.enqueue_function_checked[kernel, kernel](
-        src_device.buffer,
-        dst_device.buffer,
+        Span[Float32, origin_of(src_device)](
+            ptr=UnsafePointer[Float32, origin_of(src_device)](src_device.ptr),
+            length=size,
+        ).get_immutable(),
+        Span[Float32, origin_of(dst_device)](
+            ptr=UnsafePointer[Float32, origin_of(dst_device)](dst_device.ptr),
+            length=size,
+        ),
         grid_dim=(1),
         block_dim=(256),
     )
-    ctx.enqueue_copy(dst_host.tensor.data, dst_device.buffer)
     ctx.synchronize()
 
-    src = src_host.tensor
-    dst = dst_host.tensor
-
-    for i in range(num_stages):
-        for j in range(size_per_stage):
-            idx = i * size_per_stage + j
-            if src[idx] + i != dst[idx]:
-                print(idx, src[idx], dst[idx])
-                return
-            assert_equal(src[idx] + i, dst[idx])
+    # src = src_host.tensor
+    # dst = dst_host.tensor
+    with src_device_buffer.map_to_host() as src:
+        with dst_device_buffer.map_to_host() as dst:
+            for i in range(num_stages):
+                for j in range(size_per_stage):
+                    idx = i * size_per_stage + j
+                    if src[idx] + i != dst[idx]:
+                        print(idx, src[idx], dst[idx])
+                        return
+                    assert_equal(src[idx] + i, dst[idx])
 
 
 def main():

@@ -81,13 +81,10 @@ fn _horner_evaluate[
         The polynomial specified by the coefficients evaluated at value x.
     """
     comptime num_coefficients = len(coefficients)
-    constrained[
-        num_coefficients > 0,
-        (
-            "the number of coefficients for the polynomial evaluation should be"
-            " a positive number"
-        ),
-    ]()
+    __comptime_assert num_coefficients > 0, (
+        "the number of coefficients for the polynomial evaluation should be"
+        " a positive number"
+    )
 
     comptime c_last = coefficients[num_coefficients - 1]
 

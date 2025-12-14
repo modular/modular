@@ -15,6 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 from collections.string.string_slice import _get_kgen_string
+from compile.reflection import get_type_name
 
 
 @always_inline("nodebug")
@@ -34,10 +35,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
 
     ```mojo
     fn half[dtype: DType](a: Scalar[dtype]) -> Scalar[dtype]:
-        constrained[
-            dtype.is_numeric(),
-            "dtype must be numeric."
-        ]()
+        __comptime_assert dtype.is_numeric(), "dtype must be numeric."
         return a / 2
 
     def main():
@@ -77,4 +75,37 @@ fn constrained[cond: Bool]():
     Parameters:
         cond: The bool value to assert.
     """
-    constrained[cond, "param assertion failed"]()
+    __comptime_assert cond, "param assertion failed"
+
+
+@always_inline("nodebug")
+fn _constrained_conforms_to[
+    cond: Bool,
+    *,
+    Parent: AnyType,
+    Element: AnyType,
+    ParentConformsTo: StaticString,
+    ElementConformsTo: StaticString = ParentConformsTo,
+]():
+    comptime parent_type_name = get_type_name[Parent]()
+    comptime elem_type_name = get_type_name[Element]()
+    # TODO(MOCO-2901): Support traits in get_type_name
+    #   comptime trait_name = get_type_name[ParentConformsTo]()
+    comptime parent_conforms_to_trait_name = ParentConformsTo
+    comptime elem_conforms_to_trait_name = ElementConformsTo
+
+    # Construct a message like:
+    #     List(Equatable) conformance requires Foo(Equatable) conformance, which
+    #     is not satisfied.
+    __comptime_assert cond, StaticString(
+        _get_kgen_string[
+            parent_type_name,
+            "(",
+            parent_conforms_to_trait_name,
+            ") conformance requires ",
+            elem_type_name,
+            "(",
+            elem_conforms_to_trait_name,
+            ") conformance, which is not satisfied.",
+        ]()
+    )

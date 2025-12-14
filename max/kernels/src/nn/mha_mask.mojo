@@ -66,7 +66,6 @@ struct TileMaskStatus(
     Equatable,
     Identifiable,
     ImplicitlyCopyable,
-    Movable,
     Stringable,
     Writable,
 ):
@@ -259,7 +258,7 @@ comptime MASK_VALUE = -10_000
 
 @fieldwise_init
 @register_passable("trivial")
-struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
+struct CausalMask(ImplicitlyCopyable, MHAMask):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
     comptime apply_log2e_after_mask: Bool = False
@@ -269,7 +268,7 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -420,7 +419,7 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
+struct NullMask(ImplicitlyCopyable, MHAMask):
     """Mask that's effectively a noop."""
 
     comptime apply_log2e_after_mask: Bool = False
@@ -430,7 +429,7 @@ struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -514,9 +513,7 @@ struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ChunkedMask[local_window_size: Int](
-    ImplicitlyCopyable, MHAMask, Movable
-):
+struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
     """Mask implementing Chunked attention.
 
     This groups the mask into chunks of size `local_window_size`.
@@ -544,7 +541,7 @@ struct ChunkedMask[local_window_size: Int](
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -698,9 +695,7 @@ struct ChunkedMask[local_window_size: Int](
 
 @fieldwise_init
 @register_passable("trivial")
-struct SlidingWindowCausalMask[window_size: Int](
-    ImplicitlyCopyable, MHAMask, Movable
-):
+struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
     """Mask implementing Sliding Window attention.
 
     Considering the following case:
@@ -727,7 +722,7 @@ struct SlidingWindowCausalMask[window_size: Int](
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -978,7 +973,7 @@ fn naively_get_first_nonempty_mask_col[
 
 @register_passable("trivial")
 struct MaterializedMask[dtype_: DType, layout_: Layout](
-    ImplicitlyCopyable, MHAMask, Movable
+    ImplicitlyCopyable, MHAMask
 ):
     """Mask that's backed by a materialized tensor."""
 
@@ -998,7 +993,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -1152,7 +1147,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
 @fieldwise_init
 @register_passable("trivial")
 struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    ImplicitlyCopyable, MHAMask, Movable
+    ImplicitlyCopyable, MHAMask
 ):
     """Mask that's the AND of two masks."""
 
@@ -1163,7 +1158,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -1256,7 +1251,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 @fieldwise_init
 @register_passable("trivial")
 struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    ImplicitlyCopyable, MHAMask, Movable
+    ImplicitlyCopyable, MHAMask
 ):
     """Mask that's the OR of two masks."""
 
@@ -1267,7 +1262,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod

@@ -35,7 +35,7 @@ trait NamedAnimal(Animal, Named):
 
 
 @fieldwise_init
-struct Parrot(Bird, Copyable, Movable, NamedAnimal):
+struct Parrot(Bird, Copyable, NamedAnimal):
     fn make_sound(self):
         print("Squawk!")
 

@@ -23,14 +23,14 @@ def test_none_end_folds():
 
 # This requires parameter inference of StartT.
 @fieldwise_init
-struct FunnySlice(ImplicitlyCopyable, Movable):
+struct FunnySlice(ImplicitlyCopyable):
     var start: Int
     var upper: String
     var stride: Float64
 
 
 @fieldwise_init
-struct BoringSlice(ImplicitlyCopyable, Movable):
+struct BoringSlice(ImplicitlyCopyable):
     var a: Int
     var b: Int
     var c: String

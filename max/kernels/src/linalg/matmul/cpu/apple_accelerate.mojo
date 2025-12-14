@@ -74,7 +74,7 @@ fn _on_error_msg() -> Error:
             "the XCode package is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join(LIB_ACC_PATH),
+        ", ".join(Span([LIB_ACC_PATH])),
         "].",
     )
 
@@ -145,7 +145,7 @@ fn use_apple_accelerate_lib[
 
 @fieldwise_init
 @register_passable("trivial")
-struct _CBLASOrder(ImplicitlyCopyable, Movable):
+struct _CBLASOrder(ImplicitlyCopyable):
     var value: Int32
     comptime ROW_MAJOR = _CBLASOrder(101)
     comptime COL_MAJOR = _CBLASOrder(102)
@@ -153,7 +153,7 @@ struct _CBLASOrder(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _CBLASTranspose(ImplicitlyCopyable, Movable):
+struct _CBLASTranspose(ImplicitlyCopyable):
     var value: Int32
     comptime NO_TRANSPOSE = _CBLASTranspose(111)
     comptime TRANSPOSE = _CBLASTranspose(112)

@@ -110,6 +110,7 @@ class Linear(Module, Shardable):
         float8_config: Float8Config | None = None,
         name: str | None = None,
         clip_weight: float | None = None,
+        is_sharding: bool = False,
     ) -> None:
         """Initializes the linear layer with weights and optional bias.
 
@@ -126,6 +127,7 @@ class Linear(Module, Shardable):
             quantization_encoding: :obj:`QuantizationEncoding` for the weights.
             float8_config: :obj:`Float8Config` for float8 quantization.
             clip_weight: Optional weight clipping threshold.
+            is_sharding: Disable child layer creation during sharding.
         """
         super().__init__()
 
@@ -133,32 +135,35 @@ class Linear(Module, Shardable):
         self.clip_weight = clip_weight
         self.float8_config = float8_config
 
-        self.weight = Weight(
-            name=f"{name}.weight" if name else "weight",
-            dtype=dtype,
-            shape=(out_dim, in_dim),
-            device=device,
-            quantization_encoding=quantization_encoding,
-        )
+        if not is_sharding:
+            self.weight = Weight(
+                name=f"{name}.weight" if name else "weight",
+                dtype=dtype,
+                shape=(out_dim, in_dim),
+                device=device,
+                quantization_encoding=quantization_encoding,
+            )
 
         if has_bias:
             bias_dtype = dtype
             if float8_config and float8_config.bias_dtype:
                 bias_dtype = float8_config.bias_dtype
-            self.bias = Weight(
-                name=f"{name}.bias" if name else "bias",
-                dtype=bias_dtype,
-                shape=(out_dim,),
-                device=device,
-                quantization_encoding=quantization_encoding,
-            )
 
-            if self.bias.device != self.weight.device:
-                raise ValueError(
-                    f"Bias is on device {self.bias.device} while weight is on {self.weight.device}."
+            if not is_sharding:
+                self.bias = Weight(
+                    name=f"{name}.bias" if name else "bias",
+                    dtype=bias_dtype,
+                    shape=(out_dim,),
+                    device=device,
+                    quantization_encoding=quantization_encoding,
                 )
 
-        if float8_config:
+                if self.bias.device != self.weight.device:
+                    raise ValueError(
+                        f"Bias is on device {self.bias.device} while weight is on {self.weight.device}."
+                    )
+
+        if float8_config and not is_sharding:
             if float8_config.is_static:
                 self.input_scale = Weight(
                     name=f"{name}.input_scale" if name else "input_scale",
@@ -323,6 +328,7 @@ class Linear(Module, Shardable):
                 has_bias=self.bias is not None,
                 float8_config=self.float8_config,
                 clip_weight=self.clip_weight,
+                is_sharding=True,
             )
 
             # Replace the weights with sharded versions.
@@ -1049,6 +1055,7 @@ class MLP(Module, Shardable):
         activation_function: str = "silu",
         float8_config: Float8Config | None = None,
         dist_gemm_config: DistributedGemmConfig | None = None,
+        is_sharding: bool = False,
     ) -> None:
         """Initializes the MLP layer.
 
@@ -1074,6 +1081,7 @@ class MLP(Module, Shardable):
 
             float8_config: :obj:`Float8Config` for float8 quantization.
             dist_gemm_config: :obj:`DistributedGemmConfig` for distributed GEMM configuration.
+            is_sharding: Disable child layer creation during sharding.
         """
         super().__init__()
         self.devices = devices
@@ -1081,33 +1089,36 @@ class MLP(Module, Shardable):
         self.dist_gemm_config = dist_gemm_config
         self.hidden_dim = hidden_dim
         self.feed_forward_length = feed_forward_length
-        self.gate_proj = linear_cls(  # [ffl, hidden]
-            in_dim=hidden_dim,
-            out_dim=feed_forward_length,
-            dtype=dtype,
-            device=devices[0],
-            quantization_encoding=quantization_encoding,
-            has_bias=has_bias,
-            float8_config=float8_config,
-        )
-        self.down_proj = linear_cls(
-            in_dim=feed_forward_length,
-            out_dim=hidden_dim,
-            dtype=dtype,
-            device=devices[0],
-            quantization_encoding=quantization_encoding,
-            has_bias=has_bias,
-            float8_config=float8_config,
-        )
-        self.up_proj = linear_cls(
-            in_dim=hidden_dim,
-            out_dim=feed_forward_length,
-            dtype=dtype,
-            device=devices[0],
-            quantization_encoding=quantization_encoding,
-            has_bias=has_bias,
-            float8_config=float8_config,
-        )
+
+        if not is_sharding:
+            self.gate_proj = linear_cls(  # [ffl, hidden]
+                in_dim=hidden_dim,
+                out_dim=feed_forward_length,
+                dtype=dtype,
+                device=devices[0],
+                quantization_encoding=quantization_encoding,
+                has_bias=has_bias,
+                float8_config=float8_config,
+            )
+            self.down_proj = linear_cls(
+                in_dim=feed_forward_length,
+                out_dim=hidden_dim,
+                dtype=dtype,
+                device=devices[0],
+                quantization_encoding=quantization_encoding,
+                has_bias=has_bias,
+                float8_config=float8_config,
+            )
+            self.up_proj = linear_cls(
+                in_dim=hidden_dim,
+                out_dim=feed_forward_length,
+                dtype=dtype,
+                device=devices[0],
+                quantization_encoding=quantization_encoding,
+                has_bias=has_bias,
+                float8_config=float8_config,
+            )
+
         self.quantization_encoding = quantization_encoding
         self.float8_config = float8_config
         assert activation_function in _ACTIVATION_FUNCTIONS
@@ -1242,6 +1253,7 @@ class MLP(Module, Shardable):
                 activation_function=self._activation_function_name,
                 float8_config=self.float8_config,
                 dist_gemm_config=self.dist_gemm_config,
+                is_sharding=True,
             )
 
             # Assign the sharded linear layers

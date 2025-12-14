@@ -20,7 +20,6 @@ These are Mojo built-ins, so you don't need to import them.
 struct NoneType(
     Defaultable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
     Writable,

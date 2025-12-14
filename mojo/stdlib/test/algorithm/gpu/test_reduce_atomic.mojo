@@ -14,15 +14,13 @@
 from math import ceildiv
 from os.atomic import Atomic
 
-from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, TestSuite
 
 
 @fieldwise_init
-struct FillStrategy(ImplicitlyCopyable, Movable):
+struct FillStrategy(ImplicitlyCopyable):
     var value: Int
 
     comptime LINSPACE = Self(0)
@@ -36,10 +34,10 @@ struct FillStrategy(ImplicitlyCopyable, Movable):
 
 
 fn reduce(
-    res_add: UnsafePointer[Float32],
-    res_min: UnsafePointer[Float32],
-    res_max: UnsafePointer[Float32],
-    vec: UnsafePointer[Float32],
+    res_add: UnsafePointer[Float32, MutAnyOrigin],
+    res_min: UnsafePointer[Float32, MutAnyOrigin],
+    res_max: UnsafePointer[Float32, MutAnyOrigin],
+    vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
@@ -58,7 +56,8 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     comptime n = 1024
     comptime F32 = DType.float32
 
-    var vec_host = NDBuffer[F32, 1, MutAnyOrigin, DimList(n)].stack_allocation()
+    var stack = InlineArray[Float32, n](fill=0)
+    var vec_host = Span(stack)
 
     if fill_strategy is FillStrategy.LINSPACE:
         for i in range(n):
@@ -77,7 +76,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
             vec_host[i] = 1
 
     var vec_device = ctx.enqueue_create_buffer[F32](n)
-    vec_device.enqueue_copy_from(vec_host.data)
+    vec_device.enqueue_copy_from(vec_host.unsafe_ptr())
 
     var res_add_device = ctx.enqueue_create_buffer[F32](1)
     res_add_device.enqueue_fill(0)

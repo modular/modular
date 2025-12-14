@@ -336,12 +336,12 @@ fn gemm_kernel_amd[
     # Matrix dimensions from input tensors
     var M = a.dim[0]()
 
-    comptime N = b.shape[0 if transpose_b else 1]()
+    comptime N = b.shape[0]() if transpose_b else b.shape[1]()
     constrained[N != UNKNOWN_VALUE, "N should be known at compile time"]()
 
     var K = b.dim[1 if transpose_b else 0]()
 
-    comptime stride = b.stride[0 if transpose_b else 1]()
+    comptime stride = b.stride[0]() if transpose_b else b.stride[1]()
     constrained[
         stride != UNKNOWN_VALUE, "stride should be known at compile time"
     ]()
@@ -754,7 +754,7 @@ fn write_output_fragments[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c_reg_fragment: LayoutTensor,
-    c_gmem_fragment: LayoutTensor,
+    c_gmem_fragment: LayoutTensor[mut=True, **_],
     warp_tile_m: Int,
     warp_tile_n: Int,
     M: Int,

@@ -1,12 +1,13 @@
 load("//bazel:api.bzl", "mojo_library")
 
+package(default_visibility = ["//max:consumers"])
+
 exports_files(["__init__.mojo"])
 
 mojo_library(
     name = "compiler_internal",
     srcs = glob(["**/*.mojo"]),
     validate_missing_docs = False,
-    visibility = ["//visibility:public"],
     deps = [
         "//max:layout",
         #TODO: Remove once GEX-1879 and GEX-1842 are done

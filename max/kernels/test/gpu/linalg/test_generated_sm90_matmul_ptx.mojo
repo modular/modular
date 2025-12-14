@@ -165,10 +165,10 @@ fn compile_sm90_matmul_ptx[
     comptime c_tile_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1])
 
     comptime a_tma_desc_layout = _tma_desc_tile_layout[
-        a_type, 2, a_tile_shape, is_k_major=True, swizzle_mode=a_swizzle
+        a_type, 2, a_tile_shape, swizzle_mode=a_swizzle
     ]()
     comptime b_tma_desc_layout = _tma_desc_tile_layout[
-        b_type, 2, b_tile_shape, is_k_major=True, swizzle_mode=b_swizzle
+        b_type, 2, b_tile_shape, swizzle_mode=b_swizzle
     ]()
     comptime c_tma_desc_layout = Layout.row_major(
         c_smem_tile[0], c_smem_tile[1]

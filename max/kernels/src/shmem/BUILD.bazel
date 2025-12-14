@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 mojo_library(
     name = "shmem",
@@ -12,7 +12,6 @@ mojo_library(
     ],
     data = ["@nvshmem_prebuilt//:host"],
     validate_missing_docs = False,
-    visibility = ["//visibility:public"],
     deps = [
         "//max:layout",
         "@mojo//:stdlib",

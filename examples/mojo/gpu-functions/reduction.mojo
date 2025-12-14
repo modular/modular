@@ -33,13 +33,13 @@ from testing import assert_equal
 
 # Initialize parameters
 # To achieve high bandwidth increase SIZE to large value
-alias TPB: UInt = 512
-alias LOG_TPB = log2_floor(TPB)
-alias BATCH_SIZE = 8  # needs to be power of 2
-alias SIZE = 1 << 12
-alias NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
-alias WARP_SIZE = 32
-alias dtype = DType.int32
+comptime TPB: UInt = 512
+comptime LOG_TPB = log2_floor(TPB)
+comptime BATCH_SIZE = 8  # needs to be power of 2
+comptime SIZE = 1 << 12
+comptime NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
+comptime WARP_SIZE = 32
+comptime dtype = DType.int32
 
 
 fn sum_kernel[
@@ -108,7 +108,7 @@ fn sum_kernel_benchmark(
     @parameter
     @always_inline
     fn kernel_launch_sum(ctx: DeviceContext) raises:
-        alias kernel = sum_kernel[SIZE, BATCH_SIZE]
+        comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
         var out_ptr = input_data.out_ptr
         var a_ptr = input_data.a_ptr
         var out_buffer = DeviceBuffer[dtype](ctx, out_ptr, 1, owning=False)
@@ -132,7 +132,7 @@ def main():
 
     with DeviceContext() as ctx:
         # Allocate memory on the device
-        alias kernel = sum_kernel[SIZE, BATCH_SIZE]
+        comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
         out = ctx.enqueue_create_buffer[dtype](1)
         out.enqueue_fill(0)
         a = ctx.enqueue_create_buffer[dtype](SIZE)

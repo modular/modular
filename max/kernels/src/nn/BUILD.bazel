@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 mojo_library(
     name = "nn",
@@ -15,7 +15,6 @@ mojo_library(
         "//max:linalg",
         "//max:quantization",
         "//max:register",
-        "//max:tensor",
         "@mojo//:stdlib",
     ],
 )

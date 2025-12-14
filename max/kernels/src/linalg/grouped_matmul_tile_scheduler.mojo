@@ -18,11 +18,12 @@ from gpu import block_idx, grid_dim, thread_idx
 from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
 from buffer.buffer import NDBuffer
+from layout import Layout, LayoutTensor
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct RasterOrder(ImplicitlyCopyable, Movable):
+struct RasterOrder(ImplicitlyCopyable):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -39,7 +40,7 @@ struct RasterOrder(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -93,24 +94,36 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
 # ought to enable swapAB for grouped matmul.
 @register_passable("trivial")
 struct TileScheduler[
-    M: Int,
+    offsets_layout: Layout, //,
+    *,
+    static_MN: Int,  # if swapAB, then static_MN is M, otherwise N
     # note that the tile shape always refers to the original non-swapped AB
     # shape
     tile_shape: IndexList[3],
     cluster: IndexList[3] = Index(1, 1, 1),
     cta_group: Int = 1,
     swizzle: Bool = False,
+    swapAB: Bool = True,
 ]:
     var num_active_experts: Int
-    var group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin]
+    var group_offsets: LayoutTensor[
+        DType.uint32, Self.offsets_layout, MutAnyOrigin
+    ]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
-    comptime tile_n = Self.tile_shape[1] * Self.cta_group
-    comptime div_block_n = FastDiv[DType.uint32](Self.tile_n)
-    var current_n_cumsum: UInt32
+    comptime static_dim = 0 if Self.swapAB else 1
+    comptime dynamic_dim = 1 if Self.swapAB else 0
+    comptime cta_group_tile_shape = Index(
+        Self.tile_shape[0] * Self.cta_group, Self.tile_shape[1] * Self.cta_group
+    )
+    comptime div_dynamic_block = FastDiv[DType.uint32](
+        Self.cta_group_tile_shape[Self.dynamic_dim]
+    )
+    var current_dynamic_dim_cumsum: UInt32
     var block_idx_start: UInt32
-
-    comptime num_m_blocks: UInt32 = ceildiv(Self.M, Self.tile_shape[0])
+    comptime num_static_dim_blocks: UInt32 = ceildiv(
+        Self.static_MN, Self.tile_shape[Self.static_dim]
+    )
 
     comptime kNum1DBlocksPerGroup: UInt32 = 16
 
@@ -118,7 +131,9 @@ struct TileScheduler[
     fn __init__(
         out self,
         num_active_experts: Int,
-        group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+        group_offsets: LayoutTensor[
+            DType.uint32, Self.offsets_layout, MutAnyOrigin
+        ],
     ):
         constrained[
             Self.cluster[1] == Self.cluster[2] == 1,
@@ -132,23 +147,28 @@ struct TileScheduler[
             + String(Self.cluster[0]),
         ]()
         comptime cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
+        comptime cluster_n_size = Self.cluster[1] * Self.tile_shape[1]
         constrained[
-            Self.cluster[0] == 1 or Self.M % cluster_m_size == 0,
-            "Problem shape M must be divisible by cluster M size. Got "
-            + String(Self.M)
-            + " and cluster M size "
+            (
+                Self.cluster[0] == 1 or Self.static_MN % cluster_m_size == 0
+            ) if Self.swapAB else (
+                Self.cluster[1] == 1 or Self.static_MN % cluster_n_size == 0
+            ),
+            "Problem static non-reducing dimension must be divisible by the"
+            " corresponding cluster size. Got "
+            + String(Self.static_MN)
+            + " and cluster ("
             + String(cluster_m_size)
-            + " = cluster M size "
-            + String(Self.cluster[0])
-            + " * tile M size "
-            + String(Self.tile_shape[0]),
+            + ", "
+            + String(cluster_n_size)
+            + ")",
         ]()
 
         self.num_active_experts = num_active_experts
         self.group_offsets = group_offsets
         self.current_iter = -1
         self.current_group_idx = 0
-        self.current_n_cumsum = 0
+        self.current_dynamic_dim_cumsum = 0
         self.block_idx_start = 0
 
     @always_inline
@@ -157,10 +177,12 @@ struct TileScheduler[
         var next_block_idx = (
             UInt32(self.current_iter) * grid_dim.x + block_idx.x
         )
-        var start_idx = self.group_offsets[Int(self.current_group_idx)]
+        var start_idx = rebind[Scalar[DType.uint32]](
+            self.group_offsets[Int(self.current_group_idx)]
+        )
         var end_idx: UInt32 = 0
-        var num_n_blocks: UInt32 = 0
-        var current_n: UInt32 = 0
+        var num_dynamic_dim_blocks: UInt32 = 0
+        var current_dynamic_dim: UInt32 = 0
 
         # Trim to the next group
         while True:
@@ -168,35 +190,50 @@ struct TileScheduler[
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
-            end_idx = self.group_offsets[Int(self.current_group_idx + 1)]
-            current_n = end_idx - start_idx
-            num_n_blocks = UInt32(
-                rebind[Scalar[Self.div_block_n.uint_type]](
-                    current_n + UInt32(Self.tile_n - 1)
+            end_idx = rebind[Scalar[DType.uint32]](
+                self.group_offsets[Int(self.current_group_idx + 1)]
+            )
+            current_dynamic_dim = end_idx - start_idx
+            num_dynamic_dim_blocks = UInt32(
+                rebind[Scalar[Self.div_dynamic_block.uint_type]](
+                    current_dynamic_dim
+                    + UInt32(Self.cta_group_tile_shape[Self.dynamic_dim] - 1)
                 )
-                / Self.div_block_n
+                / Self.div_dynamic_block
             )
-            var current_n_block_cumsum = self.current_n_cumsum + num_n_blocks
-            var current_block_idx_start = (
-                current_n_block_cumsum * Self.num_m_blocks
+            var current_dynamic_dim_block_cumsum = (
+                self.current_dynamic_dim_cumsum + num_dynamic_dim_blocks
             )
-            if next_block_idx < current_block_idx_start:
+            var current_dynamic_dim_block_idx_start = (
+                current_dynamic_dim_block_cumsum * Self.num_static_dim_blocks
+            )
+            if next_block_idx < current_dynamic_dim_block_idx_start:
                 break
             self.current_group_idx += 1
-            self.current_n_cumsum = current_n_block_cumsum
-            self.block_idx_start = current_block_idx_start
+            self.current_dynamic_dim_cumsum = current_dynamic_dim_block_cumsum
+            self.block_idx_start = current_dynamic_dim_block_idx_start
             start_idx = end_idx
 
         var group_local_block_idx = next_block_idx - self.block_idx_start
-        var is_valid = group_local_block_idx < num_n_blocks * Self.num_m_blocks
+        var is_valid = (
+            group_local_block_idx
+            < num_dynamic_dim_blocks * Self.num_static_dim_blocks
+        )
         if not is_valid:
             return WorkInfo(0, 0, False, False)
 
+        var num_n_blocks = (
+            num_dynamic_dim_blocks if Self.swapAB else Self.num_static_dim_blocks
+        )
         var m_block_idx, n_block_idx = self._get_swizzled_block_idx(
-            num_n_blocks, group_local_block_idx
+            num_n_blocks, group_local_block_idx, num_dynamic_dim_blocks
         )
         var m = UInt32(m_block_idx) * UInt32(Self.tile_shape[0])
-        var n = UInt32(start_idx + n_block_idx * Self.tile_n)
+        var n = UInt32(n_block_idx) * UInt32(Self.cta_group_tile_shape[1])
+        if Self.swapAB:
+            n += UInt32(start_idx)
+        else:
+            m += UInt32(start_idx)
         # In GMM scheduler, a tile may be invalid, but that is an independent
         # condition from `is_done/terminate`, that is, the CTA might have more
         # work to do in the next group. This is the consequence of not aligning
@@ -210,17 +247,27 @@ struct TileScheduler[
 
     @always_inline
     fn _get_swizzled_block_idx(
-        self, num_n_blocks: UInt32, block_idx: UInt32
+        self,
+        num_n_blocks: UInt32,
+        _block_idx: UInt32,
+        num_dynamic_dim_blocks: UInt32,
     ) -> Tuple[UInt32, UInt32]:
         """
         Calculates swizzled (m_block_idx, n_block_idx) based on the overall block_idx.
         Returns a tuple (m_block_idx, n_block_idx).
         """
-        comptime primary_num_blocks: UInt32 = Self.num_m_blocks
+        var primary_num_blocks: UInt32 = (
+            Self.num_static_dim_blocks if Self.swapAB else num_dynamic_dim_blocks
+        )
+        var div_primary_num_blocks = FastDiv[DType.uint32](
+            Int(primary_num_blocks)
+        )
+        comptime uint_type = div_primary_num_blocks.uint_type
+        var block_idx = rebind[Scalar[uint_type]](_block_idx)
         if not Self.swizzle:
             return (
-                block_idx % primary_num_blocks,
-                block_idx / primary_num_blocks,
+                UInt32(block_idx % div_primary_num_blocks),
+                UInt32(block_idx / div_primary_num_blocks),
             )
 
         var m_block_idx: UInt32
@@ -229,19 +276,18 @@ struct TileScheduler[
         # Swizzle for better L2 usages
         # Since we will only multicast on the M-dimension if any, the primary
         # dimension must be along M.
-        var secondary_num_blocks: UInt32 = num_n_blocks
+        var secondary_num_blocks: UInt32 = (
+            num_dynamic_dim_blocks if Self.swapAB else Self.num_static_dim_blocks
+        )
         var num_blocks_per_group = UInt32(
             secondary_num_blocks * Self.kNum1DBlocksPerGroup
         )
         var div_num_blocks_per_group = FastDiv[DType.uint32](
             Int(num_blocks_per_group)
         )
-        comptime uint_type = div_num_blocks_per_group.uint_type
-        var group_idx = UInt32(
-            rebind[Scalar[uint_type]](block_idx) / div_num_blocks_per_group
-        )
+        var group_idx = UInt32(block_idx / div_num_blocks_per_group)
         var first_block_idx = group_idx * Self.kNum1DBlocksPerGroup
-        var in_group_idx = block_idx % num_blocks_per_group
+        var in_group_idx = block_idx % div_num_blocks_per_group
         var num_blocks_in_group = min(
             Self.kNum1DBlocksPerGroup, primary_num_blocks - first_block_idx
         )

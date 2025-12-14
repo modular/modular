@@ -36,7 +36,6 @@ struct Consistency(
     Equatable,
     Identifiable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
 ):
@@ -184,7 +183,7 @@ struct Consistency(
         if self is Self.SEQUENTIAL:
             return __mlir_attr.`#pop<atomic_ordering seq_cst>`
 
-        return abort[__mlir_type.`!kgen.deferred`]()
+        abort()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -525,9 +524,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Returns:
           True if ptr == expected and ptr was updated to desired. False otherwise.
         """
-        constrained[
-            Self.dtype.is_numeric(), "the input type must be arithmetic"
-        ]()
+        __comptime_assert (
+            Self.dtype.is_numeric()
+        ), "the input type must be arithmetic"
 
         if is_compile_time():
             if ptr[] == expected:
@@ -618,9 +617,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr: The source pointer.
             rhs: Value to max.
         """
-        constrained[
-            Self.dtype.is_numeric(), "the input type must be arithmetic"
-        ]()
+        __comptime_assert (
+            Self.dtype.is_numeric()
+        ), "the input type must be arithmetic"
 
         _max_impl[scope = Self.scope, ordering=ordering](ptr, rhs)
 
@@ -643,9 +642,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Args:
             rhs: Value to max.
         """
-        constrained[
-            Self.dtype.is_numeric(), "the input type must be arithmetic"
-        ]()
+        __comptime_assert (
+            Self.dtype.is_numeric()
+        ), "the input type must be arithmetic"
 
         Self.max[ordering=ordering](UnsafePointer(to=self.value), rhs)
 
@@ -674,9 +673,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr: The source pointer.
             rhs: Value to min.
         """
-        constrained[
-            Self.dtype.is_numeric(), "the input type must be arithmetic"
-        ]()
+        __comptime_assert (
+            Self.dtype.is_numeric()
+        ), "the input type must be arithmetic"
 
         _min_impl[scope = Self.scope, ordering=ordering](ptr, rhs)
 
@@ -701,9 +700,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             rhs: Value to min.
         """
 
-        constrained[
-            Self.dtype.is_numeric(), "the input type must be arithmetic"
-        ]()
+        __comptime_assert (
+            Self.dtype.is_numeric()
+        ), "the input type must be arithmetic"
 
         Self.min[ordering=ordering](UnsafePointer(to=self.value), rhs)
 
@@ -725,7 +724,7 @@ fn _compare_exchange_integral_impl[
     expected_ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
     desired: Scalar[dtype],
 ) -> Bool:
-    constrained[dtype.is_integral(), "the input type must be integral"]()
+    __comptime_assert dtype.is_integral(), "the input type must be integral"
 
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
         failure_ordering = failure_ordering.__mlir_attr(),

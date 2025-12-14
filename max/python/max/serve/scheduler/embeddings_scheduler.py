@@ -77,7 +77,7 @@ class EmbeddingsScheduler(Scheduler):
     def _create_batch_to_execute(
         self,
     ) -> dict[RequestID, EmbeddingsContext]:
-        max_batch_size_to_create = self.scheduler_config.max_batch_size
+        max_batch_size = self.scheduler_config.max_batch_size
 
         batch: dict[RequestID, EmbeddingsContext] = {}
 
@@ -87,7 +87,7 @@ class EmbeddingsScheduler(Scheduler):
 
             # Process items from the drainer
             while True:
-                if len(batch) < max_batch_size_to_create:
+                if len(batch) < max_batch_size:
                     try:
                         item = self._queue_drainer.retrieve_item()
                         batch[item.request_id] = item
@@ -98,7 +98,7 @@ class EmbeddingsScheduler(Scheduler):
         else:
             # Synchronous draining
             while True:
-                if len(batch) >= max_batch_size_to_create:
+                if len(batch) >= max_batch_size:
                     break
 
                 try:

@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct MyPair(ImplicitlyCopyable, Movable):
+struct MyPair(ImplicitlyCopyable):
     var first: Int
     var second: Int
 

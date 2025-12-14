@@ -451,7 +451,7 @@ class TextTokenizer(
         tools: list[TextGenerationRequestTool] | None = None,
         chat_template_options: dict[str, Any] | None = None,
     ) -> tuple[str | list[int], npt.NDArray[np.integer[Any]]]:
-        if prompt and messages:
+        if prompt is not None and messages is not None:
             raise ValueError("both prompt and messages cannot be provided.")
 
         if isinstance(prompt, str):
@@ -665,31 +665,9 @@ class TextAndVisionTokenizer(
         ):
             self.vision_token_ids.append(image_break_token_id)
 
-    def _wrap_str_message_content(
-        self, messages: list[TextGenerationRequestMessage]
-    ) -> list[TextGenerationRequestMessage]:
-        # Wrap string type values of "content" key with "type": "text" and its
-        # value. For example, if the message is {"content": "Hello, world!"},
-        # it will be wrapped with {"type": "text", "text": "Hello, world!"}.
-        # This is a workaround for LlamaVision's chat template:
-        # https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct/blob/main/chat_template.json
-        for message in messages:
-            if isinstance(message["content"], str):
-                message["content"] = [
-                    {"type": "text", "text": message["content"]}
-                ]
-            elif isinstance(message["content"], list):
-                for content in message["content"]:
-                    if "content" in content and content["type"] == "text":
-                        content["text"] = content.pop("content")
-        return messages
-
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
-        # TODO: Refactor this.
-        if self.model_path == "meta-llama/Llama-3.2-11B-Vision-Instruct":
-            messages = self._wrap_str_message_content(messages)
         templated_message = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )

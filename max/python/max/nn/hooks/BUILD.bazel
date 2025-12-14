@@ -1,13 +1,13 @@
 load("//bazel:api.bzl", "modular_py_library")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "base_print_hook",
     srcs = [
         "base_print_hook.py",
         "identity.py",
     ],
-    imports = ["../../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/nn",
     ],
@@ -16,8 +16,6 @@ modular_py_library(
 modular_py_library(
     name = "print_hook",
     srcs = ["print_hook.py"],
-    imports = ["../../.."],
-    visibility = ["//visibility:public"],
     deps = [
         ":base_print_hook",
         "//max/python/max/dtype",
@@ -30,8 +28,6 @@ modular_py_library(
     srcs = [
         "__init__.py",
     ],
-    imports = ["../../.."],
-    visibility = ["//visibility:public"],
     deps = [
         ":print_hook",
     ],

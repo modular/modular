@@ -26,7 +26,10 @@ from sys import llvm_intrinsic
 comptime ComplexScalar = ComplexSIMD[size=1]
 """Represents a scalar complex value."""
 comptime ComplexFloat32 = ComplexScalar[DType.float32]
+"""A complex number with 32-bit floating point components."""
+
 comptime ComplexFloat64 = ComplexScalar[DType.float64]
+"""A complex number with 64-bit floating point components."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -52,7 +55,11 @@ struct ComplexSIMD[dtype: DType, size: Int](
     # ===-------------------------------------------------------------------===#
 
     comptime type = Self.dtype
+    """The data type of the complex components."""
+
     comptime element_type = SIMD[Self.dtype, Self.size]
+    """The SIMD type used for real and imaginary parts."""
+
     var re: Self.element_type
     """The real part of the complex SIMD value."""
     var im: Self.element_type

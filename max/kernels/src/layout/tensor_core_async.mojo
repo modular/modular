@@ -35,7 +35,6 @@ Performance features:
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
 from collections import OptionalReg
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
 
@@ -200,6 +199,7 @@ comptime _CM_ROW_BITS = 128
 
 # WGMMA's K dim has 32 bytes.
 comptime WGMMA_K_BYTES = 32
+"""Size of WGMMA K dimension in bytes."""
 
 comptime _CM_LAYOUT_BITS = Layout.row_major(_CM_NUM_ROWS, _CM_ROW_BITS)
 comptime _CM_TILE_STRIDE = IntTuple(1, _CM_ROW_BITS)
@@ -319,6 +319,43 @@ fn tile_layout_k_major[
     return tile_to_shape(atom, new_shape)
 
 
+fn tile_sf_layout_k_major[
+    BM: Int,
+    BK: Int,
+    SF_SCALE_SIZE: Int,
+]() -> Layout:
+    """Creates a K-major layout for tensor core scale factors.
+
+    Constructs a layout for K-major access patterns for scale factors.
+
+    Parameters:
+        BM: Size of the M dimension in the tile.
+        BK: Size of the K dimension in the tile.
+        SF_SCALE_SIZE: Number of elements in a scale factor vector.
+
+    Returns:
+        `Layout` - A K-major layout configured for the specified dimensions and scale factor size.
+    """
+
+    comptime SF_ATOM_M = (32, 4)
+    comptime SF_ATOM_K = 4
+    comptime SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+
+    comptime sf_atom = Layout(
+        IntTuple(SF_ATOM_M[0], IntTuple(SF_ATOM_M[1], SF_ATOM_K)),
+        IntTuple(SF_ATOM_M[1] * SF_ATOM_K, IntTuple(1, SF_ATOM_M[1])),
+    )
+    comptime sf_layout = tile_to_shape(
+        sf_atom,
+        [
+            (BM // SF_MN_GROUP_SIZE) * SF_ATOM_M[0],
+            (BK // (SF_ATOM_K * SF_SCALE_SIZE)) * (SF_ATOM_M[1] * SF_ATOM_K),
+        ],
+        IntTuple(2, 1),
+    )
+    return sf_layout
+
+
 fn tile_to_descriptor[
     dtype: DType,
     layout: Layout,
@@ -373,40 +410,7 @@ fn tile_layout_mn_major[
         This returns the "unit" layout; the actual shared memory layout can be a multiple of this unit.
         Currently only supports SWIZZLE_NONE and SWIZZLE_128B modes.
     """
-    constrained[
-        swizzle_mode
-        in (TensorMapSwizzle.SWIZZLE_NONE, TensorMapSwizzle.SWIZZLE_128B),
-        "Only support 128B and no swizzle",
-    ]()
-
-    @parameter
-    if swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
-        # See comments in file header.
-        comptime row_len = swizzle_mode.bytes() // size_of[dtype]()
-        return Layout(
-            [
-                [row_len, mn_dim // row_len],
-                [_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS],
-            ],
-            [
-                [1, _CM_NUM_ROWS * row_len],
-                [row_len, _CM_NUM_ROWS * mn_dim],
-            ],
-        )
-
-    # No swizzle
-    # Number of elements per row in core matrix
-    comptime _CM_ROW_LEN = _CM_ROW_BYTES // size_of[dtype]()
-    return Layout(
-        [
-            [_CM_ROW_LEN, mn_dim // _CM_ROW_LEN],
-            [_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS],
-        ],
-        [
-            [1, _CM_NUM_ROWS * _CM_ROW_LEN],
-            [_CM_ROW_LEN, _CM_NUM_ROWS * mn_dim],
-        ],
-    )
+    return tile_layout_k_major[dtype, k_dim, mn_dim, swizzle_mode]().transpose()
 
 
 fn wgmma_c_thread_layout[C: Layout]() -> Layout:
@@ -687,7 +691,7 @@ fn _convert_cfrags_to_simd[
 ](
     c_frags_in_tuple: StaticTuple[Scalar[c_type], c_frag_size],
     c_frags: LayoutTensor[
-        c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+        mut=True, c_type, _, address_space = AddressSpace.LOCAL, *_, **_
     ],
 ):
     @parameter
@@ -753,7 +757,12 @@ struct TensorCoreAsync[
             Self.b_type, _, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         c_reg_tile: LayoutTensor[
-            Self.c_type, _, _, address_space = AddressSpace.LOCAL, *_, **_
+            mut=True,
+            Self.c_type,
+            _,
+            _,
+            address_space = AddressSpace.LOCAL,
+            *_, **_,
         ],
         wg_idx: Int = 0,
     ):
@@ -915,7 +924,11 @@ struct TensorCoreAsync[
             Self.b_type, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         c_reg_tile: LayoutTensor[
-            Self.c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+            mut=True,
+            Self.c_type,
+            _,
+            address_space = AddressSpace.LOCAL,
+            *_, **_,
         ],
     ):
         """Perform asynchronous matrix multiplication using warp group matrix multiply-accumulate (WGMMA).
@@ -993,7 +1006,7 @@ struct TensorCoreAsync[
             ".\na_frag_tile.layout[0].shape[0].value() = ",
             String(a_frag_tile.layout[0].shape[0].value()),
             "\nnum_k_mmas = ",
-            String(num_k_mmas),
+            String(num_k_mmas) + "\nb_smem_layout = " + String(b_smem_layout),
         ]()
 
         b_desc = _wgmma_descriptor[

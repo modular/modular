@@ -48,7 +48,7 @@ fn make_small_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
         return _to_string_list(content.split())
     except e:
         print(e, file=stderr)
-    return abort[List[String]]()
+    abort()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -68,7 +68,7 @@ fn make_long_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
         return _to_string_list(content.split("\n"))
     except e:
         print(e, file=stderr)
-    return abort[List[String]]()
+    abort()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -88,13 +88,12 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     var capacity: Int
 
     fn __init__(out self, capacity: Int):
-        constrained[
+        __comptime_assert (
             Self.KeyEndType == DType.uint8
             or Self.KeyEndType == DType.uint16
             or Self.KeyEndType == DType.uint32
-            or Self.KeyEndType == DType.uint64,
-            "KeyEndType needs to be an unsigned integer",
-        ]()
+            or Self.KeyEndType == DType.uint64
+        ), "KeyEndType needs to be an unsigned integer"
         self.allocated_bytes = capacity << 3
         self.keys = UnsafePointer[UInt8].alloc(self.allocated_bytes)
         self.keys_end = UnsafePointer[Scalar[Self.KeyEndType]].alloc(capacity)
@@ -189,7 +188,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
 
 struct StringDict[
-    V: Copyable & Movable,
+    V: Copyable,
     KeyCountType: DType = DType.uint32,
     KeyOffsetType: DType = DType.uint32,
     destructive: Bool = True,
@@ -204,13 +203,12 @@ struct StringDict[
     var capacity: Int
 
     fn __init__(out self, capacity: Int = 16):
-        constrained[
+        __comptime_assert (
             Self.KeyCountType == DType.uint8
             or Self.KeyCountType == DType.uint16
             or Self.KeyCountType == DType.uint32
-            or Self.KeyCountType == DType.uint64,
-            "KeyCountType needs to be an unsigned integer",
-        ]()
+            or Self.KeyCountType == DType.uint64
+        ), "KeyCountType needs to be an unsigned integer"
         self.count = 0
         if capacity <= 8:
             self.capacity = 8

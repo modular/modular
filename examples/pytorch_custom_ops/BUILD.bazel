@@ -1,6 +1,8 @@
 load("//bazel:api.bzl", "mojo_library", "requirement")
 load(":custom_op_example.bzl", "custom_op_example_py_binary")
 
+package(default_visibility = ["//visibility:private"])
+
 filegroup(
     name = "kernel_sources",
     srcs = glob(["operations/*.mojo"]),

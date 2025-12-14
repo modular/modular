@@ -18,8 +18,9 @@ import math
 from typing import Literal
 
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn import DistributedGemmConfig, ReturnLogits
+from max.nn import DistributedGemmConfig, ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
@@ -37,7 +38,7 @@ class Olmo2Config(Llama3Config):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         data_parallel_degree: int = 1,
@@ -47,7 +48,7 @@ class Olmo2Config(Llama3Config):
         unlike Llama models where it needs to be calculated.
         Args:
             huggingface_config: The HuggingFace configuration object.
-            n_devices: Number of devices for distributed inference.
+            devices: Devices to use for the KV cache.
             kv_cache_config: Configuration for KV cache.
             cache_dtype: Data type for the cache.
         Returns:
@@ -70,13 +71,13 @@ class Olmo2Config(Llama3Config):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            n_devices=n_devices,
+            devices=devices,
         )
 
     @staticmethod
     def calculate_attention_multiplier(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> float:
@@ -84,7 +85,7 @@ class Olmo2Config(Llama3Config):
         Uses the explicit head_dim from the config instead of calculating it.
         Args:
             huggingface_config: The HuggingFace configuration object.
-            n_devices: Number of devices for distributed inference.
+            devices: Devices to use for the model.
             kv_cache_config: Configuration for KV cache.
             cache_dtype: Data type for the cache.
         Returns:
@@ -98,7 +99,7 @@ class Olmo2Config(Llama3Config):
                 / float(
                     Olmo2Config.get_kv_params(
                         huggingface_config=huggingface_config,
-                        n_devices=n_devices,
+                        devices=devices,
                         kv_cache_config=kv_cache_config,
                         cache_dtype=cache_dtype,
                     ).head_dim
@@ -116,6 +117,7 @@ class Olmo2Config(Llama3Config):
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
         data_parallel_degree: int = 1,
@@ -152,17 +154,22 @@ class Olmo2Config(Llama3Config):
             data_parallel_degree=data_parallel_degree,
         )
 
+        device_refs = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in pipeline_config.model_config.device_specs[:n_devices]
+        ]
+
         # Override the KV parameters and attention multiplier with Olmo2-specific calculations
         olmo2_kv_params = Olmo2Config.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
 
         olmo2_attention_multiplier = Olmo2Config.calculate_attention_multiplier(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )

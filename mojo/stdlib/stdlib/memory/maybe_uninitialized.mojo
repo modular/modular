@@ -14,9 +14,7 @@
 from os import abort
 
 
-struct UnsafeMaybeUninitialized[ElementType: AnyType](
-    Copyable, Defaultable, Movable
-):
+struct UnsafeMaybeUninitialized[ElementType: AnyType](Copyable, Defaultable):
     """A memory location that may or may not be initialized.
 
     Note that the destructor is a no-op. If the memory was initialized, the caller
@@ -71,7 +69,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The object to copy.
         """
-        self = abort[Self](
+        abort(
             "You should never call __copyinit__ on UnsafeMaybeUninitialized"
             " UnsafeMaybeUninitialized because it's ambiguous to copy"
             " possibly uninitialized memory. Use"
@@ -132,7 +130,6 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
             other: The object to move.
         """
         abort("You should never call __moveinit__ on MaybeUninitialized")
-        self = Self()
 
     @always_inline
     fn move_from[

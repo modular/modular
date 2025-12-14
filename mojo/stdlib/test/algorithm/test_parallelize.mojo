@@ -15,7 +15,6 @@ from math import ceildiv
 from sys.info import num_physical_cores
 
 from algorithm import map, parallelize, sync_parallelize
-from buffer import NDBuffer
 from testing import TestSuite
 
 
@@ -26,7 +25,7 @@ def test_sync_parallelize():
     var num_work_items = 4
 
     var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
-    var vector = NDBuffer[DType.int, 1, _, 20](vector_stack.unsafe_ptr())
+    var vector = Span(vector_stack)
 
     for i in range(len(vector)):
         vector[i] = i
@@ -64,7 +63,7 @@ def test_parallelize():
     var num_work_items = num_physical_cores()
 
     var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
-    var vector = NDBuffer[DType.int, 1, _, 20](vector_stack.unsafe_ptr())
+    var vector = Span(vector_stack)
 
     for i in range(len(vector)):
         vector[i] = i

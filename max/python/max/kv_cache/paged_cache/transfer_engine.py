@@ -292,6 +292,9 @@ class KVTransferEngineMetadata(
     memory_type: nixl.MemoryType
     """Memory type of the transfer engine."""
 
+    hostname: str
+    """Hostname of the machine that the transfer engine is running on."""
+
     agents_meta: list[list[TensorAgentMetadata]]
     """Metadata for each replica's agents: [replica][tp_shard]."""
 
@@ -488,6 +491,7 @@ class KVTransferEngine:
             bytes_per_page=self.bytes_per_page,
             memory_type=self.memory_type,
             agents_meta=agents_meta,
+            hostname=socket.gethostname(),
         )
 
     def connect(self, remote: KVTransferEngineMetadata) -> None:
@@ -507,6 +511,19 @@ class KVTransferEngine:
         if self.bytes_per_page != remote.bytes_per_page:
             raise ValueError(
                 f"Bytes per page mismatch: {self.bytes_per_page} != {remote.bytes_per_page}"
+            )
+
+        # Check if the relevant UCX env vars are set. You can get away with eliding
+        # these for intra-node DI. However, for inter-node DI, loading metadata
+        # appears to hang if these are not set.
+        hostname = socket.gethostname()
+        is_internode = hostname != remote.hostname
+        if is_internode and not (
+            "UCX_NET_DEVICES" in os.environ and "UCX_TLS" in os.environ
+        ):
+            raise ValueError(
+                f"Attempted to connect to a TransferEngine on a different node but UCX transports are not configured ({hostname} <-> {remote.hostname}). "
+                "Please re-run and specify both the UCX_TLS and UCX_NET_DEVICES env vars."
             )
 
         # Connect all replicas pairwise

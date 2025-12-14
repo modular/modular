@@ -339,7 +339,11 @@ fn _quantize_a_Q8_K[
             packed_ptr += tile_m
 
         tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = am_ptr
 
+    # TODO(MOCO-2074): Suppress false positive unused var warning.
+    _ = packed_ptr
     return packed_base_ptr
 
 
@@ -1549,6 +1553,11 @@ fn _matmul_Qb_K[
             tile[process_cols, VariadicList[Int](2, 1)](
                 0, ceildiv(task_n_count, simd_width)
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = bn_packed_ptr
+            _ = cn_ptr
+            _ = accumulate
+            _ = is_last_k_iter
 
             a_packed_ptr += M
             b_packed_ptr += N

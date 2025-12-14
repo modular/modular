@@ -432,6 +432,10 @@ fn matmul_dispatch_sm100[
 ) raises:
     constrained[a_type == b_type, "a_type and b_type must be the same"]()
 
+    var m = c.dim[0]()
+    comptime static_N = c.shape.get[1]()
+    comptime static_K = a.shape.get[1]()
+
     @parameter
     if env_get_bool["AUTOTUNING_MODE", False]():
         var c_tensor = from_ndbuffer_row_major(c)
@@ -457,7 +461,6 @@ fn matmul_dispatch_sm100[
         comptime CTA_GROUP = env_get_int["TUNE_CTA_GROUP", 2]()
         comptime K_GROUP_SIZE = env_get_int["TUNE_K_GROUP_SIZE", 1]()
         comptime AB_SWAPPED = env_get_bool["TUNE_AB_SWAPPED", False]()
-        # alias PIPELINE_STAGE = env_get_int["TUNE_PIPELINE_STAGE", 4]()
 
         comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
@@ -477,9 +480,31 @@ fn matmul_dispatch_sm100[
             register_based_epilogue=register_based_epilogue,
         ](c_tensor, a_tensor, b_tensor, ctx)
 
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    @parameter
+    if env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]():
+
+        @parameter
+        if (
+            c_type == DType.bfloat16
+            and static_N * size_of[c_type]() % 16 == 0
+            and static_K * size_of[a_type]() % 16 == 0
+            and transpose_b
+        ):
+            var status = heuristic_and_outliers_dispatch[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+            if status:
+                return
+            else:
+                raise Error("Heuristic and outliers dispatch failed.")
+        else:
+            constrained[
+                False,
+                "Unsupported shape for benchmarking mode.",
+            ]()
 
     var epilogue_type = String("None")
 
@@ -1703,7 +1728,7 @@ fn matmul_dispatch_sm100_fp8[
     return DISPATCH_MISS
 
 
-fn heuristic_and_outliers_dispatch_bf16[
+fn heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType, //,
@@ -1723,11 +1748,18 @@ fn heuristic_and_outliers_dispatch_bf16[
     comptime static_N = c.shape.get[1]()
     comptime static_K = a.shape.get[1]()
 
-    comptime MMA_K = 16
+    constrained[
+        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
+        "Only support bfloat16 and float8_e4m3fn input types",
+    ]()
+
+    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
     comptime outliers = Table(
         _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
+    ) if a_type == DType.bfloat16 else Table(
+        _get_tuning_list_sm100_fp8[MMA_K, BK](), "fp8_heuristic_outliers"
     )
 
     @parameter
@@ -1827,7 +1859,7 @@ fn matmul_dispatch_sm100_bf16[
     @parameter
     if Index(static_N, static_K) in llama3_8b_NK:
         if m <= 128:
-            return heuristic_and_outliers_dispatch_bf16[
+            return heuristic_and_outliers_dispatch[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -2483,10 +2515,13 @@ fn _matmul_dispatch_sm100[
             c.num_elements()
         )
 
-        # We do not want to mark c as `mut` in the function signature, so we
-        # create a new shallow copy of c as a temporary buffer.
-        var c_tmp = c
-        c_tmp.data = tmp_device_buffer.unsafe_ptr()
+        # Construct a new buffer with external origin pointing to the temporary storage.
+        var c_tmp = NDBuffer[c.type, 2, MutOrigin.external](
+            rebind[UnsafePointer[Scalar[c.type], MutOrigin.external]](
+                tmp_device_buffer.unsafe_ptr()
+            ),
+            IndexList[2](c.dim[0](), c.dim[1]()),
+        )
 
         _matmul_dispatch_sm100[
             transpose_b=transpose_b,

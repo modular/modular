@@ -42,4 +42,5 @@ deepseekV3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     supports_empty_batches=True,
+    requires_max_batch_context_length=True,
 )

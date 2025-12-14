@@ -1,6 +1,8 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("//bazel:api.bzl", "modular_py_library")
 
+package(default_visibility = ["//visibility:public"])
+
 exports_files([
     "validate_lit_features.py",
     "lit_shim.py",
@@ -11,7 +13,6 @@ modular_py_library(
     testonly = True,
     srcs = ["modular_test_format.py"],
     imports = ["."],
-    visibility = ["//visibility:public"],
     deps = [
         "@llvm-project//llvm:lit",
     ],
@@ -25,7 +26,6 @@ filegroup(
         "modular_test_format.py",
         ":lit_common_configured",
     ],
-    visibility = ["//visibility:public"],
 )
 
 expand_template(

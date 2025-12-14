@@ -29,6 +29,7 @@ class SpeculativeMethod(str, Enum):
     """The supported methods for speculative decoding."""
 
     STANDALONE = "standalone"
+    EAGLE = "eagle"
 
 
 @dataclass
@@ -46,6 +47,10 @@ class SpeculativeConfig(MAXConfig):
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
 
+    def is_eagle(self) -> bool:
+        """Whether the speculative method is eagle i.e. it shares embedding and lm_head weights between the target and draft models and only takes the last hidden state from the target model"""
+        return self.speculative_method == SpeculativeMethod.EAGLE
+
     def is_standalone(self) -> bool:
         """Whether the speculative method is a standalone model"""
         return self.speculative_method == SpeculativeMethod.STANDALONE
@@ -60,7 +65,7 @@ class SpeculativeConfig(MAXConfig):
     @staticmethod
     def help() -> dict[str, str]:
         return {
-            "speculative_method": "The speculative decoding method to use (standalone, eagle, deepseek_mtp).",
+            "speculative_method": "The speculative decoding method to use (standalone, eagle).",
             "num_speculative_tokens": "The number of speculative tokens. Defaults to the number in the draft model config if present.",
             "model": "The name of the draft model, eagle head, or additional weights.",
         }

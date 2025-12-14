@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from itertools import product
+from itertools.itertools import _Product2, _Product3, _Product4
 from testing import TestSuite, assert_equal, assert_false, assert_true
+from test_utils import Observable
 
 
 def test_product2():
@@ -252,6 +254,64 @@ def test_product_bounds():
         assert_equal(it.bounds()[0], i)
         assert_equal(it.bounds()[1].value(), i)
         var _ = next(it)
+
+
+struct TestCopyIterator[
+    CopyOrigin: MutOrigin,
+](Copyable, Iterator):
+    comptime Element = NoneType
+
+    var counter: Observable[CopyOrigin = Self.CopyOrigin]
+
+    fn __init__(out self, ref [Self.CopyOrigin]copies: Int):
+        self.counter = Observable(copies=Pointer(to=copies))
+
+    fn __next__(mut self) -> Self.Element:
+        return None
+
+    fn __has_next__(self) -> Bool:
+        return False
+
+
+def test_product2_copies():
+    var copy_a = 0
+    var copy_b = 0
+    var _product_iter = _Product2(
+        TestCopyIterator(copy_a), TestCopyIterator(copy_b)
+    )
+    assert_equal(copy_a, 0)
+    assert_equal(copy_b, 1)
+
+
+def test_product3_copies():
+    var copy_a = 0
+    var copy_b = 0
+    var copy_c = 0
+    var _product_iter = _Product3(
+        TestCopyIterator(copy_a),
+        TestCopyIterator(copy_b),
+        TestCopyIterator(copy_c),
+    )
+    assert_equal(copy_a, 0)
+    assert_equal(copy_b, 1)
+    assert_equal(copy_c, 3)
+
+
+def test_product4_copies():
+    var copy_a = 0
+    var copy_b = 0
+    var copy_c = 0
+    var copy_d = 0
+    var _product_iter = _Product4(
+        TestCopyIterator(copy_a),
+        TestCopyIterator(copy_b),
+        TestCopyIterator(copy_c),
+        TestCopyIterator(copy_d),
+    )
+    assert_equal(copy_a, 0)
+    assert_equal(copy_b, 1)
+    assert_equal(copy_c, 3)
+    assert_equal(copy_d, 7)
 
 
 def main():

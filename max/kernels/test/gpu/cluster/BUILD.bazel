@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_filecheck_test")
 
+package(default_visibility = ["//max:consumers"])
+
 mojo_filecheck_test(
     name = "test_cluster.mojo.test",
     srcs = ["test_cluster.mojo"],

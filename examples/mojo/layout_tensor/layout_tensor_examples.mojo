@@ -40,9 +40,9 @@ from utils import Index, IndexList
 
 
 def accessing_tensor_elements_example():
-    alias rows = 4
-    alias columns = 8
-    alias layout = Layout.row_major(rows, columns)
+    comptime rows = 4
+    comptime columns = 8
+    comptime layout = Layout.row_major(rows, columns)
     var storage = InlineArray[Float32, rows * columns](uninitialized=True)
     for i in range(rows * columns):
         storage[i] = i
@@ -69,10 +69,10 @@ def accessing_tensor_elements_example():
 
 
 def accessing_nested_tensor_elements_example():
-    alias rows = 4
-    alias columns = 6
-    alias tiler = Layout.row_major(2, 3)
-    alias layout = blocked_product(Layout.col_major(2, 2), tiler)
+    comptime rows = 4
+    comptime columns = 6
+    comptime tiler = Layout.row_major(2, 3)
+    comptime layout = blocked_product(Layout.col_major(2, 2), tiler)
     var storage = InlineArray[Float32, rows * columns](uninitialized=True)
     for i in range(rows * columns):
         storage[i] = i
@@ -87,9 +87,9 @@ def accessing_nested_tensor_elements_example():
 
 def layout_tensor_on_cpu_example():
     # start-layout-tensor-on-cpu-example
-    alias rows = 8
-    alias columns = 16
-    alias layout = Layout.row_major(rows, columns)
+    comptime rows = 8
+    comptime columns = 16
+    comptime layout = Layout.row_major(rows, columns)
     var storage = InlineArray[Float32, rows * columns](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](storage)
     # end-layout-tensor-on-cpu-example
@@ -99,10 +99,10 @@ def layout_tensor_on_cpu_example():
 
 def layout_tensor_from_pointer_example():
     # start-layout-tensor-from-pointer-example
-    alias rows = 1024
-    alias columns = 1024
-    alias buf_size = rows * columns
-    alias layout = Layout.row_major(rows, columns)
+    comptime rows = 1024
+    comptime columns = 1024
+    comptime buf_size = rows * columns
+    comptime layout = Layout.row_major(rows, columns)
     var ptr = alloc[Float32](buf_size)
     memset(ptr, 0, buf_size)
     var tensor = LayoutTensor[DType.float32, layout](ptr)
@@ -113,12 +113,12 @@ def layout_tensor_from_pointer_example():
 
 def layout_tensor_tile_example():
     # start-layout-tensor-tile-example
-    alias rows = 2
-    alias columns = 4
-    alias tile_size = 32
-    alias tile_layout = Layout.row_major(tile_size, tile_size)
-    alias tiler_layout = Layout.row_major(rows, columns)
-    alias tiled_layout = blocked_product(tile_layout, tiler_layout)
+    comptime rows = 2
+    comptime columns = 4
+    comptime tile_size = 32
+    comptime tile_layout = Layout.row_major(tile_size, tile_size)
+    comptime tiler_layout = Layout.row_major(rows, columns)
+    comptime tiled_layout = blocked_product(tile_layout, tiler_layout)
     var storage = InlineArray[Float32, tiled_layout.size()](uninitialized=True)
     for i in range(tiled_layout.size()):
         storage[i] = i
@@ -141,11 +141,11 @@ def layout_tensor_tile_example():
 # tiles (or a 2D row-major matrix of tiles).
 def layout_tensor_iterator_example():
     # start-layout-tensor-iterator-example-1
-    alias buf_size = 128
+    comptime buf_size = 128
     var storage = InlineArray[Int16, buf_size](uninitialized=True)
     for i in range(buf_size):
         storage[i] = i
-    alias tile_layout = Layout.row_major(4, 4)
+    comptime tile_layout = Layout.row_major(4, 4)
     var iter = LayoutTensorIter[DType.int16, tile_layout, MutAnyOrigin](
         storage.unsafe_ptr(), buf_size
     )
@@ -161,20 +161,20 @@ def layout_tensor_iterator_example():
 def layout_tensor_iterator_example2():
     # TODO: set up a tiled layout tensor as input and
     # validate output.
-    alias rows = 4
-    alias cols = 8
-    alias size = rows * cols
-    alias tile_size = 2
+    comptime rows = 4
+    comptime cols = 8
+    comptime size = rows * cols
+    comptime tile_size = 2
     var storage = InlineArray[Int32, size](uninitialized=True)
     for i in range(size):
         storage[i] = Int32(i)
 
-    alias layout = Layout.row_major(rows, cols)
+    comptime layout = Layout.row_major(rows, cols)
     var tensor = LayoutTensor[DType.int32, layout, masked=True](storage)
     # start-layout-tensor-iterator-example-2
     # given a tensor of size rows x cols
-    alias num_row_tiles = ceildiv(rows, tile_size)
-    alias num_col_tiles = ceildiv(cols, tile_size)
+    comptime num_row_tiles = ceildiv(rows, tile_size)
+    comptime num_col_tiles = ceildiv(cols, tile_size)
 
     for i in range(num_row_tiles):
         var iter = tensor.tiled_iterator[tile_size, tile_size, axis=1](i, 0)

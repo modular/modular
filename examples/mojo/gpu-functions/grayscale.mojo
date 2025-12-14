@@ -19,14 +19,14 @@ from gpu.host import DeviceContext
 from gpu import global_idx
 from layout import Layout, LayoutTensor
 
-alias WIDTH = 5
-alias HEIGHT = 10
-alias NUM_CHANNELS = 3
+comptime WIDTH = 5
+comptime HEIGHT = 10
+comptime NUM_CHANNELS = 3
 
-alias int_dtype = DType.uint8
-alias float_dtype = DType.float32
-alias rgb_layout = Layout.row_major(HEIGHT, WIDTH, NUM_CHANNELS)
-alias gray_layout = Layout.row_major(HEIGHT, WIDTH)
+comptime int_dtype = DType.uint8
+comptime float_dtype = DType.float32
+comptime rgb_layout = Layout.row_major(HEIGHT, WIDTH, NUM_CHANNELS)
+comptime gray_layout = Layout.row_major(HEIGHT, WIDTH)
 
 
 def main():
@@ -55,7 +55,7 @@ def main():
     # The grid is divided up into blocks, making sure there's an extra
     # full block for any remainder. This hasn't been tuned for any specific
     # GPU.
-    alias BLOCK_SIZE = 16
+    comptime BLOCK_SIZE = 16
     num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
     num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
 

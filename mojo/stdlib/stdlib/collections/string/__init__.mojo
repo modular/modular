@@ -38,7 +38,10 @@ Example:
 
     # Unicode-aware operations
     for c in s.codepoints():
-        print(c.to_uppercase())
+        if c.is_ascii_lower():
+            print(String(c).upper())
+        else:
+            print(c)
 
     # String formatting
     var name = "Mojo"

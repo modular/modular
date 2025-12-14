@@ -1,0 +1,37 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(["**/*.py"]),
+    data = ["//max/tests/tests/torch/custom_ops"],
+    env = {
+        "MODULAR_PYTORCH_CUSTOM_OPS": "$(rootpath //max/tests/tests/torch/custom_ops)",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.9",
+    },
+    mojo_deps = [
+        "//max:MOGGPrimitives",
+        "//max:compiler_internal",
+        "//max:tensor",
+        "@mojo//:stdlib",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/torch",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

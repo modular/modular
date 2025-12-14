@@ -19,13 +19,14 @@ import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
+    Pipeline,
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
@@ -50,6 +51,7 @@ from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
+    EAGLESpeculativeDecodingPipeline,
     SpeculativeMethod,
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -58,13 +60,7 @@ from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
-PipelineTypes = Union[  # noqa: UP007 (This breaks a mypy check, unsure why)
-    TextGenerationPipeline[TextContext],
-    EmbeddingsPipeline,
-    AudioGeneratorPipeline,
-    StandaloneSpeculativeDecodingPipeline,
-    SpeechTokenGenerationPipeline,
-]
+PipelineTypes: TypeAlias = Pipeline[Any, Any]
 
 
 def get_pipeline_for_task(
@@ -75,6 +71,7 @@ def get_pipeline_for_task(
     | type[AudioGeneratorPipeline]
     | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
+    | type[EAGLESpeculativeDecodingPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
         if pipeline_config._speculative_config is not None:
@@ -87,6 +84,15 @@ def get_pipeline_for_task(
                 == SpeculativeMethod.STANDALONE
             ):
                 return StandaloneSpeculativeDecodingPipeline
+            elif (
+                pipeline_config._speculative_config.speculative_method
+                == SpeculativeMethod.EAGLE
+            ):
+                return EAGLESpeculativeDecodingPipeline
+            else:
+                raise ValueError(
+                    f"Unsupported speculative method: {pipeline_config._speculative_config.speculative_method}"
+                )
         else:
             return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -206,6 +212,13 @@ class SupportedArchitecture:
     When set to True, the pipeline can process requests with zero-sized batches
     without errors. This is useful for certain execution modes and expert parallelism.
     Most architectures do not require empty batch support and should leave this as False.
+    """
+
+    requires_max_batch_context_length: bool = False
+    """Whether the architecture requires a max batch context length to be specified.
+
+    If True and max_batch_context_length is not specified, we will default to
+    the max sequence length of the model.
     """
 
     @property

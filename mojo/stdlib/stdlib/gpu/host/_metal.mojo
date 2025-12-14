@@ -13,14 +13,13 @@
 
 from sys import external_call
 from gpu.host.device_context import _ConstCharPtr, _checked, _DeviceContextPtr
-from memory import LegacyUnsafePointer as UnsafePointer
 
 
 struct _MTLDevice:
     pass
 
 
-comptime MTLDevice = UnsafePointer[_MTLDevice]
+comptime MTLDevice = UnsafePointer[_MTLDevice, MutAnyOrigin]
 
 
 # Accessor function to get access to the underlying MTLDevice from an abstract DeviceContext.
@@ -34,7 +33,7 @@ fn metal_device(ctx: DeviceContext) raises -> MTLDevice:
         external_call[
             "AsyncRT_DeviceContext_metal_device",
             _ConstCharPtr,
-            UnsafePointer[MTLDevice],
+            UnsafePointer[MTLDevice, origin_of(result)],
             _DeviceContextPtr,
         ](
             UnsafePointer(to=result),

@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing.prop.random import Rng
-from .types import *
+from .simd_strategy import *
+from .list_strategy import *
+from .string_strategy import *
 
 
 trait Strategy(Movable):
@@ -24,7 +26,7 @@ trait Strategy(Movable):
 
     # TODO: `Value` should require `Representable/Stringable` once conditional
     # conformance is supported.
-    comptime Value: Copyable & Movable
+    comptime Value: Copyable
     """The type the strategy produces."""
 
     fn value(mut self, mut rng: Rng) raises -> Self.Value:

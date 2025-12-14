@@ -32,8 +32,13 @@ from io.file import FileHandle, open
 from io.file_descriptor import FileDescriptor
 from io.io import input, print
 
-from builtin.anytype import AnyType, Some, UnknownDestructibility
-from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any
+from builtin.anytype import (
+    AnyType,
+    Some,
+    UnknownDestructibility,
+    ImplicitlyDestructible,
+)
+from builtin.bool import Bool, Boolable, all, any
 from builtin.breakpoint import breakpoint
 from builtin.builtin_slice import Slice, slice
 from builtin.comparable import Comparable, Equatable
@@ -79,6 +84,7 @@ from builtin.simd import (
     Float8_e4m3fnuz,
     Float8_e5m2,
     Float8_e5m2fnuz,
+    Float8_e8m0fnu,
     Float16,
     Float32,
     Float64,
@@ -104,13 +110,10 @@ from builtin.tuple import Tuple
 from builtin.type_aliases import (
     AnyTrivialRegType,
     ImmutAnyOrigin,
-    ImmutableAnyOrigin,
-    ImmutableOrigin,
     ImmutOrigin,
     MutAnyOrigin,
-    MutableAnyOrigin,
-    MutableOrigin,
     MutOrigin,
+    Never,
     Origin,
     OriginSet,
     StaticConstantOrigin,

@@ -17,19 +17,21 @@ from collections.optional import OptionalReg
 from random import random_si64
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.dimlist import DimList
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from gpu.host.info import MI355X
-from internal_utils import DeviceNDBuffer, HostNDBuffer
-from internal_utils._utils import ValOrDim, dynamic, static
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
     _matmul_gpu,
 )
 from linalg.utils_gpu import MatmulConfig
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
-from utils import Index
+from utils import Index, IndexList
+
+comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
 fn test[
@@ -40,111 +42,128 @@ fn test[
     config: OptionalReg[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+    M: Optional[Int] = None,
+    N: Optional[Int] = None,
+    K: Optional[Int] = None,
+](ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
     constrained[
-        Int(n.dim) > 0 and Int(k.dim) > 0,
+        Bool(N) and Bool(K),
         "This test currently requires static N and K.",
     ]()
 
-    var M = m.value
-    var N = n.value
-    var K = k.value
-    print(M, "x", N, "x", K)
+    print(m, "x", n, "x", k)
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
+    comptime static_b_shape = DimList(
+        to_dim[N], to_dim[K]
+    ) if transpose_b else DimList(to_dim[K], to_dim[N])
+    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
+    var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
+    var dynamic_b_shape = IndexList[2](
+        N.or_else(n), K.or_else(k)
+    ) if transpose_b else IndexList[2](K.or_else(k), N.or_else(n))
+    var dynamic_c_shape = IndexList[2](M.or_else(m), N.or_else(n))
 
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var a_size = m * k
+    var b_size = n * k if transpose_b else k * n
+    var c_size = m * n
 
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[b_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
+    # Host allocations
+    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
 
-    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+    # Device allocations
+    var a_device_buffer = ctx.enqueue_create_buffer[a_type](a_size)
+    var b_device_buffer = ctx.enqueue_create_buffer[b_type](b_size)
+    var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_device_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
+
+    var a_device = NDBuffer[a_type, 2, _, static_a_shape](
+        a_device_buffer.unsafe_ptr(),
+        DimList(m, k),
     )
-    var b_device = DeviceNDBuffer[b_type, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
+    var b_device = NDBuffer[b_type, 2, _, static_b_shape](
+        b_device_buffer.unsafe_ptr(),
+        DimList(n, k) if transpose_b else DimList(k, n),
     )
-    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_device = NDBuffer[c_type, 2, _, static_c_shape](
+        c_device_buffer.unsafe_ptr(),
+        DimList(m, n),
     )
-    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_device_ref = NDBuffer[c_type, 2, _, static_c_shape](
+        c_device_ref_buffer.unsafe_ptr(),
+        DimList(m, n),
     )
 
     comptime rand_min = -100
     comptime rand_max = 100
 
-    for i in range(M * K):
+    for i in range(m * k):
         var val = random_si64(rand_min, rand_max)
-        a_host.tensor.data[i] = val.cast[a_type]()
+        a_host_ptr[i] = val.cast[a_type]()
 
-    for i in range(K * N):
+    for i in range(k * n):
         var val = random_si64(rand_min, rand_max)
-        b_host.tensor.data[i] = val.cast[b_type]()
+        b_host_ptr[i] = val.cast[b_type]()
 
-    for i in range(M * N):
-        c_host.tensor.data[i] = 0
-        c_host_ref.tensor.data[i] = 0
+    for i in range(m * n):
+        c_host_ptr[i] = 0
+        c_host_ref_ptr[i] = 0
 
     # Move operands to the Device
-
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
+    ctx.enqueue_copy(a_device_buffer, a_host_ptr)
+    ctx.enqueue_copy(b_device_buffer, b_host_ptr)
+    ctx.enqueue_copy(c_device_buffer, c_host_ptr)
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b, config=config](
-        c_device.tensor, a_device.tensor, b_device.tensor, ctx
+        c_device, a_device, b_device, ctx
     )
 
     vendor_blas.matmul(
         ctx,
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device_ref,
+        a_device,
+        b_device,
         c_row_major=True,
         transpose_b=transpose_b,
     )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device_buffer)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref_buffer)
     ctx.synchronize()
 
     var errors = 0
-    for i in range(M * N):
-        # print(i // N, i % N, c_host.tensor.data[i], c_host_ref.tensor.data[i])
-        if c_host.tensor.data[i] != c_host_ref.tensor.data[i]:
-            # print(i//N, i%N, c_host.tensor.data[i], c_host_ref.tensor.data[i])
+    for i in range(m * n):
+        if c_host_ptr[i] != c_host_ref_ptr[i]:
             errors += 1
 
     assert_equal(errors, 0)
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device_buffer^
+    _ = b_device_buffer^
+    _ = c_device_buffer^
+    _ = c_device_ref_buffer^
 
 
 fn test[
     in_type: DType,
     out_type: DType,
     transpose_b: Bool,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
-    return test[in_type, in_type, out_type, transpose_b](ctx, m, n, k)
+    M: Optional[Int] = None,
+    N: Optional[Int] = None,
+    K: Optional[Int] = None,
+](ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
+    return test[in_type, in_type, out_type, transpose_b, M=M, N=N, K=K](
+        ctx, m, n, k
+    )
 
 
 fn test[
@@ -153,8 +172,13 @@ fn test[
     c_type: DType,
     transpose_b: Bool, //,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
-    return test[a_type, b_type, c_type, transpose_b, config](ctx, m, n, k)
+    M: Optional[Int] = None,
+    N: Optional[Int] = None,
+    K: Optional[Int] = None,
+](ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
+    return test[a_type, b_type, c_type, transpose_b, config, M=M, N=N, K=K](
+        ctx, m, n, k
+    )
 
 
 def test_bf16(ctx: DeviceContext):
@@ -164,49 +188,67 @@ def test_bf16(ctx: DeviceContext):
         in_type = DType.bfloat16,
         out_type = DType.float32,
         transpose_b=False,
-    ](ctx, dynamic(256), static[256](), static[128]())
+        N = Int(256),
+        K = Int(128),
+    ](ctx, 256, 256, 128)
     test[
         in_type = DType.bfloat16,
         out_type = DType.float32,
         transpose_b=True,
-    ](ctx, dynamic(256), static[256](), static[128]())
+        N = Int(256),
+        K = Int(128),
+    ](ctx, 256, 256, 128)
     test[
         in_type = DType.bfloat16,
         out_type = DType.bfloat16,
         transpose_b=False,
-    ](ctx, dynamic(256), static[256](), static[128]())
+        N = Int(256),
+        K = Int(128),
+    ](ctx, 256, 256, 128)
     test[
         in_type = DType.bfloat16,
         out_type = DType.bfloat16,
         transpose_b=True,
-    ](ctx, dynamic(256), static[256](), static[128]())
+        N = Int(256),
+        K = Int(128),
+    ](ctx, 256, 256, 128)
 
     test[
         in_type = DType.bfloat16,
         out_type = DType.bfloat16,
         transpose_b=False,
-    ](ctx, dynamic(1024), static[256](), static[128]())
+        N = Int(256),
+        K = Int(128),
+    ](ctx, 1024, 256, 128)
     test[
         in_type = DType.bfloat16,
         out_type = DType.bfloat16,
         transpose_b=False,
-    ](ctx, dynamic(1024), static[256](), static[256]())
+        N = Int(256),
+        K = Int(256),
+    ](ctx, 1024, 256, 256)
     test[
         in_type = DType.bfloat16,
         out_type = DType.float32,
         transpose_b=True,
-    ](ctx, dynamic(1024), static[256](), static[1024]())
+        N = Int(256),
+        K = Int(1024),
+    ](ctx, 1024, 256, 1024)
     test[
         in_type = DType.bfloat16,
         out_type = DType.float32,
         transpose_b=True,
-    ](ctx, dynamic(1024), static[1024](), static[1024]())
+        N = Int(1024),
+        K = Int(1024),
+    ](ctx, 1024, 1024, 1024)
 
     test[
         in_type = DType.bfloat16,
         out_type = DType.bfloat16,
         transpose_b=True,
-    ](ctx, dynamic(256), static[284](), static[256]())
+        N = Int(284),
+        K = Int(256),
+    ](ctx, 256, 284, 256)
 
 
 def test_float8[in_type: DType](ctx: DeviceContext):
@@ -216,7 +258,9 @@ def test_float8[in_type: DType](ctx: DeviceContext):
         in_type=in_type,
         out_type = DType.bfloat16,
         transpose_b=True,
-    ](ctx, dynamic(480), static[512](), static[640]())
+        N = Int(512),
+        K = Int(640),
+    ](ctx, 480, 512, 640)
 
 
 def test_block_k(ctx: DeviceContext):
@@ -224,20 +268,24 @@ def test_block_k(ctx: DeviceContext):
 
     @parameter
     def test_block_k[
-        in_type: DType, out_type: DType, block_k: Int
-    ](m: ValOrDim, n: ValOrDim, k: ValOrDim):
+        in_type: DType,
+        out_type: DType,
+        block_k: Int,
+        N: Int,
+        K: Int,
+    ](m: Int, n: Int, k: Int):
         comptime config = MatmulConfig[in_type, in_type, out_type, True](
             block_tile_shape=Index(64, 64, block_k),
             warp_tile_shape=Index(32, 32, block_k),
         )
-        test[config](ctx, m, n, k)
+        test[config, N = Int(N), K = Int(K)](ctx, m, n, k)
 
     comptime block_ks: List[Int] = [32, 64, 128, 256]
 
     @parameter
     for i in range(len(block_ks)):
-        test_block_k[DType.bfloat16, DType.bfloat16, block_ks[i]](
-            dynamic(192), static[1024](), static[1024]()
+        test_block_k[DType.bfloat16, DType.bfloat16, block_ks[i], 1024, 1024](
+            192, 1024, 1024
         )
 
 
@@ -246,8 +294,11 @@ def test_warp_k_partitions(ctx: DeviceContext):
 
     @parameter
     def test_warp_k_partitions[
-        in_type: DType, out_type: DType
-    ](m: ValOrDim, n: ValOrDim, k: ValOrDim):
+        in_type: DType,
+        out_type: DType,
+        N: Int,
+        K: Int,
+    ](m: Int, n: Int, k: Int):
         comptime config_type = MatmulConfig[in_type, in_type, out_type, True]
         comptime configs: List[config_type] = [
             # TEST: num_warps=(1, 4, 1).
@@ -276,10 +327,10 @@ def test_warp_k_partitions(ctx: DeviceContext):
 
         @parameter
         for i in range(len(configs)):
-            test[configs[i]](ctx, m, n, k)
+            test[configs[i], N = Int(N), K = Int(K)](ctx, m, n, k)
 
-    test_warp_k_partitions[DType.bfloat16, DType.bfloat16](
-        dynamic(16), static[2048](), static[2048]()
+    test_warp_k_partitions[DType.bfloat16, DType.bfloat16, 2048, 2048](
+        16, 2048, 2048
     )
 
 
@@ -293,8 +344,8 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
     comptime transpose_b = True
 
     # The test is intended to cover partial and complete blocks.
-    var m = static[1012]()
-    var n = static[1016]()
+    comptime m_val = 1012
+    comptime n_val = 1016
 
     comptime block_sizes = [16, 32, 64, 96, 128, 160, 192, 224, 256]
 
@@ -316,7 +367,9 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
                     config.warp_tile_shape,
                     config.num_warp_k_partitions,
                 )
-                test[config](ctx, m, n, static[k]())
+                test[config, M = Int(m_val), N = Int(n_val), K = Int(k)](
+                    ctx, m_val, n_val, k
+                )
 
             @parameter
             if block_m <= 32 and block_n <= 32:

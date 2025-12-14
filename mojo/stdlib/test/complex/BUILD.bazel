@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test", "pkg_files")
 
+package(default_visibility = ["//visibility:private"])
+
 [
     mojo_test(
         name = src + ".test",
@@ -17,5 +19,5 @@ pkg_files(
     srcs = [
         "test_mandelbrot.mojo",
     ],
-    visibility = ["//visibility:public"],
+    visibility = ["//utils:__subpackages__"],
 )

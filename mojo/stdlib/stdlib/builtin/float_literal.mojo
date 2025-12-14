@@ -23,7 +23,7 @@ These are Mojo built-ins, so you don't need to import them.
 @nonmaterializable(Float64)
 @register_passable("trivial")
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
-    Defaultable, Floatable, ImplicitlyBoolable, Intable, Stringable
+    Boolable, Defaultable, Floatable, Intable, Stringable
 ):
     """Mojo floating point literal type.
 
@@ -59,13 +59,20 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     comptime nan = FloatLiteral[__mlir_attr.`#pop.float_literal<nan>`]()
+    """Not a number (NaN) value."""
+
     comptime infinity = FloatLiteral[__mlir_attr.`#pop.float_literal<inf>`]()
+    """Positive infinity value."""
+
     comptime negative_infinity = FloatLiteral[
         __mlir_attr.`#pop.float_literal<neg_inf>`
     ]()
+    """Negative infinity value."""
+
     comptime negative_zero = FloatLiteral[
         __mlir_attr.`#pop.float_literal<neg_zero>`
     ]()
+    """Negative zero value."""
 
     @always_inline("builtin")
     fn is_nan(self) -> Bool:
@@ -170,15 +177,6 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
             True if non-zero.
         """
         return self != 0.0
-
-    @always_inline("builtin")
-    fn __as_bool__(self) -> Bool:
-        """A FloatLiteral value is true if it is non-zero.
-
-        Returns:
-            True if non-zero.
-        """
-        return self.__bool__()
 
     @always_inline("builtin")
     fn __neg__(self) -> type_of(self * -1):

@@ -100,7 +100,7 @@ fn test_impl_init_shrink() raises:
 
 
 fn test_impl_init_list() raises:
-    q = Deque(elements=List(0, 1, 2))
+    q = Deque(elements=Optional([Int(0), 1, 2]))
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
     assert_equal(q._capacity, q.default_capacity)
@@ -112,7 +112,7 @@ fn test_impl_init_list() raises:
 
 
 fn test_impl_init_list_args() raises:
-    q = Deque(elements=List(0, 1, 2), maxlen=2, capacity=10)
+    q = Deque(elements=Optional([0, 1, 2]), maxlen=2, capacity=10)
     assert_equal(q._head, 0)
     assert_equal(q._tail, 2)
     assert_equal(q._capacity, 4)

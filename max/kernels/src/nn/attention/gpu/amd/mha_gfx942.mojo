@@ -75,17 +75,18 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
             var group_idx = lane_id() % UInt(mma_shape[0])
             return block_idx.y * UInt(Self.group) + UInt(group_idx)
         else:
-            return block_idx.y
+            return block_idx.x
 
     @staticmethod
     @always_inline
     fn q_tile_idx() -> UInt:
-        return block_idx.x if not Self.token_gen else 0
+        return block_idx.y if not Self.token_gen else 0
 
     @staticmethod
     @always_inline
     fn kv_head_idx() -> UInt:
-        return block_idx.y if Self.token_gen else block_idx.y // UInt(
+        # decode and prefill have different launch configs
+        return block_idx.y if Self.token_gen else Self.q_head_idx() // UInt(
             Self.group
         )
 
@@ -107,7 +108,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
         return q_depth * (
             (
                 Self.kv_head_idx()
-                * UInt(Self.group) if Self.token_gen else block_idx.y
+                * UInt(Self.group) if Self.token_gen else Self.q_head_idx()
             )
             + Self.config.num_heads * Self.q_tile_idx() * Self.config.block_m()
         )
@@ -115,13 +116,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     @staticmethod
     @always_inline
     fn get_output_offset[output_depth: UInt]() -> UInt32:
-        return output_depth * (
-            (
-                Self.kv_head_idx()
-                * UInt(Self.group) if Self.token_gen else block_idx.y
-            )
-            + Self.config.num_heads * Self.q_tile_idx() * Self.config.block_m()
-        )
+        return Self.get_q_offset[output_depth]()
 
 
 __extension Attention:

@@ -68,7 +68,7 @@ trait Movable:
     """
 
 
-trait Copyable:
+trait Copyable(Movable):
     """The Copyable trait denotes a type whose value can be explicitly copied.
 
     Example implementing the `Copyable` trait on `Foo`, which requires the
@@ -184,6 +184,7 @@ trait ImplicitlyCopyable(Copyable):
     " longer implies implicit copyability."
 )
 comptime ExplicitlyCopyable = Copyable
+"""Deprecated alias for `Copyable`."""
 
 
 fn materialize[T: AnyType, //, value: T](out result: T):

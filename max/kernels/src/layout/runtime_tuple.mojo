@@ -36,7 +36,7 @@ from layout.int_tuple import UNKNOWN_VALUE, IntTuple, flatten
 from layout.int_tuple import idx2crd as idx2crd_int_tuple
 from layout.int_tuple import prefix_product as prefix_product_int_tuple
 from layout.int_tuple import shape_div as shape_div_int_tuple
-
+from layout.int_tuple import product as product_int_tuple
 from utils import IndexList
 
 
@@ -743,3 +743,64 @@ fn to_index_list[
     for i in range(rank):
         res[i] = Int(tuple.value[i])
     return res
+
+
+fn _int_tuple_product_flatten[t: IntTuple]() -> IntTuple:
+    comptime rank = len(t)
+    var tup = IntTuple(num_elems=rank)
+
+    @parameter
+    for i in range(rank):
+        comptime known = t[i].all_known()
+
+        @parameter
+        if known:
+            comptime product = product_int_tuple(t[i])
+            tup.replace_entry(i, int_value=product)
+        else:
+            tup.replace_entry(i, int_value=UNKNOWN_VALUE)
+
+    return tup
+
+
+fn coalesce_nested_tuple[
+    t: IntTuple,
+    out_t: IntTuple = _int_tuple_product_flatten[t](),
+](tuple: RuntimeTuple[t, **_]) -> RuntimeTuple[out_t, **_]:
+    """Coalesces a nested `RuntimeTuple` into a single-level `RuntimeTuple`, by multiplying all the
+    values together.
+
+    Parameters:
+        t: The underlying Compile-time IntTuple backing the RuntimeTuple.
+        out_t: The flattened Compile-time IntTuple.
+
+    Args:
+        tuple: The RuntimeTuple to convert.
+
+    Returns:
+        A new `IntTuple` containing the products of each top level tuple, in a flat structure.
+    """
+
+    comptime rank = len(out_t)
+    var idxs = IndexList[rank]()
+
+    @parameter
+    for i in range(rank):
+        comptime known = out_t[i].all_known()
+
+        @parameter
+        if known:
+            idxs[i] = out_t[i].value()
+        else:
+            var slice = tuple[i]
+            var product = 1
+
+            constrained[slice.scalar_length > 0, "Slice is empty"]()
+
+            @parameter
+            for j in range(slice.scalar_length):
+                product *= Int(slice[j])
+
+            idxs[i] = product
+
+    return RuntimeTuple[out_t](idxs)

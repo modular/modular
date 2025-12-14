@@ -14,16 +14,11 @@
 
 from random import seed
 
-from buffer import DimList
+from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from internal_utils import (
-    HostNDBuffer,
-    InitializationType,
-    Timer,
-    init_vector_launch,
-    initialize,
-)
+from internal_utils import InitializationType, Timer, init_vector_launch
+from internal_utils._utils import initialize
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
@@ -50,11 +45,13 @@ fn test_vec_init[
         InitializationType.one,
         InitializationType.arange,
     ]:
-        var verification_data = HostNDBuffer[dtype, 1](DimList(length))
+        var verification_ptr = UnsafePointer[Scalar[dtype]].alloc(length)
+        var verification_data = NDBuffer[dtype, 1](verification_ptr, length)
         seed(0)
-        initialize(verification_data.tensor, init_type)
+        initialize(verification_data, init_type)
         for i in range(length):
-            assert_equal(verification_data.tensor.data[i], out_host[i])
+            assert_equal(verification_ptr[i], out_host[i])
+        verification_ptr.free()
 
     out_host.free()
     timer.print()

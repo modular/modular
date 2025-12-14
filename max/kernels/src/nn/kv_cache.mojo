@@ -43,7 +43,6 @@ from nn.mha_utils import (
 from nn.normalization import _rms_norm_impl
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from tensor import ManagedTensorSlice, trace_slice_arg
 
 from utils import Index, IndexList
 from tensor import InputTensor
@@ -67,11 +66,16 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     output: LayoutTensor[mut=True, dtype, **_],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
+
+    Only positions within valid_lengths are written to the KV cache.
 
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
@@ -80,6 +84,8 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
             this layer is retrieved via layer_idx.
         layer_idx: The index of the layer being executed. Used to retrieve the KVCache
             for the given layer from kv_collection.
+        valid_lengths: Tensor of shape [batch] containing the valid length for each
+            sequence. K and V are only written to cache for positions within these lengths.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
@@ -89,12 +95,22 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("hidden_state", hidden_state.runtime_layout.shape.value),
-            trace_arg("weight", weight.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    trace_arg(
+                        "valid_lengths",
+                        valid_lengths.runtime_layout.shape.value,
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -107,7 +123,94 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     ):
         return _fused_qkv_matmul_kv_cache[
             kv_collection.CacheType, target=target
-        ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
+        ](
+            hidden_state,
+            weight,
+            kv_collection,
+            layer_idx,
+            valid_lengths,
+            output,
+            ctx,
+        )
+
+
+@always_inline
+fn generic_fused_qkv_matmul_kv_cache_bshd_paged[
+    dtype: DType,
+    target: StaticString = "cpu",
+](
+    hidden_state: LayoutTensor[
+        dtype, address_space = AddressSpace.GENERIC, **_
+    ],
+    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
+    output: LayoutTensor[mut=True, dtype, **_],
+    ctx: DeviceContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Only positions within valid_lengths are written to the KV cache.
+
+    Args:
+        hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        valid_lengths: Tensor of shape [batch] containing the valid length for each
+            sequence. K and V are only written to cache for positions within these lengths.
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    trace_arg(
+                        "valid_lengths",
+                        valid_lengths.runtime_layout.shape.value,
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.fused_qkv_matmul.padded.paged.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        return _fused_qkv_matmul_kv_cache[
+            kv_collection.CacheType, target=target
+        ](
+            hidden_state,
+            weight,
+            kv_collection,
+            layer_idx,
+            valid_lengths,
+            output,
+            ctx,
+        )
 
 
 @always_inline
@@ -124,11 +227,16 @@ fn _fused_qkv_matmul_kv_cache[
     weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     kv_collection: collection_t,
     layer_idx: UInt32,
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     output: LayoutTensor[mut=True, dtype, **_],
     context: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
+
+    Only positions within valid_lengths are written to the KV cache.
 
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
@@ -137,6 +245,8 @@ fn _fused_qkv_matmul_kv_cache[
             this layer is retrieved via layer_idx.
         layer_idx: The index of the layer being executed. Used to retrieve the KVCache
             for the given layer from kv_collection.
+        valid_lengths: Tensor of shape [batch] containing the valid length for each
+            sequence. K and V are only written to cache for positions within these lengths.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
@@ -148,7 +258,13 @@ fn _fused_qkv_matmul_kv_cache[
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_impl[target=target](
-        hidden_state, weight, kv_collection, layer_idx, output, cuda_ctx
+        hidden_state,
+        weight,
+        kv_collection,
+        layer_idx,
+        valid_lengths,
+        output,
+        cuda_ctx,
     )
 
 
@@ -172,11 +288,17 @@ fn _fused_qkv_matmul_kv_cache_impl[
     weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     kv_collection: collection_t,
     layer_idx: UInt32,
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     output: LayoutTensor[mut=True, dtype, **_],
     context: Optional[DeviceContext],
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
+
+    Only positions within valid_lengths are written to the KV cache. Padded positions
+    (where t_idx >= valid_lengths[b_idx]) are skipped for K and V writes.
 
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
@@ -185,6 +307,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
             this layer is retrieved via layer_idx.
         layer_idx: The index of the layer being executed. Used to retrieve the KVCache
             for the given layer from kv_collection.
+        valid_lengths: Tensor of shape [batch] containing the valid length for each
+            sequence. K and V are only written to cache for positions within these lengths.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         context: The DeviceContext. This is unused if is_cpu[target]().
@@ -214,7 +338,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
     @parameter
-    @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache)
+    @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache, valid_lengths)
     @always_inline
     fn write_to_cache[
         dtype_: DType, width: Int, *, alignment: Int = 1
@@ -225,6 +349,11 @@ fn _fused_qkv_matmul_kv_cache_impl[
                 Index(Int(b_idx), Int(t_idx), idx[1]),
                 rebind[SIMD[dtype, width]](val),
             )
+            return
+
+        # Skip writing to cache for padded positions
+        var valid_len_for_batch = UInt(valid_lengths[Int(b_idx)])
+        if t_idx >= valid_len_for_batch:
             return
 
         var h_idx: UInt
@@ -243,8 +372,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
                 UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
             )
 
-        var valid_len = cache.cache_length(Int(b_idx))
-        var cache_t_idx = t_idx + UInt(valid_len)
+        var cache_len = cache.cache_length(Int(b_idx))
+        var cache_t_idx = t_idx + UInt(cache_len)
         cache.store(
             Int(b_idx),
             Int(h_idx),
@@ -334,6 +463,9 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: LayoutTensor[dtype, **_],
     layer_idx: UInt32,
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     output: LayoutTensor[mut=True, dtype, **_],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -347,19 +479,39 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     because the graph compiler doesn't know about the dependency between these
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only executed after QKV completes.
+
+    Args:
+        q_proj: Query projection tensor of shape [batch, seq_len, n_heads, head_dim].
+        kv_collection: The continuous batching KV cache collection.
+        freqs_cis: Frequency tensor for RoPE of shape [max_seq_len, head_dim].
+        layer_idx: The layer index for accessing the correct cache.
+        valid_lengths: Tensor of shape [batch] containing the valid length for each
+            sequence. RoPE is only applied to positions within these lengths.
+        output: Output tensor for Q with RoPE applied, same shape as q_proj.
+        context: Device context pointer for execution.
     """
 
     @always_inline
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("q_proj", q_proj.runtime_layout.shape.value),
-            trace_arg("freqs_cis", freqs_cis.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
-            "interleaved=" + String(interleaved),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
+                    trace_arg(
+                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                    ),
+                    trace_arg(
+                        "valid_lengths",
+                        valid_lengths.runtime_layout.shape.value,
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    "interleaved=" + String(interleaved),
+                ]
+            )
         )
 
     # Pass device context only on GPU.
@@ -381,6 +533,89 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
             kv_collection,
             freqs_cis,
             layer_idx,
+            valid_lengths,
+            output,
+            dev_ctx,
+        )
+
+
+@always_inline
+fn generic_fused_qk_rope_bshd_paged[
+    dtype: DType, //,
+    *,
+    interleaved: Bool,
+    target: StaticString,
+](
+    q_proj: LayoutTensor[dtype, **_],
+    kv_collection: PagedKVCacheCollection,
+    freqs_cis: LayoutTensor[dtype, **_],
+    layer_idx: UInt32,
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
+    output: LayoutTensor[mut=True, dtype, **_],
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Performs a fused RoPE projection for Q and K with paged KV cache.
+
+    This is the paged equivalent of generic_fused_qk_rope_bshd_continuous_batch.
+    It applies RoPE to both Q (returned) and K (in paged cache) to ensure
+    proper dependency ordering after fused_qkv_padded_matmul.
+
+    Args:
+        q_proj: Query projection tensor of shape [batch, seq_len, n_heads, head_dim].
+        kv_collection: The paged KV cache collection.
+        freqs_cis: Frequency tensor for RoPE of shape [max_seq_len, head_dim].
+        layer_idx: The layer index for accessing the correct cache.
+        valid_lengths: Tensor of shape [batch] containing the valid length for each
+            sequence. RoPE is only applied to positions within these lengths.
+        output: Output tensor for Q with RoPE applied, same shape as q_proj.
+        context: Device context pointer for execution.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
+                    trace_arg(
+                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                    ),
+                    trace_arg(
+                        "valid_lengths",
+                        valid_lengths.runtime_layout.shape.value,
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    "interleaved=" + String(interleaved),
+                ]
+            )
+        )
+
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[DeviceContext]() if is_cpu[
+        target
+    ]() else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "mo.fused_qk_rope.padded.paged.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
+    ):
+        fused_qk_rope[
+            kv_collection.CacheType, interleaved=interleaved, target=target
+        ](
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            valid_lengths,
             output,
             dev_ctx,
         )
@@ -405,7 +640,9 @@ fn generic_flash_attention_kv_cache_padded[
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     scale: Float32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
@@ -419,12 +656,19 @@ fn generic_flash_attention_kv_cache_padded[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_slice_arg("valid_lengths", valid_lengths),
-            "scale=" + String(scale),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(collection_t.kv_params.num_heads),
-            "head_size=" + String(collection_t.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg(
+                        "valid_lengths",
+                        valid_lengths.runtime_layout.shape.value,
+                    ),
+                    "scale=" + String(scale),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(collection_t.kv_params.num_heads),
+                    "head_size=" + String(collection_t.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -472,7 +716,9 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     scale: Float32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
@@ -486,13 +732,20 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("mask", mask.runtime_layout.shape.value),
-            trace_slice_arg("valid_lengths", valid_lengths),
-            "scale=" + String(scale),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(collection_t.kv_params.num_heads),
-            "head_size=" + String(collection_t.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("mask", mask.runtime_layout.shape.value),
+                    trace_arg(
+                        "valid_lengths",
+                        valid_lengths.runtime_layout.shape.value,
+                    ),
+                    "scale=" + String(scale),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(collection_t.kv_params.num_heads),
+                    "head_size=" + String(collection_t.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -533,7 +786,9 @@ fn _flash_attention_dispatch[
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     kv_cache: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     scale: Float32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
@@ -589,7 +844,9 @@ fn _flash_attention_dispatch_materialized_mask[
     kv_cache: collection_t,
     layer_idx: UInt32,
     mask_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     scale: Float32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_

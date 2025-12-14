@@ -31,12 +31,14 @@ from max.interfaces import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
+from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    mrope_pos_ids_3d,
+)
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import smart_resize
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
     get_rope_index,
     get_seqlens,
-    mrope_pos_ids_3d,
 )
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
@@ -451,9 +453,6 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
-        # Use tokenizer directly instead of processor to avoid AutoProcessor dependency
-        # TODO(E2EOPT-621): Wrap message content more generically.
-        messages = self._wrap_str_message_content(messages)
         templated_message = self.delegate.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -705,28 +704,27 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 max_seqlen=max_seqlen_arr,
                 concatenated_pixel_values=pixel_values,
             )
-
-            # process images for prefix caching
-            if pixel_values_list:
-                start_and_end_idxs = find_contiguous_ranges(
-                    encoded_prompt, [self.image_token_id]
-                )
-                images = [
-                    ImageMetadata(
-                        start_idx=start_idx,
-                        end_idx=end_idx,
-                        pixel_values=pixel_values,
-                    )
-                    for (start_idx, end_idx), pixel_values in zip(
-                        start_and_end_idxs, pixel_values_list, strict=True
-                    )
-                ]
-            else:
-                images = []
-
         else:
             # TODO:consistently handle image_token_indices when we don't get images. Here or model.py?
             image_token_indices = np.array([], dtype=np.int32)
+
+        # process images for prefix caching
+        if pixel_values_list:
+            start_and_end_idxs = find_contiguous_ranges(
+                encoded_prompt, [self.image_token_id]
+            )
+            images = [
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixel_values,
+                )
+                for (start_idx, end_idx), pixel_values in zip(
+                    start_and_end_idxs, pixel_values_list, strict=True
+                )
+            ]
+        else:
+            images = []
 
         # Calculate Rope Delta and position ids
         decoder_position_ids, rope_delta_array = get_rope_index(

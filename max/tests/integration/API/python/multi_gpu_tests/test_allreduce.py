@@ -106,10 +106,6 @@ def test_allreduce_execution() -> None:
     # Create tensors on each device
     input_tensors = [Tensor.from_numpy(a_np).to(device) for device in devices]
 
-    # Synchronize devices so that the signal buffers are initialized.
-    for dev in devices:
-        dev.synchronize()
-
     output = compiled.execute(*input_tensors, *signals.buffers())
 
     # Check Executed Graph
@@ -255,10 +251,6 @@ def test_allreduce_signal_buffer_too_small_error_message(
         Tensor.zeros((64, 64), dtype=DType.float32).to(devices[i])
         for i in range(num_gpus)
     ]
-
-    # Synchronize devices.
-    for dev in devices:
-        dev.synchronize()
 
     # Execute and expect error.
     error_regex = r"Expected signal buffer to be at least \d+ bytes, but got \d+\. This error can appear when running large requests through MAX serve without chunked prefill\. If so, try enabling chunked prefill with --enable-chunked-prefill\. Otherwise, consider increasing the signal buffer size\."

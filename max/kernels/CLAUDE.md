@@ -95,7 +95,7 @@ bd //KGEN/tools/mojo -- /path/to/file.mojo
 
 ```mojo
 from linalg.matmul import matmul
-from internal_utils import DeviceNDBuffer, HostNDBuffer
+from layout import Layout, LayoutTensor
 from gpu.host import DeviceContext
 ```
 

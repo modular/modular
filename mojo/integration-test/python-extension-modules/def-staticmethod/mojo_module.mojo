@@ -57,9 +57,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 @fieldwise_init
@@ -102,21 +100,21 @@ struct Dummy(Defaultable, Movable, Representable):
         try:
             return Self.takes_zero_raises_returns()
         except e:
-            return abort[PythonObject](String("Unexpected Python error: ", e))
+            abort(String("Unexpected Python error: ", e))
 
     @staticmethod
     fn takes_one_returns(a: PythonObject) -> PythonObject:
         try:
             return Self.takes_one_raises_returns(a)
         except e:
-            return abort[PythonObject](String("Unexpected Python error: ", e))
+            abort(String("Unexpected Python error: ", e))
 
     @staticmethod
     fn takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
         try:
             return Self.takes_two_raises_returns(a, b)
         except e:
-            return abort[PythonObject](String("Unexpected Python error: ", e))
+            abort(String("Unexpected Python error: ", e))
 
     @staticmethod
     fn takes_three_returns(
@@ -125,7 +123,7 @@ struct Dummy(Defaultable, Movable, Representable):
         try:
             return Self.takes_three_raises_returns(a, b, c)
         except e:
-            return abort[PythonObject](String("Unexpected Python error: ", e))
+            abort(String("Unexpected Python error: ", e))
 
     @staticmethod
     fn takes_zero_raises() raises:

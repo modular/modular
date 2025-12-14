@@ -54,7 +54,7 @@ fn make_string[
             return String(bytes=f.read_bytes())
     except e:
         print(e, file=stderr)
-    return abort[String]()
+    abort(String())
 
 
 # ===-----------------------------------------------------------------------===#

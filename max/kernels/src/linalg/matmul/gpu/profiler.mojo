@@ -38,7 +38,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     scheduler_warps: UInt32,
     epilogue_warps: UInt32,
     max_entries_per_warp: UInt32,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """
     This struct manages the profiling workspace. The workspaces consists of equal sized chunks, the total number of
     which is equal to the total number of active SMs. Each SM chunk consists of sequences of entries, with a maximum
@@ -185,7 +185,7 @@ struct BlackwellProfileWarp[
         max_entries_per_warp,
     ],
     warp_role: UInt32 = 0,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """
     This struct calculates execution time for a warp/s,
     and writes a single entry to the workspace.

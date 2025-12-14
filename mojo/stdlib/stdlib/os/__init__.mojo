@@ -42,5 +42,7 @@ from .os import (
     rmdir,
     sep,
     unlink,
+    symlink,
+    link,
 )
 from .pathlike import PathLike

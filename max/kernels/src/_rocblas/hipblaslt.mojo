@@ -82,7 +82,7 @@ struct Status(Equatable, Writable):
         if self == Self.INVALID_ENUM:
             return writer.write("INVALID_ENUM")
 
-        return abort("unreachable: invalid Status entry")
+        abort("unreachable: invalid Status entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)

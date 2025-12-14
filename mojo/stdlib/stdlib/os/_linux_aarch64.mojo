@@ -28,7 +28,7 @@ comptime blkcnt_t = Int64
 comptime blksize_t = Int32
 
 
-struct _c_stat(Copyable, Defaultable, Movable, Stringable, Writable):
+struct _c_stat(Copyable, Defaultable, Stringable, Writable):
     var st_dev: dev_t
     """ID of device containing file."""
     var st_ino: Int64
@@ -132,7 +132,7 @@ struct _c_stat(Copyable, Defaultable, Movable, Stringable, Writable):
 fn _stat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__xstat", Int32](
-        Int32(0), path.unsafe_cstr_ptr(), Pointer(to=stat)
+        Int32(0), path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)
     )
     if err == -1:
         raise Error("unable to stat '", path, "'")
@@ -143,7 +143,7 @@ fn _stat(var path: String) raises -> _c_stat:
 fn _lstat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__lxstat", Int32](
-        Int32(0), path.unsafe_cstr_ptr(), Pointer(to=stat)
+        Int32(0), path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)
     )
     if err == -1:
         raise Error("unable to lstat '", path, "'")

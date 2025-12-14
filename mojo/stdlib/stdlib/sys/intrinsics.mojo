@@ -488,10 +488,9 @@ fn prefetch[
       addr: The data pointer to prefetch.
     """
 
-    constrained[
-        params.rw == PrefetchRW.READ or type_of(addr).mut == True,
-        "prefetch pointer mutability must match the prefetch read-write option",
-    ]()
+    __comptime_assert (
+        params.rw == PrefetchRW.READ or type_of(addr).mut == True
+    ), "prefetch pointer mutability must match the prefetch read-write option"
 
     @parameter
     if is_nvidia_gpu():
@@ -544,7 +543,7 @@ fn masked_load[
     Returns:
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
-    debug_assert(addr, "masked_load requires a valid (non-null) pointer")
+    debug_assert(Bool(addr), "masked_load requires a valid (non-null) pointer")
 
     @parameter
     if size == 1:
@@ -585,7 +584,7 @@ fn masked_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(addr, "masked_store requires a valid (non-null) pointer")
+    debug_assert(Bool(addr), "masked_store requires a valid (non-null) pointer")
 
     @parameter
     if size == 1:
@@ -627,7 +626,9 @@ fn compressed_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(addr, "compressed_store requires a valid (non-null) pointer")
+    debug_assert(
+        Bool(addr), "compressed_store requires a valid (non-null) pointer"
+    )
 
     @parameter
     if size == 1:
@@ -673,7 +674,7 @@ fn strided_load[
     Returns:
       A vector containing the loaded data.
     """
-    debug_assert(addr, "strided_load requires a valid (non-null) pointer")
+    debug_assert(Bool(addr), "strided_load requires a valid (non-null) pointer")
 
     @parameter
     if simd_width == 1:
@@ -716,7 +717,9 @@ fn strided_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(addr, "strided_store requires a valid (non-null) pointer")
+    debug_assert(
+        Bool(addr), "strided_store requires a valid (non-null) pointer"
+    )
 
     @parameter
     if simd_width == 1:
@@ -933,7 +936,9 @@ fn implicitarg_ptr(
     Returns:
         A pointer to LLVM's implicit arguments table.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     result = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
         type_of(result),
@@ -956,7 +961,9 @@ fn readfirstlane(value: Int32) -> Int32:
     Returns:
         The value in the lowest active lane of the input operand.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
 
 
@@ -972,7 +979,9 @@ fn readfirstlane(value: UnsafePointer) -> type_of(value):
     Returns:
         The value in the lowest active lane of the input operand.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic[
         "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
@@ -989,7 +998,9 @@ fn readfirstlane(value: Int) -> type_of(value):
     Returns:
         The value in the lowest active lane of the input operand.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic[
         "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
@@ -1010,7 +1021,9 @@ fn sendmsg(opcode: Int32, msg: Int32):
         opcode: The operation to perform.
         msg: The message to send.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     _ = llvm_intrinsic["llvm.amdgcn.s.sendmsg", NoneType, Int32, Int32](
         opcode, msg
     )
@@ -1037,9 +1050,10 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
     Returns:
         A bitfield(Int32 or Int64) containing the result of its Bool argument in all active lanes.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
-    constrained[
-        dtype == DType.int32 or dtype == DType.int64,
-        "This intrinsic is only defined for i32 or i64",
-    ]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
+    __comptime_assert (
+        dtype == DType.int32 or dtype == DType.int64
+    ), "This intrinsic is only defined for i32 or i64"
     return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)

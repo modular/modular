@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import TestSuite
-from testing import assert_equal, assert_raises, assert_true
+from testing import assert_equal, assert_raises, assert_true, assert_false
 from math import iota
 
 
@@ -130,7 +130,7 @@ def test_span_slice():
     var s = Span(l)
     var res = s[1:2]
     assert_equal(res[0], 2)
-    res = s[1:-1:1]
+    res = s[1:-1]
     assert_equal(res[0], 2)
     assert_equal(res[1], 3)
     assert_equal(res[2], 4)
@@ -426,6 +426,30 @@ def test_binary_sarch_by():
 
     var result4 = span.binary_search_by[cmp_13]()
     assert_equal(6, result4.value())
+
+
+def test_iter():
+    var data = [1, 2, 3, 4, 5]
+    var span = Span(data)
+    var it = iter(span)
+    assert_true(it.__has_next__())
+    assert_equal(next(it), 1)
+    assert_true(it.__has_next__())
+    assert_equal(next(it), 2)
+    assert_true(it.__has_next__())
+    assert_equal(next(it), 3)
+    assert_true(it.__has_next__())
+    assert_equal(next(it), 4)
+    assert_true(it.__has_next__())
+    assert_equal(next(it), 5)
+    assert_false(it.__has_next__())
+
+
+def test_iter_empty():
+    var data: List[Int] = []
+    var span = Span(data)
+    var it = iter(span)
+    assert_false(it.__has_next__())
 
 
 def main():

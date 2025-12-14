@@ -29,9 +29,7 @@ from bit import next_power_of_two
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: Copyable & Movable](
-    Boolable, Copyable, Iterable, Movable, Sized
-):
+struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
     """Implements a double-ended queue.
 
     It supports pushing and popping from both ends in O(1) time resizing the
@@ -39,12 +37,18 @@ struct Deque[ElementType: Copyable & Movable](
 
     Parameters:
         ElementType: The type of the elements in the deque.
-            Must implement the traits `Copyable` and `Movable`.
+            Must implement the traits `Copyable`.
     """
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DequeIter[Self.ElementType, iterable_origin]
+    """The iterator type for this deque.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     # ===-------------------------------------------------------------------===#
     # Aliases
@@ -262,7 +266,7 @@ struct Deque[ElementType: Copyable & Movable](
                 self.append(element.copy())
 
     fn __eq__[
-        T: Equatable & Copyable & Movable, //
+        T: Equatable & Copyable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are equal.
 
@@ -287,7 +291,7 @@ struct Deque[ElementType: Copyable & Movable](
         return True
 
     fn __ne__[
-        T: Equatable & Copyable & Movable, //
+        T: Equatable & Copyable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are not equal.
 
@@ -304,7 +308,7 @@ struct Deque[ElementType: Copyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        T: Equatable & Copyable & Movable, //
+        T: Equatable & Copyable, //
     ](self: Deque[T], value: T) -> Bool:
         """Verify if a given value is present in the deque.
 
@@ -393,7 +397,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     @no_inline
     fn write_to[
-        T: Representable & Copyable & Movable,
+        T: Representable & Copyable,
     ](self: Deque[T], mut writer: Some[Writer]):
         """Writes `my_deque.__str__()` to a `Writer`.
 
@@ -413,9 +417,7 @@ struct Deque[ElementType: Copyable & Movable](
         writer.write(")")
 
     @no_inline
-    fn __str__[
-        T: Representable & Copyable & Movable, //
-    ](self: Deque[T]) -> String:
+    fn __str__[T: Representable & Copyable, //](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
         Note that since we can't condition methods on a trait yet,
@@ -441,9 +443,7 @@ struct Deque[ElementType: Copyable & Movable](
         return output^
 
     @no_inline
-    fn __repr__[
-        T: Representable & Copyable & Movable, //
-    ](self: Deque[T]) -> String:
+    fn __repr__[T: Representable & Copyable, //](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
         Note that since we can't condition methods on a trait yet,
@@ -518,9 +518,7 @@ struct Deque[ElementType: Copyable & Movable](
         self._head = 0
         self._tail = 0
 
-    fn count[
-        T: Equatable & Copyable & Movable, //
-    ](self: Deque[T], value: T) -> Int:
+    fn count[T: Equatable & Copyable, //](self: Deque[T], value: T) -> Int:
         """Counts the number of occurrences of a `value` in the deque.
 
         Parameters:
@@ -612,7 +610,7 @@ struct Deque[ElementType: Copyable & Movable](
         values_data.free()
 
     fn index[
-        T: Equatable & Copyable & Movable, //
+        T: Equatable & Copyable, //
     ](
         self: Deque[T],
         value: T,
@@ -705,9 +703,7 @@ struct Deque[ElementType: Copyable & Movable](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn remove[
-        T: Equatable & Copyable & Movable, //
-    ](mut self: Deque[T], value: T) raises:
+    fn remove[T: Equatable & Copyable, //](mut self: Deque[T], value: T) raises:
         """Removes the first occurrence of the `value`.
 
         Parameters:
@@ -982,10 +978,10 @@ struct Deque[ElementType: Copyable & Movable](
 @fieldwise_init
 struct _DequeIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: Copyable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for Deque.
 
     Parameters:

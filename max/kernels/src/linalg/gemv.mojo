@@ -75,7 +75,7 @@ comptime logger = Logger()
 
 
 @fieldwise_init
-struct GEMVAlgorithm(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct GEMVAlgorithm(ImplicitlyCopyable, Stringable, Writable):
     var _value: Int
 
     comptime GEMV_KERNEL = Self(0)

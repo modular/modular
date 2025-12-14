@@ -11,9 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import DimList
-from internal_utils import TestTensor, assert_equal
+from memory import LegacyUnsafePointer as UnsafePointer
+
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.gather_scatter import scatter_nd_generator
+from testing import assert_equal
+
+from utils.index import Index
 
 
 @always_inline
@@ -26,424 +30,417 @@ fn use_update[
     return update_val
 
 
-fn test_case[
-    dtype: DType,
-](
-    data: TestTensor[dtype, 3],
-    indices: TestTensor[DType.int64, 2],
-    updates: TestTensor[dtype, 3],
-    output: TestTensor[dtype, 3],
-) raises:
-    @always_inline
-    @parameter
-    fn use_update[
-        _dtype: DType, width: Int
-    ](input_val: SIMD[_dtype, width], update_val: SIMD[_dtype, width]) -> SIMD[
-        _dtype, width
-    ]:
-        return update_val
-
-    test_case[dtype, use_update](data, indices, updates, output)
-
-
-fn test_case[
-    dtype: DType,
-    reduce_fn: fn[dtype: DType, width: Int] (
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
-](
-    data: TestTensor[dtype, 3],
-    indices: TestTensor[DType.int64, 2],
-    updates: TestTensor[dtype, 3],
-    output: TestTensor[dtype, 3],
-) raises:
-    var output_ref = output
-
-    # Note: This is for the specific set of examples
-    #      (due to _to_ndbuffer[] parameters).
-    # last example 3,2,2,3 ; original: 3,2,3,3
-    scatter_nd_generator[dtype, DType.int64, False, reduce_fn=reduce_fn](
-        data.to_managed_tensor_slice().to_layout_tensor(),
-        indices.to_managed_tensor_slice().to_layout_tensor(),
-        updates.to_managed_tensor_slice().to_layout_tensor(),
-        output.to_managed_tensor_slice().to_layout_tensor(),
-    )
-
-    assert_equal(output, output_ref)
-
-
 def main():
     fn test_scatternd() raises:
         print("== test_scatternd")
-        var data = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(1),
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
+        # data: 4x4x4 = 64 elements
+        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_vals = InlineArray[Float32, 64](
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+        )
+        for i in range(64):
+            data_ptr[i] = data_vals[i]
+
+        comptime data_layout = Layout.row_major(4, 4, 4)
+        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+
+        # indices: 2x1 = 2 elements
+        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        indices_ptr[0] = 0
+        indices_ptr[1] = 2
+
+        comptime indices_layout = Layout.row_major(2, 1)
+        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+
+        # updates: 2x4x4 = 32 elements
+        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_vals = InlineArray[Float32, 32](
+            Float32(5),
+            5,
+            5,
+            5,
+            6,
+            6,
+            6,
+            6,
+            7,
+            7,
+            7,
+            7,
+            8,
+            8,
+            8,
+            8,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            4,
+            4,
+            4,
+            4,
+        )
+        for i in range(32):
+            updates_ptr[i] = updates_vals[i]
+
+        comptime updates_layout = Layout.row_major(2, 4, 4)
+        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+
+        # output: 4x4x4 = 64 elements
+        var output_ptr = UnsafePointer[Float32].alloc(64)
+        comptime output_layout = Layout.row_major(4, 4, 4)
+        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+
+        # expected output
+        var expected = InlineArray[Float32, 64](
+            Float32(5),
+            5,
+            5,
+            5,
+            6,
+            6,
+            6,
+            6,
+            7,
+            7,
+            7,
+            7,
+            8,
+            8,
+            8,
+            8,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            4,
+            4,
+            4,
+            4,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
         )
 
-        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 2])
+        scatter_nd_generator[
+            DType.float32, DType.int64, False, reduce_fn=use_update
+        ](data, indices, updates, output)
 
-        var updates = TestTensor[DType.float32, 3](
-            DimList(2, 4, 4),
-            [
-                Float32(5),
-                5,
-                5,
-                5,
-                6,
-                6,
-                6,
-                6,
-                7,
-                7,
-                7,
-                7,
-                8,
-                8,
-                8,
-                8,
-                1,
-                1,
-                1,
-                1,
-                2,
-                2,
-                2,
-                2,
-                3,
-                3,
-                3,
-                3,
-                4,
-                4,
-                4,
-                4,
-            ],
-        )
+        for i in range(64):
+            assert_equal(output_ptr[i], expected[i])
 
-        var output_ref = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(5),
-                5,
-                5,
-                5,
-                6,
-                6,
-                6,
-                6,
-                7,
-                7,
-                7,
-                7,
-                8,
-                8,
-                8,
-                8,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                1,
-                1,
-                1,
-                2,
-                2,
-                2,
-                2,
-                3,
-                3,
-                3,
-                3,
-                4,
-                4,
-                4,
-                4,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
-        )
-
-        test_case[DType.float32](
-            data,
-            indices,
-            updates,
-            output_ref,
-        )
+        data_ptr.free()
+        indices_ptr.free()
+        updates_ptr.free()
+        output_ptr.free()
 
     test_scatternd()
 
     fn test_scatternd_add() raises:
         print("== test_scatternd_add")
-        var data = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(1),
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
+        # data: 4x4x4 = 64 elements
+        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_vals = InlineArray[Float32, 64](
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
         )
+        for i in range(64):
+            data_ptr[i] = data_vals[i]
 
-        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 0])
+        comptime data_layout = Layout.row_major(4, 4, 4)
+        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
 
-        var updates = TestTensor[DType.float32, 3](
-            DimList(2, 4, 4),
-            [
-                Float32(5),
-                5,
-                5,
-                5,
-                6,
-                6,
-                6,
-                6,
-                7,
-                7,
-                7,
-                7,
-                8,
-                8,
-                8,
-                8,
-                1,
-                1,
-                1,
-                1,
-                2,
-                2,
-                2,
-                2,
-                3,
-                3,
-                3,
-                3,
-                4,
-                4,
-                4,
-                4,
-            ],
+        # indices: 2x1 = 2 elements (both pointing to index 0)
+        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        indices_ptr[0] = 0
+        indices_ptr[1] = 0
+
+        comptime indices_layout = Layout.row_major(2, 1)
+        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+
+        # updates: 2x4x4 = 32 elements
+        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_vals = InlineArray[Float32, 32](
+            Float32(5),
+            5,
+            5,
+            5,
+            6,
+            6,
+            6,
+            6,
+            7,
+            7,
+            7,
+            7,
+            8,
+            8,
+            8,
+            8,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            4,
+            4,
+            4,
+            4,
         )
+        for i in range(32):
+            updates_ptr[i] = updates_vals[i]
 
-        var output_ref = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(7),
-                8,
-                9,
-                10,
-                13,
-                14,
-                15,
-                16,
-                18,
-                17,
-                16,
-                15,
-                16,
-                15,
-                14,
-                13,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
+        comptime updates_layout = Layout.row_major(2, 4, 4)
+        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+
+        # output: 4x4x4 = 64 elements
+        var output_ptr = UnsafePointer[Float32].alloc(64)
+        comptime output_layout = Layout.row_major(4, 4, 4)
+        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+
+        # expected output (add reduction)
+        var expected = InlineArray[Float32, 64](
+            Float32(7),
+            8,
+            9,
+            10,
+            13,
+            14,
+            15,
+            16,
+            18,
+            17,
+            16,
+            15,
+            16,
+            15,
+            14,
+            13,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
         )
 
         @always_inline
@@ -453,190 +450,217 @@ def main():
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        test_case[DType.float32, _add](data, indices, updates, output_ref)
+        scatter_nd_generator[DType.float32, DType.int64, False, reduce_fn=_add](
+            data, indices, updates, output
+        )
+
+        for i in range(64):
+            assert_equal(output_ptr[i], expected[i])
+
+        data_ptr.free()
+        indices_ptr.free()
+        updates_ptr.free()
+        output_ptr.free()
 
     test_scatternd_add()
 
     fn test_scatternd_max() raises:
         print("== test_scatternd_max")
-        var data = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(1),
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
+        # data: 4x4x4 = 64 elements
+        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_vals = InlineArray[Float32, 64](
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
         )
+        for i in range(64):
+            data_ptr[i] = data_vals[i]
 
-        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 0])
+        comptime data_layout = Layout.row_major(4, 4, 4)
+        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
 
-        var updates = TestTensor[DType.float32, 3](
-            DimList(2, 4, 4),
-            [
-                Float32(5),
-                5,
-                5,
-                5,
-                6,
-                6,
-                6,
-                6,
-                7,
-                7,
-                7,
-                7,
-                8,
-                8,
-                8,
-                8,
-                1,
-                1,
-                1,
-                1,
-                2,
-                2,
-                2,
-                2,
-                3,
-                3,
-                3,
-                3,
-                4,
-                4,
-                4,
-                4,
-            ],
+        # indices: 2x1 = 2 elements (both pointing to index 0)
+        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        indices_ptr[0] = 0
+        indices_ptr[1] = 0
+
+        comptime indices_layout = Layout.row_major(2, 1)
+        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+
+        # updates: 2x4x4 = 32 elements
+        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_vals = InlineArray[Float32, 32](
+            Float32(5),
+            5,
+            5,
+            5,
+            6,
+            6,
+            6,
+            6,
+            7,
+            7,
+            7,
+            7,
+            8,
+            8,
+            8,
+            8,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            4,
+            4,
+            4,
+            4,
         )
+        for i in range(32):
+            updates_ptr[i] = updates_vals[i]
 
-        var output_ref = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(5),
-                5,
-                5,
-                5,
-                6,
-                6,
-                7,
-                8,
-                8,
-                7,
-                7,
-                7,
-                8,
-                8,
-                8,
-                8,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
+        comptime updates_layout = Layout.row_major(2, 4, 4)
+        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+
+        # output: 4x4x4 = 64 elements
+        var output_ptr = UnsafePointer[Float32].alloc(64)
+        comptime output_layout = Layout.row_major(4, 4, 4)
+        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+
+        # expected output (max reduction)
+        var expected = InlineArray[Float32, 64](
+            Float32(5),
+            5,
+            5,
+            5,
+            6,
+            6,
+            7,
+            8,
+            8,
+            7,
+            7,
+            7,
+            8,
+            8,
+            8,
+            8,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
         )
 
         @always_inline
@@ -646,190 +670,217 @@ def main():
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        test_case[DType.float32, _max](data, indices, updates, output_ref)
+        scatter_nd_generator[DType.float32, DType.int64, False, reduce_fn=_max](
+            data, indices, updates, output
+        )
+
+        for i in range(64):
+            assert_equal(output_ptr[i], expected[i])
+
+        data_ptr.free()
+        indices_ptr.free()
+        updates_ptr.free()
+        output_ptr.free()
 
     test_scatternd_max()
 
     fn test_scatternd_min() raises:
         print("== test_scatternd_min")
-        var data = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(1),
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
+        # data: 4x4x4 = 64 elements
+        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_vals = InlineArray[Float32, 64](
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
         )
+        for i in range(64):
+            data_ptr[i] = data_vals[i]
 
-        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 0])
+        comptime data_layout = Layout.row_major(4, 4, 4)
+        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
 
-        var updates = TestTensor[DType.float32, 3](
-            DimList(2, 4, 4),
-            [
-                Float32(5),
-                5,
-                5,
-                5,
-                6,
-                6,
-                6,
-                6,
-                7,
-                7,
-                7,
-                7,
-                8,
-                8,
-                8,
-                8,
-                1,
-                1,
-                1,
-                1,
-                2,
-                2,
-                2,
-                2,
-                3,
-                3,
-                3,
-                3,
-                4,
-                4,
-                4,
-                4,
-            ],
+        # indices: 2x1 = 2 elements (both pointing to index 0)
+        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        indices_ptr[0] = 0
+        indices_ptr[1] = 0
+
+        comptime indices_layout = Layout.row_major(2, 1)
+        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+
+        # updates: 2x4x4 = 32 elements
+        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_vals = InlineArray[Float32, 32](
+            Float32(5),
+            5,
+            5,
+            5,
+            6,
+            6,
+            6,
+            6,
+            7,
+            7,
+            7,
+            7,
+            8,
+            8,
+            8,
+            8,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            4,
+            4,
+            4,
+            4,
         )
+        for i in range(32):
+            updates_ptr[i] = updates_vals[i]
 
-        var output_ref = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(1),
-                1,
-                1,
-                1,
-                2,
-                2,
-                2,
-                2,
-                3,
-                3,
-                3,
-                3,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
+        comptime updates_layout = Layout.row_major(2, 4, 4)
+        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+
+        # output: 4x4x4 = 64 elements
+        var output_ptr = UnsafePointer[Float32].alloc(64)
+        comptime output_layout = Layout.row_major(4, 4, 4)
+        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+
+        # expected output (min reduction)
+        var expected = InlineArray[Float32, 64](
+            Float32(1),
+            1,
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
         )
 
         @always_inline
@@ -839,190 +890,217 @@ def main():
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
-        test_case[DType.float32, _min](data, indices, updates, output_ref)
+        scatter_nd_generator[DType.float32, DType.int64, False, reduce_fn=_min](
+            data, indices, updates, output
+        )
+
+        for i in range(64):
+            assert_equal(output_ptr[i], expected[i])
+
+        data_ptr.free()
+        indices_ptr.free()
+        updates_ptr.free()
+        output_ptr.free()
 
     test_scatternd_min()
 
     fn test_scatternd_multiply() raises:
         print("== test_scatternd_multiply")
-        var data = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(1),
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
+        # data: 4x4x4 = 64 elements
+        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_vals = InlineArray[Float32, 64](
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
         )
+        for i in range(64):
+            data_ptr[i] = data_vals[i]
 
-        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 0])
+        comptime data_layout = Layout.row_major(4, 4, 4)
+        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
 
-        var updates = TestTensor[DType.float32, 3](
-            DimList(2, 4, 4),
-            [
-                Float32(5),
-                5,
-                5,
-                5,
-                6,
-                6,
-                6,
-                6,
-                7,
-                7,
-                7,
-                7,
-                8,
-                8,
-                8,
-                8,
-                1,
-                1,
-                1,
-                1,
-                2,
-                2,
-                2,
-                2,
-                3,
-                3,
-                3,
-                3,
-                4,
-                4,
-                4,
-                4,
-            ],
+        # indices: 2x1 = 2 elements (both pointing to index 0)
+        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        indices_ptr[0] = 0
+        indices_ptr[1] = 0
+
+        comptime indices_layout = Layout.row_major(2, 1)
+        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+
+        # updates: 2x4x4 = 32 elements
+        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_vals = InlineArray[Float32, 32](
+            Float32(5),
+            5,
+            5,
+            5,
+            6,
+            6,
+            6,
+            6,
+            7,
+            7,
+            7,
+            7,
+            8,
+            8,
+            8,
+            8,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            4,
+            4,
+            4,
+            4,
         )
+        for i in range(32):
+            updates_ptr[i] = updates_vals[i]
 
-        var output_ref = TestTensor[DType.float32, 3](
-            DimList(4, 4, 4),
-            [
-                Float32(5),
-                10,
-                15,
-                20,
-                60,
-                72,
-                84,
-                96,
-                168,
-                147,
-                126,
-                105,
-                128,
-                96,
-                64,
-                32,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                8,
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-            ],
+        comptime updates_layout = Layout.row_major(2, 4, 4)
+        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+
+        # output: 4x4x4 = 64 elements
+        var output_ptr = UnsafePointer[Float32].alloc(64)
+        comptime output_layout = Layout.row_major(4, 4, 4)
+        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+
+        # expected output (multiply reduction)
+        var expected = InlineArray[Float32, 64](
+            Float32(5),
+            10,
+            15,
+            20,
+            60,
+            72,
+            84,
+            96,
+            168,
+            147,
+            126,
+            105,
+            128,
+            96,
+            64,
+            32,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
         )
 
         @always_inline
@@ -1032,283 +1110,16 @@ def main():
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
-        test_case[DType.float32, _mul](data, indices, updates, output_ref)
+        scatter_nd_generator[DType.float32, DType.int64, False, reduce_fn=_mul](
+            data, indices, updates, output
+        )
+
+        for i in range(64):
+            assert_equal(output_ptr[i], expected[i])
+
+        data_ptr.free()
+        indices_ptr.free()
+        updates_ptr.free()
+        output_ptr.free()
 
     test_scatternd_multiply()
-
-    fn test_scatternd_empty_1d() raises:
-        print("== test_scatternd_empty_1d")
-        # Test 1D scatter_nd with empty updates (identity operation).
-        var data = TestTensor[DType.float32, 1](
-            DimList(5),
-            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
-        )
-
-        # Empty indices and updates.
-        var indices = TestTensor[DType.int64, 2](DimList(0, 1), List[Int64]())
-        var updates = TestTensor[DType.float32, 1](DimList(0), List[Float32]())
-
-        # Output should equal input (identity).
-        var output_ref = TestTensor[DType.float32, 1](
-            DimList(5),
-            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
-        )
-
-        # Create a proper test case function for 1D.
-        var output = TestTensor[DType.float32, 1](DimList(5))
-        scatter_nd_generator[
-            DType.float32, DType.int64, False, reduce_fn=use_update
-        ](
-            data.to_managed_tensor_slice().to_layout_tensor(),
-            indices.to_managed_tensor_slice().to_layout_tensor(),
-            updates.to_managed_tensor_slice().to_layout_tensor(),
-            output.to_managed_tensor_slice().to_layout_tensor(),
-        )
-        assert_equal(output, output_ref)
-
-    test_scatternd_empty_1d()
-
-    fn test_scatternd_empty_2d() raises:
-        print("== test_scatternd_empty_2d")
-        # Test 2D scatter_nd with empty row updates.
-        var data = TestTensor[DType.float32, 2](
-            DimList(2, 2),
-            [Float32(1.0), 2.0, 3.0, 4.0],
-        )
-
-        var indices = TestTensor[DType.int64, 2](DimList(0, 1), List[Int64]())
-        var updates = TestTensor[DType.float32, 2](
-            DimList(0, 2), List[Float32]()
-        )
-
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(2, 2),
-            [Float32(1.0), 2.0, 3.0, 4.0],
-        )
-
-        var output = TestTensor[DType.float32, 2](DimList(2, 2))
-        scatter_nd_generator[
-            DType.float32, DType.int64, False, reduce_fn=use_update
-        ](
-            data.to_managed_tensor_slice().to_layout_tensor(),
-            indices.to_managed_tensor_slice().to_layout_tensor(),
-            updates.to_managed_tensor_slice().to_layout_tensor(),
-            output.to_managed_tensor_slice().to_layout_tensor(),
-        )
-        assert_equal(output, output_ref)
-
-    test_scatternd_empty_2d()
-
-    fn test_scatternd_empty_2d_points() raises:
-        print("== test_scatternd_empty_2d_points")
-        # Test 2D scatter_nd with empty point updates.
-        var data = TestTensor[DType.float32, 2](
-            DimList(3, 3),
-            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
-        )
-
-        var indices = TestTensor[DType.int64, 2](DimList(0, 2), List[Int64]())
-        var updates = TestTensor[DType.float32, 1](DimList(0), List[Float32]())
-
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(3, 3),
-            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
-        )
-
-        var output = TestTensor[DType.float32, 2](DimList(3, 3))
-        scatter_nd_generator[
-            DType.float32, DType.int64, False, reduce_fn=use_update
-        ](
-            data.to_managed_tensor_slice().to_layout_tensor(),
-            indices.to_managed_tensor_slice().to_layout_tensor(),
-            updates.to_managed_tensor_slice().to_layout_tensor(),
-            output.to_managed_tensor_slice().to_layout_tensor(),
-        )
-        assert_equal(output, output_ref)
-
-    test_scatternd_empty_2d_points()
-
-    fn test_scatternd_empty_3d() raises:
-        print("== test_scatternd_empty_3d")
-        # Test 3D scatter_nd with empty updates.
-        var data = TestTensor[DType.float32, 3](
-            DimList(2, 2, 2),
-            [Float32(1), 2, 3, 4, 5, 6, 7, 8],
-        )
-
-        var indices = TestTensor[DType.int64, 2](DimList(0, 1), List[Int64]())
-        var updates = TestTensor[DType.float32, 3](
-            DimList(0, 2, 2), List[Float32]()
-        )
-
-        var output_ref = TestTensor[DType.float32, 3](
-            DimList(2, 2, 2),
-            [Float32(1), 2, 3, 4, 5, 6, 7, 8],
-        )
-
-        test_case[DType.float32](
-            data,
-            indices,
-            updates,
-            output_ref,
-        )
-
-    test_scatternd_empty_3d()
-
-    fn test_scatternd_single_update() raises:
-        print("== test_scatternd_single_update")
-        # Test basic functionality with single element update.
-        var data = TestTensor[DType.float32, 1](
-            DimList(5),
-            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
-        )
-
-        var indices = TestTensor[DType.int64, 2](DimList(1, 1), [Int64(2)])
-        var updates = TestTensor[DType.float32, 1](DimList(1), [Float32(99.0)])
-
-        var output_ref = TestTensor[DType.float32, 1](
-            DimList(5),
-            [Float32(1.0), 2.0, 99.0, 4.0, 5.0],
-        )
-
-        var output = TestTensor[DType.float32, 1](DimList(5))
-        scatter_nd_generator[
-            DType.float32, DType.int64, False, reduce_fn=use_update
-        ](
-            data.to_managed_tensor_slice().to_layout_tensor(),
-            indices.to_managed_tensor_slice().to_layout_tensor(),
-            updates.to_managed_tensor_slice().to_layout_tensor(),
-            output.to_managed_tensor_slice().to_layout_tensor(),
-        )
-        assert_equal(output, output_ref)
-
-    test_scatternd_single_update()
-
-    fn test_scatternd_row_updates() raises:
-        print("== test_scatternd_row_updates")
-        # Test 2D scatter_nd updating entire rows.
-        var data = TestTensor[DType.float32, 2](
-            DimList(3, 3),
-            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
-        )
-
-        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 2])
-        var updates = TestTensor[DType.float32, 2](
-            DimList(2, 3), [Float32(10), 11, 12, 20, 21, 22]
-        )
-
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(3, 3),
-            [Float32(10), 11, 12, 4, 5, 6, 20, 21, 22],
-        )
-
-        var output = TestTensor[DType.float32, 2](DimList(3, 3))
-        scatter_nd_generator[
-            DType.float32, DType.int64, False, reduce_fn=use_update
-        ](
-            data.to_managed_tensor_slice().to_layout_tensor(),
-            indices.to_managed_tensor_slice().to_layout_tensor(),
-            updates.to_managed_tensor_slice().to_layout_tensor(),
-            output.to_managed_tensor_slice().to_layout_tensor(),
-        )
-        assert_equal(output, output_ref)
-
-    test_scatternd_row_updates()
-
-    fn test_scatternd_point_updates() raises:
-        print("== test_scatternd_point_updates")
-        # Test 2D scatter_nd updating individual points.
-        var data = TestTensor[DType.float32, 2](
-            DimList(3, 3),
-            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
-        )
-
-        var indices = TestTensor[DType.int64, 2](
-            DimList(3, 2), [Int64(0), 0, 1, 1, 2, 2]
-        )
-        var updates = TestTensor[DType.float32, 1](
-            DimList(3), [Float32(100), 200, 300]
-        )
-
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(3, 3),
-            [Float32(100), 2, 3, 4, 200, 6, 7, 8, 300],
-        )
-
-        var output = TestTensor[DType.float32, 2](DimList(3, 3))
-        scatter_nd_generator[
-            DType.float32, DType.int64, False, reduce_fn=use_update
-        ](
-            data.to_managed_tensor_slice().to_layout_tensor(),
-            indices.to_managed_tensor_slice().to_layout_tensor(),
-            updates.to_managed_tensor_slice().to_layout_tensor(),
-            output.to_managed_tensor_slice().to_layout_tensor(),
-        )
-        assert_equal(output, output_ref)
-
-    test_scatternd_point_updates()
-
-    fn test_scatternd_negative_indices() raises:
-        print("== test_scatternd_negative_indices")
-        # Test negative index wrapping.
-        var data = TestTensor[DType.float32, 1](
-            DimList(5),
-            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
-        )
-
-        # -1 should wrap to index 4, -3 should wrap to index 2.
-        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(-1), -3])
-        var updates = TestTensor[DType.float32, 1](
-            DimList(2), [Float32(100.0), 200.0]
-        )
-
-        var output_ref = TestTensor[DType.float32, 1](
-            DimList(5),
-            [Float32(1.0), 2.0, 200.0, 4.0, 100.0],
-        )
-
-        var output = TestTensor[DType.float32, 1](DimList(5))
-        scatter_nd_generator[
-            DType.float32, DType.int64, False, reduce_fn=use_update
-        ](
-            data.to_managed_tensor_slice().to_layout_tensor(),
-            indices.to_managed_tensor_slice().to_layout_tensor(),
-            updates.to_managed_tensor_slice().to_layout_tensor(),
-            output.to_managed_tensor_slice().to_layout_tensor(),
-        )
-        assert_equal(output, output_ref)
-
-    test_scatternd_negative_indices()
-
-    fn test_scatternd_int32_indices() raises:
-        print("== test_scatternd_int32_indices")
-        # Test with int32 indices instead of int64.
-        var data = TestTensor[DType.float32, 2](
-            DimList(3, 3),
-            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
-        )
-
-        var indices = TestTensor[DType.int32, 2](
-            DimList(2, 2), [Int32(0), 1, 2, 0]
-        )
-        var updates = TestTensor[DType.float32, 1](
-            DimList(2), [Float32(100), 200]
-        )
-
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(3, 3),
-            [Float32(1), 100, 3, 4, 5, 6, 200, 8, 9],
-        )
-
-        var output = TestTensor[DType.float32, 2](DimList(3, 3))
-        scatter_nd_generator[
-            DType.float32, DType.int32, False, reduce_fn=use_update
-        ](
-            data.to_managed_tensor_slice().to_layout_tensor(),
-            indices.to_managed_tensor_slice().to_layout_tensor(),
-            updates.to_managed_tensor_slice().to_layout_tensor(),
-            output.to_managed_tensor_slice().to_layout_tensor(),
-        )
-        assert_equal(output, output_ref)
-
-    test_scatternd_int32_indices()

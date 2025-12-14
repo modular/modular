@@ -14,6 +14,7 @@
 from math import clamp
 
 from algorithm import elementwise
+from gpu.host import DeviceContext, get_gpu_target
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -23,6 +24,7 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from runtime.asyncrt import DeviceContextPtr
+from sys.info import simd_width_of, _current_target
 
 from utils._select import _select_register_value as select
 from utils.index import IndexList
@@ -325,3 +327,68 @@ fn slice_shape[
         output_shape[i] = len(range(start, stop, step))
 
     return output_shape
+
+
+# ===-----------------------------------------------------------------------===#
+# sliced_add
+# ===-----------------------------------------------------------------------===#
+
+
+fn sliced_add[
+    dtype: DType, //,
+    target: StaticString,
+](
+    c: LayoutTensor[mut=True, dtype, *_, **_],
+    a: LayoutTensor[dtype, *_, **_],
+    b: LayoutTensor[dtype, *_, **_],
+    lora_end_idx: LayoutTensor[DType.int64, *_, **_],
+    ctx: Optional[DeviceContext],
+) raises:
+    """Adds tensors a and b element-wise for rows < lora_end_idx, otherwise copies a.
+
+    This is used for LoRA where only some sequences have LoRA applied.
+    For rows in [0, lora_end_idx): c = a + b
+    For rows in [lora_end_idx, batch_seq_len): c = a
+
+    Args:
+        c: Output tensor.
+        a: First input tensor.
+        b: Second input tensor.
+        lora_end_idx: Scalar tensor with end index of LoRA token portion (rows to apply add).
+        ctx: Device context for GPU operations.
+    """
+    var batch_end_idx = Int(lora_end_idx[0])
+
+    @parameter
+    @__copy_capture(batch_end_idx, c, a, b)
+    fn _sliced_add[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
+        var out_val: SIMD[dtype, width]
+
+        if idx[0] >= batch_end_idx:
+            out_val = a.load[width](idx)
+        else:
+            var a_val = a.load[width](idx)
+            var b_val = b.load[width](idx)
+            out_val = a_val + b_val
+
+        c.store[width](idx, out_val)
+
+    @parameter
+    if target == "gpu":
+        debug_assert(ctx is not None, "DeviceContext required for GPU target")
+        comptime compile_target = get_gpu_target()
+        comptime simd_width = simd_width_of[dtype, target=compile_target]()
+
+        elementwise[_sliced_add, simd_width, target=target](
+            c.runtime_layout.shape.value.canonicalize(),
+            ctx.value(),
+        )
+    else:
+        comptime compile_target = _current_target()
+        comptime simd_width = simd_width_of[dtype, target=compile_target]()
+
+        elementwise[_sliced_add, simd_width, target=target](
+            c.runtime_layout.shape.value.canonicalize()
+        )

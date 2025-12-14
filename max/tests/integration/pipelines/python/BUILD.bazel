@@ -1,0 +1,348 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "hf_repo_lock",
+    srcs = ["hf_repo_lock.py"],
+    data = ["hf-repo-lock.tsv"],
+    imports = ["."],
+    visibility = [
+        "//SDK:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//open-source/max/max/tests:__subpackages__",
+        "//utils:__subpackages__",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        requirement("huggingface-hub"),
+    ],
+)
+
+modular_py_test(
+    name = "test_debug_utils",
+    size = "small",
+    srcs = ["test_debug_utils.py"],
+    external_noop = True,  # FIXME: SDLC-2743
+    deps = [
+        "//max/tests/integration/tools:debugging_utils",
+        requirement("torch"),
+        requirement("pytest-mock"),
+    ],
+)
+
+modular_py_test(
+    name = "test_hf_repo_lock",
+    size = "small",
+    srcs = ["test_hf_repo_lock.py"],
+    external_noop = True,  # FIXME: SDLC-2743
+    deps = [
+        ":hf_repo_lock",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("pytest-mock"),
+    ],
+)
+
+modular_py_binary(
+    name = "verify",
+    testonly = True,
+    srcs = ["verify.py"],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/pipelines/python/llama3/testdata"
+        ),
+    },
+    imports = ["."],
+    deps = [
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("click"),
+        requirement("numpy"),
+        requirement("rich"),
+    ],
+)
+
+modular_py_binary(
+    name = "verify_pipelines",
+    testonly = True,
+    srcs = ["verify_pipelines.py"],
+    data = [
+        "//max/tests/integration/pipelines/python/test_common",
+    ],
+    env = {
+        # PIPELINES_TESTDATA is required by the Llama3 scripts.
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/pipelines/python/llama3/testdata"
+        ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    deps = [
+        ":verify",
+        "//max/tests/integration/tools:generate_llm_logits",
+        requirement("click"),
+        "@rules_python//python/runfiles",
+    ],
+)
+
+modular_py_binary(
+    name = "smoke_test",
+    testonly = True,
+    srcs = ["smoke_tests/smoke_test.py"],
+    data = glob([
+        "smoke_tests/chartqa_modular/**",
+    ]),
+    deps = [
+        requirement("click"),
+        requirement("requests"),
+        requirement("lm-eval"),
+        "//max/python/max/entrypoints:pipelines",
+    ],
+)
+
+modular_py_binary(
+    name = "smoke_test_github_matrix",
+    srcs = ["smoke_tests/smoke_test_github_matrix.py"],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_smoke_test_github_matrix",
+    size = "small",
+    srcs = ["test_smoke_test_github_matrix.py"],
+    deps = [
+        ":smoke_test_github_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "verify_layers_e2e",
+    testonly = True,
+    srcs = glob(["verify_layers/*.py"]),
+    env = {
+        # PIPELINES_TESTDATA is required by the model scripts.
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/pipelines/python/llama3/testdata"
+        ),
+    },
+    main = "verify_layers/cli.py",
+    deps = [
+        ":verify",
+        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/tools:generate_llm_logits",
+        requirement("click"),
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("matplotlib"),
+        requirement("pandas"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli",
+    size = "enormous",
+    srcs = ["test_pipelines_cli.py"],
+    env = {
+        "PIPELINES_CUSTOM_ARCHITECTURE": "max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+    },
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        ":hf_repo_lock",
+        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("transformers"),
+        requirement("gguf"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_gpu",
+    size = "enormous",
+    srcs = ["test_pipelines_cli_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "21.25",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":hf_repo_lock",
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("transformers"),
+        requirement("gguf"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_multi_gpu_smoke",
+    size = "enormous",
+    srcs = ["test_pipelines_multi_gpu_smoke.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_4_gpus"],
+    tags = [
+        # TODO(PAQ-1096): These are moved to the HF pipeline for now but it
+        # should still run under a new generic pipeline that isn't presubmit
+        # due to compilation times.
+        "run-in-hf-workflow",
+        "gpu",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":hf_repo_lock",
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("transformers"),
+        requirement("gguf"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_help",
+    srcs = ["test_pipelines_cli_help.py"],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_lightweight",
+    srcs = ["test_pipelines_cli_lightweight.py"],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_json_lightweight",
+    srcs = ["test_pipelines_cli_json_lightweight.py"],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+    ],
+)
+
+modular_py_test(
+    name = "test_generate_llm_logits_gpu",
+    size = "medium",
+    srcs = ["test_generate_llm_logits_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "manual",  # TODO(AITLIB-293, AITLIB-345)
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    deps = [
+        "//max/tests/integration/tools:generate_llm_logits",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "lm-eval",
+    testonly = True,
+    srcs = ["run_lm_eval.py"],
+    main = "run_lm_eval.py",
+    deps = [
+        requirement("lm-eval"),
+    ],
+)
+
+modular_py_binary(
+    name = "mistral-eval",
+    srcs = ["run_mistral_eval.py"],
+    main = "run_mistral_eval.py",
+    deps = [
+        "@mistral-evals//:evaluate",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "pipelines-lm-eval",
+    testonly = True,
+    srcs = ["pipelines_lm_eval.py"],
+    data = [
+        "run_lm_eval.py",
+        "//max/tests/integration/pipelines/python/eval_tasks",
+    ],
+    main = "pipelines_lm_eval.py",
+    deps = [
+        ":lm-eval",
+        ":mistral-eval",
+        "//max/python/max/entrypoints:pipelines",  # The transitive mojo deps from this target must be available
+        "//max/tests/integration/pipelines/python/eval_tasks/human_eval",
+        "@mistral-evals//:evaluate",
+        "@rules_python//python/runfiles",
+        requirement("click"),
+        requirement("requests"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_lm_eval",
+    size = "medium",
+    srcs = ["test_pipelines_lm_eval.py"],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:asan": ["@platforms//:incompatible"],  # Too slow with ASAN
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":pipelines-lm-eval",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "pipelines_mteb",
+    testonly = True,
+    srcs = ["pipelines_mteb.py"],
+    data = ["//max/python/max/entrypoints:pipelines"],
+    deps = [
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/dataprocessing",
+        requirement("click"),
+        requirement("mteb"),
+    ],
+)

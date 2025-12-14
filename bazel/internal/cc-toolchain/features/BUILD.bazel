@@ -124,5 +124,4 @@ cc_feature(
     name = "external_include_paths",
     args = ["@rules_cc//cc/toolchains/args/external_include_paths"],
     feature_name = "external_include_paths",
-    visibility = ["//visibility:public"],
 )

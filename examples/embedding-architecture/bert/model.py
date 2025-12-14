@@ -117,13 +117,13 @@ class BertPipelineModel(PipelineModel[TextContext]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return BertConfig.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -167,10 +167,15 @@ class BertPipelineModel(PipelineModel[TextContext]):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],
+        replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> BertInputs:
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
+
         # Get tokens and seq_ids.
         tokens = [ctx.next_tokens for ctx in context_batch]
 

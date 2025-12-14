@@ -39,10 +39,6 @@ print(info)
 """
 
 from collections.string.string_slice import _get_kgen_string
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from os import PathLike
 from pathlib import Path
 from sys.info import CompilationTarget, _current_target, _TargetType
@@ -68,7 +64,7 @@ struct _Info:
     var asm: __mlir_type.`!kgen.string`
     var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
-    var capture_sizes: UnsafePointer[UInt64]
+    var capture_sizes: UnsafePointer[UInt64, ImmutOrigin.external]
 
 
 @register_passable("trivial")
@@ -118,10 +114,12 @@ struct CompiledFunctionInfo[
     var num_captures: Int
     """Number of variables captured by the function closure."""
 
-    var capture_sizes: UnsafePointer[UInt64]
+    var capture_sizes: UnsafePointer[UInt64, ImmutOrigin.external]
     """Pointer to the sizes of the variables captured by the function closure."""
 
-    comptime populate = rebind[fn (OpaquePointer) capturing -> None](
+    comptime populate = rebind[
+        fn (OpaquePointer[MutAnyOrigin]) capturing -> None
+    ](
         __mlir_attr[
             `#kgen.compile_offload_closure<`,
             Self.target,
@@ -189,17 +187,18 @@ comptime _EMISSION_KIND_LLVM_OPT_BITCODE = 5
 
 
 fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
-    constrained[
-        emission_kind == "asm"
-        or emission_kind == "llvm"
-        or emission_kind == "llvm-bitcode"
-        or emission_kind == "llvm-opt"
-        or emission_kind == "llvm-opt-bitcode"
-        or emission_kind == "object",
-        "invalid emission kind '",
-        emission_kind,
-        "', must be one of 'asm', 'llvm', 'llvm-opt', or 'object'",
-    ]()
+    __comptime_assert emission_kind in [
+        "asm",
+        "llvm",
+        "llvm-bitcode",
+        "llvm-opt",
+        "llvm-opt-bitcode",
+        "object",
+    ], (
+        "invalid emission kind '"
+        + emission_kind
+        + "', must be one of 'asm', 'llvm', 'llvm-opt', or 'object'"
+    )
 
     @parameter
     if emission_kind == "llvm":

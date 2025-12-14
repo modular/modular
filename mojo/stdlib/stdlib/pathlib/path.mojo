@@ -22,6 +22,7 @@ from sys.ffi import c_char
 from builtin._location import __call_location
 
 comptime DIR_SEPARATOR = "/"
+"""The directory separator character for path operations."""
 
 
 fn cwd() raises -> Path:
@@ -70,7 +71,6 @@ struct Path(
     Hashable,
     ImplicitlyCopyable,
     KeyElement,
-    Movable,
     PathLike,
     Stringable,
     Writable,

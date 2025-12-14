@@ -45,6 +45,9 @@ from . import (
 from . import (
     safetensors as safetensors,
 )
+from . import (
+    xxhash as xxhash,
+)
 
 class Attribute:
     @staticmethod

@@ -116,7 +116,7 @@ from sys import exit, has_accelerator
 from gpu.host import DeviceContext
 from gpu import block_dim, block_idx, thread_idx
 
-alias num_elements = 20
+comptime num_elements = 20
 
 fn scalar_add(
     vector: UnsafePointer[Float32, MutAnyOrigin],
@@ -314,7 +314,7 @@ From within a kernel function, you can access the grid and thread block
 dimensions and the assigned thread block and thread indices of the individual
 threads executing the kernel using the following structures:
 
-| Struct alias | Description |
+| Comptime value | Description |
 | --- | --- |
 | [`grid_dim`](/mojo/stdlib/gpu/primitives/id/#grid_dim)  | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`). |
 | [`block_dim`](/mojo/stdlib/gpu/primitives/id/#block_dim)  | Dimensions of the thread block as `x`, `y`, and `z` values. |
@@ -470,15 +470,15 @@ fn process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int):
 
 All values passed to a kernel function must be of types that conform to the
 [`DevicePassable`](/mojo/stdlib/builtin/device_passable/DevicePassable/) trait.
-The trait declares an [associated
-alias](/mojo/manual/traits/#associated-aliases-for-generics) named `device_type`
-that maps the type as used on the CPU host to a corresponding type used on the
-GPU device.
+The trait declares a
+[`comptime` member](/mojo/manual/traits/#comptime-members-for-generics) named
+`device_type` that maps the type as used on the CPU host to a corresponding type
+used on the GPU device.
 
 As an example,
 [`DeviceBuffer`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer) is a
 host-side representation of a buffer located in the GPU's global memory space.
-But it defines its `device_type` associated alias as `UnsafePointer`, so the
+But it defines its `device_type` member as `UnsafePointer`, so the
 data represented by a `DeviceBuffer` is actually passed to the kernel function
 as a value of type
 [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer). The next

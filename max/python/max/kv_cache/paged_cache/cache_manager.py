@@ -24,15 +24,14 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.kv_cache.cache_params import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.nn.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
 )
-from max.nn.kv_cache.manager import RaggedKVCacheInputs
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
-from .tp_cache_manager import PagedCacheInputSymbols, _TPPagedKVCacheManager
+from .tp_cache_manager import _TPPagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 
@@ -69,46 +68,30 @@ class PagedKVCacheManager:
     def __init__(
         self,
         params: KVCacheParams,
-        total_num_pages: int,
-        max_batch_size: int,
-        max_seq_len: int,
-        devices: Sequence[Device],
         session: InferenceSession,
+        total_num_pages: int,
         total_num_host_pages: int = 0,
-        zmq_endpoint_base: str | None = None,
         enable_runtime_checks: bool = False,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
 
         Args:
             params: KV cache parameters including data parallelism settings
-            devices: The devices to use for the KV cache manager.  If data
-                parallelism is enabled, the devices will be split into
-                ``params.data_parallel_degree`` groups.
-            session: Inference session
+            session: The MAX Engine inference session
+            total_num_pages: The total number of pages to allocate
+            total_num_host_pages: The total number of host pages to allocate
             enable_runtime_checks: Whether to enable runtime checks
         """
         self.params = params
-        self.max_seq_len = max_seq_len
-        self.max_batch_size = max_batch_size
+        self.devices = [d.to_device() for d in params.devices]
 
-        max_batch_size_per_replica = (
-            max_batch_size // params.data_parallel_degree
-        )
-        if max_batch_size_per_replica == 0:
-            raise ValueError(
-                f"Cannot use {max_batch_size=} with {params.data_parallel_degree}"
-                " KV cache replicas. The minimum value of max_batch_size allowed"
-                f" is {params.data_parallel_degree}."
-            )
-
-        # The effective total number of pages is .
         self.num_replicas = params.data_parallel_degree
-        assert len(devices) % self.num_replicas == 0, (
+        assert len(self.devices) % self.num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
-        self.devices = devices
-        self.devices_per_replica = split_into_groups(devices, self.num_replicas)
+        self.devices_per_replica = split_into_groups(
+            self.devices, self.num_replicas
+        )
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
         dp_1_params = params.copy_as_dp_1()
@@ -118,11 +101,8 @@ class PagedKVCacheManager:
                     params=dp_1_params,
                     total_num_pages=total_num_pages,
                     total_num_host_pages=total_num_host_pages,
-                    max_batch_size=max_batch_size_per_replica,
-                    max_seq_len=max_seq_len,
                     devices=devices,
                     session=session,
-                    zmq_endpoint_base=zmq_endpoint_base,
                     enable_runtime_checks=enable_runtime_checks,
                 )
             )
@@ -163,29 +143,6 @@ class PagedKVCacheManager:
             key=self._request_count_per_replica.__getitem__,
         )
         return replica_idx
-
-    def get_data_parallel_splits(
-        self, context_batch: Sequence[TextGenerationContext]
-    ) -> Tensor:
-        """Constructs splits for the data parallel execution.
-
-        Args:
-            context_batch: Sequence of requests. This must already be ordered
-                by replica index (so contexts that are on the same replica
-                are adjacent in the batch, and the replica must be in order).
-
-        Returns:
-            Tensor: An int64 tensor with shape (self.num_replicas + 1) that
-            contains the number of requests on each device:
-            [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
-        """
-        splits = np.zeros(self.num_replicas + 1, dtype=np.int64)
-        for ctx in context_batch:
-            replica_index = self._request_to_replica_idx[ctx.request_id]
-            splits[replica_index + 1] += 1
-        splits = np.cumsum(splits)  # type: ignore
-
-        return Tensor.from_numpy(splits)
 
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, num_steps: int = 1
@@ -260,19 +217,6 @@ class PagedKVCacheManager:
             )
         return ret_list
 
-    def get_symbolic_inputs(
-        self,
-        devices: Sequence[Device] | None = None,
-        num_layers: int | None = None,
-    ) -> Sequence[PagedCacheInputSymbols]:
-        input_symbols: list[PagedCacheInputSymbols] = []
-        for i, devices in enumerate(self.devices_per_replica):
-            symbols = self._replica_managers[i]._input_symbols(
-                devices, num_layers, dynamic_dim_prefix=f"replica_{i}_"
-            )
-            input_symbols.extend(symbols)
-        return input_symbols
-
     def release(self, request_id: RequestID) -> None:
         replica_idx = self._request_to_replica_idx.pop(request_id)
         self._request_count_per_replica[replica_idx] -= 1
@@ -324,7 +268,7 @@ class PagedKVCacheManager:
             manager.reset_metrics()
 
     def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
-        input_symbols = self.get_symbolic_inputs()
+        input_symbols = self.params.get_symbolic_inputs()
         cache_lengths_types = [
             input_symbols[i][1] for i in range(len(self.devices))
         ]
@@ -386,8 +330,6 @@ class PagedKVCacheManager:
     ) -> Sequence[RaggedKVCacheInputs]:
         """Prepares cache inputs for the next token in multistep execution.
 
-        **Updated to handle replicas**
-
         Updates the cache lengths for the next inference step without requiring device
         synchronization or memory copies. This is crucial for maintaining performance
         during multi-token generation.
@@ -399,14 +341,6 @@ class PagedKVCacheManager:
         Returns:
             Updated cache input tuples with incremented lengths.
         """
-        # TODO E2EOPT-640: Instead of having a separate graph for incrementing
-        # cache lengths when DP=1 and DP>1, we should try to consolidate them.
-        # This will eliminate a fair amount of code.
-        if self.num_replicas == 1:
-            return self._replica_managers[0].increment_cache_lengths(
-                kv_cache_inputs, prev_model_inputs
-            )
-
         blocks = [kv_cache_inputs[i].blocks for i in range(len(self.devices))]
         cache_lengths = [
             kv_cache_inputs[i].cache_lengths for i in range(len(self.devices))
@@ -415,7 +349,13 @@ class PagedKVCacheManager:
             kv_cache_inputs[i].lookup_table for i in range(len(self.devices))
         ]
 
-        assert hasattr(prev_model_inputs, "data_parallel_splits")
+        if self.params.data_parallel_degree > 1:
+            data_parallel_splits = prev_model_inputs.data_parallel_splits
+        else:
+            batch_size = cache_lengths[0].shape[0]
+            data_parallel_splits = Tensor.from_numpy(
+                np.array([0, batch_size], dtype=np.int64)
+            )
 
         # Update the cache_lengths of our batch by the previous sequence length.
         # Handle both single tensor and list of tensors for compatibility
@@ -428,7 +368,7 @@ class PagedKVCacheManager:
         row_offsets = row_offsets.to(self.devices[0])
 
         updated_cache_lengths = self.increment_cache_lengths_model.execute(
-            row_offsets, prev_model_inputs.data_parallel_splits, *cache_lengths
+            row_offsets, data_parallel_splits, *cache_lengths
         )
 
         start_idx = 0
