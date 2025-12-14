@@ -139,19 +139,13 @@ struct Codepoint(
         self._scalar_value = UInt32(Int(codepoint))
 
     @always_inline("nodebug")
-    @implicit
-    fn __init__[
-        value: __mlir_type.`!kgen.string`
-    ](out self, lit: StringLiteral[value]):
+    fn __init__(out self, lit: StringLiteral):
         """Construct a `Codepoint` from a single-codepoint `StringLiteral`.
 
         This constructor validates at compile-time that the literal contains
         exactly one Unicode codepoint, and computes the codepoint value as a
         compile-time constant. This provides an ergonomic and efficient way to
         create codepoints from string literals without runtime overhead.
-
-        Parameters:
-            value: The compile-time string literal value.
 
         Args:
             lit: A string literal containing exactly one Unicode codepoint.
@@ -179,7 +173,7 @@ struct Codepoint(
         ```
         """
         # Reconstruct the literal from the type parameter to force compile-time evaluation
-        comptime sl: StringLiteral[value] = {}
+        comptime sl: StringLiteral[lit.value] = {}
 
         # Compile-time validation for proper UTF-8 codepoint
         __comptime_assert (
