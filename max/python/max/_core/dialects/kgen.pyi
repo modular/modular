@@ -1933,6 +1933,8 @@ class TailKind(enum.Enum):
 
     notail = 2
 
+    tail = 3
+
 class CallIndirectOp(max._core.Operation):
     """
     The `kgen.call_indirect` operation takes an SSA value of `!kgen.generator`
