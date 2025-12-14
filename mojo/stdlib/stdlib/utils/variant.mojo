@@ -22,7 +22,7 @@ from sys.intrinsics import _type_is_eq
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: Movable](ImplicitlyCopyable):
+struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
 
@@ -169,20 +169,17 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable):
 
         @parameter
         for i in range(len(VariadicList(Self.Ts))):
-            comptime T = Self.Ts[i]
+            comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
-                conforms_to(T, Copyable),
+                conforms_to(TUnknown, Copyable),
                 Parent=Self,
-                Element=T,
+                Element=TUnknown,
                 ParentConformsTo="Copyable",
             ]()
-
-            comptime TCopyable = downcast[Copyable, T]
+            comptime T = downcast[Copyable, TUnknown]
 
             if self._get_discr() == i:
-                self._get_ptr[TCopyable]().init_pointee_copy(
-                    other._get_ptr[TCopyable]()[]
-                )
+                self._get_ptr[T]().init_pointee_copy(other._get_ptr[T]()[])
                 return
 
     fn __moveinit__(out self, deinit other: Self):
@@ -196,7 +193,15 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable):
 
         @parameter
         for i in range(len(VariadicList(Self.Ts))):
-            comptime T = Self.Ts[i]
+            comptime TUnknown = Self.Ts[i]
+            _constrained_conforms_to[
+                conforms_to(TUnknown, Movable),
+                Parent=Self,
+                Element=TUnknown,
+                ParentConformsTo="Movable",
+            ]()
+            comptime T = downcast[Movable, TUnknown]
+
             if self._get_discr() == i:
                 # Calls the correct __moveinit__
                 self._get_ptr[T]().init_pointee_move_from(other._get_ptr[T]())
@@ -207,15 +212,28 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable):
 
         @parameter
         for i in range(len(VariadicList(Self.Ts))):
+            comptime TUnknown = Self.Ts[i]
+            _constrained_conforms_to[
+                # FIXME(MOCO-2964): This should check for conformance to
+                #   literally `ImplicitlyDestructible`, not `AnyType`. It
+                #   currently cannot as using an alias in the 2nd argument to
+                #   `conforms_to` crashes the compiler.
+                conforms_to(TUnknown, AnyType),
+                Parent=Self,
+                Element=TUnknown,
+                ParentConformsTo="ImplicitlyDestructible",
+            ]()
+            comptime T = downcast[Movable, TUnknown]
+
             if self._get_discr() == i:
-                self._get_ptr[Self.Ts[i]]().destroy_pointee()
+                self._get_ptr[T]().destroy_pointee()
                 return
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__[T: AnyType](ref self) -> ref [self] T:
+    fn __getitem__[T: UnknownDestructibility](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -241,7 +259,9 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn _get_ptr[T: AnyType](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
+    fn _get_ptr[
+        T: UnknownDestructibility
+    ](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
         comptime idx = Self._check[T]()
         __comptime_assert idx != Self._sentinel, "not a union element type"
         var ptr = UnsafePointer(to=self._impl).address
@@ -370,7 +390,7 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable):
         """
         self = Self(value^)
 
-    fn isa[T: AnyType](self) -> Bool:
+    fn isa[T: UnknownDestructibility](self) -> Bool:
         """Check if the variant contains the required type.
 
         Parameters:
@@ -382,7 +402,7 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable):
         comptime idx = Self._check[T]()
         return self._get_discr() == idx
 
-    fn unsafe_get[T: AnyType](ref self) -> ref [self] T:
+    fn unsafe_get[T: UnknownDestructibility](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This doesn't explicitly check that your value is of that type!
@@ -403,7 +423,7 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable):
         return self._get_ptr[T]()[]
 
     @staticmethod
-    fn _check[T: AnyType]() -> Int:
+    fn _check[T: UnknownDestructibility]() -> Int:
         @parameter
         for i in range(len(VariadicList(Self.Ts))):
             if _type_is_eq[Self.Ts[i], T]():
@@ -411,7 +431,7 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable):
         return Self._sentinel
 
     @staticmethod
-    fn is_type_supported[T: AnyType]() -> Bool:
+    fn is_type_supported[T: UnknownDestructibility]() -> Bool:
         """Check if a type can be used by the `Variant`.
 
         Parameters:

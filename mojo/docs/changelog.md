@@ -278,6 +278,7 @@ what we publish.
   destroyed.
 
   - `UnsafePointer` and `Pointer` can point to linear types
+  - `Variant` and `VariadicPack` can now contain linear types
 
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
   and `trait_downcast()` to perform "late" element type conformance checking,
