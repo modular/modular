@@ -183,7 +183,9 @@ struct Codepoint(
         comptime sl: StringLiteral[value] = {}
 
         # Compile-time validation for proper UTF-8 codepoint
-        constrained[sl.byte_length() > 0, "Cannot construct an empty codepoint"]()
+        constrained[
+            sl.byte_length() > 0, "Cannot construct an empty codepoint"
+        ]()
         constrained[
             sl.byte_length()
             == Int(_utf8_first_byte_sequence_length(sl.as_bytes()[0])),
