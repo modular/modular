@@ -183,7 +183,7 @@ fn _run(var handle: Coroutine[*_], out result: handle.type):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Task[type: AnyType, origins: OriginSet]:
+struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
     """Represents an asynchronous task that will produce a value of the specified type.
 
     A Task encapsulates a coroutine that is executing asynchronously and will eventually
@@ -303,7 +303,9 @@ struct _TaskGroupBox(Copyable):
 
     var handle: AnyCoroutine
 
-    fn __init__[type: AnyType](out self, var coro: Coroutine[type]):
+    fn __init__[
+        type: ImplicitlyDestructible
+    ](out self, var coro: Coroutine[type]):
         self.handle = coro^._take_handle()
 
     fn __del__(deinit self):
@@ -384,7 +386,7 @@ struct TaskGroup(Defaultable):
             Self._task_complete_callback,
             UnsafePointer(to=self).unsafe_origin_cast[MutOrigin.external](),
         )
-        _async_execute[task.type](task._handle, desired_worker_id)
+        _async_execute[NoneType](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
 
     @staticmethod

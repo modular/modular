@@ -21,7 +21,7 @@ from memory import OwnedPointer
 
 
 @register_passable
-struct OwnedPointer[T: AnyType]:
+struct OwnedPointer[T: ImplicitlyDestructible]:
     """A safe, owning, smart pointer.
 
     This smart pointer is designed for cases where there is clear ownership

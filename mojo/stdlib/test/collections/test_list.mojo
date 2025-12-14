@@ -76,7 +76,7 @@ def test_list():
     assert_equal(7, list[-1])
 
 
-struct WeirdList[T: AnyType]:
+struct WeirdList[T: ImplicitlyDestructible]:
     fn __init__(out self, var *values: Self.T, __list_literal__: ()):
         pass
 

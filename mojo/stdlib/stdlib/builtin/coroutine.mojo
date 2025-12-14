@@ -79,7 +79,7 @@ fn _coro_resume_noop_callback(null: AnyCoroutine):
 
 @explicit_destroy
 @register_passable
-struct Coroutine[type: AnyType, origins: OriginSet]:
+struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet]:
     """Represents a coroutine.
 
     Coroutines can pause execution saving the state of the program (including

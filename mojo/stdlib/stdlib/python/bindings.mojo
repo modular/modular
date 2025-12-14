@@ -122,7 +122,7 @@ fn lookup_py_type_object[T: AnyType]() raises -> PythonObject:
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
 
-struct PyMojoObject[T: AnyType]:
+struct PyMojoObject[T: ImplicitlyDestructible]:
     """Storage backing a PyObject* wrapping a Mojo value.
 
     This struct represents the C-level layout of a Python object that contains
@@ -158,7 +158,7 @@ struct PyMojoObject[T: AnyType]:
     """Whether the Mojo value has been initialized."""
 
 
-fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
+fn _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
 
     This function serves as the tp_dealloc slot for Python type objects that
@@ -1068,7 +1068,7 @@ fn _py_c_function_wrapper[
 @always_inline
 fn _py_function_wrapper[
     method_type: AnyTrivialRegType,
-    self_type: AnyType, //,
+    self_type: ImplicitlyDestructible, //,
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
     is_method: Bool = False,
@@ -1190,7 +1190,7 @@ fn check_arguments_arity(
 
 
 fn check_and_get_arg[
-    T: AnyType
+    T: ImplicitlyDestructible
 ](
     func_name: StaticString, py_args: PythonObject, index: Int
 ) raises -> UnsafePointer[T, MutAnyOrigin]:

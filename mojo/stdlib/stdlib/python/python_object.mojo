@@ -1667,7 +1667,7 @@ struct PythonObject(
         )
 
     fn downcast_value_ptr[
-        T: AnyType
+        T: ImplicitlyDestructible
     ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[
         T, MutAnyOrigin
     ]:
@@ -1719,7 +1719,7 @@ struct PythonObject(
             )
 
     fn _try_downcast_value[
-        T: AnyType
+        T: ImplicitlyDestructible
     ](var self) raises -> Optional[UnsafePointer[T, MutAnyOrigin]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
@@ -1746,7 +1746,7 @@ struct PythonObject(
         return None
 
     fn unchecked_downcast_value_ptr[
-        mut: Bool, origin: Origin[mut], //, T: AnyType
+        mut: Bool, origin: Origin[mut], //, T: ImplicitlyDestructible
     ](ref [origin]self) -> UnsafePointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 

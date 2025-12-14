@@ -335,7 +335,7 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
 @fieldwise_init
 struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
-    elt_type: AnyType,
+    elt_type: ImplicitlyDestructible,
     elt_origin: Origin[elt_is_mutable],
     list_origin: ImmutOrigin,
     is_owned: Bool,
@@ -386,7 +386,7 @@ struct _VariadicListMemIter[
 
 struct VariadicListMem[
     elt_is_mutable: Bool, //,
-    element_type: AnyType,
+    element_type: ImplicitlyDestructible,
     origin: Origin[elt_is_mutable],
     is_owned: Bool,
 ](Sized):

@@ -223,7 +223,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
                 Element=TUnknown,
                 ParentConformsTo="ImplicitlyDestructible",
             ]()
-            comptime T = downcast[Movable, TUnknown]
+            comptime T = downcast[ImplicitlyDestructible, TUnknown]
 
             if self._get_discr() == i:
                 self._get_ptr[T]().destroy_pointee()

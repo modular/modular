@@ -21,7 +21,7 @@ from python.bindings import check_arguments_arity
 
 struct PyObjectFunction[
     func_type: AnyTrivialRegType,
-    self_type: AnyType = NoneType,
+    self_type: ImplicitlyDestructible = NoneType,
     has_kwargs: Bool = False,
 ](ImplicitlyCopyable):
     """Wrapper to hide the binding logic for functions taking a variadic number
