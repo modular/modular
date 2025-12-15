@@ -12,7 +12,6 @@ modular_nanobind_extension(
     name = "bindings",
     testonly = True,
     srcs = ["test_bindings.cpp"],
-    new_link_root = "lib",  # Not needed here
     deps = [
         "//Support:Base",
         "//Support:NanobindUtils",
