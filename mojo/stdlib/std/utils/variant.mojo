@@ -214,11 +214,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         for i in range(len(VariadicList(Self.Ts))):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
-                # FIXME(MOCO-2964): This should check for conformance to
-                #   literally `ImplicitlyDestructible`, not `AnyType`. It
-                #   currently cannot as using an alias in the 2nd argument to
-                #   `conforms_to` crashes the compiler.
-                conforms_to(TUnknown, AnyType),
+                conforms_to(TUnknown, ImplicitlyDestructible),
                 Parent=Self,
                 Element=TUnknown,
                 ParentConformsTo="ImplicitlyDestructible",

@@ -1437,9 +1437,11 @@ fn mogg_async_unpack[T: AnyTrivialRegType](async_ptr: AnyAsyncValueRefPtr) -> T:
     """
     Returns the value stored in the AnyAsyncValueRef.
     """
-    return external_call["MGP_RT_GetValueFromAsync", OpaquePointer](
+    var ptr = external_call["MGP_RT_GetValueFromAsync", OpaquePointer](
         async_ptr
-    ).bitcast[T]()[0]
+    ).bitcast[T]()
+
+    return UnsafePointer[T].__getitem__(ptr, 0)
 
 
 struct MoggAsyncPackHelper:

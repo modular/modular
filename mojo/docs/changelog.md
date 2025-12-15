@@ -165,6 +165,25 @@ what we publish.
 - The compiler will now warn on the use of `alias` keyword and suggest
 `comptime` instead.
 
+- The Mojo language basic trait hierarchy has changed to expand first-class
+  support for linear types (aka. non-implicitly-destructible types).
+
+  The `AnyType` trait no longer requires that a type provide a `__del__()`
+  method that may be called by the compiler implicitly whenver an owned value
+  is unused. Instead, the `ImplicitlyDestructible` trait should be used in
+  generic code to require that a type is implicitly destructible.
+
+  Linear types enable Mojo programs to encode powerful invariants in the type
+  system, by modeling a type in such a way that a user is required to take an
+  action "in the future", rather than simply implicitly dropping an instance
+  "on the floor".
+
+  Code using `T: AnyType` can change to use `T: ImplicitlyDestructible` to
+  preserve its pre-existing behavior following this change.
+
+  Relatedly, the `UnknownDestructibility` trait is now no longer required, as it
+  is equivalent to the new `AnyType` behavior.
+
 ### Library changes
 
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs

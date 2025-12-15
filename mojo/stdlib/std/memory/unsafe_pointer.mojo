@@ -161,7 +161,7 @@ Parameters:
 @register_passable("trivial")
 struct UnsafePointer[
     mut: Bool, //,
-    type: UnknownDestructibility,
+    type: AnyType,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
