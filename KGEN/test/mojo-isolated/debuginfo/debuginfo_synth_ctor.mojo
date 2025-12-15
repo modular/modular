@@ -9,7 +9,7 @@
 
 # COM: Synthesized constructors should not emit debuginfo.
 
-# CHECK: lit.struct.decl @MyValueStruct(!AnyType_Copyable_Movable_UnknownDestructibility)
+# CHECK: lit.struct.decl @MyValueStruct(!AnyType_Copyable_ImplicitlyDestructible_Movable)
 # CHECK-SAME: attributes {sourceName = #MyValueStruct_name}
 
 # The only debug info comes from default trait method for copy.

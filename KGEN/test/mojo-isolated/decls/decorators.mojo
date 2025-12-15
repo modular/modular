@@ -274,7 +274,7 @@ struct StructExample(ImplicitlyCopyable):
         pass
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
+# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable)
 # CHECK: move :!lit.generator<[2]({{.*}} deinit_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
 @fieldwise_init
 struct ValueMem(ImplicitlyCopyable):
@@ -320,7 +320,7 @@ struct ValueMem(ImplicitlyCopyable):
 # CHECK-NEXT: lit.ref.store [[TMP]], %[[PB]]
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable)
 @fieldwise_init
 struct ValueMemHasCopy(ImplicitlyCopyable):
     var a: Int
@@ -331,7 +331,7 @@ struct ValueMemHasCopy(ImplicitlyCopyable):
         self.b = other.b
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable)
 @fieldwise_init
 struct ValueMemHasMove(Movable, ImplicitlyCopyable):
     var a: Int
@@ -339,7 +339,7 @@ struct ValueMemHasMove(Movable, ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
-# CHECK-SAME: (!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility) register_passable_trivial
+# CHECK-SAME: (!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable) register_passable_trivial
 
 # CHECK: lit.fn @"__moveinit__{{.*}}"[{{.*}}](%other: !lit.ref<!ValueRegTrivial, {{.*}}> deinit_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
@@ -399,7 +399,7 @@ struct ValueReg(ImplicitlyCopyable):
 
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility) attributes
+# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable) attributes
 @fieldwise_init
 struct Foo(ImplicitlyCopyable):
     var a: Int

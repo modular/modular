@@ -19,7 +19,7 @@ struct MemOnly(ImplicitlyCopyable):
     var b: Int
 
 
-fn owned_generic[T: AnyType](var x: T):
+fn owned_generic[T: ImplicitlyDestructible](var x: T):
     pass
 
 

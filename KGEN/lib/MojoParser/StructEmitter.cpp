@@ -1108,7 +1108,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   // fail to synthesize the special function during `populateMoveCopy`.
   StringRef traitName = [kind] {
     if (kind == SpecialFunctionKind::kDel)
-      return "AnyType";
+      return "ImplicitlyDestructible";
     else if (kind == SpecialFunctionKind::kCopyInit)
       return "Copyable";
     return "Movable";

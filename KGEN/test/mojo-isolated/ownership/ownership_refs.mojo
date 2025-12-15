@@ -521,7 +521,7 @@ fn check_mutability[
     pass
 
 
-struct TestDict[K: AnyType, V: AnyType]:
+struct TestDict[K: AnyType, V: ImplicitlyDestructible]:
     fn __getitem__(ref self) -> ref [self] Self.V:
         while True: pass
 

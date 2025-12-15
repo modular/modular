@@ -88,9 +88,9 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
       callFieldAttr(StringAttr::get(ctx, "call")),
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
       opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
-      unknownDestructibility("UnknownDestructibility", "", ClosureMethod::NONE),
+      unknownDestructibility("AnyType", "", ClosureMethod::NONE),
       moveParent("Movable", "__moveinit__", ClosureMethod::MOVE),
-      anyParent("AnyType", "__del__", ClosureMethod::DEL),
+      anyParent("ImplicitlyDestructible", "__del__", ClosureMethod::DEL),
       copyParent("Copyable", "__copyinit__", ClosureMethod::COPY),
       implicitlyCopyableParent("ImplicitlyCopyable", "", ClosureMethod::NONE) {}
 
