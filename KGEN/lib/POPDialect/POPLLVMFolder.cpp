@@ -41,8 +41,8 @@ static llvm::Type *convertTypeToLLVM(Type type, llvm::LLVMContext &llvmCtx,
     return llvm::Type::getIntNTy(llvmCtx, intType.getWidth());
 
   // Use target info to lower 'index' to the right LLVM bitwidth if available.
-  if (isa<IndexType>(type) && target && target.getIndexBitWidth().has_value())
-    return llvm::Type::getIntNTy(llvmCtx, *target.getIndexBitWidth());
+  if (isa<IndexType>(type) && target)
+    return llvm::Type::getIntNTy(llvmCtx, target.resolveIndexBitWidth());
 
   // Lower SIMD types to LLVM vectors.
   if (auto simd = dyn_cast<SIMDType>(type)) {
@@ -319,6 +319,7 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
     if (!loweredValue)
       return ErrorTree(getLoc(), "LLVM intrinsic operand has unknown value: " +
                                      stringize(typedOp));
+
     loweredOperands.push_back(loweredValue);
     loweredOperandsCst.push_back(loweredValue);
   }
