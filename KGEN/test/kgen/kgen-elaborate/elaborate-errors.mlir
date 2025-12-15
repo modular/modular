@@ -348,3 +348,12 @@ kgen.generator export @main() -> index {
   %0 = kgen.param.constant = <x>
   kgen.return %0: index
 }
+
+// -----
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @illegal_type_name() {
+  // expected-note @below {{'get_type_name' type parameter did not resolve to a concrete type}}
+  kgen.param.constant: string = <#kgen.get_type_name<#kgen.struct<> : !kgen.struct<()>, false>>
+  kgen.return
+}
