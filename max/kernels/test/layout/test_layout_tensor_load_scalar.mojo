@@ -20,31 +20,19 @@ which can be surprising in generic contexts when element_size > 1.
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._fillers import arange
 from layout.int_tuple import UNKNOWN_VALUE
-from memory import LegacyUnsafePointer as UnsafePointer
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
 def main():
-    test_load_scalar_static_layout()
-    test_load_scalar_dynamic_layout()
-    test_load_scalar_with_runtime_tuple()
-    test_load_scalar_matches_getitem_lane0()
-    test_load_scalar_vectorized_element_size_gt_1()
-    print("All tests passed!")
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 fn test_load_scalar_static_layout() raises:
     """Test load_scalar with a static 2x3 row-major layout."""
-    print("== test_load_scalar_static_layout")
-
     comptime layout = Layout.row_major(2, 3)
-    var storage = UnsafePointer[Float32].alloc(6)
+    var storage = InlineArray[Float32, 6](0.0, 1.0, 2.0, 3.0, 4.0, 5.0)
 
-    # Initialize storage with values 0..5
-    for i in range(6):
-        storage[i] = Float32(i)
-
-    var tensor = LayoutTensor[DType.float32, layout](storage)
+    var tensor = LayoutTensor[DType.float32, layout](storage.unsafe_ptr())
 
     # Test scalar access at various positions
     var v00: Scalar[DType.float32] = tensor.load_scalar(0, 0)
@@ -65,14 +53,9 @@ fn test_load_scalar_static_layout() raises:
     var v12: Scalar[DType.float32] = tensor.load_scalar(1, 2)
     assert_equal(v12, 5.0)
 
-    storage.free()
-    print("  PASSED")
-
 
 fn test_load_scalar_dynamic_layout() raises:
     """Test load_scalar with a dynamic runtime layout."""
-    print("== test_load_scalar_dynamic_layout")
-
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
@@ -82,17 +65,16 @@ fn test_load_scalar_dynamic_layout() raises:
         RuntimeTuple[layout.stride, element_type = DType.int32](4, 1),
     )
 
-    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var storage = InlineArray[Float32, 12](uninitialized=True)
+    for i in range(12):
+        storage[i] = Float32(i)
 
     var tensor = LayoutTensor[
         DType.float32,
         layout,
         layout_int_type = DType.int32,
         linear_idx_type = DType.int32,
-    ](storage, dynamic_layout)
-
-    # Fill tensor with sequential values
-    arange(tensor)
+    ](storage.unsafe_ptr(), dynamic_layout)
 
     # Test load_scalar at various positions
     var v00: Scalar[DType.float32] = tensor.load_scalar(0, 0)
@@ -104,14 +86,9 @@ fn test_load_scalar_dynamic_layout() raises:
     var v23: Scalar[DType.float32] = tensor.load_scalar(2, 3)
     assert_equal(v23, 11.0)  # row 2, col 3 = 2*4 + 3 = 11
 
-    storage.free()
-    print("  PASSED")
-
 
 fn test_load_scalar_with_runtime_tuple() raises:
     """Test load_scalar using RuntimeTuple coordinates."""
-    print("== test_load_scalar_with_runtime_tuple")
-
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
@@ -121,35 +98,31 @@ fn test_load_scalar_with_runtime_tuple() raises:
         RuntimeTuple[layout.stride, element_type = DType.int32](4, 1),
     )
 
-    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var storage = InlineArray[Float32, 16](uninitialized=True)
+    for i in range(16):
+        storage[i] = Float32(i)
 
     var tensor = LayoutTensor[
         DType.float32,
         layout,
         layout_int_type = DType.int32,
         linear_idx_type = DType.int32,
-    ](storage, dynamic_layout)
-
-    arange(tensor)
+    ](storage.unsafe_ptr(), dynamic_layout)
 
     # Test load_scalar with RuntimeTuple
     var coord = RuntimeTuple[layout.shape, element_type = DType.int32](2, 3)
     var val: Scalar[DType.float32] = tensor.load_scalar(coord)
     assert_equal(val, 11.0)  # row 2, col 3 = 2*4 + 3 = 11
 
-    storage.free()
-    print("  PASSED")
-
 
 fn test_load_scalar_matches_getitem_lane0() raises:
     """Test that load_scalar returns the same value as __getitem__[0]."""
-    print("== test_load_scalar_matches_getitem_lane0")
-
     comptime layout = Layout.row_major(4, 4)
-    var storage = UnsafePointer[Float32].alloc(16)
+    var storage = InlineArray[Float32, 16](uninitialized=True)
+    for i in range(16):
+        storage[i] = Float32(i)
 
-    var tensor = LayoutTensor[DType.float32, layout](storage)
-    arange(tensor)
+    var tensor = LayoutTensor[DType.float32, layout](storage.unsafe_ptr())
 
     # Verify load_scalar matches the 0th lane of __getitem__
     for i in range(4):
@@ -158,9 +131,6 @@ fn test_load_scalar_matches_getitem_lane0() raises:
             var simd_val = tensor[i, j]
             assert_equal(scalar_val, simd_val[0])
 
-    storage.free()
-    print("  PASSED")
-
 
 fn test_load_scalar_vectorized_element_size_gt_1() raises:
     """Test load_scalar with a vectorized tensor where element_size > 1.
@@ -168,14 +138,13 @@ fn test_load_scalar_vectorized_element_size_gt_1() raises:
     This is the primary use case for load_scalar: when element_layout.size() > 1,
     __getitem__ returns a SIMD vector, but users often want just one scalar.
     """
-    print("== test_load_scalar_vectorized_element_size_gt_1")
-
     # Create an 8x8 tensor and vectorize it to have 4-element vectors
     comptime layout = Layout.row_major(8, 8)
-    var storage = UnsafePointer[Float32].alloc(64)
+    var storage = InlineArray[Float32, 64](uninitialized=True)
+    for i in range(64):
+        storage[i] = Float32(i)
 
-    var tensor = LayoutTensor[DType.float32, layout](storage)
-    arange(tensor)
+    var tensor = LayoutTensor[DType.float32, layout](storage.unsafe_ptr())
 
     # Vectorize to 1x4 elements - this creates a tensor where each "element"
     # is a SIMD[float32, 4] (element_size = 4)
@@ -206,6 +175,3 @@ fn test_load_scalar_vectorized_element_size_gt_1() raises:
     # In original tensor this is position (1, 0) = value 8.0
     var scalar_val3 = vec_tensor.load_scalar(1, 0)
     assert_equal(scalar_val3, 8.0)
-
-    storage.free()
-    print("  PASSED")
