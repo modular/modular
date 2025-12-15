@@ -1422,13 +1422,12 @@ fn mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
 
 @register_internal("mogg.async.__del__")
 @no_inline
-fn mogg_async_del(async_ptr: AnyAsyncValueRefPtr):
+fn mogg_async_del(async_ptr: UnsafePointer[AnyAsyncValueRefPtr], size: Int):
     """
     Decrement the AnyAsyncValueRef. Typically called at the end of a kernel for
     all input and output operands.
     """
-    var ptr = UnsafePointer(to=async_ptr)
-    external_call["MGP_RT_DestructAsyncRefs", NoneType](1, ptr, False)
+    external_call["MGP_RT_DestructAsyncRefs", NoneType](size, async_ptr, False)
 
 
 @register_internal("mogg.async.unpack")
