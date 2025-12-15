@@ -159,10 +159,5 @@ cython_debug/
 examples/models/*
 !examples/models/README.md
 
-# Magic cache
-.magic
-# pixi environments (ignored; local configs should not be committed)
-.pixi/
-# Local pixi artifacts
-pixi.lock
-pixi.toml
+# Kgen trace
+kgen.trace.*

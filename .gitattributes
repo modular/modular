@@ -2,4 +2,3 @@
 # since the linguist system does not work with the .🔥 extention.
 # See https://github.com/github/linguist/blob/master/docs/overrides.md
 *.🔥 linguist-language=Mojo
-# SCM syntax highlighting & preventing 3-way merges
