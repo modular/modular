@@ -138,6 +138,61 @@ struct Codepoint(
         """
         self._scalar_value = UInt32(Int(codepoint))
 
+    @always_inline("nodebug")
+    fn __init__(out self, lit: StringLiteral):
+        """Construct a `Codepoint` from a single-codepoint `StringLiteral`.
+
+        This constructor validates at compile-time that the literal contains
+        exactly one Unicode codepoint, and computes the codepoint value as a
+        compile-time constant. This provides an ergonomic and efficient way to
+        create codepoints from string literals without runtime overhead.
+
+        Args:
+            lit: A string literal containing exactly one Unicode codepoint.
+
+        Constraints:
+            The string literal must contain exactly one Unicode codepoint.
+            Multi-byte UTF-8 sequences are supported (e.g., "🔥").
+
+        Examples:
+
+        ```mojo
+        from collections.string import Codepoint
+        from testing import assert_equal
+
+        # Create codepoints from ASCII literals
+        var a = Codepoint("A")
+        assert_equal(a.to_u32(), 65)
+
+        var space = Codepoint(" ")
+        assert_equal(space, Codepoint.ord(" "))
+
+        # Multi-byte UTF-8 codepoints also work
+        var emoji = Codepoint("🔥")
+        assert_equal(emoji, Codepoint.ord("🔥"))
+        ```
+        """
+        # Reconstruct the literal from the type parameter to force compile-time evaluation
+        comptime sl: StringLiteral[lit.value] = {}
+
+        # Compile-time validation for proper UTF-8 codepoint
+        __comptime_assert (
+            sl.byte_length() > 0
+        ), "Cannot construct an empty codepoint"
+
+        # SAFETY:
+        #   This is safe because `StringLiteral` is guaranteed to point to valid
+        #   UTF-8.
+        comptime char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            sl.as_bytes()
+        )
+
+        __comptime_assert sl.byte_length() == Int(
+            num_bytes
+        ), "input string must be one character"
+
+        self = char
+
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
