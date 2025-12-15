@@ -26,9 +26,11 @@ import numpy.typing as npt
 from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
+    EmbeddingsContext,
     Pipeline,
     PipelineTask,
     PipelineTokenizer,
+    TextGenerationContext,
     TextGenerationRequest,
 )
 from max.nn.kv_cache import KVCacheStrategy
@@ -167,6 +169,13 @@ class SupportedArchitecture:
 
     default_weights_format: WeightsFormat
     """The weights format expected by the `pipeline_model`."""
+
+    context_type: type[TextGenerationContext] | type[EmbeddingsContext]
+    """The context class type that this architecture uses for managing request state and inputs.
+
+    This should be a class (not an instance) that implements either the `TextGenerationContext`
+    or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
+    """
 
     rope_type: RopeType = RopeType.none
     """The type of RoPE (Rotary Position Embedding) used by the model."""
@@ -523,6 +532,35 @@ class PipelineRegistry:
             )
 
         return tokenizer, pipeline_factory
+
+    def retrieve_context_type(
+        self, pipeline_config: PipelineConfig
+    ) -> type[TextGenerationContext] | type[EmbeddingsContext]:
+        """Retrieve the context class type associated with the architecture for the given pipeline configuration.
+
+        The context type defines how the pipeline manages request state and inputs during
+        model execution. Different architectures may use different context implementations
+        that adhere to either the TextGenerationContext or EmbeddingsContext protocol.
+
+        Args:
+            pipeline_config: The configuration for the pipeline.
+
+        Returns:
+            The context class type associated with the architecture, which implements
+            either the TextGenerationContext or EmbeddingsContext protocol.
+
+        Raises:
+            ValueError: If no supported architecture is found for the given model repository.
+        """
+        if arch := self.retrieve_architecture(
+            huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+            use_module_v3=pipeline_config.use_module_v3,
+        ):
+            return arch.context_type
+
+        raise ValueError(
+            f"MAX Optimized architecture not supported for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+        )
 
     def retrieve_pipeline_task(
         self, pipeline_config: PipelineConfig

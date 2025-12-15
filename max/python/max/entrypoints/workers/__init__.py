@@ -107,7 +107,10 @@ def start_workers(
                         settings,
                         metric_client,
                         scheduler_zmq_configs=SchedulerZmqConfigs(
-                            pipeline_task
+                            pipeline_task,
+                            context_type=PIPELINE_REGISTRY.retrieve_context_type(
+                                pipeline_config
+                            ),
                         ),
                     )
                 )

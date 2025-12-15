@@ -29,7 +29,9 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
     MAXModelConfig,
     PipelineConfig,
 )
@@ -55,6 +57,30 @@ class MockPipelineConfig(PipelineConfig):
 @pytest.fixture
 def mock_pipeline_config() -> PipelineConfig:
     return MockPipelineConfig()
+
+
+@pytest.fixture(autouse=True)
+def patch_pipeline_registry_context_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Patch PIPELINE_REGISTRY.retrieve_context_type to always return TextContext.
+
+    The tests in this module use simple mock pipeline configs that do not
+    correspond to a registered architecture. The default implementation of
+    `retrieve_context_type` would raise in this case, but for these tests we
+    only care that a valid context type is provided, not which one.
+    """
+
+    def _mock_retrieve_context_type(
+        pipeline_config: PipelineConfig,
+    ) -> type[TextContext]:
+        return TextContext
+
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_context_type",
+        _mock_retrieve_context_type,
+    )
 
 
 @dataclass(frozen=True)
@@ -84,7 +110,8 @@ async def test_model_worker_propagates_exception(
             settings=settings,
             metric_client=NoopClient(),
             scheduler_zmq_configs=SchedulerZmqConfigs(
-                PipelineTask.TEXT_GENERATION
+                PipelineTask.TEXT_GENERATION,
+                context_type=TextContext,
             ),
         ):
             raise ValueError("kaboom")
@@ -124,7 +151,8 @@ async def test_model_worker_propagates_construction_exception(
             mock_pipeline_config,
             settings=settings,
             scheduler_zmq_configs=SchedulerZmqConfigs(
-                PipelineTask.TEXT_GENERATION
+                PipelineTask.TEXT_GENERATION,
+                context_type=TextContext,
             ),
             metric_client=NoopClient(),
         ):
@@ -162,7 +190,7 @@ async def test_model_worker_start_timeout(
             settings=settings,
             metric_client=NoopClient(),
             scheduler_zmq_configs=SchedulerZmqConfigs(
-                PipelineTask.TEXT_GENERATION
+                PipelineTask.TEXT_GENERATION, context_type=TextContext
             ),
         ):
             pass

@@ -18,7 +18,7 @@ from max.driver import accelerator_count
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config_enums import SupportedEncoding
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
@@ -93,6 +93,7 @@ def test_registry__retrieve_architecture_with_module_v3() -> None:
         },
         pipeline_model=DummyLlamaPipelineModel,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
     )
     PIPELINE_REGISTRY.register(llama_v3_arch)
@@ -152,6 +153,7 @@ def test_config__use_module_v3_can_be_set_to_true() -> None:
         },
         pipeline_model=DummyLlamaPipelineModel,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
     )
     PIPELINE_REGISTRY.register(llama_v3_arch)
@@ -204,6 +206,7 @@ def test_config__use_module_v3_with_draft_model() -> None:
         },
         pipeline_model=DummyLlamaPipelineModel,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
     )
     PIPELINE_REGISTRY.register(llama_v3_arch)

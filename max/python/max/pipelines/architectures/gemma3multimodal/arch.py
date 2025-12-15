@@ -16,6 +16,7 @@ import os
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -70,6 +71,7 @@ if ENABLE_NEW_IMPL:
             "enable_prefix_caching": False,
             "enable_chunked_prefill": False,
         },
+        context_type=TextAndVisionContext,
     )
 else:
     gemma3_multimodal_arch = SupportedArchitecture(
@@ -89,4 +91,5 @@ else:
         weight_adapters={
             WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         },
+        context_type=TextAndVisionContext,
     )

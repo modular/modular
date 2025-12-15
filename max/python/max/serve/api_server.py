@@ -27,7 +27,7 @@ from typing import Any
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
@@ -108,7 +108,10 @@ async def lifespan(
 
         # start model worker
         scheduler_zmq_configs = SchedulerZmqConfigs(
-            serving_settings.pipeline_task
+            serving_settings.pipeline_task,
+            context_type=PIPELINE_REGISTRY.retrieve_context_type(
+                serving_settings.pipeline_config
+            ),
         )
         worker_monitor = await exit_stack.enter_async_context(
             start_model_worker(

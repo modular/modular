@@ -13,7 +13,8 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.core import TextContext
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.pipelines.echo_gen import (
@@ -22,6 +23,24 @@ from max.serve.pipelines.echo_gen import (
 )
 from max.serve.router import openai_routes
 from max.serve.schemas.openai import InputItem, PromptItem
+
+
+@pytest.fixture(autouse=True)
+def patch_pipeline_registry_context_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Patch PIPELINE_REGISTRY.retrieve_context_type to always return TextContext."""
+
+    def _mock_retrieve_context_type(
+        pipeline_config: PipelineConfig,
+    ) -> type[TextContext]:
+        return TextContext
+
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_context_type",
+        _mock_retrieve_context_type,
+    )
 
 
 @pytest.fixture

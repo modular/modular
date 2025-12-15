@@ -464,7 +464,10 @@ async def run_max_async(
     pipeline_task: PipelineTask,
     top_k: int | None,
 ) -> tuple[float, list[int]]:
-    scheduler_zmq_configs = SchedulerZmqConfigs(pipeline_task)
+    scheduler_zmq_configs = SchedulerZmqConfigs(
+        pipeline_task,
+        context_type=PIPELINE_REGISTRY.retrieve_context_type(config),
+    )
     async with (
         # Start the model worker process.
         start_model_worker(

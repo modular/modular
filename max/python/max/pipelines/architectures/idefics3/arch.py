@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from .model import Idefics3Model
@@ -29,6 +30,7 @@ idefics3_arch = SupportedArchitecture(
     },
     pipeline_model=Idefics3Model,
     tokenizer=Idefics3Tokenizer,
+    context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
     required_arguments={
         "enable_chunked_prefill": False,

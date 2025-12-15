@@ -30,6 +30,7 @@ from max.pipelines import (
     PipelineModel,
     SupportedArchitecture,
     SupportedEncoding,
+    TextContext,
     TextTokenizer,
     upper_bounded_default,
 )
@@ -244,6 +245,7 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=TextTokenizer,
+    context_type=TextContext,
     multi_gpu_supported=True,
     default_weights_format=WeightsFormat.gguf,
 )
@@ -265,6 +267,7 @@ DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=TextTokenizer,
+    context_type=TextContext,
     multi_gpu_supported=True,
     default_weights_format=WeightsFormat.gguf,
 )
@@ -293,6 +296,7 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
     },
     pipeline_model=DummyPipelineModel,
     tokenizer=TextTokenizer,
+    context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     rope_type=RopeType.normal,
     multi_gpu_supported=False,

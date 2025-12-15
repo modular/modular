@@ -19,7 +19,8 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient as SyncTestClient
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.core import TextContext
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
@@ -33,6 +34,24 @@ from max.serve.schemas.openai import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(autouse=True)
+def patch_pipeline_registry_context_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Patch PIPELINE_REGISTRY.retrieve_context_type to always return TextContext."""
+
+    def _mock_retrieve_context_type(
+        pipeline_config: PipelineConfig,
+    ) -> type[TextContext]:
+        return TextContext
+
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_context_type",
+        _mock_retrieve_context_type,
+    )
 
 
 @pytest_asyncio.fixture(scope="function")

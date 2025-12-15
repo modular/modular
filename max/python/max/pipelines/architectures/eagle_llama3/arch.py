@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -35,6 +36,7 @@ eagle_llama_arch = SupportedArchitecture(
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
     },
     pipeline_model=EagleLlama3Model,
+    context_type=TextContext,
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,
     default_weights_format=WeightsFormat.safetensors,

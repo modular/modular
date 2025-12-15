@@ -16,6 +16,7 @@ from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
+from .context import Qwen3VLTextAndVisionContext
 from .model import Qwen3VLModel
 from .tokenizer import Qwen3VLTokenizer
 from .weight_adapters import convert_qwen3vl_model_state_dict
@@ -38,6 +39,7 @@ qwen3vl_moe_arch = SupportedArchitecture(
     },
     pipeline_model=Qwen3VLModel,
     tokenizer=Qwen3VLTokenizer,
+    context_type=Qwen3VLTextAndVisionContext,
     required_arguments={
         "enable_chunked_prefill": False,
     },

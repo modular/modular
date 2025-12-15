@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.core.context_validators import (
     validate_aspect_ratio_args,
     validate_image_shape_5d,
@@ -36,6 +37,7 @@ llama_vision_arch = SupportedArchitecture(
     supported_encodings={SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED]},
     pipeline_model=LlamaVision,
     tokenizer=TextAndVisionTokenizer,
+    context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
     required_arguments={
         "enable_prefix_caching": False,
