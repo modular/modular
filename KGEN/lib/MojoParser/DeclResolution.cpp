@@ -1214,7 +1214,7 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
     convention = TypeConvention::MemoryOnly;
   ASTDecl *closureWrapper = shared.getOrCreateUnifiedClosureWrapper(
       loc, wrapperSig, moduleDecl, nestedFn.getInlineLevel(), isCopyable,
-      convention);
+      convention, captures.empty());
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
   Value wrapperInstance = emitter.emitClosureOp(

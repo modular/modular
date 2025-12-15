@@ -506,7 +506,8 @@ public:
                                             ASTDecl *moduleDecl,
                                             InlineLevel inlineLevel,
                                             bool isCopyable,
-                                            TypeConvention typeConvention);
+                                            TypeConvention typeConvention,
+                                            bool isStateless);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
