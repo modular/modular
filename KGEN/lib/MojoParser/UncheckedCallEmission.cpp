@@ -650,8 +650,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 bool CallEmitter::isSafeToUseValueDestForDirectResult(
     ASTType destRValueType, ArrayRef<Value> argValues) {
 
-  // If the callee is returning a RefResult, don't do this.
-  if (calleeSig.isRefResult())
+  // We don't handle a "ref result" ValueDest initializing a pattern yet.
+  if (calleeSig.isRefResult() && !dest.isOperation())
     return false;
 
   // Check to see if the destination provides a buffer.  If not, we can't use
@@ -737,8 +737,13 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
         // use the old value because it won't be live outside.
         else if (VarDeclOp varDeclOp =
                      underlyingDest.getDefiningOp<VarDeclOp>()) {
-          if (opForRaise->isAncestor(varDeclOp))
+          if (underlyingDest.use_empty()) {
+            // If there are no assignments into this so far, then it must be
+            // uninit.
             isOk = true;
+          } else if (opForRaise->isAncestor(varDeclOp)) {
+            isOk = true;
+          }
         }
       }
 
@@ -1765,17 +1770,29 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
         // Thrown type must be implicitly convertible to the error slot type.
         canImplicitlyConvertToType({UnboundAttr::get(thrownType), callExpr},
                                    errSlot.getRValueType(), getDeclScope())) {
+      auto loc = translateLocation(callExpr->getLoc());
 
       // If the ValueDest is a lazy materialized vardecl, we need to materialize
       // it outside the try block. This is safe because it will update the
       // ValueDest in place now that we know the type we're binding to.
-      MLValue destBuf = dest.getMLValueForResult(
-          callExpr->getLoc(), calleeSig.getUserResultType(), *this);
-      if (!destBuf)
-        return {};
-      dest = ValueDest(LValue(destBuf), dest.getContext());
+      if (!calleeSig.isRefResult()) {
+        MLValue destBuf = dest.getMLValueForResult(
+            callExpr->getLoc(), calleeSig.getUserResultType(), *this);
+        if (!destBuf)
+          return {};
+        dest = ValueDest(LValue(destBuf), dest.getContext());
+      } else {
+        assert(!dest.isSpecified() &&
+               "ref result must not have a specified dest");
+        // A ref result will infer the origin of the ref from the arguments.
+        // We will do an indirect dance here since the type will be inferred
+        // from the result.
+        auto varDecl =
+            emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
+                        loc, VarDeclKind::Synthesized);
+        dest = ValueDest(varDecl, dest.getContext());
+      }
 
-      auto loc = translateLocation(callExpr->getLoc());
       VarDeclOp errDecl = emitVarDecl("__call_error_tmp__", thrownType, loc,
                                       VarDeclKind::Synthesized);
 
@@ -1802,6 +1819,19 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       (void)emitResult(MRValue(errDecl), callExpr, moveDest);
       RaiseOp::create(*builder, tryOp.getLoc());
       TryYieldOp::create(*builder, tryOp.getLoc());
+
+      // If we had a ref result, we would have emitted a call into our
+      // __ref_result_tmp__ temporary above, and then call emission would have
+      // emitted a lit.load.consume to get the value.  The problem is that it
+      // drops it INTO the try block and we need it live afterwards.  Move it
+      // now.
+      if (calleeSig.isRefResult()) {
+        Value resultVal = result.getIfMBValue();
+        assert(resultVal && "ref result must be a MBValue");
+        assert(resultVal.getDefiningOp<LIT::LoadConsumeOp>() &&
+               "expected ref result to be a lit.load.consume");
+        resultVal.getDefiningOp()->moveAfter(tryOp);
+      }
       return result;
     }
   }
@@ -2058,11 +2088,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   // If there were any writebacks to handle, emit them before handling raised
   // errors.
   callEmitter.emitAfterCallActions();
-
-  // TODO(SUGAR): For a call like Int8+Int8 we'll end up calling into a function
-  // that returns SIMD[i8,1] because it is generic.  We should look to see if
-  // the result type matches some sugared argument type, and if so, reapply the
-  // sugared type to the result.
 
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.

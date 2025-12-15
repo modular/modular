@@ -1155,6 +1155,10 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (isa<LValueBufferTaken>(dest.representation)) {
     dest.representation = NullRepresentation(); // Resolved the ValueDest;
 
+    // Propagating a ref result.
+    if (auto memValue = cValue.getIfMBValue())
+      return memValue;
+
     // The client directly filled in an LValue we provided which is great, but
     // that LValue we provided took ownership of the value, so we need to return
     // the result as a borrow, not an owned reference.

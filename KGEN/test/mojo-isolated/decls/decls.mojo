@@ -633,10 +633,7 @@ fn test_typed_raises_fn3() raises Float32:
     # CHECK-NEXT: %anonymous2A = lit.var.decl
     # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<!Int
     # CHECK-NEXT: lit.try %__call_error_tmp__
-    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl{{.*}}lit.ref<!String
-    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %__call_result_tmp__)
-    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%__call_result_tmp__, %anonymous2A)
-    # HECK-NEXT: lit.ownership.use %__call_result_tmp__
+    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %anonymous2A)
     # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: } except {
     # CHECK-NEXT:    = lit.ref.load %__call_error_tmp__
@@ -664,6 +661,19 @@ fn test_typed_raises_fn5() raises Float32:
     # CHECK-NEXT: %__call_error_tmp__
     # CHECK-NEXT: lit.try
     _ = test_typed_raises_fn2().__len__()
+
+fn test_typed_raises_fn3(x: String) raises Int -> ref [x] String:
+    return x
+
+
+# CHECK-LABEL: lit.fn @"test_typed_raises_fn6
+fn test_typed_raises_fn6(x: String) raises Float32:
+
+    # Make sure to emit ValueDest outside the try block.
+    # CHECK: %__ref_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: %__call_error_tmp__
+    # CHECK-NEXT: lit.try
+    _ = test_typed_raises_fn3(x).__len__()
 
 
 # CHECK-LABEL: lit.fn @"call_test_typed_raises_fn
