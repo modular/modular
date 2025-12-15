@@ -17,7 +17,8 @@ from math.constants import log2e
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of, simd_width_of
 from sys.info import _cdna_4_or_newer
-
+from sys.intrinsics import _type_is_eq
+from sys._assembly import inlined_assembly
 from algorithm.functional import unswitch
 from gpu import barrier, block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
@@ -30,6 +31,9 @@ from layout.layout_tensor import (
     copy_dram_to_local,
     copy_local_to_dram,
 )
+from memory import bitcast
+from sys.intrinsics import readfirstlane
+from nn.mha_mask import CausalMask, MASK_VALUE, MaterializedMask
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore, num_matrix_reg
 from memory.pointer import AddressSpace as BaseAddressSpace
@@ -40,8 +44,8 @@ from nn.mha_utils import (
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
-from nn.softmax import _online_softmax_iter_for_mma_output
-
+from .softmax import Softmax
+from sys import _RegisterPackType
 from utils import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf
 
@@ -111,7 +115,6 @@ trait AttentionConfig(ImplicitlyCopyable):
 
 @always_inline
 fn _mask_apply[
-    masked: Bool,
     attention_config_t: AttentionConfig,
     accum_type: DType,
     token_gen: Bool,
@@ -124,6 +127,7 @@ fn _mask_apply[
     warp_layout: Layout,
     use_exp2: Bool = False,
 ](
+    masked: Bool,
     kv_tile_start_row: UInt32,
     kv_tile_num_rows: UInt32,
     start_pos: UInt32,
@@ -132,7 +136,7 @@ fn _mask_apply[
     mask_block_row: UInt32,
     mask_warp_row: UInt32,
     mask_warp_col: UInt32,
-    scale: Float32,
+    scale: Scalar[accum_type],
     mask: mask_t,
     p_reg_vectorized: LayoutTensor[mut=True, accum_type, **_],
     not_last_iter: Bool,
@@ -149,10 +153,6 @@ fn _mask_apply[
     ]()
 
     var lane = lane_id()
-    var scale_log2e: Scalar[accum_type] = scale.cast[accum_type]() * (
-        log2e if use_exp2
-        and not mask_t.apply_log2e_after_mask else Scalar[accum_type](1)
-    )
 
     var coords = idx2crd[warp_layout](Int(lane))
     var lane_row = coords[0] * rowwise_stride
@@ -169,9 +169,7 @@ fn _mask_apply[
         @parameter
         for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
-            p_reg_vectorized[mma_id, 0] = (
-                p_reg_vectorized[mma_id, 0] * scale_log2e
-            )
+
             # Coordinates in mask for current mma tile.
             var mask_frag_row = mask_warp_row + m_mma * mma_shape[0]
             var mask_frag_col = (
@@ -189,23 +187,86 @@ fn _mask_apply[
             var score_col = mask_frag_col
             var score_col_with_cache_start_pos = score_col + cache_start_pos
             var score_row_with_start_pos = score_row + start_pos
+            comptime is_causal_mask = _type_is_eq[mask_t, CausalMask]()
 
-            @parameter
             if masked:
 
                 @parameter
-                for j in range(output_frag_size):
-                    comptime fragment_col = fragment_layout(j)
+                for j in range(0, output_frag_size, 2 if is_causal_mask else 1):
                     var q_head_idx = attention_config_t.q_head_idx()
-                    p_reg_vectorized[mma_id, 0][j] = mask.mask(
-                        IndexList[4, element_type = DType.uint32](
-                            Int(block_idx.z),
-                            Int(q_head_idx),
-                            Int(score_row_with_start_pos),
-                            Int(score_col_with_cache_start_pos + fragment_col),
-                        ),
-                        p_reg_vectorized[mma_id, 0][j],
-                    )
+
+                    @parameter
+                    if is_causal_mask:
+                        var x_0 = Int32(
+                            score_row_with_start_pos
+                            - score_col_with_cache_start_pos
+                        )
+                        comptime y_0 = Int32(fragment_layout(j)) - 1
+                        var val_0 = p_reg_vectorized[mma_id, 0][j]
+
+                        comptime y_1 = Int32(fragment_layout(j + 1)) - 1
+                        var val_1 = p_reg_vectorized[mma_id, 0][j + 1]
+                        var val_inf = Scalar[accum_type](-10000.0)
+
+                        # v_cmp writing to 2 sgprs or vcc requires waiting for 1 cycle
+                        # before they can be used in another VALU instruction.
+                        # Using 2 cmp and 2 cndmask instructions avoids this wait.
+                        # Without using this inline asm, we would stall for a cycle after each comparison.
+                        # the generated asm without this would be:
+                        # v_cmp_lt_i32_e32 vcc, -1, v221
+                        # s_nop 1
+                        # v_cndmask_b32_e32 v82, v227, v82, vcc
+                        # v_cmp_lt_i32_e32 vcc, 0, v221
+                        # s_nop 1
+                        # v_cndmask_b32_e32 v83, v227, v83, vcc
+
+                        # this inline asm does the same thing as CausalMask.mask(),
+                        # it just processes 2 elements at a time vs. 1.
+                        comptime asm = """
+                            v_cmp_lt_i32_e64 $2, $5, $4
+                            v_cmp_lt_i32_e64 $3, $8, $7
+                            v_cndmask_b32_e64 $0, $10, $6, $2
+                            v_cndmask_b32_e64 $1, $10, $9, $3
+                            """
+                        var ret = inlined_assembly[
+                            asm,
+                            _RegisterPackType[
+                                Scalar[accum_type],
+                                Scalar[accum_type],
+                                Int64,
+                                Int64,
+                            ],
+                            constraints="=v,=v,=&s,=&s,v,n,v,v,n,v,v,~{vcc}",
+                        ](x_0, y_0, val_0, x_0, y_1, val_1, val_inf)
+                        p_reg_vectorized[mma_id, 0][j] = ret[0]
+                        p_reg_vectorized[mma_id, 0][j + 1] = ret[1]
+
+                        # p_reg_vectorized[mma_id, 0][j] = mask.mask[
+                        #     element_type = DType.int32
+                        # ](
+                        #     IndexList[4, element_type = DType.int32](
+                        #         Int(block_idx.z),
+                        #         Int(q_head_idx),
+                        #         Int(score_row_with_start_pos)
+                        #         - Int(score_col_with_cache_start_pos),
+                        #         Int(fragment_col),
+                        #     ),
+                        #     p_reg_vectorized[mma_id, 0][j],
+                        # )
+                    else:
+                        comptime fragment_col = fragment_layout(j)
+                        p_reg_vectorized[mma_id, 0][j] = mask.mask(
+                            IndexList[4, element_type = DType.uint32](
+                                Int(block_idx.z),
+                                Int(q_head_idx),
+                                Int(score_row_with_start_pos),
+                                Int(
+                                    score_col_with_cache_start_pos
+                                    + fragment_col
+                                ),
+                            ),
+                            p_reg_vectorized[mma_id, 0][j],
+                        )
 
             @parameter
             if mask_t.apply_log2e_after_mask:
@@ -318,18 +379,8 @@ struct Attention[
         # use double buffer as proxy for experimental kernel
         # need to find a better way to determine this
         tr_load_enabled = Self.attention_config_t.double_buffer,
+        num_stages = 2 if Self.attention_config_t.double_buffer else 1,
     ]
-
-    comptime row_layout = Layout.row_major(
-        Int(Self.num_m_mmas), Self.fragment_layout.shape[0].value()
-    )
-
-    comptime RowMaxTensorType = LocalLayoutTensor[
-        Self.accum_type,
-        Self.row_layout,
-    ]
-
-    comptime RowSumTensorType = Self.RowMaxTensorType
 
     comptime GlobalMemoryManagerType = GlobalMemoryManager[
         Self.q_type,
@@ -372,9 +423,6 @@ struct Attention[
     var out_reg_buffer: Self.OutputRegisterBufferType
     var p_reg_buffer: Self.PRegisterBufferType
 
-    var rowmax: Self.RowMaxTensorType
-    var rowsum: Self.RowSumTensorType
-
     var gmem_manager: Self.GlobalMemoryManagerType
     var smem_manager: Self.SharedMemoryManagerType
 
@@ -390,13 +438,23 @@ struct Attention[
     var mask_block_row: UInt32
     var mask_warp_row: UInt32
     var mask_warp_col: UInt32
+    var kv_start_row: UInt32
 
-    var scale: Float32
+    var scale: Scalar[Self.accum_type]
 
     var seq_len: Int
     var num_keys: Int
     var start_pos: Int
     var cache_start_pos: Int
+
+    var softmax: Softmax[
+        Self.accum_type,
+        Layout.row_major(Int(Self.num_m_mmas), Int(Self.num_n_mmas)),
+        Layout.row_major(Int(Self.num_warps_m), Int(Self.num_warps_n)),
+        Self.warp_layout,
+        Self.fragment_layout,
+        Self.use_exp2,
+    ]
 
     var warp_scratch_tensor: SharedLayoutTensor[
         Self.accum_type,
@@ -419,12 +477,24 @@ struct Attention[
         return Self.attention_config_t.kv_head_idx()
 
     @always_inline
-    fn zero_p_buffer(self):
-        self.p_reg_buffer.zero()
+    fn zero_p_buffer[stage: Int = 0](self):
+        self.p_reg_buffer.zero[stage]()
 
     @always_inline
     fn get_batch_idx(self) -> Int:
         return self.batch_idx
+
+    @always_inline
+    fn scale_p_reg[stage: Int = 0](self):
+        var p_reg_vectorized = self.p_reg_buffer.vectorize[stage]()
+
+        @parameter
+        for m_mma in range(Self.num_m_mmas):
+
+            @parameter
+            for n_mma in range(Self.num_n_mmas):
+                comptime mma_id = n_mma * Self.num_m_mmas + m_mma
+                p_reg_vectorized[mma_id, 0] *= self.scale
 
     @staticmethod
     @always_inline
@@ -544,7 +614,9 @@ struct Attention[
         return False
 
     @always_inline
-    fn mask_apply(
+    fn mask_apply[
+        stage: Int = 0
+    ](
         mut self,
         kv_tile_start_row: UInt32,
         kv_tile_num_rows: UInt32,
@@ -552,9 +624,8 @@ struct Attention[
     ):
         @always_inline
         @parameter
-        fn _mask_apply_impl[masked: Bool]():
+        fn _mask_apply_impl(masked: Bool):
             _mask_apply[
-                masked=masked,
                 attention_config_t = Self.attention_config_t,
                 accum_type = Self.accum_type,
                 token_gen = Self.token_gen,
@@ -567,6 +638,7 @@ struct Attention[
                 warp_layout = Self.warp_layout,
                 use_exp2 = Self.use_exp2,
             ](
+                masked,
                 kv_tile_start_row,
                 kv_tile_num_rows,
                 self.start_pos,
@@ -577,21 +649,21 @@ struct Attention[
                 self.mask_warp_col,
                 self.scale,
                 self.mask,
-                self.p_reg_buffer.vectorize(),
+                self.p_reg_buffer.vectorize[stage](),
                 not_last_iter,
                 self.cache_start_pos,
             )
+
+        # self.scale_p_reg[stage]()
 
         @parameter
         if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var mask_status = self.mask_status(
                 kv_tile_start_row,
             )
-            unswitch[_mask_apply_impl](
-                mask_status == TileMaskStatus.PARTIAL_MASK
-            )
+            _mask_apply_impl(mask_status == TileMaskStatus.PARTIAL_MASK)
         else:
-            _mask_apply_impl[masked=True]()
+            _mask_apply_impl(masked=True)
         self.mask_advance()
 
     @always_inline
@@ -615,8 +687,7 @@ struct Attention[
         start_pos: Int,
         cache_start_pos: Int = 0,
     ):
-        self.rowmax = Self.RowMaxTensorType.stack_allocation()
-        self.rowsum = Self.RowSumTensorType.stack_allocation()
+        self.softmax = type_of(self.softmax)()
         self.out_reg_buffer = Self.OutputRegisterBufferType()
         self.out_reg_buffer.zero()
 
@@ -655,12 +726,41 @@ struct Attention[
         self.mask_warp_col = warp_col * Int(Self.WN)
 
         self.batch_idx = batch_idx
-        self.scale = scale
+        var scale_log2e: Scalar[Self.accum_type] = scale.cast[
+            Self.accum_type
+        ]() * (
+            log2e if (
+                Self.use_exp2 and (not Self.mask_t.apply_log2e_after_mask)
+            ) else Scalar[Self.accum_type](1)
+        )
+
+        comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
+
+        @parameter
+        if not is_causal_mask or (not Self.attention_config_t.double_buffer):
+            # using double buffer as proxy for the experimental kernel,
+            # using readfirstlane for the gfx942 kernel leads to incorrect results.
+            # This needs more investigation.
+            # Disable inline asm for all other masks except causal mask,
+            # Inline asm was generating bad code for the MaterializedMask,
+            # and for now we only care about the performance of the causal mask.
+            self.scale = scale_log2e
+        else:
+            self.scale = inlined_assembly[
+                "v_readfirstlane_b32 $0, $1",
+                Scalar[Self.accum_type],
+                constraints="=s,v",
+            ](scale_log2e)
+            # readfirstlane does not work without inline asm
+            # bitcast[Self.accum_type](
+            #     readfirstlane(bitcast[DType.int32](Float32(scale_log2e)))
+            # )
 
         self.seq_len = seq_len
         self.num_keys = num_keys
         self.start_pos = start_pos
         self.cache_start_pos = cache_start_pos
+        self.kv_start_row = 0
 
         @parameter
         if Self.sink:
@@ -674,35 +774,25 @@ struct Attention[
                 ]()
                 * log2e
             )
-            self.rowmax = self.rowmax.fill(sink_weight)
-            self.rowsum = self.rowsum.fill(1)
+            _ = self.softmax.rowmax_tensor.fill(sink_weight)
+            _ = self.softmax.rowsum_tensor.fill(1)
         else:
-            self.rowmax = self.rowmax.fill(min_or_neg_inf[Self.accum_type]())
-            self.rowsum = self.rowsum.fill(0)
+            _ = self.softmax.rowmax_tensor.fill(
+                min_or_neg_inf[Self.accum_type]()
+            )
+            _ = self.softmax.rowsum_tensor.fill(0)
 
     @always_inline
-    fn online_softmax(self):
+    fn online_softmax[stage: Int = 0](mut self):
         var warp_scratch = self.warp_scratch_tensor
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
 
-        _online_softmax_iter_for_mma_output[
-            Self.accum_type,
-            # score layout by mma unit
-            # TODO: generalize beyond 16x8 layout
-            Layout.row_major(Int(Self.num_m_mmas), Int(Self.num_n_mmas)),
-            # threads layout by warp
-            Layout.row_major(Int(Self.num_warps_m), Int(Self.num_warps_n)),
-            Self.warp_layout,
-            use_exp2 = Self.use_exp2,
-            fragment_layout = Self.fragment_layout,
-        ](
+        self.softmax.full(
             self.out_reg_buffer.vectorize(),
-            self.p_reg_buffer.vectorize(),
+            self.p_reg_buffer.vectorize[stage](),
             warp_scratch.tile[2 * Int(Self.num_warps_n), Int(Self.WM)](
                 0, Int(warp_row)
             ),
-            self.rowmax.ptr.address_space_cast[AddressSpace.GENERIC](),
-            self.rowsum.ptr.address_space_cast[AddressSpace.GENERIC](),
         )
 
     @always_inline
@@ -762,8 +852,8 @@ struct Attention[
         var q_head_idx = self.q_head_idx()
         if num_partitions > 1:
             if thread_idx.x < UInt(Self.group):
-                var row_sum = self.rowsum[0, 0][0]
-                var row_max = self.rowmax[0, 0][0]
+                var row_sum = self.softmax.rowsum_tensor[0, 0][0]
+                var row_max = self.softmax.rowmax_tensor[0, 0][0]
 
                 exp_sum_ptr[q_head_idx] = row_sum
                 qk_max_ptr[q_head_idx] = row_max

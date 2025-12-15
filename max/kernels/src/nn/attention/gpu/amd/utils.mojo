@@ -15,7 +15,7 @@ from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of
 
 from gpu import lane_id, thread_idx, block_idx
-from gpu import warp_id as get_warp_id
+from gpu import warp_id as get_warp_id, WARP_SIZE
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.element import Element
@@ -27,6 +27,11 @@ from memory import stack_allocation
 
 from utils import IndexList
 from utils.numerics import get_accum_type
+from collections import OptionalReg
+from layout.swizzle import Swizzle
+from gpu._utils import to_i32, to_llvm_shared_mem_ptr, to_i64
+from itertools import product
+from sys._assembly import inlined_assembly
 
 
 @always_inline
@@ -398,3 +403,348 @@ struct GlobalMemoryManager[
         )
 
         return {ptr, kv_runtime_layout}
+
+
+comptime _alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+comptime _no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+
+
+@always_inline
+fn _load_tr16_b64_row(
+    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+) -> SIMD[tile.dtype, 4]:
+    # ds_read_tr16_b64 uses a set of 4x4 lanes (amd calls 16 lanes a "row")
+    # to load a 4x16 tile. Each lane loads 4 contiguous elements from the tile.
+    # Then they are exchanged such that at the end of this operation you get a
+    # SIMD[tile.dtype, 4], with each lane containing a column of the 4x16 tile.
+    constrained[
+        size_of[tile.dtype]() == 2,
+        String(
+            "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
+        ),
+    ]()
+    constrained[
+        tile.shape[0]() == 4,
+        String("Expected tile.shape[0]() to be 4, but got ", tile.shape[0]()),
+    ]()
+    constrained[
+        tile.shape[1]() == 16,
+        String("Expected tile.shape[1]() to be 16, but got ", tile.shape[1]()),
+    ]()
+
+    comptime thread_layout = Layout.row_major(4, 4)
+    var lane_in_row = lane_id() % 16
+    var dist_result = tile.vectorize[1, 4]().distribute_with_offset[
+        thread_layout
+    ](lane_in_row)
+    var offset = dist_result[2]
+    var ptr = tile.ptr.offset(offset)
+
+    var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type = __mlir_type.`!llvm.ptr<3>`
+    ](ptr)
+
+    var llvm_res = __mlir_op.`rocdl.ds.read.tr16.b64`[
+        _type = __mlir_type.`vector<4 x bf16>`,
+        noalias_scopes=_alias_scope_attr,
+        alias_scopes=_no_alias_scope_attr,
+    ](
+        shared_ptr3,
+    )
+
+    return rebind[SIMD[tile.dtype, 4]](
+        __mlir_op.`pop.cast_from_builtin`[
+            _type = SIMD[tile.dtype, 4]._mlir_type
+        ](llvm_res)
+    )
+    # return ds_read_tr16_b64(ptr)
+
+
+@always_inline
+fn _load_tr16_b64_warp[
+    mma_shape: IndexList[3],
+](
+    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+) -> SIMD[tile.dtype, 4]:
+    # for 8x32 we need 2x2 distribution of rows (16 lanes), 2x2 x 4x16 = 8x32
+    # for 16x16 we need 4x1 distribution of rows (16 lanes), 4x1 x 4x16 = 16x16
+    comptime row_layout = Layout.row_major(2, 2) if mma_shape[
+        0
+    ] == 32 else Layout.row_major(4, 1)
+    constrained[
+        tile.dtype == DType.bfloat16,
+        String(
+            "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
+        ),
+    ]()
+    constrained[
+        tile.shape[0]() == row_layout.shape[0].value() * 4,
+        String(
+            "Expected tile.shape[0]() to be ",
+            row_layout.shape[0].value() * 4,
+            ", but got ",
+            tile.shape[0](),
+        ),
+    ]()
+    constrained[
+        tile.shape[1]() == row_layout.shape[1].value() * 16,
+        String(
+            "Expected tile.shape[1]() to be ",
+            row_layout.shape[1].value() * 16,
+            ", but got ",
+            tile.shape[1](),
+        ),
+    ]()
+
+    var coords = idx2crd[row_layout](Int(lane_id() // 16))
+    var shared_b_tile = tile.tile[4, 16](Int(coords[0]), Int(coords[1]))
+    return _load_tr16_b64_row(shared_b_tile)
+
+
+@always_inline
+fn load_b_tr[
+    mma_shape: IndexList[3]
+](
+    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+) -> SIMD[tile.dtype, 8]:
+    """Loads the b operand tile for AMD tensor core MFMA instructions using transposed memory access.
+
+    This function supports double-rate MFMA shapes (32x32x16, 16x16x32) with bfloat16 input.
+    The input tile (shape = (mma_shape[2], mma_shape[1])) is split along the K dimension into
+    two halves of shape (MMA_K//2, MMA_N). Each half is loaded using `_load_tr16_b64_warp`, which
+    performs a transposed (column-major) load from shared memory. The resulting two 4-element SIMD
+    vectors are concatenated into a single `SIMD[tile.dtype, 8]` vector.
+
+    Parameters:
+        mma_shape: The MMA instruction tile shape (only 32x32x16 or 16x16x32 supported).
+
+    Args:
+        tile:      A `LayoutTensor`, residing in shared memory, with shape (mma_shape[2], mma_shape[1])
+                   and dtype `DType.bfloat16`.
+
+    Returns:
+        SIMD[tile.dtype, 8]: Concatenated transposed SIMD loads from both halves of the tile.
+    """
+    # only support double-rate mfma shapes for now
+    constrained[
+        mma_shape in (IndexList[3](32, 32, 16), IndexList[3](16, 16, 32)),
+        String(
+            "Unsupported mma_shape: ",
+            mma_shape[0],
+            "x",
+            mma_shape[1],
+            "x",
+            mma_shape[2],
+            ". Supported shapes: 32x32x16, 16x16x32",
+        ),
+    ]()
+    constrained[
+        tile.dtype == DType.bfloat16,
+        String(
+            "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
+        ),
+    ]()
+    constrained[
+        tile.shape[0]() == mma_shape[2],
+        String(
+            "Expected tile.shape[0]() to be mma_shape[2]=",
+            mma_shape[2],
+            ", but got ",
+            tile.shape[0](),
+        ),
+    ]()
+    constrained[
+        tile.shape[1]() == mma_shape[1],
+        String(
+            "Expected tile.shape[1]() to be mma_shape[1]=",
+            mma_shape[1],
+            ", but got ",
+            tile.shape[1](),
+        ),
+    ]()
+    # Loads the input tile as two halves along the K dimension, each of shape
+    # (MMA_K//2, MMA_N), and concatenates the resulting 4-element vectors.
+    # This is designed for use in multi-head attention (MHA) kernels where
+    # the output fragment of a previous MFMA serves as the input to the next.
+    #
+    # For example, with MMA shape (32, 32, 16), this function splits a tile of
+    # shape (16, 32) into two (8, 32) tiles, loads 4 values from each, and
+    # joins them. This follows the MFMA output pattern on AMD GPUs where output
+    # fragments are organized in 4-element vectors.
+    #
+    # Typical usage: when fusing two MMAs, you can efficiently pass the
+    # accumulator of the first (after downcasting to 2 bytes) as part of the input to the next.
+    var tiles = tile.split[2]()
+    var part_1 = _load_tr16_b64_warp[mma_shape](tiles[0])
+    var part_2 = _load_tr16_b64_warp[mma_shape](tiles[1])
+    return part_1.join(part_2)
+
+
+@always_inline
+fn copy_dram_to_sram_lds[
+    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+](dst: LayoutTensor, src: LayoutTensor, lds_base_ptr: UInt32 = 0):
+    comptime thread_layout = Layout.row_major(16, 4)
+    var worker_idx = lane_id()
+
+    var bc = make_amd_buffer_resource(src)
+
+    comptime M = src.shape[0]()
+    comptime N = src.shape[1]()
+    # we use 16x4 thread layout to load 16x32 tile from dram to sram
+    # but we need to load 32x16 tiles from sram for mma, so swizzle need to be applied to
+    # the whole 32x32 tile.
+    comptime BM = 32
+    comptime BN = 32
+    comptime BM_SUB = thread_layout.shape[0].value()
+
+    comptime aux = 0  # _cache_operation_to_amd_aux[cache_policy]()
+
+    var lds_ptr = lds_base_ptr
+
+    @parameter
+    for n_tile, m_tile, m_sub_tile in product(
+        range(N // BN), range(M // BM), range(BM // BM_SUB)
+    ):
+        var dst_partitions = dst.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
+            m_sub_tile, 0
+        )
+        var src_partitions = src.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
+            m_sub_tile, 0
+        )
+        comptime dst_layout = dst_partitions.layout
+        # dst need to be contiguous
+        constrained[dst_layout.stride[1].value() == 1, String(dst_layout)]()
+        constrained[dst_layout.stride[0].value() == 32, String(dst_layout)]()
+        var worker_idx_with_offset = worker_idx + UInt(m_sub_tile * WARP_SIZE)
+        var src_dist = src_partitions.vectorize[
+            1, simd_width_of[src.dtype]()
+        ]().distribute[thread_layout](
+            (
+                UInt(
+                    swizzle.value()(Int(worker_idx_with_offset))
+                ) if swizzle else worker_idx_with_offset
+            )
+            % UInt(WARP_SIZE)
+        )
+        comptime dtype = src.dtype
+        var ptr = dst_partitions.ptr
+        var dst_ptr = ptr.address_space_cast[AddressSpace.SHARED]()
+        # bc.load_to_lds[width = simd_width_of[src.dtype]()](
+        #     Int32(src_offset + src_load_offset),
+        #     dst_ptr,
+        #     scalar_offset=0,
+        # )
+
+        var desc_ptr_ = UnsafePointer[
+            Scalar[DType.bfloat16], address_space = AddressSpace.BUFFER_RESOURCE
+        ]()
+
+        var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
+        var ptr_to_simd = UnsafePointer(to=bc.desc)
+        ptr_to_ptr[0] = ptr_to_simd.bitcast[
+            UnsafePointer[
+                Scalar[DType.bfloat16],
+                address_space = AddressSpace.BUFFER_RESOURCE,
+            ]
+        ]()[0]
+        var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type = __mlir_type.`!llvm.ptr<8>`
+        ](desc_ptr_)
+
+        var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type = __mlir_type.`!llvm.ptr<3>`
+        ](type_of(dst_ptr)())
+
+        comptime num_bytes_per_lane = size_of[dtype]() * simd_width_of[dtype]()
+        var vector_offset_bytes = Int(src_dist.ptr) - Int(src_partitions.ptr)
+        var scalar_offset_bytes = Int(src_partitions.ptr) - Int(src.ptr)
+
+        inlined_assembly[
+            "s_mov_b32 m0, $0", NoneType, has_side_effect=True, constraints="s"
+        ](lds_ptr)
+        __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+            alias_scopes=_alias_scope_attr,
+            _type=None,
+        ](
+            desc_ptr_llvm,
+            shared_ptr3,
+            to_i32(num_bytes_per_lane),
+            to_i32(vector_offset_bytes),
+            to_i32(scalar_offset_bytes),
+            to_i32(0),
+            to_i32(aux),
+        )
+        comptime num_bytes_per_warp = thread_layout.size() * num_bytes_per_lane
+        lds_ptr += num_bytes_per_warp
+
+
+@always_inline
+fn load_b_[
+    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle], k_tile_idx: Int
+](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_K = mma_shape[2]
+    constrained[src.shape[0]() == MMA_M]()
+    comptime simd_width = simd_width_of[src.dtype]()
+    var tile = src.tile[MMA_M, MMA_K](0, k_tile_idx)
+    comptime thread_layout = Layout.col_major(32, 2) if mma_shape[
+        0
+    ] == 32 else Layout.col_major(16, 4)
+    var dist = tile.vectorize[1, simd_width]().distribute[thread_layout,](
+        lane_id()
+    )
+    var offset = dist.distance(src.ptr)
+
+    @parameter
+    if swizzle:
+        offset = swizzle.value()(offset // simd_width) * simd_width
+
+    var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type = __mlir_type.`!llvm.ptr<3>`
+    ](src.ptr.offset(offset))
+
+    var llvm_res = __mlir_op.`llvm.load`[
+        _type = __mlir_type.`vector<8 x bf16>`,
+        alignment = to_i64(16),
+        noalias_scopes=_alias_scope_attr,
+        alias_scopes=_no_alias_scope_attr,
+    ](
+        shared_ptr3,
+    )
+
+    return rebind[SIMD[src.dtype, simd_width]](
+        __mlir_op.`pop.cast_from_builtin`[
+            _type = SIMD[src.dtype, simd_width]._mlir_type
+        ](llvm_res)
+    )
+
+
+@always_inline
+fn load_b[
+    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle]
+](
+    src: LayoutTensor,
+    out res: LayoutTensor[
+        src.dtype,
+        Layout.row_major(src.layout.size() // (WARP_SIZE * 8), 8),
+        MutAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ],
+):
+    var output = type_of(res).stack_allocation()
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_K = mma_shape[2]
+    comptime M = src.shape[0]() // MMA_M
+    comptime N = src.shape[1]() // MMA_K
+    var output_vectorized = output.vectorize[1, 8]()
+
+    @parameter
+    for i, j in product(range(M), range(N)):
+        var out_reg = load_b_[mma_shape, swizzle, j](
+            src.tile[MMA_M, src.shape[1]()](i, 0)
+        )
+        output_vectorized[i + j * M, 0] = rebind[
+            type_of(output_vectorized[i + j * M, 0])
+        ](out_reg)
+    return output

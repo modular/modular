@@ -229,6 +229,8 @@ __extension Attention:
                 prefetched_b_tile=True,
             ](k_rope_buffer)
 
+            self.scale_p_reg()
+
             self.mask_apply(
                 kv_tile_start_row,
                 kv_tile_num_rows,
@@ -245,7 +247,9 @@ __extension Attention:
             var end = min(i + Self.BN, self.num_keys)
             loop_over_kvcache[Int(Self.BN)](i, end, end != self.num_keys)
 
-        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
+        self.out_reg_buffer.apply_softmax_denominator(
+            self.softmax.rowsum_tensor
+        )
 
         self.store_output()
 

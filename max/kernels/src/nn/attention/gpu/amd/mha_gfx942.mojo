@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import _cdna_4_or_newer
 from sys import env_get_bool
@@ -193,6 +192,8 @@ __extension Attention:
 
             self.mma_qk[prefetch_function=prefetch_function](k_buffer)
 
+            self.scale_p_reg()
+
             self.mask_apply(
                 kv_tile_start_row,
                 kv_tile_num_rows,
@@ -209,7 +210,9 @@ __extension Attention:
             var end = min(i + Self.BN, self.num_keys)
             loop_over_kvcache[Int(Self.BN)](i, end, end != self.num_keys)
 
-        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
+        self.out_reg_buffer.apply_softmax_denominator(
+            self.softmax.rowsum_tensor
+        )
 
         self.store_output()
 
@@ -301,6 +304,8 @@ __extension Attention:
 
             self.mma_qk[prefetch_function=prefetch_function](k_buffer)
 
+            self.scale_p_reg()
+
             self.mask_apply(
                 kv_tile_start_row,
                 kv_tile_num_rows,
@@ -332,6 +337,8 @@ __extension Attention:
             loop_over_kvcache[Int(Self.BN)](i, end_, end_ != end)
 
         # Apply softmax denominator.
-        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
+        self.out_reg_buffer.apply_softmax_denominator(
+            self.softmax.rowsum_tensor
+        )
         self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
         self.store_output()

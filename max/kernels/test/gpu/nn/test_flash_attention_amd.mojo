@@ -15,7 +15,8 @@ from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
 from math import isclose
 from random import rand
-from sys import argv
+from sys import argv, env_get_bool
+
 
 from gpu import *
 from gpu.host import DeviceContext
@@ -579,7 +580,11 @@ fn test_decoding[
 
 def main():
     with DeviceContext() as ctx:
-        comptime depths = (64, 128, 256)
+        # experimental kernel only supports depth == 128
+        comptime experimental_kernel = env_get_bool[
+            "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
+        ]()
+        comptime depths = [64, 128, 256] if not experimental_kernel else [128]
 
         @parameter
         for i in range(len(depths)):
