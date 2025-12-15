@@ -516,7 +516,8 @@ def bench_decode(
     print("=" * 80)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Main entry point for the MHA decode benchmark."""
     import argparse
 
     parser = argparse.ArgumentParser(description="MHA Decode Benchmark")
@@ -558,3 +559,7 @@ if __name__ == "__main__":
         head_dim=args.head_dim,
         dtype=dtype_map[args.dtype],
     )
+
+
+if __name__ == "__main__":
+    main()

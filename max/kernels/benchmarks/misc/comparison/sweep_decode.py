@@ -37,17 +37,12 @@ import argparse
 import csv
 import itertools
 import os
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import torch
-
-# Add the directory containing this script to sys.path for importing bench_blackwell_decode
-# This is needed because Bazel runfiles may not include the module in the Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from bench_blackwell_decode import (  # type: ignore[import-not-found]
+from bench_blackwell_decode import (
     bench_flashinfer,
     bench_max,
 )

@@ -68,6 +68,34 @@ modular_py_binary(
 # Moved to kbench. Please run the following:
 # kbench bench_mla_decode.yaml --param engine:"[modular_max, flashinfer]"
 
+# Shared library for MHA decode benchmark functions
+modular_py_library(
+    name = "bench_decode_lib",
+    srcs = ["bench_blackwell_decode.py"],
+    imports = ["."],
+    deps = [
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        blackwell_bench_wheel("flashinfer"),
+        requirement("torch"),
+        "//max/python/max",
+    ],
+)
+
+# MHA decode benchmark: MAX vs FlashInfer (TensorRT-LLM backend)
+modular_py_binary(
+    name = "bench_decode",
+    srcs = ["bench_blackwell_decode_main.py"],
+    main = "bench_blackwell_decode_main.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":bench_decode_lib",
+    ],
+)
+
 # Grouped GEMM benchmark using DeepGEMM baseline
 modular_py_binary(
     name = "bench_grouped_gemm",
@@ -88,12 +116,9 @@ modular_py_binary(
 
 # TODO: This can be removed and `bench_decode` can be directly with `kbench`.
 # Parameter sweep for MHA decode benchmark
-# Note: This target depends on bench_decode at runtime for importing benchmark functions.
-# The sweep_decode.py uses sys.path to import from the same directory.
 modular_py_binary(
     name = "sweep_decode",
     srcs = ["sweep_decode.py"],
-    imports = ["."],
     main = "sweep_decode.py",
     tags = [
         "gpu",
@@ -101,10 +126,8 @@ modular_py_binary(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        blackwell_bench_wheel("flashinfer"),
+        ":bench_decode_lib",
         requirement("torch"),
-        "//max/python/max",
     ],
 )
 
