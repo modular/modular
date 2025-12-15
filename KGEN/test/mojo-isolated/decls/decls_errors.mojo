@@ -567,6 +567,11 @@ struct Rec[
   param: Rec]:
   pass
 
+struct EarlySelf[
+  # expected-error @below {{'Self' type is not available in this context}}
+  param: Self]:
+  pass
+
 # expected-error @+2 {{attempt to resolve a recursive reference to declaration 'Rec1'}}
 # expected-note @+1 {{referenced through this use}}
 struct Rec1[# expected-note {{by declaration 'Rec1'}}

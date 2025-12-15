@@ -572,6 +572,14 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return {};
   }
 
+  ASTType selfType = astDecl->getTypeDeclSelf();
+  if (!selfType) {
+    // The user is attempting to use "Self" when the self type hasn't yet been
+    // computed (e.g. inside a struct's parameter list). This is not allowed.
+    emitter.emitError(getLoc(), "'Self' type is not available in this context");
+    return {};
+  }
+
   // Notify the listener that the Self is a reference of the parent
   // struct.
   emitter.shared.notifyListenerOnRef(astDecl, "Self", getRange());
