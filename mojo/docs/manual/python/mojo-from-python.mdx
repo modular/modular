@@ -19,13 +19,12 @@ work in progress. See below for [known limitations](#known-limitations).
 
 :::
 
-## Import a Mojo module in Python
+## Import a simple Mojo module in Python
 
-To illustrate what calling Mojo from Python looks like, we'll start with a
-simple example, and then dig into the details of how it works and what is
-possible today.
+We'll start with a simple example, what calling Mojo from Python looks like
+and then dig into the details of how it works and what is possible today.
 
-Consider a project with the following structure:
+Consider the following directory structure of a simple project:
 
 ```text
 project
@@ -33,36 +32,39 @@ project
 └── 🔥 mojo_module.mojo
 ```
 
-The main entrypoint is a Python program called `main.py`, and the Mojo code
-includes functions to call from Python.
+The main Python entrypoint is called `main.py`. The Mojo code in
+`mojo_module.mojo` includes a function that we want to call from Python.
 
-For example, let's say we want a Mojo function to take a Python value as an
-argument:
-
-```mojo title="mojo_module.mojo"
-fn factorial(py_obj: PythonObject) raises -> Python
-    var n = Int(py_obj)
-    return math.factorial(n)
-```
-
-And we want to call it from Python like this:
-
-```python title="main.py"
+```python title="Python Entrypoint"
 import mojo_module
 
 print(mojo_module.factorial(5))
 ```
 
-However, before we can call the Mojo function from Python, we must declare it
-so Python knows it exists.
+In Mojo we define a function to take a Python value as an argument:
 
-Because Python is trying to load `mojo_module`, it looks for a function called
-`PyInit_mojo_module()`. (If our file was called `foo.mojo`, the function Python
-looked for would be `PyInit_foo()`.) Within the `PyInit_mojo_module()`, we must
-declare all Mojo functions and types that are callable from Python using
+```mojo title="Mojo Function"
+fn factorial(py_obj: PythonObject) raises -> Python
+    var n = Int(py_obj)
+    return math.factorial(n)
+```
+
+Before we can call the Mojo function from Python, we must declare and export
+it to Python.
+
+Python is trying to load `mojo_module`, it looks for a function called
+`PyInit_mojo_module()`. Within the `PyInit_mojo_module()`, we declare all
+Mojo functions and types that are callable from Python using
 [`PythonModuleBuilder`](/mojo/stdlib/python/bindings/PythonModuleBuilder).
 
-So the complete Mojo code looks like this:
+:::note
+
+If the Mojo file is called `foo.mojo`, the Python initializer must be
+named `PyInit_foo()`.
+
+:::
+
+The complete Mojo code looks like this:
 
 ```mojo title="mojo_module.mojo"
 from python import PythonObject
@@ -100,7 +102,7 @@ import mojo_module
 print(mojo_module.factorial(5))
 ```
 
-That's it! Try it:
+That's it! Try to call it from Python:
 
 ```sh
 python main.py
@@ -110,10 +112,72 @@ python main.py
 120
 ```
 
-### How it works
+## Packaged Python Mojo module extensions
+
+Mojo extensoins can be shipped with Python packages using the `mojo.import` hook. The
+modules are built in user-space at runtime to leverage Mojo's system-specific
+hardware optimization. This requires a runtime dependency to the
+[Mojo](https://pypi.org/project/mojo/) package.
+
+Add the dependency to the project's `pyproject.toml`:
+
+```toml title="pyproject.toml`
+[project]
+name = "awesome-project"
+version = "0.1.0"
+description = "Python project packaging Mojo extension"
+authors = [
+    { name = "Joe", email = "doe@modular.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "mojo"
+]
+```
+
+The package structure can includes the `.mojo` extension files.
+
+:::warning
+
+The extension is compiled at runtime.
+The package directory must be writeable by the user.
+
+:::
+
+```text
+awesome-project/
+├── pyproject.toml
+└── src
+    └── awesome_project
+        ├── __init__.py
+        └── mojo_module.mojo
+```
+
+The module-level `__init__.py` file can include the lightweight wrapper code
+to expose the Mojo extension to Python.
+
+```python title="__init__.py"
+import mojo.importer  # ignore: F401
+
+from awesome_project import mojo_module
+
+def factorial(number: int) -> int:
+    return mojo_module.factorial(number)
+```
+
+The module can be exposed to the user without worrying about import hooks and
+the underlying Mojo code.
+
+```python
+from awesome_package import factorial
+
+factorial(5)
+```
+
+### How the Mojo import works
 
 Python supports a standard mechanism called [Python extension
-modules](https://docs.python.org/3/extending/extending.html) that enables
+modules](https://docs.python.org/3/extending/extending.html) enabling
 compiled languages (like Mojo, C, C++, or Rust) to make themselves callable
 from Python in an intuitive way. Concretely, a Python extension module is
 simply a dynamic library that defines a suitable `PyInit_*()` function.
@@ -130,7 +194,7 @@ project
 ├── main.py
 ├── mojo_module.mojo
 └── __mojocache__
-    └── mojo_module.hash-ABC123.so
+    └── mojo_module.<hash>.so
 ```
 
 Loading `mojo.importer` loads our Python Mojo [import
