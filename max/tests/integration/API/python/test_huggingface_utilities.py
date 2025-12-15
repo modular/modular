@@ -165,6 +165,10 @@ def test_huggingface_repo__encoding_for_file(
 class TestValidateHfRepoAccess:
     """Test cases for validate_hf_repo_access function."""
 
+    def setup_method(self) -> None:
+        """Clear the lru_cache before each test to ensure test isolation."""
+        validate_hf_repo_access.cache_clear()
+
     def test_valid_repo_access_success(self) -> None:
         """Test that valid repository access doesn't raise any exception."""
         with patch(
