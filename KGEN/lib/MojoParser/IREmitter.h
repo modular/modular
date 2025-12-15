@@ -196,6 +196,8 @@ public:
   /// an expression will be emitted to generate a PValue, SRValue, LValue, etc.
   bool isSpecified() const { return !isa<NullRepresentation>(representation); }
 
+  bool isOperation() const { return isa<Operation *>(representation); }
+
   /// Return the LValueInitializerType this contains if it is one.
   ASTType getIfInitializerType() const {
     // LPValueInitializer does not support null test, test isa first and then do
