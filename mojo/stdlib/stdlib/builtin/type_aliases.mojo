@@ -47,7 +47,7 @@ by functions that never return."""
 
 
 @register_passable("trivial")
-struct Origin[mut: Bool]:
+struct Origin[mut: Bool](ImplicitlyCopyable, Movable):
     """This represents a origin reference for a memory value.
 
     Parameters:
