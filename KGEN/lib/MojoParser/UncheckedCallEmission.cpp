@@ -1765,6 +1765,16 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
         // Thrown type must be implicitly convertible to the error slot type.
         canImplicitlyConvertToType({UnboundAttr::get(thrownType), callExpr},
                                    errSlot.getRValueType(), getDeclScope())) {
+
+      // If the ValueDest is a lazy materialized vardecl, we need to materialize
+      // it outside the try block. This is safe because it will update the
+      // ValueDest in place now that we know the type we're binding to.
+      MLValue destBuf = dest.getMLValueForResult(
+          callExpr->getLoc(), calleeSig.getUserResultType(), *this);
+      if (!destBuf)
+        return {};
+      dest = ValueDest(LValue(destBuf), dest.getContext());
+
       auto loc = translateLocation(callExpr->getLoc());
       VarDeclOp errDecl = emitVarDecl("__call_error_tmp__", thrownType, loc,
                                       VarDeclKind::Synthesized);
