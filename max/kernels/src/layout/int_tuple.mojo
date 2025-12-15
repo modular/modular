@@ -60,7 +60,7 @@ from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
-from memory import LegacyUnsafePointer as UnsafePointer, memcpy
+from memory import memcpy
 from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
@@ -133,7 +133,7 @@ struct IntArray(ImplicitlyCopyable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: UnsafePointer[Int]
+    var _data: UnsafePointer[Int, MutOrigin.external]
     var _size: Int
 
     @always_inline("nodebug")
@@ -143,7 +143,7 @@ struct IntArray(ImplicitlyCopyable):
         Args:
             size: Number of integers to allocate space for. Defaults to 0.
         """
-        self._data = UnsafePointer[Int].alloc(size)
+        self._data = alloc[Int](size)
         self._size = size
 
     @always_inline("nodebug")
@@ -158,7 +158,7 @@ struct IntArray(ImplicitlyCopyable):
         self._size = existing._size
         if existing.owning():
             var size = existing.size()
-            self._data = UnsafePointer[Int].alloc(size)
+            self._data = alloc[Int](size)
             self.copy_from(0, existing, size)
         else:
             self._data = existing._data

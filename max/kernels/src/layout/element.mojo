@@ -32,7 +32,6 @@ from layout.layout import coalesce, is_contiguous_dim
 
 from . import Layout, RuntimeLayout
 from .int_tuple import UNKNOWN_VALUE, _get_index_type
-from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @always_inline
@@ -400,7 +399,7 @@ struct Element[
         return Element(element_data, runtime_layout)
 
     @always_inline("nodebug")
-    fn store(self, ptr: UnsafePointer[Scalar[Self.dtype], mut=True, **_]):
+    fn store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], **_]):
         """Stores element data to memory according to the specified layout.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -481,9 +480,7 @@ struct Element[
                 )
 
     @always_inline("nodebug")
-    fn masked_store(
-        self, ptr: UnsafePointer[Scalar[Self.dtype], mut=True, **_]
-    ):
+    fn masked_store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], **_]):
         """Stores element data to memory with masking for partial stores.
 
         This method performs a layout-aware store operation with boundary checking.
@@ -671,7 +668,6 @@ struct MemoryElement[
     comptime _AsMut[
         mut_origin: MutOrigin,
     ] = MemoryElement[
-        mut=True,
         Self.dtype,
         Self.layout,
         mut_origin,
@@ -681,8 +677,7 @@ struct MemoryElement[
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype],
-        mut = Self.mut,
-        origin = Self.origin,
+        Self.origin,
         address_space = Self.address_space,
     ]
     """Pointer to the memory location where the data is stored.
@@ -708,8 +703,7 @@ struct MemoryElement[
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
-            mut = Self.mut,
-            origin = Self.origin,
+            Self.origin,
             address_space = Self.address_space,
         ],
         runtime_layout: RuntimeLayout[
