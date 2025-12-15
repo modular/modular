@@ -115,8 +115,15 @@ IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
   // Find the struct generator for the instantiated type ref.
   TypedAttr typeRef = getTypeNameAttr.getTypeValue();
   if (!isa<TypeInstanceRefAttr>(typeRef)) {
-    typeRef = cast<TypeValueType>(cast<TypeParamAttr>(typeRef).getTypeValue())
-                  .getTypeValue();
+    if (auto typeParam = dyn_cast<TypeParamAttr>(typeRef)) {
+      typeRef = cast<TypeValueType>(typeParam.getTypeValue()).getTypeValue();
+    } else {
+      // This isn't a type at all.
+      emitError({*errorLoc,
+                 "'get_type_name' type parameter did not resolve to a "
+                 "concrete type"});
+      return failure();
+    }
   }
 
   TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
