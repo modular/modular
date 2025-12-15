@@ -107,3 +107,23 @@ modular_py_binary(
         "//max/python/max",
     ],
 )
+
+# AllReduce benchmark: NCCL vs SGLang custom allreduce
+# SGLang's custom allreduce (cross_device_reduce_1stage) is optimized for
+# small message sizes (<256KB) using NVLink P2P communication.
+# Run with torchrun for multi-GPU benchmarks:
+#   pip install sglang[all]
+#   torchrun --nproc_per_node=4 $(bazel-bin path) --num-bytes 16384 262144
+modular_py_binary(
+    name = "bench_allreduce",
+    srcs = ["bench_allreduce.py"],
+    main = "bench_allreduce.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        requirement("torch"),
+        "//max/python/max/support",
+    ],
+)
