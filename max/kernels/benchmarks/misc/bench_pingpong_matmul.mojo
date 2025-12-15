@@ -123,6 +123,9 @@ fn bench_matmul[
     var stride_b = align_up(get_size(shape_b_dim), simd_size)
     var stride_c = align_up(get_size(shape_c_dim), simd_size)
 
+    # Benchmark with the same data type for C as A and B
+    comptime c_dtype = dtype
+
     comptime k128 = 512 * 1024 * 1024
     var cache_a = (
         align_up(k128, stride_a * size_of[dtype]()) // size_of[dtype]()
@@ -131,13 +134,12 @@ fn bench_matmul[
         align_up(k128, stride_b * size_of[dtype]()) // size_of[dtype]()
     )
     var cache_c = (
-        align_up(k128, stride_c * size_of[DType.bfloat16]())
-        // size_of[DType.bfloat16]()
+        align_up(k128, stride_c * size_of[c_dtype]()) // size_of[c_dtype]()
     )
 
     var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
-    var buffer_c = ctx.enqueue_create_buffer[DType.bfloat16](cache_c)
+    var buffer_c = ctx.enqueue_create_buffer[c_dtype](cache_c)
 
     # Host allocations
     var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_a)
@@ -188,7 +190,7 @@ fn bench_matmul[
             var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
                 buffer_b.unsafe_ptr() + offset_b, shape_b_dim
             )
-            var tensor_c = NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c](
+            var tensor_c = NDBuffer[c_dtype, 2, MutAnyOrigin, shape_c](
                 buffer_c.unsafe_ptr() + offset_c, shape_c_dim
             )
 
@@ -225,17 +227,11 @@ fn bench_matmul[
                 comptime use_ping_pong_matmul = env_get_bool[
                     "use_ping_pong_matmul", True
                 ]()
-                comptime use_transpose_load = env_get_bool[
-                    "use_transpose_load", False
-                ]()
                 comptime enable_swizzle = env_get_bool["enable_swizzle", True]()
 
                 @parameter
                 if use_ping_pong_matmul:
-                    ping_pong_matmul[
-                        enable_swizzle=enable_swizzle,
-                        use_transpose_load=use_transpose_load,
-                    ](
+                    ping_pong_matmul[enable_swizzle=enable_swizzle](
                         from_ndbuffer_row_major(tensor_a),
                         from_ndbuffer_row_major(tensor_b),
                         from_ndbuffer_row_major(tensor_c),

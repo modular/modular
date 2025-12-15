@@ -27,8 +27,10 @@ from gpu.host import DeviceContext
 from gpu.intrinsics import AMDBufferResource
 from gpu.memory import AddressSpace
 from gpu.mma import mma
+from sys import llvm_intrinsic
 from gpu.sync import barrier, schedule_barrier, s_waitcnt
 from memory import LegacyUnsafePointer as UnsafePointer
+from memory.unsafe import bitcast
 
 from utils import Index, IndexList, StaticTuple
 from utils.numerics import get_accum_type
@@ -42,106 +44,53 @@ from gpu._utils import to_i64
 from collections import OptionalReg
 
 from ....structuring import SMemTileType, RegTileType, eval
+from ....utils import elementwise_epilogue_type
 from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout
 from layout.swizzle import Swizzle
-from layout._utils import make_amd_buffer_resource
-from layout.tensor_core import load_b_nt
+from layout._utils import make_amd_buffer_resource, idx2crd
+from .matmul import write_output_fragments
 
 
 # =============================================================================
-# Layout-Based Memory Access Patterns
+# AMD Ping-Pong Matmul Kernel for MI355X (CDNA4)
 # =============================================================================
 #
-# This kernel uses Layout and RuntimeLayout for structured memory access:
+# 8-warp double-buffered matmul with ping-pong scheduling for BF16 and FP8.
+# Achieves ~1.55 TFLOPS (BF16) and ~2.74 TFLOPS (FP8) on MI355X.
 #
-# 1. GLOBAL → LDS LOADING (TileBuffers.__init__, _load_tile_to_lds_*)
-#    - Thread layout: Layout.row_major(16, 4) maps 64 threads to 16×32 subtile
-#    - Swizzle: Swizzle(1, 5, 4) XORs bit 9→5 in byte offsets
-#    - LayoutTensor.distribute() computes per-thread global positions
-#    - 8 warps fill 64 rows × 64 cols per iteration
-#
-# 2. LDS → REGISTER LOADING (MmaOp.load_a/b)
-#    - MMA access layout: Layout((16, 4), (32, 8))
-#    - RuntimeLayout converts lane_id to LDS offset at compile time
-#    - Element swizzle: Swizzle(1, 4, 4) applied to computed offsets
-#
-# 3. TILE-BASED ADDRESSING (_load_tile_to_lds_*, _load_tile_4warp_*)
-#    - Pass LayoutTensor tiles directly to loading functions
-#    - Warp position computed via tile[rows_per_warp, BK](tile_idx, 0).ptr
-#    - readfirstlane() ensures scalar (SGPR) pointer for load_to_lds
-#
-# Swizzle Pattern (Swizzle(1, 5, 4) for bytes, Swizzle(1, 4, 4) for elements):
-#    - AMD MI300X/MI355X: 64 LDS banks × 4 bytes = 256 bytes per cycle
-#    - Without swizzle: MMA 4×16 read causes 4-way bank conflicts
-#    - Swizzle XORs bit 9→5: breaks conflicts within 16×32 bf16 subtiles
-#    - Result: ~6% performance improvement
+# Key Components:
+#   - TileLoaderLDS: Global→LDS cooperative loading with swizzle
+#   - MmaOp: LDS→register loading and MMA execution
+#   - TileBuffers: Double-buffered LDS tile management
+#   - AMDPingPongMatmul: Kernel orchestration and scheduling
 #
 # =============================================================================
 
 
-from gpu.memory import CacheOperation
-from gpu._utils import to_i32, to_i64
+fn make_mma_swizzle[MMA_K: Int]() -> Swizzle:
+    """Create swizzle pattern for MMA LDS access based on MMA K dimension.
 
+    AMD MI355X have 64 LDS banks × 4 bytes each. Without swizzling,
+    the MMA thread access pattern causes 4-way bank conflicts. The swizzle
+    XORs high-order address bits into the bank selection bits to distribute
+    accesses across banks.
 
-@always_inline
-fn _load_to_lds[
-    dtype: DType,
-    *,
-    width: Int = 1,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    resource: AMDBufferResource,
-    vector_offset: Int32,
-    shared_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
-    ],
-    *,
-    scalar_offset: Int32 = 0,
-):
-    comptime bytes = size_of[dtype]() * width
-    comptime aux = 0  # _cache_operation_to_amd_aux[cache_policy]()
-    var vector_offset_bytes = vector_offset * size_of[dtype]()
-    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+    The number of bits to XOR (log_tile) scales with MMA_K:
+    - Wider K tiles span more banks, requiring more bits to be XORed
+    - Formula: log_tile = log2(MMA_K / 32) + 1
 
-    comptime alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
-    comptime no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+    Examples:
+        MMA_K=32  (BF16):  log_tile=1 → Swizzle(1, 4, 4) - XOR 1 bit
+        MMA_K=128 (FP8):   log_tile=3 → Swizzle(3, 4, 4) - XOR 3 bits
 
-    # Create a null pointer in address space 8 (BUFFER_RESOURCE)
-    var desc_ptr_ = UnsafePointer[
-        Scalar[DType.bfloat16], address_space = AddressSpace.BUFFER_RESOURCE
-    ]()
+    Parameters:
+        MMA_K: The K dimension of the MMA instruction (32 for BF16, 128 for FP8).
 
-    var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
-    var ptr_to_simd = UnsafePointer(to=resource.desc)
-    ptr_to_ptr[0] = ptr_to_simd.bitcast[
-        UnsafePointer[
-            Scalar[DType.bfloat16],
-            address_space = AddressSpace.BUFFER_RESOURCE,
-        ]
-    ]()[0]
-
-    # Cast the null pointer to LLVM pointer type
-    var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = __mlir_type.`!llvm.ptr<8>`
-    ](desc_ptr_)
-
-    var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = __mlir_type.`!llvm.ptr<3>`
-    ](shared_ptr)
-
-    __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
-        # no_alias_scope=no_alias_scope_attr,
-        alias_scopes=alias_scope_attr,
-        _type=None,
-    ](
-        desc_ptr_llvm,
-        shared_ptr3,
-        to_i32(bytes),
-        to_i32(vector_offset_bytes),
-        to_i32(scalar_offset_bytes),
-        to_i32(0),
-        to_i32(aux),
-    )
+    Returns:
+        Swizzle pattern for bank-conflict-free LDS access.
+    """
+    comptime log_tile = log2_floor(MMA_K // 32) + 1
+    return Swizzle(log_tile, 4, 4)
 
 
 # =============================================================================
@@ -159,20 +108,54 @@ struct TileLoaderLDS[
     load_width: Int = simd_width_of[dtype](),
 ]:
     """Encapsulates load_to_lds with pre-computed thread positions and swizzle.
+
+    The loader arranges warps in a 2D grid to cover tile_rows × tile_cols.
+    Each warp handles a fixed 32-column subtile width. The grid adapts to
+    different tile widths (BK) by adjusting the number of warp columns:
+      - BK=64:  8 warps as 4×2 grid (4 rows, 2 cols of 32 each)
+      - BK=128: 8 warps as 2×4 grid (2 rows, 4 cols of 32 each)
+
+    This parameterization enables flexibility for different BK sizes without
+    changing the loading code structure.
     """
 
-    # Tile geometry (derived from src_tile_layout at compile time)
+    # =========================================================================
+    # Tile Geometry (derived from src_tile_layout at compile time)
+    # =========================================================================
     comptime tile_rows = Self.src_tile_layout.shape[0].value()
     comptime tile_cols = Self.src_tile_layout.shape[1].value()
 
-    # Thread layout geometry (derived from subtile organization)
-    # Each warp covers a 16×32 subtile: 4 threads per row × 8 elements = 32 cols
-    comptime subtile_cols = 32
-    comptime threads_per_row = Self.subtile_cols // Self.load_width  # 4
-    comptime thread_rows = WARP_SIZE // Self.threads_per_row  # 16
+    # =========================================================================
+    # Thread Layout Geometry
+    # =========================================================================
+    # Each warp covers a fixed 32-column subtile. Within the subtile:
+    #   - threads_per_row threads cooperate to load one row
+    #   - Each thread loads load_width elements (8 for BF16, 16 for FP8)
+    #   - thread_rows = threads in column direction = WARP_SIZE / threads_per_row
+    # Examples:
+    #   BF16: load_width=8,  threads_per_row=4, thread_rows=16
+    #   FP8:  load_width=16, threads_per_row=2, thread_rows=32
+    comptime subtile_cols = 32  # Fixed subtile width (columns per warp)
+    comptime threads_per_row = Self.subtile_cols // Self.load_width
+    comptime thread_rows = WARP_SIZE // Self.threads_per_row
     comptime threads_per_warp = WARP_SIZE  # 64
 
-    # Per-warp coverage
+    # =========================================================================
+    # Warp Grid Configuration (parameterized on tile_cols)
+    # =========================================================================
+    # Arrange warps in a 2D grid to cover the full tile width.
+    # num_warp_cols = how many 32-col subtiles fit in tile_cols
+    # num_warp_rows = remaining warps for row coverage
+    #
+    # Examples with 8 loading warps:
+    #   tile_cols=64:  num_warp_cols=2, num_warp_rows=4 → 4×2 grid
+    #   tile_cols=128: num_warp_cols=4, num_warp_rows=2 → 2×4 grid
+    comptime num_warp_cols = Self.tile_cols // Self.subtile_cols
+    comptime num_warp_rows = Self.num_loading_warps // Self.num_warp_cols
+
+    # =========================================================================
+    # Per-Warp Coverage
+    # =========================================================================
     comptime elements_per_warp = Self.threads_per_warp * Self.load_width
     comptime rows_per_warp = Self.elements_per_warp // Self.tile_cols
 
@@ -211,14 +194,15 @@ struct TileLoaderLDS[
                 Self.load_width * size_of[Self.dtype]()
             )
 
-        # 8 warps as 4×2 grid, each covers 16×32 subtile
-        var warp_row = warp_id // 2
-        var warp_col = warp_id % 2
-        var subtile_row = effective_lane // Self.threads_per_row
-        var subtile_col = (
-            effective_lane % Self.threads_per_row
-        ) * Self.load_width
+        # Map warp_id to 2D grid position and lane to subtile position.
+        # Warp grid adapts to tile width: 4×2 for BK=64, 2×4 for BK=128.
+        var warp_row, warp_col = divmod(warp_id, Self.num_warp_cols)
+        var subtile_row, subtile_col_idx = divmod(
+            effective_lane, Self.threads_per_row
+        )
+        var subtile_col = subtile_col_idx * Self.load_width
 
+        # Final thread position in tile: combine warp grid position + lane subtile position
         self.thread_row = warp_row * Self.thread_rows + subtile_row
         self.thread_col = warp_col * Self.subtile_cols + subtile_col
 
@@ -242,12 +226,9 @@ struct TileLoaderLDS[
             src_row: Starting row in source tensor.
             src_col: Starting column in source tensor (typically k_offset).
         """
-        # Only participating warps execute
-        if self.warp_id >= Self.num_loading_warps:
-            return
-
-        # Base offset: column position (thread_col relative to src_col)
-        var col_offset = src_col + self.thread_col
+        # Per-lane offset (constant across iterations) - uses vector registers
+        # This is the thread-varying part that differs per lane
+        var lane_offset = self.thread_col + self.thread_row * self.stride
 
         @parameter
         for i in range(Self.num_iterations):
@@ -257,12 +238,15 @@ struct TileLoaderLDS[
             )
             var smem_ptr = readfirstlane(warp_subtile.ptr)
 
-            # Row position: src_row + thread_row + iteration offset
-            var row = src_row + self.thread_row + i * Self.rows_per_iteration
-            var offset = col_offset + row * self.stride
+            # Uniform offset (same for all lanes) - uses scalar registers
+            # Combining src_col, src_row, and iteration offset
+            var uniform_row = src_row + i * Self.rows_per_iteration
+            var uniform_offset = src_col + uniform_row * self.stride
 
             self.buffer.load_to_lds[width = Self.load_width](
-                Int32(offset), smem_ptr, scalar_offset=0
+                Int32(lane_offset),
+                smem_ptr,
+                scalar_offset=Int32(uniform_offset),
             )
 
 
@@ -275,21 +259,10 @@ fn _load_from_lds[
         Scalar[dtype], address_space = AddressSpace.SHARED
     ],
 ) -> SIMD[dtype, width]:
-    """Load a SIMD vector from LDS (shared memory) with alias annotations.
+    """Load a SIMD vector from LDS with LLVM alias scopes.
 
-    This function generates an LLVM load with proper alias scopes to help
-    the compiler distinguish between async copy operations and local loads,
-    enabling better instruction scheduling.
-
-    Parameters:
-        dtype: The data type of elements to load.
-        width: Number of elements to load (SIMD width).
-
-    Args:
-        shared_ptr: Pointer to shared memory location.
-
-    Returns:
-        SIMD vector of `width` elements of type `dtype`.
+    Uses alias scopes to help LLVM distinguish LDS reads from async global→LDS
+    copies, enabling better instruction scheduling and avoiding false dependencies.
     """
     comptime alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
     comptime no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
@@ -306,29 +279,64 @@ fn _load_from_lds[
     # Generate the appropriate LLVM vector type and load
     # Using compile-time dispatch based on dtype and width
     @parameter
-    if dtype == DType.bfloat16 and width == 8:
-        comptime use_asm = False
-
-        @parameter
-        if use_asm:
-            return inlined_assembly[
-                "ds_read_b128 $0, $1",
-                SIMD[dtype, width],
-                constraints="=v,v,~{memory}",
-                has_side_effect=True,
-            ](shared_ptr3)
-        else:
-            var llvm_res = __mlir_op.`llvm.load`[
-                _type = __mlir_type.`vector<8 x bf16>`,
-                alignment = to_i64(alignment),
-                noalias_scopes=alias_scope_attr,
-                alias_scopes=no_alias_scope_attr,
-            ](shared_ptr3)
-            return rebind[SIMD[dtype, width]](
-                __mlir_op.`pop.cast_from_builtin`[
-                    _type = SIMD[DType.bfloat16, 8]._mlir_type
-                ](llvm_res)
-            )
+    if dtype == DType.bfloat16 and width == 4:
+        # BF16 x4 = 64 bits = ds_read_b64
+        var llvm_res = __mlir_op.`llvm.load`[
+            _type = __mlir_type.`vector<4 x bf16>`,
+            alignment = to_i64(alignment),
+            noalias_scopes=alias_scope_attr,
+            alias_scopes=no_alias_scope_attr,
+        ](shared_ptr3)
+        return rebind[SIMD[dtype, width]](
+            __mlir_op.`pop.cast_from_builtin`[
+                _type = SIMD[DType.bfloat16, 4]._mlir_type
+            ](llvm_res)
+        )
+    elif dtype == DType.bfloat16 and width == 8:
+        # BF16 x8 = 128 bits = ds_read_b128
+        var llvm_res = __mlir_op.`llvm.load`[
+            _type = __mlir_type.`vector<8 x bf16>`,
+            alignment = to_i64(alignment),
+            noalias_scopes=alias_scope_attr,
+            alias_scopes=no_alias_scope_attr,
+        ](shared_ptr3)
+        return rebind[SIMD[dtype, width]](
+            __mlir_op.`pop.cast_from_builtin`[
+                _type = SIMD[DType.bfloat16, 8]._mlir_type
+            ](llvm_res)
+        )
+    elif dtype == DType.float8_e4m3fn and width == 8:
+        # FP8 x8 = 64 bits = ds_read_b64
+        # Load as i8 vector, then bitcast to fp8 (same bit pattern)
+        var llvm_res = __mlir_op.`llvm.load`[
+            _type = __mlir_type.`vector<8 x i8>`,
+            alignment = to_i64(alignment),
+            noalias_scopes=alias_scope_attr,
+            alias_scopes=no_alias_scope_attr,
+        ](shared_ptr3)
+        var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
+            _type = SIMD[DType.uint8, 8]._mlir_type
+        ](llvm_res)
+        # Bitcast uint8 → float8_e4m3fn (same 8-bit representation)
+        return bitcast[dtype, width](
+            rebind[SIMD[DType.uint8, width]](uint8_vec)
+        )
+    elif dtype == DType.float8_e4m3fn and width == 16:
+        # FP8 x16 = 128 bits = ds_read_b128
+        # Used for 16×16×128 MMA (HipKittens-style FP8 schedule)
+        var llvm_res = __mlir_op.`llvm.load`[
+            _type = __mlir_type.`vector<16 x i8>`,
+            alignment = to_i64(alignment),
+            noalias_scopes=alias_scope_attr,
+            alias_scopes=no_alias_scope_attr,
+        ](shared_ptr3)
+        var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
+            _type = SIMD[DType.uint8, 16]._mlir_type
+        ](llvm_res)
+        # Bitcast uint8 → float8_e4m3fn (same 8-bit representation)
+        return bitcast[dtype, width](
+            rebind[SIMD[DType.uint8, width]](uint8_vec)
+        )
     else:
         constrained[
             False, "Unsupported dtype/width combination for _load_from_lds"
@@ -439,18 +447,60 @@ fn load_lds_fragment[
     var lane_offset = Int(RuntimeLayout[mma_access_layout]()(lane))
     var frag_ptr = reg_frag.ptr.bitcast[FragElement]()
 
+    # Iteration pattern:
+    # - Standard (BF16/FP8 16×16×32): iter_base = i * WARP_SIZE * frag_width
+    # - FP8 16×16×128: Split-K pattern with 2 iterations per MMA position
+    #
+    # Detect split-K mode: when MMA_K (stride[0]) requires more elements than
+    # one iteration can provide (col_groups * frag_width).
+    comptime mma_m = Int(mma_access_layout.shape[0])
+    comptime col_groups = Int(mma_access_layout.shape[1])
+    comptime mma_k = Int(mma_access_layout.stride[0])
+    comptime elements_per_iter = col_groups * frag_width
+    comptime use_split_k = mma_k > elements_per_iter  # True for FP8 16×16×128
+
     @parameter
-    for i in range(num_iterations):
-        var iter_base = i * WARP_SIZE * frag_width
-        var full_offset = iter_base + lane_offset
+    if use_split_k:
+        # FP8 16×16×128 split-K pattern: 2 iterations per MMA position
+        comptime k_splits = mma_k // elements_per_iter  # 2 for 128/64
+        comptime m_positions = num_iterations // k_splits
+        comptime k_stride = elements_per_iter  # 64 elements between K halves
+        comptime m_stride = mma_k * mma_m  # 128*16=2048 between M positions
 
         @parameter
-        if swizzle:
-            full_offset = swizzle.value()(full_offset)
+        for m_idx in range(m_positions):
 
-        frag_ptr[i] = rebind[FragElement](
-            _load_from_lds[width=frag_width](smem_tile.ptr.offset(full_offset))
-        )
+            @parameter
+            for k_idx in range(k_splits):
+                var iter_base = m_idx * m_stride + k_idx * k_stride
+                var full_offset = iter_base + lane_offset
+
+                @parameter
+                if swizzle:
+                    full_offset = swizzle.value()(full_offset)
+
+                comptime frag_idx = m_idx * k_splits + k_idx
+                frag_ptr[frag_idx] = rebind[FragElement](
+                    _load_from_lds[width=frag_width](
+                        smem_tile.ptr.offset(full_offset)
+                    )
+                )
+    else:
+        # Standard iteration: iter_base = i * WARP_SIZE * frag_width
+        @parameter
+        for i in range(num_iterations):
+            var iter_base = i * WARP_SIZE * frag_width
+            var full_offset = iter_base + lane_offset
+
+            @parameter
+            if swizzle:
+                full_offset = swizzle.value()(full_offset)
+
+            frag_ptr[i] = rebind[FragElement](
+                _load_from_lds[width=frag_width](
+                    smem_tile.ptr.offset(full_offset)
+                )
+            )
 
 
 struct KernelConfig(ImplicitlyCopyable, Movable, Stringable, Writable):
@@ -509,9 +559,7 @@ struct MmaOp[
     MMA_N: Int,
     MMA_K: Int,
     alignment: Int,
-    enable_swizzle: Bool,
-    swizzle_elem_base: Int,  # From loading pattern - log2(subtile_cols // 2)
-    swizzle_shift: Int,  # From loading pattern - log2(subtile_rows)
+    swizzle: OptionalReg[Swizzle],  # Swizzle pattern (None if disabled)
 ]:
     """Encapsulates MMA register tiles and operations for matrix multiplication.
 
@@ -539,90 +587,97 @@ struct MmaOp[
     AMD's expected pattern: 64 threads → 4 rows × 16 cols (row-major)
     Lane offset computed on-the-fly via lane_id()
 
-    Swizzle Configuration (enable_swizzle=True):
-    MmaOp receives swizzle parameters from the kernel/TileBuffers, since they
-    are determined by how data is loaded into LDS. MmaOp must read using
+    Swizzle Configuration:
+    MmaOp receives the swizzle pattern from the kernel/TileBuffers, since it's
+    determined by how data is loaded into LDS. MmaOp must read using
     the same swizzle pattern that was used for writing.
-    - swizzle_elem_base: bit position for XOR (from loading subtile width)
-    - swizzle_shift: XOR source distance (from loading subtile rows)
+    - BF16: Swizzle(1, 5, 4) - 1 bit XOR
+    - FP8 16×128: Swizzle(3, 4, 4) - 3 bit XOR (HipKittens st_16x128)
     """
 
     # Derived values (computed from other parameters)
     comptime num_m_mmas = Self.WM // Self.MMA_M
     comptime num_n_mmas = Self.WN // Self.MMA_N
     comptime num_k_mmas = Self.BK // Self.MMA_K
+
+    # =========================================================================
+    # FP8 16×16×128 Mode Detection
+    # =========================================================================
+    # When using MMA_K=128 for FP8, we use the high-throughput mfma_scale_f32_16x16x128
+    # instruction. This requires 32 FP8 elements per lane, but ds_read_b128 only
+    # loads 16 at a time, so we do 2 loads per MMA position.
+    # =========================================================================
+    comptime use_fp8_128_mma = Self.in_type == DType.float8_e4m3fn and Self.MMA_K == 128
+
+    # Fragment widths:
+    # - load_width: For global→LDS transfers (SIMD width: 8 bf16 or 16 fp8)
+    # - lds_frag_width: Elements per LDS read (16 for FP8 128-bit, else same as mma_frag_width)
+    # - mma_frag_width: What MMA hardware expects = (MMA_M * MMA_K) // WARP_SIZE
+    #   - BF16 16×16×32: 16*32/64 = 8 elements
+    #   - FP8  16×16×32: 16*32/64 = 8 elements
+    #   - FP8  16×16×128: 16*128/64 = 32 elements (loaded as 2×16)
     comptime load_width = simd_width_of[Self.in_type]()
+    comptime mma_frag_width = (
+        Self.MMA_M * Self.MMA_K
+    ) // WARP_SIZE  # 32 for FP8 16×16×128, 8 for FP8 16×16×32
+    comptime lds_frag_width = 16 if Self.use_fp8_128_mma else Self.mma_frag_width
+    comptime k_loads_per_mma = Self.mma_frag_width // Self.lds_frag_width  # 2 for FP8 128, 1 otherwise
     comptime accum_width = (Self.MMA_M * Self.MMA_N) // WARP_SIZE
 
     # Quadrant dimensions (warp tile divided into 4 quadrants for MMA scheduling)
     comptime quadrant_m_mmas = Self.num_m_mmas // 2
     comptime quadrant_n_mmas = Self.num_n_mmas // 2
 
-    # =========================================================================
-    # Swizzle Configuration (received from kernel/TileBuffers)
-    # =========================================================================
-    # MmaOp receives swizzle parameters that match how TileBuffers loads data.
-    # The element swizzle is used when reading from LDS to registers.
-    # =========================================================================
-    comptime elem_swizzle = OptionalReg(
-        Swizzle(1, Self.swizzle_elem_base, Self.swizzle_shift)
-    ) if Self.enable_swizzle else OptionalReg[Swizzle]()
+    # Swizzle pattern for LDS reads (must match TileBuffers write pattern)
+    comptime elem_swizzle = Self.swizzle
 
-    # =========================================================================
-    # Async LDS Load Counts (for s_waitcnt[lgkmcnt=N])
-    # =========================================================================
-    # Each _load_from_lds call issues one ds_read instruction.
-    # load_a/load_b iterate `half_*_mmas * num_k_mmas` times.
-    # These aliases enable precise lgkmcnt tracking in the optimized schedule.
-    # =========================================================================
-    comptime lgkm_per_load_a = Self.quadrant_m_mmas * Self.num_k_mmas  # ds_read ops per load_a[which]
-    comptime lgkm_per_load_b = Self.quadrant_n_mmas * Self.num_k_mmas  # ds_read ops per load_b[which]
+    # LDS load counts for lgkmcnt tracking (ds_read ops per load_a/load_b call)
+    comptime lgkm_per_load_a = Self.quadrant_m_mmas * Self.num_k_mmas * Self.k_loads_per_mma
+    comptime lgkm_per_load_b = Self.quadrant_n_mmas * Self.num_k_mmas * Self.k_loads_per_mma
     comptime lgkm_per_load_ab = Self.lgkm_per_load_a + Self.lgkm_per_load_b  # Combined A+B load
 
-    # Register tile type aliases
+    # Register tile type aliases - sized for MMA fragment width
     comptime RegTileType[num_mmas: Int] = RegTileType[
         Self.in_type,
-        Layout.row_major(num_mmas, Self.num_k_mmas * Self.load_width),
+        Layout.row_major(num_mmas, Self.num_k_mmas * Self.mma_frag_width),
         alignment = Self.alignment,
     ]
     comptime ARegTileType = Self.RegTileType[Self.num_m_mmas]
     comptime BRegTileType = Self.RegTileType[Self.num_n_mmas]
 
-    # Output layout: Four separate contiguous quadrants
-    # Each quadrant is (quadrant_m_mmas, quadrant_n_mmas * accum_width) for MMA scheduling
-    # This gives truly contiguous memory for each mma[which_a, which_b] operation.
-    comptime OutQuadrantType = RegTileType[
+    # Output layout: Single contiguous register tile for all accumulators
+    # Layout: (num_m_mmas, num_n_mmas * accum_width) = (8, 4*4) = (8, 16)
+    # Quadrants are accessed via .tile[] views during MMA execution.
+    # This enables reuse of write_output_fragments from matmul.mojo.
+    comptime out_reg_layout = Layout.row_major(
+        Self.num_m_mmas, Self.num_n_mmas * Self.accum_width
+    )
+    comptime OutRegTileType = RegTileType[
         Self.accum_type,
-        Layout.row_major(
-            Self.quadrant_m_mmas, Self.quadrant_n_mmas * Self.accum_width
-        ),
+        Self.out_reg_layout,
         alignment = Self.alignment,
     ]
 
-    # MMA LDS Read Access Layout (using RuntimeLayout for compile-time evaluation)
-    #
-    # AMD WMMA/MMA lane assignment for bf16 splits 64 lanes into 4 groups of 16:
-    #   - lane // 16 gives group index (0-3)
-    #   - lane % 16 gives position within group (0-15)
-    #
-    # Layout((16, 4), (32, 8)) maps lane_id to LDS offset:
-    #   - Shape (16, 4): decompose lane as col = lane % 16, row = lane // 16
-    #   - Stride (32, 8): compute offset as col * 32 + row * 8
-    #   - Equivalent to: (lane // 16) * 8 + (lane % 16) * 32
-    #
-    # RuntimeLayout[layout]() enables compile-time offset computation when
-    # the layout has all known dimensions, avoiding GPU heap allocation.
+    # Quadrant dimensions for tile view access
+    comptime quadrant_m_size = Self.quadrant_m_mmas
+    comptime quadrant_n_size = Self.quadrant_n_mmas * Self.accum_width
+
+    # MMA LDS access layout: maps 64 lanes to (MMA_M × MMA_K) subtile
+    # Shape (MMA_M, col_groups) with strides (MMA_K, lds_frag_width)
+    # RuntimeLayout enables compile-time offset computation
+    comptime col_groups = WARP_SIZE // Self.MMA_M
     comptime mma_access_layout = Layout(
-        IntTuple(16, 4), IntTuple(4 * Self.load_width, Self.load_width)
+        IntTuple(Self.MMA_M, Self.col_groups),
+        IntTuple(Self.MMA_K, Self.lds_frag_width),
     )
 
     # Register tiles for A and B inputs
     var a_reg_tile: Self.ARegTileType
     var b_reg_tile: Self.BRegTileType
 
-    # Four separate output quadrants - each is contiguous in memory
-    # Indexed by [which_a][which_b]: out_quadrants[0][0], out_quadrants[0][1], etc.
-    var out_quadrants: StaticTuple[StaticTuple[Self.OutQuadrantType, 2], 2]
+    # Single contiguous output register tile
+    # Quadrants accessed via .tile[] views: out_reg_tile.tile[quadrant_m_size, quadrant_n_size](qa, qb)
+    var out_reg_tile: Self.OutRegTileType
 
     @always_inline
     fn __init__(out self):
@@ -635,27 +690,13 @@ struct MmaOp[
         self.a_reg_tile = Self.ARegTileType.stack_allocation()
         self.b_reg_tile = Self.BRegTileType.stack_allocation()
 
-        # Initialize all four output quadrants to zero
-        self.out_quadrants = StaticTuple[
-            StaticTuple[Self.OutQuadrantType, 2], 2
-        ](
-            StaticTuple[Self.OutQuadrantType, 2](
-                Self.OutQuadrantType.stack_allocation().fill(0),
-                Self.OutQuadrantType.stack_allocation().fill(0),
-            ),
-            StaticTuple[Self.OutQuadrantType, 2](
-                Self.OutQuadrantType.stack_allocation().fill(0),
-                Self.OutQuadrantType.stack_allocation().fill(0),
-            ),
-        )
+        # Initialize contiguous output tile to zero
+        self.out_reg_tile = Self.OutRegTileType.stack_allocation().fill(0)
 
     @always_inline
     fn reset_accumulator(self):
-        """Reset all output quadrants to zero."""
-        _ = self.out_quadrants[0][0].fill(0)
-        _ = self.out_quadrants[0][1].fill(0)
-        _ = self.out_quadrants[1][0].fill(0)
-        _ = self.out_quadrants[1][1].fill(0)
+        """Reset output register tile to zero."""
+        _ = self.out_reg_tile.fill(0)
 
     @always_inline
     fn load_a[which: Int](self, smem_tile: SMemTileType[Self.in_type, **_]):
@@ -663,11 +704,15 @@ struct MmaOp[
 
         Accepts SMemTileType with matching dtype - layout compatibility validated
         at compile-time via load_lds_fragment constraints.
+
+        For FP8 16×16×128: Uses lds_frag_width=16 with 2 K-iterations per MMA.
+        For other modes: Single load of mma_frag_width elements.
         """
-        var smem_frag = smem_tile.vectorize[1, Self.load_width]()
+        # Vectorize with the LDS load width (16 for FP8 128, else mma_frag_width)
+        var smem_frag = smem_tile.vectorize[1, Self.lds_frag_width]()
         var reg_frag = self.a_reg_tile.tile[
-            Self.quadrant_m_mmas, Self.num_k_mmas * Self.load_width
-        ](which, 0).vectorize[1, Self.load_width]()
+            Self.quadrant_m_mmas, Self.num_k_mmas * Self.mma_frag_width
+        ](which, 0).vectorize[1, Self.lds_frag_width]()
         load_lds_fragment[
             mma_access_layout = Self.mma_access_layout,
             swizzle = Self.elem_swizzle,
@@ -679,92 +724,46 @@ struct MmaOp[
 
         Accepts SMemTileType with matching dtype - layout compatibility validated
         at compile-time via load_lds_fragment constraints.
+
+        For FP8 16×16×128: Uses lds_frag_width=16 with 2 K-iterations per MMA.
+        For other modes: Single load of mma_frag_width elements.
         """
-        var smem_frag = smem_tile.vectorize[1, Self.load_width]()
+        # Vectorize with the LDS load width (16 for FP8 128, else mma_frag_width)
+        var smem_frag = smem_tile.vectorize[1, Self.lds_frag_width]()
         var reg_frag = self.b_reg_tile.tile[
-            Self.quadrant_n_mmas, Self.num_k_mmas * Self.load_width
-        ](which, 0).vectorize[1, Self.load_width]()
+            Self.quadrant_n_mmas, Self.num_k_mmas * Self.mma_frag_width
+        ](which, 0).vectorize[1, Self.lds_frag_width]()
         load_lds_fragment[
             mma_access_layout = Self.mma_access_layout,
             swizzle = Self.elem_swizzle,
         ](smem_frag, reg_frag)
 
     @always_inline
-    fn load_b_with_transpose[
-        which: Int
-    ](self, smem_tile: SMemTileType[Self.in_type, **_]):
-        """Load B[which] from LDS → registers using hardware transpose.
-
-        Uses ds_read_tr16_b64 instruction for efficient transposed LDS read.
-        This function expects B tiles in (N, K) storage order and produces
-        data in the format expected by AMD MFMA instructions.
-
-        Supports swizzle: When enable_swizzle is True, applies the byte swizzle
-        pattern to LDS read offsets for bank-conflict-free access.
-
-        Requires: MMA shape must be 16x16x32 or 32x32x16 (double-rate MFMA).
-
-        Args:
-            smem_tile: B tile in LDS with shape (mma_tile_n, BK) = (N, K) order.
-        """
-        # Validate MMA shape supports load_b_nt
-        comptime mma_shape = IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K)
-        constrained[
-            mma_shape in (IndexList[3](32, 32, 16), IndexList[3](16, 16, 32)),
-            "load_b_with_transpose requires 16x16x32 or 32x32x16 MMA shape",
-        ]()
-
-        # Get register tile for this quadrant
-        # Shape: (quadrant_n_mmas, num_k_mmas * load_width) = (2, 16) vectorized
-        var reg_frag = self.b_reg_tile.tile[
-            Self.quadrant_n_mmas, Self.num_k_mmas * Self.load_width
-        ](which, 0)
-
-        # smem_tile shape: (mma_tile_n, BK) = (32, 64) = (2*MMA_N, 2*MMA_K)
-        # Load each (MMA_N, MMA_K) = (16, 32) subtile using hardware transpose
-        @parameter
-        for n_idx in range(Self.quadrant_n_mmas):
-
-            @parameter
-            for k_idx in range(Self.num_k_mmas):
-                # Extract (MMA_N, MMA_K) subtile from smem_tile
-                var subtile = smem_tile.tile[Self.MMA_N, Self.MMA_K](
-                    n_idx, k_idx
-                )
-
-                # Load with hardware transpose: converts (N, K) → (K, N) for MMA
-                var b_values = load_b_nt[mma_shape, Self.elem_swizzle](subtile)
-
-                # Store to register tile at position (n_idx, k_idx * load_width)
-                # reg_frag[n_idx, k_idx] corresponds to load_width elements
-                reg_frag.ptr.offset(
-                    n_idx * Self.num_k_mmas * Self.load_width
-                    + k_idx * Self.load_width
-                ).store(b_values)
-
-    @always_inline
     fn mma[which_a: Int, which_b: Int](self):
         """Execute MMA operations for a quadrant of the output tile.
 
-        Each quadrant is stored in a separate contiguous register tile.
+        Accesses quadrant via .tile[] view into the contiguous out_reg_tile.
+        Uses mma_frag_width for fragment sizing (4 for BF16, 8 for FP8).
+
+        Works for both BF16 and FP8 via stdlib mma() dispatch.
 
         Parameters:
             which_a: A quadrant index (0 or 1).
             which_b: B quadrant index (0 or 1).
         """
-        # Create vectorized views of the A and B quadrants
+        # Create vectorized views with mma_frag_width (dtype-aware)
         var a_mma_frag = self.a_reg_tile.tile[
-            Self.quadrant_m_mmas, Self.num_k_mmas * Self.load_width
-        ](which_a, 0).vectorize[1, Self.load_width]()
+            Self.quadrant_m_mmas, Self.num_k_mmas * Self.mma_frag_width
+        ](which_a, 0).vectorize[1, Self.mma_frag_width]()
 
         var b_mma_frag = self.b_reg_tile.tile[
-            Self.quadrant_n_mmas, Self.num_k_mmas * Self.load_width
-        ](which_b, 0).vectorize[1, Self.load_width]()
+            Self.quadrant_n_mmas, Self.num_k_mmas * Self.mma_frag_width
+        ](which_b, 0).vectorize[1, Self.mma_frag_width]()
 
-        # Access the contiguous quadrant directly
-        var c_accum_frag = self.out_quadrants[which_a][which_b].vectorize[
-            1, Self.accum_width
-        ]()
+        # Access quadrant via tile view into contiguous out_reg_tile
+        var c_accum_frag = self.out_reg_tile.tile[
+            Self.quadrant_m_size, Self.quadrant_n_size
+        ](which_a, which_b).vectorize[1, Self.accum_width]()
 
         @parameter
         for k in range(Self.num_k_mmas):
@@ -774,6 +773,7 @@ struct MmaOp[
 
                 @parameter
                 for n in range(Self.quadrant_n_mmas):
+                    # stdlib mma() handles both BF16 and FP8 dispatch
                     mma(
                         c_accum_frag[m, n],
                         b_mma_frag[n, k],
@@ -800,22 +800,40 @@ struct TileBuffers[
     """Double-buffered LDS tiles and TileLoaders for ping-pong matmul.
 
     a_layout and b_layout are infer-only parameters (note `//`), automatically
-    extracted from the input tensors passed to __init__. K is derived as a
+    extracted from the input tensors passed to __init__. K is derived as an
     comptime from a_layout.shape[1].
     """
 
-    # Swizzle derived from 16×4 thread layout
+    # =========================================================================
+    # Swizzle Configuration
+    # =========================================================================
+    # Different swizzle patterns for different tile sizes:
+    # - BF16 16×32 subtile: Swizzle(1, 5, 4) - 1 bit XOR, bit 9 → bit 5
+    # - FP8  16×128 subtile: Swizzle(3, 4, 4) - 3 bit XOR, bits 8:10 → bits 4:6
+    #
+    # HipKittens st_16x128 swizzle (for FP8):
+    #   swizzle = ((offset % 2048) >> 8) << 4
+    #   swizzled_offset = offset ^ swizzle
+    # This XORs 3 bits (8,9,10) into positions (4,5,6)
+    # =========================================================================
     comptime swizzle_subtile_rows = 16
     comptime swizzle_subtile_cols = 4 * Self.load_width
     comptime elem_size = size_of[Self.in_type]()
 
-    comptime swizzle_elem_base = log2_floor(Self.swizzle_subtile_cols // 2)
-    comptime swizzle_byte_base = Self.swizzle_elem_base + log2_floor(
-        Self.elem_size
+    # Detect FP8 16×128 mode for HipKittens-style swizzle
+    comptime use_fp8_128_swizzle = (
+        Self.in_type == DType.float8_e4m3fn and Self.BK == 128
     )
-    comptime swizzle_shift = log2_floor(Self.swizzle_subtile_rows)
+
+    # Swizzle parameters differ by dtype/tile size
+    comptime swizzle_log_tile = 3 if Self.use_fp8_128_swizzle else 1
+    comptime swizzle_base = 4 if Self.use_fp8_128_swizzle else (
+        log2_floor(Self.swizzle_subtile_cols // 2) + log2_floor(Self.elem_size)
+    )
+    comptime swizzle_shift = 4  # Same for both
+
     comptime byte_swizzle = OptionalReg(
-        Swizzle(1, Self.swizzle_byte_base, Self.swizzle_shift)
+        Swizzle(Self.swizzle_log_tile, Self.swizzle_base, Self.swizzle_shift)
     ) if Self.enable_swizzle else OptionalReg[Swizzle]()
 
     # Half-tile dimensions (each warp group loads/uses one half independently)
@@ -863,22 +881,7 @@ struct TileBuffers[
     # With 8 warps: 512/8 = 64 rows per iteration
     # With 4 warps: 256/8 = 32 rows per iteration
 
-    # =========================================================================
-    # Async Global Load Counts (for s_waitcnt[vmcnt=N])
-    # =========================================================================
-    # Each _load_to_lds call issues one buffer load instruction (vmcnt).
-    # These aliases enable precise vmcnt tracking in the optimized schedule.
-    #
-    # 8-warp loading (buffers.load_a, buffers.load_b):
-    #   - half_rows = BM/2 = 128 rows
-    #   - rows_per_iteration = loading_threads / loads_per_row = 512/8 = 64
-    #   - iterations = 128 / 64 = 2 load_to_lds per half-tile
-    #
-    # 4-warp loading (buffers.load_a_as_group, buffers.load_b_as_group):
-    #   - half_rows = BM/2 = 128 rows
-    #   - rows_per_iter_4warp = (4*64) / 8 = 32
-    #   - iterations = 128 / 32 = 4 load_to_lds per half-tile
-    # =========================================================================
+    # Global load counts for vmcnt tracking (load_to_lds ops per half-tile)
     comptime vmcnt_per_load_a = (
         Self.BM // 2
     ) // Self.rows_per_load_iteration  # 8-warp A half
@@ -979,8 +982,9 @@ struct TileBuffers[
         var a_s0 = a_s0_g0 if warp_id_m == 0 else a_s0_g1
         var a_s1 = a_s1_g0 if warp_id_m == 0 else a_s1_g1
 
-        var b_half_idx = warp_id_n // 2  # which B half (0 or 1)
-        var b_local_n = warp_id_n % 2  # position within half (0 or 1)
+        var b_half_idx, b_local_n = divmod(
+            warp_id_n, 2
+        )  # which B half, position within
         var b_s0 = b_s0_h0 if b_half_idx == 0 else b_s0_h1
         var b_s1 = b_s1_h0 if b_half_idx == 0 else b_s1_h1
 
@@ -1081,8 +1085,9 @@ struct TileBuffers[
         var effective_thread_row = loader.thread_row + self.warp_shift_rows
         var group_warp_id = loader.warp_id % 4
 
-        # Base column offset
-        var col_offset = self.k_offset + loader.thread_col
+        # Per-lane offset (constant across iterations) - uses vector registers
+        # This is the thread-varying part that differs per lane
+        var lane_offset = loader.thread_col + effective_thread_row * self.K
 
         comptime rows_per_iter_4warp = 4 * Self.rows_per_warp  # 32 rows
         comptime num_iterations = half_data_rows // rows_per_iter_4warp
@@ -1095,18 +1100,15 @@ struct TileBuffers[
             )
             var smem_ptr = readfirstlane(warp_subtile.ptr)
 
-            # Row: which * half_data_rows + thread_row + iteration offset
-            var row = (
-                which * half_data_rows
-                + effective_thread_row
-                + i * rows_per_iter_4warp
-            )
-            var offset = col_offset + row * self.K
+            # Uniform offset (same for all lanes) - uses scalar registers
+            # Combining k_offset, which * half_data_rows, and iteration offset
+            var uniform_row = which * half_data_rows + i * rows_per_iter_4warp
+            var uniform_offset = self.k_offset + uniform_row * self.K
 
             loader.buffer.load_to_lds[width = Self.load_width](
-                Int32(offset),
+                Int32(lane_offset),
                 smem_ptr,
-                scalar_offset=0,
+                scalar_offset=Int32(uniform_offset),
             )
 
     @always_inline
@@ -1132,49 +1134,6 @@ struct TileBuffers[
         )
 
 
-@always_inline
-fn chiplet_transform_chunked[
-    num_xcds: Int, chunk_size: Int
-](workgroup_id: Int, num_workgroups: Int) -> Int:
-    """Transform work group ID for better chiplet locality.
-
-    AMD MI300X/MI355X have 8 XCDs (chiplets), each with its own L2 cache.
-    This function reorganizes blocks from round-robin distribution to chunked
-    allocation, improving cache locality.
-
-    Original pattern: WG0→XCD0, WG1→XCD1, ..., WG8→XCD0
-    Transformed: WG0-63→XCD0, WG64-127→XCD1, etc.
-
-    Args:
-        workgroup_id: Original block ID.
-        num_workgroups: Total number of blocks.
-
-    Parameters:
-        num_xcds: Number of XCDs (8 for MI300X/MI355X).
-        chunk_size: Number of blocks per XCD chunk.
-
-    Returns:
-        Transformed block ID for better XCD locality.
-    """
-    # Current XCD under round-robin
-    var xcd = workgroup_id % num_xcds
-
-    # Largest full (NUM_XCDS * CHUNK_SIZE)-aligned block
-    comptime block = num_xcds * chunk_size
-    var limit = (num_workgroups // block) * block
-
-    # If beyond last full block, leave unchanged
-    if workgroup_id > limit:
-        return workgroup_id
-
-    # Local PID (within round-robin assignment)
-    var local_pid = workgroup_id // num_xcds
-    var chunk_idx, pos_in_chunk = divmod(local_pid, chunk_size)
-
-    # New PID with chunked assignment
-    return chunk_idx * block + xcd * chunk_size + pos_in_chunk
-
-
 struct AMDPingPongMatmul[
     a_type: DType,
     b_type: DType,
@@ -1184,41 +1143,19 @@ struct AMDPingPongMatmul[
     c_layout: Layout,
     config: KernelConfig,
     /,
-    # Only helps when M is known at compile time and matrix dims are not regular
-    enable_l2_cache_optimization: Bool,
     # Enable 16×32 swizzle pattern for bank conflict avoidance
     enable_swizzle: Bool,
-    # Use ds_read_tr16_b64 for B loads (experimental, requires enable_swizzle=False)
-    use_transpose_load: Bool,
 ]:
-    """High-level ping-pong matmul implementation for AMD GPUs.
+    """8-warp ping-pong matmul for AMD MI355X.
 
-    This implements the 8-warp ping-pong pattern where warps alternate
-    between loading data and computing, achieving overlapped execution.
+    Warps are split into 2 groups of 4, alternating between load and compute
+    phases for overlapped execution. Uses double-buffered LDS with swizzled
+    access patterns to avoid bank conflicts.
 
-    Memory Layout Strategy for Bank Conflict Avoidance:
-
-    1. Shared Memory Organization (AMD MI355 has 64 banks, 4 bytes each):
-       - Uses double-buffered shared memory (ping-pong buffers)
-       - Each buffer holds BM×BK elements for A, BN×BK for B
-
-    2. Bank Conflict Avoidance Pattern:
-       - Bank index = (address / 4) % 64
-       - Swizzled access pattern distributes consecutive thread accesses across banks
-       - Column swizzle: (lane_id % 4) * load_width spreads within 32 bytes
-       - Row stride: (lane_id // 4) * K ensures different rows map to different banks
-       - Warp-level offsets further distribute accesses
-
-    3. Load Pattern (Global → Shared Memory):
-       - Uses AMD's load_to_lds instruction for direct DRAM→LDS transfer
-       - Bypasses L1/L2 caches for lower latency
-       - Coalesced global memory access (consecutive threads → consecutive addresses)
-       - Bank-conflict-free shared memory writes via swizzled offsets
-
-    4. MMA Access Pattern (Shared Memory → Registers):
-       - Optimized for AMD's matrix cores (4 per CU on MI355)
-       - 16×4 thread layout within each warp for MMA fragments
-       - Ensures all 4 matrix cores stay busy throughout execution
+    Key features:
+    - load_to_lds for direct DRAM→LDS transfer (bypasses L1/L2)
+    - Swizzle pattern for bank-conflict-free LDS access
+    - Fine-grained lgkmcnt/vmcnt waits for maximum overlap
     """
 
     # Extract configuration
@@ -1249,10 +1186,8 @@ struct AMDPingPongMatmul[
     comptime total_smem_a = Self.ping_pong_stages * Self.BM * Self.BK
     comptime total_smem_b = Self.ping_pong_stages * Self.BN * Self.BK
 
-    # Accumulator configuration
-    comptime accum_dtype = get_accum_type[
-        Self.c_type
-    ]()  # FIXME: which one should this be?
+    # Accumulator configuration (fp32 for bf16/fp8 output)
+    comptime accum_dtype = get_accum_type[Self.c_type]()
     comptime accum_width = (Self.MMA_M * Self.MMA_N) // WARP_SIZE
     comptime num_accums = Self.num_m_mmas * Self.num_n_mmas
 
@@ -1331,7 +1266,7 @@ struct AMDPingPongMatmul[
         )
     )
     @staticmethod
-    fn matmul_demo_ping_pong(
+    fn matmul_ping_pong(
         a: LayoutTensor[
             Self.a_type,
             Self.a_layout,
@@ -1353,7 +1288,7 @@ struct AMDPingPongMatmul[
     ):
         var M = a.dim(0)
         # Makes enable_l2_cache_optimization useful
-        # alias M = a.layout.shape[0].value()
+        # comptime M = a.layout.shape[0].value()
         comptime N = b.layout.shape[0].value()
         comptime K = a.layout.shape[1].value()
 
@@ -1403,63 +1338,19 @@ struct AMDPingPongMatmul[
 
         # Thread and warp identification
         var thread_id = Int(thread_idx.x)
-        var lane_id = thread_id % WARP_SIZE
+        var lane_id = Int(lane_id())
         var warp_id = readfirstlane(Int(get_warp_id()))
 
-        @parameter
-        @always_inline
-        fn compute_block_coords() -> Tuple[Int, Int]:
-            @parameter
-            if Self.enable_l2_cache_optimization:
-                # Apply chiplet transform for better XCD locality
-                comptime NUM_XCDS = 8  # MI355X has 8 XCDs
-                comptime CHUNK_SIZE = 64  # Blocks per XCD chunk
+        # Block coordinates from block indices
+        var n = Int(block_idx.x) * BN
+        var m = Int(block_idx.y) * BM
 
-                # If M is a compile-time constant
-                # alias grid_dim_x = ceildiv(N, Self.config.block_shape[1])
-                # alias grid_dim_y = ceildiv(M, Self.config.block_shape[0])
+        # Swizzle for LDS bank conflict avoidance (see make_mma_swizzle docs)
+        comptime mma_swizzle = OptionalReg(
+            make_mma_swizzle[MMA_K]()
+        ) if Self.enable_swizzle else OptionalReg[Swizzle]()
 
-                var num_wgs = Int(grid_dim.x) * Int(grid_dim.y)
-                var wgid = Int(block_idx.y) * Int(grid_dim.x) + Int(block_idx.x)
-                wgid = chiplet_transform_chunked[NUM_XCDS, CHUNK_SIZE](
-                    wgid, num_wgs
-                )
-
-                # Further transform within XCD for L2 cache locality
-                comptime WGM = 8  # 4, 8, 12, 16, 32  # Super-block size
-                var num_pid_m = ceildiv(M, BM)
-                comptime num_pid_n = ceildiv(N, BN)
-                comptime num_wgid_in_group = WGM * num_pid_n
-                var group_id = wgid // num_wgid_in_group
-                var first_pid_m = group_id * WGM
-                var group_size_m = min(num_pid_m - first_pid_m, WGM)
-                var local_wgid = wgid % num_wgid_in_group
-                var pid_m = first_pid_m + (local_wgid % group_size_m)
-                var pid_n = local_wgid // group_size_m
-
-                # Set block coordinates based on transformed IDs
-                return (pid_n * BN, pid_m * BM)
-            else:
-                # Direct mapping from block indices to coordinates
-                return (Int(block_idx.x) * BN, Int(block_idx.y) * BM)
-
-        var n, m = compute_block_coords()
-
-        var count_n = min(N - n, BN)
-        var count_m = min(M - m, BM)
-
-        # ================================================================
-        # Swizzle Configuration (determined by loading thread layout)
-        # ================================================================
-        # The loading pattern uses 16×4 threads per warp, each loading
-        # load_width elements. This determines the swizzle parameters.
-        # ================================================================
-        comptime swizzle_subtile_rows = 16  # Loading thread layout rows
-        comptime swizzle_subtile_cols = 4 * load_width  # Cols × SIMD width
-        comptime swizzle_elem_base = log2_floor(swizzle_subtile_cols // 2)
-        comptime swizzle_shift = log2_floor(swizzle_subtile_rows)
-
-        # Type aliases - TileBuffers owns loading, MmaOp receives swizzle params
+        # MmaOp handles both BF16 and FP8 via dtype-aware mma_frag_width
         comptime MmaOpType = MmaOp[
             in_type,
             accum_dtype,
@@ -1470,9 +1361,7 @@ struct AMDPingPongMatmul[
             MMA_N,
             MMA_K,
             alignment,
-            Self.enable_swizzle,
-            swizzle_elem_base,  # From loading pattern
-            swizzle_shift,  # From loading pattern
+            mma_swizzle,
         ]
         comptime BuffersType = TileBuffers[
             BM,
@@ -1518,6 +1407,17 @@ struct AMDPingPongMatmul[
         # By giving G1 a higher barrier_count, G1 waits for more increments.
         # ================================================================
 
+        # Parameterized lgkmcnt values for compute_stage (BK-dependent)
+        # lgkm_per_load_a = quadrant_m_mmas * num_k_mmas (8 for BK=64, 16 for BK=128)
+        # lgkm_per_load_b = quadrant_n_mmas * num_k_mmas (4 for BK=64, 8 for BK=128)
+        comptime lgkm_a = Self.LGKM_PER_LOAD_A
+        comptime lgkm_b = Self.LGKM_PER_LOAD_B
+        # Wait values: lgkmcnt=N means "wait until ≤N ops remain"
+        # After issuing b[0], a[0], b[1], a[1]: total = 2*lgkm_a + 2*lgkm_b
+        # To wait for b[0]+a[0]: lgkmcnt = lgkm_b + lgkm_a (ops remaining = b[1]+a[1])
+        comptime lgkm_wait_a0_b0 = lgkm_b + lgkm_a  # 12 for BK=64
+        comptime lgkm_wait_b1 = lgkm_a  # 8 for BK=64
+
         # Helper to extract compute logic (used by both groups)
         @parameter
         @always_inline
@@ -1543,28 +1443,20 @@ struct AMDPingPongMatmul[
             """
 
             # Issue all loads asynchronously (24 lgkm ops total)
-            @parameter
-            if Self.use_transpose_load:
-                # Use hardware transpose for B loads (ds_read_tr16_b64)
-                mma_op.load_b_with_transpose[0](buffers.b_mma_tiles[stage][0])
-                mma_op.load_a[0](buffers.a_mma_tiles[stage][0])
-                mma_op.load_b_with_transpose[1](buffers.b_mma_tiles[stage][1])
-                mma_op.load_a[1](buffers.a_mma_tiles[stage][1])
-            else:
-                mma_op.load_b[0](buffers.b_mma_tiles[stage][0])  # +4 = 4
-                mma_op.load_a[0](buffers.a_mma_tiles[stage][0])  # +8 = 12
-                mma_op.load_b[1](buffers.b_mma_tiles[stage][1])  # +4 = 16
-                mma_op.load_a[1](buffers.a_mma_tiles[stage][1])  # +8 = 24
+            mma_op.load_b[0](buffers.b_mma_tiles[stage][0])  # +4 = 4
+            mma_op.load_a[0](buffers.a_mma_tiles[stage][0])  # +8 = 12
+            mma_op.load_b[1](buffers.b_mma_tiles[stage][1])  # +4 = 16
+            mma_op.load_a[1](buffers.a_mma_tiles[stage][1])  # +8 = 24
 
-            # Wait for b[0], a[0] (first 12 ops)
-            s_waitcnt[lgkmcnt=12]()
+            # Wait for b[0], a[0] complete
+            s_waitcnt[lgkmcnt=lgkm_wait_a0_b0]()
             mma_op.mma[0, 0]()  # Uses a[0], b[0] ✓
 
-            # Wait for b[1] (next 4 ops, 8 remaining from a[1])
-            s_waitcnt[lgkmcnt=8]()
+            # Wait for b[1] complete (a[1] still in flight)
+            s_waitcnt[lgkmcnt=lgkm_wait_b1]()
             mma_op.mma[0, 1]()  # Uses a[0] (done), b[1] ✓
 
-            # Wait for a[1] (final 8 ops)
+            # Wait for a[1] (drain remaining)
             s_waitcnt[lgkmcnt=0]()
             mma_op.mma[1, 0]()  # Uses a[1] ✓, b[0] (done)
             mma_op.mma[1, 1]()  # Uses a[1] ✓, b[1] (done)
@@ -1573,68 +1465,37 @@ struct AMDPingPongMatmul[
         # TILE ORGANIZATION AND PING-PONG SCHEDULE
         # ================================================================
         #
-        # BLOCK TILE (BM=256 × BN=256):
-        # ┌─────────────────────────────────────────────────────────────┐
-        # │                    BN = 256 columns                         │
-        # │  ┌─────────────┬─────────────┬─────────────┬─────────────┐  │
-        # │  │   Warp 0    │   Warp 1    │   Warp 2    │   Warp 3    │  │
-        # │  │  WM×WN      │  WM×WN      │  WM×WN      │  WM×WN      │  │
-        # │  │  128×64     │  128×64     │  128×64     │  128×64     │  │ half_BM
-        # │  │ (group 0)   │ (group 0)   │ (group 0)   │ (group 0)   │  │ = 128
-        # │  ├─────────────┼─────────────┼─────────────┼─────────────┤  │ rows
-        # │  │   Warp 4    │   Warp 5    │   Warp 6    │   Warp 7    │  │
-        # │  │  WM×WN      │  WM×WN      │  WM×WN      │  WM×WN      │  │
-        # │  │  128×64     │  128×64     │  128×64     │  128×64     │  │ half_BM
-        # │  │ (group 1)   │ (group 1)   │ (group 1)   │ (group 1)   │  │ = 128
-        # │  └─────────────┴─────────────┴─────────────┴─────────────┘  │ rows
-        # └─────────────────────────────────────────────────────────────┘
-        #    warp_id_m = warp_id // 4    (0 or 1, selects row group)
-        #    warp_id_n = warp_id % 4     (0-3, selects column)
+        # BLOCK TILE (256×256, 8 warps in 2×4 grid):
+        # ┌─────────────┬─────────────┬─────────────┬─────────────┐
+        # │   Warp 0    │   Warp 1    │   Warp 2    │   Warp 3    │ group 0
+        # │   128×64    │   128×64    │   128×64    │   128×64    │
+        # ├─────────────┼─────────────┼─────────────┼─────────────┤
+        # │   Warp 4    │   Warp 5    │   Warp 6    │   Warp 7    │ group 1
+        # │   128×64    │   128×64    │   128×64    │   128×64    │
+        # └─────────────┴─────────────┴─────────────┴─────────────┘
+        #   warp_id_m = warp_id // 4, warp_id_n = warp_id % 4
         #
-        # DOUBLE BUFFERING:
-        # ┌─────────────────────────────────────────────────────────────┐
-        # │  Stage 0 LDS Buffers        │  Stage 1 LDS Buffers          │
-        # │  ┌─────────┐ ┌─────────┐    │  ┌─────────┐ ┌─────────┐      │
-        # │  │ A_s0[0] │ │ B_s0[0] │    │  │ A_s1[0] │ │ B_s1[0] │      │
-        # │  │ 128×64  │ │ 128×64  │    │  │ 128×64  │ │ 128×64  │      │
-        # │  ├─────────┤ ├─────────┤    │  ├─────────┤ ├─────────┤      │
-        # │  │ A_s0[1] │ │ B_s0[1] │    │  │ A_s1[1] │ │ B_s1[1] │      │
-        # │  │ 128×64  │ │ 128×64  │    │  │ 128×64  │ │ 128×64  │      │
-        # │  └─────────┘ └─────────┘    │  └─────────┘ └─────────┘      │
-        # │  [0] = group 0's region     │  [1] = group 1's region       │
-        # └─────────────────────────────────────────────────────────────┘
+        # DOUBLE BUFFERING (ping-pong):
+        #   Stage 0: A[0][0,1], B[0][0,1]  ←→  Stage 1: A[1][0,1], B[1][0,1]
+        #   K loop: compute[0] while load[1], then compute[1] while load[0]
         #
-        # PING-PONG COMPUTE SCHEDULE (each k-iteration processes BK×2):
-        # ┌─────────────────────────────────────────────────────────────┐
-        # │  K dimension: ──k=0────k=BK────k=2BK────k=3BK────...        │
-        # │                  │      │       │       │                   │
-        # │  compute_stage:  │  [0] │  [1]  │  [0]  │  [1]  │ ...       │
-        # │                  │      │       │       │                   │
-        # │  Stage 0 bufs:   │ COMP │ LOAD  │ COMP  │ LOAD  │ ...       │
-        # │  Stage 1 bufs:   │ LOAD │ COMP  │ LOAD  │ COMP  │ ...       │
-        # └─────────────────────────────────────────────────────────────┘
-        #
-        # compute_stage[stage] QUADRANT PROCESSING:
-        # Each warp's output tile (WM×WN = 128×64) is divided into 4 quadrants:
-        # ┌───────────────────────────────────────┐
-        # │  Warp Output (128×64)                 │
-        # │  ┌─────────────────┬─────────────────┐│
-        # │  │ mma[0,0]        │ mma[0,1]        ││ quadrant_m=0
-        # │  │ (64×32 output)  │ (64×32 output)  ││
-        # │  ├─────────────────┼─────────────────┤│
-        # │  │ mma[1,0]        │ mma[1,1]        ││ quadrant_m=1
-        # │  │ (64×32 output)  │ (64×32 output)  ││
-        # │  └─────────────────┴─────────────────┘│
-        # │     quadrant_n=0      quadrant_n=1    │
-        # └───────────────────────────────────────┘
-        #
-        # Each mma[qa,qb] call executes quadrant_m_mmas × quadrant_n_mmas MMA ops
-        # using A quadrant [qa] and B quadrant [qb] from the current stage's LDS.
+        # WARP OUTPUT QUADRANTS (128×64 → 4 quadrants):
+        # ┌─────────────────┬─────────────────┐
+        # │ mma[0,0] 64×32  │ mma[0,1] 64×32  │
+        # ├─────────────────┼─────────────────┤
+        # │ mma[1,0] 64×32  │ mma[1,1] 64×32  │
+        # └─────────────────┴─────────────────┘
         #
         # ================================================================
 
-        # Toggle to switch between simplified and optimized schedules
+        # Schedule selection:
+        # - USE_SIMPLIFIED_SCHEDULE: Generic 4-warp group loading (set to True to test)
+        # - USE_FP8_HIPKITTENS_SCHEDULE: HipKittens-identical FP8 16×16×128 schedule
+        # - else: Original BF16 optimized schedule
         comptime USE_SIMPLIFIED_SCHEDULE = False
+        comptime USE_FP8_HIPKITTENS_SCHEDULE = (
+            in_type == DType.float8_e4m3fn and not USE_SIMPLIFIED_SCHEDULE
+        )
 
         @parameter
         if USE_SIMPLIFIED_SCHEDULE:
@@ -1696,14 +1557,241 @@ struct AMDPingPongMatmul[
             if warp_id_m == 0:
                 s_barrier()
 
+        elif USE_FP8_HIPKITTENS_SCHEDULE:
+            # ================================================================
+            # HIPKITTENS-IDENTICAL FP8 SCHEDULE
+            # ================================================================
+            # Exact translation of HipKittens 8_wave.cu schedule:
+            # - 4 LDS loads per iteration (b0, a0, b1, a1) with register reuse
+            # - 4 MMAs per iteration: cA=a0×b0, cB=a0×b1, cC=a1×b0, cD=a1×b1
+            # - b0 reused for cA and cC, b1 reused for cB and cD
+            # - 10 barriers per main loop iteration (vs 16 in old schedule)
+            # - lgkmcnt(8) placement matches HipKittens exactly
+            # ================================================================
+
+            # Wait counts from HipKittens:
+            # lgkmcnt(8) = allow 8 pending LDS loads
+            # lgkmcnt(0) = wait for all LDS loads
+            # vmcnt(4), vmcnt(6) = HipKittens specific for 4 global loads/iter
+            comptime lgkm_partial = 8  # HipKittens: lgkmcnt(8)
+
+            # === PROLOGUE (matches HipKittens exactly) ===
+            # G::load(Bs[tic][0], B, ...)
+            # G::load(As[tic][0], A, ...)
+            # G::load(Bs[tic][1], B, ...)
+            # G::load(As[tic][1], A, ...)
+            buffers.load_b[0, 0]()  # Bs[0][0]
+            buffers.load_a[0, 0]()  # As[0][0]
+            buffers.load_b[0, 1]()  # Bs[0][1]
+            buffers.load_a[0, 1]()  # As[0][1]
+
+            # Warp staggering: if (warp_m == 1) barrier
+            if warp_id_m == 1:
+                s_barrier()
+
+            # s_waitcnt vmcnt(4), barrier
+            s_waitcnt[vmcnt=4]()
+            s_barrier()
+
+            # Load into toc stage (3 loads, as[1] comes later in loop)
+            # G::load(As[toc][0], A, ...)
+            # G::load(Bs[toc][0], B, ...)
+            # G::load(Bs[toc][1], B, ...)
+            buffers.load_a[1, 0]()  # As[1][0]
+            buffers.load_b[1, 0]()  # Bs[1][0]
+            buffers.load_b[1, 1]()  # Bs[1][1]
+
+            # s_waitcnt vmcnt(6), barrier
+            s_waitcnt[vmcnt=6]()
+            s_barrier()
+
+            # === MAIN LOOP (HipKittens: k = 0 to k_iters - 2) ===
+            # Unrolled by 2 to handle ping-pong stages with comptime indices.
+            # Each unrolled iteration: tic=0→tic=1, processing 2×BK K elements.
+            @parameter
+            for _k in range(BK, K - BK, 2 * BK):
+                # --- Stage 0 compute, prefetch to stage 1 ---
+                mma_op.load_b[0](buffers.b_mma_tiles[0][0])
+                mma_op.load_a[0](buffers.a_mma_tiles[0][0])
+                buffers.load_a[1, 1]()
+                s_waitcnt[lgkmcnt=lgkm_partial]()
+                s_barrier()
+
+                s_waitcnt[lgkmcnt=0]()
+                s_setprio[1]()
+                mma_op.mma[0, 0]()
+                s_setprio[0]()
+                s_barrier()
+                schedule_barrier()
+
+                mma_op.load_b[1](buffers.b_mma_tiles[0][1])
+                buffers.load_a[0, 0]()
+                s_barrier()
+
+                s_waitcnt[lgkmcnt=0]()
+                s_setprio[1]()
+                mma_op.mma[0, 1]()
+                s_setprio[0]()
+                s_barrier()
+
+                mma_op.load_a[1](buffers.a_mma_tiles[0][1])
+                buffers.load_b[0, 0]()
+                s_barrier()
+
+                s_waitcnt[lgkmcnt=0]()
+                s_setprio[1]()
+                mma_op.mma[1, 0]()
+                s_setprio[0]()
+                s_barrier()
+                schedule_barrier()
+
+                buffers.load_b[0, 1]()
+                s_waitcnt[vmcnt=6]()
+                s_barrier()
+
+                s_setprio[1]()
+                mma_op.mma[1, 1]()
+                s_setprio[0]()
+                s_barrier()
+
+                buffers.advance_k()
+
+                # --- Stage 1 compute, prefetch to stage 0 ---
+                mma_op.load_b[0](buffers.b_mma_tiles[1][0])
+                mma_op.load_a[0](buffers.a_mma_tiles[1][0])
+                buffers.load_a[0, 1]()
+                s_waitcnt[lgkmcnt=lgkm_partial]()
+                s_barrier()
+
+                s_waitcnt[lgkmcnt=0]()
+                s_setprio[1]()
+                mma_op.mma[0, 0]()
+                s_setprio[0]()
+                s_barrier()
+                schedule_barrier()
+
+                mma_op.load_b[1](buffers.b_mma_tiles[1][1])
+                buffers.load_a[1, 0]()
+                s_barrier()
+
+                s_waitcnt[lgkmcnt=0]()
+                s_setprio[1]()
+                mma_op.mma[0, 1]()
+                s_setprio[0]()
+                s_barrier()
+
+                mma_op.load_a[1](buffers.a_mma_tiles[1][1])
+                buffers.load_b[1, 0]()
+                s_barrier()
+
+                s_waitcnt[lgkmcnt=0]()
+                s_setprio[1]()
+                mma_op.mma[1, 0]()
+                s_setprio[0]()
+                s_barrier()
+                schedule_barrier()
+
+                buffers.load_b[1, 1]()
+                s_waitcnt[vmcnt=6]()
+                s_barrier()
+
+                s_setprio[1]()
+                mma_op.mma[1, 1]()
+                s_setprio[0]()
+                s_barrier()
+
+                buffers.advance_k()
+
+            # === EPILOGUE: Final 2 K chunks ===
+            mma_op.load_b[0](buffers.b_mma_tiles[0][0])
+            mma_op.load_a[0](buffers.a_mma_tiles[0][0])
+            buffers.load_a[1, 1]()
+            s_barrier()
+
+            s_waitcnt[lgkmcnt=0]()
+            s_setprio[1]()
+            mma_op.mma[0, 0]()
+            s_setprio[0]()
+            s_barrier()
+            schedule_barrier()
+
+            mma_op.load_b[1](buffers.b_mma_tiles[0][1])
+            s_barrier()
+
+            s_waitcnt[lgkmcnt=0]()
+            s_setprio[1]()
+            mma_op.mma[0, 1]()
+            s_setprio[0]()
+            s_barrier()
+
+            mma_op.load_a[1](buffers.a_mma_tiles[0][1])
+            s_barrier()
+
+            s_waitcnt[lgkmcnt=0]()
+            s_setprio[1]()
+            mma_op.mma[1, 0]()
+            s_setprio[0]()
+            s_barrier()
+
+            mma_op.load_b[0](buffers.b_mma_tiles[1][0])
+            s_waitcnt[vmcnt=4]()
+            s_barrier()
+
+            s_waitcnt[lgkmcnt=0]()
+            s_setprio[1]()
+            mma_op.mma[1, 1]()
+            s_setprio[0]()
+            s_barrier()
+
+            # Last iteration
+            mma_op.load_a[0](buffers.a_mma_tiles[1][0])
+            s_waitcnt[vmcnt=2]()
+            s_barrier()
+
+            s_waitcnt[lgkmcnt=0]()
+            s_setprio[1]()
+            mma_op.mma[0, 0]()
+            s_setprio[0]()
+            s_barrier()
+
+            mma_op.load_b[1](buffers.b_mma_tiles[1][1])
+            s_waitcnt[vmcnt=0]()
+            s_barrier()
+            schedule_barrier()
+
+            s_waitcnt[lgkmcnt=0]()
+            s_setprio[1]()
+            mma_op.mma[0, 1]()
+            s_setprio[0]()
+            s_barrier()
+
+            mma_op.load_a[1](buffers.a_mma_tiles[1][1])
+            s_barrier()
+
+            s_waitcnt[lgkmcnt=0]()
+            s_setprio[1]()
+            mma_op.mma[1, 0]()
+            mma_op.mma[1, 1]()
+            s_setprio[0]()
+            s_barrier()
+
+            # Re-balance warp staggering: if (warp_m == 0) barrier
+            if warp_id_m == 0:
+                s_barrier()
+
         else:
             # ================================================================
-            # OPTIMIZED PING-PONG SCHEDULE (HipKittens-style)
+            # ORIGINAL BF16 OPTIMIZED PING-PONG SCHEDULE
             # ================================================================
-            # Aggressively interleaved schedule for maximum throughput.
+            # Aggressively interleaved schedule for BF16 maximum throughput.
             # Overlaps global loads, LDS loads, and MMA compute operations.
             # Uses original 8-warp loading functions.
             # ================================================================
+
+            # Parameterized wait counts (enable BK flexibility)
+            comptime lgkm_load_a = Self.LGKM_PER_LOAD_A
+            comptime vmcnt_per_ab = Self.VMCNT_PER_LOAD_A + Self.VMCNT_PER_LOAD_B
+            comptime vmcnt_wait_partial = 2 * vmcnt_per_ab - 2
 
             # === PROLOGUE ===
             buffers.load_b[0, 0]()
@@ -1738,7 +1826,7 @@ struct AMDPingPongMatmul[
                 mma_op.load_b[0](buffers.b_mma_tiles[0][0])
                 mma_op.load_a[0](buffers.a_mma_tiles[0][0])
                 buffers.load_a[1, 1]()
-                s_waitcnt[lgkmcnt=8]()
+                s_waitcnt[lgkmcnt=lgkm_load_a]()
                 s_barrier()
 
                 buffers.advance_k()
@@ -1773,7 +1861,7 @@ struct AMDPingPongMatmul[
 
                 mma_op.load_b[0](buffers.b_mma_tiles[1][0])
                 buffers.load_b[0, 1]()
-                s_waitcnt[vmcnt=6]()
+                s_waitcnt[vmcnt=vmcnt_wait_partial]()
                 schedule_barrier()
                 s_barrier()
                 schedule_barrier()
@@ -1785,7 +1873,7 @@ struct AMDPingPongMatmul[
 
                 mma_op.load_a[0](buffers.a_mma_tiles[1][0])
                 buffers.load_a[0, 1]()
-                s_waitcnt[lgkmcnt=8]()
+                s_waitcnt[lgkmcnt=lgkm_load_a]()
                 s_barrier()
 
                 buffers.advance_k()
@@ -1819,7 +1907,7 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 buffers.load_b[1, 1]()
-                s_waitcnt[vmcnt=6]()
+                s_waitcnt[vmcnt=vmcnt_wait_partial]()
                 schedule_barrier()
                 s_barrier()
                 schedule_barrier()
@@ -1905,66 +1993,57 @@ struct AMDPingPongMatmul[
 
         barrier()
 
-        lane_id_n, lane_id_m = divmod(lane_id, MMA_N)
+        # ================================================================
+        # Output Store using write_output_fragments (reused from matmul.mojo)
+        # ================================================================
+        # Thread layout for output: maps lane_id to (m_offset, n_offset)
+        # For 16×16 MMA with accum_width=4:
+        #   lane_crd[0] = lane_id % 16 (m offset within MMA tile)
+        #   lane_crd[1] = lane_id // 16 (n group, multiplied by accum_width)
+        comptime output_thread_layout = Layout(
+            IntTuple(MMA_M, WARP_SIZE // MMA_M),
+            IntTuple(1, MMA_M),
+        )
 
-        # Create output block tile
-        var c_block = c.tile[BM, BN](
-            m // BM, n // BN
-        )  # Block at (m//BM, n//BN)
+        # Fragment layout: (num_m_mmas, num_n_mmas, accum_width)
+        # Strides must match out_reg_layout = row_major(num_m_mmas, num_n_mmas * accum_width)
+        # Element at (m, n, f) is at: m * (num_n_mmas * accum_width) + n * accum_width + f
+        comptime out_frag_layout = Layout(
+            IntTuple(num_m_mmas, num_n_mmas, accum_width),
+            IntTuple(num_n_mmas * accum_width, accum_width, 1),
+        )
 
-        c_resource = AMDBufferResource(c_block.ptr, count_m * N)
+        # Reshape MMA output to fragment view and vectorize
+        var c_reg_fragment = mma_op.out_reg_tile.reshape[
+            out_frag_layout
+        ]().vectorize[1, 1, accum_width]()
 
-        # Quadrant dimensions for output storage
-        comptime quadrant_m_mmas = num_m_mmas // 2
-        comptime quadrant_n_mmas = num_n_mmas // 2
+        # Create warp tile in output matrix
+        var warp_tile_m = m + WM * warp_id_m
+        var warp_tile_n = n + WN * warp_id_n
 
-        # Store each quadrant separately
-        # Quadrant (qa, qb) contains elements for:
-        #   om in [qa*quadrant_m_mmas, (qa+1)*quadrant_m_mmas)
-        #   on in [qb*quadrant_n_mmas, (qb+1)*quadrant_n_mmas)
-        @parameter
-        for qa in range(2):
+        var c_warp_tile = c.tile[WM, WN](warp_tile_m // WM, warp_tile_n // WN)
 
-            @parameter
-            for qb in range(2):
-                # Get vectorized view of this quadrant
-                var c_quad = mma_op.out_quadrants[qa][qb].vectorize[
-                    1, accum_width
-                ]()
+        # Create global memory fragment distributed across threads
+        var c_gmem_fragment = c_warp_tile.vectorize[
+            1, accum_width
+        ]().distribute[output_thread_layout](UInt(lane_id))
 
-                # Base output position for this quadrant
-                comptime quad_m_offset = qa * quadrant_m_mmas * MMA_M
-                comptime quad_n_offset = qb * quadrant_n_mmas * MMA_N
-
-                var quad_base_offset = (
-                    (WM * warp_id_m + lane_id_m + quad_m_offset) * N
-                    + WN * warp_id_n
-                    + lane_id_n * 4
-                    + quad_n_offset
-                )
-
-                @parameter
-                for j in range(0, accum_width, 4):
-
-                    @parameter
-                    for local_m in range(quadrant_m_mmas):
-
-                        @parameter
-                        for local_n in range(quadrant_n_mmas):
-                            output_reg = (
-                                c_quad[local_m, local_n]
-                                .slice[4, offset=j]()
-                                .cast[Self.c_type]()
-                            )
-
-                            c_resource.store(
-                                quad_base_offset
-                                + (local_m * MMA_M) * N
-                                + local_n * MMA_N,
-                                output_reg,
-                            )
-
-                    quad_base_offset += 8
+        # Use shared write_output_fragments function
+        write_output_fragments[
+            Self.c_type,
+            accum_width,
+            MMA_M,
+            MMA_N,
+            output_thread_layout,
+        ](
+            c_reg_fragment,
+            c_gmem_fragment,
+            warp_tile_m,
+            warp_tile_n,
+            M,
+            N,
+        )
 
 
 @always_inline
@@ -1975,19 +2054,49 @@ fn ping_pong_matmul[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout, //,
-    enable_l2_cache_optimization: Bool = False,
     enable_swizzle: Bool = True,
-    use_transpose_load: Bool = False,
 ](
     a_device_tensor: LayoutTensor[a_type, a_layout],
     b_device_tensor: LayoutTensor[b_type, b_layout],
     c_device_tensor: LayoutTensor[c_type, c_layout],
     ctx: DeviceContext,
 ) raises:
+    constrained[a_type == b_type, "A and B must have the same type"]()
+    constrained[
+        a_type == DType.bfloat16 or a_type == DType.float8_e4m3fn,
+        "A must be bfloat16 or float8_e4m3fn",
+    ]()
+
+    # Select kernel based on input dtype
+    comptime is_fp8 = a_type == DType.float8_e4m3fn
+
+    # =========================================================================
+    # FP8 16×16×128 MMA Configuration Toggle
+    # =========================================================================
+    # When True, FP8 uses the high-throughput mfma_scale_f32_16x16x128 instruction
+    # which processes 4× more K elements per instruction.
+    # Requires: BK >= 128, currently experimental.
+    # =========================================================================
+    comptime use_fp8_128_mma_mode = True  # Use high-throughput 16×16×128 MMA for FP8
+
+    # These parameters are actually baked in the optimized schedule
+    comptime BM = 256
+    comptime BN = 256
+    # FP8 with 128 MMA uses BK=128 to match the instruction's K dimension
+    comptime BK = 128 if (is_fp8 and use_fp8_128_mma_mode) else 64
+
+    # The shared memory tiles need to be mapped to the 8 warp structure
+    comptime WM = BM / 2  # (2 warp rows)
+    comptime WN = BN / 4  # (4 warp columns)
+    comptime WK = BK  # (same as block K)
+
+    # MMA shape: 16×16×128 for FP8 128 mode, else 16×16×32
+    comptime MMA_K = 128 if (is_fp8 and use_fp8_128_mma_mode) else 32
+
     comptime config = KernelConfig(
-        block_shape=Index(256, 256, 64),
-        warp_shape=Index(128, 64, 64),
-        mma_shape=Index(16, 16, 32),
+        block_shape=Index(BM, BN, BK),
+        warp_shape=Index(WM, WN, BK),
+        mma_shape=Index(16, 16, MMA_K),
     )
 
     var N = c_device_tensor.dim(1)
@@ -2001,10 +2110,8 @@ fn ping_pong_matmul[
         b_layout,
         c_layout,
         config,
-        enable_l2_cache_optimization,
         enable_swizzle,
-        use_transpose_load,
-    ].matmul_demo_ping_pong
+    ].matmul_ping_pong
 
     ctx.enqueue_function_checked[kernel, kernel](
         a_device_tensor,
