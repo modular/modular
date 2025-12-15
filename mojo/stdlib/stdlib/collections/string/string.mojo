@@ -1089,9 +1089,9 @@ struct String(
 
         var s = "abc"
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
-        assert_equal(iter.__next__(), Codepoint.ord("b"))
-        assert_equal(iter.__next__(), Codepoint.ord("c"))
+        assert_equal(iter.__next__(), Codepoint("a"))
+        assert_equal(iter.__next__(), Codepoint("b"))
+        assert_equal(iter.__next__(), Codepoint("c"))
         assert_equal(iter.__has_next__(), False)
         ```
 
@@ -1106,7 +1106,7 @@ struct String(
         assert_equal(s.byte_length(), 3)
 
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
+        assert_equal(iter.__next__(), Codepoint("a"))
          # U+0301 Combining Acute Accent
         assert_equal(iter.__next__().to_u32(), 0x0301)
         assert_equal(iter.__has_next__(), False)
@@ -1967,7 +1967,7 @@ fn ord(s: StringSlice) -> Int:
     Returns:
         An integer representing the code point of the given character.
     """
-    return Int(Codepoint.ord(s))
+    return Int(Codepoint(s))
 
 
 # ===----------------------------------------------------------------------=== #

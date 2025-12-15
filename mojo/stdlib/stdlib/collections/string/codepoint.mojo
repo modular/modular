@@ -29,7 +29,7 @@ from collections.string import Codepoint
 from testing import assert_true
 
 # Create a codepoint from a character
-var c = Codepoint.ord('A')
+var c = Codepoint('A')
 
 # Check properties
 assert_true(c.is_ascii())
@@ -138,6 +138,33 @@ struct Codepoint(
         """
         self._scalar_value = UInt32(Int(codepoint))
 
+    fn __init__(out self, string: StringSlice[mut=False]):
+        """Constructs the `Codepoint` that represents the given single-character
+        string.
+
+        Args:
+            string: The input string, which must contain only a single
+                character.
+        """
+
+        debug_assert(
+            string.byte_length() > 0, "an empty string has no defined codepoint"
+        )
+
+        # SAFETY:
+        #   This is safe because `StringSlice` is guaranteed to point to valid
+        #   UTF-8.
+        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            string.as_bytes()
+        )
+
+        debug_assert(
+            string.byte_length() == Int(num_bytes),
+            "input string must be one character",
+        )
+
+        self = char
+
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
@@ -160,6 +187,7 @@ struct Codepoint(
         else:
             return None
 
+    @deprecated("Use the Codepoint(string) constructor instead.")
     @staticmethod
     fn ord(string: StringSlice[mut=False]) -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
@@ -409,14 +437,14 @@ struct Codepoint(
         from testing import assert_true
 
         # ASCII space characters
-        assert_true(Codepoint.ord(" ").is_python_space())
-        assert_true(Codepoint.ord("\t").is_python_space())
+        assert_true(Codepoint(" ").is_python_space())
+        assert_true(Codepoint("\t").is_python_space())
 
         # Unicode paragraph separator:
         assert_true(Codepoint.from_u32(0x2029).value().is_python_space())
 
         # Letters are not space characters
-        assert_fales(Codepoint.ord("a").is_python_space())
+        assert_fales(Codepoint("a").is_python_space())
         ```
         """
 

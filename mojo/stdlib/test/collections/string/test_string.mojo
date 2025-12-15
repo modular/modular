@@ -1084,9 +1084,9 @@ def test_indexing():
 def test_string_codepoints_iter():
     var s = "abc"
     var iter = s.codepoints()
-    assert_equal(iter.__next__(), Codepoint.ord("a"))
-    assert_equal(iter.__next__(), Codepoint.ord("b"))
-    assert_equal(iter.__next__(), Codepoint.ord("c"))
+    assert_equal(iter.__next__(), Codepoint("a"))
+    assert_equal(iter.__next__(), Codepoint("b"))
+    assert_equal(iter.__next__(), Codepoint("c"))
     assert_equal(iter.__has_next__(), False)
 
 
