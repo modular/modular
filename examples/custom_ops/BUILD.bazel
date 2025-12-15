@@ -80,7 +80,7 @@ mojo_binary(
         "//max:compiler",
         "//max:layout",
         "//max:tensor",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -92,6 +92,6 @@ mojo_library(
         "//max:compiler",
         "//max:layout",
         "//max:tensor",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

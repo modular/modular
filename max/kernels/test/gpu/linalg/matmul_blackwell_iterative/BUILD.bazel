@@ -20,7 +20,7 @@ package(default_visibility = ["//max:consumers"])
         deps = [
             "//max:internal_utils",
             "//max:linalg",
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

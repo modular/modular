@@ -8,6 +8,6 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//max:tensor",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

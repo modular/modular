@@ -873,7 +873,7 @@ struct NDBuffer[
             The tiled buffer at tile_coords.
         """
 
-        comptime num_tile_sizes = stdlib.builtin.Variadic.size(tile_sizes)
+        comptime num_tile_sizes = std.builtin.Variadic.size(tile_sizes)
 
         __comptime_assert (
             num_tile_sizes == Self.rank

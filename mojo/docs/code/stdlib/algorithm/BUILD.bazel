@@ -9,7 +9,7 @@ MOJO_SRCS = glob(["*.mojo"])
         name = src.split(".")[0],
         srcs = [src],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in MOJO_SRCS

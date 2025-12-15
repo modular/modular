@@ -291,7 +291,7 @@ Results with `offset = (iteration*n2)%n`
 ## The element-wise algorithm
 
 See
-[`_elementwise_impl_gpu`](https://github.com/modular/modular/blob/9855690a6a40f87f7c2948a59d417dee21d966f1/mojo/stdlib/stdlib/algorithm/functional.mojo#L1594),
+[`_elementwise_impl_gpu`](https://github.com/modular/modular/blob/9855690a6a40f87f7c2948a59d417dee21d966f1/mojo/stdlib/std/algorithm/functional.mojo#L1594),
 based on ["OneFlow’s Optimization of CUDA Elementwise Template
 Library"](https://archive.md/Tye9y#selection-1101.2-1151.3).
 

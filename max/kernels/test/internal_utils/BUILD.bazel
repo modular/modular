@@ -9,7 +9,7 @@ package(default_visibility = ["//max:consumers"])
         deps = [
             "//max:internal_utils",
             "//max:layout",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(["**/*.mojo"])

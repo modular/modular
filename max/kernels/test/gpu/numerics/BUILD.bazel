@@ -9,7 +9,7 @@ package(default_visibility = ["//max:consumers"])
         tags = ["gpu"],
         target_compatible_with = ["//:h100_gpu"],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in [
@@ -28,7 +28,7 @@ mojo_filecheck_test(
     ],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -43,7 +43,7 @@ mojo_filecheck_test(
             "//conditions:default": ["@platforms//:incompatible"],
         }),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in [
@@ -59,7 +59,7 @@ mojo_filecheck_test(
     target_compatible_with = ["//:amd_gpu"],
     deps = [
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -71,7 +71,7 @@ mojo_filecheck_test(
         target_compatible_with = ["//:b200_gpu"],
         deps = [
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in [

@@ -25,7 +25,7 @@ _PLATFORM_CONSTRAINTS = {
         data = [src],  # NOTE: some tests attempt to read their source files
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

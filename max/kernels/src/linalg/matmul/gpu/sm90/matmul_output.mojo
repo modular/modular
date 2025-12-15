@@ -27,7 +27,7 @@ from layout.swizzle import Swizzle, make_ldmatrix_swizzle
 from layout.tensor_core_async import st_matrix_n_layout
 from layout.tma_async import TMATensorTile
 from memory import bitcast
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 
 from utils.index import IndexList
 

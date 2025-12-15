@@ -30,7 +30,7 @@ mojo_test(
         "//max:linalg",
         "//max:nn",
         "//max:quantization",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -58,7 +58,7 @@ mojo_test(
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(

@@ -8,7 +8,7 @@ mojo_binary(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -24,7 +24,7 @@ mojo_binary(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -41,7 +41,7 @@ mojo_binary(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -60,7 +60,7 @@ mojo_binary(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -79,7 +79,7 @@ mojo_binary(
     }),
     deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 

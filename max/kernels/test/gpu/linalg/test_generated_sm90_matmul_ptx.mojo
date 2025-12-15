@@ -34,7 +34,7 @@ from linalg.utils import (
     elementwise_epilogue_type,
 )
 from linalg.utils_gpu import MatmulConfig
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 from testing import assert_true
 
 from utils.index import Index, IndexList

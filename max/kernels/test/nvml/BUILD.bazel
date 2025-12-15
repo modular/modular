@@ -13,6 +13,6 @@ mojo_test(
     }),
     deps = [
         "//max:nvml",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

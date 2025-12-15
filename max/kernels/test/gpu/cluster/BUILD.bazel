@@ -12,6 +12,6 @@ mojo_filecheck_test(
     deps = [
         "//max:layout",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

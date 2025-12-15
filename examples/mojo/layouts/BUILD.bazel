@@ -7,7 +7,7 @@ mojo_binary(
     srcs = ["basic_layouts.mojo"],
     deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -21,7 +21,7 @@ mojo_binary(
     srcs = ["tiled_layouts.mojo"],
     deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 

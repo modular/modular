@@ -48,7 +48,7 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type

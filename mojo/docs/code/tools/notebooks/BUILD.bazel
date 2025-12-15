@@ -30,7 +30,7 @@ _PLATFORM_CONSTRAINTS = {
         name = src.split(".")[0],
         srcs = [src],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in NON_GPU_SRCS
@@ -48,7 +48,7 @@ _PLATFORM_CONSTRAINTS = {
         ),
         deps = [
             "//max:layout",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in GPU_SRCS

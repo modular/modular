@@ -8,7 +8,7 @@ mojo_binary(
         "stacktrace_error.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -18,7 +18,7 @@ mojo_binary(
         "stacktrace_error_capture.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -34,7 +34,7 @@ mojo_binary(
         "handle_error.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -53,7 +53,7 @@ mojo_test(
     ],
     main = "test_incr.mojo",
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -63,7 +63,7 @@ mojo_binary(
         "context_mgr.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -76,7 +76,7 @@ mojo_test(
     ],
     main = "test_context_mgr.mojo",
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -86,7 +86,7 @@ mojo_binary(
         "conditional_context_mgr.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -99,6 +99,6 @@ mojo_test(
     ],
     main = "test_conditional_context_mgr.mojo",
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

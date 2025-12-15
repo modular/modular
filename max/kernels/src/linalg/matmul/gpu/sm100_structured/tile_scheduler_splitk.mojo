@@ -24,7 +24,7 @@ from gpu.globals import WARPGROUP_SIZE
 from gpu.tcgen05 import *
 from gpu.sync import named_barrier
 from memory import LegacyUnsafePointer as UnsafePointer
-from stdlib.bit import prev_power_of_two
+from std.bit import prev_power_of_two
 
 from ....structuring import SMemPtr
 from .pipeline import ProducerConsumerPipeline

@@ -31,7 +31,7 @@ subset of the repository. For example to package only the `stdlib`, you
 can run:
 
 ```sh
-./bazelw build //mojo/stdlib/stdlib
+./bazelw build //mojo/stdlib/std
 ```
 
 Similarly to run all the tests in the repository you can run:
@@ -115,7 +115,7 @@ mojo_library(
     srcs = glob(["**/*.mojo"]),
     visibility = ["//visibility:public"],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 ```
@@ -132,7 +132,7 @@ mojo_binary(
     name = "example",
     srcs = ["src/example.mojo"],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 ```
@@ -151,7 +151,7 @@ mojo_test(
     name = "test_hash",
     srcs = ["hashlib/test_hash.mojo"],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 ```
@@ -167,7 +167,7 @@ mojo_filecheck_test(
     deps = [
         "//max:layout",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 ```

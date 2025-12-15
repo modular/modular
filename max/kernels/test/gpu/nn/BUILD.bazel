@@ -120,7 +120,7 @@ _FILECHECK_TESTS = [
             "//max:linalg",
             "//max:nn",
             "//max:testdata",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -146,7 +146,7 @@ _FILECHECK_TESTS = [
             "//max:linalg",
             "//max:nn",
             "//max:testdata",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(

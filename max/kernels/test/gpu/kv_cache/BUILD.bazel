@@ -57,7 +57,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(["**/*.mojo"])

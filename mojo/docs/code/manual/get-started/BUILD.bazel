@@ -10,7 +10,7 @@ mojo_binary(
         "life_step5.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -28,7 +28,7 @@ mojo_binary(
         "life_step7.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -46,7 +46,7 @@ mojo_binary(
         "life_step8.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -64,7 +64,7 @@ mojo_binary(
         "life_step9.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 

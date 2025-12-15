@@ -3981,7 +3981,7 @@ class PackageLinkOp(max._core.Operation):
 
     ```mlir
     kgen.package.link @foo
-      dependencies([@stdlib])
+      dependencies([@std])
       post_parse(dense_resource<...> : tensor<...xi8>)
     ```
     """

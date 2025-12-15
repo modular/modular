@@ -271,7 +271,7 @@ class CustomOp:
         # Filter to keep only tensor-like types
         tensor_like_types = {
             "tensor::ManagedTensorSlice",
-            "stdlib::SIMD",
+            "std::SIMD",
         }
         io_specs = [spec for spec in io_specs if spec in tensor_like_types]
 
@@ -675,14 +675,14 @@ def _validate_op_arg_types(io_specs: list[str], op_name: str) -> None:
     # The set of types that are legal tensor inputs.
     tensor_like_types = {
         "tensor::ManagedTensorSlice",
-        "stdlib::SIMD",
+        "std::SIMD",
     }
 
     # Types that are ignored or implicitly supplied by the graph compiler.
     types_to_ignore = {
-        "stdlib::DeviceContextPtr",
-        "stdlib::DeviceContextPtrList",
-        "stdlib::Error",
+        "std::DeviceContextPtr",
+        "std::DeviceContextPtrList",
+        "std::Error",
     }
 
     # Validate that all types are either tensor-like or can be ignored

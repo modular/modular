@@ -11,7 +11,7 @@ mogg_lib_deps = [
     "//max:tensor",
     "//max:compiler_internal",
     "//max:shmem",
-    "@mojo//:stdlib",
+    "@mojo//:std",
 ]
 
 mojo_kgen_lib(

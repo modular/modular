@@ -21,7 +21,7 @@ _LIT_TESTS = [
             "full",
         ],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -37,7 +37,7 @@ _LIT_TESTS = [
             "full",
         ],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -52,7 +52,7 @@ lit_tests(
     size = "large",
     srcs = _LIT_TESTS,
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

@@ -126,7 +126,7 @@ kernel logic and defines how to benchmark.
 See [`sample.mojo`](sample.mojo) for a complete example template.
 
 Within the Mojo file, you'll need to import the Mojo
-[`benchmark`](https://docs.modular.com/mojo/stdlib/benchmark/) package.
+[`benchmark`](https://docs.modular.com/mojo/std/benchmark/) package.
 
 ```mojo
 from sys import env_get_string, env_get_int

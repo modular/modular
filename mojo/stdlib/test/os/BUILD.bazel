@@ -29,7 +29,7 @@ _EXPECT_CRASH = [
         ],
         expect_crash = src in _EXPECT_CRASH,
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -48,7 +48,7 @@ _EXPECT_CRASH = [
         env = _ENV.get(src, {}),
         target_compatible_with = [],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -63,7 +63,7 @@ lit_tests(
     size = "large",
     srcs = _LIT_TESTS,
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

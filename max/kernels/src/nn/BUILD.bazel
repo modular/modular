@@ -15,6 +15,6 @@ mojo_library(
         "//max:linalg",
         "//max:quantization",
         "//max:register",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

@@ -10,7 +10,7 @@ mojo_binary(
         "lifev1.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
         requirement("pygame"),
     ],
 )
@@ -23,7 +23,7 @@ mojo_binary(
         "lifev2.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
         requirement("pygame"),
     ],
 )
@@ -36,7 +36,7 @@ mojo_binary(
         "lifev3.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
         requirement("pygame"),
     ],
 )
@@ -51,7 +51,7 @@ mojo_binary(
         "gridv3.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -64,7 +64,7 @@ mojo_test(
     ],
     main = "test/test_gridv1.mojo",
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -77,7 +77,7 @@ mojo_test(
     ],
     main = "test/test_gridv2.mojo",
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -90,6 +90,6 @@ mojo_test(
     ],
     main = "test/test_gridv3.mojo",
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from math import ceildiv
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 from sys import simd_width_of, size_of
 
 from gpu import (

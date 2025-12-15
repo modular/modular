@@ -24,7 +24,7 @@ we need to execute the following command:
 ./bazelw test mojo/stdlib/benchmarks/... --local_test_jobs=1 --test_output=all
 ```
 
-This script builds the open source `stdlib.mojopkg` and then executes
+This script builds the open source `std.mojopkg` and then executes
 all the benchmarks sequentially.
 
 If you wish to test changes you are making on the current branch, remove the

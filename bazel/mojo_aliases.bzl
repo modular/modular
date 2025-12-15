@@ -1,7 +1,7 @@
 """Aliases for mojo packages."""
 
 _PACKAGES = {
-    "stdlib": "mojo/stdlib/stdlib",
+    "std": "mojo/stdlib/std",
     "python": "mojo/python/mojo",
     "test_utils": "mojo/stdlib/test/test_utils",
 }

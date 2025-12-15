@@ -30,7 +30,7 @@ _EXPECT_CRASH = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         expect_crash = src in _EXPECT_CRASH,
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -46,7 +46,7 @@ _EXPECT_CRASH = [
             "full",
         ],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

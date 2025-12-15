@@ -9,6 +9,6 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

@@ -257,7 +257,7 @@ column bits. Parameters are derived from the **loading thread layout**
 (owned by TileBuffers):
 
 ```mojo
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 
 # Loading thread layout determines subtile dimensions
 # For 16×4 thread layout, each thread loads load_width elements:

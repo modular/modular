@@ -8,6 +8,6 @@ mojo_library(
     docs_base_path = "kernels",
     deps = [
         "//max:buffer",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
