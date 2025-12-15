@@ -23,7 +23,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "bench_baseline_lib",
     srcs = [
-        "bench_blackwell_decode.py",
         "bench_blackwell_mla_decode.py",
     ],
     # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
@@ -36,6 +35,7 @@ modular_py_library(
         blackwell_bench_wheel("deep-gemm"),
         requirement("packaging"),
         requirement("torch"),
+        ":bench_decode_lib",
         "//max/kernels/benchmarks/autotune:bencher_utils",
         "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
         "//max/kernels/benchmarks/misc/utils:bench_utils",
