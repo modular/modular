@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the `LayoutTensor` type for representing multidimensional data.
 """
+from builtin.variadics import Variadic
 from collections import OptionalReg
 from math import align_up, ceildiv, exp
 from math.math import _Expable
@@ -316,6 +317,32 @@ struct LayoutTensor[
     # `trait DevicePassable` implementation, to allow LayoutTensor to be passed directly to kernels
     comptime device_type: AnyType = Self
     """The device-side type representation."""
+
+    @staticmethod
+    fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
+        @parameter
+        if Self.mut:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self.OriginCastType[True, MutAnyOrigin],
+                    Self.OriginCastType[True, MutOrigin.external],
+                    Self.OriginCastType[False, ImmutAnyOrigin],
+                    Self.OriginCastType[False, ImmutOrigin.external],
+                ],
+            ]
+        else:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self.OriginCastType[False, ImmutAnyOrigin],
+                    Self.OriginCastType[False, ImmutOrigin.external],
+                ],
+            ]
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self

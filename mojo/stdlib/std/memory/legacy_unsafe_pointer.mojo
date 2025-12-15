@@ -20,6 +20,7 @@ from sys.intrinsics import gather, scatter, strided_load, strided_store
 
 from builtin.rebind import downcast
 from builtin.simd import _simd_construction_checks
+from builtin.variadics import Variadic
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
@@ -32,17 +33,6 @@ from compile import get_type_name
 # ===----------------------------------------------------------------------=== #
 # LegacyUnsafePointer
 # ===----------------------------------------------------------------------=== #
-
-
-trait _IsUnsafePointer:
-    """A temporary helper trait for converting between LegacyUnsafePointer and
-    UnsafePointer in kernel code.
-
-    This trait is used by `_checked` functions to see if the argument can be
-    converted to it's associated kernel argument type.
-    """
-
-    comptime _UnsafePointerType: AnyType
 
 
 @always_inline
@@ -532,6 +522,50 @@ struct LegacyUnsafePointer[
     # Implementation of `DevicePassable`
     comptime device_type: AnyType = Self
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
+
+    @staticmethod
+    fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
+        @parameter
+        if Self.mut:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self._OriginCastType[True, MutAnyOrigin],
+                    Self._OriginCastType[True, MutOrigin.external],
+                    Self._OriginCastType[False, ImmutAnyOrigin],
+                    Self._OriginCastType[False, ImmutOrigin.external],
+                    Self._UnsafePointerType,
+                    Self._UnsafePointerType._OriginCastType[True, MutAnyOrigin],
+                    Self._UnsafePointerType._OriginCastType[
+                        True, MutOrigin.external
+                    ],
+                    Self._UnsafePointerType._OriginCastType[
+                        False, ImmutAnyOrigin
+                    ],
+                    Self._UnsafePointerType._OriginCastType[
+                        False, ImmutOrigin.external
+                    ],
+                ],
+            ]
+        else:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self._OriginCastType[False, ImmutAnyOrigin],
+                    Self._OriginCastType[False, ImmutOrigin.external],
+                    Self._UnsafePointerType,
+                    Self._UnsafePointerType._OriginCastType[
+                        False, ImmutAnyOrigin
+                    ],
+                    Self._UnsafePointerType._OriginCastType[
+                        False, ImmutOrigin.external
+                    ],
+                ],
+            ]
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
@@ -1544,7 +1578,3 @@ struct LegacyUnsafePointer[
 
 comptime LegacyOpaquePointer = LegacyUnsafePointer[NoneType]
 """An opaque pointer, equivalent to the C `void*` type."""
-
-
-__extension LegacyUnsafePointer(_IsUnsafePointer):
-    pass

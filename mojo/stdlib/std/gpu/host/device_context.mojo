@@ -64,7 +64,6 @@ from utils import Variant
 from utils._serialize import _serialize_elements
 
 from .info import GPUInfo
-from ._pointer_conv import _is_pointer_convertible
 
 
 # Create empty structs to ensure dtype checking when using the C++ handles.
@@ -2639,12 +2638,14 @@ struct DeviceFunction[
             # First, check if they're handing in a device dtype, in other
             # words, a dtype that can be passed directly and doesn't need to
             # be mapped. For example, Int, IndexList, etc.
+            comptime is_convertible: Bool = actual_arg_type._is_convertible_to_device_type[
+                declared_arg_type
+            ]()
+
             @parameter
             if _type_is_eq[actual_arg_type, actual_arg_type.device_type]():
                 # Now check if they handed in the *correct* device dtype.
-                __comptime_assert _type_is_eq[
-                    declared_arg_type, actual_arg_type.device_type
-                ](), String(
+                __comptime_assert is_convertible, String(
                     "argument #",
                     i,
                     " of type '",
@@ -2653,21 +2654,11 @@ struct DeviceFunction[
                     declared_arg_type_name(),
                     "'",
                 )
-            elif _is_pointer_convertible[
-                declared_arg_type, actual_arg_type.device_type
-            ]():
-                # This is a temporary check for the conversions between
-                # LegacyUnsafePointer and UnsafePointer (v2). Since type
-                # checking would fail between these two types, this allows
-                # you to convert between them without type checking errors.
-                pass
             else:
                 # They handed in a host dtype, in other words, a dtype that
                 # needs to be mapped before handing it to the device. In
                 # this case, we use a more informative error message.
-                __comptime_assert _type_is_eq[
-                    declared_arg_type, actual_arg_type.device_type
-                ](), String(
+                __comptime_assert is_convertible, String(
                     "argument #",
                     i,
                     " of type '",

@@ -15,6 +15,7 @@ from sys.intrinsics import gather, scatter, strided_load, strided_store
 
 from builtin.rebind import downcast
 from builtin.simd import _simd_construction_checks
+from builtin.variadics import Variadic
 from compile import get_type_name
 from memory import memcpy
 from memory.memory import _free, _malloc
@@ -25,7 +26,7 @@ from builtin.device_passable import DevicePassable
 from compile import get_type_name
 
 
-from .legacy_unsafe_pointer import _default_invariant, _IsUnsafePointer
+from .legacy_unsafe_pointer import _default_invariant
 
 
 # ===----------------------------------------------------------------------=== #
@@ -943,6 +944,17 @@ struct UnsafePointer[
     comptime device_type: AnyType = Self
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
+    comptime _LegacyPointerType = LegacyUnsafePointer[
+        Self.type,
+        mut = Self.mut,
+        origin = Self.origin,
+        address_space = Self.address_space,
+    ]
+
+    @staticmethod
+    fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
+        return Self._LegacyPointerType._is_convertible_to_device_type[T]()
+
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
         """
@@ -964,6 +976,8 @@ struct UnsafePointer[
         return String(
             "UnsafePointer[",
             get_type_name[Self.type](),
+            ", mut=",
+            Self.mut,
             ", address_space=",
             Self.address_space,
             "]",
@@ -1744,7 +1758,3 @@ struct UnsafePointer[
         __get_address_as_uninit_lvalue(
             self.address
         ) = __get_address_as_owned_value(src.address)
-
-
-__extension UnsafePointer(_IsUnsafePointer):
-    pass

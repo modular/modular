@@ -11,12 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys.intrinsics import _type_is_eq
+from builtin.rebind import downcast
+
 
 trait DevicePassable:
     """This trait marks types as passable to accelerator devices."""
 
     comptime device_type: AnyType
     """Indicate the type being used on accelerator devices."""
+
+    @staticmethod
+    fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
+        @parameter
+        if not _type_is_eq[Self, Self.device_type]() and conforms_to(
+            Self.device_type, DevicePassable
+        ):
+            return downcast[
+                DevicePassable, Self.device_type
+            ]._is_convertible_to_device_type[T]()
+        else:
+            return _type_is_eq[T, Self.device_type]()
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         """
