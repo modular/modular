@@ -90,7 +90,8 @@ public:
   /// check-lifetimes pass.
   ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef name,
                                ASTDecl &traitDecl, SMLoc location,
-                               TypeConvention typeConvention, bool isCopyable);
+                               TypeConvention typeConvention, bool isCopyable,
+                               bool isStateless);
 
 private:
   MLIRContext *ctx;
@@ -158,7 +159,8 @@ public:
   };
 
   TraitType getWrapperTraitType(ASTDecl &traitDecl, ASTDecl &moduleDecl,
-                                bool isCopyable, TypeConvention typeConvention);
+                                bool isCopyable, TypeConvention typeConvention,
+                                bool isStateless);
 
 private:
   /// Given a name, a list of builtin parent traits (like "Movable" for
@@ -194,6 +196,8 @@ private:
                                       StructFieldOp devicePassedField,
                                       ParamDeclAttr impl,
                                       ParamDeclAttr originSet);
+  void addConformanceToExtern(ASTDecl &moduleDecl, ASTDecl &structDecl,
+                              FuncTypeGeneratorType originalSignature);
   /// UnknownDestructibility is the base metatype for all types.
   ClosureParent unknownDestructibility;
   /// Movable trait is a parent of all closures. Cache its defining op.

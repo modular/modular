@@ -2084,14 +2084,15 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
 
 ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
     SMLoc loc, FnTypeGeneratorType sig, ASTDecl *moduleDecl,
-    InlineLevel inlineLevel, bool isCopyable, TypeConvention typeConvention) {
+    InlineLevel inlineLevel, bool isCopyable, TypeConvention typeConvention,
+    bool isStateless) {
   ASTDecl *traitDecl =
       getOrCreateClosureTrait(loc, *moduleDecl, sig, inlineLevel);
 
   // Compute the wrapper's combined TraitType based on all conformances.
   // This uniquely identifies the wrapper configuration.
   TraitType wrapperTraitType = closureEmitter->getWrapperTraitType(
-      *traitDecl, *moduleDecl, isCopyable, typeConvention);
+      *traitDecl, *moduleDecl, isCopyable, typeConvention, isStateless);
 
   auto &wrapper = impl->unifiedClosureWrappers[{wrapperTraitType, moduleDecl}];
   if (!wrapper) {
@@ -2106,7 +2107,8 @@ ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
       baseName += leafName.take_front(4);
     }
     wrapper = closureEmitter->createStructWrapper(
-        *moduleDecl, baseName, *traitDecl, loc, typeConvention, isCopyable);
+        *moduleDecl, baseName, *traitDecl, loc, typeConvention, isCopyable,
+        isStateless);
   }
 
   return wrapper;

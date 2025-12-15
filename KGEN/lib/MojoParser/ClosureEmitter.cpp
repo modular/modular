@@ -605,11 +605,9 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
   return {op, parameters, result};
 }
 
-ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
-                                             StringRef name, ASTDecl &traitDecl,
-                                             SMLoc smLocation,
-                                             TypeConvention typeConvention,
-                                             bool isCopyable) {
+ASTDecl *ClosureEmitter::createStructWrapper(
+    ASTDecl &moduleDecl, StringRef name, ASTDecl &traitDecl, SMLoc smLocation,
+    TypeConvention typeConvention, bool isCopyable, bool isStateless) {
   StringRef implName = "impl";
   StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
@@ -820,7 +818,9 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   if (typeConvention == TypeConvention::RegisterPassableTrivial)
     addConformanceToDevicePassable(structDecl, wrappedField, implType,
                                    originSetParam);
-
+  if (isStateless)
+    addConformanceToExtern(moduleDecl, structDecl,
+                           *trait.getClosureSignature());
   // Generate is-trivial special aliases
   auto generateIsTrivialSpecialAlias = [&](StringRef name,
                                            ClosureParent parent) {
@@ -876,9 +876,18 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
   auto populate = [&](ASTDecl &decl,
                       DenseSet<std::pair<StringAttr, StringAttr>> &functions) {
     TraitDeclOp closureTrait = cast<TraitDeclOp>(decl.getIfOperation());
-    RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
-    FnTypeGeneratorType sig = addClosureSelfArgToFunctionSignature(
-        refType, ArgConvention::ReadMem, dependentSignatureType);
+    FnTypeGeneratorType sig;
+
+    // For extern functions (function pointers), the __call__ method is static
+    // and has no self argument.
+    bool isExtern = dependentSignatureType.getBody().isExtern();
+    if (isExtern) {
+      sig = dependentSignatureType;
+    } else {
+      RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
+      sig = addClosureSelfArgToFunctionSignature(
+          refType, ArgConvention::ReadMem, dependentSignatureType);
+    }
     ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
         closureTrait.getLoc(), &closureTrait.getFields().front());
     SmallVector<ParamDeclAttr> parameters(
@@ -901,8 +910,11 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
         sig.getFnEffects()
             .setUnified(false)
             .setRegisterPassable(false)
-            .setCapturing(true),
+            .setCapturing(!isExtern)
+            .setExtern(false),
         "", true, inlineLevel);
+    if (isExtern)
+      fnOp.setIsStatic(true);
     builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());
     UnreachableOp::create(builder);
     functions.insert({callName, fnOp.getSymNameAttr()});
@@ -2574,7 +2586,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
 TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
                                               ASTDecl &moduleDecl,
                                               bool isCopyable,
-                                              TypeConvention typeConvention) {
+                                              TypeConvention typeConvention,
+                                              bool isStateless) {
   SmallVector<SymbolRefAttr> symbols;
   symbols.push_back(traitDecl.getSymbolRef());
   symbols.push_back(moveParent.getSymbolRef(moduleDecl));
@@ -2590,6 +2603,132 @@ TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
     if (devicePassableTrait)
       symbols.push_back(devicePassableTrait->getSymbolRef());
   }
-
+  if (isStateless) {
+    TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
+    auto closureSignature = trait.getClosureSignature();
+    if (closureSignature) {
+      // Create signature with extern effect added.
+      FuncTypeGeneratorType externSig = closureSignature->getWithBody(
+          closureSignature->getBody().getWithFnEffects(
+              closureSignature->getBody().getFnEffects().setExtern()));
+      ASTDecl *externTraitDecl = shared.getOrCreateClosureTrait(
+          traitDecl.getLoc(), moduleDecl, externSig, InlineLevel::Automatic);
+      if (externTraitDecl)
+        symbols.push_back(externTraitDecl->getSymbolRef());
+    }
+  }
   return TraitType::get(moduleDecl.getContext(), symbols);
+}
+
+void ClosureEmitter::addConformanceToExtern(
+    ASTDecl &moduleDecl, ASTDecl &structDecl,
+    FuncTypeGeneratorType originalSignature) {
+  // Create signature with extern effect added so we can get a handle to the
+  // extern trait.
+  FuncTypeGeneratorType externSig = originalSignature.getWithBody(
+      originalSignature.getBody().getWithFnEffects(
+          originalSignature.getBody().getFnEffects().setExtern()));
+  ASTDecl *externTraitDecl = shared.getOrCreateClosureTrait(
+      structDecl.getLoc(), moduleDecl, externSig, InlineLevel::Automatic);
+  assert(externTraitDecl && "trait creation is not failable");
+  TraitDeclOp externTrait =
+      cast<TraitDeclOp>(externTraitDecl->getIfOperation());
+  FnOp externCallFn = getFnOpNamed(externTrait, "__call__");
+  assert(externCallFn &&
+         "the extern trait is expected to have a call function");
+
+  // Create a static __call__ implementation for the extern trait.
+  // The extern __call__ is static (no self), so we use the trait signature
+  // directly without adding a self argument.
+  auto [callImpl, parameters, result] =
+      pushBackTraitFunctionImpl(externCallFn, structDecl);
+  callImpl.setIsStatic(true);
+
+  // Get the Impl parameter from the struct. We need it to generate the witness.
+  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp);
+  ArrayRef<ParamDeclAttr> structParams = structDeclOp.getInputParams();
+  assert(!structParams.empty() && "wrapper struct should have impl parameter");
+  ParamDeclAttr implType = structParams.front();
+  ParamDeclAttr originSetParam =
+      structParams.size() > 1 ? structParams[1] : ParamDeclAttr();
+  b.setInsertionPointToEnd(&callImpl.getBodyRegion().front());
+
+  // Create a fake self: allocate uninit storage for the impl parameter type.
+  // The specialized vanilla __call__ expects self to be a ref to impl.
+  Type implParamType = ParamType::get(ParamDeclRefAttr::get(implType));
+  PointerType implPtrType = PointerType::get(implParamType);
+  Value fakeImplPtr = POP::StackAllocationOp::create(b, implPtrType,
+                                                     /*count=*/1,
+                                                     /*alignment=*/TypedAttr(),
+                                                     /*markedLifetimes=*/false);
+  auto immortal = b.getAttr<AnyOriginAttr>(/*isMut=*/false);
+  Value fakeImplRef = RefFromPointerOp::create(b, fakeImplPtr, immortal,
+                                               /*startUninit=*/true,
+                                               /*endUninit=*/true);
+  OwnershipMarkInitializedOp::create(b, fakeImplRef);
+
+  // Get or create the vanilla (non-extern) closure trait. We will be calling
+  // the non-extern version of the call on the closure field by creating a null
+  // "self" argument which will later be optimized away. This simplifies the
+  // code gen.
+  ASTDecl *vanillaTraitDecl =
+      shared.getOrCreateClosureTrait(structDecl.getLoc(), moduleDecl,
+                                     originalSignature, InlineLevel::Automatic);
+  assert(vanillaTraitDecl && "trait creation is not failable");
+  TraitDeclOp vanillaTrait =
+      cast<TraitDeclOp>(vanillaTraitDecl->getIfOperation());
+  FnOp vanillaCallFn = getFnOpNamed(vanillaTrait, "__call__");
+  assert(vanillaCallFn &&
+         "the vanilla trait is expected to have a call function");
+  ASTType implASTType(implParamType);
+  FnTypeGeneratorType specializedSig =
+      specializeSignature(vanillaCallFn, implASTType, *shared.declResolver);
+
+  // Build the witness lookup symbol for the vanilla __call__.
+  StringAttr vanillaParentName =
+      b.getStringAttr(getFlattenedSymbolName(vanillaTraitDecl->getSymbolRef()));
+  TypedAttr witnessSymbol = GetWitnessAttr::get(
+      ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
+      vanillaParentName, vanillaCallFn.getSymNameAttr(), specializedSig);
+
+  // Collect operands: fake self first, then all function arguments.
+  SmallVector<Value> operands;
+  operands.push_back(fakeImplRef);
+  llvm::append_range(operands, callImpl.getBodyRegion().front().getArguments());
+  SmallVector<TypedAttr> origins;
+  origins.push_back(immortal);
+  llvm::SmallDenseSet<StringRef> explicitParameters;
+  for (auto explicitParam : parameters)
+    explicitParameters.insert(explicitParam.getName().getValue());
+
+  SmallVector<ParamDeclAttr> allParams = callImpl.collectAllParams(true);
+  for (ParamDeclAttr param : allParams) {
+    if (explicitParameters.contains(param.getName().getValue()))
+      continue;
+    if (!isa<OriginType>(param.getType()))
+      continue;
+    origins.push_back(ParamDeclRefAttr::get(param.getName(), param.getType()));
+  }
+
+  SmallVector<TypedAttr> paramArgs;
+  llvm::append_range(
+      paramArgs, llvm::map_range(parameters, [](ParamDeclAttr p) -> TypedAttr {
+        return ParamDeclRefAttr::get(p);
+      }));
+
+  auto callOp =
+      LIT::CallOp::create(b, result,
+                          BindParamsAttr::get(witnessSymbol, paramArgs,
+                                              &shared.getEvaluationContext()),
+                          origins, operands);
+  IREmitter::emitNormalReturn(b, callOp.getResult(0));
+
+  // Add the conformance table for the extern trait.
+  SmallVector<std::pair<StringRef, TypedAttr>> witnesses;
+  witnesses.push_back({*externCallFn.getSymName(),
+                       buildSymbol(callImpl, implType, originSetParam)});
+
+  ClosureParent externParent(externTrait, externCallFn, ClosureMethod::CALL);
+  addConformanceTable(structDecl, externParent, witnesses, moduleDecl);
 }
