@@ -396,17 +396,13 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
         return (self._data + offset)[]
 
     @no_inline
-    fn write_to[
-        T: Representable & Copyable,
+    fn write_to_repr[
+        T: Representable & Copyable & Movable,
     ](self: Deque[T], mut writer: Some[Writer]):
-        """Writes `my_deque.__str__()` to a `Writer`.
+        """Write a `repr()`-style representation of the deque to `writer`.
 
-        Parameters:
-            T: The type of the Deque elements.
-                Must implement the trait `Representable`.
-
-        Args:
-            writer: The object to write to.
+        This uses `repr(elem)` for each element and produces the
+        `Deque(...)` form.
         """
         writer.write("Deque(")
         for i in range(len(self)):
@@ -417,53 +413,33 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
         writer.write(")")
 
     @no_inline
-    fn __str__[T: Representable & Copyable, //](self: Deque[T]) -> String:
-        """Returns a string representation of a `Deque`.
+    fn write_to[
+        _ElementType: Copyable & Movable & Writable,
+    ](self: Deque[_ElementType], mut writer: Some[Writer]):
+        """Write raw/writable elements to `writer` (no repr quoting).
 
-        Note that since we can't condition methods on a trait yet,
-        the way to call this method is a bit special. Here is an example below:
-
-        ```mojo
-        my_deque = Deque[Int](1, 2, 3)
-        print(my_deque.__str__())
-        ```
-
-        When the compiler supports conditional methods, then a simple `String(my_deque)` will
-        be enough.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Representable`.
-
-        Returns:
-            A string representation of the deque.
+        This preserves the writer-based API for `Writable` element types.
         """
+        writer.write("Deque(")
+        for i in range(len(self)):
+            offset = self._physical_index(self._head + i)
+            writer.write((self._data + offset)[])
+            if i < len(self) - 1:
+                writer.write(", ")
+        writer.write(")")
+
+    @no_inline
+    fn __str__[
+        T: Representable & Copyable & Movable, //
+    ](self: Deque[T]) -> String:
         output = String()
-        self.write_to(output)
+        self.write_to_repr(output)
         return output^
 
     @no_inline
-    fn __repr__[T: Representable & Copyable, //](self: Deque[T]) -> String:
-        """Returns a string representation of a `Deque`.
-
-        Note that since we can't condition methods on a trait yet,
-        the way to call this method is a bit special. Here is an example below:
-
-        ```mojo
-        my_deque = Deque[Int](1, 2, 3)
-        print(my_deque.__repr__())
-        ```
-
-        When the compiler supports conditional methods, then a simple `repr(my_deque)` will
-        be enough.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Representable`.
-
-        Returns:
-            A string representation of the deque.
-        """
+    fn __repr__[
+        T: Representable & Copyable & Movable, //
+    ](self: Deque[T]) -> String:
         return self.__str__()
 
     # ===-------------------------------------------------------------------===#

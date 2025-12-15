@@ -767,23 +767,17 @@ struct LinkedList[
         self._write(writer)
         return writer
 
+    
+
     fn __repr__[
-        _ElementType: Copyable & Writable
-    ](self: LinkedList[_ElementType]) -> String:
-        """Convert the list to its string representation.
+        T: Representable & Copyable & Movable,
+    ](self: LinkedList[T]) -> String:
+        """Return a `repr()` representation of `LinkedList[T]`.
 
-        Parameters:
-            _ElementType: Used to conditionally enable this function when
-                `_ElementType` is `Writable`.
-
-        Returns:
-            String representation of the list.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
+        Uses `repr(elem)` on each element and includes the type name.
         """
         var writer = String()
-        self._write(writer, prefix="LinkedList(", suffix=")")
+        self.write_to_repr(writer)
         return writer
 
     fn write_to[
@@ -802,6 +796,25 @@ struct LinkedList[
             Time Complexity: O(n) in len(self).
         """
         self._write(writer)
+
+
+    @no_inline
+    fn write_to_repr[
+        T: Representable & Copyable & Movable,
+    ](self: LinkedList[T], mut writer: Some[Writer]):
+        """Write a `repr()`-style representation of the list to `writer`.
+
+        This uses `repr(elem)` for each element and produces the
+        `LinkedList(...)` form.
+        """
+        writer.write("LinkedList(")
+        var i: Int = 0
+        for elem in self:
+            writer.write(repr(elem))
+            if i < len(self) - 1:
+                writer.write(", ")
+            i += 1
+        writer.write(")")
 
     @no_inline
     fn _write[

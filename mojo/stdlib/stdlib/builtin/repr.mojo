@@ -96,14 +96,20 @@ fn repr[U: KeyElement & Representable](value: Set[U]) -> String:
     return value.__repr__()
 
 
-fn repr[U: Copyable & Writable](value: LinkedList[U]) -> String:
+# Note: `Optional` implements `Representable` via its `__repr__` method.
+# The generic `repr[T: Representable]` above will call `value.__repr__()` for
+# Optionals, so a separate `Optional` overload is unnecessary and could
+# introduce overload ambiguity with the generic implementation.
+
+
+fn repr[U: Representable & Copyable & Movable](value: LinkedList[U]) -> String:
     """Returns the string representation of an `LinkedList[U]`.
 
     Args:
         value: A `LinkedList` of element type `U`.
 
     Parameters:
-        U: A type that implements `Copyable` and `Writable`.
+        U: A type that implements `Copyable` and `Representable`.
 
     Returns:
         The string representation of `LinkedList[U]`.
