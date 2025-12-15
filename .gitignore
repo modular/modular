@@ -163,3 +163,6 @@ examples/models/*
 .magic
 # pixi environments (ignored; local configs should not be committed)
 .pixi/
+# Local pixi artifacts
+pixi.lock
+pixi.toml
