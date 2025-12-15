@@ -51,9 +51,12 @@ struct S1[X: Int](Movable, R1, R1Child, R2):
     # CHECK: lit.fn @"__moveinit__[[MOVEINIT_NAME:.+]]"[
 
     # CHECK: kgen.conformance @{{.*}}AnyType
+    # CHECK-NEXT: }
+
+    # CHECK: kgen.conformance @{{.*}}ImplicitlyDestructible
     # CHECK-NEXT: kgen.witness "__del__{{.*}}" : {{.*}} = {{.*}}@S1::@"__del__{{.*}}"<:!Int X>
     # CHECK-NEXT: kgen.witness "__del__is_trivial" : !Bool = {:i1 1}
-    # CHECK-NEXT: traitRef = [[ANYTYPE_NAME:(@[^:]+::)+@AnyType]]
+    # CHECK-NEXT: traitRef = [[ANYTYPE_NAME:(@[^:]+::)+@ImplicitlyDestructible]]
 
     # CHECK: kgen.conformance @{{.*}}Movable
     # CHECK-NEXT: kgen.witness "__moveinit__{{.*}}" : {{.*}} = {{.*}}@S1::@"__moveinit__{{.*}}"<:!Int X>

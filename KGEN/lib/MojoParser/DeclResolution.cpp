@@ -1031,7 +1031,8 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     // These are the trait methods that MOGG is interested in.
     for (auto [traitName, entryName] :
          SmallVector<std::pair<StringRef, StringRef>>{
-             {"AnyType", "__del__"}, {"Movable", "__moveinit__"}}) {
+             {"ImplicitlyDestructible", "__del__"},
+             {"Movable", "__moveinit__"}}) {
       auto traitDecl = shared.lookupBuiltinTrait(traitName, &decl, smloc);
       if (!traitDecl)
         continue;
@@ -2620,7 +2621,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   // Make every nominal struct type inherit from `UnknownDestructibility`.
   if (ASTDecl *traitDecl = shared.lookupBuiltinTrait(
-          "UnknownDestructibility", decl.getParentDecl(), decl.getLoc()))
+          "AnyType", decl.getParentDecl(), decl.getLoc()))
     parentTraits.push_back(traitDecl->getSymbolRef());
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
@@ -2671,7 +2672,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
         std::make_optional(llvm::StringRef(linearTypeErrorMsg)));
   } else {
     if (ASTDecl *implicitlyDestructibleDecl = shared.lookupBuiltinTrait(
-            "AnyType", decl.getParentDecl(), decl.getLoc())) {
+            "ImplicitlyDestructible", decl.getParentDecl(), decl.getLoc())) {
       parentTraits.push_back(implicitlyDestructibleDecl->getSymbolRef());
     }
   }
@@ -3002,8 +3003,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     }
   }
 
-  // Determine if there is an explicit conformance to AnyType.
-  bool implicitlyDestructible = conformsToTrait("AnyType");
+  // Determine if there is an explicit conformance to ImplicitlyDestructible.
+  bool implicitlyDestructible = conformsToTrait("ImplicitlyDestructible");
 
   // Check to see if there is a destructor and install it into the StructDeclOp
   // if so.
@@ -3016,7 +3017,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     (void)StructEmitter(structDecl).synthesizeEmptyDtor();
   }
 
-  // If the structure conforms to "AnyType", we populate the trivial flag.
+  // If the structure conforms to "ImplicitlyDestructible", we populate the
+  // trivial flag.
   if (implicitlyDestructible)
     synthesizeTrivialFlagIfNeeded("__del__");
 
@@ -3363,17 +3365,16 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 
   // TODO(MOCO-1468): Remove this, put an @explicit_destroy on
   // UnknownDestructibility's definition.
-  if (traitOp.getSymName() == "UnknownDestructibility") {
+  if (traitOp.getSymName() == "AnyType") {
     // TODO(MOCO-1468): Remove this, specify it in the code.
     traitOp.setLinearTypeErrorMsg(std::make_optional(llvm::StringRef(
         "Unhandled explicit_destroy type UnknownDestructibility")));
   }
 
   // Make every trait inherit from `UnknownDestructibility`, except itself.
-  if (parentTraits.empty() &&
-      traitOp.getSymName() != "UnknownDestructibility") {
+  if (parentTraits.empty() && traitOp.getSymName() != "AnyType") {
     if (ASTDecl *unknownDestructibilityDecl = shared.lookupBuiltinTrait(
-            "UnknownDestructibility", decl.getParentDecl(), decl.getLoc())) {
+            "AnyType", decl.getParentDecl(), decl.getLoc())) {
       parentTraits.push_back(unknownDestructibilityDecl->getSymbolRef());
       // No need to add UnknownDestructibility to immediateParents, since it
       // has an empty requirements table.
@@ -3416,10 +3417,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   } else {
     // Make every trait inherit from `AnyType`, except itself and
     // UnknownDestructibility.
-    if (traitOp.getSymName() != "AnyType" &&
-        traitOp.getSymName() != "UnknownDestructibility") {
+    if (traitOp.getSymName() != "ImplicitlyDestructible" &&
+        traitOp.getSymName() != "AnyType") {
       if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
-              "AnyType", decl.getParentDecl(), decl.getLoc())) {
+              "ImplicitlyDestructible", decl.getParentDecl(), decl.getLoc())) {
         parentTraits.push_back(anyTypeDecl->getSymbolRef());
         // Update immediateParents only if it is empty, otherwise some other
         // parent trait will have already added it.

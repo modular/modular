@@ -726,7 +726,7 @@ struct Dict[K: AnyType, V: ImplicitlyCopyable]:
 
 # A linear type, see
 # https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
-trait UnknownDestructibility:
+trait AnyType:
     pass
 
 
@@ -770,14 +770,14 @@ trait Movable:
     comptime __moveinit__is_trivial: Bool
 
 
-trait AnyType:
+trait ImplicitlyDestructible:
     fn __del__(deinit self, /):
         ...
 
     comptime __del__is_trivial: Bool
 
 
-comptime ImplicitlyDestructible = AnyType
+comptime UnknownDestructibility = AnyType
 
 
 @register_passable("trivial")
@@ -1184,7 +1184,7 @@ struct _StridedRangeIterator(Iterator):
 
 
 trait Iterator(Movable):
-    comptime Element: AnyType
+    comptime Element: ImplicitlyDestructible
 
     fn __has_next__(self) -> Bool:
         ...

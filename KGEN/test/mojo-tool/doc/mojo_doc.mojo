@@ -828,16 +828,16 @@ struct HList[T: ImplicitlyCopyable]:
 # CHECK-NEXT:     "path": "/std/builtin/value/ImplicitlyCopyable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
+# CHECK-NEXT:     "name": "ImplicitlyDestructible",
+# CHECK-NEXT:     "path": "/std/builtin/anytype/ImplicitlyDestructible"
+# CHECK-NEXT:   },
+# CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Movable",
 # CHECK-NEXT:     "path": "/std/builtin/value/Movable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Sized",
 # CHECK-NEXT:     "path": "/std/builtin/len/Sized"
-# CHECK-NEXT:   },
-# CHECK-NEXT:   {
-# CHECK-NEXT:     "name": "UnknownDestructibility",
-# CHECK-NEXT:     "path": "/std/builtin/anytype/UnknownDestructibility"
 # CHECK-NEXT:   }
 # CHECK:  "signature": "struct InMemoryStruct"
 
