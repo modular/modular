@@ -315,7 +315,7 @@ static void printSIMDValue(raw_ostream &os, const POP::DTypeValue &value,
 /// implemented on the struct directly.
 static void printDType(raw_ostream &os, KGENDType dtype, bool qualified) {
   if (qualified)
-    os << "stdlib.builtin.dtype.";
+    os << "std.builtin.dtype.";
   os << "DType." << dtype.getAsString(/*libForm=*/true);
 }
 
@@ -382,7 +382,7 @@ void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
         }
         os << " : ";
         if (qualifiedBuiltins)
-          os << "stdlib.builtin.simd.";
+          os << "std.builtin.simd.";
         os << "SIMD[";
         printDType(os, dType, qualifiedBuiltins);
         os << ", " << values.size() << "]";
@@ -397,19 +397,19 @@ IREvaluatorContext::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
   StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
 
   llvm::SmallDenseMap<llvm::StringRef, llvm::StringRef> eligibleBuiltins = {
-      {"stdlib::builtin::bool::Bool", "Bool"},
-      {"stdlib::builtin::int::Int", "Int"},
-      {"stdlib::collections::list::List", "List"},
-      {"stdlib::builtin::simd::SIMD", "SIMD"},
-      {"stdlib::collections::string::string::String", "String"},
-      {"stdlib::builtin::uint::UInt", "UInt"},
+      {"std::builtin::bool::Bool", "Bool"},
+      {"std::builtin::int::Int", "Int"},
+      {"std::collections::list::List", "List"},
+      {"std::builtin::simd::SIMD", "SIMD"},
+      {"std::collections::string::string::String", "String"},
+      {"std::builtin::uint::UInt", "UInt"},
   };
 
   // Print the type name first. A few common types can be printed more tersely.
   /// NOTE: It would be better to have custom type name printing that can be
   /// implemented on the struct directly.
   std::string name = genOp.getSymName().str();
-  if (!qualifiedBuiltins && name.starts_with("stdlib::")) {
+  if (!qualifiedBuiltins && name.starts_with("std::")) {
     if (auto it = eligibleBuiltins.find(name); it != eligibleBuiltins.end())
       name = it->second;
   }

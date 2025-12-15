@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
 
 
-from stdlib.builtin.variadics import *
+from std.builtin.variadics import *
 
 comptime ToFloatMapper[From: AnyType] = FloatDyn
 comptime AnyToFloat[Ts: VariadicOf[AnyType]] = MapTypeToType[
@@ -27,7 +27,7 @@ fn foldable(int_tuple: Tuple[Int, Int, Int]) -> type_of(unfoldable(int_tuple)):
 
 # // -----
 
-from stdlib.builtin.variadics import *
+from std.builtin.variadics import *
 
 
 struct DepT[T: AnyType]:

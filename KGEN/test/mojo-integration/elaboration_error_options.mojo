@@ -12,17 +12,17 @@
 
 from collections.string.string_slice import _get_kgen_string
 
-# CHECK-PRELUDE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-PRELUDE: {{.*}}std/builtin/_startup.mojo
 # CHECK-PRELUDE-SAME: error: function instantiation failed
-# CHECK-VERBOSE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-VERBOSE: {{.*}}std/builtin/_startup.mojo
 # CHECK-VERBOSE-SAME: error: function instantiation failed
-# CHECK-PRELUDE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-PRELUDE: {{.*}}std/builtin/_startup.mojo
 # CHECK-PRELUDE-SAME: note: call expansion failed with parameter value(s): (...)
-# CHECK-VERBOSE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-VERBOSE: {{.*}}std/builtin/_startup.mojo
 # CHECK-VERBOSE-SAME: note: call expansion failed with parameter value(s): ("main_func":
-# CHECK-PRELUDE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-PRELUDE: {{.*}}std/builtin/_startup.mojo
 # CHECK-PRELUDE-SAME: note: function instantiation failed
-# CHECK-PRELUDE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-PRELUDE: {{.*}}std/builtin/_startup.mojo
 # CHECK-PRELUDE-SAME: note: call expansion failed
 
 

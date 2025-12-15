@@ -154,7 +154,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   var a = MemExample()
 
-  # CHECK: lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%a)
+  # CHECK: lit.call @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%a)
   var aref = Pointer(to=a)
   # CHECK: lit.alias.decl *"aLifetime{{.*}}": origin<1> = <*"a`1">
   comptime aLifetime =  aref.origin._mlir_origin
@@ -188,7 +188,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   var aref2 = aref
 
   # Pointer can bind to immutable things as well, no problem.
-  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call {{.*}}@Pointer::@"__init__{{.*}}(%imm)
+  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call tail @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%imm)
   # CHECK-NEXT: %immref = lit.var.decl "immref"
   # CHECK: lit.ref.store [[IMMRV]], %immref
   var immref = Pointer(to=imm)
@@ -290,14 +290,14 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}(%arg)
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
-  # CHECK-NEXT: [[RES:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[REF]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[REF]])
   # CHECK-NEXT: kgen.return [[RES]]
   return Pointer[Int, arg.origin](to=UnsafePointer(to=arg[])[])
 
 
 # CHECK-LABEL: lit.fn @"ref_copyability
 fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
-  # CHECK: [[ITEM:%.*]] = lit.call {{.*}}@VariadicPack::@"__getitem__
+  # CHECK: [[ITEM:%.*]] = lit.call tail @std::@builtin::@stubs::@VariadicPack::@"__getitem__
   # CHECK: %_x = lit.var.decl
   # CHECK: lit.call[{{.*}}#kgen.get_witness<{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
   var _x = args[4]

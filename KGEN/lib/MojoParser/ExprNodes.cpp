@@ -193,7 +193,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
     // If this is a wrapper for a type, print it as such.
     if (sugarIsa<TraitType>(indexVal.getType())) {
       // values of trait type are printed in a kgen compatible way, e.g.
-      // "":!lit.trait<@stdlib::@builtin::@stubs::@AnyType> someParamValue"
+      // "":!lit.trait<@std::@builtin::@stubs::@AnyType> someParamValue"
       if (!elideType)
         os << ":" << ASTType(indexVal.getType()).mlirType << " ";
       os << ASTType(indexVal).mlirType;
@@ -272,7 +272,7 @@ static std::string getStringRepresentation(AttrCtorDeferredAttr attr) {
 
       if (sugarIsa<TraitType>(val.getType())) {
         // values of trait type are printed in a kgen compatible way, e.g.
-        // "":!lit.trait<@stdlib::@builtin::@stubs::@AnyType> someParamValue"
+        // "":!lit.trait<@std::@builtin::@stubs::@AnyType> someParamValue"
         if (!elideType)
           os << ":" << ASTType(val.getType()).mlirType << " ";
         os << ASTType(val).mlirType;
@@ -2028,7 +2028,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     auto getParamMemberSugar = [&](PValue value) -> PValue {
       // Propagate failures, never sugar aliases that start with an _.  These
       // are internal implementation details of types and eliding this
-      // chops gigabytes of IR out of .mlir files for the stdlib.
+      // chops gigabytes of IR out of .mlir files for the std.
       if (!value || spelling.starts_with('_'))
         return value;
 

@@ -254,7 +254,7 @@ struct SharedState::Impl {
   /// symbol tables.
   DenseMap<std::pair<SymbolTable *, StringAttr>, unsigned> symbolTableCounters;
 
-  /// The auto import path (e.g. path to the stdlib), or nullopt if it is not
+  /// The auto import path (e.g. path to the std), or nullopt if it is not
   /// available.
   SmallVector<std::string> autoImportDirs;
 
@@ -308,7 +308,7 @@ struct SharedState::Impl {
   SmallVector<StringAttr> implicitBuiltinImports;
 
   /// The decl corresponding to the standard library package.
-  ModuleState *stdlibPackageState = nullptr;
+  ModuleState *stdPackageState = nullptr;
 
   /// The parser configuration used when loading bytecode.
   mlir::ParserConfig bytecodeParserContext;
@@ -1076,24 +1076,24 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
     // If this is a top-level import, try to resolve a standard library module.
     // We current bundle all of the standard library packages into one mega
     // package, but still want to expose them separately.
-    if (impl->stdlibPackageState && name != "stdlib") {
+    if (impl->stdPackageState && name != "std") {
       // Check for an existing module for this name. If we find one, insert it
       // into the parent state and return it.
-      auto it = impl->stdlibPackageState->nestedModules.find(declName);
-      if (it != impl->stdlibPackageState->nestedModules.end()) {
+      auto it = impl->stdPackageState->nestedModules.find(declName);
+      if (it != impl->stdPackageState->nestedModules.end()) {
         parentState->nestedModules.insert({declName, it->second});
         return *it->second;
       }
 
       // Otherwise, if the standard library is a source package, check to see if
       // we can resolve a path from it.
-      if (impl->stdlibPackageState->sourcePath) {
+      if (impl->stdPackageState->sourcePath) {
         modulePath = ::resolveModulePath(*this, loc, name,
-                                         *impl->stdlibPackageState->sourcePath,
+                                         *impl->stdPackageState->sourcePath,
                                          disablePrebuiltPackages);
         if (modulePath) {
-          ModuleState &moduleState = importModuleState(("stdlib." + name).str(),
-                                                       impl->topLevelDecl, loc);
+          ModuleState &moduleState =
+              importModuleState(("std." + name).str(), impl->topLevelDecl, loc);
           parentState->nestedModules.insert({declName, &moduleState});
           return moduleState;
         }
@@ -1240,7 +1240,7 @@ bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
 ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, ASTDecl *context,
                                          SMLoc loc) {
   if (useBuiltinModule)
-    context = &importModule("stdlib.prelude", /*currentPackage=*/nullptr, loc);
+    context = &importModule("std.prelude", /*currentPackage=*/nullptr, loc);
 
   LookupResult lookup = lookupAndResolveDecl(traitName, loc, *context, true);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
@@ -1300,7 +1300,7 @@ ASTType SharedState::lookupBuiltinType(StringRef name, ASTDecl &context,
                                        llvm::SMLoc loc) {
   if (useBuiltinModule) {
     ASTDecl &preludeModule =
-        importModule("stdlib.prelude", /*currentPackage=*/nullptr, loc);
+        importModule("std.prelude", /*currentPackage=*/nullptr, loc);
     return lookupNamedType(name, preludeModule, loc);
   }
   return lookupNamedType(name, context, loc);
@@ -1342,7 +1342,7 @@ ASTDecl *SharedState::getBuiltinRaisingCoroutineType(llvm::SMLoc loc) {
 ASTType SharedState::getStandardCollectionType(llvm::SMLoc loc,
                                                StringRef name) {
   ASTDecl &collectionsModule =
-      importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
+      importModule("std.collections", /*currentPackage=*/nullptr, loc);
   return lookupNamedType(name, collectionsModule, loc);
 }
 
@@ -1389,26 +1389,26 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   // Check if this is the first attempt at resolving the builtin modules.
   if (impl->implicitBuiltinImports.empty()) {
     // Import the main standard library package.
-    impl->stdlibPackageState =
-        &importModuleState("stdlib", impl->topLevelDecl, moduleDecl.getLoc());
+    impl->stdPackageState =
+        &importModuleState("std", impl->topLevelDecl, moduleDecl.getLoc());
     ASTDecl *last = declResolver->getParsedDeclList().back();
     if (last && last->isErroneous()) {
       std::string stdmsg =
-          "'stdlib' is required for all normal mojo compiles.\n"
+          "'std' is required for all normal mojo compiles.\n"
           "If you see this either:\n"
           "- Your mojo installation is broken and needs to be reinstalled or\n"
-          "- You are a 'stdlib' developer and are intentionally avoiding a "
-          "pre-built 'stdlib'";
+          "- You are a 'std' developer and are intentionally avoiding a "
+          "pre-built 'std'";
       emitError(last->loc, stdmsg);
     }
 
-    if (failed(declResolver->resolveBody(*impl->stdlibPackageState->decl,
+    if (failed(declResolver->resolveBody(*impl->stdPackageState->decl,
                                          moduleDecl.getLoc())))
       return;
 
     // Import the prelude package.
     ASTDecl &preludePackageDecl =
-        *importModuleState("stdlib.prelude", impl->topLevelDecl,
+        *importModuleState("std.prelude", impl->topLevelDecl,
                            moduleDecl.getLoc())
              .decl;
     if (failed(
@@ -2915,7 +2915,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
 
   // FIXME(MOCO-2839): We silently ignore 'kgen.param.assert' ops when folding
   // @always_inline("builtin") functions. We should either support these or
-  // remove them from the key locations in the stdlib which we wish to support
+  // remove them from the key locations in the std which we wish to support
   // (SIMD).
   if (isa<KGEN::ParamAssertOp>(op))
     return TypedAttr();
@@ -2955,7 +2955,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
   if (fnOp.getInlineLevel() != InlineLevel::AlwaysBuiltin) {
     // FIXME(MOCO-2839): We silently ignore 'constrained' calls when folding
     // @always_inline("builtin") functions. We should either support these or
-    // remove them from the key locations in the stdlib which we wish to support
+    // remove them from the key locations in the std which we wish to support
     // (SIMD).
     if (fnOp.getSourceName() == "constrained")
       return NoneAttr::get(fnOp.getContext());

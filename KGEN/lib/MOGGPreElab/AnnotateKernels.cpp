@@ -35,8 +35,8 @@ static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor", "managed_tensor_slice", "ManagedTensorSlice"};
 static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
     "tensor", "managed_tensor_slice", "VariadicTensors"};
-static constexpr std::array<StringLiteral, 4> kMaxList = {
-    "stdlib", "collections", "list", "List"};
+static constexpr std::array<StringLiteral, 4> kMaxList = {"std", "collections",
+                                                          "list", "List"};
 
 // TODO(GEX-1822): Should be able to query this information from
 // The lit.struct.decl ops for each of these types rather than hard-coding them.

@@ -162,7 +162,7 @@ fn testMyOptional(a: MyOptional[MyFancyStruct]):
 
 
 # CHECK-LABEL: lit.fn @"findall
-# CHECK-NEXT: lit.call tail @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%self)
+# CHECK-NEXT: lit.call tail @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%self)
 struct DefBoxInference:
     def findall(self) -> DefBoxInferenceIter[origin_of(self)]:
         return DefBoxInferenceIter[origin_of(self)](Pointer(to=self))

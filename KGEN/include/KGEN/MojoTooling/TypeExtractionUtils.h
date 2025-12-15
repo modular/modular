@@ -26,11 +26,11 @@ namespace KGEN {
 namespace TypeExtractionUtils {
 
 /// Extracts the leaf name from a symbol reference.
-/// For example, given "stdlib.collections.List", returns "List".
+/// For example, given "std.collections.List", returns "List".
 std::string extractSymbolLeafName(mlir::SymbolRefAttr symbol);
 
 /// Gets the base type name, removing generic parameters and qualifiers.
-/// For example: "stdlib.collections.List[T]" -> "List", and
+/// For example: "std.collections.List[T]" -> "List", and
 /// "ref [_] SomeType[T, U]" -> "SomeType". Uses AST information when available,
 /// falls back to string parsing.
 std::string extractBaseTypeName(const M::MojoASTTypeRef &astType,
@@ -40,8 +40,8 @@ std::string extractBaseTypeName(const M::MojoASTTypeRef &astType,
 std::string extractBaseTypeName(llvm::StringRef fullTypeStr);
 
 /// Extracts the fully qualified module path from an AST declaration reference.
-/// For example, a declaration in stdlib.collections would return
-/// "stdlib.collections".
+/// For example, a declaration in std.collections would return
+/// "std.collections".
 std::string extractModulePathFromDecl(M::MojoASTDeclRef declRef);
 
 /// Attempts to resolve a type name (e.g., "List", "Int") to its actual AST
@@ -62,15 +62,15 @@ tryResolveTypeToDecl(llvm::StringRef typeName,
 /// defined in __init__.mojo files should link to their parent package/module.
 ///
 /// Examples:
-/// - generateDocPath("stdlib.collections", "List", "") ->
-/// "/stdlib/collections/List"
-/// - generateDocPath("stdlib.collections.__init__", "List", "") ->
-/// "/stdlib/collections/List"
+/// - generateDocPath("std.collections", "List", "") ->
+/// "/std/collections/List"
+/// - generateDocPath("std.collections.__init__", "List", "") ->
+/// "/std/collections/List"
 std::string generateDocPath(llvm::StringRef module, llvm::StringRef typeName,
                             llvm::StringRef docsBasePath, bool isAlias = false);
 
 /// The main function that extracts comprehensive type metadata from type names.
-/// Takes a type like "List[Int]" or "stdlib.collections.Dict" and produces
+/// Takes a type like "List[Int]" or "std.collections.Dict" and produces
 /// metadata including the clean type name, module path, and doc link path. Uses
 /// AST resolution when possible to get accurate paths, caches results for
 /// performance, and falls back to basic name for unresolvable types.

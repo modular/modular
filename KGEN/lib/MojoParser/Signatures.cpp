@@ -1443,7 +1443,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   evaluator.appendIndexBinding(origin);
 
   // The default element_trait param type is
-  // !lit.anytrait<<@stdlib::@builtin::@anytype::@AnyType>>
+  // !lit.anytrait<<@std::@builtin::@anytype::@AnyType>>
   // reflecting that it takes any trait like Stringable.
   // If the declared type of the pack elements is a trait subtype of AnyType,
   // it will be that traits metatype.  Downcast to the same type, but with

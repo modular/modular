@@ -178,10 +178,10 @@ module {
       destructor :!lit.signature<[1]("self": !lit.ref<!Person, mut *[0,0]> owned_in_mem, |) -> !kgen.none> @example::@Person::@"__del__(example::Person)" {
       lit.struct.field name : !String
       lit.struct.field age : !Int
-      lit.func @"__init__(example::Person=&,stdlib::collections::string::String,::Int)"[mut *"self`2x", mut *"name`2x1"](%self: !lit.ref<!Person, mut *"self`2x"> init_self, %name: !lit.ref<!String, mut *"name`2x1"> owned_in_mem, %age: !Int) -> !kgen.none attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
+      lit.func @"__init__(example::Person=&,std::collections::string::String,::Int)"[mut *"self`2x", mut *"name`2x1"](%self: !lit.ref<!Person, mut *"self`2x"> init_self, %name: !lit.ref<!String, mut *"name`2x1"> owned_in_mem, %age: !Int) -> !kgen.none attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
         lit.ownership.use %name : !lit.ref<!String, mut *"name`2x1">
         %0 = lit.ref.struct.ger %self[name] : <!Person, mut *"self`2x"> -> !String
-        %1 = lit.call @stdlib::@collections::@string::@String::@"__moveinit__(stdlib::collections::string::String=&,stdlib::collections::string::String)"[mut *"self`2x"->name, mut *"name`2x1"](%0, %name) : !lit.signature<[2]("self": !lit.ref<!String, mut *[0,0]> init_self, "other": !lit.ref<!String, mut *[0,1]> owned_in_mem, |) -> !kgen.none>
+        %1 = lit.call @std::@collections::@string::@String::@"__moveinit__(std::collections::string::String=&,std::collections::string::String)"[mut *"self`2x"->name, mut *"name`2x1"](%0, %name) : !lit.signature<[2]("self": !lit.ref<!String, mut *[0,0]> init_self, "other": !lit.ref<!String, mut *[0,1]> owned_in_mem, |) -> !kgen.none>
         %2 = lit.ref.struct.ger %self[age] : <!Person, mut *"self`2x"> -> !Int
         lit.ref.store %age, %2 : <!Int, mut *"self`2x"->age>
         %3 = lit.ref.immut %self : <!Person, mut *"self`2x">
@@ -206,20 +206,20 @@ module {
       %me = lit.var.decl "me" var : !lit.ref<!Person, mut *"me`">
       %anonymous2A = lit.var.decl "anonymous*" synth : !lit.ref<!String, mut *"anonymous*`1">
       %0 = kgen.param.constant: !StringLiteral = <{:string "Connor"}>
-      %1 = lit.call @stdlib::@collections::@string::@String::@"__init__(stdlib::collections::string::String=&,::StringLiteral)"[mut *"anonymous*`1"](%anonymous2A, %0) : !lit.signature<[1]("self": !lit.ref<!String, mut *[0,0]> init_self, "literal": !StringLiteral) -> !kgen.none>
+      %1 = lit.call @std::@collections::@string::@String::@"__init__(std::collections::string::String=&,::StringLiteral)"[mut *"anonymous*`1"](%anonymous2A, %0) : !lit.signature<[1]("self": !lit.ref<!String, mut *[0,0]> init_self, "literal": !StringLiteral) -> !kgen.none>
       %2 = kgen.param.constant: !Int = <{25}>
-      %3 = lit.call @example::@Person::@"__init__(example::Person=&,stdlib::collections::string::String,::Int)"[mut *"me`", mut *"anonymous*`1"](%me, %anonymous2A, %2) : !lit.signature<[2]("self": !lit.ref<!Person, mut *[0,0]> init_self, "name": !lit.ref<!String, mut *[0,1]> owned_in_mem, "age": !Int) -> !kgen.none>
+      %3 = lit.call @example::@Person::@"__init__(example::Person=&,std::collections::string::String,::Int)"[mut *"me`", mut *"anonymous*`1"](%me, %anonymous2A, %2) : !lit.signature<[2]("self": !lit.ref<!Person, mut *[0,0]> init_self, "name": !lit.ref<!String, mut *[0,1]> owned_in_mem, "age": !Int) -> !kgen.none>
       %none = kgen.param.constant: none = <#kgen.none>
       lit.return %none : !kgen.none
       lit.end_func
     }
     lit.func export C @main(%argc: !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>, %argv: !kgen.pointer<pointer<scalar<ui8>>>) -> !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>> attributes {linkageName = "main", sourceName = "__mojo_main_prototype", specialFnKind = 0 : i8} {
-      %0 = lit.call @stdlib::@builtin::@_startup::@"__wrap_and_execute_main[fn() -> None](::SIMD[{int32}, {1}],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>)"<:!lit.signature<() -> !kgen.none> @example::@"main()">(%argc, %argv) : !lit.signature<("argc": !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>, "argv": !kgen.pointer<pointer<scalar<ui8>>>) -> !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>>
+      %0 = lit.call @std::@builtin::@_startup::@"__wrap_and_execute_main[fn() -> None](::SIMD[{int32}, {1}],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>)"<:!lit.signature<() -> !kgen.none> @example::@"main()">(%argc, %argv) : !lit.signature<("argc": !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>, "argv": !kgen.pointer<pointer<scalar<ui8>>>) -> !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>>
       lit.return %0 : !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>
       lit.end_func
     }
   }
-  lit.package @stdlib { }
+  lit.package @std { }
 }
 ```
 
@@ -257,7 +257,7 @@ module {
       lit.end_func
     }
   }
-  lit.package @stdlib { }
+  lit.package @std { }
 }
 ```
 
@@ -382,14 +382,14 @@ lit.fn @"main()"() -> !kgen.none attributes {sourceName = "main", specialFnKind 
   lit.loop cond {
     %1 = lit.ref.load %i : <!Int, mut *"i`">
     %2 = kgen.param.constant: !Int = <{5}>
-    %3 = lit.call @stdlib::@builtin::@stubs::@Int::@"__lt__(::Int,::Int)"(%1, %2) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool>
-    %4 = lit.call @stdlib::@builtin::@stubs::@Bool::@"__mlir_i1__(::Bool)"(%3) : !lit.generator<("self": !Bool) -> i1>
+    %3 = lit.call @std::@builtin::@stubs::@Int::@"__lt__(::Int,::Int)"(%1, %2) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool>
+    %4 = lit.call @std::@builtin::@stubs::@Bool::@"__mlir_i1__(::Bool)"(%3) : !lit.generator<("self": !Bool) -> i1>
     lit.loop.condition %4 : i1
   } body {
     %1 = lit.call @main::@"hello()"() : !lit.generator<() -> !kgen.none>
     %2 = lit.ref.load %i : <!Int, mut *"i`">
     %3 = kgen.param.constant: !Int = <{1}>
-    %4 = lit.call @stdlib::@builtin::@stubs::@Int::@"__add__(::Int,::Int)"(%2, %3) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Int>
+    %4 = lit.call @std::@builtin::@stubs::@Int::@"__add__(::Int,::Int)"(%2, %3) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Int>
     lit.ref.store %4, %i : <!Int, mut *"i`">
     lit.loop.continue
   } else {

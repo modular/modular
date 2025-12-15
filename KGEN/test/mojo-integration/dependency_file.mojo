@@ -7,7 +7,7 @@
 # RUN: kgen --emit=object %s -o %t.o -d=%t.d
 # RUN: cat %t.d | FileCheck %s
 
-# CHECK: {{.*}}.o: {{.*}}stdlib.mojopkg
+# CHECK: {{.*}}.o: {{.*}}std.mojopkg
 
 
 @export

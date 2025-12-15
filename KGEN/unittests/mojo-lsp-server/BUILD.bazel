@@ -36,7 +36,7 @@ modular_cc_library(
         mojo_deps = [
             "//max:compiler_internal",
             "//max:tensor",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
         deps = [
             ":Support",
@@ -68,7 +68,7 @@ modular_python_binding_library_test(
         "PRESERVE_LSP_IO_FILES": "1",
     },
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     deps = [
         ":Support",

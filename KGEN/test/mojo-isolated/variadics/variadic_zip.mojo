@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
 
 
-from stdlib.builtin.variadics import *
+from std.builtin.variadics import *
 
 
 fn unfoldable[

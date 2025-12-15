@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo doc %s | FileCheck %s
-from stdlib.collections import List
+from std.collections import List
 
 
 # CHECK: "name": "foo"
@@ -35,6 +35,6 @@ fn baz() -> List[Int]:
 # CHECK: "type": "fn(List[Int]) -> Int"
 # CHECK: "signature": "higher_order(f: fn(List[Int]) -> Int) -> fn(List[Int]) -> Int"
 fn higher_order(
-    f: fn (stdlib.collections.list.List[Int]) -> Int,
-) -> fn (stdlib.collections.list.List[Int]) -> Int:
+    f: fn (std.collections.list.List[Int]) -> Int,
+) -> fn (std.collections.list.List[Int]) -> Int:
     return f

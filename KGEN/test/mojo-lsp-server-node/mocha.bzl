@@ -5,7 +5,7 @@ load("//bazel:api.bzl", "mojo_test_environment")
 
 def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
     mojo_test_environment(name = "mojo_test_env", data = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
         "//max:tensor",
         "//max:compiler_internal",
     ], testonly = True)
@@ -23,7 +23,7 @@ def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
         ] + args,
         data = data + srcs + [
             "//KGEN/test/mojo-lsp-server-node:.mocharc.json",
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "//max:tensor",
             "//max:compiler_internal",
             ":mojo_test_env",

@@ -3,8 +3,8 @@
 package(default_visibility = ["//KGEN:__subpackages__"])
 
 exports_files([
-    "stdlib/__init__.mojo",
-    "stdlib/prelude/__init__.mojo",
+    "std/__init__.mojo",
+    "std/prelude/__init__.mojo",
 ])
 
 filegroup(

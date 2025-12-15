@@ -190,10 +190,10 @@ std::string generateDocPath(llvm::StringRef module, llvm::StringRef typeName,
   }
 
   std::string path;
-  bool isStdlibType = moduleStr.starts_with("stdlib.");
+  bool isStdType = moduleStr.starts_with("std.");
 
-  // If this is a stdlib type, use the module path as-is
-  if (isStdlibType) {
+  // If this is a std type, use the module path as-is
+  if (isStdType) {
     path = moduleStr;
     // Add underscore at the end of ".index" name for docsite URL compatibility
     if (path.length() >= 6 && path.substr(path.length() - 6) == ".index") {

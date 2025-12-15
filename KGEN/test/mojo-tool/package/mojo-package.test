@@ -4,7 +4,7 @@
 // MAIN_IN_PACKAGE: defining 'main' within a package is not yet supported
 
 // CHECK: lit.package @test_package
-// CHECK-SAME: dependencies = #kgen<link.dependencies[@stdlib]>
+// CHECK-SAME: dependencies = #kgen<link.dependencies[@std]>
 // CHECK-SAME: postParseModule = {{.*}}
 
 // CHECK: lit.package @inner1

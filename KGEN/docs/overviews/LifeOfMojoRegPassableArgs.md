@@ -628,7 +628,7 @@ ends up lowering:
       %6 = lit.ref.pack.create(%4, %5) : !lit.ref.pack<:variadic<!AnyType> [#String1, #MyRPType1], imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>
       %7 = kgen.param.constant: !Bool = <{:i1 0}>
       // Create an instance of the VariadicPack with __init__.
-      %8 = lit.call @VariadicPack::@__init__<:!Bool {:i1 0}, :Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>(%6, %7) : !lit.generator<("value": !lit.ref.pack<:variadic<!AnyType> [#String1, #MyRPType1], imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>, "is_owned": !Bool) -> !lit.struct<#VariadicPack <:!Bool {:i1 0}, :@stdlib::@builtin::@type_aliases::@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>>>
+      %8 = lit.call @VariadicPack::@__init__<:!Bool {:i1 0}, :Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>(%6, %7) : !lit.generator<("value": !lit.ref.pack<:variadic<!AnyType> [#String1, #MyRPType1], imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>, "is_owned": !Bool) -> !lit.struct<#VariadicPack <:!Bool {:i1 0}, :@std::@builtin::@type_aliases::@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>>>
       // We need to pass this by-ref into the callee, so create a stack temp.
       // This will be eliminated when argument lowering turns this into a
       // register passable thing.
@@ -636,7 +636,7 @@ ends up lowering:
       lit.ref.store %8, %anonymous2A : <@VariadicPack<:!Bool {:i1 0}, :@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>, mut *"anonymous*`2">
 
       // Pass the temporary as immutable to the callee.
-      %9 = lit.ref.immut %anonymous2A : <@stdlib::@builtin::@list_literal::@VariadicPack<:!Bool {:i1 0}, :@stdlib::@builtin::@type_aliases::@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>, mut *"anonymous*`2">
+      %9 = lit.ref.immut %anonymous2A : <@std::@builtin::@list_literal::@VariadicPack<:!Bool {:i1 0}, :@std::@builtin::@type_aliases::@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>, mut *"anonymous*`2">
       %10 = lit.call @example4[
          # Bind the implicit origins for the callee.
          imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")},
@@ -653,7 +653,7 @@ are gone, which makes it easier to read:
   kgen.func export @call_example4() -> !kgen.none {
     %0 = pop.stack_allocation 1 x struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly> marked
     pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>>
-    %1 = kgen.call @"stdlib::collections::string::string::String::__init__()"(%0) : (!kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>> byref_result) -> !kgen.none
+    %1 = kgen.call @"std::collections::string::string::String::__init__()"(%0) : (!kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>> byref_result) -> !kgen.none
     %2 = pop.stack_allocation 1 x struct<()> marked
     %3 = kgen.call @"y::MyRPType::__init__()"() : () -> !kgen.struct<()>
     pop.stack_alloc.lifetime.start(%2) : !kgen.pointer<struct<()>>

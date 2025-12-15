@@ -33,7 +33,7 @@ lit_tests(
     force_strip = True,  # TODO(MOTO-1190): Debug and fix this duplicate symbol issue
     mojo_deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tools = [
         "//KGEN/tools/kgen",

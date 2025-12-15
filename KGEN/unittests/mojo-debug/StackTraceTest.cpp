@@ -43,13 +43,13 @@ TEST(StackTraceTest, testStackTraceFormat) {
   EXPECT_THAT(
       frameDescs[1],
       ContainsRegex(
-          R"(stack_trace::Foo<stdlib::builtin::int::Int, stdlib::builtin::int::Int>)"
-          R"(::getParametrized<stdlib::builtin::simd::SIMD,dtype=f32,size=1>\(self=.* @ 0x.*,)"
+          R"(stack_trace::Foo<std::builtin::int::Int, std::builtin::int::Int>)"
+          R"(::getParametrized<std::builtin::simd::SIMD,dtype=f32,size=1>\(self=.* @ 0x.*,)"
           R"( val=\(\[0] = 105.25\)\) at stack_trace.mojo:17:31)"));
   EXPECT_THAT(
       frameDescs[2],
       ContainsRegex(
-          R"(stack_trace::Foo<stdlib::builtin::int::Int, stdlib::builtin::int::Int>)"
+          R"(stack_trace::Foo<std::builtin::int::Int, std::builtin::int::Int>)"
           R"(::getFloat\(self=.* @ 0x.*, x=\(\[0\] = 1.125\), y=100\))"
           R"( at stack_trace.mojo:20:48)"));
   EXPECT_THAT(frameDescs[3],

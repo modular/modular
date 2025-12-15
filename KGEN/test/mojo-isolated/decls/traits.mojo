@@ -246,7 +246,7 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__: !lit.ref<:!ImplicitlyCopyable T, mut {{.*}}> byref_result
 fn copy_me[T: ImplicitlyCopyable](value: T) -> T:
     # CHECK-NEXT: lit.call tail[!lit.generator<[2]("existing": {{.*}}T, {{.*}}> read_mem, |, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "stdlib::builtin::stubs::Copyable", "__copyinit__{{.*}}">]{{.*}}(%value, %__result__)
+    # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "std::builtin::stubs::Copyable", "__copyinit__{{.*}}">]{{.*}}(%value, %__result__)
     return value
 
 
@@ -256,7 +256,7 @@ fn copy_me[T: ImplicitlyCopyable](value: T) -> T:
 # CHECK-SAME: :!Movable T, {{.*}}> byref_result
 fn move_me[T: Movable](var value: T) -> T:
     # CHECK-NEXT: lit.ownership.use %value
-    # CHECK-NEXT: lit.call tail[{{.*}}#kgen.get_witness<:!Movable T, "stdlib::builtin::stubs::Movable", "__moveinit__{{.*}}">]{{.*}}(%value, %__result__)
+    # CHECK-NEXT: lit.call tail[{{.*}}#kgen.get_witness<:!Movable T, "std::builtin::stubs::Movable", "__moveinit__{{.*}}">]{{.*}}(%value, %__result__)
     return value^
 
 
