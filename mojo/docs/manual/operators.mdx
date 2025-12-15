@@ -51,7 +51,7 @@ operators from the highest precedence to the lowest precedence.
 | `not x` | Boolean NOT | Right to left |
 | `x and y` | Boolean AND | Left to right |
 | `x or y` | Boolean OR | Left to right |
-| `if-else` | Conditional expression | Right to left |
+| `a if condition else b`| Ternary expression | Right to left |
 | `:=` | Assignment expression (walrus operator) | Right to left |
 
 Mojo supports the same operators as Python (plus a few extensions), and they
@@ -746,6 +746,32 @@ A type must explicitly implement in-place assignment methods, so you might
 encounter some types where in-place equivalents are not supported.
 
 :::
+
+### Ternary checks
+
+In many languages, the ternary (`condition ? first : second`) provides a three-element operator that returns the first value if a Boolean expression is true, and the second if false:
+
+```swift title="Not Mojo"
+let result = score > 65 ? "pass" : "fail"
+```
+
+In Mojo, as in Python, the ternary operator takes a different approach:
+
+```mojo title="Mojo"
+result = "pass" if score > 65 else "fail"
+```
+
+The ternary can be used in expressions, assignments, and as function args:
+
+```mojo
+exp = 5 # or -5
+result = 2.0 ** Float64(exp) 
+    if exp >= 0 \
+    else 1.0 / (2.0 ** abs(Float64(exp))) \
+    # For 5, 32, for -5, 0.03125
+
+greet("Sami" if is_sami else "Cass")
+```
 
 ### Assignment expressions
 
