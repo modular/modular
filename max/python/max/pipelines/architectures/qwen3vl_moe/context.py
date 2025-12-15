@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import msgspec
+from dataclasses import dataclass
+
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.core.context import TextAndVisionContext
 
 
-class VisionEncodingData(
-    msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
-):
+@dataclass(kw_only=True, slots=True)
+class VisionEncodingData:
     """Container for vision-specific encoding data used during image/video processing.
 
     This data is only present when the context includes images or videos that need
@@ -46,9 +46,8 @@ class VisionEncodingData(
     concatenated_pixel_values: npt.NDArray[np.float32]
 
 
-class Qwen3VLTextAndVisionContext(
-    TextAndVisionContext, tag=True, kw_only=True, omit_defaults=True
-):
+@dataclass(kw_only=True, slots=True)
+class Qwen3VLTextAndVisionContext(TextAndVisionContext):
     """Context object for Qwen3VL multimodal model processing.
 
     Extends TextAndVisionContext with Qwen3VL-specific configuration and state.

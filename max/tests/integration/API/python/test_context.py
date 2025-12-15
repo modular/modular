@@ -13,6 +13,8 @@
 
 import pickle
 import re
+from dataclasses import fields, is_dataclass
+from typing import Any
 
 import numpy as np
 import pytest
@@ -25,11 +27,56 @@ from max.interfaces import (
     SamplingParamsInput,
     TextGenerationContext,
     VLMTextGenerationContext,
-    msgpack_eq,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+
+
+def dataclass_equal(left: Any, right: Any) -> bool:
+    """Deep equality for dataclasses, handling numpy arrays and nested dataclasses.
+
+    - Requires both `left` and `right` to be dataclass instances of the same type.
+    - For each field:
+        * If both values are dataclasses, compare them recursively.
+        * If both values are numpy arrays, use np.array_equal.
+        * Otherwise, use regular ==.
+    """
+
+    def _eq(lv: Any, rv: Any) -> bool:
+        # Identity fast-path
+        if lv is rv:
+            return True
+
+        # Nested dataclasses: recurse
+        if is_dataclass(lv) and is_dataclass(rv):
+            if type(lv) is not type(rv):
+                return False
+            for f in fields(lv):
+                if not _eq(getattr(lv, f.name), getattr(rv, f.name)):
+                    return False
+            return True
+
+        # NumPy array handling
+        if isinstance(lv, np.ndarray) or isinstance(rv, np.ndarray):
+            if not (isinstance(lv, np.ndarray) and isinstance(rv, np.ndarray)):
+                return False  # one is array, the other is not
+            return np.array_equal(lv, rv)
+
+        # Fallback: normal equality
+        return lv == rv
+
+    if not (is_dataclass(left) and is_dataclass(right)):
+        raise TypeError("dataclass_equal expects two dataclass instances")
+
+    if type(left) is not type(right):
+        return False
+
+    for f in fields(left):
+        if not _eq(getattr(left, f.name), getattr(right, f.name)):
+            return False
+
+    return True
 
 
 def test_context__get_min_token_logit_mask() -> None:
@@ -506,15 +553,15 @@ def test_context_serializable() -> None:
     pickle_decoded = pickle.loads(pickle_encoded)
 
     assert isinstance(pickle_decoded, TextContext)
-    assert msgpack_eq(pickle_decoded, original_context)
+    assert dataclass_equal(pickle_decoded, original_context)
 
     # Test that we can encode a sample TextContext with MsgPack
     serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(TextContext | TextAndVisionContext)
+    deserialize = msgpack_numpy_decoder(TextContext)
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
-    assert msgpack_eq(msgpack_decoded, original_context)
+    assert dataclass_equal(msgpack_decoded, original_context)
 
 
 def test_context_tuple_serializable() -> None:
@@ -530,18 +577,18 @@ def test_context_tuple_serializable() -> None:
     pickle_decoded = pickle.loads(pickle_encoded)
 
     assert pickle_decoded[0] == original_tuple[0]
-    assert msgpack_eq(pickle_decoded[1], original_tuple[1])
+    assert dataclass_equal(pickle_decoded[1], original_tuple[1])
 
     # Test that we can encode a tuple of (str, TextContext) with MsgPack
     serialize = msgpack_numpy_encoder()
     deserialize = msgpack_numpy_decoder(
-        tuple[str, TextContext | TextAndVisionContext]
+        tuple[str, TextContext],
     )
     msgpack_encoded = serialize(original_tuple)
     msgpack_decoded = deserialize(msgpack_encoded)
 
     assert msgpack_decoded[0] == original_tuple[0]
-    assert msgpack_eq(msgpack_decoded[1], original_tuple[1])
+    assert dataclass_equal(msgpack_decoded[1], original_tuple[1])
 
 
 def test_text_and_vision_context_serializable() -> None:
@@ -563,15 +610,15 @@ def test_text_and_vision_context_serializable() -> None:
     pickle_decoded = pickle.loads(pickle_encoded)
 
     assert isinstance(pickle_decoded, TextAndVisionContext)
-    assert msgpack_eq(pickle_decoded, original_context)
+    assert dataclass_equal(pickle_decoded, original_context)
 
     # Test that we can encode a sample TextAndVisionContext with MsgPack
     serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(TextContext | TextAndVisionContext)
+    deserialize = msgpack_numpy_decoder(TextAndVisionContext)
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
-    assert msgpack_eq(msgpack_decoded, original_context)
+    assert dataclass_equal(msgpack_decoded, original_context)
 
 
 def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
@@ -587,15 +634,15 @@ def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
     pickle_decoded = pickle.loads(pickle_encoded)
 
     assert isinstance(pickle_decoded, TextAndVisionContext)
-    assert msgpack_eq(pickle_decoded, original_context)
+    assert dataclass_equal(pickle_decoded, original_context)
 
     # Test that we can encode a sample TextAndVisionContext with MsgPack
     serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(TextContext | TextAndVisionContext)
+    deserialize = msgpack_numpy_decoder(TextAndVisionContext)
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
-    assert msgpack_eq(msgpack_decoded, original_context)
+    assert dataclass_equal(msgpack_decoded, original_context)
 
 
 def test_text_and_vision_context_tuple_serializable() -> None:
@@ -618,18 +665,16 @@ def test_text_and_vision_context_tuple_serializable() -> None:
     pickle_decoded = pickle.loads(pickle_encoded)
 
     assert pickle_decoded[0] == original_tuple[0]
-    assert msgpack_eq(pickle_decoded[1], original_tuple[1])
+    assert dataclass_equal(pickle_decoded[1], original_tuple[1])
 
     # Test that we can encode a tuple of (str, TextAndVisionContext) with MsgPack
     serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(
-        tuple[str, TextContext | TextAndVisionContext]
-    )
+    deserialize = msgpack_numpy_decoder(tuple[str, TextAndVisionContext])
     msgpack_encoded = serialize(original_tuple)
     msgpack_decoded = deserialize(msgpack_encoded)
 
     assert msgpack_decoded[0] == original_tuple[0]
-    assert msgpack_eq(msgpack_decoded[1], original_tuple[1])
+    assert dataclass_equal(msgpack_decoded[1], original_tuple[1])
 
 
 def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
@@ -663,7 +708,7 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
 
     # Verify the deserialized context matches the original
     assert isinstance(msgpack_decoded, TTSContext)
-    assert msgpack_eq(msgpack_decoded, original_context)
+    assert dataclass_equal(msgpack_decoded, original_context)
     assert np.array_equal(
         msgpack_decoded.audio_prompt_tokens, audio_prompt_tokens
     )

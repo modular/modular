@@ -68,7 +68,6 @@ from .task import PipelineTask
 from .tokenizer import PipelineTokenizer
 from .utils import (
     SharedMemoryArray,
-    msgpack_eq,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -148,7 +147,6 @@ __all__ = [
     "VLMTextGenerationContext",
     "drain_queue",
     "get_blocking",
-    "msgpack_eq",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
 ]
