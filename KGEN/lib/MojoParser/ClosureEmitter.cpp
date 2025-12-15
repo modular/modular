@@ -42,7 +42,9 @@ using namespace M::KGEN::LIT;
 // File-local
 namespace {
 static constexpr char kToDeviceType[] = "_to_device_type";
-}
+static constexpr char kIsDeviceTypeConvertible[] =
+    "_is_convertible_to_device_type";
+} // namespace
 
 static FnOp getFnOpNamed(TraitDeclOp traitDecl, StringRef name) {
   for (FnOp candidate : traitDecl.getFields().getOps<FnOp>()) {
@@ -2446,6 +2448,9 @@ void ClosureEmitter::addConformanceToDevicePassable(
 
   for (Operation &member : trait.getFields().getOps()) {
     if (auto function = dyn_cast<FnOp>(member)) {
+      /// Check for the _is_convertible_to_device_type function.
+      if (function.getSourceName() == kIsDeviceTypeConvertible)
+        continue;
       /// We already have AnyType members implemented, only implement those that
       /// are defined by DevicePassable.
       auto parent = function.getInheritedFrom();
