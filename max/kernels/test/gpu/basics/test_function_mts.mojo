@@ -13,11 +13,11 @@
 
 from math import ceildiv
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import global_idx
+from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from tensor import InputTensor, OutputTensor, StaticTensorSpec
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 from utils import IndexList
 
@@ -67,64 +67,64 @@ def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
 
 
 def test_color_to_grayscale():
-    var ctx = create_test_device_context()
+    with DeviceContext() as ctx:
+        var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](
+            rgb_layout_orig.size()
+        )
+        var gray_buffer = ctx.enqueue_create_buffer[int_dtype](
+            gray_layout_orig.size()
+        )
 
-    var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](
-        rgb_layout_orig.size()
-    )
-    var gray_buffer = ctx.enqueue_create_buffer[int_dtype](
-        gray_layout_orig.size()
-    )
-
-    var rgb_tensor = InputTensor[static_spec=rgb_spec](
-        rgb_buffer.unsafe_ptr(), IndexList[3](HEIGHT, WIDTH, NUM_CHANNELS)
-    )
-
-    # Map device buffer to host to initialize values from CPU
-    with rgb_buffer.map_to_host() as host_buffer:
         var rgb_tensor = InputTensor[static_spec=rgb_spec](
-            host_buffer.unsafe_ptr(), IndexList[3](HEIGHT, WIDTH, NUM_CHANNELS)
-        ).to_layout_tensor()
-        # Fill the image with initial colors.
-        for row in range(HEIGHT):
-            for col in range(WIDTH):
-                rgb_tensor[row, col, 0] = row + col
-                rgb_tensor[row, col, 1] = row + col + 20
-                rgb_tensor[row, col, 2] = row + col + 40
+            rgb_buffer.unsafe_ptr(), IndexList[3](HEIGHT, WIDTH, NUM_CHANNELS)
+        )
 
-    var gray_tensor = OutputTensor[static_spec=gray_spec](
-        gray_buffer.unsafe_ptr(), IndexList[2](HEIGHT, WIDTH)
-    )
+        # Map device buffer to host to initialize values from CPU
+        with rgb_buffer.map_to_host() as host_buffer:
+            var rgb_tensor = InputTensor[static_spec=rgb_spec](
+                host_buffer.unsafe_ptr(),
+                IndexList[3](HEIGHT, WIDTH, NUM_CHANNELS),
+            ).to_layout_tensor()
+            # Fill the image with initial colors.
+            for row in range(HEIGHT):
+                for col in range(WIDTH):
+                    rgb_tensor[row, col, 0] = row + col
+                    rgb_tensor[row, col, 1] = row + col + 20
+                    rgb_tensor[row, col, 2] = row + col + 40
 
-    # The grid is divided up into blocks, making sure there's an extra
-    # full block for any remainder. This hasn't been tuned for any specific
-    # GPU.
-    comptime BLOCK_SIZE = 16
-    num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
-    num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
+        var gray_tensor = OutputTensor[static_spec=gray_spec](
+            gray_buffer.unsafe_ptr(), IndexList[2](HEIGHT, WIDTH)
+        )
 
-    # Launch the compiled function on the GPU. The target device is specified
-    # first, followed by all function arguments. The last two named parameters
-    # are the dimensions of the grid in blocks, and the block dimensions.
-    ctx.enqueue_function_experimental[color_to_grayscale](
-        rgb_tensor,
-        gray_tensor,
-        grid_dim=(num_col_blocks, num_row_blocks),
-        block_dim=(BLOCK_SIZE, BLOCK_SIZE),
-    )
+        # The grid is divided up into blocks, making sure there's an extra
+        # full block for any remainder. This hasn't been tuned for any specific
+        # GPU.
+        comptime BLOCK_SIZE = 16
+        num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
+        num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
 
-    with gray_buffer.map_to_host() as host_buffer:
-        host_tensor = LayoutTensor[int_dtype, gray_layout_orig](host_buffer)
-        print("Resulting grayscale image:")
-        print_image(host_tensor)
-        expect_eq(host_tensor[0, 0], 17)
-        expect_eq(host_tensor[0, 3], 19)
-        expect_eq(host_tensor[5, 4], 25)
-        expect_eq(host_tensor[7, 1], 24)
-        expect_eq(host_tensor[9, 4], 29)
+        # Launch the compiled function on the GPU. The target device is specified
+        # first, followed by all function arguments. The last two named parameters
+        # are the dimensions of the grid in blocks, and the block dimensions.
+        ctx.enqueue_function_experimental[color_to_grayscale](
+            rgb_tensor,
+            gray_tensor,
+            grid_dim=(num_col_blocks, num_row_blocks),
+            block_dim=(BLOCK_SIZE, BLOCK_SIZE),
+        )
 
-    _ = rgb_buffer
-    _ = gray_buffer
+        with gray_buffer.map_to_host() as host_buffer:
+            host_tensor = LayoutTensor[int_dtype, gray_layout_orig](host_buffer)
+            print("Resulting grayscale image:")
+            print_image(host_tensor)
+            assert_equal(host_tensor[0, 0], 17)
+            assert_equal(host_tensor[0, 3], 19)
+            assert_equal(host_tensor[5, 4], 25)
+            assert_equal(host_tensor[7, 1], 24)
+            assert_equal(host_tensor[9, 4], 29)
+
+        _ = rgb_buffer
+        _ = gray_buffer
 
 
 def main():
