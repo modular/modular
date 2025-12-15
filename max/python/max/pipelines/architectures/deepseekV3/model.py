@@ -290,9 +290,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # The shared experts are duplicated on each device.
         total_size += shared_experts_size * n_gpus_per_node
 
-        # The routing experts are split across the nodes.
-        n_nodes = pipeline_config.ep_size // n_gpus_per_node
-        total_size += routing_experts_size // n_nodes
+        ep_size = max(pipeline_config.ep_size, 1)
+        if ep_size == 1:
+            total_size += routing_experts_size
+        else:
+            # we don't support mixing EP and TP strategies yet.
+            # ep_size must be equal to n_gpus_per_node * n_nodes
+            assert ep_size % n_gpus_per_node == 0
+            n_nodes = ep_size // n_gpus_per_node
+            total_size += routing_experts_size // n_nodes
 
         # Add back the lm_head/embed_tokens size, they will never be duplicated.
         total_size += lm_head_size + embed_tokens_size
