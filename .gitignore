@@ -161,6 +161,5 @@ examples/models/*
 
 # Magic cache
 .magic
-# pixi environments
-.pixi/*
-!.pixi/config.toml
+# pixi environments (ignored; local configs should not be committed)
+.pixi/

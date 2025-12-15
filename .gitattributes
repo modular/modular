@@ -3,4 +3,3 @@
 # See https://github.com/github/linguist/blob/master/docs/overrides.md
 *.🔥 linguist-language=Mojo
 # SCM syntax highlighting & preventing 3-way merges
-pixi.lock merge=binary linguist-language=YAML linguist-generated=true
