@@ -125,7 +125,7 @@ kgen.func @no_variadic_get_hoisting() {
   %index0 = kgen.param.constant = <0>
   %index99 = kgen.param.constant = <99>
   %0 = kgen.param.constant: i1 = <0>
-  %1 = kgen.call @"stdlib::sys::arg::argv()"() : () -> !kgen.variadic<struct<(pointer<none>, index)>>
+  %1 = kgen.call @"std::sys::arg::argv()"() : () -> !kgen.variadic<struct<(pointer<none>, index)>>
   %2 = pop.variadic.size %1 : !kgen.variadic<struct<(pointer<none>, index)>>
   %3 = index.cmp sgt(%2, %index0)
   // CHECK: hlcf.if

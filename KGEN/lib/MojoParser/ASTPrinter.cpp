@@ -99,11 +99,11 @@ static StringRef tryGetTypeNameFromSymbolRef(SymbolRefAttr symbol) {
 }
 
 // If we are a builtin symbol, then just strip everything but the name of the
-// type. E.g. Print ::Int instead of stdlib::builtin::int::Int.
+// type. E.g. Print ::Int instead of std::builtin::int::Int.
 static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
   // List of common namespace prefixes to trim
   static const StringRef commonPrefixes[] = {
-      "stdlib::", "layout::"
+      "std::", "layout::"
       // Add other common prefixes here
   };
 
@@ -134,7 +134,7 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
   // them more readable.
   StringRef name = getNameFromSymbolRef(symbol, isFunc);
 
-  // Remove stdlib:: prefixes.
+  // Remove std:: prefixes.
   name = trimBuiltinNamespace(name);
 
   // The symbol is mangled and therefore will have parameter type information

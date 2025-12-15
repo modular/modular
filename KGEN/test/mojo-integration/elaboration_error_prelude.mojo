@@ -10,13 +10,13 @@
 
 from collections.string.string_slice import _get_kgen_string
 
-# CHECK-PRELUDE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-PRELUDE: {{.*}}std/builtin/_startup.mojo
 # CHECK-PRELUDE-SAME: error: function instantiation failed
-# CHECK-PRELUDE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-PRELUDE: {{.*}}std/builtin/_startup.mojo
 # CHECK-PRELUDE-SAME: note: call expansion failed
-# CHECK-PRELUDE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-PRELUDE: {{.*}}std/builtin/_startup.mojo
 # CHECK-PRELUDE-SAME: note: function instantiation failed
-# CHECK-PRELUDE: {{.*}}stdlib/builtin/_startup.mojo
+# CHECK-PRELUDE: {{.*}}std/builtin/_startup.mojo
 # CHECK-PRELUDE-SAME: note: call expansion failed
 
 

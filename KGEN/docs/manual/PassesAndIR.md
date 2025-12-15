@@ -515,7 +515,7 @@ fn main():
 In this, the LIT contains this `lit.call` line:
 
 ```mlir
-      %0 = lit.call @main::@"zork[::List[::Int, ::Bool(False)]]()"<:@stdlib::@collections::@list::@List<:!Copyable_Movable #Int1, :!Bool {:i1 0}> apply_result_slot(...)>() : !lit.generator<() -> !kgen.none>
+      %0 = lit.call @main::@"zork[::List[::Int, ::Bool(False)]]()"<:@std::@collections::@list::@List<:!Copyable_Movable #Int1, :!Bool {:i1 0}> apply_result_slot(...)>() : !lit.generator<() -> !kgen.none>
 
 ```
 

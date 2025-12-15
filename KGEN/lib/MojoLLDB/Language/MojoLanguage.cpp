@@ -371,9 +371,9 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
 
   constexpr const char *kListRegex =
-      R"(^!lit.struct<@stdlib::@collections::@list::@"?List[\[<].*)";
+      R"(^!lit.struct<@std::@collections::@list::@"?List[\[<].*)";
   constexpr const char *kLLDBFormatterWrappingTypeRegex =
-      R"(.* {@stdlib::utils::_visualizers::lldb_formatter_wrapping_type\(.*)";
+      R"(.* {@std::utils::_visualizers::lldb_formatter_wrapping_type\(.*)";
 
   // Formatters are matched in reverse order.
   AddCXXSynthetic(mojoCategorySP,
@@ -409,11 +409,10 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
 
   // Add summary provider for pointer<String> types - MUST be AFTER generic
   // pointer handler because summary providers are matched in reverse order
-  AddCXXSummary(
-      mojoCategorySP, pointerToStringSummaryProvider,
-      "pointer<String> summary provider",
-      R"(pointer<(@stdlib::)?@collections::@string::@string::@String>)",
-      summaryFlags, /*regex=*/true);
+  AddCXXSummary(mojoCategorySP, pointerToStringSummaryProvider,
+                "pointer<String> summary provider",
+                R"(pointer<(@std::)?@collections::@string::@string::@String>)",
+                summaryFlags, /*regex=*/true);
 
   summaryFlags.SetDontShowChildren(true);
   AddCXXSummary(mojoCategorySP, kgenNoneSummaryProvider,
@@ -430,7 +429,7 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(
       mojoCategorySP, builtinStringSummaryProvider,
       "collections::string::string::String summary provider",
-      R"(!lit.struct<(@stdlib::)?@collections::@string::@string::@String>)",
+      R"(!lit.struct<(@std::)?@collections::@string::@string::@String>)",
       summaryFlags, /*regex=*/true);
 
   summaryFlags.SetDontShowChildren(false);

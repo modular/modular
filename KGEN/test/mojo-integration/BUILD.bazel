@@ -27,7 +27,7 @@ lit_tests(
     data = [":fixtures"],
     mojo_deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tags = ["gpu"],
     target_compatible_with = select({
@@ -48,18 +48,18 @@ lit_tests(
 )
 
 lit_tests(
-    name = "test_stdlib_srcs",
-    # This tests require the stdlib, where other tests do
+    name = "test_std_srcs",
+    # This tests require the std, where other tests do
     # not require them
     srcs = glob(["*.test"]),
     data = [":fixtures"] + [
-        "//open-source/max/mojo/stdlib/stdlib:stdlib_srcs",
+        "//open-source/max/mojo/stdlib/std:std_srcs",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/mojo/stdlib/stdlib:stdlib_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/mojo/stdlib/std:std_srcs)",
     },
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tools = [
         "//KGEN/tools/hash-mlir",

@@ -819,7 +819,7 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
 
   TypedAttr message;
   if (messageExpr) {
-    // Parse the message into an expression with stdlib "StaticString" type,
+    // Parse the message into an expression with std "StaticString" type,
     // which is an alias for "StringSlice[StaticConstantOrigin]".
     auto staticStringType =
         shared.getBuiltinStaticStringType(*curDeclScope, smLoc);

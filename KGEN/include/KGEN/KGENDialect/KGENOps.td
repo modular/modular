@@ -1507,7 +1507,7 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
 
     ```mlir
     kgen.package.link @foo
-      dependencies([@stdlib])
+      dependencies([@std])
       post_parse(dense_resource<...> : tensor<...xi8>)
     ```
   }];

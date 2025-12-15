@@ -79,7 +79,7 @@ comptime __SomeImpl[Trait: AnyTrivialRegType, T: Trait] = T
 # CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": !alias_AnyTrivialRegType1>!lit.generator<<"T": !kgen.param<:!alias_AnyTrivialRegType1 *(1,0)>>!kgen.param<:!alias_AnyTrivialRegType1 *(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
 comptime Some[Trait: AnyTrivialRegType] = __SomeImpl[Trait]
 
-# CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Int> @stdlib::@builtin::@stubs::@Int::@"__add__(::Int,::Int)", *(0,0), *(0,0)), {_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)})>>
+# CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Int> @std::@builtin::@stubs::@Int::@"__add__(::Int,::Int)", *(0,0), *(0,0)), {_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)})>>
 comptime myDouble[x: Int] = myDependentDefaultAdd[x]
 
 

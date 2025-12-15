@@ -29,5 +29,5 @@ bool isLocationInPrelude(const Location &loc) {
   llvm::raw_string_ostream os(str);
   os << loc;
   StringRef strref(str);
-  return str.find("stdlib/builtin/_startup.mojo") != std::string::npos;
+  return str.find("std/builtin/_startup.mojo") != std::string::npos;
 }

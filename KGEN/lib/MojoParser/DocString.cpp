@@ -31,7 +31,7 @@ static size_t getIndentationLevel(StringRef str) {
 /// Return if one of the given decorators is the doc_private decorator.
 static bool hasDocPrivateDecorator(ArrayRef<TypedAttr> decorators) {
   return hasDecorator(decorators,
-                      "stdlib::documentation::documentation::doc_private");
+                      "std::documentation::documentation::doc_private");
 }
 
 /// Given a function name such as "__init__(module::Struct=&)", returns whether

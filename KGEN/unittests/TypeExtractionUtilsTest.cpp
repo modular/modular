@@ -58,10 +58,10 @@ TEST_F(TypeExtractionUtilsTest, ExtractBaseTypeName_FunctionTypes) {
 /// Test extractBaseTypeName with qualified type names.
 /// Should preserve the full qualified name when generics are present.
 TEST_F(TypeExtractionUtilsTest, ExtractBaseTypeName_QualifiedTypes) {
-  EXPECT_EQ(extractBaseTypeName("stdlib.collections.List"),
-            "stdlib.collections.List");
-  EXPECT_EQ(extractBaseTypeName("stdlib.collections.List[Int]"),
-            "stdlib.collections.List");
+  EXPECT_EQ(extractBaseTypeName("std.collections.List"),
+            "std.collections.List");
+  EXPECT_EQ(extractBaseTypeName("std.collections.List[Int]"),
+            "std.collections.List");
 }
 
 /// Test extractBaseTypeName with types containing whitespace.
@@ -92,12 +92,11 @@ TEST_F(TypeExtractionUtilsTest, ExtractBaseTypeName_EdgeCases) {
 //===----------------------------------------------------------------------===//
 
 /// Test generateDocPath with standard library types.
-/// Should generate proper stdlib documentation paths.
+/// Should generate proper std documentation paths.
 TEST_F(TypeExtractionUtilsTest, GenerateDocPath_StandardlibTypes) {
-  EXPECT_EQ(generateDocPath("stdlib.collections", "List", ""),
-            "/stdlib/collections/List");
-  EXPECT_EQ(generateDocPath("stdlib.builtin", "Int", ""),
-            "/stdlib/builtin/Int");
+  EXPECT_EQ(generateDocPath("std.collections", "List", ""),
+            "/std/collections/List");
+  EXPECT_EQ(generateDocPath("std.builtin", "Int", ""), "/std/builtin/Int");
 }
 
 /// Test generateDocPath with custom documentation base paths.
@@ -109,12 +108,12 @@ TEST_F(TypeExtractionUtilsTest, GenerateDocPath_WithDocsBasePath) {
 }
 
 /// Test generateDocPath with special index module handling.
-/// Should handle .index suffix for website compatibility (stdlib only).
+/// Should handle .index suffix for website compatibility (std only).
 TEST_F(TypeExtractionUtilsTest, GenerateDocPath_IndexModules) {
-  // Test .index suffix handling for website compatibility (stdlib only)
-  EXPECT_EQ(generateDocPath("stdlib.utils.index", "IndexList", ""),
-            "/stdlib/utils/index_/IndexList");
-  // Non-stdlib modules should not get the .index_ conversion
+  // Test .index suffix handling for website compatibility (std only)
+  EXPECT_EQ(generateDocPath("std.utils.index", "IndexList", ""),
+            "/std/utils/index_/IndexList");
+  // Non-std modules should not get the .index_ conversion
   EXPECT_EQ(generateDocPath("mypackage.index", "SomeType", "docs"),
             "/docs/mypackage/index/SomeType");
 }
@@ -122,8 +121,8 @@ TEST_F(TypeExtractionUtilsTest, GenerateDocPath_IndexModules) {
 /// Test generateDocPath with alias types.
 /// Should generate paths with a lowercase anchor tag.
 TEST_F(TypeExtractionUtilsTest, GenerateDocPath_Aliases) {
-  EXPECT_EQ(generateDocPath("stdlib.builtin", "MutOrigin", "", true),
-            "/stdlib/builtin/#mutorigin");
+  EXPECT_EQ(generateDocPath("std.builtin", "MutOrigin", "", true),
+            "/std/builtin/#mutorigin");
   EXPECT_EQ(generateDocPath("", "MyAlias", "", true), "//#myalias");
   EXPECT_EQ(generateDocPath("mymodule", "SomeAlias", "docs", true),
             "/docs/mymodule/#somealias");
@@ -141,16 +140,16 @@ TEST_F(TypeExtractionUtilsTest, GenerateDocPath_EdgeCases) {
 /// documentation URLs.
 TEST_F(TypeExtractionUtilsTest, GenerateDocPath_InitModuleRemoval) {
   // __init__ at the end of a path should be removed
-  EXPECT_EQ(generateDocPath("stdlib.collections.__init__", "List", ""),
-            "/stdlib/collections/List");
+  EXPECT_EQ(generateDocPath("std.collections.__init__", "List", ""),
+            "/std/collections/List");
 
   // __init__ in the middle of a path should be removed
-  EXPECT_EQ(generateDocPath("stdlib.__init__.collections", "Dict", ""),
-            "/stdlib/collections/Dict");
+  EXPECT_EQ(generateDocPath("std.__init__.collections", "Dict", ""),
+            "/std/collections/Dict");
 
   // __init__ with aliases should work correctly
-  EXPECT_EQ(generateDocPath("stdlib.builtin.__init__", "MutOrigin", "", true),
-            "/stdlib/builtin/#mutorigin");
+  EXPECT_EQ(generateDocPath("std.builtin.__init__", "MutOrigin", "", true),
+            "/std/builtin/#mutorigin");
 }
 
 /// Test generateDocPath dot-to-slash conversion for nested modules.
@@ -237,8 +236,8 @@ TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_EmptyType) {
 TEST_F(TypeExtractionUtilsTest, TypeMetadata_ToJSON) {
   // Test TypeMetadata JSON serialization
   // Constructor: TypeMetadata(typeStr, module, relativePath, constraints)
-  M::KGEN::TypeMetadata metadata("List[Int]", "stdlib.collections",
-                                 "/stdlib/collections/List");
+  M::KGEN::TypeMetadata metadata("List[Int]", "std.collections",
+                                 "/std/collections/List");
 
   auto json = metadata.toJSON();
 
@@ -251,7 +250,7 @@ TEST_F(TypeExtractionUtilsTest, TypeMetadata_ToJSON) {
   EXPECT_TRUE(typeValue.has_value());
   EXPECT_TRUE(pathValue.has_value());
   EXPECT_EQ(typeValue.value(), "List[Int]");
-  EXPECT_EQ(pathValue.value(), "/stdlib/collections/List");
+  EXPECT_EQ(pathValue.value(), "/std/collections/List");
 }
 
 /// Test TypeMetadata JSON serialization with empty path.

@@ -9,7 +9,7 @@ lit_tests(
         "**/*.mojo",
     ]),
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tools = [
         "//KGEN/tools/mojo-lsp-server",

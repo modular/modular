@@ -234,44 +234,44 @@ inline bool isExtensibilityFunc(Operation *gen) {
 constexpr StringLiteral MOJO_DPS_TENSOR_TYPE_NAME =
     "tensor::ManagedTensorSlice";
 
-constexpr StringLiteral MOJO_INTERNAL_DPS_SIMD_TYPE_NAME = "stdlib::SIMD";
+constexpr StringLiteral MOJO_INTERNAL_DPS_SIMD_TYPE_NAME = "std::SIMD";
 
-constexpr StringLiteral MOJO_INTERNAL_DPS_INT_TYPE_NAME = "stdlib::Int";
+constexpr StringLiteral MOJO_INTERNAL_DPS_INT_TYPE_NAME = "std::Int";
 
-constexpr StringLiteral MOJO_INTERNAL_DPS_UINT_TYPE_NAME = "stdlib::UInt";
+constexpr StringLiteral MOJO_INTERNAL_DPS_UINT_TYPE_NAME = "std::UInt";
 
-constexpr StringLiteral MOJO_INTERNAL_DPS_BOOL_TYPE_NAME = "stdlib::Bool";
+constexpr StringLiteral MOJO_INTERNAL_DPS_BOOL_TYPE_NAME = "std::Bool";
 
 constexpr StringLiteral MOJO_INTERNAL_DPS_INDEX_LIST_TYPE_NAME =
-    "stdlib::IndexList";
+    "std::IndexList";
 
 // We support tuples of DPS tensors for operations with variadic input/outputs
 constexpr StringLiteral MOJO_VARIADIC_TENSORS_NAME = "tensor::VariadicTensors";
 
 // We support lists of DPS tensors for a few operations
-constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "stdlib::List";
+constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "std::List";
 
 // The stored mojo type symbol name of device contexts in extensibility kernels.
 constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
-    "stdlib::DeviceContextPtr";
+    "std::DeviceContextPtr";
 
 // The stored mojo type symbol name of device contexts list in extensibility
 // kernels.
 constexpr StringLiteral
     MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_LIST_TYPE_NAME =
-        "stdlib::DeviceContextPtrList";
+        "std::DeviceContextPtrList";
 
 // These type names can be confusing. Inside the Graph Compiler code, the
 // types show up like this:
-// - StaticString -> stdlib::StringSlice
-// - String -> stdlib::String
-// - StringSlice -> stdlib::Origin
+// - StaticString -> std::StringSlice
+// - String -> std::String
+// - StringSlice -> std::Origin
 constexpr StringLiteral MOJO_INTERNAL_STATIC_STRING_TYPE_NAME =
-    "stdlib::StringSlice";
+    "std::StringSlice";
 
-constexpr StringLiteral MOJO_STRING_TYPE_NAME = "stdlib::String";
+constexpr StringLiteral MOJO_STRING_TYPE_NAME = "std::String";
 
-constexpr StringLiteral MOJO_INTERNAL_STRING_SLICE_TYPE_NAME = "stdlib::Origin";
+constexpr StringLiteral MOJO_INTERNAL_STRING_SLICE_TYPE_NAME = "std::Origin";
 
 //===----------------------------------------------------------------------===//
 // Parameter Inference
