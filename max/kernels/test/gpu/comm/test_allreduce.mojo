@@ -18,14 +18,11 @@ from itertools import product
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import (
-    MAX_GPUS,
-    Signal,
     _allreduce_naive_single,
     allreduce,
     elementwise_epilogue_type,
-    group_start,
-    group_end,
 )
 import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer

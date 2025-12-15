@@ -14,6 +14,8 @@
 # count
 # ===-----------------------------------------------------------------------===#
 
+from builtin.constrained import _constrained_conforms_to
+
 
 @fieldwise_init
 @register_passable("trivial")
@@ -113,7 +115,21 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
             # item from the A iterator.
             self._inner_b = self._initial_inner_b.copy()
             self._inner_a_elem = next(self._inner_a)
-        return self._inner_a_elem.unsafe_value().copy(), next(self._inner_b)
+
+        _constrained_conforms_to[
+            conforms_to(type_of(self._inner_a_elem).T, Copyable),
+            Parent=Self,
+            Element = type_of(self._inner_a_elem).T,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="Copyable",
+        ]()
+
+        var elem = trait_downcast[Copyable](
+            self._inner_a_elem.unsafe_value()
+        ).copy()
+        return rebind_var[Self.IteratorTypeA.Element](elem^), next(
+            self._inner_b
+        )
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         # compute a * initial_b + b for lower and upper
@@ -213,9 +229,40 @@ struct _Product3[
         return self._inner.__has_next__()
 
     fn __next__(mut self) -> Self.Element:
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA.Element, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeA.Element,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB.Element, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeB.Element,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeC.Element, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeC.Element,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="Copyable",
+        ]()
+
         var nested = next(self._inner)  # Returns (a, (b, c))
+        var a = rebind_var[Self.IteratorTypeA.Element](
+            trait_downcast[Copyable](nested[0]).copy()
+        )
+        var b = rebind_var[Self.IteratorTypeB.Element](
+            trait_downcast[Copyable](nested[1][0]).copy()
+        )
+        var c = rebind_var[Self.IteratorTypeC.Element](
+            trait_downcast[Copyable](nested[1][1]).copy()
+        )
         # Flatten to (a, b, c)
-        return (nested[0].copy(), nested[1][0].copy(), nested[1][1].copy())
+        return (a^, b^, c^)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
@@ -312,14 +359,51 @@ struct _Product4[
         return self._inner.__has_next__()
 
     fn __next__(mut self) -> Self.Element:
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA.Element, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeA.Element,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB.Element, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeB.Element,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeC.Element, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeC.Element,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeD.Element, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeD.Element,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="Copyable",
+        ]()
+
         var nested = next(self._inner)  # Returns (a, (b, c, d))
         # Flatten to (a, b, c, d)
-        return (
-            nested[0].copy(),
-            nested[1][0].copy(),
-            nested[1][1].copy(),
-            nested[1][2].copy(),
+
+        var a = rebind_var[Self.IteratorTypeA.Element](
+            trait_downcast[Copyable](nested[0]).copy()
         )
+        var b = rebind_var[Self.IteratorTypeB.Element](
+            trait_downcast[Copyable](nested[1][0]).copy()
+        )
+        var c = rebind_var[Self.IteratorTypeC.Element](
+            trait_downcast[Copyable](nested[1][1]).copy()
+        )
+        var d = rebind_var[Self.IteratorTypeD.Element](
+            trait_downcast[Copyable](nested[1][2]).copy()
+        )
+        return (a^, b^, c^, d^)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()

@@ -46,7 +46,7 @@ EX_TEMPFAIL = 75
 
 def validate_hf_token() -> None:
     """
-    It's a regular occurence that people are asked to run logit verification
+    It's a regular occurrence that people are asked to run logit verification
     locally, and not everyone has an HF_TOKEN set. Let's help them out
     """
     if os.getenv("HF_TOKEN") is None:

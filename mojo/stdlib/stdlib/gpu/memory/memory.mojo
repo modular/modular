@@ -32,6 +32,7 @@ from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import (
     align_of,
     bit_width_of,
+    is_apple_gpu,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
@@ -657,7 +658,7 @@ fn async_copy[
     ), "the l2 prefetch size must be in bounds"
 
     @parameter
-    if is_amd_gpu():
+    if is_amd_gpu() or is_apple_gpu():
         # Use sync load and stores for now
         # TODO(KERN-1249): add async memcopy to AMD
         comptime n_scalars = size // size_of[dtype]()
@@ -808,7 +809,7 @@ fn async_copy_commit_group():
     @parameter
     if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.commit.group", NoneType]()
-    elif is_amd_gpu() or not is_gpu():
+    elif is_amd_gpu() or is_apple_gpu() or not is_gpu():
         # This operation is a no-op on AMD and CPU.
         pass
     else:
@@ -838,7 +839,7 @@ fn async_copy_wait_group(n: Int32):
     @parameter
     if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.wait.group", NoneType](n)
-    elif is_amd_gpu() or not is_gpu():
+    elif is_amd_gpu() or is_apple_gpu() or not is_gpu():
         # This operation is a no-op on AMD and CPU.
         pass
     else:
@@ -866,7 +867,7 @@ fn async_copy_wait_all():
     @parameter
     if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.wait.all", NoneType]()
-    elif is_amd_gpu() or not is_gpu():
+    elif is_amd_gpu() or is_apple_gpu() or not is_gpu():
         # This operation is a no-op on AMD and CPU.
         pass
     else:

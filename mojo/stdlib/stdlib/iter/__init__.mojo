@@ -80,7 +80,7 @@ trait Iterator(Copyable):
     iterator, e.g. in a `for` loop.
     """
 
-    comptime Element: Copyable
+    comptime Element: Movable
 
     fn __has_next__(self) -> Bool:
         """Checks if there are more elements in the iterator.

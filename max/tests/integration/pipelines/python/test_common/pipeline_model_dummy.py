@@ -15,18 +15,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
-from max.driver import Device, Tensor, load_devices
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask, TextGenerationContext
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from max.pipelines import (
     KVCacheConfig,
@@ -164,7 +158,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -181,58 +175,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             page_size=kv_cache_config.kv_cache_page_size,
-            n_devices=n_devices,
-        )
-
-    def load_kv_manager(
-        self,
-        session: InferenceSession,
-        available_cache_memory: int | None,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        """Provided a PipelineConfig and InferenceSession, load the kv manager."""
-        assert available_cache_memory is not None
-        devices = load_devices(self.pipeline_config.model_config.device_specs)
-
-        return load_kv_manager(
-            params=self.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, self.huggingface_config
-            ),
             devices=devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
-        )
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int | None,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the kv cache in bytes."""
-        assert available_cache_memory is not None
-        assert pipeline_config.max_length is not None
-
-        return estimate_kv_cache_size(
-            params=cls.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=len(devices),
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=pipeline_config.max_length,
-            available_cache_memory=available_cache_memory,
         )
 
     def load_model(
@@ -240,7 +183,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         session: InferenceSession,
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
-        kv_inputs = self.kv_manager.get_symbolic_inputs()[0]
+        kv_inputs = self.kv_params.get_symbolic_inputs()[0]
         with Graph(
             "dummy",
             input_types=[

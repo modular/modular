@@ -41,6 +41,7 @@ def test_mla_prefill_plan() -> None:
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         is_mla=True,
+        devices=[DeviceRef.GPU()],
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -53,7 +54,6 @@ def test_mla_prefill_plan() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[Accelerator(0)],
         session=session,
     )
 
@@ -62,7 +62,7 @@ def test_mla_prefill_plan() -> None:
             "call_mla_prefill_plan",
             input_types=[
                 input_row_offsets_type,
-                *kv_manager.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs()[0],
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
@@ -145,6 +145,7 @@ def test_mla_decompress_k_cache() -> None:
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         is_mla=True,
+        devices=[DeviceRef.GPU()],
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -162,7 +163,6 @@ def test_mla_decompress_k_cache() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[Accelerator(0)],
         session=session,
     )
 
@@ -172,7 +172,7 @@ def test_mla_decompress_k_cache() -> None:
             input_types=[
                 input_row_offsets_type,
                 weight_type,
-                *kv_manager.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs()[0],
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
@@ -291,6 +291,7 @@ def test_mla_decompress_k_cache_only_k() -> None:
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         is_mla=False,  # intentionally false, which is incorrect
+        devices=[DeviceRef.GPU()],
     )
 
     # Set MLIR types for the graph.
@@ -303,20 +304,13 @@ def test_mla_decompress_k_cache_only_k() -> None:
         device=DeviceRef.GPU(),
     )
 
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        devices=[Accelerator(0)],
-        session=session,
-    )
-
     def construct() -> Graph:
         with Graph(
             "call_mla_decompress_k_cache",
             input_types=[
                 input_row_offsets_type,
                 weight_type,
-                *kv_manager.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs()[0],
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor

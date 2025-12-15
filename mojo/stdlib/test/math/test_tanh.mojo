@@ -14,7 +14,6 @@
 from math import tanh
 from random import randn, seed
 
-from buffer import NDBuffer
 from test_utils import compare, libm_call
 from testing import assert_almost_equal, TestSuite
 
@@ -31,8 +30,8 @@ def test_tanh_tfvals_fp32():
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
     var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var x = NDBuffer[dtype, 1, _, 4](x_stack.unsafe_ptr())
-    x.store[width=4](
+    var x = Span(x_stack)
+    x.unsafe_ptr().store[width=4](
         0,
         SIMD[dtype, 4](
             -1.2583316564559937,
@@ -43,7 +42,7 @@ def test_tanh_tfvals_fp32():
     )
 
     var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var y = NDBuffer[dtype, 1, _, 4](y_stack.unsafe_ptr())
+    var y = Span(y_stack)
     for i in range(4):
         y[i] = tanh(x[i])
 
@@ -51,8 +50,8 @@ def test_tanh_tfvals_fp32():
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float32(x)))`
     var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var tfvals_fp32 = NDBuffer[dtype, 1, _, 4](tfvals_stack.unsafe_ptr())
-    tfvals_fp32.store[width=4](
+    var tfvals_fp32 = Span(tfvals_stack)
+    tfvals_fp32.unsafe_ptr().store[width=4](
         0, SIMD[dtype, 4](-0.850603521, -1, -1, -0.612388909)
     )
 
@@ -61,7 +60,10 @@ def test_tanh_tfvals_fp32():
         0.0, 1.1920928955078125e-07, 0.0, 1.1920928955078125e-07
     )
     var err = compare[dtype](
-        y.data, tfvals_fp32.data, 4, msg="Compare Mojo vs. Tensorflow FP32"
+        y.unsafe_ptr(),
+        tfvals_fp32.unsafe_ptr(),
+        4,
+        msg="Compare Mojo vs. Tensorflow FP32",
     )
     # check that tolerances are better than or almost equal to abs_rel_err
     for i in range(4):
@@ -75,8 +77,8 @@ def test_tanh_tfvals_fp64():
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
     var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var x = NDBuffer[dtype, 1, _, 4](x_stack.unsafe_ptr())
-    x.store[width=4](
+    var x = Span(x_stack)
+    x.unsafe_ptr().store[width=4](
         0,
         SIMD[dtype, 4](
             -1.2583316564559937,
@@ -87,7 +89,7 @@ def test_tanh_tfvals_fp64():
     )
 
     var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var y = NDBuffer[dtype, 1, _, 4](y_stack.unsafe_ptr())
+    var y = Span(y_stack)
     for i in range(4):
         y[i] = tanh(x[i])
 
@@ -95,8 +97,8 @@ def test_tanh_tfvals_fp64():
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float64(x)))`
     var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var tfvals_fp64 = NDBuffer[dtype, 1, _, 4](tfvals_stack.unsafe_ptr())
-    tfvals_fp64.store[width=4](
+    var tfvals_fp64 = Span(tfvals_stack)
+    tfvals_fp64.unsafe_ptr().store[width=4](
         0,
         SIMD[dtype, 4](
             -0.85060351067231821,
@@ -115,7 +117,10 @@ def test_tanh_tfvals_fp64():
     )
 
     var err = compare[dtype](
-        y.data, tfvals_fp64.data, 4, msg="Compare Mojo vs. Tensorflow FP64"
+        y.unsafe_ptr(),
+        tfvals_fp64.unsafe_ptr(),
+        4,
+        msg="Compare Mojo vs. Tensorflow FP64",
     )
     # check that tolerances are better than or almost equal to abs_rel_err
     for i in range(4):

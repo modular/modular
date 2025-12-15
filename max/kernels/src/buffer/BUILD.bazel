@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "buffer",
+    srcs = glob(["**/*.mojo"]),
+    docs_base_path = "kernels",
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)

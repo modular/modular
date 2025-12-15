@@ -18,12 +18,16 @@ These APIs are imported automatically, just like builtins.
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
+from builtin.rebind import downcast
 from builtin.simd import _simd_construction_checks
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from os import abort
 from python import PythonObject
+
+from builtin.device_passable import DevicePassable
+from compile import get_type_name
 
 # ===----------------------------------------------------------------------=== #
 # LegacyUnsafePointer
@@ -48,7 +52,7 @@ fn _default_invariant[mut: Bool]() -> Bool:
 
 @register_passable("trivial")
 struct LegacyUnsafePointer[
-    type: AnyType,
+    type: UnknownDestructibility,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
@@ -57,6 +61,7 @@ struct LegacyUnsafePointer[
     Boolable,
     Comparable,
     Defaultable,
+    DevicePassable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
@@ -192,10 +197,10 @@ struct LegacyUnsafePointer[
             other.address
         )
 
-    fn __init__(
-        out self: LegacyUnsafePointer[
-            Self.type, mut = Self.mut, origin = Self.origin
-        ],
+    fn __init__[
+        T: ImplicitlyDestructible, //
+    ](
+        out self: LegacyUnsafePointer[T, mut = Self.mut, origin = Self.origin],
         *,
         ref [Self.origin]unchecked_downcast_value: PythonObject,
     ):
@@ -204,13 +209,15 @@ struct LegacyUnsafePointer[
         This operation is only valid if the provided Python object contains
         an initialized Mojo object of matching type.
 
+        Parameters:
+            T: Pointee type that can be destroyed implicitly (without
+              deinitializer arguments).
+
         Args:
             unchecked_downcast_value: The Python object to downcast from.
         """
 
-        self = unchecked_downcast_value.unchecked_downcast_value_ptr[
-            Self.type
-        ]()
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[T]()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -522,6 +529,48 @@ struct LegacyUnsafePointer[
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    # Implementation of `DevicePassable`
+    comptime device_type: AnyType = Self
+    """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
+
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
+        """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
+        """
+        # TODO: Allow the low-level DeviceContext implementation to intercept
+        # these translations.
+        target.bitcast[Self.device_type]()[] = self.address
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type name, for use in error messages when handing arguments
+        to kernels.
+        TODO: This will go away soon, when we get better error messages for
+        kernel calls.
+
+        Returns:
+            This name of the type.
+        """
+        return String(
+            "LegacyUnsafePointer[",
+            get_type_name[Self.type](),
+            ", address_space=",
+            Self.address_space,
+            ", mut=",
+            Self.mut,
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name.
+
+        Returns:
+            The device type's name.
+        """
+        return Self.get_type_name()
+
     @always_inline("builtin")
     fn as_unsafe_pointer(
         self,
@@ -595,7 +644,7 @@ struct LegacyUnsafePointer[
     fn as_noalias_ptr(self) -> Self:
         """Cast the pointer to a new pointer that is known not to locally alias
         any other pointer. In other words, the pointer transitively does not
-        comptime any other memory value declared in the local function context.
+        alias any other memory value declared in the local function context.
 
         This information is relayed to the optimizer. If the pointer does
         locally alias another memory value, the behaviour is undefined.
@@ -1047,7 +1096,7 @@ struct LegacyUnsafePointer[
 
     @always_inline("builtin")
     fn bitcast[
-        T: AnyType = Self.type,
+        T: UnknownDestructibility = Self.type,
     ](self) -> LegacyUnsafePointer[
         T,
         address_space = Self.address_space,
@@ -1278,9 +1327,11 @@ struct LegacyUnsafePointer[
         ](self.address)
 
     @always_inline
-    fn destroy_pointee(
+    fn destroy_pointee[
+        T: ImplicitlyDestructible, //
+    ](
         self: LegacyUnsafePointer[
-            Self.type, mut=True, address_space = AddressSpace.GENERIC, **_
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
         ]
     ):
         """Destroy the pointed-to value.
@@ -1289,6 +1340,10 @@ struct LegacyUnsafePointer[
         to contain a valid initialized instance of `type`.  This is equivalent to
         `_ = self.take_pointee()` but doesn't require `Movable` and is
         more efficient because it doesn't invoke `__moveinit__`.
+
+        Parameters:
+            T: Pointee type that can be destroyed implicitly (without
+              deinitializer arguments).
 
         """
         _ = __get_address_as_owned_value(self.address)

@@ -266,6 +266,19 @@ what we publish.
   `UnsafePointer` to an argument expecting a `Bool` would silently compile
   successfully.
 
+- Basic support for linear types in the standard library is now available.
+  Linear types, also known as non-implicitly-destructible types, are types that
+  do not define a `__del__()` method that the compiler can call automatically
+  to destroy an instance. Instead, a linear type must provide a named
+  method taking `deinit self` that the programmer will be required to call
+  explicitly whenever an owned instance is no longer used.
+
+  The `UnknownDestructibility` trait can be used in parameters to denote
+  generic code that supports object instances that cannot be implicitly
+  destroyed.
+
+  - `UnsafePointer` and `Pointer` can point to linear types
+
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
   and `trait_downcast()` to perform "late" element type conformance checking,
   some standard library types are now able to conform to traits that they could
@@ -273,10 +286,13 @@ what we publish.
 
   - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
     and `Representable`.
+  - `Dict` now conforms to `Writable`, `Stringable`, and `Representable`.
 
   - The following types no longer require their elements to be `Copyable`.
+    - `Iterator`
     - `Tuple`
     - `Variant`
+    - `Optional`
 
 - Basic file I/O operations in the `io` module are now implemented natively in
   Mojo using direct `libc` system calls (`open`, `close`, `read`, `write`,

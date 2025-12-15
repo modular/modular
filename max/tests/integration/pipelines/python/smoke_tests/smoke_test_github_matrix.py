@@ -55,6 +55,7 @@ MODELS = {
     ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
     "deepseek-ai/deepseek-v2-lite-chat": ["max-ci", "max", "multi"],
+    "google/gemma-3-1b-it": ["multi"],
     "google/gemma-3-12b-it": ["multi"],
     "google/gemma-3-27b-it": [],
     "meta-llama/llama-3.1-8b-instruct": ["multi"],
@@ -62,6 +63,7 @@ MODELS = {
     "microsoft/phi-3.5-mini-instruct": ["multi"],
     "microsoft/phi-4": ["multi"],
     "mistralai/mistral-nemo-instruct-2407": ["multi"],
+    "mistralai/mistral-small-3.1-24b-instruct-2503": ["multi"],
     "opengvlab/internvl3-8b-instruct": [
         "sglang@B200",
         "multi",
@@ -74,9 +76,15 @@ MODELS = {
         "max",
     ],
     "qwen/qwen2.5-7b-instruct": ["multi"],
-    "qwen/qwen2.5-vl-7b-instruct": ["multi", "MI355"],  # Times out
+    "qwen/qwen2.5-vl-3b-instruct": ["multi", "MI355"],  # Memory access fault
+    "qwen/qwen2.5-vl-7b-instruct": ["multi", "MI355"],  # Memory access fault
     "qwen/qwen3-8b": ["multi"],
     "redhatai/gemma-3-27b-it-fp8-dynamic": [],
+    "tbmod/gemma-3-4b-it": [
+        "multi",
+        "H100",
+        "MI355",
+    ],  # B200 only, copy of gemma-3-4b
     "unsloth/gpt-oss-20b-bf16": [
         "max-ci@H100",
         "max@H100",

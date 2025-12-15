@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -73,7 +74,7 @@ class DeviceSpec:
         return DeviceSpec(id, "gpu")
 
 
-def load_devices(device_specs: list[DeviceSpec]) -> list[Device]:
+def load_devices(device_specs: Sequence[DeviceSpec]) -> list[Device]:
     """Initialize and return a list of devices, given a list of device specs."""
     num_devices_available = accelerator_count()
     devices: list[Device] = []

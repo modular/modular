@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, no_type_check
 
+from max.driver import load_devices
 from max.interfaces import (
     AudioGenerationInputs,
     AudioGenerationOutput,
@@ -60,13 +61,14 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
             pipeline_model: The pipeline model to use.
         """
         # Create the pipeline model.
-        # None of the arguments are used except for the config.
+        # None of the arguments are used except for the config and devices.
+        devices = load_devices(pipeline_config.model_config.device_specs)
         self.pipeline_model = pipeline_model(
             pipeline_config=pipeline_config,
             session=None,
             huggingface_config=None,
             encoding=None,
-            devices=None,
+            devices=devices,
             kv_cache_config=None,
             weights=None,
             adapter=None,

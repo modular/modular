@@ -163,10 +163,10 @@ def generate_max_outputs(
     text_config = config.text_config
     kv_cache_config = KVCacheConfig(cache_strategy=KVCacheStrategy.PAGED)
     kv_params = MaxLlama4Config.get_kv_params(
-        config,
-        1,
-        kv_cache_config,
-        dtype,
+        huggingface_config=config,
+        kv_cache_config=kv_cache_config,
+        cache_dtype=dtype,
+        devices=[DeviceRef.from_device(device)],
     )
 
     session = InferenceSession(devices=[Accelerator(0)])
@@ -198,7 +198,6 @@ def generate_max_outputs(
         # Set up blank KV cache.
         kv_manager = PagedKVCacheManager(
             params=kv_params,
-            devices=[device],
             total_num_pages=8,
             session=session,
         )
@@ -217,7 +216,7 @@ def generate_max_outputs(
             ["total_seq_len"],
             device=device_ref,
         )
-        kv_cache_args = kv_manager.get_symbolic_inputs()
+        kv_cache_args = kv_params.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_cache_args for kv_type in sublist
         ]

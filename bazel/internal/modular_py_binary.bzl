@@ -57,6 +57,7 @@ def modular_py_binary(
         "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
         "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
         "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
+        "MODULAR_MOJO_MAX_SYSTEM_LIBS": "$(MOJO_LINKER_SYSTEM_LIBS)",
     } | runtime_sanitizer_env()
 
     transitive_mojo_deps = name + ".mojo_deps"

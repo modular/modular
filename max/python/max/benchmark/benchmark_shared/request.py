@@ -673,4 +673,6 @@ REQUEST_DRIVER_CLASSES: dict[Backend, type[RequestDriver]] = {
     Backend.modular_chat: OpenAIChatCompletionsRequestDriver,
     Backend.sglang: OpenAICompletionsRequestDriver,
     Backend.sglang_chat: OpenAIChatCompletionsRequestDriver,
+    Backend.trtllm: OpenAICompletionsRequestDriver,
+    Backend.trtllm_chat: OpenAIChatCompletionsRequestDriver,
 }

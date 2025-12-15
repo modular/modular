@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
-package(default_visibility = ["//visibility:private"])
+package(default_visibility = ["//max:consumers"])
 
 _FILECHECK_TESTS = [
     "test_dimlist.mojo",

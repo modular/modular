@@ -15,7 +15,6 @@ from sys import simd_width_of
 
 from algorithm.functional import elementwise
 from asyncrt_test_utils import create_test_device_context, expect_eq
-from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext, get_gpu_target
 from testing import TestSuite
@@ -44,8 +43,8 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             in_host[i] = i
             out_host[i] = length + i
 
-    var in_buffer = NDBuffer[dtype, 2](in0.unsafe_ptr(), Index(dim_x, dim_y))
-    var out_buffer = NDBuffer[dtype, 2](out.unsafe_ptr(), Index(dim_x, dim_y))
+    var in_buffer = Span[Scalar[dtype]](ptr=in0.unsafe_ptr(), length=length)
+    var out_buffer = Span[Scalar[dtype]](ptr=out.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
@@ -54,9 +53,12 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)
-        out_buffer.store(
-            idx,
-            in_buffer.load[width=simd_width](idx) + 42,
+        out_buffer.unsafe_ptr().store(
+            idx[0] * dim_y + idx[1],
+            in_buffer.unsafe_ptr().load[width=simd_width](
+                idx[0] * dim_y + idx[1]
+            )
+            + 42,
         )
 
     elementwise[func, pack_size, target="gpu"](
@@ -66,8 +68,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
     with out.map_to_host() as out_host:
         for i in range(length):
-            if i < 10:
-                print("at index", i, "the value is", out_host[i])
+            print("at index", i, "the value is", out_host[i])
             expect_eq(
                 out_host[i],
                 i + 42,

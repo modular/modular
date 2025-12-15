@@ -206,7 +206,7 @@ fn test[
 
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
+    @__copy_capture(q_device, k_device, v_device, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
         flash_attention[config=config](
             output_device,
@@ -359,6 +359,7 @@ fn test[
 fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
     var depths = [64, 128]
     if is_sm90orsm100:
+        depths.append(72)
         depths.append(80)
         depths.append(256)
     return depths^

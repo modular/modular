@@ -41,6 +41,8 @@ class Backend(str, enum.Enum):
     modular_chat = "modular-chat"
     sglang = "sglang"
     sglang_chat = "sglang-chat"
+    trtllm = "trtllm"
+    trtllm_chat = "trtllm-chat"
 
 
 class Endpoint(str, enum.Enum):

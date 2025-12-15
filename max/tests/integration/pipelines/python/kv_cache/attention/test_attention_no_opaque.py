@@ -37,8 +37,12 @@ from max.nn.attention.attention_with_rope import (
     Module,
     PagedKVCacheTensorsNoOpaque,
 )
-from max.nn.kv_cache import NestedIterableDataclass, PagedCacheValues
-from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    NestedIterableDataclass,
+    PagedCacheValues,
+)
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
@@ -133,6 +137,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         num_layers=1,
         page_size=page_size,
         cache_strategy=KVCacheStrategy.PAGED,
+        devices=[DeviceRef.from_device(device)],
     )
 
     rope_ref = RotaryEmbedding(dim, n_heads, 10000.0, max_seq_len)
@@ -173,7 +178,6 @@ def test_compare_attention_with_rope_no_opaque() -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=32,
-        devices=[device],
         session=session,
     )
 
@@ -190,7 +194,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
     kv_inputs = PagedKVCacheTensorsNoOpaque(
         *kv_manager.get_runtime_inputs(batch)[0]
     )
-    kv_input_symbols = kv_manager.get_symbolic_inputs()[0]
+    kv_input_symbols = kv_params.get_symbolic_inputs()[0]
 
     def reference_attention_fn(
         hidden_state: TensorValue,

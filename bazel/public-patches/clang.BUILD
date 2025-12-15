@@ -2,6 +2,13 @@ load("@bazel_skylib//rules/directory:directory.bzl", "directory")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(
+    glob([
+        "lib/clang/*/lib/*/libclang_rt.*",
+        "bin/*",
+    ]),
+)
+
 filegroup(
     name = "clang",
     srcs = glob(["bin/clang*"]),
@@ -14,39 +21,30 @@ filegroup(
 
 filegroup(
     name = "include",
-    srcs = glob([
-        "lib/clang/*/include/**",
-        "lib/clang/*/share/**/*.txt",  # sanitizer default ignore lists
-    ]),
+    srcs = [
+        "lib/clang/20/include",
+        "lib/clang/20/share",  # sanitizer default ignore lists
+    ],
 )
 
 directory(
-    name = "include_dir".format(platform),
+    name = "include_dir",
     srcs = [":include"],
+)
+
+filegroup(
+    name = "resource_directory_filegroup",
+    srcs = ["lib/clang/20"],
 )
 
 directory(
     name = "resource_directory",
-    srcs = glob(["lib/clang/*/**"]),
+    srcs = [":resource_directory_filegroup"],
 )
 
 filegroup(
     name = "bin",
     srcs = glob(["bin/**"]),
-)
-
-filegroup(
-    name = "lib",
-    srcs = glob(
-        [
-            "lib/clang/*/lib/**/*.a",  # sanitizers
-            "lib/clang/*/lib/**/*.o",  # crtbegin.o
-            "lib/clang/*/lib/**/*.so",  # sanitizers linux
-            "lib/clang/*/lib/**/*.dylib",  # sanitizers macOS
-            "lib/clang/*/lib/**/*.syms",  # sanitizers syms files used during linking
-        ],
-        allow_empty = True,
-    ),
 )
 
 filegroup(

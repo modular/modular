@@ -12,43 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 from memory import LegacyUnsafePointer as UnsafePointer
 from gpu import block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext, DeviceBuffer
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
-
-from utils.index import IndexList, StaticTuple
-
-# ===-----------------------------------------------------------------------===#
-# pad GPU
-# ===-----------------------------------------------------------------------===#
-
-
-fn _fill_gpu_kernel[
-    dtype: DType
-](dst: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], count: Int):
-    var tid = thread_idx.x + block_idx.x * block_dim.x
-    if tid < UInt(count):
-        dst[tid] = value
-
-
-fn _copy_gpu_kernel[
-    dtype: DType
-](
-    dst: UnsafePointer[Scalar[dtype]],
-    src: UnsafePointer[Scalar[dtype]],
-    count: Int,
-):
-    var tid = thread_idx.x + block_idx.x * block_dim.x
-    if tid < UInt(count):
-        dst[tid] = src[tid]
+from gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
+from layout import Layout, RuntimeLayout, LayoutTensor
+from layout.runtime_tuple import idx2crd, crd2idx, RuntimeTuple
+from math import ceildiv
+from sys.info import align_of
+from utils.index import IndexList
 
 
 fn _fill_strides_indexlist[
     rank: Int,
-](
-    input_shape: IndexList[rank],
-    strides: LayoutTensor[mut=True, DType.int, Layout(rank)],
-):
+](input_shape: IndexList[rank], mut strides: IndexList[rank],):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.
@@ -67,234 +41,161 @@ fn _fill_strides_indexlist[
         strides[axis] = curr_axis_stride
 
 
-fn _fill_gpu[
-    dtype: DType
+@always_inline
+fn get_row_offset[
+    dtype: DType,
+    tensor_layout: Layout,
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
-    value: Scalar[dtype],
-    count: Int,
-    ctx: DeviceContext,
-) raises:
-    comptime block_dim = 256
-    comptime kernel = _fill_gpu_kernel[dtype]
-    var ptr_device = DeviceBuffer[dtype](ctx, ptr, count, owning=False)
-    ctx.enqueue_function_checked[kernel, kernel](
-        ptr_device,
-        value,
-        count,
-        grid_dim=((count + block_dim) // block_dim),
-        block_dim=(block_dim),
+    input_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    output_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    row_length: Int,
+    row: Int,
+) -> Int:
+    var coord = idx2crd(
+        RuntimeTuple(row * row_length),
+        input_tensor.runtime_layout.shape,
+        input_tensor.runtime_layout.stride,
     )
 
-
-fn _memcpy_gpu[
-    dtype: DType
-](
-    dst: UnsafePointer[Scalar[dtype]],
-    src: UnsafePointer[Scalar[dtype]],
-    count: Int,
-    ctx: DeviceContext,
-) raises:
-    comptime block_dim = 256
-    comptime kernel = _copy_gpu_kernel[dtype]
-    var dst_device = DeviceBuffer[dtype](ctx, dst, count, owning=False)
-    var src_device = DeviceBuffer[dtype](ctx, src, count, owning=False)
-    ctx.enqueue_function_checked[kernel, kernel](
-        dst_device,
-        src_device,
-        count,
-        grid_dim=((count + block_dim) // block_dim),
-        block_dim=(block_dim),
+    var offset = crd2idx(
+        coord,
+        output_tensor.runtime_layout.shape,
+        output_tensor.runtime_layout.stride,
     )
 
-
-@register_passable("trivial")
-struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
-    ImplicitlyCopyable
-):
-    var pre_pad: Int
-    var post_pad: Int
-    var non_pad: Int
-
-    var output_offset: Int
-    var input_offset: Int
-    var pad_with_constant: Bool
-    var is_within_padding: Bool
-    var next_pad_with_constant: Bool
-    var output_shape: IndexList[Self.rank]
-
-    """
-    output_offset: The offset at which output data starts.
-    input_offset: The offset at which input data starts.
-    pad_with_constant: whether to always pad remaining region with constant.
-    """
-
-    @always_inline
-    fn __init__(
-        out self,
-        axis: Int,
-        paddings: UnsafePointer[Scalar[Self.paddings_type]],
-        output_shape: IndexList[Self.rank],
-    ):
-        var axis_dim = output_shape[axis]
-        var pre_pad = Int(paddings[2 * axis])
-        var post_pad = Int(paddings[2 * axis + 1])
-        var non_pad = axis_dim - pre_pad - post_pad
-
-        self.pre_pad = pre_pad
-        self.post_pad = post_pad
-        self.non_pad = non_pad
-        self.output_offset = 0
-        self.input_offset = 0
-        self.pad_with_constant = False
-        self.is_within_padding = False
-        self.next_pad_with_constant = False
-        self.output_shape = output_shape
-
-    @always_inline
-    fn init_offsets(
-        mut self,
-        output_offset: Int,
-        input_offset: Int,
-        pad_with_constant: Bool,
-    ):
-        self.output_offset = output_offset
-        self.input_offset = input_offset
-        self.pad_with_constant = pad_with_constant
-
-    @always_inline
-    fn pre_check(mut self, i: Int):
-        self.is_within_padding = (i < self.pre_pad) or (
-            self.pre_pad + self.non_pad <= i
-        )
-        self.next_pad_with_constant = (
-            self.pad_with_constant or self.is_within_padding
-        )
-
-    @always_inline
-    fn post_check(mut self, output_axis_stride: Int, input_axis_stride: Int):
-        if not self.is_within_padding:
-            self.input_offset += input_axis_stride
-        self.output_offset += output_axis_stride
-
-    @always_inline
-    fn base(
-        mut self,
-        output: UnsafePointer[Scalar[Self.dtype]],
-        input: UnsafePointer[Scalar[Self.dtype]],
-        constant: Scalar[Self.dtype],
-        axis_dim: Int,
-        ctx: DeviceContext,
-    ) raises:
-        var pre_pad_start_ptr = output.offset(self.output_offset)
-
-        # setting values
-        if self.pad_with_constant:
-            _fill_gpu(pre_pad_start_ptr, constant, axis_dim, ctx)
-        else:
-            var non_pad_start_ptr = pre_pad_start_ptr.offset(self.pre_pad)
-            var post_pad_start_ptr = non_pad_start_ptr.offset(self.non_pad)
-            var input_start_ptr = input.offset(self.input_offset)
-            _fill_gpu(pre_pad_start_ptr, constant, self.pre_pad, ctx)
-            _memcpy_gpu(non_pad_start_ptr, input_start_ptr, self.non_pad, ctx)
-            _fill_gpu(post_pad_start_ptr, constant, self.post_pad, ctx)
+    return Int(offset)
 
 
 @always_inline
-fn _pad_constant_axis[
-    rank: Int, dtype: DType, paddings_type: DType, axis: Int
+fn scalar_copy_row[
+    dtype: DType,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    input: UnsafePointer[Scalar[dtype]],
-    constant: Scalar[dtype],
-    output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.int]],
-    input_strides: UnsafePointer[Scalar[DType.int]],
-    var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
-    ctx: DeviceContext,
-) raises:
-    @parameter
-    if axis == (rank - 1):
-        # print(product(self.output_shape, rank))
-        axis_params[axis].base(output, input, constant, output_shape[axis], ctx)
+    input_ptr: UnsafePointer[Scalar[dtype]],
+    output_ptr: UnsafePointer[Scalar[dtype]],
+    row_length: Int,
+    threads_per_row: Int,
+):
+    var start_col = Int(thread_idx.x) % threads_per_row
+    for col in range(start_col, row_length, threads_per_row):
+        output_ptr[col] = input_ptr[col]
 
-    else:
-        var output_axis_stride = Int(output_strides[axis])
-        var input_axis_stride = Int(input_strides[axis])
-        for i in range(output_shape[axis]):
-            axis_params[axis].pre_check(i)
 
-            axis_params[axis + 1].init_offsets(
-                axis_params[axis].output_offset,
-                axis_params[axis].input_offset,
-                axis_params[axis].next_pad_with_constant,
+@always_inline
+fn vector_copy_row[
+    dtype: DType,
+    simd_width: Int,
+](
+    input_ptr: UnsafePointer[Scalar[dtype]],
+    output_ptr: UnsafePointer[Scalar[dtype]],
+    scaled_row_length: Int,
+    row_length: Int,
+    threads_per_row: Int,
+):
+    comptime alignment = align_of[SIMD[dtype, simd_width]]()
+
+    var input_aligned = Int(input_ptr) % alignment == 0
+    var output_aligned = Int(output_ptr) % alignment == 0
+
+    # NOTE: possible perf improvement check for simd_width > 1
+    # first then do alignment check
+
+    if input_aligned and output_aligned and simd_width > 1:  # vectorized loads
+        var iter_width = threads_per_row * simd_width
+        var start_col = (Int(thread_idx.x) % threads_per_row) * simd_width
+        for col in range(start_col, scaled_row_length, iter_width):
+            output_ptr.store[width=simd_width](
+                col, input_ptr.load[width=simd_width](col)
             )
-            _pad_constant_axis[rank, dtype, paddings_type, axis + 1](
-                output,
-                input,
-                constant,
-                output_shape,
-                output_strides,
-                input_strides,
-                axis_params,
-                ctx,
+
+        if scaled_row_length < row_length:
+            var out_ptr = output_ptr + scaled_row_length
+            var in_ptr = input_ptr + scaled_row_length
+            scalar_copy_row(
+                in_ptr, out_ptr, row_length - scaled_row_length, threads_per_row
             )
 
-            axis_params[axis].post_check(output_axis_stride, input_axis_stride)
+    else:  # default to scalar loads
+        scalar_copy_row(input_ptr, output_ptr, row_length, threads_per_row)
+
+
+fn padded_copy_kernel[
+    dtype: DType, tensor_layout: Layout, simd_width: Int
+](
+    input_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    output_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    rows_per_sm: Int,
+    total_rows: Int,
+    row_length: Int,
+    scaled_row_length: Int,
+):
+    var start_row = Int(block_idx.x) * rows_per_sm
+    var threads_per_row = Int(block_dim.x)
+
+    var rows_per_iter = Int(block_dim.y)
+    var end_row = min(start_row + rows_per_sm, total_rows)
+
+    start_row += Int(thread_idx.y)
+
+    for row in range(start_row, end_row, rows_per_iter):
+        var output_offset = get_row_offset(
+            input_tensor, output_tensor, row_length, row
+        )
+        var input_offset = row * row_length
+
+        var output_ptr = output_tensor.ptr + (output_offset)
+        var input_ptr = input_tensor.ptr + (input_offset)
+
+        vector_copy_row[dtype, simd_width](
+            input_ptr,
+            output_ptr,
+            scaled_row_length,
+            row_length,
+            threads_per_row,
+        )
 
 
 fn _pad_constant_impl[
-    rank: Int, dtype: DType, paddings_type: DType
+    dtype: DType,
+    tensor_layout: Layout,
+    simd_width: Int = 1,
+    max_threads: Int = 256,
+    threads_per_row: Int = 16,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    input: UnsafePointer[Scalar[dtype]],
-    paddings: UnsafePointer[Scalar[paddings_type]],
-    constant: Scalar[dtype],
-    output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.int]],
-    input_strides: UnsafePointer[Scalar[DType.int]],
+    input_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    output_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    """
-    Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges
-    padded with `constant` based on `paddings`.
+    var row_length = input_tensor.dim(input_tensor.rank - 1)
+    var total_rows = input_tensor.size() // row_length
 
-    Args:
-        output: The output buffer.
-        input: The input buffer.
-        paddings: The (before, after) padding sizes for each axis.
-        constant: the constant to pad output with.
-        output_shape: the dynamic shape of the tensor pointed to by output buffer
-        output_strides: the stride at each output axis.
-        input_strides: the stride at each input axis.
-        ctx: Device context for participating GPU.
-    """
+    constrained[threads_per_row > 0 and max_threads % threads_per_row == 0]()
 
-    # allocate 'rank' axis-data vector, only use the ones in range[axis,rank)
-    var axis_params = StaticTuple[
-        _AxisParams[rank, dtype, paddings_type], rank
-    ]()
+    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
 
-    @parameter
-    for r in range(rank):
-        axis_params[r] = _AxisParams[rank, dtype, paddings_type](
-            r, paddings, output_shape
-        )
+    var linear_block_count: Int
 
-    # CRITICAL: should be setting output_offset=0, input_offset=0, and
-    # pad_with_constant=False for axis=0 in padding. However, this is
-    # already addressed in the constructor of _AxisParams.
+    var rows_per_block: Int
 
-    # axis_params[0].init_offsets(output_offset, input_offset, pad_with_constant)
-    _pad_constant_axis[rank, dtype, paddings_type, 0](
-        output,
-        input,
-        constant,
-        output_shape,
-        output_strides,
-        input_strides,
-        axis_params,
-        ctx,
+    if sm_count > total_rows:
+        linear_block_count = total_rows
+        rows_per_block = 1
+    else:
+        linear_block_count = sm_count
+        rows_per_block = ceildiv(total_rows, sm_count)
+
+    var scaled_row_length = (row_length // simd_width) * simd_width
+    comptime block_rows = max_threads // threads_per_row
+    comptime kernel = padded_copy_kernel[dtype, tensor_layout, simd_width]
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        input_tensor,
+        output_tensor,
+        rows_per_block,
+        total_rows,
+        row_length,
+        scaled_row_length,
+        grid_dim=(linear_block_count),
+        block_dim=(threads_per_row, block_rows),
     )
 
 
@@ -306,7 +207,6 @@ fn pad_constant[
     input: UnsafePointer[Scalar[dtype]],
     input_shape: IndexList[rank],
     paddings: UnsafePointer[Scalar[padding_type]],
-    # TODO: implement (before, after) variant
     constant: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -335,46 +235,52 @@ fn pad_constant[
           else constant
         ```
     """
-    var constant_cast = rebind[Scalar[dtype]](constant[0])
 
-    @__copy_capture(constant_cast)
+    var input_strides = IndexList[rank]()
+    var output_strides = IndexList[rank]()
+
+    var output_size: Int = 1
+
     @parameter
-    fn pad_constant_wrapper(
-        output: UnsafePointer[Scalar[dtype]],
-        input: UnsafePointer[Scalar[dtype]],
-        paddings: UnsafePointer[Scalar[padding_type]],
-        output_shape: IndexList[rank],
-        output_strides: UnsafePointer[Scalar[DType.int]],
-        input_strides: UnsafePointer[Scalar[DType.int]],
-        ctx: DeviceContext,
-    ) raises:
-        return _pad_constant_impl[rank, dtype](
-            output,
-            input,
-            paddings,
-            constant_cast,
-            output_shape,
-            output_strides,
-            input_strides,
-            ctx,
-        )
+    for i in range(rank):
+        output_size *= output_shape[i]
 
-    var input_strides_buf = LayoutTensor[
-        DType.int, Layout(rank), MutAnyOrigin
-    ].stack_allocation()
-    var output_strides_buf = LayoutTensor[
-        DType.int, Layout(rank), MutAnyOrigin
-    ].stack_allocation()
-    _fill_strides_indexlist[rank](input_shape, input_strides_buf)
-    _fill_strides_indexlist[rank](output_shape, output_strides_buf)
+    var output_buffer = DeviceBuffer[dtype](
+        ctx, output, output_size, owning=False
+    )
+    output_buffer.enqueue_fill(constant)
 
-    return pad_constant_wrapper(
-        output,
+    _fill_strides_indexlist[rank](input_shape, input_strides)
+    _fill_strides_indexlist[rank](output_shape, output_strides)
+
+    comptime tensor_layout = Layout.row_major[rank]()
+
+    var input_tensor = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
         input,
-        paddings,
-        output_shape,
-        output_strides_buf.ptr,
-        input_strides_buf.ptr,
+        RuntimeLayout[tensor_layout](
+            input_shape,
+            input_strides,
+        ),
+    )
+
+    var pre_pad_offset = 0
+
+    for i in range(rank):
+        pre_pad_offset += Int(paddings[2 * i]) * output_strides[i]
+
+    var adjusted_output_ptr = output + pre_pad_offset
+
+    var output_tensor = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
+        adjusted_output_ptr,
+        RuntimeLayout[tensor_layout](
+            input_shape,
+            output_strides,
+        ),
+    )
+
+    _pad_constant_impl[dtype, tensor_layout](
+        input_tensor,
+        output_tensor,
         ctx,
     )
 

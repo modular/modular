@@ -634,6 +634,7 @@ def attention_lora_max_output(
         n_kv_heads=config.n_kv_heads,
         head_dim=config.head_dim,
         cache_strategy=KVCacheStrategy.PAGED,
+        devices=[device_ref],
     )
 
     linear_lora_cls = functools.partial(
@@ -662,12 +663,11 @@ def attention_lora_max_output(
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=8,
-        devices=[device],
         session=session,
     )
 
     blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_manager.get_symbolic_inputs()[0]
+        kv_params.get_symbolic_inputs()[0]
     )
 
     with Graph(

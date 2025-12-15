@@ -30,17 +30,12 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.nn import Module, ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -103,7 +98,7 @@ class PixtralInputs(ModelInputs):
         return self._attention_mask
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext]):
+class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """The overall interface to the Pixtral model."""
 
     model: Model
@@ -286,13 +281,13 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return PixtralConfig.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -313,52 +308,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 f"model's max_position_embeddings "
                 f"({huggingface_config.text_config.max_position_embeddings})."
             ) from e
-
-    def load_kv_manager(
-        self,
-        session: InferenceSession,
-        available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        return load_kv_manager(
-            params=self.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
-        )
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the kv cache in bytes."""
-        return estimate_kv_cache_size(
-            params=cls.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=len(devices),
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-        )
 
     def _get_state_dict(
         self,
@@ -388,7 +337,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         input_ids_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
@@ -425,16 +374,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
 
-        kv_params = PixtralConfig.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
-        device_refs = [
-            DeviceRef(spec.device_type, spec.id)
-            for spec in self.pipeline_config.model_config.device_specs
-        ]
         model_config = PixtralConfig(
             image_token_index=self.huggingface_config.image_token_index,
             vocab_size=self.huggingface_config.text_config.vocab_size,
@@ -451,16 +390,16 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             image_size=self.huggingface_config.vision_config.image_size,
             num_channels=self.huggingface_config.vision_config.num_channels,
             vision_hidden_size=self.huggingface_config.vision_config.hidden_size,
-            attention_multiplier=math.sqrt(1 / kv_params.head_dim),
+            attention_multiplier=math.sqrt(1 / self.kv_params.head_dim),
             vision_num_attention_heads=self.huggingface_config.vision_config.num_attention_heads,
             vision_rope_theta=self.huggingface_config.vision_config.rope_theta,
             vision_num_hidden_layers=self.huggingface_config.vision_config.num_hidden_layers,
             vision_intermediate_size=self.huggingface_config.vision_config.intermediate_size,
             vision_head_dim=self.huggingface_config.vision_config.head_dim,
             dtype=self.dtype,
-            devices=device_refs,
+            devices=self.device_refs,
             return_logits=self.return_logits,
-            kv_params=kv_params,
+            kv_params=self.kv_params,
         )
 
         # Get Graph Inputs

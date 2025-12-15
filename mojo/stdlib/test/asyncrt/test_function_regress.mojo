@@ -160,63 +160,6 @@ fn _run_test_function_compilation(ctx: DeviceContext) raises:
     _ = compiled_vec_func_3
 
 
-def test_function_unchecked():
-    var ctx = create_test_device_context()
-    _run_test_function_unchecked(ctx)
-
-
-fn _run_test_function_unchecked(ctx: DeviceContext) raises:
-    comptime length = 1024
-    comptime block_dim = 32
-
-    comptime zero_sized_t = NotZeroSized
-    comptime vec_func = _vec_func[zero_sized_t]
-    # alias vec_func = _vec_func_not_zero
-    # alias vec_func = _vec_func_zero
-
-    var zs = zero_sized_t()
-    print(zs)
-
-    var scalar: S = 2
-
-    # Initialize the input and outputs with known values.
-    var in0 = ctx.enqueue_create_buffer[T](length)
-    var out = ctx.enqueue_create_buffer[T](length)
-    with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
-        for i in range(length):
-            in0_host[i] = i
-            out_host[i] = length + i
-    var in1 = ctx.enqueue_create_buffer[T](length)
-    in1.enqueue_fill(scalar)
-
-    print("compiling vec_func")
-    var compiled_vec_func = ctx.compile_function_unchecked[vec_func]()
-    print("calling vec_func")
-    ctx.enqueue_function_unchecked(
-        compiled_vec_func,
-        zs,
-        in0,
-        in1,
-        out,
-        length,
-        grid_dim=(length // block_dim),
-        block_dim=(block_dim),
-    )
-
-    with out.map_to_host() as out_host:
-        for i in range(length):
-            if i < 10:
-                print("at index", i, "the value is", out_host[i])
-            expect_eq(
-                out_host[i],
-                i + 4,
-                "at index ",
-                i,
-                " the value is ",
-                out_host[i],
-            )
-
-
 def test_function_checked():
     var ctx = create_test_device_context()
     _run_test_function_checked(ctx)
@@ -281,7 +224,6 @@ def main():
     var suite = TestSuite()
 
     suite.test[test_function_compilation]()
-    suite.test[test_function_unchecked]()
     suite.test[test_function_checked]()
 
     suite^.run()

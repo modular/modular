@@ -17,12 +17,16 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.interfaces import Pipeline
-from max.kv_cache import NullKVCacheManager
-from max.kv_cache.paged_cache import PagedKVCacheManager
+from max.kv_cache import (
+    NullKVCacheManager,
+    PagedKVCacheManager,
+    estimate_kv_cache_size,
+    load_kv_manager,
+)
 from max.nn.kv_cache import KVCacheParams
 from transformers import AutoConfig
 
@@ -34,19 +38,57 @@ if TYPE_CHECKING:
 @runtime_checkable
 class KVCacheMixin(Protocol):
     def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
+        self,
+        kv_params: KVCacheParams,
+        max_batch_size: int,
+        max_seq_len: int,
+        session: InferenceSession,
+        available_cache_memory: int,
     ) -> PagedKVCacheManager | NullKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
+            kv_params: KV cache parameters.
+            max_batch_size: Maximum batch size of the model.
+            max_seq_len: Maximum sequence length of the model.
             session: Inference session to compile and init the KV cache.
             available_cache_memory: Amount of memory available to the KV cache,
                 in bytes.
 
         Returns:
-            Either a single KV cache manager or a tuple of KV cache managers:
-            one per input modality.
+            A single KV cache manager.
         """
+        return load_kv_manager(
+            params=kv_params,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
+            available_cache_memory=available_cache_memory,
+            session=session,
+        )
+
+    @classmethod
+    def estimate_kv_cache_size(
+        cls,
+        huggingface_config: AutoConfig,
+        params: KVCacheParams,
+        max_batch_size: int,
+        max_seq_len: int,
+        available_cache_memory: int,
+    ) -> int:
+        """Estimates the size of the kv cache in bytes."""
+        return estimate_kv_cache_size(
+            params=params,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
+            available_cache_memory=available_cache_memory,
+        )
+
+    @classmethod
+    @abstractmethod
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        """Calculates the maximum sequence length for the pipeline model."""
         ...
 
     # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
@@ -55,7 +97,7 @@ class KVCacheMixin(Protocol):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -67,20 +109,6 @@ class KVCacheMixin(Protocol):
     @abstractmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         """Returns the number of layers for the pipeline model."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the kv cache in bytes."""
         ...
 
 

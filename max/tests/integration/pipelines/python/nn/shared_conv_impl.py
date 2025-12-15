@@ -210,6 +210,419 @@ def conv1d_impl(session: InferenceSession) -> None:
     )
 
 
+def conv1d_tuple_padding_impl(session: InferenceSession) -> None:
+    """Test Conv1D with tuple padding (asymmetric padding)."""
+    torch.manual_seed(42)
+
+    batch_size = 1
+    in_channels = 64
+    length = 20
+    hidden_size = 128  # out_channels
+    kernel_size = 3
+    stride = 1
+    padding_tuple = (2, 0)  # left padding only
+
+    is_gpu = not session.devices[0].is_host
+    torch_dtype = torch.float32
+    torch_device = torch.device("cuda") if is_gpu else torch.device("cpu")
+    max_dtype = DType.float32
+    max_device = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
+
+    input_sequence = torch.rand(
+        size=(batch_size, in_channels, length),
+        dtype=torch_dtype,
+        device=torch_device,
+    )
+
+    torch_conv = nn.Conv1d(
+        in_channels=in_channels,
+        out_channels=hidden_size,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=0,
+        bias=True,
+        device=torch_device,
+    )
+
+    max_conv = Conv1D(
+        kernel_size=kernel_size,
+        in_channels=in_channels,
+        out_channels=hidden_size,
+        dtype=max_dtype,
+        stride=stride,
+        device=max_device,
+        padding=padding_tuple,
+        has_bias=True,
+        permute=True,
+    )
+
+    torch_conv.weight.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.weight.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+    assert torch_conv.bias is not None
+    torch_conv.bias.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.bias.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+
+    state_dict = {
+        "weight": torch_conv.weight.data.detach().cpu(),
+        "bias": torch_conv.bias.data.detach().cpu(),
+    }
+    max_conv.load_state_dict(state_dict)
+
+    with torch.no_grad():
+        padded_input = nn.functional.pad(
+            input_sequence,
+            (padding_tuple[0], padding_tuple[1]),
+            mode="constant",
+            value=0,
+        )
+        torch_conv_result = torch_conv(padded_input)
+
+    graph = Graph(
+        "conv1d_tuple_padding",
+        max_conv,
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, device=max_device),
+        ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+    graph_api_conv_result = compiled.execute(input_sequence)[0]
+    assert isinstance(graph_api_conv_result, Tensor)
+
+    np.testing.assert_allclose(
+        graph_api_conv_result.to_numpy(),
+        torch_conv_result.detach().cpu().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+
+def conv1d_tuple_padding_nonfcrs_impl(session: InferenceSession) -> None:
+    """Test Conv1D with tuple padding on non-FCRS (permute=False) path."""
+    torch.manual_seed(123)
+
+    batch_size = 2
+    in_channels = 8
+    length = 16
+    hidden_size = 4  # out_channels
+    kernel_size = 3
+    stride = 1
+    padding_tuple = (2, 0)  # left padding only
+
+    is_gpu = not session.devices[0].is_host
+    torch_dtype = torch.float32
+    torch_device = torch.device("cuda") if is_gpu else torch.device("cpu")
+    max_dtype = DType.float32
+    max_device = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
+
+    # Torch expects (N, C, L); Conv1D permute=False expects (N, L, C).
+    torch_input = torch.rand(
+        size=(batch_size, in_channels, length),
+        dtype=torch_dtype,
+        device=torch_device,
+    )
+    max_input = torch_input.permute(0, 2, 1).contiguous()
+
+    torch_conv = nn.Conv1d(
+        in_channels=in_channels,
+        out_channels=hidden_size,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=0,
+        bias=True,
+        device=torch_device,
+    )
+
+    max_conv = Conv1D(
+        kernel_size=kernel_size,
+        in_channels=in_channels,
+        out_channels=hidden_size,
+        dtype=max_dtype,
+        stride=stride,
+        device=max_device,
+        padding=padding_tuple,
+        has_bias=True,
+        permute=False,  # non-FCRS layout path
+    )
+
+    torch_conv.weight.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.weight.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+    assert torch_conv.bias is not None
+    torch_conv.bias.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.bias.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+
+    # Convert torch weights to RSCF (K, C_in, C_out) layout expected by permute=False.
+    state_dict = {
+        "weight": torch_conv.weight.data.detach()
+        .cpu()
+        .permute(2, 1, 0)
+        .contiguous(),
+        "bias": torch_conv.bias.data.detach().cpu(),
+    }
+    max_conv.load_state_dict(state_dict)
+
+    with torch.no_grad():
+        padded_input = nn.functional.pad(
+            torch_input,
+            (padding_tuple[0], padding_tuple[1]),
+            mode="constant",
+            value=0,
+        )
+        torch_conv_result = torch_conv(padded_input).permute(0, 2, 1)
+
+    graph = Graph(
+        "conv1d_tuple_padding_nonfcrs",
+        max_conv,
+        input_types=(
+            TensorType(max_dtype, max_input.shape, device=max_device),
+        ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+    graph_api_conv_result = compiled.execute(max_input)[0]
+    assert isinstance(graph_api_conv_result, Tensor)
+
+    np.testing.assert_allclose(
+        graph_api_conv_result.to_numpy(),
+        torch_conv_result.detach().cpu().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+
+def conv2d_tuple_padding_impl(session: InferenceSession) -> None:
+    """Test Conv2d with tuple padding (asymmetric padding)."""
+    torch.manual_seed(7)
+
+    batch_size = 2
+    in_channels = 16
+    out_channels = 8
+    kernel_size = (3, 3)
+    stride = (1, 1)
+    padding_tuple = (1, 0, 2, 1)  # top, bottom, left, right
+    height = 8
+    width = 7
+
+    is_gpu = not session.devices[0].is_host
+    torch_dtype = torch.float32
+    torch_device = torch.device("cuda") if is_gpu else torch.device("cpu")
+    max_dtype = DType.float32
+    max_device = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
+
+    input_sequence = torch.rand(
+        size=(batch_size, in_channels, height, width),
+        dtype=torch_dtype,
+        device=torch_device,
+    )
+
+    torch_conv = nn.Conv2d(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=0,
+        bias=True,
+        device=torch_device,
+    )
+
+    max_conv = Conv2d(
+        kernel_size=kernel_size,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        dtype=max_dtype,
+        stride=stride,
+        padding=padding_tuple,
+        has_bias=True,
+        permute=True,
+        device=max_device,
+    )
+
+    torch_conv.weight.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.weight.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+    assert torch_conv.bias is not None
+    torch_conv.bias.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.bias.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+
+    state_dict = {
+        "weight": torch_conv.weight.data.detach().cpu(),
+        "bias": torch_conv.bias.data.detach().cpu(),
+    }
+    max_conv.load_state_dict(state_dict)
+
+    with torch.no_grad():
+        padded_input = nn.functional.pad(
+            input_sequence,
+            (
+                padding_tuple[2],
+                padding_tuple[3],
+                padding_tuple[0],
+                padding_tuple[1],
+            ),
+            mode="constant",
+            value=0,
+        )
+        torch_conv_result = torch_conv(padded_input)
+
+    graph = Graph(
+        "conv2d_tuple_padding",
+        max_conv,
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, device=max_device),
+        ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+    graph_api_conv_result = compiled.execute(input_sequence)[0]
+    assert isinstance(graph_api_conv_result, Tensor)
+
+    np.testing.assert_allclose(
+        graph_api_conv_result.to_numpy(),
+        torch_conv_result.detach().cpu().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+
+def conv3d_tuple_padding_impl(session: InferenceSession) -> None:
+    """Test Conv3D with tuple padding (asymmetric padding)."""
+    torch.manual_seed(9)
+
+    batch_size = 1
+    in_channels = 4
+    out_channels = 6
+    depth, height, width = 6, 5, 4
+    kernel_size = (3, 3, 2)
+    stride = (1, 1, 1)
+    padding_tuple = (1, 0, 2, 1, 3, 0)  # front, back, top, bottom, left, right
+
+    is_gpu = not session.devices[0].is_host
+    torch_dtype = torch.float32
+    torch_device = torch.device("cuda") if is_gpu else torch.device("cpu")
+    max_dtype = DType.float32
+    max_device = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
+
+    input_sequence = torch.rand(
+        size=(batch_size, in_channels, depth, height, width),
+        dtype=torch_dtype,
+        device=torch_device,
+    )
+
+    torch_conv = nn.Conv3d(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=0,
+        bias=True,
+        device=torch_device,
+    )
+
+    max_conv = Conv3D(
+        depth=kernel_size[0],
+        height=kernel_size[1],
+        width=kernel_size[2],
+        in_channels=in_channels,
+        out_channels=out_channels,
+        dtype=max_dtype,
+        stride=stride,
+        padding=padding_tuple,
+        has_bias=True,
+        permute=True,
+        device=max_device,
+    )
+
+    torch_conv.weight.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.weight.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+    assert torch_conv.bias is not None
+    torch_conv.bias.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.bias.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+
+    state_dict = {
+        "weight": torch_conv.weight.data.detach().cpu(),
+        "bias": torch_conv.bias.data.detach().cpu(),
+    }
+    max_conv.load_state_dict(state_dict)
+
+    with torch.no_grad():
+        padded_input = nn.functional.pad(
+            input_sequence,
+            (
+                padding_tuple[4],
+                padding_tuple[5],
+                padding_tuple[2],
+                padding_tuple[3],
+                padding_tuple[0],
+                padding_tuple[1],
+            ),
+            mode="constant",
+            value=0,
+        )
+        torch_conv_result = torch_conv(padded_input)
+
+    graph = Graph(
+        "conv3d_tuple_padding",
+        max_conv,
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, device=max_device),
+        ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+    graph_api_conv_result = compiled.execute(input_sequence)[0]
+    assert isinstance(graph_api_conv_result, Tensor)
+
+    np.testing.assert_allclose(
+        graph_api_conv_result.to_numpy(),
+        torch_conv_result.detach().cpu().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+
 def conv2d_impl(session: InferenceSession) -> None:
     torch.manual_seed(42)
 

@@ -15,13 +15,14 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from builtin.constrained import _constrained_conforms_to
 from sys.intrinsics import _type_is_eq_parse_time
 
 
 struct Variadic:
     """A namespace for variadic utilities."""
 
-    comptime ValuesOfType[type: AnyType] = __mlir_type[
+    comptime ValuesOfType[type: UnknownDestructibility] = __mlir_type[
         `!kgen.variadic<`, type, `>`
     ]
     """Represents a raw variadic sequence of values of the specified type.
@@ -30,7 +31,7 @@ struct Variadic:
         type: The type of values in the variadic sequence.
     """
 
-    comptime TypesOfTrait[T: _AnyTypeMetaType] = __mlir_type[
+    comptime TypesOfTrait[T: type_of(UnknownDestructibility)] = __mlir_type[
         `!kgen.variadic<`, T, `>`
     ]
     """Represents a raw variadic sequence of types that satisfy the specified trait.
@@ -41,7 +42,7 @@ struct Variadic:
 
     @staticmethod
     @always_inline("builtin")
-    fn size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
+    fn size[T: UnknownDestructibility](seq: Self.ValuesOfType[T]) -> Int:
         """Returns the length of a variadic sequence.
 
         Parameters:
@@ -57,7 +58,9 @@ struct Variadic:
 
     @staticmethod
     @always_inline("builtin")
-    fn size[T: _AnyTypeMetaType](seq: Self.TypesOfTrait[T]) -> Int:
+    fn size[
+        T: type_of(UnknownDestructibility)
+    ](seq: Self.TypesOfTrait[T]) -> Int:
         """Returns the length of a variadic sequence.
 
         Parameters:
@@ -538,7 +541,7 @@ struct VariadicPack[
     elt_is_mutable: Bool, //,
     is_owned: Bool,
     origin: Origin[elt_is_mutable],
-    element_trait: _AnyTypeMetaType,
+    element_trait: type_of(UnknownDestructibility),
     *element_types: element_trait,
 ](Sized):
     """A utility class to access heterogeneous variadic function arguments.
@@ -632,8 +635,24 @@ struct VariadicPack[
 
             @parameter
             for i in reversed(range(Self.__len__())):
+                # FIXME(MOCO-2953):
+                #   Due to a compiler limitation, we can't use
+                #   conforms_to() here, meaning the `trait_downcast` below
+                #   could fail with a worse elaboration error than we'd get from
+                #   _constrained_conforms_to.
+                #
+                # comptime element_type = Self.element_types[i]
+                # _constrained_conforms_to[
+                #     conforms_to(element_type, ImplicitlyDestructible),
+                #     Parent=Self,
+                #     Element=element_type,
+                #     ParentConformsTo="ImplicitlyDestructible",
+                # ]()
+
                 # Safety: We own the elements in this pack.
-                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
+                UnsafePointer(
+                    to=trait_downcast[ImplicitlyDestructible](self[i])
+                ).mut_cast[True]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn[idx: Int] (var elt: Self.element_types[idx]) capturing

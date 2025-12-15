@@ -18,7 +18,6 @@ from collections.abc import Callable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import (
     MLP,
     Embedding,
@@ -28,6 +27,7 @@ from max.nn import (
     RMSNorm,
     Transformer,
 )
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
@@ -175,9 +175,7 @@ class Olmo2(Transformer):
             embedding_multiplier=config.embedding_multiplier,
         )
 
-    def input_types(
-        self, kv_manager: PagedKVCacheManager | NullKVCacheManager
-    ) -> tuple[TensorType, ...]:
+    def input_types(self, kv_params: KVCacheParams) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
         # config.
@@ -188,7 +186,7 @@ class Olmo2(Transformer):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = kv_manager.get_symbolic_inputs()
+        kv_inputs = kv_params.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(

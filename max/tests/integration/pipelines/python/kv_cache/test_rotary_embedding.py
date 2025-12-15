@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 import torch
 from hypothesis import assume, settings
-from max.driver import CPU, Tensor
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
@@ -387,6 +387,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
+        devices=[DeviceRef.CPU()],
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -409,11 +410,10 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
     kv_manager = PagedKVCacheManager(
         kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_manager.get_symbolic_inputs()[0]
+        kv_params.get_symbolic_inputs()[0]
     )
 
     def construct() -> Graph:

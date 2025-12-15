@@ -86,7 +86,7 @@ def generate_max_outputs(
         head_dim=576,
         num_layers=config.num_hidden_layers,
         cache_strategy=KVCacheStrategy.PAGED,
-        n_devices=1,
+        devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
     )
@@ -109,7 +109,6 @@ def generate_max_outputs(
     latent_attention.load_state_dict(attention_weights)
 
     kv_manager = PagedKVCacheManager(
-        devices=[Accelerator(0)],
         params=kv_params,
         total_num_pages=8,
         session=session,
@@ -128,7 +127,7 @@ def generate_max_outputs(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_manager.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs()[0],
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
@@ -250,7 +249,7 @@ def generate_max_outputs_dp(
         head_dim=576,
         num_layers=config.num_hidden_layers,
         cache_strategy=KVCacheStrategy.PAGED,
-        n_devices=1,
+        devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
     )
@@ -273,7 +272,6 @@ def generate_max_outputs_dp(
     dp_attention.load_state_dict(attention_weights)
 
     kv_manager = PagedKVCacheManager(
-        devices=[Accelerator(0)],
         params=kv_params,
         total_num_pages=8,
         session=session,
@@ -292,7 +290,7 @@ def generate_max_outputs_dp(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_manager.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs()[0],
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor

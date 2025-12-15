@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Tensor
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
@@ -189,11 +189,11 @@ def test_cross_attention(
         num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
+        devices=[DeviceRef.CPU()],
     )
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=8,
-        devices=[CPU()],
         session=session,
     )
 
@@ -210,7 +210,7 @@ def test_cross_attention(
             hidden_max_seq_len_type,
             cross_attention_states_type,
             input_row_offsets_type,
-            *kv_manager.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs()[0],
         ],
     )
 

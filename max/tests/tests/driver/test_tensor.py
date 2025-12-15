@@ -343,18 +343,28 @@ def test_from_dlpack_short_circuit() -> None:
     assert tensor.shape == copy_tensor.shape
 
 
-def test_from_dlpack_copy() -> None:
-    tensor = Tensor(DType.int8, (4,))
+def test_from_dlpack_double_transfer() -> None:
+    tensor1 = Tensor(DType.int8, (4,))
     for i in range(4):
-        tensor[i] = i
+        tensor1[i] = i
 
-    arr = np.from_dlpack(tensor)
-    tensor_copy = Tensor.from_dlpack(arr)  # Should be implicitly copied.
-    tensor_copy[0] = np.int8(7)
-    assert arr[0] != np.int8(7)
+    arr = np.from_dlpack(tensor1)  # Transfer ownership
+    tensor2 = Tensor.from_dlpack(arr)  # Transfer ownership back
+    tensor2[0] = np.int8(7)
+    assert arr[0] == np.int8(7)
 
-    with pytest.raises(BufferError):
-        Tensor.from_dlpack(arr, copy=False)
+    tensor3 = Tensor.from_dlpack(arr)  # No transfer, but still able to view
+    # TODO: Why does this not work if we omit .item() ?
+    assert tensor3[0].item() == np.int8(7)
+
+
+def test_to_numpy_writable() -> None:
+    # Ensure that to_numpy returns a writable array.
+    # This is similar to test_from_dlpack_double_transfer above
+    # but explicitly tests that the numpy array is writable.
+    tensor = Tensor(shape=(20, 10), dtype=DType.int32)
+    np_array = tensor.to_numpy()
+    np_array[0, 0] = 100
 
 
 def test_dlpack_device() -> None:

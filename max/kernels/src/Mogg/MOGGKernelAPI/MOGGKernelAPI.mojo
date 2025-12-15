@@ -54,7 +54,8 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from comm.allgather import allgather
-from comm.allreduce import MAX_GPUS, Signal, allreduce
+from comm.allreduce import allreduce
+from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
@@ -77,6 +78,11 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
     batched_quantize_dynamic_scaled_fp8,
+)
+from linalg.fp4_quantization import (
+    block_scaled_matmul,
+    quantize_dynamic_block_scaled,
+    block_scales_interleave,
 )
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
@@ -4746,16 +4752,12 @@ struct Conv:
                 ]()
 
                 var cuda_ctx = ctx.get_device_context()
-                var pad_tuple = IndexList[input.rank - 2](0)
+
+                var pad_tuple = IndexList[2 * (input.rank - 2)](0)
 
                 @parameter
-                if input.rank == 4:
-                    pad_tuple[0] = pad_h_tuple[0]
-                    pad_tuple[1] = pad_w_tuple[0]
-                elif input.rank == 5:
-                    pad_tuple[0] = pad_d_tuple[0]
-                    pad_tuple[1] = pad_h_tuple[0]
-                    pad_tuple[2] = pad_w_tuple[0]
+                for i in range(2 * (input.rank - 2)):
+                    pad_tuple[i] = Int(paddings._ptr[i])
 
                 conv_gpu[
                     input_buf.layout,  # input shape
@@ -7463,6 +7465,117 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
             managed_tensor_slice_to_ndbuffer(b),
             managed_tensor_slice_to_ndbuffer(a_scales),
             managed_tensor_slice_to_ndbuffer(b_scales),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.matmul.dynamic.block.scaled")
+struct Struct_matmul_dynamic_block_scaled:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        scales_type: DType, //,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2],
+        a: InputTensor[dtype=a_type, rank=2],
+        b: InputTensor[dtype=b_type, rank=2],
+        a_scales: InputTensor[dtype=scales_type, rank=5],
+        b_scales: InputTensor[dtype=scales_type, rank=5],
+        tensor_sf: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](),
+            (
+                "dynamic block scaled matmul only support GPUs with native"
+                " block scaled support"
+            ),
+        ]()
+
+        cuda_ctx = context.get_device_context()
+        block_scaled_matmul[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=True,
+            target=target,
+        ](
+            managed_tensor_slice_to_ndbuffer(c),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(a_scales),
+            managed_tensor_slice_to_ndbuffer(b_scales),
+            tensor_sf,
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.quantize.dynamic.block.scaled")
+struct Struct_quantize_dynamic_block_scaled:
+    @always_inline
+    @staticmethod
+    fn execute[
+        out_dtype: DType,
+        scales_type: DType,
+        in_dtype: DType, //,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=2],
+        scales: OutputTensor[dtype=scales_type, rank=5],
+        input: InputTensor[dtype=in_dtype, rank=2],
+        tensor_sf: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](),
+            (
+                "quantize dynamic block scaled only support GPUs with native"
+                " block scaled support"
+            ),
+        ]()
+
+        cuda_ctx = context.get_device_context()
+        quantize_dynamic_block_scaled[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            target=target,
+        ](
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(scales),
+            managed_tensor_slice_to_ndbuffer(input),
+            tensor_sf,
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.interleave.block.scales")
+struct Struct_interleave_block_scales:
+    @always_inline
+    @staticmethod
+    fn execute[
+        scales_type: DType, //,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        output_scales: OutputTensor[dtype=scales_type, rank=5],
+        input_scales: InputTensor[dtype=scales_type, rank=2],
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](),
+            (
+                "quantize dynamic block scaled only support GPUs with native"
+                " block scaled support"
+            ),
+        ]()
+
+        cuda_ctx = context.get_device_context()
+        block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target,](
+            managed_tensor_slice_to_ndbuffer(output_scales),
+            managed_tensor_slice_to_ndbuffer(input_scales),
             cuda_ctx,
         )
 

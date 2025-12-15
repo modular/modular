@@ -18,6 +18,7 @@ import logging
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -89,13 +90,14 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config.text_config,
+            huggingface_config,
             encoding,
             devices,
             kv_cache_config,
             weights,
             adapter,
             return_logits,
+            text_huggingface_config=huggingface_config.text_config,
         )
 
     @classmethod
@@ -113,7 +115,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -124,7 +126,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
         Args:
             huggingface_config: The HuggingFace model configuration object
                 (:obj:`transformers.AutoConfig`).
-            n_devices: The number of devices the model will run on.
+            devices: The list of devices the model will run on.
             kv_cache_config: The MAX Engine KV cache configuration settings
                 (:obj:`max.pipelines.max_config.KVCacheConfig`).
             cache_dtype: The desired data type for the KV cache
@@ -135,7 +137,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
         """
         return super().get_kv_params(
             huggingface_config.text_config,
-            n_devices,
+            devices,
             kv_cache_config,
             cache_dtype,
         )
@@ -154,39 +156,3 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
             The number of hidden layers.
         """
         return super().get_num_layers(huggingface_config.text_config)
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the KV cache required for the Gemma 3 model in bytes.
-
-        Args:
-            pipeline_config: The configuration for the pipeline.
-            available_cache_memory: The total memory available for the KV cache
-                in bytes.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) the
-                model will run on.
-            kv_cache_config: Configuration settings for the KV cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The estimated size of the KV cache in bytes.
-        """
-        return super().estimate_kv_cache_size(
-            pipeline_config,
-            available_cache_memory,
-            devices,
-            huggingface_config.text_config,
-            kv_cache_config,
-            cache_dtype,
-        )
