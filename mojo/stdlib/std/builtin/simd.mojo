@@ -1240,11 +1240,6 @@ struct SIMD[dtype: DType, size: Int](
             `self << rhs`.
         """
         __comptime_assert Self.dtype.is_integral(), "must be an integral type"
-        debug_assert(all(rhs.ge(0)), "unhandled negative value")
-        debug_assert(
-            all(rhs.lt(bit_width_of[Self.dtype]())),
-            "unhandled value greater than size",
-        )
         return Self(
             mlir_value=__mlir_op.`pop.shl`(self._mlir_value, rhs._mlir_value)
         )
@@ -1263,11 +1258,6 @@ struct SIMD[dtype: DType, size: Int](
             `self >> rhs`.
         """
         __comptime_assert Self.dtype.is_integral(), "must be an integral type"
-        debug_assert(all(rhs.ge(0)), "unhandled negative value")
-        debug_assert(
-            all(rhs.lt(bit_width_of[Self.dtype]())),
-            "unhandled value greater than size",
-        )
         return Self(
             mlir_value=__mlir_op.`pop.shr`(self._mlir_value, rhs._mlir_value)
         )
