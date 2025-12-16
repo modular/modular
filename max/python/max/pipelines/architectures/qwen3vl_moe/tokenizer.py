@@ -141,10 +141,9 @@ def qwen3vl_image_preprocessing(
         max_pixels=max_pixels,
     )
 
-    # This resize might be causing some accuracy issues because of BICUBIC interpolation.
     if resized_height != height or resized_width != width:
         image = image.resize(
-            (resized_width, resized_height), Image.Resampling.BICUBIC
+            (resized_width, resized_height), resample=Image.Resampling.BICUBIC
         )
         height, width = resized_height, resized_width
 
@@ -153,12 +152,11 @@ def qwen3vl_image_preprocessing(
 
     img_array = np.array(image, dtype=np.float32)
 
-    # Rescale to [0, 1] using the same rescale_factor as transformers (1/255)
-    img_array = img_array / 255.0
-
     # Qwen3VL uses mean=0.5, std=0.5 for normalization to [-1, 1] range
+    # Also, Rescale to [0, 1] using the same rescale_factor as transformers (1/255)
+    # img_array = img_array / 255.0
     # This is equivalent to: (x - 0.5) / 0.5 = 2*x - 1
-    img_array = img_array * 2.0 - 1.0
+    img_array = (img_array - (0.5 * 255.0)) / (0.5 * 255.0)
 
     patches = np.array([img_array])  # Shape: (n_images, height, width, 3)
     patches = patches.transpose(

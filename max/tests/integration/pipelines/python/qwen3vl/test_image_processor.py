@@ -20,6 +20,7 @@ import io
 import urllib.request
 
 import numpy as np
+import numpy.typing as npt
 
 # Import our custom processor
 from max.pipelines.architectures.qwen3vl_moe.tokenizer import (
@@ -27,6 +28,40 @@ from max.pipelines.architectures.qwen3vl_moe.tokenizer import (
 )
 from PIL import Image
 from transformers import Qwen3VLProcessor
+
+
+def calculate_mae(
+    img1_np: npt.NDArray[np.float32], img2_np: npt.NDArray[np.float32]
+) -> float:
+    """Calculates Mean Absolute Error (MAE)."""
+    img1_float = img1_np.astype(np.float64)
+    img2_float = img2_np.astype(np.float64)
+    mae = np.mean(np.abs(img1_float - img2_float))
+    return mae
+
+
+def calculate_psnr(
+    img1_np: npt.NDArray[np.float32],
+    img2_np: npt.NDArray[np.float32],
+    max_val: float = 1.0,
+) -> float:
+    """
+    Calculates Peak Signal-to-Noise Ratio (PSNR).
+
+    Args:
+        max_val: 1.0 if images are normalized [0, 1], or 255.0 if 8-bit [0, 255].
+    """
+    img1_float = img1_np.astype(np.float64)
+    img2_float = img2_np.astype(np.float64)
+
+    # Mean Squared Error (MSE)
+    mse = np.mean((img1_float - img2_float) ** 2)
+
+    if mse == 0:
+        return float("inf")
+
+    psnr = 10 * np.log10((max_val**2) / mse)
+    return psnr
 
 
 def download_image(url: str) -> Image.Image:
@@ -203,6 +238,13 @@ def test_image_processor() -> None:
     print(
         f"Max absolute error: {abs_err:.8f}, Max relative error: {rel_err:.8f}"
     )
+
+    mae = calculate_mae(pixel_values, transformers_result_raw["pixel_values"])
+    psnr = calculate_psnr(pixel_values, transformers_result_raw["pixel_values"])
+    print(f"MAE: {mae:.8f}, PSNR: {psnr:.8f}")
+
+    assert mae < 1e-4, f"MAE: {mae:.8f} is greater than 1e-4"
+    assert psnr > 40, f"PSNR: {psnr:.8f} is less than 40"
 
     assert np.allclose(
         pixel_values,
