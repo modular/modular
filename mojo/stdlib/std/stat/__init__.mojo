@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the stat package."""
+"""File type constants and detection from stat system calls."""
 
 from .stat import (
     S_IFBLK,

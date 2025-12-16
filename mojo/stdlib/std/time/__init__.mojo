@@ -10,6 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the time package."""
+"""Timing operations: monotonic clocks, performance counters, sleep, time_function."""
 
 from .time import monotonic, perf_counter, perf_counter_ns, sleep, time_function

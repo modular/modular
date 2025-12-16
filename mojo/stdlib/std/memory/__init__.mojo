@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The memory package provides several pointer types, as well
+"""Low-level memory management: pointers, allocations, address spaces.
+
+The memory package provides several pointer types, as well
 as utility functions for dealing with memory."""
 
 from .arc import ArcPointer

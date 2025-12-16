@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the algorithm package."""
+"""High performance data operations: vectorization, parallelization, reduction, memory."""
 
 from .functional import (
     BinaryTile1DTileUnitFunc,

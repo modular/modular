@@ -10,6 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the subprocess package."""
+"""Execute external processes and commands."""
 
 from .subprocess import run

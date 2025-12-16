@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the math package."""
+"""Math functions and constants: trig, exponential, logarithmic, and special functions."""
 
 # In Python, these are in the math module, so we also expose them here.
 from utils.numerics import inf, isfinite, isinf, isnan, nan, nextafter

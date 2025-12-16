@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the random package."""
+"""Pseudorandom number generation with uniform and normal distributions."""
 
 from .random import (
     rand,

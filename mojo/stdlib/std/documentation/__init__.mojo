@@ -10,6 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the documentation package."""
+"""Documentation built-ins: decorators and utilities for doc generation."""
 
 from .documentation import doc_private

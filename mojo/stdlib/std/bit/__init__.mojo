@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the bit package."""
+"""Bitwise operations: manipulation, counting, rotation, and power-of-two utilities."""
 
 from .bit import (
     bit_not,

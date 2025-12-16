@@ -10,5 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Iterator tools: count, product, repeat for lazy sequence generation."""
 
 from .itertools import count, product, repeat

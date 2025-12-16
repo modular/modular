@@ -10,6 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the pathlib package."""
+"""Filesystem path manipulation and navigation."""
 
 from .path import DIR_SEPARATOR, Path, _dir_of_current_file, cwd

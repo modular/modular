@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides traits and utilities for iteration.
+"""Iteration traits and utilities: Iterable, Iterator, enumerate, zip, map.
 
 This module defines the core iteration protocol for Mojo through the `Iterable`
 and `Iterator` traits. Types that conform to these traits can be used with

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides utilities for compiling and inspecting Mojo code at runtime.
+"""Runtime function compilation and introspection: assembly, IR, linkage, metadata.
 
 This module exposes functionality for compiling individual Mojo functions and
 examining their low-level implementation details. It is particularly useful for:
