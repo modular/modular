@@ -34,8 +34,8 @@ from .fp4_utils import (
     SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
-    _set_scale_factor,
-    _get_scale_factor,
+    set_scale_factor,
+    get_scale_factor,
 )
 from gpu.host.info import B200
 from utils import StaticTuple
@@ -191,7 +191,7 @@ fn quantize_dynamic_scaled_fp4_kernel[
                 # they only exist in the scale factor tensor. Tensor cores expects these scale factors to be 0.
                 # there will be accuracy issues if we don't zero out the scale factors for padding rows.
                 if global_col_idx % SF_VECTOR_SIZE == 0:
-                    _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                    set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         scales,
                         global_row_idx,
                         global_col_idx,
@@ -212,7 +212,7 @@ fn quantize_dynamic_scaled_fp4_kernel[
 
                 if col_idx >= num_col_threads:
                     if global_col_idx % SF_VECTOR_SIZE == 0:
-                        _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                             scales,
                             global_row_idx,
                             global_col_idx,
@@ -251,7 +251,7 @@ fn quantize_dynamic_scaled_fp4_kernel[
 
                     # write back the scale factor
                     if global_col_idx % SF_VECTOR_SIZE == 0:
-                        _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                             scales,
                             global_row_idx,
                             global_col_idx,
@@ -354,7 +354,7 @@ fn block_scales_interleave_fp4_kernel[
                     input_scales[row_idx, col_idx]
                 )
 
-            _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+            set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                 output_scales,
                 row_idx,
                 col_idx * SF_VECTOR_SIZE,
@@ -538,10 +538,10 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
 
     var accum = Scalar[accum_type](0.0)
     for k in range(0, K, 2):
-        var a_scale = _get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+        var a_scale = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             a_scales, Int(row_idx), k
         )
-        var b_scale = _get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+        var b_scale = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             b_scales, Int(col_idx), k
         )
 

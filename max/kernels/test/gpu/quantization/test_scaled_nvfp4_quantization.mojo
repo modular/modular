@@ -28,7 +28,7 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
-    _get_scale_factor,
+    get_scale_factor,
 )
 from utils import IndexList
 from memory import bitcast
@@ -176,7 +176,7 @@ fn test_dynamic_fp4_quant[
                         )
                         var ref_fp8_sf = sf_value.cast[scales_dtype]()
 
-                        var fp8_sf = _get_scale_factor[
+                        var fp8_sf = get_scale_factor[
                             SF_VECTOR_SIZE=SF_VECTOR_SIZE
                         ](scales_tensor_host.as_any_origin(), row_idx, col_idx)
 

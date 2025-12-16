@@ -1196,9 +1196,11 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     - The memory barrier should be properly initialized before use.
     - The multicast_mask must be properly configured based on cluster size and desired distribution.
     """
-    __comptime_assert (
-        rank == 1 or rank == 2
-    ), "Expecting rank-1 or rank-2 tensors"
+    __comptime_assert rank in (
+        1,
+        2,
+        3,
+    ), "Expecting rank-1, rank-2, or rank-3 tensors"
 
     __comptime_assert cta_group in (1, 2), "cta_group must be 1 or 2"
     comptime tma_asm = String(
@@ -1211,7 +1213,40 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     )
 
     @parameter
-    if rank == 2:
+    if rank == 3:
+
+        @parameter
+        if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                AddressSpace.SHARED_CLUSTER
+            ]()
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,1,0,0>}`
+            ](
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_i32(coords[1]),
+                to_i32(coords[2]),
+                to_llvm_shared_mem_ptr(mem_bar),
+                to_i16(multicast_mask),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$4, $5, $6}], [$2], $3;",
+                NoneType,
+                constraints="r,l,r,h,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                multicast_mask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+            )
+
+    elif rank == 2:
 
         @parameter
         if cta_group == 1:

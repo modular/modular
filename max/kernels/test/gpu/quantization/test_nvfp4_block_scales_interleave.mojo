@@ -24,7 +24,7 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
-    _get_scale_factor,
+    get_scale_factor,
 )
 from math import ceildiv, align_up
 from utils import IndexList
@@ -112,7 +112,7 @@ fn test_block_scales_interleave_fp4[
 
             for row_idx in range(0, align_up(m, SF_MN_GROUP_SIZE)):
                 for col_idx in range(0, align_up(n, SF_ATOM_K)):
-                    var swizzled_sf = _get_scale_factor[
+                    var swizzled_sf = get_scale_factor[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE
                     ](
                         output_host_tensor.as_any_origin(),

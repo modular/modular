@@ -989,7 +989,9 @@ struct TMATensorTile[
                         )
 
     @always_inline
-    fn async_copy_5d(
+    fn async_copy_5d[
+        cta_group: Int = 1
+    ](
         self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
@@ -1003,6 +1005,11 @@ struct TMATensorTile[
         This method initiates a hardware-accelerated asynchronous transfer of data from global memory
         to the specified destination in shared memory for 5D tensors. The transfer is tracked by the
         provided memory barrier.
+
+        Parameters:
+            cta_group: Int
+                If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -1075,7 +1082,9 @@ struct TMATensorTile[
                                 IntTuple(o, n, m, i, j)
                             ) * copy_size
 
-                            cp_async_bulk_tensor_shared_cluster_global(
+                            cp_async_bulk_tensor_shared_cluster_global[
+                                cta_group=cta_group
+                            ](
                                 dst.ptr.mut_cast[True]() + copy_offset,
                                 UnsafePointer(to=self.descriptor).bitcast[
                                     NoneType
@@ -1293,6 +1302,105 @@ struct TMATensorTile[
                     ),
                     multicast_mask,
                 )
+
+    @always_inline
+    fn async_multicast_load_3d[
+        cta_group: Int = 1
+    ](
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+        ],
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        coords: Tuple[UInt, UInt, UInt],
+        multicast_mask: UInt16,
+    ):
+        """
+        Schedules an asynchronous 3D multicast load from global memory to multiple shared memory locations.
+
+        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
+        to multiple destination locations in shared memory across different CTAs (Cooperative Thread Arrays)
+        as specified by the multicast mask.
+
+        Parameters:
+            cta_group: Int
+                If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
+
+        Args:
+            dst: LayoutTensor
+                The destination tensor in shared memory where data will be copied.
+                Must be 128-byte aligned.
+            mem_barrier: SharedMemBarrierArray
+                The memory barrier used to track and synchronize the asynchronous transfer.
+            coords: Tuple[UInt, UInt, UInt]
+                The 2D coordinates in the source tensor from which to copy data.
+            multicast_mask: UInt16
+                A bit mask specifying which CTAs should receive the data.
+
+        Constraints:
+            The destination tensor must be 128-byte aligned in shared memory.
+        """
+        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
+        constrained[
+            type_of(dst).alignment % 128 == 0,
+            "TMA requires 128B alignment in shared memory",
+        ]()
+
+        # The descriptor layout i.e. data per copy can be smaller than the shared memory
+        # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
+        # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
+        #
+        # dim0, dim1 are MN, K for K-major and K, MN for MN-major because our inputs are
+        # row_major(K, MN) for the latter.
+        #
+        # TODO: use layout algebra here
+        comptime copy_dim0 = Self.desc_layout.shape[0].value()
+        comptime copy_dim1 = Self.desc_layout.shape[1].value()
+        comptime copy_dim2 = Self.desc_layout.shape[2].value()
+        comptime copy_size = Self.desc_layout.size()
+        comptime num_copies_dim0 = ceildiv(
+            Self.layout.shape[0].value(), copy_dim0
+        )
+        comptime num_copies_dim1 = ceildiv(
+            Self.layout.shape[1].value(), copy_dim1
+        )
+        comptime num_copies_dim2 = ceildiv(
+            Self.layout.shape[2].value(), copy_dim2
+        )
+
+        # This is the layout with which the descs themselves are arranged.
+        comptime layout_of_descs = Layout.col_major(
+            num_copies_dim0, num_copies_dim1, num_copies_dim2
+        ) if Self.is_k_major else Layout.row_major(
+            num_copies_dim0, num_copies_dim1, num_copies_dim2
+        )
+
+        @parameter
+        for m in range(num_copies_dim0):
+
+            @parameter
+            for i in range(num_copies_dim1):
+
+                @parameter
+                for j in range(num_copies_dim2):
+                    comptime copy_offset: UInt32 = layout_of_descs(
+                        IntTuple(m, i, j)
+                    ) * copy_size
+
+                    cp_async_bulk_tensor_shared_cluster_global_multicast[
+                        cta_group=cta_group
+                    ](
+                        dst.ptr.mut_cast[True]() + copy_offset,
+                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        mem_barrier.unsafe_ptr(),
+                        Index(
+                            coords[0] + UInt(j * copy_dim2),
+                            coords[1] + UInt(i * copy_dim1),
+                            coords[2] + UInt(m * copy_dim0),
+                        ),
+                        multicast_mask,
+                    )
 
     @always_inline
     fn async_multicast_load_partitioned[

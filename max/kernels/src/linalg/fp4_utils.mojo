@@ -180,41 +180,104 @@ cvt.rn.f16x2.e2m1x2 $0, byte0;
     return bitcast[DType.float16, 2](result)
 
 
-fn _set_scale_factor[
+fn set_scale_factor[
     scales_dtype: DType,
     scales_layout: Layout, //,
     SF_VECTOR_SIZE: Int,
 ](
     scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    global_row_idx: Int,
-    global_col_idx: Int,
+    row_idx: Int,
+    col_idx: Int,
     scale_value: Scalar[scales_dtype],
 ):
+    constrained[
+        scales_tensor.rank == 5,
+        "scales_tensor must be 5D for non-batched scales tensor",
+    ]()
+
     scales_tensor[
-        global_row_idx // SF_MN_GROUP_SIZE,
-        global_col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-        global_row_idx % SF_ATOM_M[0],
-        (global_row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-        (global_col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+        row_idx // SF_MN_GROUP_SIZE,
+        col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+        row_idx % SF_ATOM_M[0],
+        (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+        (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
     ] = rebind[Scalar[scales_dtype]](scale_value)
 
 
-fn _get_scale_factor[
+fn get_scale_factor[
     scales_dtype: DType,
     scales_layout: Layout, //,
     SF_VECTOR_SIZE: Int,
 ](
     scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    global_row_idx: Int,
-    global_col_idx: Int,
+    row_idx: Int,
+    col_idx: Int,
 ) -> Scalar[scales_dtype]:
+    constrained[
+        scales_tensor.rank == 5,
+        "scales_tensor must be 5D for non-batched scales tensor",
+    ]()
+
     return rebind[Scalar[scales_dtype]](
         scales_tensor[
-            global_row_idx // SF_MN_GROUP_SIZE,
-            global_col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-            global_row_idx % SF_ATOM_M[0],
-            (global_row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-            (global_col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+            row_idx // SF_MN_GROUP_SIZE,
+            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+            row_idx % SF_ATOM_M[0],
+            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+        ]
+    )
+
+
+fn set_batched_scale_factor[
+    scales_dtype: DType,
+    scales_layout: Layout, //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    batch_idx: Int,
+    row_idx: Int,
+    col_idx: Int,
+    scale_value: Scalar[scales_dtype],
+):
+    constrained[
+        scales_tensor.rank == 6,
+        "scales_tensor must be 6D for batched scales tensor",
+    ]()
+
+    scales_tensor[
+        batch_idx,
+        row_idx // SF_MN_GROUP_SIZE,
+        col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+        row_idx % SF_ATOM_M[0],
+        (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+        (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+    ] = rebind[Scalar[scales_dtype]](scale_value)
+
+
+fn get_batched_scale_factor[
+    scales_dtype: DType,
+    scales_layout: Layout, //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    batch_idx: Int,
+    row_idx: Int,
+    col_idx: Int,
+) -> Scalar[scales_dtype]:
+    constrained[
+        scales_tensor.rank == 6,
+        "scales_tensor must be 6D for batched scales tensor",
+    ]()
+
+    return rebind[Scalar[scales_dtype]](
+        scales_tensor[
+            batch_idx,
+            row_idx // SF_MN_GROUP_SIZE,
+            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+            row_idx % SF_ATOM_M[0],
+            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
         ]
     )
 
