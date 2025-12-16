@@ -39,7 +39,7 @@ import p
           i.label === "prelude" &&
           i.kind! === CompletionItemKind.Folder &&
           (i.documentation! as MarkupContent).value.includes(
-            "Implements the prelude package"
+            "Standard library prelude: fundamental types, traits, and operations auto-imported"
           )
       )
     );
