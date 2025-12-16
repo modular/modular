@@ -195,6 +195,34 @@ fn simd_where_clause_int_invert[x: Int]() -> Int where not (~SIMDInt(x)):
     return 0
 
 
+@always_inline("builtin")
+fn simd_where_clause_int_shl[
+    x: Int
+]() -> Int where SIMDInt(x) << SIMDInt(1) == SIMDInt(4):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_shl[
+    x: Int
+]() -> Int where SIMDInt(x) << SIMDInt(1) != SIMDInt(4):
+    return 0
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_shr[
+    x: Int
+]() -> Int where SIMDInt(x) >> SIMDInt(1) == SIMDInt(3):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_shr[
+    x: Int
+]() -> Int where SIMDInt(x) >> SIMDInt(1) != SIMDInt(3):
+    return 0
+
+
 # CHECK-LABEL: lit.fn @"use_them
 fn use_them():
     # CHECK: lit.alias.decl *"x`": !Int = <{0}>
@@ -274,3 +302,13 @@ fn use_them():
     comptime i0 = simd_where_clause_int_eq[4]()
     # CHECK: lit.alias.decl *"i1`{{.*}}": !Int = <{0}>
     comptime i1 = simd_where_clause_int_eq[9]()
+
+    # CHECK: lit.alias.decl *"shl0`{{.*}}": !Int = <{1}>
+    comptime shl0 = simd_where_clause_int_shl[2]()
+    # CHECK: lit.alias.decl *"shl1`{{.*}}": !Int = <{0}>
+    comptime shl1 = simd_where_clause_int_shl[1]()
+
+    # CHECK: lit.alias.decl *"shr0`{{.*}}": !Int = <{1}>
+    comptime shr0 = simd_where_clause_int_shr[6]()
+    # CHECK: lit.alias.decl *"shr1`{{.*}}": !Int = <{0}>
+    comptime shr1 = simd_where_clause_int_shr[2]()
