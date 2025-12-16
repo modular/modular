@@ -183,39 +183,21 @@ def IntegerSIMD : SIMDOfDType<BoundAnd<IntDType>, "!pop.simd<N, integral>">;
 def FloatSIMD : SIMDOfDType<BoundAnd<FloatDType>, "!pop.simd<N, float>">;
 def AddressSIMD : SIMDOfDType<BoundAnd<AddressDType>, "!pop.simd<N, address>">;
 
-def UnboundOrIntegerSIMD : SIMDOfDType<UnboundOr<IntDType>,
-    "whose element type is either unbound or an integral dtype">;
-def UnboundOrSignedSIMD : SIMDOfDType<UnboundOr<OrDType<[SIntDType, FloatDType]>>,
-    "whose element type is either unbound or of signed dtype">;
-def UnboundOrFloatOrUnsignedSIMD : SIMDOfDType<UnboundOr<OrDType<[UIntDType, FloatDType]>>,
-    "whose element type is either unbound or unsigned or a floating-point dtype">;
-def UnboundOrFloatSIMD : SIMDOfDType<UnboundOr<FloatDType>,
-    "whose element type is either unbound or a floating-point dtype">;
-def UnboundOrIndexOrSignedSIMD : SIMDOfDType<UnboundOr<OrDType<
-                                          [SIntDType, IndexDType, UIndexDType, FloatDType]>>,
-    "whose element type is either unbound, index, or of signed dtype">;
-def UnboundOrBoolOrIndexOrIntegerSIMD : SIMDOfDType<
-    UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType, BoolDType]>>,
-    "whose element type is either unbound, or integer, or bool">;
 def UnboundOrIndexOrIntegerSIMD : SIMDOfDType<
     UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType]>>,
-    "whose element type is either unbound, index, or integral dtype">;
-def UnboundOrBoolOrArithmeticSIMD : SIMDOfDType<
-    UnboundOr<OrDType<[BoolDType, ArithmeticDType]>>,
-    "whose element type is either integer or float dtype">;
-def UnboundOrArithmeticSIMD : SIMDOfDType<UnboundOr<ArithmeticDType>,
-    "whose element type is either integer or float dtype">;
+    "SIMD type whose element type is either unbound, index, uindex, or integral dtype">;
 def UnboundOrIndexOrArithmeticSIMD : SIMDOfDType<
     UnboundOr<OrDType<[IndexDType, UIndexDType, ArithmeticDType]>>,
-    "whose element type is either unbound, index, or arithmetic dtype">;
+    "SIMD type whose element type is either unbound, index, uindex, integer or float dtype">;
+
+// TODO: the following two should be unified, but may be subtly different in the
+// current implementation.
+def UnboundOrBoolOrArithmeticSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[BoolDType, ArithmeticDType]>>,
+    "SIMD type whose element type is either unbound, boolean, integral, or float dtype">;
 def UnboundOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
-    UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType, BoolDType, FloatDType]>>,
-    "whose element type is either unbound, integral, bool or float dtype">;
-def UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
-    UnboundOr<OrDType<
-      [IndexDType, UIndexDType, AddressDType, IntDType, BoolDType, FloatDType]>>,
-    "whose element type is either unbound, address, integral, bool or float "
-      "dtype">;
+    UnboundOr<OrDType<[BoolDType, IndexDType, UIndexDType, IntDType, FloatDType]>>,
+    "SIMD type whose element type is either unbound, boolean, index, uindex, integral, or float dtype">;
 
 /// A "scalar" type is a SIMD of size 1.
 def ScalarType : ConfinedType<POP_SIMDType,
