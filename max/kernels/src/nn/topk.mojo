@@ -129,7 +129,8 @@ fn _adjust_top_p[
 
 fn top_k[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     largest: Bool = True,
     target: StaticString = "cpu",
 ](
@@ -1251,7 +1252,8 @@ fn _topk_stage2[
 
 fn _topk_gpu[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
@@ -1500,7 +1502,8 @@ fn _topk_gpu[
 @always_inline
 fn topk_gpu[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
@@ -1736,7 +1739,8 @@ fn topk_gpu[
 @always_inline
 fn fused_token_sampling_gpu[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1924,7 +1928,8 @@ fn apply_gumbel_noise_kernel[
 fn gumbel_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
-    input_layout: Layout, //,
+    input_layout: Layout,
+    //,
 ](
     ctx: DeviceContext,
     input: LayoutTensor[dtype, input_layout, **_],

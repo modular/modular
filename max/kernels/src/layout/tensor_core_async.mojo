@@ -208,7 +208,8 @@ comptime _CM_TILE_STRIDE = IntTuple(1, _CM_ROW_BITS)
 @always_inline
 fn warpgroup_fence[
     accum_type: DType,
-    accum_layout: Layout, //,
+    accum_layout: Layout,
+    //,
 ](
     accum: LayoutTensor[
         accum_type, accum_layout, address_space = AddressSpace.LOCAL, **_
@@ -558,7 +559,8 @@ fn st_matrix_n_layout[
 
 
 fn _wgmma_descriptor[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     layout: Layout,
     is_k_major: Bool = True,
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -605,7 +607,8 @@ fn _wgmma_descriptor[
 
 fn _lhs_descriptor[
     dtype: DType,
-    layout: Layout, //,
+    layout: Layout,
+    //,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
     tensor: LayoutTensor[
@@ -630,7 +633,8 @@ fn _lhs_descriptor[
 
 fn _rhs_descriptor[
     dtype: DType,
-    layout: Layout, //,
+    layout: Layout,
+    //,
     transposed: Bool = False,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](

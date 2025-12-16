@@ -66,7 +66,8 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
 
 @always_inline
 fn _mojo_block_hasher[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     py_array_object_ptr: UnsafePointer[PyArrayObject[dtype]],
     block_size: Int,

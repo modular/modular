@@ -603,7 +603,8 @@ fn _mark_eviction[
 
 @always_inline("nodebug")
 fn async_copy[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     size: Int,
     *,
     fill: OptionalReg[Scalar[dtype]] = None,
@@ -1486,7 +1487,8 @@ fn cp_async_bulk_tensor_reduce[
 
 @always_inline
 fn _load_impl[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     width: Int = 1,
     *,
     read_only: Bool = False,
@@ -1636,7 +1638,8 @@ fn _load_impl[
 
 @always_inline
 fn load[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     width: Int = 1,
     *,
     read_only: Bool = False,
@@ -1680,7 +1683,8 @@ fn load[
 @always_inline
 fn load[
     OffsetType: Indexer,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     width: Int = 1,
     *,
     read_only: Bool = False,

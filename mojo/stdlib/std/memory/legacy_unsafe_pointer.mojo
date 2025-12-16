@@ -690,7 +690,8 @@ struct LegacyUnsafePointer[
 
     @always_inline("nodebug")
     fn load[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -763,7 +764,8 @@ struct LegacyUnsafePointer[
 
     @always_inline("nodebug")
     fn load[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -802,7 +804,8 @@ struct LegacyUnsafePointer[
     @always_inline("nodebug")
     fn load[
         I: Indexer,
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -840,7 +843,8 @@ struct LegacyUnsafePointer[
     @always_inline("nodebug")
     fn store[
         I: Indexer,
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -872,7 +876,8 @@ struct LegacyUnsafePointer[
     @always_inline("nodebug")
     fn store[
         dtype: DType,
-        offset_type: DType, //,
+        offset_type: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -905,7 +910,8 @@ struct LegacyUnsafePointer[
 
     @always_inline("nodebug")
     fn store[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -992,7 +998,8 @@ struct LegacyUnsafePointer[
     @always_inline("nodebug")
     fn strided_store[
         dtype: DType,
-        T: Intable, //,
+        T: Intable,
+        //,
         width: Int = 1,
     ](
         self: LegacyUnsafePointer[Scalar[dtype], mut=True, **_],
@@ -1016,7 +1023,8 @@ struct LegacyUnsafePointer[
 
     @always_inline("nodebug")
     fn gather[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         *,
         width: Int = 1,
         alignment: Int = align_of[dtype](),
@@ -1069,7 +1077,8 @@ struct LegacyUnsafePointer[
 
     @always_inline("nodebug")
     fn scatter[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         *,
         width: Int = 1,
         alignment: Int = align_of[dtype](),
@@ -1384,7 +1393,8 @@ struct LegacyUnsafePointer[
 
     @always_inline
     fn take_pointee[
-        T: Movable, //,
+        T: Movable,
+        //,
     ](
         self: LegacyUnsafePointer[
             T, mut=True, address_space = AddressSpace.GENERIC, **_
@@ -1411,7 +1421,8 @@ struct LegacyUnsafePointer[
     # TODO: Allow overloading on more specific traits
     @always_inline
     fn init_pointee_move[
-        T: Movable, //,
+        T: Movable,
+        //,
     ](
         self: LegacyUnsafePointer[
             T, mut=True, address_space = AddressSpace.GENERIC, **_
@@ -1438,7 +1449,8 @@ struct LegacyUnsafePointer[
 
     @always_inline
     fn init_pointee_copy[
-        T: Copyable, //,
+        T: Copyable,
+        //,
     ](
         self: LegacyUnsafePointer[
             T, mut=True, address_space = AddressSpace.GENERIC, **_
@@ -1465,7 +1477,8 @@ struct LegacyUnsafePointer[
 
     @always_inline
     fn init_pointee_move_from[
-        T: Movable, //,
+        T: Movable,
+        //,
     ](
         self: LegacyUnsafePointer[
             T, mut=True, address_space = AddressSpace.GENERIC, **_
@@ -1536,7 +1549,8 @@ struct LegacyUnsafePointer[
     )
     @always_inline
     fn move_pointee_into[
-        T: Movable, //,
+        T: Movable,
+        //,
     ](
         self: LegacyUnsafePointer[
             T, mut=True, address_space = AddressSpace.GENERIC, **_

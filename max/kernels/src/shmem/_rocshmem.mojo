@@ -414,7 +414,8 @@ fn rocshmem_team_my_pe(team: c_int) -> c_int:
 
 
 fn rocshmem_put[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
@@ -439,7 +440,8 @@ fn rocshmem_put[
 
 
 fn rocshmem_put_nbi[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
@@ -470,7 +472,8 @@ fn rocshmem_p[
 
 
 fn rocshmem_get[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
@@ -482,7 +485,8 @@ fn rocshmem_get[
 
 
 fn rocshmem_get_nbi[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],

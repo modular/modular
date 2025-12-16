@@ -848,7 +848,8 @@ def generic_assert_output_equals[
 
 
 def generic_execute_fused_qkv_cache_ragged[
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     kv_params: KVCacheStaticParams,
     dtype: DType,
     num_q_heads: Int,

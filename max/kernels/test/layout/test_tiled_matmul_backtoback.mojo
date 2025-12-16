@@ -381,7 +381,8 @@ fn strided_store[
 @always_inline
 fn vectorize_flat[
     elt_a: DType,
-    elt_b: DType, //,
+    elt_b: DType,
+    //,
     f: fn[width: Int, stride_a: Int, stride_b: Int] (
         UnsafePointer[Scalar[elt_a]], UnsafePointer[Scalar[elt_b]], Int
     ) capturing -> None,
@@ -440,7 +441,8 @@ fn vectorize_layout_tensor[
     elt_a: DType,
     layout_a: Layout,
     elt_b: DType,
-    layout_b: Layout, //,
+    layout_b: Layout,
+    //,
     f: fn[width: Int, stride_a: Int, stride_b: Int] (
         UnsafePointer[Scalar[elt_a]], UnsafePointer[Scalar[elt_b]], Int
     ) capturing -> None,
@@ -465,7 +467,8 @@ fn copy_to[
     elt_dst: DType,
     layout_dst: Layout,
     elt_src: DType,
-    layout_src: Layout, //,
+    layout_src: Layout,
+    //,
     simd_width: Int = max(simd_width_of[elt_dst](), simd_width_of[elt_src]()),
     unroll_factor: Int = 4,
 ](
@@ -491,7 +494,8 @@ fn check_approx_equal[
     elt_dst: DType,
     layout_dst: Layout,
     elt_src: DType,
-    layout_src: Layout, //,
+    layout_src: Layout,
+    //,
     cmp_elt: DType,
     simd_width: Int = max(simd_width_of[elt_dst](), simd_width_of[elt_src]()),
     *,

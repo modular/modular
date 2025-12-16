@@ -86,7 +86,8 @@ fn llvm_intrinsic[
 @always_inline("nodebug")
 fn gather[
     dtype: DType,
-    size: Int, //,
+    size: Int,
+    //,
     *,
     invariant: Bool = False,
     alignment: Int = 0,
@@ -177,7 +178,8 @@ fn gather[
 @always_inline("nodebug")
 fn scatter[
     dtype: DType,
-    size: Int, //,
+    size: Int,
+    //,
     alignment: Int = 0,
 ](
     value: SIMD[dtype, size],
@@ -516,7 +518,8 @@ fn prefetch[
 
 @always_inline("nodebug")
 fn masked_load[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     size: Int,
     alignment: Int = 1,
 ](

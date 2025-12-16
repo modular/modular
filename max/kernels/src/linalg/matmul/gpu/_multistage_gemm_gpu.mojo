@@ -87,7 +87,8 @@ comptime WarpSplitKReductionSMem[
 @always_inline
 fn warp_split_k_reduction[
     c_type: DType,
-    c_layout: Layout, //,
+    c_layout: Layout,
+    //,
     BM: Int,
     BN: Int,
     num_threads_per_warp_k_part: Int,
@@ -145,7 +146,8 @@ fn warp_split_k_reduction[
 @always_inline
 fn warp_split_k_reduction[
     c_type: DType,
-    c_layout: Layout, //,
+    c_layout: Layout,
+    //,
     BM: Int,
     BN: Int,
     num_threads_per_warp_k_part: Int,
@@ -178,7 +180,8 @@ fn multistage_mma[
     a_smem_layout: Layout,
     b_type: DType,
     b_layout: Layout,
-    b_smem_layout: Layout, //,
+    b_smem_layout: Layout,
+    //,
     BM: Int,
     BN: Int,
     BK: Int,

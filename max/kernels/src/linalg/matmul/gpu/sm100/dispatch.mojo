@@ -606,7 +606,8 @@ fn matmul_dispatch_sm100[
 fn matmul_dispatch_sm100_fp8[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: OptionalReg[
@@ -1731,7 +1732,8 @@ fn matmul_dispatch_sm100_fp8[
 fn heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: OptionalReg[
@@ -1823,7 +1825,8 @@ fn heuristic_and_outliers_dispatch[
 fn matmul_dispatch_sm100_bf16[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: OptionalReg[
@@ -2425,7 +2428,8 @@ fn _vendor_blas_matmul_sm100[
 fn _matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,

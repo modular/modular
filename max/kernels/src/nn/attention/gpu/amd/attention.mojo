@@ -301,7 +301,8 @@ struct Attention[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
     config: MHAConfig,
     group: Int,
     token_gen: Bool,
@@ -521,7 +522,8 @@ struct Attention[
 
     @always_inline
     fn mma_qk[
-        k_buffer_type: KVBuffer, //,
+        k_buffer_type: KVBuffer,
+        //,
         prefetch_function: OptionalReg[fn () capturing -> None] = None,
         beg_iter: Int = 0,
         num_iters: Int = Int(Self.depth // Self.BK),
@@ -543,7 +545,8 @@ struct Attention[
 
     @always_inline
     fn mma_pv[
-        v_buffer_type: KVBuffer, //,
+        v_buffer_type: KVBuffer,
+        //,
         prefetch_function: OptionalReg[fn () capturing -> None] = None,
         prefetched_b_tile: Bool = True,
     ](mut self, mut v_buffer: v_buffer_type):

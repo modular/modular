@@ -32,7 +32,8 @@ from utils.index import Index, IndexList
 
 
 fn run_rms_norm_fused_residual_add_gpu[
-    rank: Int, //,
+    rank: Int,
+    //,
     dtype: DType,
 ](shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     var cols = shape[rank - 1]

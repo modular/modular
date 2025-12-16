@@ -652,7 +652,8 @@ fn shuffle_xor[
 @always_inline
 fn lane_group_reduce[
     val_type: DType,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     shuffle: fn[dtype: DType, simd_width: Int] (
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
@@ -712,7 +713,8 @@ fn lane_group_reduce[
 @always_inline
 fn reduce[
     val_type: DType,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     shuffle: fn[dtype: DType, simd_width: Int] (
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
@@ -764,7 +766,8 @@ fn reduce[
 @always_inline
 fn lane_group_sum[
     val_type: DType,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     num_lanes: Int,
     stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
@@ -800,7 +803,8 @@ fn lane_group_sum[
 @always_inline
 fn lane_group_sum_and_broadcast[
     val_type: DType,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     num_lanes: Int,
     stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
@@ -871,7 +875,8 @@ fn sum(val: SIMD) -> Scalar[val.dtype]:
 
 @always_inline
 fn prefix_sum[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     intermediate_type: DType = dtype,
     *,
     output_type: DType = dtype,
@@ -954,7 +959,8 @@ fn _redux_f32_max_min[direction: StaticString](val: SIMD) -> type_of(val):
 @always_inline
 fn lane_group_max[
     val_type: DType,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     num_lanes: Int,
     stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
@@ -997,7 +1003,8 @@ fn lane_group_max[
 @always_inline
 fn lane_group_max_and_broadcast[
     val_type: DType,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     num_lanes: Int,
     stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
@@ -1076,7 +1083,8 @@ fn max(val: SIMD) -> Scalar[val.dtype]:
 @always_inline
 fn lane_group_min[
     val_type: DType,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     num_lanes: Int,
     stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:

@@ -227,7 +227,8 @@ fn linear_filter(x: Float32) -> Float32:
 @parameter
 @always_inline
 fn interpolate_point_1d[
-    in_layout: Layout, //,
+    in_layout: Layout,
+    //,
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
     dtype: DType,

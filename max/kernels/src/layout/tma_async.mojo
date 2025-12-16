@@ -395,7 +395,8 @@ struct SharedMemBarrier(ImplicitlyCopyable):
 
     @always_inline
     fn unsafe_ptr[
-        mut: Bool, //,
+        mut: Bool,
+        //,
         origin: Origin[mut],
     ](
         ref [origin, AddressSpace.SHARED]self,
@@ -2281,7 +2282,8 @@ def create_tma_tile[
 @always_inline
 def _create_tma_descriptor_helper[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     desc_index_list: IndexList[rank],
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext, tensor: LayoutTensor[dtype, *_, **_]) -> TMADescriptor:
@@ -2361,7 +2363,8 @@ def _create_tma_descriptor_helper[
 @always_inline
 def create_tma_tile[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     tile_shape: IndexList[rank],
     /,
     k_major_tma: Bool = True,
@@ -2679,7 +2682,8 @@ fn _ragged_desc_layout[
 
 
 comptime SplitLastDimTMATensorTile[
-    rank: Int, //,
+    rank: Int,
+    //,
     dtype: DType,
     smem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
@@ -2713,7 +2717,8 @@ fn _tile_shape[smem_layout: Layout]() -> IndexList[len(smem_layout)]:
 @always_inline
 fn _split_tma_gmem_tensor[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
@@ -2739,7 +2744,8 @@ fn _split_tma_gmem_tensor[
 @always_inline
 fn _split_tma_gmem_tensor[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
@@ -2781,7 +2787,8 @@ fn _split_tma_gmem_tensor[
 
 fn create_split_tma[
     rank: Int,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
@@ -2833,7 +2840,8 @@ fn create_split_tma[
 
 fn create_split_tma[
     rank: Int,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
@@ -3051,7 +3059,8 @@ struct TMATensorTileArray[
 
 
 struct RaggedTensorMap[
-    descriptor_rank: Int, //,
+    descriptor_rank: Int,
+    //,
     dtype: DType,
     descriptor_shape: IndexList[descriptor_rank],
     remaining_global_dim_rank: Int,
@@ -3302,7 +3311,8 @@ struct RaggedTensorMap[
 
     @always_inline
     fn store_ragged_tile[
-        rank: Int, //,
+        rank: Int,
+        //,
         using_max_descriptor_size: Bool = False,
     ](
         self,

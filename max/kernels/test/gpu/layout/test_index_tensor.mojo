@@ -22,7 +22,8 @@ from utils import IndexList
 
 
 def execute_index_tensor_test[
-    data_type: DType, //,
+    data_type: DType,
+    //,
     batch_dims: Int,
 ](
     data_device: LayoutTensor[

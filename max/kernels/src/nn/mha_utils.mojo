@@ -688,7 +688,8 @@ fn dispatch_mask_and_score_mod[
 @always_inline
 fn dispatch_materialized_mask_and_score_mod[
     dtype: DType,
-    layout: Layout, //,
+    layout: Layout,
+    //,
     score_mod_type: String,
     callback_fn: callback_fn_type,
     num_heads: Int = -1,

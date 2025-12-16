@@ -50,7 +50,8 @@ fn get_batch_from_row_offsets(
 
 fn merge_ragged_tensors[
     rank: Int,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: StaticString = "cpu",
 ](
     c: LayoutTensor[mut=True, dtype, **_],

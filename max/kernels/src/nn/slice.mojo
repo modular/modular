@@ -335,7 +335,8 @@ fn slice_shape[
 
 
 fn sliced_add[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: StaticString,
 ](
     c: LayoutTensor[mut=True, dtype, *_, **_],

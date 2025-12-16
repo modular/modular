@@ -948,7 +948,8 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 @always_inline("nodebug")
 fn copy_from_nd_buffer[
     dtype: DType,
-    dst_data_layout: Layout, //,
+    dst_data_layout: Layout,
+    //,
     thread_layout: Layout,
     is_async: Bool = False,
     swizzle: OptionalReg[_swizzle_signature] = None,

@@ -372,7 +372,8 @@ fn simd_load_from_managed_tensor_slice[
 @no_inline
 fn _extract_tensor_spec[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     static_spec: StaticTensorSpec[dtype, rank],
 ]() -> type_of(static_spec):
     return static_spec
@@ -380,7 +381,8 @@ fn _extract_tensor_spec[
 
 @no_inline
 fn rebuild_static_tensor_specs_with_input_lambda[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     dtype: DType,
     rank: Int,
 ](
@@ -401,7 +403,8 @@ fn rebuild_static_tensor_specs_with_input_lambda[
 
 @no_inline
 fn rebuild_static_tensor_specs_with_output_lambda[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     dtype: DType,
     rank: Int,
 ](
@@ -422,7 +425,8 @@ fn rebuild_static_tensor_specs_with_output_lambda[
 
 @no_inline
 fn rebuild_static_tensor_specs_with_compute_output_lambda[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     dtype: DType,
     rank: Int,
 ](
@@ -448,7 +452,8 @@ fn rebuild_static_tensor_specs_with_compute_output_lambda[
 @register_internal("mogg.dps_input_fusion_hook")
 @no_inline
 fn _input_fusion_hook_impl[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dtype: DType,
     rank: Int,
     io_spec: IOSpec[mut],
@@ -482,7 +487,8 @@ fn _input_fusion_hook_impl[
 @register_internal("mogg.dps_output_fusion_hook")
 @no_inline
 fn _output_fusion_hook_impl[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dtype: DType,
     rank: Int,
     io_spec: IOSpec[mut],
@@ -519,7 +525,8 @@ fn _output_fusion_hook_impl[
 @register_internal("mogg.dps_mixed_precision_output_fusion_hook")
 @no_inline
 fn _mixed_precision_output_fusion_hook_impl[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     # DType and rank after casting/view fusion.
     rank: Int,
     dst_dtype: DType,
@@ -567,7 +574,8 @@ fn _mixed_precision_output_fusion_hook_impl[
 @register_internal("mogg.dps_mixed_precision_compute_output_fusion_hook")
 @no_inline
 fn _mixed_precision_compute_output_fusion_hook_impl[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     # DType and rank after casting/view fusion.
     rank: Int,
     dst_dtype: DType,
@@ -613,7 +621,8 @@ fn _mixed_precision_compute_output_fusion_hook_impl[
 )
 @no_inline
 fn rebuild_mix_precision_static_tensor_specs_with_input_lambda[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     src_dtype: DType,
     dst_dtype: DType,
     rank: Int,
@@ -638,7 +647,8 @@ fn rebuild_mix_precision_static_tensor_specs_with_input_lambda[
 @register_internal("mogg.dps_mixed_precision_input_fusion_hook")
 @no_inline
 fn _mixed_precision_input_fusion_hook_impl[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dst_dtype: DType,  # The DType after casting.
     src_dtype: DType,  # The DType before casting.
     rank: Int,
@@ -699,7 +709,8 @@ struct ManagedTensorSlice[
     mut: Bool,
     input: IO,
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[dtype, rank],
@@ -1264,7 +1275,8 @@ struct ManagedTensorSlice[
 
     @always_inline
     fn with_layout[
-        new_rank: Int, //,
+        new_rank: Int,
+        //,
         new_static_shape: DimList,
         new_static_strides: DimList,
     ](
@@ -1413,7 +1425,8 @@ comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
 @register_passable("trivial")
 struct VariadicTensors[
     mut: Bool,
-    input: IO, //,
+    input: IO,
+    //,
     dtype: DType,
     rank: Int,
     size: Int,
@@ -1487,7 +1500,8 @@ fn get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
 @no_inline
 fn foreach[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int, element_alignment: Int] (
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
@@ -1542,7 +1556,8 @@ fn foreach[
 @no_inline
 fn foreach[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
     out_func: fn[width: Int] (IndexList[rank]) capturing [_] -> None,
     *,
@@ -1592,7 +1607,8 @@ fn foreach[
 
 fn foreach[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
     *,
     target: StaticString = "cpu",
@@ -1642,7 +1658,8 @@ fn foreach[
 fn view_copy_impl[
     dtype: DType,
     rank: Int,
-    spec: StaticTensorSpec[dtype, rank], //,
+    spec: StaticTensorSpec[dtype, rank],
+    //,
     *,
     target: StaticString,
     _trace_name: StaticString = "mogg.view_copy_impl",

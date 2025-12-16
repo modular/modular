@@ -62,7 +62,8 @@ struct TileLoaderTMA[
     a_layout: Layout,
     b_layout: Layout,
     a_desc_layout: Layout,
-    b_desc_layout: Layout, //,
+    b_desc_layout: Layout,
+    //,
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     BM: Int,
@@ -187,7 +188,8 @@ struct TileLoaderTMA[
 
     @always_inline
     fn load_tiles[
-        tiles_origin: Origin[True], //,
+        tiles_origin: Origin[True],
+        //,
     ](
         self,
         tiles: ProducerTiles[

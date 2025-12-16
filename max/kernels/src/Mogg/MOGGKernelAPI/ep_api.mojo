@@ -97,7 +97,8 @@ struct Struct_ep_init:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         dispatch_scale_granularity: StaticString,
-        dispatch_scale_dtype: DType, //,
+        dispatch_scale_dtype: DType,
+        //,
         target: StaticString,
     ](
         dev_ptrs: OutputTensor[dtype = DType.uint64, rank=2],
@@ -253,7 +254,8 @@ struct Struct_ep_dispatch:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
-        n_nodes: Int, //,
+        n_nodes: Int,
+        //,
         target: StaticString,
     ](
         atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
@@ -404,7 +406,8 @@ struct Struct_ep_dispatch_cb:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
-        n_nodes: Int, //,
+        n_nodes: Int,
+        //,
         target: StaticString,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
@@ -569,7 +572,8 @@ struct Struct_ep_dispatch_fp8:
         n_gpus_per_node: Int,
         n_nodes: Int,
         dispatch_scale_granularity: StaticString,
-        dispatch_scale_dtype: DType, //,
+        dispatch_scale_dtype: DType,
+        //,
         target: StaticString,
     ](
         atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
@@ -737,7 +741,8 @@ struct Struct_ep_dispatch_cb_fp8:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         n_nodes: Int,
-        dispatch_scale_granularity: StaticString, //,
+        dispatch_scale_granularity: StaticString,
+        //,
         target: StaticString,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
@@ -918,7 +923,8 @@ struct Struct_ep_combine:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
-        n_nodes: Int, //,
+        n_nodes: Int,
+        //,
         target: StaticString,
     ](
         atomic_counters_1: MutableInputTensor[dtype = DType.int32, rank=1],
@@ -1057,7 +1063,8 @@ struct Struct_ep_combine_cb:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
-        n_nodes: Int, //,
+        n_nodes: Int,
+        //,
         target: StaticString,
     ](
         output_tokens: OutputTensor[dtype=combine_dtype, rank=3],
@@ -1183,7 +1190,8 @@ struct Struct_ep_fused_silu:
     @staticmethod
     fn execute[
         output_dtype: DType,
-        input_dtype: DType, //,
+        input_dtype: DType,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_dtype, rank=2],

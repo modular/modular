@@ -94,7 +94,8 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
 # ought to enable swapAB for grouped matmul.
 @register_passable("trivial")
 struct TileScheduler[
-    offsets_layout: Layout, //,
+    offsets_layout: Layout,
+    //,
     *,
     static_MN: Int,  # if swapAB, then static_MN is M, otherwise N
     # note that the tile shape always refers to the original non-swapped AB

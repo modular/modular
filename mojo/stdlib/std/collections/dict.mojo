@@ -65,7 +65,8 @@ struct DictKeyError(Writable):
 
 @fieldwise_init
 struct _DictEntryIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     K: KeyElement,
     V: Copyable,
     H: Hasher,
@@ -190,7 +191,8 @@ struct _TakeDictEntryIter[
 
 @fieldwise_init
 struct _DictKeyIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     K: KeyElement,
     V: Copyable,
     H: Hasher,
@@ -243,7 +245,8 @@ struct _DictKeyIter[
 
 @fieldwise_init
 struct _DictValueIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     K: KeyElement,
     V: Copyable,
     H: Hasher,

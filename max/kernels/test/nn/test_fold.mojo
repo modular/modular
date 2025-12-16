@@ -61,7 +61,8 @@ from utils.index import Index, IndexList
 
 # CHECK-LABEL: test_fold
 fn test[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     input_shape: IndexList[3],
     output_shape: IndexList[4],
     stride: Tuple[Int, Int],

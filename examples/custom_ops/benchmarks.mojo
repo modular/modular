@@ -43,7 +43,8 @@ from tensor import (
 @fieldwise_init
 struct Tensor[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank],
 ](ImplicitlyCopyable):

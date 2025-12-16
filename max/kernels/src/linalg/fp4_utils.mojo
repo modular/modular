@@ -55,7 +55,8 @@ comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
 
 fn cast_uint_to_fp4e2m1[
     in_dtype: DType,
-    in_width: Int, //,
+    in_width: Int,
+    //,
     *,
     out_dtype: DType,
     out_width: Int,
@@ -91,7 +92,8 @@ fn cast_uint_to_fp4e2m1[
 
 fn cast_fp_to_fp4e2m1[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     __comptime_assert dtype in (
         DType.float32,
@@ -134,7 +136,8 @@ fn cast_fp_to_fp4e2m1[
 
 
 fn cast_fp32_to_fp4e2m1[
-    width: Int, //,
+    width: Int,
+    //,
 ](x: SIMD[DType.float32, width]) -> UInt32:
     __comptime_assert (
         is_nvidia_gpu() and _is_sm_100x_or_newer()
@@ -179,7 +182,8 @@ cvt.rn.f16x2.e2m1x2 $0, byte0;
 
 fn set_scale_factor[
     scales_dtype: DType,
-    scales_layout: Layout, //,
+    scales_layout: Layout,
+    //,
     SF_VECTOR_SIZE: Int,
 ](
     scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
@@ -203,7 +207,8 @@ fn set_scale_factor[
 
 fn get_scale_factor[
     scales_dtype: DType,
-    scales_layout: Layout, //,
+    scales_layout: Layout,
+    //,
     SF_VECTOR_SIZE: Int,
 ](
     scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
@@ -228,7 +233,8 @@ fn get_scale_factor[
 
 fn set_batched_scale_factor[
     scales_dtype: DType,
-    scales_layout: Layout, //,
+    scales_layout: Layout,
+    //,
     SF_VECTOR_SIZE: Int,
 ](
     scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
@@ -254,7 +260,8 @@ fn set_batched_scale_factor[
 
 fn get_batched_scale_factor[
     scales_dtype: DType,
-    scales_layout: Layout, //,
+    scales_layout: Layout,
+    //,
     SF_VECTOR_SIZE: Int,
 ](
     scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],

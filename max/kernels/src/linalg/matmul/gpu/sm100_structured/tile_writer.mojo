@@ -1834,7 +1834,8 @@ struct SMemEpilogueWriter[
     # Infer-only: deduced from c_tiles argument type
     c_type: DType,
     c_smem_layout: Layout,
-    num_output_stages: Int, //,
+    num_output_stages: Int,
+    //,
     # Configuration parameters (must be explicit)
     epilogue_dtype: DType,
     BM: Int,

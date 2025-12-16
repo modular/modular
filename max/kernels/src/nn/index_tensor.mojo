@@ -198,7 +198,8 @@ fn index_tensor[
 # Batch dims refer to the number of sliced dimensions at the beginning
 fn _index_tensor_1d[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     batch_dims: Int,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -287,7 +288,8 @@ fn _index_tensor_1d[
 
 fn _index_tensor_impl[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     batch_dims: Int,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -431,7 +433,8 @@ fn advanced_indexing_getitem[
     input_rank: Int,
     index_rank: Int,
     input_type: DType,
-    index_type: DType, //,
+    index_type: DType,
+    //,
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
@@ -578,7 +581,8 @@ fn advanced_indexing_getitem[
 @always_inline
 fn advanced_indexing_getitem_shape[
     input_rank: Int,
-    index_rank: Int, //,
+    index_rank: Int,
+    //,
     start_axis: Int,
     num_index_tensors: Int,
 ](
@@ -619,7 +623,8 @@ fn advanced_indexing_setitem_inplace[
     index_rank: Int,
     updates_rank: Int,
     input_type: DType,
-    index_type: DType, //,
+    index_type: DType,
+    //,
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,

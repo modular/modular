@@ -30,7 +30,8 @@ from .blas import matmul as vendor_matmul
 fn matmul[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     config: OptionalReg[

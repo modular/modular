@@ -1289,7 +1289,8 @@ struct ScatterSetConstant:
     @staticmethod
     fn execute[
         data_type: DType,
-        index_type: DType, //,
+        index_type: DType,
+        //,
         target: StaticString,
     ](
         data: MutableInputTensor[dtype=data_type, rank=2],
@@ -1750,7 +1751,8 @@ struct StaticBroadcastTo:
     fn update_input_view[
         dtype: DType,
         in_rank: Int,
-        out_rank: Int, //,
+        out_rank: Int,
+        //,
         output_static_shape: DimList,
     ](
         x: InputTensor[dtype=dtype, rank=in_rank],
@@ -1815,7 +1817,8 @@ struct StaticReshape:
     @staticmethod
     fn update_input_view[
         dtype: DType,
-        output_rank: Int, //,
+        output_rank: Int,
+        //,
         output_static_shape: DimList,
     ](
         input: InputTensor[dtype=dtype],
@@ -1930,7 +1933,8 @@ struct Transpose:
     @staticmethod
     fn update_input_view[
         dtype: DType,
-        rank: Int, //,
+        rank: Int,
+        //,
         output_static_shape: DimList,
         static_permutations: DimList,
     ](
@@ -2024,7 +2028,8 @@ struct Slice:
     @staticmethod
     fn update_input_view[
         dtype: DType,
-        rank: Int, //,
+        rank: Int,
+        //,
         output_static_shape: DimList,
         static_steps: DimList,
     ](
@@ -2204,7 +2209,8 @@ struct SliceDim:
     @staticmethod
     fn update_input_view[
         dtype: DType,
-        rank: Int, //,
+        rank: Int,
+        //,
         output_static_shape: DimList,
         axis: Int,
         static_start: DimList,
@@ -3959,7 +3965,8 @@ struct ResizeBicubic:
     fn execute[
         rank: Int,
         dtype: DType,
-        target: StaticString, //,
+        target: StaticString,
+        //,
     ](
         output: OutputTensor[dtype=dtype, rank=rank],
         input: InputTensor[dtype=dtype, rank=rank],
@@ -5149,7 +5156,8 @@ struct MaskedFlashAttentionGPU:
 struct FlashAttentionGPU:
     @staticmethod
     fn execute[
-        rank: Int, //,
+        rank: Int,
+        //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -5246,7 +5254,8 @@ struct FlashAttentionGPU:
 struct PaddedFlashAttentionGPU:
     @staticmethod
     fn execute[
-        rank: Int, //,
+        rank: Int,
+        //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -5314,7 +5323,8 @@ struct PaddedFlashAttentionGPU:
 struct RaggedFlashAttentionGPU:
     @staticmethod
     fn execute[
-        rank: Int, //,
+        rank: Int,
+        //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -6126,7 +6136,8 @@ struct Struct_fused_qkv_matmul_padded_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -6171,7 +6182,8 @@ struct Struct_fused_qkv_matmul_padded_ragged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
@@ -6212,7 +6224,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         dtype: DType,
         weight_type: DType,
         group_size: Int,
-        has_zp_int: Int, //,
+        has_zp_int: Int,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
@@ -6256,7 +6269,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
@@ -6299,7 +6313,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         dtype: DType,
         scale_type: DType,
         output_type: DType,
-        kv_type: DType, //,
+        kv_type: DType,
+        //,
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
@@ -6359,7 +6374,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
         dtype: DType,
         scale_type: DType,
         output_type: DType,
-        kv_type: DType, //,
+        kv_type: DType,
+        //,
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
@@ -6421,7 +6437,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         dtype: DType,
         weight_type: DType,
         group_size: Int,
-        has_zp_int: Int, //,
+        has_zp_int: Int,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
@@ -6470,7 +6487,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
 @always_inline
 fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     dtype: DType,
-    freq_dtype: DType, //,
+    freq_dtype: DType,
+    //,
     *,
     interleaved: Bool,
     has_position_ids: Bool,
@@ -6513,7 +6531,8 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     fn execute[
         dtype: DType,
         freq_dtype: DType,
-        mrope_section: StaticString, //,
+        mrope_section: StaticString,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -6559,7 +6578,8 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     @staticmethod
     fn execute[
         dtype: DType,
-        freq_dtype: DType, //,
+        freq_dtype: DType,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -6604,7 +6624,8 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
@@ -6660,7 +6681,8 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
     @staticmethod
     fn execute[
         dtype: DType,
-        freq_dtype: DType, //,
+        freq_dtype: DType,
+        //,
         target: StaticString,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=3],
@@ -6735,7 +6757,8 @@ struct Struct_mha_padded_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -6788,7 +6811,8 @@ struct Struct_mha_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -6836,7 +6860,8 @@ struct Struct_mha_ragged_paged_sink_weights:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -6895,7 +6920,8 @@ struct Struct_mla_decode_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         mask_str: StaticString,
         score_mod_str: StaticString,
         target: StaticString,
@@ -6941,7 +6967,8 @@ struct Struct_mla_prefill_init_ragged_paged:
     @staticmethod
     fn execute[
         dtype: DType,
-        softmax_type: DType, //,
+        softmax_type: DType,
+        //,
         mask_str: StaticString,
         score_mod_str: StaticString,
         target: StaticString,
@@ -6996,7 +7023,8 @@ struct Struct_mla_prefill_ragged_paged:
     @staticmethod
     fn execute[
         dtype: DType,
-        softmax_type: DType, //,
+        softmax_type: DType,
+        //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -7072,7 +7100,8 @@ struct Struct_mla_prefill_ragged_plan:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         buffer_row_offsets: OutputTensor[dtype = DType.uint32, rank=2],
@@ -7114,7 +7143,8 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         k_latent_buffer: OutputTensor[dtype=dtype, rank=2],
@@ -7154,7 +7184,8 @@ struct Struct_kv_cache_get_max_seq_len_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         max_seq_len: OutputTensor[dtype = DType.uint32, rank=1],
@@ -7182,7 +7213,8 @@ struct Struct_mla_prefill_graph_paged:
     fn execute[
         dtype: DType,
         fp8_dtype: DType,
-        fp8_scale_dtype: DType, //,
+        fp8_scale_dtype: DType,
+        //,
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
@@ -7252,7 +7284,8 @@ struct Struct_mla_decode_graph_paged:
     fn execute[
         dtype: DType,
         fp8_dtype: DType,
-        fp8_scale_dtype: DType, //,
+        fp8_scale_dtype: DType,
+        //,
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
@@ -7320,7 +7353,8 @@ struct Struct_mla_prefill_graph_decode_paged:
     fn execute[
         dtype: DType,
         fp8_dtype: DType,
-        fp8_scale_dtype: DType, //,
+        fp8_scale_dtype: DType,
+        //,
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
@@ -7406,7 +7440,8 @@ struct Struct_cross_attention_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         mask_str: StaticString,
         score_mod_str: StaticString,
         target: StaticString,
@@ -7486,7 +7521,8 @@ struct Struct_moe_router_group_limited:
     @staticmethod
     fn execute[
         scores_type: DType,
-        bias_type: DType, //,
+        bias_type: DType,
+        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         n_groups: Int,
@@ -7525,7 +7561,8 @@ struct Struct_grouped_matmul_ragged:
     fn execute[
         c_type: DType,
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2],
@@ -7560,7 +7597,8 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         a_type: DType,
         b_type: DType,
         a_scales_type: DType,
-        b_scales_type: DType, //,
+        b_scales_type: DType,
+        //,
         input_scale_granularity: StaticString,
         weight_scale_granularity: StaticString,
         m_scale_granularity: Int,
@@ -7617,7 +7655,8 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         a_type: DType,
         b_type: DType,
         a_scales_type: DType,
-        b_scales_type: DType, //,
+        b_scales_type: DType,
+        //,
         input_scale_granularity: StaticString,
         weight_scale_granularity: StaticString,
         m_scale_granularity: Int,
@@ -7666,7 +7705,8 @@ struct Struct_matmul_dynamic_block_scaled:
         c_type: DType,
         a_type: DType,
         b_type: DType,
-        scales_type: DType, //,
+        scales_type: DType,
+        //,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
@@ -7706,7 +7746,8 @@ struct Struct_quantize_dynamic_block_scaled:
     fn execute[
         out_dtype: DType,
         scales_type: DType,
-        in_dtype: DType, //,
+        in_dtype: DType,
+        //,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
@@ -7739,7 +7780,8 @@ struct Struct_interleave_block_scales:
     @always_inline
     @staticmethod
     fn execute[
-        scales_type: DType, //,
+        scales_type: DType,
+        //,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
@@ -8121,7 +8163,8 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
     fn execute[
         dtype: DType,
         multiply_before_cast: Bool,
-        per_head_norm: Bool, //,
+        per_head_norm: Bool,
+        //,
         target: StaticString,
     ](
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
@@ -8167,7 +8210,8 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
 
 
 fn print_kv_cache_paged_generic_kernel_api[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: StaticString,
     kv_params: KVCacheStaticParams,
     page_size: Int,
@@ -8202,7 +8246,8 @@ struct Struct_print_kv_cache_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         valid_lengths: InputTensor[dtype = DType.uint32, rank=1],
@@ -8242,7 +8287,8 @@ struct Struct_kv_matmul_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2],
@@ -8284,7 +8330,8 @@ struct Struct_k_matmul_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2],
@@ -8320,7 +8367,8 @@ struct Struct_k_matmul_ragged_paged_scale:
     fn execute[
         dtype: DType,
         scale_dtype: DType,
-        kv_cache_t: DType, //,
+        kv_cache_t: DType,
+        //,
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
@@ -8602,7 +8650,8 @@ struct Struct_sampler_update_frequency_data:
     @always_inline
     @staticmethod
     fn execute[
-        token_type: DType, //,
+        token_type: DType,
+        //,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -9010,7 +9059,8 @@ struct AdvancedIndexingGetItem:
         index_rank: Int,
         input_type: DType,
         index_type: DType,
-        num_index_tensors: Int, //,
+        num_index_tensors: Int,
+        //,
         start_axis: Int,
         target: StaticString,
         _trace_name: StaticString,
@@ -9063,7 +9113,8 @@ struct AdvancedIndexingGetItem:
         index_rank: Int,
         input_type: DType,
         index_type: DType,
-        num_index_tensors: Int, //,
+        num_index_tensors: Int,
+        //,
         start_axis: Int,
     ](
         input_tensor: InputTensor[dtype=input_type, rank=input_rank],
@@ -9086,7 +9137,8 @@ struct AdvancedIndexingSetItemInplace:
         updates_rank: Int,
         input_type: DType,
         index_type: DType,
-        num_index_tensors: Int, //,
+        num_index_tensors: Int,
+        //,
         start_axis: Int,
         target: StaticString,
         _trace_name: StaticString,
@@ -9141,7 +9193,8 @@ struct AdvancedIndexingSetItem:
         updates_rank: Int,
         input_type: DType,
         index_type: DType,
-        num_index_tensors: Int, //,
+        num_index_tensors: Int,
+        //,
         start_axis: Int,
         target: StaticString,
         _trace_name: StaticString,
@@ -9261,7 +9314,8 @@ struct QuantizeDynamicScaledFloat8:
     fn execute[
         input_type: DType,
         scales_type: DType,
-        output_type: DType, //,
+        output_type: DType,
+        //,
         group_size_or_per_token: Int,
         target: StaticString,
     ](
@@ -9288,7 +9342,8 @@ struct BatchedQuantizeDynamicScaledFloat8:
     fn execute[
         input_type: DType,
         scales_type: DType,
-        output_type: DType, //,
+        output_type: DType,
+        //,
         group_size_or_per_token: Int,
         target: StaticString,
     ](
@@ -9316,7 +9371,8 @@ struct MatmulDynamicScaledFloat8:
     fn execute[
         input_type: DType,
         scales_type: DType,
-        output_type: DType, //,
+        output_type: DType,
+        //,
         input_scale_granularity: StaticString,
         weight_scale_granularity: StaticString,
         m_scale_granularity: Int,
@@ -9421,7 +9477,8 @@ struct MergeRaggedTensors:
     @staticmethod
     fn execute[
         dtype: DType,
-        rank: Int, //,
+        rank: Int,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank],
@@ -9455,7 +9512,8 @@ struct Struct_lora_sgmv_ragged:
     fn execute[
         c_type: DType,
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2],
@@ -9492,7 +9550,8 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
     fn execute[
         c_type: DType,
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=3],
@@ -9532,7 +9591,8 @@ struct Struct_kv_cache_ragged_paged_radd:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         a: InputTensor[dtype=dtype, rank=2],
@@ -9571,7 +9631,8 @@ struct SpatialMerge:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
@@ -9607,7 +9668,8 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         kv: InputTensor[dtype=dtype, rank=2],
@@ -9658,7 +9720,8 @@ struct Struct_sliced_add_ragged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         target: StaticString,
     ](
         c: OutputTensor[dtype=dtype, rank=2],

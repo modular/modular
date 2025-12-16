@@ -490,7 +490,8 @@ comptime llama_8b_fp8_table = Table(llama_8b_fp8_list, "llama_8b_fp8")
 fn matmul_dispatch_sm90_fp8[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: OptionalReg[
@@ -2141,7 +2142,8 @@ fn _get_gemma_3_27b_list[
 fn matmul_dispatch_sm90_bf16_fp32[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: OptionalReg[

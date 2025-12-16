@@ -44,7 +44,8 @@ from utils.static_tuple import StaticTuple
 fn compile_sm90_matmul_ptx[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     *,
     M: Int,
     N: Int,

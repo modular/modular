@@ -205,7 +205,8 @@ struct KVCacheIterator[
 
 
 struct KVBuffer[
-    kv_t: MHAOperand, //,
+    kv_t: MHAOperand,
+    //,
     mma_shape: IndexList[3],
     k_group_size: Int,
     swizzle: OptionalReg[Swizzle],

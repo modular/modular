@@ -643,7 +643,8 @@ struct TMemOperand[
     fn copy_from[
         src_type: DType,
         src_layout: Layout,
-        src_element_layout: Layout, //,
+        src_element_layout: Layout,
+        //,
     ](
         self,
         src: LayoutTensor[
@@ -720,7 +721,8 @@ struct TMemOperand[
     fn copy_to[
         dst_type: DType,
         dst_layout: Layout,
-        dst_element_layout: Layout, //,
+        dst_element_layout: Layout,
+        //,
     ](
         self,
         dst: LayoutTensor[
@@ -1280,7 +1282,8 @@ fn mha_sm100_dispatch[
     ScoreModType: ScoreModTrait,
     output_type: DType,
     MaxPromptLenType: OptionallyStaticInt,
-    PartitionType: MHAPartitionScheme, //,
+    PartitionType: MHAPartitionScheme,
+    //,
     config: MHAConfig,
     group: Int,
     use_score_mod: Bool,

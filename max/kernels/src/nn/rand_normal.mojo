@@ -21,7 +21,8 @@ from utils import IndexList
 
 fn random_normal[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     output_fn: fn[width: Int, _rank: Int] (
         idx: IndexList[_rank], val: SIMD[dtype, width]
     ) capturing [_],

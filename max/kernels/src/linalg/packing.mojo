@@ -45,7 +45,8 @@ from .utils import (
 
 @fieldwise_init
 struct PackMatrixRows[
-    original_mut: Bool, //,
+    original_mut: Bool,
+    //,
     # original matrix shape list
     original_shape: DimList,
     # packed matrix shape list
@@ -298,7 +299,8 @@ struct PackMatrixRows[
 
 @fieldwise_init
 struct PackMatrixCols[
-    original_mut: Bool, //,
+    original_mut: Bool,
+    //,
     # original matrix shape list
     original_shape: DimList,
     # packed matrix shape list
@@ -763,7 +765,8 @@ fn pack_b[
 
 @always_inline
 fn _pack_b_ndbuffer_impl[
-    b_mut: Bool, //,
+    b_mut: Bool,
+    //,
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -846,7 +849,8 @@ fn _pack_b_ndbuffer_impl[
 
 @register_internal("layout_transform_KN_to_KNkni")
 fn pack_b_ndbuffer[
-    b_mut: Bool, //,
+    b_mut: Bool,
+    //,
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -907,7 +911,8 @@ fn pack_transposed_b_ndbuffer[
 
 @fieldwise_init
 struct BTileGenerator[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     config: KernelConfig,
     a_type: DType,
     b_type: DType,

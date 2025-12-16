@@ -304,7 +304,8 @@ fn tcgen05_ld[
 
 fn tcgen05_st[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     *,
     datapaths: Int,
     bits: Int,

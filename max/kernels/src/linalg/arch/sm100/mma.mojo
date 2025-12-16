@@ -55,7 +55,8 @@ struct Major:
 
 
 fn max_contiguous_tile_shape[
-    rank: Int, //,
+    rank: Int,
+    //,
     dtype: DType,
     tile_shape: IndexList[rank],
     /,
@@ -126,7 +127,8 @@ fn _create_mma_desc_pair[
 
 @always_inline
 fn smem_descriptor[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     BMN: Int,
     BK: Int,

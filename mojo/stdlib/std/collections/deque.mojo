@@ -977,7 +977,8 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
 
 @fieldwise_init
 struct _DequeIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     T: Copyable,
     origin: Origin[mut],
     forward: Bool = True,

@@ -1936,7 +1936,8 @@ fn _is_path_like(ss: StringSlice) -> Bool:
 
 
 struct DeviceFunction[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     func: func_type,
     declared_arg_types: Optional[Variadic.TypesOfTrait[AnyType]],
     *,
@@ -3725,7 +3726,8 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn compile_function[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
         *,
         dump_asm: _DumpPath = False,
@@ -3786,7 +3788,8 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn compile_function_unchecked[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
         *,
         dump_asm: _DumpPath = False,
@@ -3859,7 +3862,8 @@ struct DeviceContext(ImplicitlyCopyable):
     @always_inline
     fn compile_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *,
@@ -3935,7 +3939,8 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn compile_function_experimental[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: fn (* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
@@ -4008,7 +4013,8 @@ struct DeviceContext(ImplicitlyCopyable):
     @always_inline
     fn compile_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) capturing -> None,
         *,
@@ -4085,7 +4091,8 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn compile_function_experimental[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: fn (* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
@@ -4156,7 +4163,8 @@ struct DeviceContext(ImplicitlyCopyable):
         ]()
 
     fn load_function[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
     ](
         self,
@@ -4227,7 +4235,8 @@ struct DeviceContext(ImplicitlyCopyable):
         " instead."
     )
     fn enqueue_function[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
@@ -4339,7 +4348,8 @@ struct DeviceContext(ImplicitlyCopyable):
     @parameter
     @always_inline
     fn enqueue_function_unchecked[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
@@ -4789,7 +4799,8 @@ struct DeviceContext(ImplicitlyCopyable):
     @always_inline
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
@@ -4918,7 +4929,8 @@ struct DeviceContext(ImplicitlyCopyable):
     @parameter
     @always_inline
     fn enqueue_function_experimental[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
@@ -5037,7 +5049,8 @@ struct DeviceContext(ImplicitlyCopyable):
     @always_inline
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
@@ -5166,7 +5179,8 @@ struct DeviceContext(ImplicitlyCopyable):
     @parameter
     @always_inline
     fn enqueue_function_experimental[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: fn (* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
@@ -5287,7 +5301,8 @@ struct DeviceContext(ImplicitlyCopyable):
     # TODO: Rename to enqueue_function once we're sure this works for every
     # callsite.
     fn enqueue_function_experimental[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
         declared_arg_types: Optional[Variadic.TypesOfTrait[AnyType]],
         *Ts: DevicePassable,

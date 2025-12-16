@@ -112,7 +112,8 @@ fn roi_align_nhwc[
     dtype: DType,
     output_layout: Layout,
     input_layout: Layout,
-    roi_layout: Layout, //,
+    roi_layout: Layout,
+    //,
     aligned: Bool,
     mode: StaticString = "AVG",
 ](

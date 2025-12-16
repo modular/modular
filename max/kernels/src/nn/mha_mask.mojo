@@ -286,7 +286,8 @@ struct CausalMask(ImplicitlyCopyable, MHAMask):
     @always_inline
     fn mask[
         dtype: DType,
-        width: Int, //,
+        width: Int,
+        //,
         *,
         element_type: DType = DType.uint32,
     ](
@@ -559,7 +560,8 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
     @always_inline
     fn mask[
         dtype: DType,
-        width: Int, //,
+        width: Int,
+        //,
         *,
         element_type: DType = DType.uint32,
     ](
@@ -739,7 +741,8 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
     @always_inline
     fn mask[
         dtype: DType,
-        width: Int, //,
+        width: Int,
+        //,
         *,
         element_type: DType = DType.uint32,
     ](
@@ -1038,7 +1041,8 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     @always_inline
     fn mask[
         dtype: DType,
-        width: Int, //,
+        width: Int,
+        //,
         *,
         element_type: DType = DType.uint32,
     ](

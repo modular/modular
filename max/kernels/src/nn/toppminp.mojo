@@ -25,7 +25,8 @@ from utils import IndexList
 @always_inline
 fn top_p_sampling[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     _test_sort: Bool = False,
 ](
     top_ps: LayoutTensor[dtype, **_],
@@ -50,7 +51,8 @@ fn top_p_sampling[
 @always_inline
 fn min_p_sampling[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     _test_sort: Bool = False,
 ](
     min_ps: LayoutTensor[dtype, **_],
@@ -73,7 +75,8 @@ fn _topp_minp_sampling[
     dtype: DType,
     out_idx_type: DType,
     out_token_layout: Layout,
-    out_token_element_layout: Layout, //,
+    out_token_element_layout: Layout,
+    //,
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](

@@ -882,7 +882,8 @@ fn Index[
 fn Index[
     T0: Intable,
     T1: Intable,
-    T2: Intable, //,
+    T2: Intable,
+    //,
     *,
     dtype: DType = DType.int64,
 ](x: T0, y: T1, z: T2, out result: IndexList[3, element_type=dtype]):
@@ -910,7 +911,8 @@ fn Index[
     T0: Intable,
     T1: Intable,
     T2: Intable,
-    T3: Intable, //,
+    T3: Intable,
+    //,
     *,
     dtype: DType = DType.int64,
 ](x: T0, y: T1, z: T2, w: T3, out result: IndexList[4, element_type=dtype]):
@@ -941,7 +943,8 @@ fn Index[
     T1: Intable,
     T2: Intable,
     T3: Intable,
-    T4: Intable, //,
+    T4: Intable,
+    //,
     *,
     dtype: DType = DType.int64,
 ](

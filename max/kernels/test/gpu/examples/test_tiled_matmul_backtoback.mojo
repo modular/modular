@@ -569,7 +569,8 @@ fn multistage_b2b_gemm[
     dst_type: DType,
     src_type: DType,
     transpose_b: Bool,
-    transpose_c: Bool, //,
+    transpose_c: Bool,
+    //,
     config: BackToBackMatmulConfig[
         dst_type, src_type, transpose_b, transpose_c
     ],

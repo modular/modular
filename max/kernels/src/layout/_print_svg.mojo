@@ -24,7 +24,8 @@ fn print_svg[
     layout_int_type: DType,
     linear_idx_type: DType,
     element_layout: Layout,
-    masked: Bool, //,
+    masked: Bool,
+    //,
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
 ](
@@ -59,7 +60,8 @@ fn _print_svg_impl[
     linear_idx_type: DType,
     element_layout: Layout,
     masked: Bool,
-    W: Writer, //,
+    W: Writer,
+    //,
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
 ](

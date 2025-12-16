@@ -171,7 +171,8 @@ struct TileWriterTMA[
     tma_origin: Origin[False],
     dtype: DType,
     tma_layout: Layout,
-    desc_layout: Layout, //,
+    desc_layout: Layout,
+    //,
 ](SMemTileWriter):
     """TMA-based tile writer for hardware-accelerated memory transfers.
 
@@ -243,7 +244,8 @@ struct TileWriterThreadwise[
     dst_layout_int_type: DType,
     dst_linear_idx_type: DType,
     dst_masked: Bool,
-    dst_alignment: Int, //,
+    dst_alignment: Int,
+    //,
     thread_layout: Layout,
     simd_size: Int,
     half_tile: Bool = False,  # Handle masked x2 case
@@ -375,7 +377,8 @@ trait RegTileWriter:
 @register_passable("trivial")
 struct FragmentToSMemWriter[
     c_type: DType,
-    c_tile_layout: Layout, //,
+    c_tile_layout: Layout,
+    //,
     tile_n_size: Int,  # Size of each tile in N dimension (e.g., TMA_BN)
     num_m_mmas: Int,
     num_consumer: Int,
@@ -571,7 +574,8 @@ struct RegisterToGMemWriter[
     dst_layout_int_type: DType,
     dst_linear_idx_type: DType,
     dst_masked: Bool,
-    dst_alignment: Int, //,
+    dst_alignment: Int,
+    //,
     wgmma_shape: IndexList[3],
     num_consumer: Int,
     N: Int,  # Matrix N dimension

@@ -24,7 +24,8 @@ from .buffers import KVBuffer, RegisterBuffer, RegisterMMABuffer
 fn mma[
     c_register_buffer_type: RegisterBuffer,
     a_register_buffer_type: RegisterMMABuffer,
-    b_buffer_type: KVBuffer, //,
+    b_buffer_type: KVBuffer,
+    //,
     tensor_core_mma: TiledTensorCore,
     BK: Int,
     prefetch_function: OptionalReg[fn () capturing -> None],

@@ -61,7 +61,8 @@ fn rope_q_proj[
     dtype: DType,
     freq_dtype: DType,
     rank: Int,
-    width: Int, //,
+    width: Int,
+    //,
     *,
     interleaved: Bool,
 ](
@@ -145,7 +146,8 @@ fn rope_k_cache[
 @always_inline
 fn fused_qk_rope[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     cache_t: KVCacheT,
     *,
     interleaved: Bool,
@@ -266,7 +268,8 @@ fn fused_qk_rope[
 fn fused_qk_rope_ragged[
     dtype: DType,
     freq_dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     cache_t: KVCacheT,
     *,
     interleaved: Bool,

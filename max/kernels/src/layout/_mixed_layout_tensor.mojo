@@ -34,7 +34,8 @@ struct MixedLayoutTensor[
     mut: Bool,
     dtype: DType,
     shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    stride_types: Variadic.TypesOfTrait[MixedTupleLike], //,
+    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -316,7 +317,8 @@ fn distribute[
     data_shape_0: Int,
     data_shape_1: Int,
     data_stride_0: Int,
-    data_stride_1: Int, //,
+    data_stride_1: Int,
+    //,
     dtype: DType,
     thread_layout: MixedLayout[
         Tuple[
@@ -396,7 +398,8 @@ fn tile[
     shape_types: Variadic.TypesOfTrait[MixedTupleLike],
     stride_types: Variadic.TypesOfTrait[MixedTupleLike],
     coord_types: Variadic.TypesOfTrait[MixedTupleLike],
-    tile_shape_types: Variadic.TypesOfTrait[MixedTupleLike], //,
+    tile_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
 ](
     data_layout_tensor: MixedLayoutTensor[
         dtype=dtype, shape_types=shape_types, stride_types=stride_types
@@ -472,7 +475,8 @@ struct MixedLayoutTensorIter[
     mut: Bool,
     dtype: DType,
     shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    stride_types: Variadic.TypesOfTrait[MixedTupleLike], //,
+    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
     origin: Origin[mut],
     /,
     *,

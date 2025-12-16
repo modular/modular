@@ -27,7 +27,8 @@ from utils import IndexList
 
 fn apply_penalties_to_logits[
     logit_type: DType,
-    penalty_type: DType, //,
+    penalty_type: DType,
+    //,
     target: StaticString,
 ](
     logits: LayoutTensor[mut=True, logit_type, **_],
@@ -173,7 +174,8 @@ fn update_frequency_data_kernel[
 
 
 fn update_frequency_data[
-    token_type: DType, //,
+    token_type: DType,
+    //,
     target: StaticString,
 ](
     compressed_frequency_data: LayoutTensor[mut=True, DType.int32, **_],

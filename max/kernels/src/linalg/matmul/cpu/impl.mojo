@@ -166,7 +166,8 @@ fn tiled_matmul_run[
 @fieldwise_init
 struct TiledMatmul[
     a_mut: Bool,
-    b_mut: Bool, //,
+    b_mut: Bool,
+    //,
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,

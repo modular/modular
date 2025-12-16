@@ -21,7 +21,8 @@ from utils.index import IndexList
 # a non-contiguous tensor cannot be fused *into* this as input.
 @always_inline
 fn reshape[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     output_rank: Int,
     single_thread_blocking_override: Bool = True,
 ](

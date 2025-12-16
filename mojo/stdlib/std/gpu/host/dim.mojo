@@ -94,7 +94,8 @@ struct Dim(Stringable, Writable):
     @implicit
     fn __init__[
         I0: Indexer & Copyable,
-        I1: Indexer & Copyable, //,
+        I1: Indexer & Copyable,
+        //,
     ](out self, dims: Tuple[I0, I1]):
         """Initializes Dim with a tuple of two indexable values.
 
@@ -113,7 +114,8 @@ struct Dim(Stringable, Writable):
     fn __init__[
         I0: Indexer & Copyable,
         I1: Indexer & Copyable,
-        I2: Indexer & Copyable, //,
+        I2: Indexer & Copyable,
+        //,
     ](out self, dims: Tuple[I0, I1, I2]):
         """Initializes Dim with a tuple of three indexable values.
 

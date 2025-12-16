@@ -146,7 +146,8 @@ fn fill(buffer: NDBuffer[mut=True, *_], val: Scalar):
 
 # TODO: refactor the following to run exactly once.
 fn bench_compile_time[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     func: func_type,
     emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:

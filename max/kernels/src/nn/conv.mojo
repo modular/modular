@@ -304,7 +304,8 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
 fn _reduce_output[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     simd_size: Int,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
@@ -363,7 +364,8 @@ fn _reduce_output[
 struct ConvDirectNHWC[
     input_mut: Bool,
     filter_mut: Bool,
-    conv_attr_rank: Int, //,
+    conv_attr_rank: Int,
+    //,
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -2996,7 +2998,8 @@ fn conv_shape[
 
 
 fn conv_nhwc_direct[
-    conv_info_rank: Int, //,
+    conv_info_rank: Int,
+    //,
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -3446,7 +3449,8 @@ fn conv_cudnn[
 
 
 fn conv_gpu[
-    conv_rank: Int, //,
+    conv_rank: Int,
+    //,
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,

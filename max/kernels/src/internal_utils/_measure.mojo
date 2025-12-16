@@ -230,7 +230,8 @@ fn uncentered_unweighted_correlation[
 
 
 fn cosine[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](u: UnsafePointer[Scalar[dtype]], v: type_of(u), len: Int,) -> Float64:
     """Compute the Cosine distance between 1-D arrays.
 
@@ -251,7 +252,8 @@ fn cosine[
 
 
 fn relative_difference[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     output: UnsafePointer[Scalar[dtype], mut=False],
     ref_out: type_of(output),

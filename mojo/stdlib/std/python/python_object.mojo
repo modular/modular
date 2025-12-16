@@ -1807,7 +1807,8 @@ fn _unsafe_alloc[
 
 
 fn _unsafe_init[
-    T: Movable, //,
+    T: Movable,
+    //,
 ](obj_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
 
@@ -1829,7 +1830,8 @@ fn _unsafe_init[
 
 
 fn _unsafe_alloc_init[
-    T: Movable, //,
+    T: Movable,
+    //,
 ](
     type_obj_ptr: UnsafePointer[PyTypeObject, MutAnyOrigin], var mojo_value: T
 ) raises -> PythonObject:

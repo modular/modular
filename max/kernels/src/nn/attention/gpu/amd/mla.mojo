@@ -92,7 +92,8 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
 __extension Attention:
     @always_inline
     fn mla_prefill[
-        k_rope_t: MHAOperand, //,
+        k_rope_t: MHAOperand,
+        //,
         # cache_num_heads: Int,
         # cache_depth: Int,
     ](mut self, k_rope: k_rope_t):

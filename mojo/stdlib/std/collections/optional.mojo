@@ -469,7 +469,8 @@ struct Optional[T: Movable](
 
     fn copied[
         mut: Bool,
-        origin: Origin[mut], //,
+        origin: Origin[mut],
+        //,
         _T: Copyable,
     ](self: Optional[Pointer[_T, origin]]) -> Optional[_T]:
         """Converts an `Optional` containing a Pointer to an `Optional` of an

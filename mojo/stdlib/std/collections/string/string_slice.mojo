@@ -85,7 +85,8 @@ comptime StaticString = StringSlice[StaticConstantOrigin]
 
 
 struct CodepointSliceIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     origin: Origin[mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator, Sized):
@@ -2426,7 +2427,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return result
 
     fn join[
-        T: Copyable & Writable, //,
+        T: Copyable & Writable,
+        //,
     ](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
@@ -2530,7 +2532,8 @@ fn get_static_string[
 
 
 fn _to_string_list[
-    O: Origin, //,
+    O: Origin,
+    //,
     T: Copyable,  # TODO(MOCO-1446): Make `T` parameter inferred
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],

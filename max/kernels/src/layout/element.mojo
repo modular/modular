@@ -635,7 +635,8 @@ struct Element[
 
 
 struct MemoryElement[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dtype: DType,
     layout: Layout,
     origin: Origin[mut],

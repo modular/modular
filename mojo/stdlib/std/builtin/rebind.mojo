@@ -18,7 +18,8 @@ These are Mojo built-ins, so you don't need to import them.
 
 @always_inline("nodebug")
 fn rebind[
-    src_type: AnyTrivialRegType, //,
+    src_type: AnyTrivialRegType,
+    //,
     dest_type: AnyTrivialRegType,
 ](src: src_type) -> dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
@@ -44,7 +45,8 @@ fn rebind[
 
 @always_inline("nodebug")
 fn rebind[
-    src_type: UnknownDestructibility, //,
+    src_type: UnknownDestructibility,
+    //,
     dest_type: UnknownDestructibility,
 ](ref src: src_type) -> ref [src] dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
@@ -73,7 +75,8 @@ fn rebind[
 
 @always_inline("nodebug")
 fn rebind_var[
-    src_type: Movable, //,
+    src_type: Movable,
+    //,
     dest_type: Movable,
 ](var src: src_type, out dest: dest_type):
     """Statically assert that a parameter input type `src_type` resolves to the

@@ -261,7 +261,8 @@ fn _distribute_is_masked[
 
 @register_passable("trivial")
 struct LayoutTensor[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dtype: DType,
     layout: Layout,
     origin: Origin[mut],
@@ -7971,7 +7972,8 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
 
 @register_passable("trivial")
 struct LayoutTensorIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dtype: DType,
     layout: Layout,
     origin: Origin[mut],

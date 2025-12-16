@@ -1506,7 +1506,8 @@ fn _online_softmax_iter_for_mma_output[
 # the `num_warps_n` rowwise warps).
 @always_inline
 fn _online_softmax_iter_for_mma_output_split_warp_reduce[
-    output_layout: Layout, //,
+    output_layout: Layout,
+    //,
     dtype: DType,
     score_layout_by_mma_unit: Layout,
     block_layout_by_warp: Layout,
@@ -1868,7 +1869,8 @@ fn _rowmax_online_softmax[
     reg_tile_layout: Layout,
     row_accum_layout: Layout,
     fragment_layout: Layout,
-    accum_frag_layout: Layout, //,
+    accum_frag_layout: Layout,
+    //,
     num_rowwise_warps: Int,
     warp_layout: Layout,
     use_exp2: Bool,
@@ -1977,7 +1979,8 @@ fn _rowmax_online_softmax[
 fn _rowsum[
     dtype: DType,
     reg_tile_layout: Layout,
-    fragment_layout: Layout, //,
+    fragment_layout: Layout,
+    //,
     warp_layout: Layout,
 ](
     score_reg_tile: LayoutTensor[
@@ -2038,7 +2041,8 @@ fn _rowsum[
 fn _online_softmax_correction[
     dtype: DType,
     row_accum_layout: Layout,
-    accum_frag_layout: Layout, //,
+    accum_frag_layout: Layout,
+    //,
     use_exp2: Bool,
 ](
     rowmax_tensor: LayoutTensor[

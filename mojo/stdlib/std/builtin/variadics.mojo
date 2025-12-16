@@ -158,7 +158,8 @@ struct Variadic:
     """
 
     comptime contains[
-        Trait: type_of(AnyType), //,
+        Trait: type_of(AnyType),
+        //,
         type: Trait,
         element_types: Variadic.TypesOfTrait[Trait],
     ] = _ReduceVariadicAndIdxToValue[
@@ -334,7 +335,8 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
 
 @fieldwise_init
 struct _VariadicListMemIter[
-    elt_is_mutable: Bool, //,
+    elt_is_mutable: Bool,
+    //,
     elt_type: ImplicitlyDestructible,
     elt_origin: Origin[elt_is_mutable],
     list_origin: ImmutOrigin,
@@ -385,7 +387,8 @@ struct _VariadicListMemIter[
 
 
 struct VariadicListMem[
-    elt_is_mutable: Bool, //,
+    elt_is_mutable: Bool,
+    //,
     element_type: ImplicitlyDestructible,
     origin: Origin[elt_is_mutable],
     is_owned: Bool,
@@ -538,7 +541,8 @@ comptime _AnyTypeMetaType = type_of(AnyType)
 
 @register_passable
 struct VariadicPack[
-    elt_is_mutable: Bool, //,
+    elt_is_mutable: Bool,
+    //,
     is_owned: Bool,
     origin: Origin[elt_is_mutable],
     element_trait: type_of(UnknownDestructibility),
@@ -811,7 +815,8 @@ comptime _IndexToIntWrap[
 
 comptime _ReduceVariadicAndIdxToVariadic[
     From: type_of(AnyType),
-    To: type_of(AnyType), //,
+    To: type_of(AnyType),
+    //,
     *,
     BaseVal: Variadic.TypesOfTrait[To],
     VariadicType: Variadic.TypesOfTrait[From],
@@ -868,7 +873,8 @@ comptime _IndexToIntValueWrap[
 
 comptime _ReduceValueAndIdxToVariadic[
     From: AnyType,
-    To: type_of(AnyType), //,
+    To: type_of(AnyType),
+    //,
     *,
     BaseVal: Variadic.TypesOfTrait[To],
     VariadicType: Variadic.ValuesOfType[From],
@@ -899,7 +905,8 @@ Parameters:
 
 comptime _ReduceVariadicAndIdxToValue[
     To: AnyType,
-    From: type_of(AnyType), //,
+    From: type_of(AnyType),
+    //,
     *,
     BaseVal: Variadic.ValuesOfType[To],
     VariadicType: Variadic.TypesOfTrait[From],
@@ -957,7 +964,8 @@ comptime _WrapVariadicIdxToTypeMapperToReducer[
 ] = Variadic.concat[Prev, Variadic.types[Mapper[From, Idx]]]
 
 comptime _MapVariadicAndIdxToType[
-    From: type_of(AnyType), //,
+    From: type_of(AnyType),
+    //,
     *,
     To: type_of(AnyType),
     VariadicType: Variadic.TypesOfTrait[From],

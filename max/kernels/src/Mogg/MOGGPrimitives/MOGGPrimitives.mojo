@@ -1022,7 +1022,8 @@ fn ManagedTensorSliceDef[
     mut: Bool,
     input: IO,
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     io_spec: IOSpec[mut, input],
     static_spec: StaticTensorSpec[dtype, rank],
 ](
@@ -1199,7 +1200,8 @@ fn get_int_from_shape[
 @register_internal("rebuild_static_tensor_specs_with_output_compute_lambda")
 @no_inline
 fn rebuild_static_tensor_specs_with_output_compute_lambda[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     dtype: DType,
     rank: Int,
 ](
@@ -1543,7 +1545,8 @@ fn mogg_async_pack_borrow(
 @no_inline
 fn mogg_async_pack_borrow_v2[
     buffer_rank: Int,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     spec_rank: Int,
     is_tensor: Bool,
 ](

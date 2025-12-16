@@ -40,7 +40,8 @@ import .warp
 
 @always_inline
 fn _block_reduce_with_padding[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     n_warps: Int,
     padding: Int,
@@ -108,7 +109,8 @@ fn _block_reduce_with_padding[
 
 @always_inline
 fn _block_reduce[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     block_size: Int,
     warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
         dtype
@@ -350,7 +352,8 @@ fn broadcast[
 
 @always_inline
 fn prefix_sum[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     block_size: Int,
     exclusive: Bool = False,

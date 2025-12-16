@@ -1418,7 +1418,8 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
 fn multistage_gemm_q[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     *,
     group_size: Int,
     pack_factor: Int,
@@ -1532,7 +1533,8 @@ fn multistage_gemm_q[
 @always_inline
 fn matmul_gpu_qint4[
     c_type: DType,
-    a_type: DType, //,
+    a_type: DType,
+    //,
     group_size: Int,
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -1556,7 +1558,8 @@ fn matmul_gpu_qint4[
 @always_inline
 fn matmul_gpu_qint4_impl[
     c_type: DType,
-    a_type: DType, //,
+    a_type: DType,
+    //,
     group_size: Int,
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -2056,7 +2059,8 @@ fn matmul_gpu_qint4_impl[
 
 @always_inline
 fn gpu_qint4_repack_Q4_0[
-    b_shape: DimList, //,
+    b_shape: DimList,
+    //,
     target: StaticString,
 ](
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],

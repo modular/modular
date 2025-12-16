@@ -99,7 +99,8 @@ fn simd_store[
 
 @no_inline
 fn run_elementwise[
-    rank: Int, //,
+    rank: Int,
+    //,
     dtype: DType,
     kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
         dtype, width

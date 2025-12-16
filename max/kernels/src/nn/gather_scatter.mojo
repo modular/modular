@@ -274,7 +274,8 @@ fn gather_reduce[
 # TODO: Delete / for testing purposes (test_gather.mojo)
 fn gather[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     *,
     axis: Int,
     target: StaticString = "cpu",
@@ -371,7 +372,8 @@ fn gather[
 
 fn gather[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     *,
     axis: Int,
     target: StaticString = "cpu",
@@ -1300,7 +1302,8 @@ fn scatter_elements[
 @always_inline
 fn scatter_elements_shape[
     input_type: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     *,
     single_thread_blocking_override: Bool,
 ](
@@ -1540,7 +1543,8 @@ fn gather_nd[
 
 fn _gather_nd_impl[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     batch_dims: Int,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -1673,7 +1677,8 @@ fn _gather_nd_impl[
 
 fn scatter_set_constant[
     data_type: DType,
-    index_type: DType, //,
+    index_type: DType,
+    //,
     target: StaticString,
     single_thread_blocking_override: Bool = False,
 ](

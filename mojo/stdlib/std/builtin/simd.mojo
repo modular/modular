@@ -3439,7 +3439,8 @@ fn _powi(base: Scalar, exp: Int32) -> type_of(base):
 
 @always_inline
 fn _convert_float8_to_f32_scalar[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     result_dtype: DType,
 ](x: Scalar[dtype]) -> Scalar[result_dtype]:
     comptime FP8_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
@@ -3565,7 +3566,8 @@ fn _convert_float8_to_f16[
 @always_inline
 fn _convert_f32_to_float8[
     dtype: DType,
-    size: Int, //,
+    size: Int,
+    //,
     target: DType,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
     @parameter
@@ -3600,7 +3602,8 @@ fn _convert_f32_to_float8[
 
 @always_inline
 fn _convert_f32_to_float8_scalar[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: DType,
 ](x: Scalar[dtype]) -> Scalar[target]:
     # software implementation rounds toward nearest even
@@ -3706,7 +3709,8 @@ fn _convert_f32_to_float8_scalar[
 
 @always_inline
 fn _convert_f32_to_float8_ue8m0_scalar[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: DType,
     *,
     satfinite: Bool = False,
@@ -3745,7 +3749,8 @@ fn _convert_f32_to_float8_ue8m0_scalar[
 @always_inline
 fn _convert_f32_to_float8_ue8m0[
     dtype: DType,
-    size: Int, //,
+    size: Int,
+    //,
     target: DType,
     *,
     satfinite: Bool = False,
@@ -3809,7 +3814,8 @@ fn _convert_f32_to_float8_ue8m0[
 @always_inline
 fn _convert_float8_ue8m0_to_f32[
     dtype: DType,
-    size: Int, //,
+    size: Int,
+    //,
     target: DType,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
     """Convert float8_e8m0fnu to float32.
@@ -3905,7 +3911,8 @@ fn _f32_to_bfloat16[
 @always_inline
 fn _simd_apply[
     input_dtype: DType,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     func: fn[input_dtype: DType, result_dtype: DType] (
         Scalar[input_dtype]
     ) capturing -> Scalar[result_dtype],
@@ -3938,7 +3945,8 @@ fn _simd_apply[
 
 @always_inline
 fn _simd_apply[
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     func: fn[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType] (
         Scalar[lhs_dtype], Scalar[rhs_dtype]
     ) capturing -> Scalar[result_dtype],
@@ -4040,7 +4048,8 @@ fn _floor(x: SIMD) -> type_of(x):
 
 fn _write_scalar[
     dtype: DType,
-    W: Writer, //,
+    W: Writer,
+    //,
 ](mut writer: W, value: Scalar[dtype]):
     @parameter
     if dtype is DType.bool:

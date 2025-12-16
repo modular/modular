@@ -415,7 +415,8 @@ struct _Accumulator[
 
     @always_inline
     fn load[
-        dt: DType, //,
+        dt: DType,
+        //,
         partial_load: Bool = False,
     ](
         mut self,
@@ -453,7 +454,8 @@ struct _Accumulator[
 
     @always_inline
     fn store[
-        dt: DType, //,
+        dt: DType,
+        //,
         partial_store: Bool = False,
     ](
         mut self,
@@ -497,7 +499,8 @@ struct _Accumulator[
     @always_inline
     fn accumulate[
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -554,7 +557,8 @@ struct _Accumulator[
     @always_inline
     fn accumulate[
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         # TODO: move the following params to accumulate function.
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
@@ -633,7 +637,8 @@ struct _Accumulator[
     @always_inline
     fn accumulate[
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         # TODO: move the following params to accumulate function.
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
@@ -749,7 +754,8 @@ struct _Accumulator[
     @always_inline
     fn _accumulate_x86_simd[
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -813,7 +819,8 @@ struct _Accumulator[
     @always_inline
     fn _accumulate_x86_simd[
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -877,7 +884,8 @@ struct _Accumulator[
     @always_inline
     fn _accumulate_x86_simd[
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -982,7 +990,8 @@ struct _Accumulator[
     @always_inline
     fn _accumulate_neon[
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -1041,7 +1050,8 @@ struct _Accumulator[
     @always_inline
     fn _accumulate_neon[
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -1102,7 +1112,8 @@ struct _Accumulator[
     @always_inline
     fn _accumulate_neon[
         a_type: DType,
-        b_type: DType, //,
+        b_type: DType,
+        //,
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](

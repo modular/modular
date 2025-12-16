@@ -655,7 +655,8 @@ fn _is_supported_dtype[dtype: DType]() -> Bool:
 @always_inline
 fn _topp_minp_sampling_gpu[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
@@ -845,7 +846,8 @@ fn _topp_minp_sampling_gpu[
 @always_inline
 fn top_p_sampling_gpu[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
@@ -876,7 +878,8 @@ fn top_p_sampling_gpu[
 @always_inline
 fn min_p_sampling_gpu[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,

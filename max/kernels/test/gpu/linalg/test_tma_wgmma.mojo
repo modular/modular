@@ -47,7 +47,8 @@ fn _compute_reg_tile_layout(layout: Layout, frag_size: Int) -> Layout:
 @always_inline
 fn _load_a_reg_tile[
     dtype: DType,
-    layout: Layout, //,
+    layout: Layout,
+    //,
     wgmma_shape: IndexList[3],
 ](
     out ret: LayoutTensor[

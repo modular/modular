@@ -333,7 +333,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     @always_inline
     fn __lt__[
         self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than comparison.
 
@@ -352,7 +353,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     @always_inline
     fn __le__[
         self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than or equal to comparison.
 
@@ -371,7 +373,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     @always_inline
     fn __gt__[
         self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than comparison.
 
@@ -392,7 +395,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     @always_inline
     fn __ge__[
         self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than or equal to comparison.
 

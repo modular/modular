@@ -33,7 +33,8 @@ from compile import get_type_name
 
 @fieldwise_init
 struct _SpanIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     T: Copyable,
     origin: Origin[mut],
     forward: Bool = True,
@@ -508,7 +509,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        _T: Equatable & Copyable, //,
+        _T: Equatable & Copyable,
+        //,
     ](self: Span[_T, Self.origin], rhs: Span[_T, _],) -> Bool:
         """Verify if span is equal to another span.
 
@@ -680,7 +682,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
 
     fn apply[
         dtype: DType,
-        O: MutOrigin, //,
+        O: MutOrigin,
+        //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace.
@@ -712,7 +715,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
 
     fn apply[
         dtype: DType,
-        O: MutOrigin, //,
+        O: MutOrigin,
+        //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
         cond: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
@@ -750,7 +754,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
                 (ptr + processed + i).init_pointee_move(func(vec))
 
     fn count[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype]]) -> UInt:
         """Count the amount of times the function returns `True`.
@@ -811,7 +816,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
         return Self(ptr=self._data + offset, length=length)
 
     fn _binary_search_index[
-        dtype: DType, //,
+        dtype: DType,
+        //,
     ](self: Span[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
         """Finds the index of `needle` with binary search.
         Args:

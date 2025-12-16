@@ -216,7 +216,8 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_paged[
 @always_inline
 fn _fused_qkv_matmul_kv_cache[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     cache_t: KVCacheT,
     *,
     target: StaticString,
@@ -276,7 +277,8 @@ comptime embed_fn_type = fn[dtype: DType, width: Int] (
 @always_inline
 fn _fused_qkv_matmul_kv_cache_impl[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     *,
     target: StaticString,
     q_embed_fn: OptionalReg[embed_fn_type] = None,
@@ -388,7 +390,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
 
 @always_inline
 fn _matmul_common[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -453,7 +456,8 @@ fn _matmul_common[
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     interleaved: Bool,
     target: StaticString,
@@ -540,7 +544,8 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
 
 @always_inline
 fn generic_fused_qk_rope_bshd_paged[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     interleaved: Bool,
     target: StaticString,
@@ -628,7 +633,8 @@ fn generic_fused_qk_rope_bshd_paged[
 @always_inline
 fn generic_flash_attention_kv_cache_padded[
     collection_t: KVCollectionT,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     target: StaticString,
     mask_str: StaticString,
@@ -704,7 +710,8 @@ fn generic_flash_attention_kv_cache_padded[
 @always_inline
 fn generic_flash_attention_kv_cache_padded_materialized_mask[
     collection_t: KVCollectionT,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     target: StaticString,
     score_mod_str: StaticString,
@@ -775,7 +782,8 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
 
 fn _flash_attention_dispatch[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     *,
     target: StaticString,
     mask_str: StaticString,
@@ -833,7 +841,8 @@ fn _flash_attention_dispatch[
 
 fn _flash_attention_dispatch_materialized_mask[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     *,
     target: StaticString,
     score_mod_str: String,
@@ -916,7 +925,8 @@ fn _flash_attention_dispatch_materialized_mask[
 
 def rms_norm_kv_cache_ragged_continuous_batching[
     dtype: DType,
-    params: KVCacheStaticParams, //,
+    params: KVCacheStaticParams,
+    //,
     target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
@@ -1079,7 +1089,8 @@ def rms_norm_kv_cache_ragged_continuous_batching[
 def rms_norm_kv_cache_ragged_paged[
     dtype: DType,
     params: KVCacheStaticParams,
-    page_size: Int, //,
+    page_size: Int,
+    //,
     target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,

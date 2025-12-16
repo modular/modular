@@ -1055,7 +1055,8 @@ code, showing the `List` and its associated `IteratorType`:
 ```mojo
 @fieldwise_init
 struct _ListIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     T: Copyable,
     origin: Origin[mut],
 ](ImplicitlyCopyable, Iterable, Iterator):

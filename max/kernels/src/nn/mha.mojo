@@ -119,7 +119,8 @@ from .softmax import (
 
 fn flash_attention[
     dtype: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[2])),
@@ -251,7 +252,8 @@ fn flash_attention[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
@@ -421,7 +423,8 @@ fn flash_attention_dispatch[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
@@ -1095,7 +1098,8 @@ fn flash_attention[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[2])),
@@ -1201,7 +1205,8 @@ fn flash_attention_ragged[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     type: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     use_score_mod: Bool = False,
     config: MHAConfig[type] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),  # num_heads
@@ -4597,7 +4602,8 @@ fn mha_gpu_naive[
     output_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
     ragged: Bool = False,
     sink: Bool = False,
     _use_valid_length: Bool = False,
@@ -4964,7 +4970,8 @@ fn mha_gpu_naive[
     k_type: DType,
     v_type: DType,
     output_type: DType,
-    mask_type: DType, //,
+    mask_type: DType,
+    //,
     sink: Bool = False,
 ](
     q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, **_],
@@ -5043,7 +5050,8 @@ fn mha_gpu_naive[
     q_type: DType,
     output_type: DType,
     cache_t: KVCacheT,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
     ragged: Bool = False,
     sink: Bool = False,
 ](

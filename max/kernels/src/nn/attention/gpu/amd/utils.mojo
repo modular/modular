@@ -379,7 +379,8 @@ struct GlobalMemoryManager[
 
     @always_inline
     fn get_kv_tensor[
-        kvtype: DType, //,
+        kvtype: DType,
+        //,
     ](
         self,
         ptr: UnsafePointer[Scalar[kvtype], **_],

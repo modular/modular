@@ -417,7 +417,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     fn _convert_to_none_batched_tensor[
         dtype: DType,
-        layout: Layout, //,
+        layout: Layout,
+        //,
         reshape_layout: Layout,
     ](
         tensor: LayoutTensor[dtype, layout, *_, **_],

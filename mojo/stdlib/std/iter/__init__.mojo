@@ -501,7 +501,8 @@ fn zip[
 @fieldwise_init
 struct _MapIterator[
     OutputType: Copyable,
-    InnerIteratorType: Iterator, //,
+    InnerIteratorType: Iterator,
+    //,
     function: fn (var InnerIteratorType.Element) -> OutputType,
 ](Copyable, Iterable, Iterator):
     comptime Element = Self.OutputType
@@ -531,7 +532,8 @@ struct _MapIterator[
 fn map[
     origin: ImmutOrigin,
     IterableType: Iterable,
-    ResultType: Copyable, //,
+    ResultType: Copyable,
+    //,
     function: fn (var IterableType.IteratorType[origin].Element) -> ResultType,
 ](ref [origin]iterable: IterableType) -> _MapIterator[
     OutputType=ResultType, function=function

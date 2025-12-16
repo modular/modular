@@ -278,7 +278,8 @@ struct _BucketGroupParams[num_threads: Int, input_type: DType]:
 @always_inline
 fn _count_expert_tokens[
     num_threads: Int,
-    input_type: DType, //,
+    input_type: DType,
+    //,
     expected_count: Int,
 ](
     topk_ids: LayoutTensor[input_type, *_, **_],
@@ -379,7 +380,8 @@ fn _get_index_and_offset(
 @always_inline
 fn _copy_tokens_smem_to_gmem[
     num_threads: Int,
-    input_type: DType, //,
+    input_type: DType,
+    //,
     expected_count: Int,
 ](
     token_expert_order: LayoutTensor[mut=True, DType.uint32, *_, **_],
@@ -434,7 +436,8 @@ fn _copy_tokens_smem_to_gmem[
 @always_inline
 fn _copy_tokens_to_gmem[
     num_threads: Int,
-    input_type: DType, //,
+    input_type: DType,
+    //,
     expected_count: Int,
 ](
     topk_ids: LayoutTensor[input_type, *_, **_],
@@ -658,7 +661,8 @@ fn moe_create_indices_bucket_group_kernel[
 
 @always_inline
 fn moe_create_indices[
-    input_type: DType, //,
+    input_type: DType,
+    //,
     target: StaticString,
     expected_count: Int = 8192,
 ](
@@ -943,7 +947,8 @@ fn group_limited_router_kernel[
 @always_inline
 fn router_group_limited[
     scores_type: DType,
-    bias_type: DType, //,
+    bias_type: DType,
+    //,
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     n_groups: Int,

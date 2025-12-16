@@ -112,7 +112,8 @@ fn dup(oldfd: c_int) -> c_int:
 
 @always_inline
 fn execvp[
-    origin: ImmutOrigin, //,
+    origin: ImmutOrigin,
+    //,
 ](
     file: UnsafePointer[mut=False, c_char],
     argv: UnsafePointer[mut=False, UnsafePointer[c_char, origin]],

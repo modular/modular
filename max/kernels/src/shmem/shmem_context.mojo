@@ -355,7 +355,8 @@ struct SHMEMContext(ImplicitlyCopyable):
     @always_inline
     @parameter
     fn enqueue_function[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
@@ -452,7 +453,8 @@ struct SHMEMContext(ImplicitlyCopyable):
     @parameter
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
@@ -555,7 +557,8 @@ struct SHMEMContext(ImplicitlyCopyable):
     @always_inline
     @parameter
     fn enqueue_function_collective[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
@@ -707,7 +710,8 @@ struct SHMEMContext(ImplicitlyCopyable):
     @parameter
     fn enqueue_function_collective_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,

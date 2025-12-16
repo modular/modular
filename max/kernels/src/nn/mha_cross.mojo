@@ -31,7 +31,8 @@ from utils.numerics import get_accum_type
 @always_inline
 fn _bmm0_bs[
     q_layout: Layout,
-    kv_layout: Layout, //,
+    kv_layout: Layout,
+    //,
     cache_t: KVCacheT,
     mask_t: MHAMask,
     q_type: DType,
@@ -136,7 +137,8 @@ fn _bmm0_bs[
 @always_inline
 fn _bmm1_bs[
     q_layout: Layout,
-    kv_layout: Layout, //,
+    kv_layout: Layout,
+    //,
     cache_t: KVCacheT,
     p_type: DType,
     output_type: DType,
@@ -213,7 +215,8 @@ fn _bmm1_bs[
 fn mha_cross_gpu_naive[
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     rank: Int,
 ](
     output: LayoutTensor[address_space = AddressSpace.GENERIC, **_],

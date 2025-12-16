@@ -140,7 +140,8 @@ fn mha_operand_tma_copy_kernel[
 
 
 fn mha_operand_copy[
-    kv_t: MHAOperand, //,
+    kv_t: MHAOperand,
+    //,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
     *,
@@ -189,7 +190,8 @@ fn mha_operand_copy[
 
 
 fn test_mha_host_operand[
-    kv_t: MHAOperand, //,
+    kv_t: MHAOperand,
+    //,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
 ](src: kv_t, dst: kv_t, batch_size: Int) raises:

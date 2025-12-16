@@ -61,7 +61,8 @@ from utils.index import IndexList
 
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: StaticString = "cpu",
 ](
     hidden_state: LayoutTensor[
@@ -424,7 +425,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
 fn _fused_qkv_matmul_kv_cache_ragged[
     dtype: DType,
     weight_dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     cache_t: KVCacheT,
     *,
     target: StaticString,
@@ -489,7 +491,8 @@ fn _fused_qkv_matmul_kv_cache_ragged[
 fn _fused_qkv_matmul_kv_cache_ragged_bias[
     dtype: DType,
     weight_dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     cache_t: KVCacheT,
     *,
     target: StaticString,
@@ -559,7 +562,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     weight_dtype: DType,
     output_dtype: DType,
     scale_dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     cache_t: KVCacheT,
     scales_granularity_mnk: IndexList[3],
     *,
@@ -651,7 +655,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
 fn _fused_qkv_matmul_kv_cache_ragged_impl[
     dtype: DType,
     weight_dtype: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     *,
     target: StaticString,
     group_size: OptionalReg[Int] = None,
@@ -780,7 +785,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
 fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     dtype: DType,
     weight_dtype: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     *,
     target: StaticString,
     group_size: OptionalReg[Int] = None,
@@ -915,7 +921,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     weight_dtype: DType,
     output_dtype: DType,
     scale_dtype: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     scales_granularity_mnk: IndexList[3],
     *,
     target: StaticString,
@@ -1103,7 +1110,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
 
 @always_inline
 fn _matmul_common[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -1155,7 +1163,8 @@ fn _matmul_common[
 
 @always_inline
 fn _qmatmul_common[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     group_size: Int,
     target: StaticString,
@@ -1200,7 +1209,8 @@ fn _matmul_blockwise_scaled_fp8_common[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    b_scales_type: DType, //,
+    b_scales_type: DType,
+    //,
     *,
     target: StaticString,
     scales_granularity_mnk: IndexList[3],
@@ -1248,7 +1258,8 @@ fn _matmul_blockwise_scaled_fp8_common[
 fn kv_matmul_ragged_paged[
     dtype: DType,
     params: KVCacheStaticParams,
-    page_size: Int, //,
+    page_size: Int,
+    //,
     target: StaticString,
 ](
     hidden_state: LayoutTensor[
@@ -1362,7 +1373,8 @@ fn _matmul_kv_cache_ragged[
 @always_inline
 fn _matmul_kv_cache_ragged_impl[
     dtype: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     *,
     target: StaticString,
 ](
@@ -1471,7 +1483,8 @@ fn _matmul_kv_cache_ragged_impl[
 fn k_matmul_ragged_paged[
     dtype: DType,
     params: KVCacheStaticParams,
-    page_size: Int, //,
+    page_size: Int,
+    //,
     target: StaticString,
 ](
     hidden_state: LayoutTensor[
@@ -1535,7 +1548,8 @@ fn k_matmul_ragged_paged[
 
 @always_inline
 fn _matmul_k_cache_ragged[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     target: StaticString,
 ](
@@ -1583,7 +1597,8 @@ fn _matmul_k_cache_ragged[
 @always_inline
 fn _matmul_k_cache_ragged_impl[
     dtype: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     *,
     target: StaticString,
 ](
@@ -1749,7 +1764,8 @@ fn k_matmul_ragged_paged_scale[
 fn _matmul_k_cache_ragged_scale_impl[
     dtype: DType,
     weight_dtype: DType,
-    scale_dtype: DType, //,
+    scale_dtype: DType,
+    //,
     cache_t: KVCacheT,
     *,
     target: StaticString,
@@ -1847,7 +1863,8 @@ fn _matmul_k_cache_ragged_scale_impl[
 fn unfused_qkv_matmul_ragged_paged_gguf_quantized[
     dtype: DType,
     params: KVCacheStaticParams,
-    page_size: Int, //,
+    page_size: Int,
+    //,
     quantization_encoding_q: StaticString,
     quantization_encoding_k: StaticString,
     quantization_encoding_v: StaticString,
@@ -2219,7 +2236,8 @@ fn _qmatmul_gguf_quantized_common[
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
     dtype: DType,
-    freq_dtype: DType, //,
+    freq_dtype: DType,
+    //,
     *,
     interleaved: Bool,
     has_position_ids: Bool,
@@ -2318,7 +2336,8 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
 @always_inline
 fn generic_fused_qk_rope_bshd_paged_ragged[
     dtype: DType,
-    freq_dtype: DType, //,
+    freq_dtype: DType,
+    //,
     *,
     interleaved: Bool,
     has_position_ids: Bool,
@@ -2434,7 +2453,8 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
 @always_inline
 fn generic_flash_attention_kv_cache_ragged[
     collection_t: KVCollectionT,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     target: StaticString,
     mask_str: StaticString,
@@ -2499,7 +2519,8 @@ fn generic_flash_attention_kv_cache_ragged[
 
 fn _flash_attention_dispatch[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     *,
     target: StaticString,
     mask_str: StaticString,
@@ -2582,7 +2603,8 @@ fn _flash_attention_dispatch[
 @always_inline
 fn generic_flash_attention_kv_cache_ragged_sink[
     collection_t: KVCollectionT,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     target: StaticString,
     mask_str: StaticString,
@@ -2662,7 +2684,8 @@ fn generic_flash_attention_kv_cache_ragged_sink[
 @always_inline
 fn generic_flare_mla_decode_kv_cache_ragged[
     collection_t: KVCollectionT,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     mask_str: StaticString,
     score_mod_str: StaticString,
     target: StaticString,
@@ -2728,7 +2751,8 @@ fn generic_flare_mla_decode_kv_cache_ragged[
 @always_inline
 fn _flare_mla_decode_kv_cache_ragged[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     mask_str: StaticString,
     score_mod_str: StaticString,
     target: StaticString,
@@ -2792,7 +2816,8 @@ fn _flare_mla_decode_kv_cache_ragged[
 @always_inline
 fn generic_flare_mla_prefill_kv_cache_ragged[
     collection_t: KVCollectionT,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     softmax_type: DType,
     write_softmax_info: Bool,
     use_cascade_attention: Bool,
@@ -2901,7 +2926,8 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
 @always_inline
 fn _flare_mla_prefill_kv_cache_ragged[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     softmax_type: DType,
     mask_str: StaticString,
     score_mod_str: StaticString,
@@ -3133,7 +3159,8 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
 
 fn _cross_attention_dispatch[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     *,
     target: StaticString,
     mask_str: StaticString,
@@ -3225,7 +3252,8 @@ fn _cross_attention_dispatch[
 @always_inline
 fn generic_cross_attention_kv_cache[
     collection_t: KVCollectionT,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: StaticString,
     mask_str: StaticString,
     score_mod_str: StaticString,
@@ -3315,7 +3343,8 @@ fn generic_cross_attention_kv_cache[
 
 fn generic_kv_cache_radd_dispatch[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     target: StaticString,
 ](
     a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
@@ -3412,7 +3441,8 @@ fn generic_kv_cache_radd_dispatch[
 
 fn kv_cache_store_ragged[
     cache_t: KVCacheT,
-    input_row_offsets_layout: Layout, //,
+    input_row_offsets_layout: Layout,
+    //,
     target: StaticString,
     input_fn: fn[width: Int, alignment: Int] (
         idx: IndexList[3]
@@ -3479,7 +3509,8 @@ fn kv_cache_store_ragged[
 
 fn kv_cache_2m_iadd_dispatch[
     dtype: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    //,
     target: StaticString,
 ](
     kv: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],

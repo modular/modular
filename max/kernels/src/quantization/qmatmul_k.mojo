@@ -633,7 +633,8 @@ fn _matmul_group_stream_x86[
     tile_k: Int,
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     group_size: Int,
     stream_b_vals_fn: fn (
         mut b_vals: InlineArray[
@@ -681,7 +682,8 @@ fn _matmul_group_stream_neon_dotprod[
     tile_k: Int,
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     group_size: Int,
     stream_b_vals_fn: fn (
         mut b_vals: InlineArray[
@@ -731,7 +733,8 @@ fn _matmul_group_stream[
     tile_m: Int,
     tile_n: Int,
     simd_width: Int,
-    origins: OriginSet, //,
+    origins: OriginSet,
+    //,
     group_size: Int,
     stream_b_vals_fn: fn (
         mut b_vals: InlineArray[
@@ -761,7 +764,8 @@ fn _matmul_group_stream[
 fn _matmul_group_unpacked[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     group_size: Int,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
@@ -1007,7 +1011,8 @@ fn _accumulate_and_store[
 fn _matmul_group_packed_Q4_K[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
     mut b_q_bits_ptr: UnsafePointer[UInt8],
@@ -1046,7 +1051,8 @@ fn _matmul_group_packed_Q4_K[
 fn _matmul_Q4_K_tile[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     matmul_group_fn: fn (
         a_ptr: UnsafePointer[Int8],
         mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -1235,7 +1241,8 @@ fn _matmul_Q4_K_columns[
 fn _matmul_group_packed_Q6_K[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     *,
     zero_point: UInt8,
 ](
@@ -1282,7 +1289,8 @@ fn _matmul_group_packed_Q6_K[
 fn _matmul_Q6_K_tile[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     matmul_group_fn: fn (
         a_ptr: UnsafePointer[Int8],
         mut c_int32_group: _Accumulator[
@@ -1463,7 +1471,8 @@ fn _matmul_Q6_K_columns[
 @always_inline
 fn _matmul_Qb_K[
     group_size: Int,
-    b_type: AnyType, //,
+    b_type: AnyType,
+    //,
     columns_fn: fn[
         tile_n: Int,
         simd_width: Int,

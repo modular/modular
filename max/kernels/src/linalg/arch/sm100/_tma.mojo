@@ -251,7 +251,8 @@ comptime MBarPtr = UnsafePointer[
 
 
 fn copy[
-    rank: Int, //,
+    rank: Int,
+    //,
     cta_group: Int = 1,
 ](
     policy: TMALoad[*_],

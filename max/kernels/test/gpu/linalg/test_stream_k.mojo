@@ -291,7 +291,8 @@ fn matmul_stream_k[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
-    b_shape: DimList, //,
+    b_shape: DimList,
+    //,
     *,
     total_programs_streamk: Int,
 ](

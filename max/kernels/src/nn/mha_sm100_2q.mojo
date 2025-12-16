@@ -172,7 +172,8 @@ fn cumulative_power_of_two(N: Int, i: Int) -> Int:
 # to enable use of this function with pipelining.
 @always_inline("nodebug")
 fn break_into_powers_of_two[
-    origins: OriginSet, //,
+    origins: OriginSet,
+    //,
     func: fn[pow_two: Int, offset: Int] () capturing [origins] -> None,
     N: Int,
     *,
@@ -1011,7 +1012,8 @@ setp.eq.s32 %pj, $6, 0;
 
 @always_inline
 fn bulk_mma[
-    kind: UMMAKind, //,
+    kind: UMMAKind,
+    //,
     layout_a: Layout,
     layout_b: Layout,
     *,
@@ -1040,7 +1042,8 @@ fn bulk_mma[
 
 @always_inline
 fn bulk_mma[
-    kind: UMMAKind, //,
+    kind: UMMAKind,
+    //,
     layout_b: Layout,
     *,
     num_k_mmas: Int,
@@ -1206,7 +1209,8 @@ fn maximum[
 fn maximum[
     dtype: DType,
     BN: Int,
-    width: Int, //,
+    width: Int,
+    //,
 ](
     x: LocalTensor[dtype, Layout.row_major(BN)], init: SIMD[dtype, width]
 ) -> SIMD[dtype, width]:
@@ -1246,7 +1250,8 @@ fn mha_sm100_dispatch[
     ScoreModType: ScoreModTrait,
     output_type: DType,
     MaxPromptLenType: OptionallyStaticInt,
-    PartitionType: MHAPartitionScheme, //,
+    PartitionType: MHAPartitionScheme,
+    //,
     config: MHAConfig,
     group: Int,
     use_score_mod: Bool,
@@ -2408,7 +2413,8 @@ fn apply_mask[
     dtype: DType,
     BN: Int,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait, //,
+    ScoreModType: ScoreModTrait,
+    //,
     *,
     use_score_mod: Bool,
     masked: Bool,

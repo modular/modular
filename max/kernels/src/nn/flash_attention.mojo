@@ -557,7 +557,8 @@ struct _FlashAttentionConfig[
 
 struct _FlashAttention[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     input_q_ptr_fn: fn (IndexList[rank]) capturing -> UnsafePointer[
         Scalar[dtype]
     ],
@@ -947,7 +948,8 @@ struct _FlashAttention[
 fn _flash_attention[
     dtype: DType,
     rank: Int,
-    mask_rank: Int, //,
+    mask_rank: Int,
+    //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
@@ -1042,7 +1044,8 @@ fn _flash_attention[
 fn flash_attention[
     dtype: DType,
     rank: Int,
-    mask_rank: Int, //,
+    mask_rank: Int,
+    //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
@@ -1079,7 +1082,8 @@ fn flash_attention[
 fn flash_attention_split_kv[
     dtype: DType,
     rank: Int,
-    mask_rank: Int, //,
+    mask_rank: Int,
+    //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
@@ -1226,7 +1230,8 @@ fn flash_attention_split_kv[
 @always_inline
 fn _flash_attention_kv_cache[
     dtype: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     mask_fn: fn[simd_width: Int, mask_rank: Int] (
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
@@ -1288,7 +1293,8 @@ fn _flash_attention_kv_cache[
 @always_inline
 fn _flash_attention_kv_cache[
     dtype: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     input_q_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[dtype]],
     output_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[dtype]],
     q_length_fn: fn (batch: Int) capturing -> Int,
@@ -1402,7 +1408,8 @@ fn flash_attention_kv_cache[
 fn flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     k: cache_t,
@@ -1437,7 +1444,8 @@ fn flash_attention_kv_cache[
 fn flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     q_input_row_offsets: LayoutTensor[

@@ -57,7 +57,8 @@ fn _cross_compilation() -> Bool:
 
 @always_inline
 fn _compile_code[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     func: func_type,
     /,
     *,

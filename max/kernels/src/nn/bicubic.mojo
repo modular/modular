@@ -267,7 +267,8 @@ fn gpu_bicubic_kernel[
 
 
 fn resize_bicubic[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: StaticString,
 ](
     output: LayoutTensor[mut=True, dtype, **_],

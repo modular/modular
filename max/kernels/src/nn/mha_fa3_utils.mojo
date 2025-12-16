@@ -375,7 +375,8 @@ struct MHAPosition[
 
     @always_inline
     fn get_start_and_end_for_partitions[
-        partition_t: MHAPartitionScheme, //,
+        partition_t: MHAPartitionScheme,
+        //,
     ](self, partition: partition_t) -> Tuple[UInt32, UInt32]:
         @parameter
         if partition_t.do_partition:
@@ -438,7 +439,8 @@ struct MHAPosition[
 fn get_seq_info[
     MaxSeqLenType: OptionallyStaticInt,
     ValidLengthType: OptionalPointer,
-    PartitionType: MHAPartitionScheme, //,
+    PartitionType: MHAPartitionScheme,
+    //,
     BM: Int,
     num_heads: Int,
 ](
@@ -474,7 +476,8 @@ struct PositionSummary:
     @staticmethod
     @always_inline
     fn get_start_pos[
-        KVLUTType: MHAOperand, //,
+        KVLUTType: MHAOperand,
+        //,
         ragged: Bool,
         _is_cache_length_accurate: Bool,
     ](kv_lut: KVLUTType, seq_info: SeqInfo, num_keys_arg: UInt32) -> UInt32:
@@ -490,7 +493,8 @@ struct PositionSummary:
     @always_inline
     fn get_num_keys[
         MaxSeqLenType: OptionallyStaticInt,
-        KVInputRowOffsetsType: OptionalPointer, //,
+        KVInputRowOffsetsType: OptionalPointer,
+        //,
         ragged: Bool,
         _is_cache_length_accurate: Bool,
     ](
@@ -538,7 +542,8 @@ struct PositionSummary:
     fn create[
         KVLUTType: MHAOperand,
         KVRowOffsetsType: OptionalPointer,
-        MaxSeqLenType: OptionallyStaticInt, //,
+        MaxSeqLenType: OptionallyStaticInt,
+        //,
         ragged: Bool,
         _is_cache_length_accurate: Bool,
     ](
@@ -574,7 +579,8 @@ struct PositionSummary:
 fn _get_position[
     KVLUTType: MHAOperand,
     MaxSeqLenType: OptionallyStaticInt,
-    KVInputRowOffsetsType: OptionalPointer, //,
+    KVInputRowOffsetsType: OptionalPointer,
+    //,
     BM: Int,
     BN: Int,
     depth: Int,
@@ -755,7 +761,8 @@ comptime KVTMATile[
 
 @always_inline
 fn q_tma[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     swizzle_mode: TensorMapSwizzle,
     *,
     BM: Int,
@@ -798,7 +805,8 @@ fn get_q_head_idx[
     padded_depth: Int,
     num_heads: Int,
     group: Int,
-    decoding: Bool, //,
+    decoding: Bool,
+    //,
 ](
     position: MHAPosition[
         BM, BN, depth, padded_depth, num_heads, group, decoding
@@ -834,7 +842,8 @@ fn _apply_mask[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     reg_tile_layout: Layout,
-    element_layout: Layout, //,
+    element_layout: Layout,
+    //,
     # last_iter: Bool,
     WM: Int,
     WN: Int,
@@ -1094,7 +1103,8 @@ fn produce[
     KVLUTType: MHAOperand,
     MaskType: MHAMask,
     KVInputRowOffsetsType: OptionalPointer,
-    ValidLengthType: OptionalPointer, //,
+    ValidLengthType: OptionalPointer,
+    //,
     swizzle_mode: TensorMapSwizzle,
     *,
     pipeline_stages: Int,
@@ -1491,7 +1501,8 @@ fn output_reg_to_smem_st_matrix[
     output_type: DType,
     accum_type: DType,
     num_m_mmas: Int,
-    o_frag_size: Int, //,
+    o_frag_size: Int,
+    //,
     BM: Int,
     padded_depth: Int,
     swizzle: Swizzle,
@@ -1549,7 +1560,8 @@ fn output_reg_to_smem[
     output_type: DType,
     accum_type: DType,
     num_m_mmas: Int,
-    o_frag_size: Int, //,
+    o_frag_size: Int,
+    //,
     BM: Int,
     BN: Int,
     padded_depth: Int,

@@ -476,7 +476,8 @@ fn nvshmemx_team_init() -> c_int:
 
 
 fn nvshmem_put[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],
@@ -491,7 +492,8 @@ fn nvshmem_put[
 
 
 fn nvshmem_put_nbi[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],
@@ -513,7 +515,8 @@ fn nvshmem_p[
 
 
 fn nvshmem_get[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],
@@ -528,7 +531,8 @@ fn nvshmem_get[
 
 
 fn nvshmem_get_nbi[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],

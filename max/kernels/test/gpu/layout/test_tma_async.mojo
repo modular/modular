@@ -204,7 +204,8 @@ fn test_tma_multiple_loads_kernel[
 
 
 fn sum_index_list[
-    rank: Int, //,
+    rank: Int,
+    //,
     index_list: IndexList[rank],
 ]() -> Int:
     var sum = 0
@@ -223,7 +224,8 @@ fn max_length[rank: Int, //](index_list: IndexList[rank]) -> Int:
 
 
 def test_tma_ragged_store[
-    rank: Int, //,
+    rank: Int,
+    //,
     dtype: DType,
     sequence_lengths: IndexList[rank],
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
