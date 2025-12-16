@@ -32,7 +32,7 @@ dependencies = [
   "jiwer",
   "kaleido==0.2.1",
   "kepler",
-  "llguidance",
+  "llguidance==1.3.0",
   "logbar",
   "markupsafe",
   "matplotlib",
