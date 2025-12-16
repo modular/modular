@@ -19,7 +19,7 @@ import logging
 from io import StringIO
 from typing import TYPE_CHECKING, Any, cast
 
-from max.driver import Device
+from max.driver import Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -156,6 +156,15 @@ class MemoryEstimator:
         exceed total pages per device times page size.
         """
 
+        # In virtual device mode (cross-compilation), skip memory-based constraints
+        # since we're only compiling and not actually running the model.
+        if is_virtual_device_mode():
+            logger.info(
+                "Skipping memory-based sequence length constraints in "
+                "virtual device mode (cross-compilation)"
+            )
+            return None
+
         # Retrieve needed parameters.
         if not model_config.quantization_encoding:
             raise ValueError(
@@ -196,6 +205,30 @@ class MemoryEstimator:
             pipeline_config.draft_model_config is not None
             and model_config is pipeline_config.draft_model_config
         )
+
+        # In virtual device mode (cross-compilation), skip memory estimation
+        # since we're only compiling and not actually running the model.
+        # Use model defaults for max_batch_size and max_length.
+        if is_virtual_device_mode():
+            logger.info(
+                "Skipping memory estimation in virtual device mode "
+                "(cross-compilation)"
+            )
+            if not pipeline_config.max_batch_size:
+                pipeline_config.max_batch_size = 1
+            if not pipeline_config.max_length:
+                pipeline_config.max_length = (
+                    pipeline_model.calculate_max_seq_len(
+                        pipeline_config, huggingface_config=huggingface_config
+                    )
+                )
+            # Set a large available cache memory value since we're not actually
+            # allocating memory during cross-compilation. Use 1TB as a reasonable
+            # large value that should work for any model.
+            model_config.kv_cache_config._available_cache_memory = (
+                1024 * 1024 * 1024 * 1024  # 1TB
+            )
+            return
 
         try:
             free_memory = cls.free_memory(devices)
