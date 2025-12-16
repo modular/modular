@@ -26,6 +26,7 @@ from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits, Signals
+from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -152,8 +153,8 @@ class Gemma3Model(
             adapter,
             return_logits,
         )
-        # Override the huggingface_config to use the text huggingface_config if provided
-        if text_huggingface_config is not None:
+        self._is_multimodal = text_huggingface_config is not None
+        if self._is_multimodal:
             self.huggingface_config = text_huggingface_config
 
         self.model = self.load_model(session)
@@ -333,6 +334,16 @@ class Gemma3Model(
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
+
+        state_dict_prefix = "language_model." if self._is_multimodal else ""
+        float8_config = parse_float8_config(
+            huggingface_config,
+            state_dict,
+            self.dtype,
+            state_dict_name_prefix=state_dict_prefix,
+            ignored_modules_prefix=state_dict_prefix or "model.",
+        )
+
         model_config = Gemma3Config.generate(
             pipeline_config=self.pipeline_config,
             huggingface_config=huggingface_config,
@@ -343,6 +354,7 @@ class Gemma3Model(
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
+            float8_config=float8_config,
         )
         nn_model = Gemma3(model_config)
         nn_model.load_state_dict(

@@ -306,6 +306,7 @@ class Gemma3VisionModel(Module):
         self.config = config
         self.devices = config.devices
         vision_config = config.vision_config
+        vision_dtype = DType.bfloat16
 
         # Vision embeddings, sharded for multi-device setups
         self.embeddings = Gemma3VisionEmbeddings(
@@ -324,7 +325,7 @@ class Gemma3VisionModel(Module):
             vision_config.hidden_size,
             eps=vision_config.layer_norm_eps,
             devices=[device],
-            dtype=config.dtype,
+            dtype=vision_dtype,
         )
         self.post_layernorm.weight.sharding_strategy = (
             ShardingStrategy.replicate(len(config.devices))
@@ -355,7 +356,7 @@ class Gemma3VisionModel(Module):
                 vision_config.hidden_size,
                 eps=vision_config.layer_norm_eps,
                 devices=[device],
-                dtype=config.dtype,
+                dtype=vision_dtype,
             )
             ln.weight = weight_shard
             if bias_shard is not None:

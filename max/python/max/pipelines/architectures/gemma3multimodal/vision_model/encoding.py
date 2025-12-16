@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import cast
 
+from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
@@ -46,6 +47,8 @@ class Gemma3VisionEncoderLayer(Module):
         multi-layer perceptrion"""
         self.config = config
         vision_config = config.vision_config
+        vision_dtype = DType.bfloat16
+
         self.device = device if device is not None else config.devices[0]
         self.embed_dim = vision_config.hidden_size
         self.layer_idx = layer_idx
@@ -54,7 +57,7 @@ class Gemma3VisionEncoderLayer(Module):
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
             devices=[self.device],
-            dtype=config.dtype,
+            dtype=vision_dtype,
         )
 
         self.self_attn = Gemma3VisionAttention(
@@ -68,7 +71,7 @@ class Gemma3VisionEncoderLayer(Module):
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
             devices=[self.device],
-            dtype=config.dtype,
+            dtype=vision_dtype,
         )
 
     def __call__(

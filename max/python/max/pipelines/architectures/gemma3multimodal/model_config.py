@@ -242,7 +242,7 @@ class Gemma3ForConditionalGenerationConfig(
         )
 
         # Parse the float8 config from compressed-tensors
-        layer_name_prefix = "language_model.model"
+        layer_name_prefix = "language_model.model."
         float8_config = parse_float8_config(
             huggingface_config,
             state_dict,
@@ -271,6 +271,7 @@ class Gemma3ForConditionalGenerationConfig(
             return_logits=return_logits,
             norm_method=norm_method,
             attention_bias=attention_bias,
+            float8_config=float8_config,
         )
 
         kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(

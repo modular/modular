@@ -313,12 +313,12 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             weights_dict
         )
         vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
-        state_dict = language_weights_dict | vision_weights_dict
 
+        raw_state_dict = {k: v.data() for k, v in weights_dict.items()}
         model_config = Gemma3ForConditionalGenerationConfig.generate(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
-            state_dict=state_dict,
+            state_dict=raw_state_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
             cache_dtype=self.encoding.cache_dtype,
@@ -372,7 +372,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         image_embeddings_types = [
             TensorType(
-                config.dtype,
+                DType.bfloat16,
                 shape=[
                     "num_image_tokens",
                     config.text_config.hidden_size,
@@ -479,7 +479,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         """Build the vision model graph for processing images."""
         pixel_values_types = [
             TensorType(
-                config.dtype,
+                DType.bfloat16,
                 shape=[
                     "batch_size",
                     3,
@@ -767,7 +767,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return [
             Tensor.zeros(
                 shape=[0, self.huggingface_config.text_config.hidden_size],
-                dtype=self.dtype,
+                dtype=DType.bfloat16,
             ).to(dev)
             for dev in self.devices
         ]

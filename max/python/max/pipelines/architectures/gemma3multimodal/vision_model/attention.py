@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn import Linear
 from max.nn.attention.mask_config import MHAMaskVariant
@@ -36,6 +37,8 @@ class Gemma3VisionAttention(Module):
         super().__init__()
         self.config = config
         vision_config = config.vision_config
+        vision_dtype = DType.bfloat16
+
         self.layer_idx = layer_idx
         self.device = device if device is not None else config.devices[0]
         self.head_dim = (
@@ -48,28 +51,28 @@ class Gemma3VisionAttention(Module):
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
             has_bias=vision_config.attention_bias,
-            dtype=config.dtype,
+            dtype=vision_dtype,
             device=self.device,
         )
         self.k_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
             has_bias=vision_config.attention_bias,
-            dtype=config.dtype,
+            dtype=vision_dtype,
             device=self.device,
         )
         self.v_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
             has_bias=vision_config.attention_bias,
-            dtype=config.dtype,
+            dtype=vision_dtype,
             device=self.device,
         )
         self.out_proj = Linear(
             self.num_heads * self.head_dim,
             vision_config.hidden_size,
             has_bias=vision_config.attention_bias,
-            dtype=config.dtype,
+            dtype=vision_dtype,
             device=self.device,
         )
 

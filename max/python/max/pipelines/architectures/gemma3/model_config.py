@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import LinearScalingParams, ReturnLogits
-from max.nn.float8_config import Float8Config, parse_float8_config
+from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -216,6 +216,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] = "rms_norm",
         attention_bias: bool = False,  # Gemma3 attention bias is False in HF.
+        float8_config: Float8Config | None = None,
     ) -> Gemma3Config:
         """Generates a Gemma3Config instance from various configuration sources.
 
@@ -278,16 +279,6 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
         hidden_activation = _HIDDEN_ACTIVATION_MAP.get(
             huggingface_config.hidden_activation,
             huggingface_config.hidden_activation,
-        )
-
-        # Parse the float8 config from compressed-tensors
-        layer_name_prefix = "language_model."
-        float8_config = parse_float8_config(
-            huggingface_config,
-            state_dict,
-            dtype,
-            state_dict_name_prefix=layer_name_prefix,
-            ignored_modules_prefix=layer_name_prefix,
         )
 
         return Gemma3Config(

@@ -248,7 +248,11 @@ def _quantized_layers_and_embedding_dtype(
     # TODO: For llama3, the layer name re-mapping is not applied to the `ignore`
     # list in quantization config, hence the two prefixes are needed here.
     """
-    num_hidden_layers = huggingface_config.num_hidden_layers
+    # Handle multimodal configs where num_hidden_layers is in text_config
+    if hasattr(huggingface_config, "text_config"):
+        num_hidden_layers = huggingface_config.text_config.num_hidden_layers
+    else:
+        num_hidden_layers = huggingface_config.num_hidden_layers
     mlp_in_float8: set[int] = set()
     attn_qkv_in_float8: set[int] = set()
 
