@@ -50,7 +50,7 @@ You can also create and use Python objects from Mojo.
 ### Mojo wrapper objects
 
 When you use Python objects in your Mojo code, Mojo adds the
-[`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) wrapper around
+[`PythonObject`](/mojo/std/python/python_object/PythonObject) wrapper around
 the Python object. This object exposes a number of common double underscore
 methods (dunder methods) like `__getitem__()` and `__getattr__()`, passing them
 through to the underlying Python object. Most of the time, you can treat the
@@ -61,12 +61,12 @@ in a sequence.
 You can explicitly create a wrapped Python object by initializing a
 `PythonObject` with a Mojo integer, float, boolean, or string. Additionally, you
 can create several types of Python collections directly in Mojo using the
-[`Python.dict()`](/mojo/stdlib/python/python/Python#dict),
-[`Python.list()`](/mojo/stdlib/python/python/Python#list), and
-[`Python.tuple()`](/mojo/stdlib/python/python/Python#tuple) static methods.
+[`Python.dict()`](/mojo/std/python/python/Python#dict),
+[`Python.list()`](/mojo/std/python/python/Python#list), and
+[`Python.tuple()`](/mojo/std/python/python/Python#tuple) static methods.
 
 For example, to create a Python dictionary, use the
-[`Python.dict()`](/mojo/stdlib/python/python/Python#dict) method:
+[`Python.dict()`](/mojo/std/python/python/Python#dict) method:
 
 ```mojo
 from python import Python
@@ -83,7 +83,7 @@ def main():
 {'item_name': 'whizbang', 'price': 11.75, 'inventory': 100}
 ```
 
-With the [`Python.list()`](/mojo/stdlib/python/python/Python#list) method, you
+With the [`Python.list()`](/mojo/std/python/python/Python#list) method, you
 can create a Python list and optionally initialize it:
 
 ```mojo
@@ -103,7 +103,7 @@ n = 3.14159
 ['aardvark', 2, 3.14159, 4, 5]
 ```
 
-The [`Python.tuple()`](/mojo/stdlib/python/python/Python#tuple) method creates a
+The [`Python.tuple()`](/mojo/std/python/python/Python#tuple) method creates a
 Python tuple of values:
 
 ```mojo
@@ -123,7 +123,7 @@ Number of cats: 2
 
 If you want to construct a Python type that doesn't have a literal Mojo
 equivalent, you can also use the
-[`Python.evaluate()`](/mojo/stdlib/python/python/Python#evaluate) method. For
+[`Python.evaluate()`](/mojo/std/python/python/Python#evaluate) method. For
 example, to create a Python `set`:
 
 ```mojo
@@ -142,9 +142,9 @@ def main():
 Is 7 in the set: True
 ```
 
-`PythonObject` implements the [`Writable`](/mojo/stdlib/io/write/Writable)
+`PythonObject` implements the [`Writable`](/mojo/std/io/write/Writable)
 trait. This allows you to print Python values using the built-in
-[`print()`](/mojo/stdlib/builtin/io/print) function, as shown in several of the
+[`print()`](/mojo/std/builtin/io/print) function, as shown in several of the
 previous examples.
 
 However, most other Mojo APIs don't accept `PythonObject` values directly. In
@@ -175,7 +175,7 @@ operator also works to compare the identity of two Python objects. Python values
 like `False` and `None` evaluate as false in Mojo boolean expressions as well.
 
 If you need to know the type of the underlying Python object, you can use the
-[`Python.type()`](/mojo/stdlib/python/python/Python#type) method, which is
+[`Python.type()`](/mojo/std/python/python/Python#type) method, which is
 equivalent to the Python `type()` builtin. You can test if a Python
 object is of a particular type by performing an identity comparison against the
 type as shown below:

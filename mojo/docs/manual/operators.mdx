@@ -117,8 +117,8 @@ provided.
 
 #### `Int` and `UInt` values
 
-The [`Int`](/mojo/stdlib/builtin/int/Int) and
-[`UInt`](/mojo/stdlib/builtin/uint/UInt) types represent signed and unsigned
+The [`Int`](/mojo/std/builtin/int/Int) and
+[`UInt`](/mojo/std/builtin/uint/UInt) types represent signed and unsigned
 integers of the [word
 size](https://en.wikipedia.org/wiki/Word_(computer_architecture)) of the CPU,
 typically 64 bits or 32 bits.
@@ -160,12 +160,12 @@ UInt quotient: 1.125
 
 #### `SIMD` values
 
-The Mojo standard library defines the [`SIMD`](/mojo/stdlib/builtin/simd/SIMD)
+The Mojo standard library defines the [`SIMD`](/mojo/std/builtin/simd/SIMD)
 type to represent a fixed-size array of values that can fit into a processor's
 register. This allows you to take advantage of [single instruction, multiple
 data](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data)
 operations in hardware to efficiently process multiple values in parallel.
-`SIMD` values of a numeric [`DType`](/mojo/stdlib/builtin/dtype/DType) support
+`SIMD` values of a numeric [`DType`](/mojo/std/builtin/dtype/DType) support
 all arithmetic operators except for matrix multiplication (`@`), though the left
 shift (`<<`) and right shift (`>>`) operators support only integral types.
 Additionally, `SIMD` values of an integral or boolean type support all bitwise
@@ -183,7 +183,7 @@ print(simd3)
 [-2, 6, -12, 20]
 ```
 
-[`Scalar`](/mojo/stdlib/builtin/simd/) values are simply aliases for
+[`Scalar`](/mojo/std/builtin/simd/) values are simply aliases for
 single-element `SIMD` vectors, so `Float16` is just an alias for
 `SIMD[DType.float16, 1]`. Therefore `Scalar` values support the same set of
 arithmetic and bitwise operators.
@@ -219,7 +219,7 @@ error: invalid call to '__mul__': failed to infer parameter 'type' of parent str
 
 If you need to perform an arithmetic or bitwise operator on two `SIMD` values of
 different types, you can explicitly convert a value to the desired type either
-by invoking its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by
+by invoking its [`cast()`](/mojo/std/builtin/simd/SIMD#cast) method or by
 passing it as an argument to the constructor of the target type.
 
 For example, to fix the previous example, add an explicit conversion:
@@ -343,8 +343,8 @@ There are three operators related to division:
 
 #### `IntLiteral` and `FloatLiteral` values
 
-[`IntLiteral`](/mojo/stdlib/builtin/int_literal/IntLiteral) and
-[`FloatLiteral`](/mojo/stdlib/builtin/float_literal/FloatLiteral) are
+[`IntLiteral`](/mojo/std/builtin/int_literal/IntLiteral) and
+[`FloatLiteral`](/mojo/std/builtin/float_literal/FloatLiteral) are
 compile-time, numeric values. When they are used in a compile-time context, they
 are arbitrary-precision values. When they are used in a run-time context, they
 are materialized as `Int` and `Float64` type values, respectively.
@@ -487,9 +487,9 @@ individually and work with the resulting boolean mask for further processing.
 ### String operators
 
 As discussed in [Strings](/mojo/manual/types#strings), the
-[`String`](/mojo/stdlib/collections/string/string/String) type represents a
+[`String`](/mojo/std/collections/string/string/String) type represents a
 mutable string value. In contrast, the
-[`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral) type
+[`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral) type
 represents a literal string that is embedded into your compiled program, but
 at run-time it materializes to a `String`, allowing you to mutate it:
 
@@ -765,7 +765,7 @@ The ternary can be used in expressions, assignments, and as function args:
 
 ```mojo
 exp = 5 # or -5
-result = 2.0 ** Float64(exp) 
+result = 2.0 ** Float64(exp)
     if exp >= 0 \
     else 1.0 / (2.0 ** abs(Float64(exp))) \
     # For 5, 32, for -5, 0.03125
@@ -1025,12 +1025,12 @@ dunder methods must return a `Bool` result representing the result of the
 comparison.
 
 There are two traits associated with the comparison dunder methods. A type that
-implements the [`Comparable`](/mojo/stdlib/builtin/comparable/Comparable) trait
+implements the [`Comparable`](/mojo/std/builtin/comparable/Comparable) trait
 defines all of the comparison methods, and authors are required to implement at
 least the "less-than" and "equal" methods, since the trait provides defaults
 for the rest. However, some types don't have a natural ordering (for example,
 complex numbers). For those types you can decide to implement the
-[`Equatable`](/mojo/stdlib/builtin/equality_comparable/Equatable)
+[`Equatable`](/mojo/std/builtin/equality_comparable/Equatable)
 trait, which defines only the "equal" and "not equal" comparison methods, with
 "equal" being required to implement by conforming structs.
 
@@ -1088,13 +1088,13 @@ in the collection or not.
 
 The `is` and `is not` operators compare the identity of two values.
 
-When a type conforms to [`Identifiable`](/mojo/stdlib/builtin/identifiable/Identifiable),
-these operators call the [`__is__()`](/mojo/stdlib/builtin/identifiable/Identifiable/#__is__)
+When a type conforms to [`Identifiable`](/mojo/std/builtin/identifiable/Identifiable),
+these operators call the [`__is__()`](/mojo/std/builtin/identifiable/Identifiable/#__is__)
 method to determine whether the left-hand operand has the same identity as the right-hand operand. For example,
 you might compare raw values or use some other way to establish what "identity" means in your work.
 
 The `is not` operator uses the automatically provided
-[`__isnot__()`](/mojo/stdlib/builtin/identifiable/Identifiable/#__isnot__) method, which
+[`__isnot__()`](/mojo/std/builtin/identifiable/Identifiable/#__isnot__) method, which
 returns the logical negation of `__is__()`.
 
 ### Subscript and slicing dunder methods
@@ -1141,7 +1141,7 @@ You provide slicing support for a collection type also by implementing
 `__getitem__()` and `__setitem__()` methods. But for slicing, instead of
 accepting an `Int` index (or indices, in the case of a multi-dimensional
 collection) you implement to methods to accept a
-[`Slice`](/mojo/stdlib/builtin/builtin_slice/Slice) (or multiple `Slice`s in
+[`Slice`](/mojo/std/builtin/builtin_slice/Slice) (or multiple `Slice`s in
 the case of a multi-dimensional collection).
 
 ```mojo
@@ -1198,7 +1198,7 @@ repo](https://github.com/modular/modular/tree/main/examples/mojo/operators).
 :::note
 
 Note that the Mojo standard library implements a parameterized
-[`ComplexSIMD`](/mojo/stdlib/complex/complex/ComplexSIMD) struct that provides
+[`ComplexSIMD`](/mojo/std/complex/complex/ComplexSIMD) struct that provides
 support for a basic set of arithmetic operators. However, our `Complex` type
 will not be based on the `ComplexSIMD` struct or be compatible with it.
 
@@ -1269,8 +1269,8 @@ c2: Real: 3.1415899999999999; Imaginary: 0.0
 ### Implement the `Writable` and `Stringable` traits
 
 To make it simpler to print `Complex` values, let's implement the
-[Writable](/mojo/stdlib/io/write/Writable) trait. While we're at it, let's
-also implement the [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait so
+[Writable](/mojo/std/io/write/Writable) trait. While we're at it, let's
+also implement the [`Stringable`](/mojo/std/builtin/str/Stringable) trait so
 that we can use the `String()` constructor to generate a `String` representation of a
 `Complex` value. You can find out more about these traits and their associated
 methods in [The `Stringable`, `Representable`, and `Writable`

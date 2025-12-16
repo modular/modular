@@ -50,7 +50,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 ```
 
 The code defines a type-specific `NodePointer` type alias built on
-[`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/).
+[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer/).
 Add the comptime within the struct definition, as shown here.
 Including [`MutOrigin.external`](/mojo/manual/values/lifetimes/)
 lets the pointer represent dynamically-allocated memory that
@@ -149,11 +149,11 @@ list_head.free()
 
 ### Destructors
 
-When you build real Mojo data structures, you usually want a safe API 
-that keeps users away from raw pointers. If you were putting together a 
-complete linked-list type rather than a small demo of linkable 
-nodes, the parent list would handle node allocation and freeing for you. 
-It owns the nodes, so it also handles the cleanup in its 
+When you build real Mojo data structures, you usually want a safe API
+that keeps users away from raw pointers. If you were putting together a
+complete linked-list type rather than a small demo of linkable
+nodes, the parent list would handle node allocation and freeing for you.
+It owns the nodes, so it also handles the cleanup in its
 [destructor](/mojo/manual/lifecycle/death/).
 
 Here’s a small example from the Mojo Standard Library that shows how to
@@ -270,7 +270,7 @@ one one two three five eight
 ## What next?
 
 * Learn more about **pointers and memory safety** in Mojo’s
-  [UnsafePointer](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/)
+  [UnsafePointer](/mojo/std/memory/unsafe_pointer/UnsafePointer/)
   and [lifetime and origin rules](/mojo/manual/values/lifetimes/) guides.
 * Learn more about how to **manage cleanup** in the Mojo
   [destructor](/mojo/manual/lifecycle/death/) documentation.

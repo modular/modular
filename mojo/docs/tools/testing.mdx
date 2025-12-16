@@ -14,7 +14,7 @@ and
 [forum announcement](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371).
 
 The recommended approach for testing is now to use the
-[`TestSuite`](/mojo/stdlib/testing/suite/TestSuite) struct from the standard
+[`TestSuite`](/mojo/std/testing/suite/TestSuite) struct from the standard
 library, which provides automatic test discovery and execution. Continue reading
 for current testing instructions using `TestSuite`.
 
@@ -23,7 +23,7 @@ for current testing instructions using `TestSuite`.
 Mojo includes a framework for developing and executing unit tests. The Mojo
 testing framework consists of a set of assertions defined as part of the [Mojo
 standard library](/mojo/lib) and the
-[`TestSuite`](/mojo/stdlib/testing/suite/TestSuite) struct for automatic test
+[`TestSuite`](/mojo/std/testing/suite/TestSuite) struct for automatic test
 discovery and execution.
 
 ## Get started
@@ -115,19 +115,19 @@ tests display their error messages inline.
 
 ## Using Mojo assertion functions
 
-The Mojo standard library includes a [`testing`](/mojo/stdlib/testing/testing/)
+The Mojo standard library includes a [`testing`](/mojo/std/testing/testing/)
 module that defines several assertion functions for implementing tests. Each
 assertion returns `None` if its condition is met or raises an error if it isn't.
 
-- [`assert_true()`](/mojo/stdlib/testing/testing/assert_true):
+- [`assert_true()`](/mojo/std/testing/testing/assert_true):
   Asserts that the input value is `True`.
-- [`assert_false()`](/mojo/stdlib/testing/testing/assert_false):
+- [`assert_false()`](/mojo/std/testing/testing/assert_false):
   Asserts that the input value is `False`.
-- [`assert_equal()`](/mojo/stdlib/testing/testing/assert_equal):
+- [`assert_equal()`](/mojo/std/testing/testing/assert_equal):
   Asserts that the input values are equal.
-- [`assert_not_equal()`](/mojo/stdlib/testing/testing/assert_not_equal):
+- [`assert_not_equal()`](/mojo/std/testing/testing/assert_not_equal):
   Asserts that the input values are not equal.
-- [`assert_almost_equal()`](/mojo/stdlib/testing/testing/assert_almost_equal):
+- [`assert_almost_equal()`](/mojo/std/testing/testing/assert_almost_equal):
   Asserts that the input values are equal up to a tolerance.
 
 The boolean assertions report a basic error message when they fail.
@@ -172,7 +172,7 @@ Error: At Expression [3] wrapper:15:24: AssertionError: 3.3333333333333335 is no
 
 The testing module also defines a [context
 manager](/mojo/manual/errors#use-a-context-manager),
-[`assert_raises()`](/mojo/stdlib/testing/testing/assert_raises), to assert that
+[`assert_raises()`](/mojo/std/testing/testing/assert_raises), to assert that
 a given code block correctly raises an expected error.
 
 ```mojo
@@ -243,7 +243,7 @@ function always raises an error to indicate failure, any test function defined
 using `fn` must include the `raises` declaration.
 
 Generally, you should use the assertion utilities from the Mojo standard library
-[`testing`](/mojo/stdlib/testing/testing/) module to implement your tests.
+[`testing`](/mojo/std/testing/testing/) module to implement your tests.
 You can include multiple related assertions in the same test function. However,
 if an assertion raises an error during execution, then the test function returns
 immediately, skipping any subsequent assertions.
@@ -251,7 +251,7 @@ immediately, skipping any subsequent assertions.
 ## Running tests with TestSuite
 
 To run your tests, each test file must include a `main()` function that uses
-[`TestSuite.discover_tests()`](/mojo/stdlib/testing/suite/TestSuite#discover_tests)
+[`TestSuite.discover_tests()`](/mojo/std/testing/suite/TestSuite#discover_tests)
 to automatically discover and execute all test functions in the module. The
 `__functions_in_module()` compiler intrinsic provides a list of all functions
 defined in the current module, which `discover_tests()` filters to find those

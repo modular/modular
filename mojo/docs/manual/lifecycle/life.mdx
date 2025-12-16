@@ -11,8 +11,8 @@ page describes [how values are
 destroyed](/mojo/manual/lifecycle/death).)
 
 All data types in Mojo—including basic types in the standard library such as
-[`Bool`](/mojo/stdlib/builtin/bool/Bool), [`Int`](/mojo/stdlib/builtin/int/Int),
-and [`String`](/mojo/stdlib/collections/string/string/String)—are defined as
+[`Bool`](/mojo/std/builtin/bool/Bool), [`Int`](/mojo/std/builtin/int/Int),
+and [`String`](/mojo/std/collections/string/string/String)—are defined as
 [structs](/mojo/manual/structs). This means the creation and destruction of any
 piece of data follows the same lifecycle rules, and you can define your own data
 types that work exactly the same way.
@@ -94,7 +94,7 @@ struct MyPet:
 Mojo does not require a destructor to destroy an instance. But in some cases you
 may need to define a custom destructor to release resources (for example, if a
 struct dynamically allocates memory using
-[`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer)). We'll
+[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)). We'll
 discuss that more in [Death of a value](/mojo/manual/lifecycle/death).
 
 :::
@@ -343,7 +343,7 @@ where you need to define a custom copy constructor:
 
 - One or more of the struct's fields is not `Copyable`.
 - The struct includes a non-owning type (like
-  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer)), and you
+  [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)), and you
   want to make a deep copy of the data.
 - The struct holds other resources (like file descriptors or network sockets)
   that need to be managed.
@@ -632,12 +632,12 @@ passed to other variables and passed into functions with any argument convention
 (`read`, `mut`, and `var`)—the only catch is that you must use the `^`
 transfer sigil to end the lifetime of a move-only type when assigning it to a
 new variable or when passing it as a `var` argument. The
-[`OwnedPointer`](/mojo/stdlib/memory/owned_pointer/OwnedPointer/) is an
+[`OwnedPointer`](/mojo/std/memory/owned_pointer/OwnedPointer/) is an
 example of a move-only type: because it is designed to provide clear single
 ownership of a stored value, the `OwnedPointer` can be moved, but not copied.
 
 In some (rare) cases, you may not want a type to be copyable *or* movable. The
-[`Atomic`](/mojo/stdlib/os/atomic/Atomic/) type is an example of a type that's
+[`Atomic`](/mojo/std/os/atomic/Atomic/) type is an example of a type that's
 neither copyable or movable.
 
 ## Trivial types

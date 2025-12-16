@@ -51,8 +51,8 @@ However, in some cases you'll need to interact with origins directly:
   values.
 
 * When working with types like
-  [`Pointer`](/mojo/stdlib/memory/pointer/Pointer) or
-  [`Span`](/mojo/stdlib/memory/span/Span) which are parameterized on the
+  [`Pointer`](/mojo/std/memory/pointer/Pointer) or
+  [`Span`](/mojo/std/memory/span/Span) which are parameterized on the
   origin of the data they refer to.
 
 This section also covers [`ref` arguments](#ref-arguments) and
@@ -81,7 +81,7 @@ struct ImmutRef[origin: ImmutOrigin]:
     pass
 ```
 
-Or you can use the [`Origin`](/mojo/stdlib/builtin/type_aliases/Origin)
+Or you can use the [`Origin`](/mojo/std/builtin/type_aliases/Origin)
 struct to specify an origin with parametric mutability:
 
 ```mojo
@@ -100,7 +100,7 @@ depending on a parameter specified by the enclosing API.
 The `is_mutable` parameter here is an [infer-only
 parameter](/mojo/manual/parameters/#infer-only-parameters). The `origin` value
 is often inferred, as well. For example, the following code creates a
-[`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to an existing value, but
+[`Pointer`](/mojo/std/memory/pointer/Pointer) to an existing value, but
 doesn't need to specify an origin—the `origin` is inferred from the existing
 value.
 
@@ -141,9 +141,9 @@ You can use the static origin `StaticConstantOrigin` when you have a
 value that exists for the entire duration of the program.
 
 For example, the `StringLiteral` method
-[`as_string_slice()`](/mojo/stdlib/builtin/string_literal/StringLiteral#as_string_slice)
+[`as_string_slice()`](/mojo/std/builtin/string_literal/StringLiteral#as_string_slice)
 returns a
-[`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice)
+[`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice)
 pointing to the original string literal. String literals are static—they're
 allocated at compile time and never destroyed—so the slice is created with an
 immutable, static origin.
@@ -172,7 +172,7 @@ when the compiler analyzes `origin_of(foo())`, it doesn't run the `foo()`
 function.)
 
 The following struct stores a string value using a
-[`OwnedPointer`](/mojo/stdlib/memory/owned_pointer/OwnedPointer): a smart
+[`OwnedPointer`](/mojo/std/memory/owned_pointer/OwnedPointer): a smart
 pointer that holds an owned value. The `as_ptr()` method returns a `Pointer` to
 the stored string, using the same origin as the original `OwnedPointer`.
 
@@ -225,7 +225,7 @@ The external origins, `MutOrigin.external` and `ImmutOrigin.external` represent
 values that do not alias any existing value. That is, they point to memory that
 is not owned by any other variable, and are therefore not tracked by the
 lifetime checker. For example, the
-[`alloc()`](/mojo/stdlib/memory/unsafe_pointer/alloc/) function returns an
+[`alloc()`](/mojo/std/memory/unsafe_pointer/alloc/) function returns an
 `UnsafePointer` to a new dynamically-allocated block of memory, with the origin
 `MutOrigin.external`. The origin indicates that the memory is not managed by the
 Mojo ownership system. When you use an unsafe API like this, you're responsible

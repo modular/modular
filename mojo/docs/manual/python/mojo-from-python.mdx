@@ -60,7 +60,7 @@ Because Python is trying to load `mojo_module`, it looks for a function called
 `PyInit_mojo_module()`. (If our file was called `foo.mojo`, the function Python
 looked for would be `PyInit_foo()`.) Within the `PyInit_mojo_module()`, we must
 declare all Mojo functions and types that are callable from Python using
-[`PythonModuleBuilder`](/mojo/stdlib/python/bindings/PythonModuleBuilder).
+[`PythonModuleBuilder`](/mojo/std/python/bindings/PythonModuleBuilder).
 
 So the complete Mojo code looks like this:
 
@@ -155,7 +155,7 @@ your Python with Mojo.
 ### Binding Mojo types
 
 You can bind any Mojo type for use in Python using
-[`PythonModuleBuilder`](/mojo/stdlib/python/bindings/PythonModuleBuilder/).
+[`PythonModuleBuilder`](/mojo/std/python/bindings/PythonModuleBuilder/).
 For example:
 
 ```mojo
@@ -177,9 +177,9 @@ fn PyInit_person_module() -> PythonObject:
 ```
 
 When you call
-[`add_type()`](/mojo/stdlib/python/bindings/PythonModuleBuilder/#add_type), it
+[`add_type()`](/mojo/std/python/bindings/PythonModuleBuilder/#add_type), it
 returns a
-[`PythonTypeBuilder`](/mojo/stdlib/python/bindings/PythonTypeBuilder), which
+[`PythonTypeBuilder`](/mojo/std/python/bindings/PythonTypeBuilder), which
 you can then use to bind the type constructor (see [binding Python
 initializers](#constructing-mojo-objects-in-python), below) and methods.
 
@@ -194,7 +194,7 @@ Any Mojo type bound using a `PythonTypeBuilder` has the resulting Python
 :::note
 
 Mojo types must implement
-[`Representable`](/mojo/stdlib/builtin/repr/Representable/) to be bound for use
+[`Representable`](/mojo/std/builtin/repr/Representable/) to be bound for use
 in Python. Additional traits are required for specific binding features:
 `Movable` for custom initializers (`def_py_init`), and both `Defaultable` and
 `Movable` for default initializers (`def_init_defaultable`).
@@ -206,7 +206,7 @@ However, merely binding a Mojo type to a Python `type` object isn’t very usefu
 ### Constructing Mojo objects in Python
 
 Mojo types can be constructed from Python by declaring a Mojo constructor function as a Python-compatible object initializer using
-[`def_py_init()`](/mojo/stdlib/python/bindings/PythonTypeBuilder#def_py_init)
+[`def_py_init()`](/mojo/std/python/bindings/PythonTypeBuilder#def_py_init)
 when you add the type to your module. For example:
 
 ```mojo
@@ -258,7 +258,7 @@ Person(Sarah, 32)
 ```
 
 For types that support default construction, you can use the simpler
-[`def_init_defaultable()`](/mojo/stdlib/python/bindings/PythonTypeBuilder#def_init_defaultable)
+[`def_init_defaultable()`](/mojo/std/python/bindings/PythonTypeBuilder#def_init_defaultable)
 method:
 
 ```mojo
@@ -284,7 +284,7 @@ method, so we prefer to always call `__init__()` the constructor.
 ### Returning Mojo objects to Python
 
 Mojo functions called from Python don't just need to be able to accept
-[`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) values as
+[`PythonObject`](/mojo/std/python/python_object/PythonObject) values as
 arguments, they also need to be able to return new values. And sometimes, they
 even need to be able to return Mojo native values back to Python. This is
 possible by using the `PythonObject(alloc=<value>)` constructor.
@@ -301,14 +301,14 @@ fn create_person() -> PythonObject:
 
 `PythonObject(alloc=...)` will raise an exception if the provided Mojo
 object type had not previously been registered using
-[`PythonModuleBuilder.add_type()`](/mojo/stdlib/python/bindings/PythonModuleBuilder#add_type).
+[`PythonModuleBuilder.add_type()`](/mojo/std/python/bindings/PythonModuleBuilder#add_type).
 
 :::
 
 ### `PythonObject` to Mojo values
 
 Within any Mojo code that is handling a
-[`PythonObject`](/mojo/stdlib/python/python_object/PythonObject), but
+[`PythonObject`](/mojo/std/python/python_object/PythonObject), but
 especially within Mojo functions called from Python, it's common to expect an
 argument of a particular type.
 
@@ -396,7 +396,7 @@ only works to immutable pointers.
 ### Methods
 
 When binding Mojo objects for use from Python, you can expose chosen methods to
-Python as well, using [`PythonTypeBuilder.def_method()`](/mojo/stdlib/python/bindings/PythonTypeBuilder/#def_method).
+Python as well, using [`PythonTypeBuilder.def_method()`](/mojo/std/python/bindings/PythonTypeBuilder/#def_method).
 
 Currently, Mojo methods being exposed to Python must be written with a modification
 compared to normal Mojo methods: they must be a `@staticmethod` that takes
@@ -448,7 +448,7 @@ Mojo methods called from Python are currently required to take non-standard self
 
 ### Static methods
 
-Python Mojo bindings supports exposing Python `@staticmethods`, bound using [`PythonTypeBuilder.def_staticmethod()`](/mojo/stdlib/python/bindings/PythonTypeBuilder/#def_staticmethod). A function declared using `def_staticmethod()` is callable as a static method on the type within Python, without needing an object instance.
+Python Mojo bindings supports exposing Python `@staticmethods`, bound using [`PythonTypeBuilder.def_staticmethod()`](/mojo/std/python/bindings/PythonTypeBuilder/#def_staticmethod). A function declared using `def_staticmethod()` is callable as a static method on the type within Python, without needing an object instance.
 
 ```mojo
 from python import PythonObject
@@ -501,7 +501,7 @@ print(Person.is_valid_age(-1)) # Prints 'False'
     This is supported in Python Mojo bindings when used in the unsugared form: `fn foo(kwargs: OwnedKwargsDict)`. (The `**kwargs` syntax limitation will be removed in the future.)
 
 
-You can define Mojo functions that accept variadic keyword arguments using [`OwnedKwargsDict[PythonObject]`](/mojo/stdlib/collections/dict/OwnedKwargsDict) as the last argument. A simple example looks like:
+You can define Mojo functions that accept variadic keyword arguments using [`OwnedKwargsDict[PythonObject]`](/mojo/std/collections/dict/OwnedKwargsDict) as the last argument. A simple example looks like:
 
 ```python
 import mojo_module
@@ -558,12 +558,12 @@ fn foo(*args: Int):
 ```
 
 However, this syntax is not yet supported in Python/Mojo bindings, because functions bound using
-[`def_function()`](/mojo/stdlib/python/bindings/PythonModuleBuilder#def_function)
+[`def_function()`](/mojo/std/python/bindings/PythonModuleBuilder#def_function)
 support only fixed-arity functions.
 
 As a workaround, you can expose Mojo functions that accept
 a variadic number of arguments to Python using the lower-level
-[`def_py_function()`](/mojo/stdlib/python/bindings/PythonModuleBuilder#def_py_function)
+[`def_py_function()`](/mojo/std/python/bindings/PythonModuleBuilder#def_py_function)
 interface, which leaves it to the user to validate the number of arguments
 provided:
 

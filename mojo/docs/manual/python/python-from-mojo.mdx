@@ -40,7 +40,7 @@ Python 3.11.0
 ## Import a Python module in Mojo
 
 To import a Python module in Mojo, just call
-[`Python.import_module()`](/mojo/stdlib/python/python/Python#import_module)
+[`Python.import_module()`](/mojo/std/python/python/Python#import_module)
 with the module name. The following shows an example of importing the standard
 Python [NumPy](https://numpy.org/) package:
 
@@ -86,7 +86,7 @@ def main():
 A few things to note:
 
 * The `import_module()` method returns a reference to the module in the form of
-  a [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject)
+  a [`PythonObject`](/mojo/std/python/python_object/PythonObject)
   wrapper. You must store the reference in a variable and then use it as shown
   in the example above to access functions, classes, and other objects defined
   by the module. See [Mojo wrapper objects](/mojo/manual/python/types#mojo-wrapper-objects)
@@ -155,7 +155,7 @@ def main():
 ```
 
 Both absolute and relative paths work with
-[`add_to_path()`](/mojo/stdlib/python/python/Python#add_to_path). For example,
+[`add_to_path()`](/mojo/std/python/python/Python#add_to_path). For example,
 you can import from the local directory like this:
 
 ```mojo

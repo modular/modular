@@ -177,7 +177,7 @@ tensors for use on the CPU.
 To create a `LayoutTensor` for use on the CPU, you need a `Layout` and a block of
 memory to store the tensor data. A common way to allocate memory for a
 `LayoutTensor` is to use an
-[`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray/):
+[`InlineArray`](/mojo/std/collections/inline_array/InlineArray/):
 
 ```mojo
 comptime rows = 8
@@ -206,7 +206,7 @@ var tensor = LayoutTensor[DType.float32, layout](ptr)
 ```
 
 
-Note that this example uses [`memset()`](/mojo/stdlib/memory/memory/memset/)
+Note that this example uses [`memset()`](/mojo/std/memory/memory/memset/)
 instead of the `LayoutTensor` `fill()` method. The `fill()` method performs
 elementwise initialization of the tensor, so it may be slow for large tensors.
 
@@ -223,7 +223,7 @@ memory space the tensor data will be stored in:
 #### Creating a `LayoutTensor` in global memory
 
 You must allocate global memory from the host side, by allocating a
-[`DeviceBuffer`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer/). You can
+[`DeviceBuffer`](/mojo/std/gpu/host/device_context/DeviceBuffer/). You can
 either construct a `LayoutTensor` using this memory on the host side, before
 invoking a GPU kernel, or you can construct a LayoutTensor inside the kernel
 itself:
@@ -239,9 +239,9 @@ itself:
 
 In both cases, if you want to initialize data for the tensor from the CPU, you
 can call
-[`enqueue_copy()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_copy)
+[`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_copy)
 or
-[`enqueue_memset()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_memset)
+[`enqueue_memset()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_memset)
 on the buffer prior to invoking the kernel. The following example shows
 initializing a `LayoutTensor` from the CPU and passing it to a GPU kernel.
 

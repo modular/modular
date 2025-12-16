@@ -127,7 +127,7 @@ Here's a quick overview of the special characters in the parameter list:
 
 "Generics" refers to functions that can act on multiple types of values, or
 containers that can hold multiple types of values. For example,
-[`List`](/mojo/stdlib/collections/list/List), can hold
+[`List`](/mojo/std/collections/list/List), can hold
 different types of values, so you can have a list of `Int` values, or
 a list of `String` values).
 
@@ -140,7 +140,7 @@ For example, the `repeat[]()` function in the previous section includes
 parameter of type `Int`, and an argument of type `String`. It's parameterized,
 but not generic. A generic function or struct is parameterized on *type*. For
 example, we could rewrite `repeat[]()` to take any type of argument that
-conforms to the [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait:
+conforms to the [`Stringable`](/mojo/std/builtin/str/Stringable) trait:
 
 ```mojo
 fn repeat[MsgType: Stringable, //, count: Int](msg: MsgType):
@@ -206,8 +206,8 @@ struct GenericArray[ElementType: Copyable]:
 This struct has a single parameter, `ElementType`, which is a placeholder for
 the data type you want to store in the array, sometimes called a *type
 parameter*. `ElementType` conforms to the
-[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait and therefore to the 
-[`Movable`](/mojo/stdlib/builtin/value/Movable) trait.
+[`Copyable`](/mojo/std/builtin/value/Copyable) trait and therefore to the
+[`Movable`](/mojo/std/builtin/value/Movable) trait.
 
 As with parameterized functions, you need to pass in parameter values when you
 use a parameterized struct. In this case, when you create an instance of
@@ -291,7 +291,7 @@ and they can be accessed the same way.
 When creating a generic struct, you might want to define some methods that
 require extra features. For example, consider a collection like `GenericArray`
 that holds instances of a type that conforms to the
-[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait. This imposes a lot
+[`Copyable`](/mojo/std/builtin/value/Copyable) trait. This imposes a lot
 of limitations: you can't implement a `sort()` method because you can't
 guarantee that the stored type supports the comparison operators; you can't
 write a useful `__str__()` or `__repr__()` dunder method because you can't
@@ -353,7 +353,7 @@ method is implemented for any `ElementType` that's also `Stringable`.
 ### Case study: the SIMD type
 
 For a real-world example of a parameterized type, let's look at the
-[`SIMD`](/mojo/stdlib/builtin/simd/SIMD) type from Mojo's standard library.
+[`SIMD`](/mojo/std/builtin/simd/SIMD) type from Mojo's standard library.
 
 [Single instruction, multiple data (SIMD)](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) is a parallel processing technology built into many modern CPUs,
 GPUs, and custom accelerators. SIMD allows you to perform a single operation on
@@ -368,7 +368,7 @@ longer SIMD vectors, and support many data types from 8-bit integers to 64-bit
 floating point numbers, so it's not practical to define all of the possible SIMD
 variations.
 
-Mojo's [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) type (defined as a struct)
+Mojo's [`SIMD`](/mojo/std/builtin/simd/SIMD) type (defined as a struct)
 exposes the common SIMD operations through its methods, and makes the SIMD data
 type and size values parametric. This allows you to directly map your data to
 the SIMD vectors on any hardware.
@@ -738,7 +738,7 @@ to infer the infer-only values from bound parameters or arguments.
 
 There are sometimes cases where it's useful to specify an infer-only parameter
 by keyword. For example, the
-[`Span`](/mojo/stdlib/memory/span/Span/) type
+[`Span`](/mojo/std/memory/span/Span/) type
 is parametric on [origin](/mojo/manual/values/lifetimes):
 
 ```mojo
@@ -911,7 +911,7 @@ var x: Float16 = 0  # Float16 works like a "typedef"
 ```
 
 (These aliases and others are actually defined in the
-[`simd` module](/mojo/stdlib/builtin/simd/#comptime-values).)
+[`simd` module](/mojo/std/builtin/simd/#comptime-values).)
 
 Like `var` variables, `comptime` values obey scope, and you can use local
 `comptime` values within functions as you'd expect.
@@ -1038,7 +1038,7 @@ fn is_happy(s: Sentiment):
 
 This pattern provides a type-safe enumeration.
 
-The [`DType`](/mojo/stdlib/builtin/dtype/DType) struct implements a simple enum
+The [`DType`](/mojo/std/builtin/dtype/DType) struct implements a simple enum
 using `comptime` members like this. This allows clients to use values like
 `DType.float32` in parameter expressions or runtime expressions.
 
