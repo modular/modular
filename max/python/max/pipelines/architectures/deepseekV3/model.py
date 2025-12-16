@@ -127,6 +127,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
+        max_batch_context_length = self.pipeline_config.max_batch_context_length
+        # PipelineConfig would automatically resolve it if not set by user.
+        assert max_batch_context_length is not None, "max_length must be set"
+
         if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
             graph_mode = "prefill"
         elif self.pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
@@ -227,6 +231,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            max_batch_context_length=max_batch_context_length,
             float8_config=float8_config,
             ep_config=ep_config,
             graph_mode=graph_mode,

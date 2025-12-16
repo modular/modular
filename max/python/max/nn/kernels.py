@@ -1658,20 +1658,19 @@ def flare_mla_prefill_plan(
 
 
 def mla_prefill_branch_fp8(
-    kv_params: KVCacheParams,
-    input: TensorValue,
+    q_nope: TensorValue,
+    q_rope: TensorValue,
     input_row_offsets: TensorValue,
     buffer_row_offsets: TensorValue,
     cache_offsets: TensorValue,
     buffer_length: TensorValue,
     kv_b_proj: TensorValue,
     kv_b_proj_scale: TensorValue,
+    kv_params: KVCacheParams,
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
-    qk_nope_head_dim: int,
-    qk_rope_head_dim: int,
     v_head_dim: int,
     float8_config: Float8Config,
 ) -> TensorValue:
@@ -1684,9 +1683,10 @@ def mla_prefill_branch_fp8(
     - Perform MLA prefill.
 
     Args:
-        kv_params: KVCacheParams
-        input: Input tensor of shape [tot_seq_len, num_heads,
-            qk_nope_head_dim + qk_rope_head_dim].
+        q_nope: Non-rope part of the query tensor. Shape: [tot_seq_len, num_heads,
+            qk_nope_head_dim].
+        q_rope: Rope part of the query tensor. Shape: [tot_seq_len, num_heads,
+            qk_rope_head_dim].
         input_row_offsets: Indicates where each request starts and ends in
             `input`. This is a 1D tensor of shape [num_batches + 1].
         buffer_row_offsets: Indicates where each request's KV latent values
@@ -1701,25 +1701,24 @@ def mla_prefill_branch_fp8(
             kv_latent_dim].
         kv_b_proj_scale: The scale for the weight matrix. Shape varies
             depending on the float8_config.
+        kv_params: KVCacheParams
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
         mask_variant: Mask variant.
         scale: scale for the attention calculation.
-        qk_nope_head_dim: Dimension of non-rope parts of the Q/K heads.
-        qk_rope_head_dim: Dimension of rope parts of the Q/K heads.
         v_head_dim: Dimension of the V heads.
         float8_config: Float8Config for the weight matrix.
     """
 
     input_rank_expected = 3
-    if input.rank != input_rank_expected:
+    if q_nope.rank != input_rank_expected:
         raise ValueError(
-            f"expected input of rank {input_rank_expected} but got {input.rank}"
+            f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
         )
 
-    if input.dtype != kv_params.dtype:
+    if q_nope.dtype != kv_params.dtype:
         raise ValueError(
-            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
+            f"expected q_nope to be dtype: {kv_params.dtype}, got {q_nope.dtype}"
         )
 
     if layer_idx.dtype != DType.uint32:
@@ -1735,13 +1734,11 @@ def mla_prefill_branch_fp8(
             f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
         )
 
-    assert qk_nope_head_dim + qk_rope_head_dim == input.shape[2]
     assert kv_params.page_size is not None
     assert float8_config.input_scale.block_size is not None
     assert float8_config.weight_scale.block_size is not None
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
-        "qk_nope_head_dim": qk_nope_head_dim,
         "m_scale_granularity": float8_config.input_scale.block_size[0],
         "n_scale_granularity": float8_config.weight_scale.block_size[0],
         "k_scale_granularity": float8_config.weight_scale.block_size[1],
@@ -1750,11 +1747,12 @@ def mla_prefill_branch_fp8(
     }
 
     input_values: MutableSequence[Value[Any]] = [
-        input,
+        q_nope,
+        q_rope,
         input_row_offsets,
-        buffer_row_offsets,
-        cache_offsets,
-        buffer_length,
+        buffer_row_offsets[0],  # one-shot prefill.
+        cache_offsets[0],  # one-shot prefill.
+        buffer_length[0],  # one-shot prefill.
         kv_b_proj,
         kv_b_proj_scale,
         *kv_collection,
@@ -1763,17 +1761,234 @@ def mla_prefill_branch_fp8(
     ]
     return ops.inplace_custom(
         "mo.mla.graph.prefill.paged",
-        device=input.device,
+        device=q_nope.device,
         values=input_values,
         out_types=[
             TensorType(
-                dtype=input.dtype,
+                dtype=q_nope.dtype,
                 shape=[
-                    input.shape[0],
-                    input.shape[1],
+                    q_nope.shape[0],
+                    q_nope.shape[1],
                     v_head_dim,
                 ],
-                device=input.device,
+                device=q_nope.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def mla_decode_branch_fp8(
+    q_nope: TensorValue,
+    q_rope: TensorValue,
+    input_row_offsets: TensorValue,
+    w_uk: TensorValue,
+    w_uk_scale: TensorValue,
+    w_uv: TensorValue,
+    w_uv_scale: TensorValue,
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    v_head_dim: int,
+    float8_config: Float8Config,
+) -> TensorValue:
+    """
+    This is a manually fused kernel that performs the following operations:
+    - Project q_nope to kv_latent_dim through a fp8 batched matmul:
+        q_nope_proj = q_nope_t @ w_uk
+    - Concatenate q_nope_proj and q_rope:
+        q_full = concat(q_nope_proj, q_rope, axis=2)
+    - Perform MLA decode
+    - Project raw_output to v_head_dim through another fp8 batched matmul:
+        output = raw_output_t @ w_uv
+
+    Args:
+        q_nope: Non-rope part of the query tensor. Shape: [tot_seq_len, num_heads,
+            qk_nope_head_dim].
+        q_rope: Rope part of the query tensor. Shape: [tot_seq_len, num_heads,
+            qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `input`. This is a 1D tensor of shape [num_batches + 1].
+        w_uk: Weight matrix for projecting q_nope to kv_latent_dim. Shape:
+            [num_heads, kv_latent_dim, qk_nope_head_dim].
+        w_uk_scale: The scale for the weight matrix. Shape varies depending on
+            the float8_config.
+        w_uv: Weight matrix for projecting MLA decode output to v_head_dim.
+            Shape: [num_heads, v_head_dim, kv_latent_dim].
+        w_uv_scale: The scale for the weight matrix. Shape varies depending on
+            the float8_config.
+        kv_params: KVCacheParams
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        mask_variant: Mask variant.
+        scale: scale for the attention calculation.
+        v_head_dim: Dimension of the V heads.
+        float8_config: Float8Config for the weight matrix.
+    """
+
+    input_rank_expected = 3
+    if q_nope.rank != input_rank_expected:
+        raise ValueError(
+            f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
+        )
+
+    if q_nope.dtype != kv_params.dtype:
+        raise ValueError(
+            f"expected q_nope to be dtype: {kv_params.dtype}, got {q_nope.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        )
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
+        )
+
+    assert kv_params.page_size is not None
+    assert float8_config.input_scale.block_size is not None
+    assert float8_config.weight_scale.block_size is not None
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    parameters: dict[str, int | str | DType] = {
+        "m_scale_granularity": float8_config.input_scale.block_size[0],
+        "n_scale_granularity": float8_config.weight_scale.block_size[0],
+        "k_scale_granularity": float8_config.weight_scale.block_size[1],
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
+    }
+
+    input_values: MutableSequence[Value[Any]] = [
+        q_nope,
+        q_rope,
+        input_row_offsets,
+        w_uk,
+        w_uk_scale,
+        w_uv,
+        w_uv_scale,
+        *kv_collection,
+        layer_idx,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    return ops.inplace_custom(
+        "mo.mla.graph.decode.paged",
+        device=q_nope.device,
+        values=input_values,
+        out_types=[
+            TensorType(
+                dtype=q_nope.dtype,
+                shape=[
+                    q_nope.shape[0],
+                    q_nope.shape[1],
+                    v_head_dim,
+                ],
+                device=q_nope.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def mla_prefill_decode_graph_fp8(
+    q_nope: TensorValue,
+    q_rope: TensorValue,
+    input_row_offsets: TensorValue,
+    buffer_row_offsets: TensorValue,
+    cache_offsets: TensorValue,
+    buffer_length: TensorValue,
+    kv_b_proj: TensorValue,
+    kv_b_proj_scale: TensorValue,
+    w_uk: TensorValue,
+    w_uk_scale: TensorValue,
+    w_uv: TensorValue,
+    w_uv_scale: TensorValue,
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    v_head_dim: int,
+    float8_config: Float8Config,
+) -> TensorValue:
+    """
+    This is a manually fused kernel that performs attention calculation for the MultiLatentAttentionWithRopeFp8 Module.
+    It will automatically switch between prefill and decode compute paths based on the maximum sequence length in this batch.
+
+    See `mla_prefill_branch_fp8` and `mla_decode_branch_fp8` for the prefill and decode compute paths respectively.
+    """
+
+    input_rank_expected = 3
+    if q_nope.rank != input_rank_expected:
+        raise ValueError(
+            f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
+        )
+
+    if q_nope.dtype != kv_params.dtype:
+        raise ValueError(
+            f"expected q_nope to be dtype: {kv_params.dtype}, got {q_nope.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        )
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
+        )
+
+    assert kv_params.page_size is not None
+    assert float8_config.input_scale.block_size is not None
+    assert float8_config.weight_scale.block_size is not None
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    parameters: dict[str, int | str | DType] = {
+        "m_scale_granularity": float8_config.input_scale.block_size[0],
+        "n_scale_granularity": float8_config.weight_scale.block_size[0],
+        "k_scale_granularity": float8_config.weight_scale.block_size[1],
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
+    }
+
+    input_values: MutableSequence[Value[Any]] = [
+        q_nope,
+        q_rope,
+        input_row_offsets,
+        buffer_row_offsets[0],  # one-shot prefill.
+        cache_offsets[0],  # one-shot prefill.
+        buffer_length[0],  # one-shot prefill.
+        kv_b_proj,
+        kv_b_proj_scale,
+        w_uk,
+        w_uk_scale,
+        w_uv,
+        w_uv_scale,
+        *kv_collection,
+        layer_idx,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    return ops.inplace_custom(
+        "mo.mla.graph.prefill.decode.paged",
+        device=q_nope.device,
+        values=input_values,
+        out_types=[
+            TensorType(
+                dtype=q_nope.dtype,
+                shape=[
+                    q_nope.shape[0],
+                    q_nope.shape[1],
+                    v_head_dim,
+                ],
+                device=q_nope.device,
             )
         ],
         parameters=parameters,

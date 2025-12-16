@@ -1423,6 +1423,7 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
     comptime BLOCK_SCALE_K = 128
     var bs = c_device.dim(0)
     var M = c_device.dim(1)
+    var M_a_scales = a_scales_device.dim(2)
     comptime N = c_device.shape.get[2]()
     comptime K = a_device.shape.get[2]()
     comptime n_dim = Dim(N)
@@ -1444,7 +1445,9 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
     var dynamic_a_shape_2D = DimList(M, K)
     var dynamic_b_shape_2D = DimList(N, K) if transpose_b else DimList(K, N)
     var dynamic_c_shape_2D = DimList(M, N)
-    var dynamic_a_scales_shape_2D = DimList(ceildiv(K, BLOCK_SCALE_K), M)
+    var dynamic_a_scales_shape_2D = DimList(
+        ceildiv(K, BLOCK_SCALE_K), M_a_scales
+    )
     var dynamic_b_scales_shape_2D = DimList(
         ceildiv(N, BLOCK_SCALE_K), ceildiv(K, BLOCK_SCALE_K)
     )
@@ -1454,7 +1457,7 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
         var a_ptr = a_device.data + batch * M * K
         var b_ptr = b_device.data + batch * N * K
         var a_scales_ptr = (
-            a_scales_device.data + batch * (K // BLOCK_SCALE_K) * M
+            a_scales_device.data + batch * (K // BLOCK_SCALE_K) * M_a_scales
         )
         var b_scales_ptr = b_scales_device.data + batch * (
             N // BLOCK_SCALE_K

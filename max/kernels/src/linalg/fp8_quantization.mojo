@@ -265,6 +265,9 @@ fn batched_quantize_dynamic_scaled_fp8[
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
 
+    if batch_size == 0 or input.dim[1]() == 0:
+        return
+
     comptime kernel = batched_quantize_fp8_kernel[
         out_dtype,
         scales_dtype,
