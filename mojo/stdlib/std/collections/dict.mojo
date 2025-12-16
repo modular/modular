@@ -49,6 +49,20 @@ dictionary keys. Dict keys must minimally be `Copyable`, `Hashable`,
 and `Equatable`."""
 
 
+@register_passable("trivial")
+@fieldwise_init
+struct DictKeyError(Writable):
+    """A custom error type for Dict lookups that fail."""
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """This always writes "KeyError".
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("KeyError")
+
+
 @fieldwise_init
 struct _DictEntryIter[
     mut: Bool, //,
@@ -519,11 +533,11 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
       avoiding the error.
 
     - **KeyError handling**: Directly accessing values with the `[]` operator
-      will raise `KeyError` if the key is not found:
+      will raise `DictKeyError` if the key is not found:
 
       ```mojo
       var phonebook = {"Alice": "555-0101", "Bob": "555-0102"}
-      print(phonebook["Charlie"])  # => KeyError: "Charlie"
+      print(phonebook["Charlie"])  # => DictKeyError: "Charlie"
       ```
 
       For safe access, you should instead use `get()`:
@@ -544,7 +558,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
     phonebook["Charlie"] = "555-0103"    # Add new entry
     phonebook["Alice"] = "555-0199"      # Update existing entry
 
-    # Access directly (unsafe and raises KeyError if key not found)
+    # Access directly (unsafe and raises DictKeyError if key not found)
     print(phonebook["Alice"])            # => 555-0199
 
     # Access safely
@@ -816,7 +830,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
 
     fn __getitem__(
         ref self, key: Self.K
-    ) raises -> ref [self._entries[0].value().value] Self.V:
+    ) raises DictKeyError -> ref [self._entries[0].value().value] Self.V:
         """Retrieve a value out of the dictionary.
 
         Args:
@@ -826,7 +840,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
             The value associated with the key, if it's present.
 
         Raises:
-            "KeyError" if the key isn't present.
+            `DictKeyError` if the key isn't present.
         """
         return self._find_ref(key)
 
@@ -1014,7 +1028,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
 
     fn _find_ref(
         ref self, key: Self.K
-    ) raises -> ref [self._entries[0].value().value] Self.V:
+    ) raises DictKeyError -> ref [self._entries[0].value().value] Self.V:
         """Find a value in the dictionary by key.
 
         Args:
@@ -1033,7 +1047,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
             # SAFETY: We just checked that `entry` is present.
             return entry.unsafe_value().value
 
-        raise Error("KeyError")
+        raise DictKeyError()
 
     fn get(self, key: Self.K) -> Optional[Self.V]:
         """Get a value from the dictionary by key.
@@ -1076,7 +1090,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
         except:
             return default^
 
-    fn pop(mut self, key: Self.K) raises -> Self.V:
+    fn pop(mut self, key: Self.K) raises DictKeyError -> Self.V:
         """Remove a value from the dictionary by key.
 
         Args:
@@ -1087,29 +1101,31 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
             Raises otherwise.
 
         Raises:
-            "KeyError" if the key was not present in the dictionary.
+            `DictKeyError` if the key was not present in the dictionary.
         """
         var hash = hash[HasherType = Self.H](key)
         var found, slot, index = self._find_index(hash, key)
         if found:
             var entry_value = self._unsafe_take_entry(slot, index)
             return entry_value^.reap_value()
-        raise Error("KeyError")
+        raise DictKeyError()
 
-    fn popitem(mut self) raises -> DictEntry[Self.K, Self.V, Self.H]:
+    fn popitem(
+        mut self,
+    ) raises DictKeyError -> DictEntry[Self.K, Self.V, Self.H]:
         """Remove and return a (key, value) pair from the dictionary.
 
         Returns:
             Last dictionary item
 
         Raises:
-            "KeyError" if the dictionary is empty.
+            `DictKeyError` if the dictionary is empty.
 
         Notes:
             Pairs are returned in LIFO order. popitem() is useful to
             destructively iterate over a dictionary, as often used in set
             algorithms. If the dictionary is empty, calling popitem() raises a
-            KeyError.
+            DictKeyError.
         """
 
         for ref entry in reversed(self._entries):
@@ -1119,7 +1135,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
                 )
                 return self._unsafe_take_entry(slot, index)
 
-        raise "KeyError: popitem(): dictionary is empty"
+        raise DictKeyError()
 
     fn keys(ref self) -> _DictKeyIter[Self.K, Self.V, Self.H, origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
@@ -1398,7 +1414,7 @@ struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
     @always_inline
     fn __getitem__(
         ref self, key: Self.key_type
-    ) raises -> ref [self._dict[key]] Self.V:
+    ) raises DictKeyError -> ref [self._dict[key]] Self.V:
         """Retrieve a value out of the keyword dictionary.
 
         Args:
@@ -1408,7 +1424,7 @@ struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
             The value associated with the key, if it's present.
 
         Raises:
-            "KeyError" if the key isn't present.
+            `DictKeyError` if the key isn't present.
         """
         return self._dict[key]
 
@@ -1481,7 +1497,7 @@ struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
         return self._dict.pop(key, default^)
 
     @always_inline
-    fn pop(mut self, key: self.key_type) raises -> Self.V:
+    fn pop(mut self, key: self.key_type) raises DictKeyError -> Self.V:
         """Remove a value from the dictionary by key.
 
         Args:
@@ -1492,7 +1508,7 @@ struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
             Raises otherwise.
 
         Raises:
-            "KeyError" if the key was not present in the dictionary.
+            `DictKeyError` if the key was not present in the dictionary.
         """
         return self._dict.pop(key)
 

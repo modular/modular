@@ -205,6 +205,9 @@ what we publish.
 - `List` slicing without a stride now returns a `Span`, instead of a `List` and
   no longer allocates memory.
 
+- `Dict` now raises a custom `DictKeyError` type on failure, making lookup
+  failures more efficient to handle.
+
 - Remove `List` variadic initializer.
 
   - Statements like:
