@@ -341,7 +341,7 @@ fn transpose_z_to_x_or_y[
         xy_row_index << 6
     )
 
-    alias is_x_destination = destination == "X"
+    comptime is_x_destination = destination == "X"
 
     var operand = offset | (
         0x8000000004004000 if is_x_destination else 0x8000000010004000
@@ -375,7 +375,7 @@ fn fma[
     # The type must be Float32.
     constrained[dtype is DType.float32]()
 
-    alias is_row_mode = mode == "ROW"
+    comptime is_row_mode = mode == "ROW"
 
     var operand = (
         y_row_index << 6
@@ -407,7 +407,7 @@ fn dot_at_b_impl(
     var b_pointer = b.ptr
     var c_pointer = c.ptr
 
-    alias num_elements = c.layout.size()
+    comptime num_elements = c.layout.size()
 
     # TODO: We can elide the copy if the data is already is already aligned.
     var a_buffer = stack_allocation[num_elements, Float32, alignment=128]()
@@ -452,7 +452,7 @@ fn dot_at_b_impl(
     var b_pointer = b.ptr
     var c_pointer = c.ptr
 
-    alias num_elements = c.layout.size()
+    comptime num_elements = c.layout.size()
 
     var a_buffer = stack_allocation[num_elements, Float16, alignment=128]()
     var b_buffer = stack_allocation[num_elements, Float16, alignment=128]()
@@ -495,7 +495,7 @@ fn dot_at_b(c: LayoutTensor[mut=True, *_, **_], a: type_of(c), b: type_of(c)):
 
     @parameter
     if c.dtype is DType.float32:
-        alias f32_tensor = LayoutTensor[
+        comptime f32_tensor = LayoutTensor[
             DType.float32,
             Layout.row_major(16, 16),
             _,
@@ -506,7 +506,7 @@ fn dot_at_b(c: LayoutTensor[mut=True, *_, **_], a: type_of(c), b: type_of(c)):
             rebind[f32_tensor[ImmutAnyOrigin]](b),
         )
     elif c.dtype is DType.float16:
-        alias f16_tensor = LayoutTensor[
+        comptime f16_tensor = LayoutTensor[
             DType.float16,
             Layout.row_major(32, 32),
             _,

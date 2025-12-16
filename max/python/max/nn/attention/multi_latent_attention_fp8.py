@@ -32,11 +32,10 @@ from ..float8_config import Float8Config
 from ..float8_ops import matmul_float8
 from ..kernels import (
     flare_mla_prefill_plan,
-    flare_mla_prefill_ragged,
     fused_qk_ragged_rope,
-    k_cache_to_buffer,
     kv_cache_get_max_seq_len,
     matmul_k_cache_ragged_scaled_float8,
+    mla_prefill_branch_fp8,
     quantize_dynamic_scaled_float8,
     rms_norm_key_cache,
 )
@@ -294,6 +293,27 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             float8_config=float8_config,
         )
 
+    def create_mla_inputs(
+        self, input_row_offsets: TensorValue, kv_collection: PagedCacheValues
+    ) -> list[TensorValue]:
+        mla_inputs: list[TensorValue] = []
+        (buffer_row_offsets, cache_offsets, buffer_lengths) = (
+            flare_mla_prefill_plan(
+                self.kv_params,
+                input_row_offsets,
+                kv_collection,
+                ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+                self.BUFFER_TOK_SIZE,
+            )
+        )
+        buffer_lengths_host = buffer_lengths.to(DeviceRef.CPU())
+
+        mla_inputs.append(buffer_row_offsets)
+        mla_inputs.append(cache_offsets)
+        mla_inputs.append(buffer_lengths_host)
+
+        return mla_inputs
+
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
         """Get the Module sharding strategy."""
@@ -478,6 +498,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         kv_collection: PagedCacheValues,
         layer_idx: TensorValue,
         input_row_offsets: TensorValue,
+        _mla_inputs: list[TensorValue] | None = None,
     ) -> TensorValue:
         # These weights are going to be used in the decode path.
         # Move the creation of these weights outside of the decode subgraph so the
@@ -486,61 +507,33 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         # w_uk, w_uv = self.w_uk_uv
 
         def _mla_prefill() -> TensorValue:
+            if _mla_inputs is None or len(_mla_inputs) == 0:
+                mla_inputs = self.create_mla_inputs(
+                    input_row_offsets, kv_collection
+                )
+            else:
+                assert len(_mla_inputs) == 3
+                mla_inputs = _mla_inputs
             xq = ops.concat([xq_nope, xq_rope], axis=2)
 
-            (buffer_row_offsets, cache_offsets, buffer_lengths) = (
-                flare_mla_prefill_plan(
-                    self.kv_params,
-                    input_row_offsets,
-                    kv_collection,
-                    layer_idx,
-                    self.BUFFER_TOK_SIZE,
-                )
-            )
-            buffer_lengths_host = buffer_lengths.to(DeviceRef.CPU())
-
-            k_latent_buffer = k_cache_to_buffer(
-                self.kv_params,
-                buffer_row_offsets[0],
-                cache_offsets[0],
-                kv_collection,
-                layer_idx,
-                buffer_lengths_host[0],
-                self.BUFFER_TOK_SIZE,
-                int(self.kv_b_proj.shape[1]),
-            )
-            kv_buffer = matmul_float8(
-                x=k_latent_buffer,
-                weight=self.kv_b_proj,
-                weight_scale=self.kv_b_proj_scale,
-                input_scale=None,  # Dynamic scaling
-                float8_config=self.float8_config,
-                group_size_or_per_token=self.scales_granularity_mnk[2],
-            )
-
-            kv_buffer = kv_buffer.reshape(
-                (-1, self.n_heads, self.qk_nope_head_dim + self.v_head_dim)
-            )
-            k_nope, v = ops.split(
-                kv_buffer, [self.qk_nope_head_dim, self.v_head_dim], axis=2
-            )
-
-            result, _ = flare_mla_prefill_ragged(
+            return mla_prefill_branch_fp8(
                 self.kv_params,
                 xq,
-                k_nope,
-                v,
                 input_row_offsets,
-                buffer_row_offsets[0],
-                cache_offsets[0],
+                mla_inputs[0][0],
+                mla_inputs[1][0],
+                mla_inputs[2][0],
+                self.kv_b_proj,
+                self.kv_b_proj_scale,
                 kv_collection,
                 layer_idx,
                 MHAMaskVariant.CAUSAL_MASK,
                 self.scale,
+                self.qk_nope_head_dim,
                 self.qk_rope_head_dim,
+                self.v_head_dim,
+                self.float8_config,
             )
-
-            return result
 
         # def _mla_decode() -> TensorValue:
         #     # from [B, H, D] to [H, B, D]
@@ -610,6 +603,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
+        mla_inputs: list[TensorValue] | None = None,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -700,7 +694,12 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
 
         attn_out = self._mla_impl(
-            xq_nope, xq_rope, kv_collection, layer_idx, input_row_offsets
+            xq_nope,
+            xq_rope,
+            kv_collection,
+            layer_idx,
+            input_row_offsets,
+            mla_inputs,
         )
 
         return self.o_proj(attn_out)
@@ -730,6 +729,22 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         self.sharding_strategy = ShardingStrategy.replicate(num_devices)
         self.list_of_attentions = self.shard(self.devices)
 
+    def create_mla_inputs(  # type: ignore[override]
+        self,
+        input_row_offsets_: list[TensorValue],
+        kv_collections: list[PagedCacheValues],
+    ) -> list[TensorValue]:
+        multi_mla_inputs: list[TensorValue] = []
+
+        for input_row_offsets, kv_collection in zip(
+            input_row_offsets_, kv_collections, strict=True
+        ):
+            multi_mla_inputs.extend(
+                super().create_mla_inputs(input_row_offsets, kv_collection)
+            )
+
+        return multi_mla_inputs
+
     def __call__(  # type: ignore[override]
         self,
         layer_idx: TensorValue,
@@ -738,6 +753,7 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         kv_collections: Sequence[PagedCacheValues],
         freqs_cis: list[TensorValue],
         input_row_offsets: Sequence[TensorValue],
+        mla_inputs: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -761,6 +777,12 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 outs.append(xs[i])
                 continue
 
+            mla_inputs_i: list[TensorValue] | None
+            if mla_inputs is not None and len(mla_inputs) == 3 * n:
+                mla_inputs_i = mla_inputs[3 * i : 3 * (i + 1)]
+            else:
+                mla_inputs_i = mla_inputs
+
             outs.append(
                 self.list_of_attentions[i](
                     layer_idx,
@@ -768,6 +790,7 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                     kv_collections[i],
                     freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
+                    mla_inputs=mla_inputs_i,
                 )
             )
         return outs

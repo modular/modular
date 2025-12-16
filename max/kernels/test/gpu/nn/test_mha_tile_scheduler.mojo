@@ -28,7 +28,7 @@ from nn.mha_tile_scheduler import (
 
 
 fn test_kernel[schedule: MHASchedule]():
-    alias scheduler_t = TileScheduler[32, 3, num_ctas=8, schedule=schedule]
+    comptime scheduler_t = TileScheduler[32, 3, num_ctas=8, schedule=schedule]
     scheduler = scheduler_t()
     valid_length = NullPointer[DType.uint32]()
     tile_summary = MHATileSummary(1, ceildiv(100, 32), valid_length, 0)
@@ -44,7 +44,7 @@ fn test_kernel[schedule: MHASchedule]():
 
 
 def test[schedule: MHASchedule](ctx: DeviceContext):
-    alias kernel = test_kernel[schedule]
+    comptime kernel = test_kernel[schedule]
 
     ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=8,

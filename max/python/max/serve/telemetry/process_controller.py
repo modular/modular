@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import functools
 import logging
+import multiprocessing
 import queue
 import threading
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from queue import Queue
-from threading import Event
+from multiprocessing.queues import Queue
+from multiprocessing.synchronize import Event
 
 import prometheus_client
 from max.serve.config import MetricLevel, MetricRecordingMethod, Settings
@@ -133,9 +134,10 @@ async def start_process_consumer(
     if handle_fn is None:
         handle_fn = _sync_commit
 
+    mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Metrics Worker") as proc:
-        metrics_q = proc.ctx.Queue()
-        alive = proc.ctx.Event()
+        metrics_q = mp.Queue()
+        alive = mp.Event()
 
         proc.start(init_and_process, settings, metrics_q, alive, handle_fn)
 

@@ -32,7 +32,6 @@ from layout.layout import coalesce, is_contiguous_dim
 
 from . import Layout, RuntimeLayout
 from .int_tuple import UNKNOWN_VALUE, _get_index_type
-from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @always_inline
@@ -53,7 +52,7 @@ fn _get_offset[
 
     @parameter
     if runtime_layout.layout.all_dims_known():
-        alias offset = runtime_layout.layout(i)
+        comptime offset = runtime_layout.layout(i)
         return offset
     else:
         return runtime_layout(i)
@@ -78,7 +77,7 @@ fn _get_offset[
 
     @parameter
     if runtime_layout.layout.all_dims_known():
-        alias offset = runtime_layout.layout([i, j])
+        comptime offset = runtime_layout.layout([i, j])
         return offset
     else:
         return runtime_layout(
@@ -105,7 +104,7 @@ struct Element[
         index_type: The integer type of the index pointing to each element.
     """
 
-    alias element_data_type = SIMD[dtype, size = layout.size()]
+    comptime element_data_type = SIMD[Self.dtype, size = Self.layout.size()]
     """The SIMD type used to store and process the element data.
 
     This type alias defines a SIMD vector with the specified data type and size
@@ -120,7 +119,7 @@ struct Element[
     """
 
     var runtime_layout: RuntimeLayout[
-        layout,
+        Self.layout,
         element_type = DType.int32,
         linear_idx_type = Self.index_type,
     ]
@@ -144,7 +143,7 @@ struct Element[
         out self,
         element_data: Self.element_data_type,
         runtime_layout: RuntimeLayout[
-            layout,
+            Self.layout,
             element_type = DType.int32,
             linear_idx_type = Self.index_type,
         ],
@@ -161,13 +160,13 @@ struct Element[
     @always_inline("nodebug")
     @staticmethod
     fn load(
-        ptr: UnsafePointer[Scalar[dtype], **_],
+        ptr: UnsafePointer[Scalar[Self.dtype], **_],
         runtime_layout: RuntimeLayout[
-            layout,
+            Self.layout,
             element_type = DType.int32,
             linear_idx_type = Self.index_type,
         ] = RuntimeLayout[
-            layout,
+            Self.layout,
             element_type = DType.int32,
             linear_idx_type = Self.index_type,
         ](),
@@ -186,18 +185,18 @@ struct Element[
         Returns:
             A new `Element` containing the loaded data.
         """
-        alias flat_layout = coalesce(layout)
+        comptime flat_layout = coalesce(Self.layout)
         constrained[flat_layout.rank() <= 2, "Only supports rank <= 2"]()
 
         var element_data = Self.element_data_type()
 
         @parameter
         if flat_layout.rank() == 1:
-            alias size = flat_layout.size()
+            comptime size = flat_layout.size()
 
             @parameter
             if is_contiguous_dim(flat_layout, 0):
-                alias alignment = align_of[Self.element_data_type]()
+                comptime alignment = align_of[Self.element_data_type]()
                 return Self(
                     ptr.load[
                         width = Self.element_data_type.size, alignment=alignment
@@ -211,10 +210,10 @@ struct Element[
 
         @parameter
         if is_contiguous_dim(flat_layout, 0):
-            alias size = Int(flat_layout.shape[0])
-            alias elements = Int(flat_layout.shape[1])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]()
+            comptime size = Int(flat_layout.shape[0])
+            comptime elements = Int(flat_layout.shape[1])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -225,10 +224,10 @@ struct Element[
             return Element(element_data, runtime_layout)
 
         elif is_contiguous_dim(flat_layout, 1):
-            alias size = Int(flat_layout.shape[1])
-            alias elements = Int(flat_layout.shape[0])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]()
+            comptime size = Int(flat_layout.shape[1])
+            comptime elements = Int(flat_layout.shape[0])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -238,8 +237,8 @@ struct Element[
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
 
-        alias dim_0 = Int(flat_layout.shape[0])
-        alias dim_1 = Int(flat_layout.shape[1])
+        comptime dim_0 = Int(flat_layout.shape[0])
+        comptime dim_1 = Int(flat_layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -254,13 +253,13 @@ struct Element[
     @always_inline("nodebug")
     @staticmethod
     fn masked_load(
-        ptr: UnsafePointer[Scalar[dtype], **_],
+        ptr: UnsafePointer[Scalar[Self.dtype], **_],
         runtime_layout: RuntimeLayout[
-            layout,
+            Self.layout,
             element_type = DType.int32,
             linear_idx_type = Self.index_type,
         ] = RuntimeLayout[
-            layout,
+            Self.layout,
             element_type = DType.int32,
             linear_idx_type = Self.index_type,
         ](),
@@ -280,16 +279,16 @@ struct Element[
             beyond the runtime dimensions.
         """
         # TODO: Use partial_simd_load after closing KERN-729.
-        constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
+        constrained[Self.layout.rank() <= 2, "Only supports rank <= 2"]()
         var element_data = Self.element_data_type()
 
         @parameter
-        if layout.rank() == 1:
-            alias size = layout.size()
+        if Self.layout.rank() == 1:
+            comptime size = Self.layout.size()
 
             @parameter
-            if layout.stride[0] == 1:
-                alias alignment = align_of[Self.element_data_type]()
+            if Self.layout.stride[0] == 1:
+                comptime alignment = align_of[Self.element_data_type]()
                 if runtime_layout.dim(0) < size:
 
                     @parameter
@@ -314,15 +313,15 @@ struct Element[
 
         # rank-2 element.
         @parameter
-        if layout.stride[0] == 1:
-            alias size = Int(layout.shape[0])
-            alias elements = Int(layout.shape[1])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]
+        if Self.layout.stride[0] == 1:
+            comptime size = Int(Self.layout.shape[0])
+            comptime elements = Int(Self.layout.shape[1])
+            comptime vec_type = SIMD[dtype, size]
+            comptime alignment = align_of[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(0) < size:
-                alias dim_0 = Int(layout.shape[0])
-                alias dim_1 = Int(layout.shape[1])
+                comptime dim_0 = Int(Self.layout.shape[0])
+                comptime dim_1 = Int(Self.layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -348,15 +347,15 @@ struct Element[
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
 
-        elif layout.stride[1] == 1:
-            alias size = Int(layout.shape[1])
-            alias elements = Int(layout.shape[0])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]
+        elif Self.layout.stride[1] == 1:
+            comptime size = Int(Self.layout.shape[1])
+            comptime elements = Int(Self.layout.shape[0])
+            comptime vec_type = SIMD[dtype, size]
+            comptime alignment = align_of[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(1) < size:
-                alias dim_0 = Int(layout.shape[0])
-                alias dim_1 = Int(layout.shape[1])
+                comptime dim_0 = Int(Self.layout.shape[0])
+                comptime dim_1 = Int(Self.layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -382,8 +381,8 @@ struct Element[
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
 
-        alias dim_0 = Int(layout.shape[0])
-        alias dim_1 = Int(layout.shape[1])
+        comptime dim_0 = Int(Self.layout.shape[0])
+        comptime dim_1 = Int(Self.layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -400,7 +399,7 @@ struct Element[
         return Element(element_data, runtime_layout)
 
     @always_inline("nodebug")
-    fn store(self, ptr: UnsafePointer[Scalar[dtype], mut=True, **_]):
+    fn store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], **_]):
         """Stores element data to memory according to the specified layout.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -422,15 +421,15 @@ struct Element[
             This method is constrained to layouts with rank <= 2. For higher-rank
             tensors, consider decomposing the operation.
         """
-        constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
+        constrained[Self.layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
-        if layout.rank() == 1:
-            alias size = layout.size()
+        if Self.layout.rank() == 1:
+            comptime size = Self.layout.size()
 
             @parameter
-            if layout.stride[0] == 1:
-                alias alignment = align_of[Self.element_data_type]()
+            if Self.layout.stride[0] == 1:
+                comptime alignment = align_of[Self.element_data_type]()
                 ptr.store[alignment=alignment](self.element_data)
                 return
 
@@ -440,11 +439,11 @@ struct Element[
             return
 
         @parameter
-        if layout.stride[0] == 1:
-            alias size = Int(layout.shape[0])
-            alias elements = Int(layout.shape[1])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]()
+        if Self.layout.stride[0] == 1:
+            comptime size = Int(Self.layout.shape[0])
+            comptime elements = Int(Self.layout.shape[1])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -454,11 +453,11 @@ struct Element[
                 )
             return
 
-        elif layout.stride[1] == 1:
-            alias size = Int(layout.shape[1])
-            alias elements = Int(layout.shape[0])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]()
+        elif Self.layout.stride[1] == 1:
+            comptime size = Int(Self.layout.shape[1])
+            comptime elements = Int(Self.layout.shape[0])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -468,8 +467,8 @@ struct Element[
                 )
             return
 
-        alias dim_0 = Int(layout.shape[0])
-        alias dim_1 = Int(layout.shape[1])
+        comptime dim_0 = Int(Self.layout.shape[0])
+        comptime dim_1 = Int(Self.layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -481,7 +480,7 @@ struct Element[
                 )
 
     @always_inline("nodebug")
-    fn masked_store(self, ptr: UnsafePointer[Scalar[dtype], mut=True, **_]):
+    fn masked_store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], **_]):
         """Stores element data to memory with masking for partial stores.
 
         This method performs a layout-aware store operation with boundary checking.
@@ -501,14 +500,14 @@ struct Element[
             This method is constrained to layouts with rank <= 2. For higher-rank
             tensors, consider decomposing the operation.
         """
-        constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
+        constrained[Self.layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
-        if layout.rank() == 1:
-            alias size = layout.size()
+        if Self.layout.rank() == 1:
+            comptime size = Self.layout.size()
 
             @parameter
-            if layout.stride[0] == 1:
+            if Self.layout.stride[0] == 1:
                 if self.runtime_layout.dim(0) < size:
 
                     @parameter
@@ -520,7 +519,7 @@ struct Element[
                         ] = self.element_data[i]
                     return
 
-                alias alignment = align_of[Self.element_data_type]()
+                comptime alignment = align_of[Self.element_data_type]()
                 ptr.store(self.element_data)
                 return
 
@@ -532,14 +531,14 @@ struct Element[
             return
 
         @parameter
-        if layout.stride[0] == 1:
-            alias size = Int(layout.shape[0])
-            alias elements = Int(layout.shape[1])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]()
+        if Self.layout.stride[0] == 1:
+            comptime size = Int(Self.layout.shape[0])
+            comptime elements = Int(Self.layout.shape[1])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
             if self.runtime_layout.dim(1) < size:
-                alias dim_0 = Int(layout.shape[0])
-                alias dim_1 = Int(layout.shape[1])
+                comptime dim_0 = Int(Self.layout.shape[0])
+                comptime dim_1 = Int(Self.layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -566,14 +565,14 @@ struct Element[
                 )
             return
 
-        elif layout.stride[1] == 1:
-            alias size = Int(layout.shape[1])
-            alias elements = Int(layout.shape[0])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]()
+        elif Self.layout.stride[1] == 1:
+            comptime size = Int(Self.layout.shape[1])
+            comptime elements = Int(Self.layout.shape[0])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
             if self.runtime_layout.dim(1) < size:
-                alias dim_0 = Int(layout.shape[0])
-                alias dim_1 = Int(layout.shape[1])
+                comptime dim_0 = Int(Self.layout.shape[0])
+                comptime dim_1 = Int(Self.layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -600,8 +599,8 @@ struct Element[
                 )
             return
 
-        alias dim_0 = Int(layout.shape[0])
-        alias dim_1 = Int(layout.shape[1])
+        comptime dim_0 = Int(Self.layout.shape[0])
+        comptime dim_1 = Int(Self.layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -666,19 +665,20 @@ struct MemoryElement[
         index_type: The integer type of the index pointing to each memory element.
     """
 
-    alias _AsMut[
+    comptime _AsMut[
         mut_origin: MutOrigin,
     ] = MemoryElement[
-        mut=True,
-        dtype,
-        layout,
+        Self.dtype,
+        Self.layout,
         mut_origin,
-        address_space,
-        index_type=index_type,
+        Self.address_space,
+        index_type = Self.index_type,
     ]
 
     var ptr: UnsafePointer[
-        Scalar[dtype], mut=mut, origin=origin, address_space=address_space
+        Scalar[Self.dtype],
+        Self.origin,
+        address_space = Self.address_space,
     ]
     """Pointer to the memory location where the data is stored.
 
@@ -688,7 +688,7 @@ struct MemoryElement[
     """
 
     var runtime_layout: RuntimeLayout[
-        layout,
+        Self.layout,
         element_type = DType.int32,
         linear_idx_type = Self.index_type,
     ]
@@ -702,10 +702,12 @@ struct MemoryElement[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[dtype], mut=mut, origin=origin, address_space=address_space
+            Scalar[Self.dtype],
+            Self.origin,
+            address_space = Self.address_space,
         ],
         runtime_layout: RuntimeLayout[
-            layout,
+            Self.layout,
             element_type = DType.int32,
             linear_idx_type = Self.index_type,
         ],
@@ -721,7 +723,10 @@ struct MemoryElement[
 
     @always_inline("nodebug")
     fn load(
-        self, out result: Element[dtype, layout, index_type = Self.index_type]
+        self,
+        out result: Element[
+            Self.dtype, Self.layout, index_type = Self.index_type
+        ],
     ):
         """Loads data from memory according to the specified layout.
 
@@ -740,7 +745,7 @@ struct MemoryElement[
     @always_inline("nodebug")
     fn store(
         self: Self._AsMut,
-        src: Element[dtype, layout, **_],
+        src: Element[Self.dtype, Self.layout, **_],
     ):
         """Stores element data to the memory location of this MemoryElement.
 
@@ -776,10 +781,15 @@ struct MemoryElement[
         # Load source element and convert to destination dtype if needed
         var src_element = src.load()
         var converted_element = Element[
-            dtype, src.layout, index_type = src.index_type
-        ](src_element.element_data.cast[dtype](), src_element.runtime_layout)
+            Self.dtype, src.layout, index_type = src.index_type
+        ](
+            src_element.element_data.cast[Self.dtype](),
+            src_element.runtime_layout,
+        )
         self.store(
-            rebind[Element[dtype, layout, index_type = src_element.index_type]](
-                converted_element
-            )
+            rebind[
+                Element[
+                    Self.dtype, Self.layout, index_type = src_element.index_type
+                ]
+            ](converted_element)
         )

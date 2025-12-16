@@ -21,11 +21,11 @@ from layout.tensor_core import TensorCore
 from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index, IndexList
 
-alias fp8_dtype = (
+comptime fp8_dtype = (
     DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
     <= MI300X.compute else DType.float8_e4m3fn
 )
-alias bf8_dtype = (
+comptime bf8_dtype = (
     DType.float8_e5m2fnuz if DeviceContext.default_device_info.compute
     <= MI300X.compute else DType.float8_e5m2
 )
@@ -104,7 +104,7 @@ fn test_mma_op[
     d: LayoutTensor[dst_dtype, layout_c, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
-    alias k_group_size = a.layout.shape[1].value() // inst_shape[2]
+    comptime k_group_size = a.layout.shape[1].value() // inst_shape[2]
     var a_reg = mma.load_a(a)
     var b_reg = mma.load_b(b)
     var d_reg = mma.load_c(c)
@@ -141,9 +141,9 @@ def test_load_and_mma_and_multiply_operands[
     transpose_b: Bool,
     k_group_size: Int = 1,
 ](ctx: DeviceContext):
-    alias M = shape[0]
-    alias N = shape[1]
-    alias K = shape[2] * k_group_size
+    comptime M = shape[0]
+    comptime N = shape[1]
+    comptime K = shape[2] * k_group_size
 
     var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(M * K)
     var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(K * N)
@@ -166,15 +166,15 @@ def test_load_and_mma_and_multiply_operands[
     var b_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
     var c_lane_device = ctx.enqueue_create_buffer[dst_dtype](WARP_SIZE * 4)
 
-    alias layout_mk = Layout.row_major(M, K)
-    alias layout_mn = Layout.row_major(M, N)
+    comptime layout_mk = Layout.row_major(M, K)
+    comptime layout_mn = Layout.row_major(M, N)
     var a_host = LayoutTensor[dtype, layout_mk](a_host_ptr)
     var a_dev = LayoutTensor[dtype, layout_mk](a_device)
 
-    alias B_row = N if transpose_b else K
-    alias B_col = K if transpose_b else N
+    comptime B_row = N if transpose_b else K
+    comptime B_col = K if transpose_b else N
 
-    alias layout_b = Layout.row_major(B_row, B_col)
+    comptime layout_b = Layout.row_major(B_row, B_col)
 
     var b_host = LayoutTensor[dtype, layout_b](b_host_ptr)
     var b_dev = LayoutTensor[dtype, layout_b](b_device)
@@ -187,8 +187,8 @@ def test_load_and_mma_and_multiply_operands[
     var d_dev = LayoutTensor[dst_dtype, layout_mn](d_device)
     var d_dev_mma = LayoutTensor[dst_dtype, layout_mn](d_device_mma)
 
-    alias layout_warp = Layout(WARP_SIZE)
-    alias layout_warp4 = Layout.row_major(WARP_SIZE, 4)
+    comptime layout_warp = Layout(WARP_SIZE)
+    comptime layout_warp4 = Layout.row_major(WARP_SIZE, 4)
 
     var a_lane_host = LayoutTensor[dtype, layout_warp](a_lane_host_ptr)
     var a_lane_dev = LayoutTensor[dtype, layout_warp](a_lane_device)
@@ -205,14 +205,16 @@ def test_load_and_mma_and_multiply_operands[
     ctx.enqueue_copy(b_device, b_host_ptr)
     ctx.enqueue_copy(c_device, c_host_ptr)
 
-    alias kernel_load_a = test_load_a[dst_dtype, dtype, a_dev.layout, shape]
-    alias kernel_load_b = test_load_b[
+    comptime kernel_load_a = test_load_a[dst_dtype, dtype, a_dev.layout, shape]
+    comptime kernel_load_b = test_load_b[
         dst_dtype, dtype, b_dev.layout, shape, transpose_b
     ]
-    alias kernel_load_c = test_load_c[
+    comptime kernel_load_c = test_load_c[
         dst_dtype, dtype, c_dev.layout, c_lane_dev.layout, shape
     ]
-    alias kernel_store_d = test_store_d[dst_dtype, dtype, c_dev.layout, shape]
+    comptime kernel_store_d = test_store_d[
+        dst_dtype, dtype, c_dev.layout, shape
+    ]
 
     ctx.enqueue_function_checked[kernel_load_a, kernel_load_a](
         a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
@@ -230,7 +232,7 @@ def test_load_and_mma_and_multiply_operands[
         d_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    alias kernel = test_mma_op[
+    comptime kernel = test_mma_op[
         dst_dtype,
         dtype,
         a_dev.layout,

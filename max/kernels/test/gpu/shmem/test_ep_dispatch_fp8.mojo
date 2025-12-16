@@ -98,14 +98,14 @@ fn test_dispatch[
     n_ranks: Int,
     n_tokens_per_rank: Int,
 ](ctx: DeviceContext, my_rank: Int) raises:
-    alias input_type = DType.bfloat16
-    alias group_size = 128
-    alias gpu_target = get_gpu_target()
-    alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
-    alias gpu_alignment = align_of[
+    comptime input_type = DType.bfloat16
+    comptime group_size = 128
+    comptime gpu_target = get_gpu_target()
+    comptime gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
+    comptime gpu_alignment = align_of[
         SIMD[DType.uint8, gpu_simd_width], target=gpu_target
     ]()
-    alias token_fmt_type = BlockwiseFP8TokenFormat[
+    comptime token_fmt_type = BlockwiseFP8TokenFormat[
         fp8_dtype=fp8_dtype,
         scales_dtype=scales_dtype,
         output_layout = Layout(),
@@ -114,9 +114,9 @@ fn test_dispatch[
         top_k,
         gpu_alignment,
     ]
-    alias msg_bytes = token_fmt_type.msg_size()
-    alias n_local_experts = n_experts // n_ranks
-    alias max_recv_tokens = n_experts * n_tokens_per_rank
+    comptime msg_bytes = token_fmt_type.msg_size()
+    comptime n_local_experts = n_experts // n_ranks
+    comptime max_recv_tokens = n_experts * n_tokens_per_rank
 
     if my_rank == 0:
         print(
@@ -178,15 +178,15 @@ fn test_dispatch[
         max_recv_tokens * 2
     )
 
-    alias topk_ids_layout = Layout.row_major(UNKNOWN_VALUE, top_k)
-    alias input_tokens_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    alias output_layout = Layout.row_major(max_recv_tokens, hidden_size)
-    alias output_scales_layout = Layout.row_major(
+    comptime topk_ids_layout = Layout.row_major(UNKNOWN_VALUE, top_k)
+    comptime input_tokens_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
+    comptime output_layout = Layout.row_major(max_recv_tokens, hidden_size)
+    comptime output_scales_layout = Layout.row_major(
         hidden_size // group_size, max_recv_tokens
     )
-    alias row_offsets_layout = Layout.row_major(n_local_experts + 1)
-    alias expert_ids_layout = Layout.row_major(n_local_experts)
-    alias src_token_info_layout = Layout.row_major(max_recv_tokens, 2)
+    comptime row_offsets_layout = Layout.row_major(n_local_experts + 1)
+    comptime expert_ids_layout = Layout.row_major(n_local_experts)
+    comptime src_token_info_layout = Layout.row_major(max_recv_tokens, 2)
 
     var topk_ids_tensor = LayoutTensor[DType.int32, topk_ids_layout](
         device_topk_buf,
@@ -240,9 +240,9 @@ fn test_dispatch[
         output_scales_tensor.as_any_origin(),
     )
 
-    alias hw_info = ctx.default_device_info
+    comptime hw_info = ctx.default_device_info
 
-    alias dispatch = dispatch_kernel[
+    comptime dispatch = dispatch_kernel[
         input_type,
         hw_info.max_thread_block_size,
         input_tokens_layout,
@@ -258,7 +258,7 @@ fn test_dispatch[
     var func = ctx.compile_function[dispatch]()
     shmem_module_init(func)
 
-    alias dispatch_cb = dispatch_cb_kernel[
+    comptime dispatch_cb = dispatch_cb_kernel[
         hw_info.max_thread_block_size,
         output_layout,
         row_offsets_layout,
@@ -524,11 +524,11 @@ fn test_dispatch[
 
 
 def main():
-    alias test_gpu_counts = (2, 4, 8)
+    comptime test_gpu_counts = (2, 4, 8)
 
     @parameter
     for gpu_idx in range(len(test_gpu_counts)):
-        alias num_gpus = test_gpu_counts[gpu_idx]
+        comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 

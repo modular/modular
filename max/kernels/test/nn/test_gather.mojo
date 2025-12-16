@@ -31,8 +31,8 @@ fn test_gather() raises:
     @always_inline
     @parameter
     fn _test_gather[indices_type: DType]() raises:
-        alias num_rows = 16
-        alias row_size = 4
+        comptime num_rows = 16
+        comptime row_size = 4
 
         # Setup input.
         var input = LayoutTensor[
@@ -46,7 +46,7 @@ fn test_gather() raises:
                 input[i, j] = Float32(i)
 
         # Setup indices.
-        alias num_indices = 16
+        comptime num_indices = 16
         var indices = LayoutTensor[
             indices_type,
             Layout(num_indices),
@@ -66,11 +66,11 @@ fn test_gather() raises:
         ].stack_allocation[stack_alignment=64]()
 
         # Test gather
-        alias simd_width = simd_width_of[__mlir_type.`!pop.scalar<f32>`]()
+        comptime simd_width = simd_width_of[__mlir_type.`!pop.scalar<f32>`]()
 
-        alias output_layout = Layout.row_major[output.rank]()
-        alias input_layout = Layout.row_major[input.rank]()
-        alias indices_layout = Layout.row_major[indices.rank]()
+        comptime output_layout = Layout.row_major[output.rank]()
+        comptime input_layout = Layout.row_major[input.rank]()
+        comptime indices_layout = Layout.row_major[indices.rank]()
 
         gather[axis=0](
             LayoutTensor[output.dtype, output_layout](
@@ -118,8 +118,8 @@ fn test_gather_3d() raises:
     @always_inline
     @parameter
     fn _test_gather[indices_type: DType]() raises:
-        alias num_rows = 16
-        alias row_size = 4
+        comptime num_rows = 16
+        comptime row_size = 4
 
         # Setup input.
         var input = LayoutTensor[
@@ -133,7 +133,7 @@ fn test_gather_3d() raises:
                 input[i, j, 0] = Float32(i)
 
         # Setup indices.
-        alias num_indices = 16
+        comptime num_indices = 16
         var indices = LayoutTensor[
             indices_type,
             Layout.row_major(num_indices, 1),
@@ -151,11 +151,11 @@ fn test_gather_3d() raises:
         ].stack_allocation[stack_alignment=64]()
 
         # Test gather
-        alias simd_width = simd_width_of[DType.float32]()
+        comptime simd_width = simd_width_of[DType.float32]()
 
-        alias output_layout = Layout.row_major[output.rank]()
-        alias input_layout = Layout.row_major[input.rank]()
-        alias indices_layout = Layout.row_major[indices.rank]()
+        comptime output_layout = Layout.row_major[output.rank]()
+        comptime input_layout = Layout.row_major[input.rank]()
+        comptime indices_layout = Layout.row_major[indices.rank]()
 
         gather[axis=0](
             LayoutTensor[output.dtype, output_layout](
@@ -202,12 +202,12 @@ fn test_gather_empty_indices() raises:
     @always_inline
     @parameter
     fn _test_gather[indices_type: DType]() raises:
-        alias num_rows = 16
-        alias row_size = 4
-        alias input_size = 64
-        alias num_indices = 0
-        alias indices_size = 0
-        alias output_size = 0
+        comptime num_rows = 16
+        comptime row_size = 4
+        comptime input_size = 64
+        comptime num_indices = 0
+        comptime indices_size = 0
+        comptime output_size = 0
 
         # Setup input.
         var input_stack = InlineArray[Float32, num_rows * row_size](
@@ -243,11 +243,11 @@ fn test_gather_empty_indices() raises:
         ](output_stack)
 
         # Test gather
-        alias simd_width = simd_width_of[DType.float32]()
+        comptime simd_width = simd_width_of[DType.float32]()
 
-        alias output_layout = Layout.row_major[output.rank]()
-        alias input_layout = Layout.row_major[input.rank]()
-        alias indices_layout = Layout.row_major[indices.rank]()
+        comptime output_layout = Layout.row_major[output.rank]()
+        comptime input_layout = Layout.row_major[input.rank]()
+        comptime indices_layout = Layout.row_major[indices.rank]()
 
         gather[axis=0](
             LayoutTensor[output.dtype, output_layout](

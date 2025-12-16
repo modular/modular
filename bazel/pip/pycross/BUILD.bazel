@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
+package(default_visibility = ["//visibility:public"])
+
 modular_py_binary(
     name = "generate",
     srcs = glob(
@@ -7,7 +9,6 @@ modular_py_binary(
         exclude = ["test_*.py"],
     ),
     imports = ["."],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("packaging"),
     ],

@@ -1,0 +1,22 @@
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+filegroup(
+    name = "pytest_inputs",
+    testonly = True,
+    srcs = [
+        "Inputs/named-inputs.mlir",
+        "Inputs/no-inputs.mlir",
+        "Inputs/scalar-input.mlir",
+        "c/mo-model.api",
+    ],
+)
+
+filegroup(
+    name = "inputs",
+    testonly = True,
+    srcs = glob(["**/*.mlir"]),
+)

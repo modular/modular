@@ -13,9 +13,9 @@
 
 from linalg.utils import SubMatmulConfig, get_partitioned_matmul_mojo
 
-alias kernel_rows = 6
-alias kernel_cols = 64
-alias b_type = DType.float32
+comptime kernel_rows = 6
+comptime kernel_cols = 64
+comptime b_type = DType.float32
 
 
 # CHECK-LABEL: test_partition

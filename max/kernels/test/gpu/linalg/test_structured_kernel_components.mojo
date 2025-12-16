@@ -115,6 +115,22 @@ def test_warp_specialization_amd[
 def main():
     with DeviceContext() as ctx:
         print("Running AMD Warp Specialization Tests")
+        # test_warp_specialization_amd[
+        #     4096,
+        #     4096,
+        #     4096,
+        #     128,
+        #     128,
+        #     64,
+        #     64,
+        #     64,
+        #     64,
+        #     2,
+        #     2,
+        #     4,
+        #     pipeline_stages=2,
+        # ](ctx)
+
         test_warp_specialization_amd[
             4096, 4096, 4096, 64, 64, 64, 32, 32, 64, 2, 2, 4, pipeline_stages=2
         ](ctx)

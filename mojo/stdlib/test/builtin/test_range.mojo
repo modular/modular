@@ -14,7 +14,7 @@
 from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
-alias DTYPES = [
+comptime DTYPES = [
     DType.int8,
     DType.int16,
     DType.int32,
@@ -60,7 +60,7 @@ def test_range_uint_bounds():
 
 
 def _test_range_scalar_bounds[dtype: DType]():
-    alias scalar = Scalar[dtype]
+    comptime scalar = Scalar[dtype]
 
     _test_range_iter_bounds(range(scalar(0)), 0)
     _test_range_iter_bounds(range(scalar(10)), 10)
@@ -158,7 +158,7 @@ def test_range_len_uint():
 
 
 def _test_range_len_scalar[dtype: DType]():
-    alias scalar = Scalar[dtype]
+    comptime scalar = Scalar[dtype]
 
     # empty
     assert_equal(range(scalar(0), scalar(0), scalar(1)).__len__(), 0)

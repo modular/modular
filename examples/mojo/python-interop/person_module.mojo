@@ -51,6 +51,4 @@ fn PyInit_person_module() -> PythonObject:
 
         return mb.finalize()
     except e:
-        return abort[PythonObject](
-            String("error creating Python Mojo module:", e)
-        )
+        abort(String("error creating Python Mojo module:", e))

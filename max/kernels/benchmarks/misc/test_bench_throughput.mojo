@@ -26,8 +26,8 @@ from memory import LegacyUnsafePointer as UnsafePointer
 
 fn test[N: Int = 1024 * 1024]() -> UInt32:
     # seed(0)
-    alias alignment = 64
-    alias type = DType.uint32
+    comptime alignment = 64
+    comptime type = DType.uint32
     var x = UnsafePointer[Scalar[type]].alloc(N, alignment=alignment)
     randint[type](x, N, 0, 255)
     var s: UInt32 = 0
@@ -39,7 +39,7 @@ fn test[N: Int = 1024 * 1024]() -> UInt32:
 fn bench_func[
     func: fn[size: Int] () -> UInt32, size: Int
 ](mut m: Bench, op_name: String) raises:
-    alias num_elements = size * 1024 * 1024
+    comptime num_elements = size * 1024 * 1024
 
     @parameter
     @always_inline
@@ -52,8 +52,8 @@ fn bench_func[
 
         b.iter[call_fn]()
 
-    alias apple_metric = BenchMetric(10, "apple", "Apples/s")
-    alias orange_metric = BenchMetric(11, "orange", "Oranges/s")
+    comptime apple_metric = BenchMetric(10, "apple", "Apples/s")
+    comptime orange_metric = BenchMetric(11, "orange", "Oranges/s")
 
     var measures = List[ThroughputMeasure](
         ThroughputMeasure(BenchMetric.flops, num_elements * 2),  # FMA's

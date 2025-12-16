@@ -1,11 +1,13 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
+package(default_visibility = ["//visibility:private"])
+
 mojo_binary(
     name = "basic_layouts",
     srcs = ["basic_layouts.mojo"],
     deps = [
-        "@mojo//:layout",
-        "@mojo//:stdlib",
+        "//max:layout",
+        "@mojo//:std",
     ],
 )
 
@@ -18,8 +20,8 @@ mojo_binary(
     name = "tiled_layouts",
     srcs = ["tiled_layouts.mojo"],
     deps = [
-        "@mojo//:layout",
-        "@mojo//:stdlib",
+        "//max:layout",
+        "@mojo//:std",
     ],
 )
 

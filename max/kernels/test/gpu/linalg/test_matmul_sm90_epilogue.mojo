@@ -24,10 +24,10 @@ from linalg.utils import elementwise_compute_lambda_type
 
 from utils.index import Index, IndexList
 
-alias block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
+comptime block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
     128, wgmma_n, 128 // size_of[a_dtype]()
 )
-alias wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
+comptime wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
     64, wgmma_n, 32 // size_of[a_dtype]()
 )
 

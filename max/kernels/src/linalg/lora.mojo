@@ -16,7 +16,7 @@ from collections import OptionalReg
 from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList, _make_tuple
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from internal_utils import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
@@ -81,13 +81,13 @@ fn shrink_qkv_permute_3mn_sm100[
     """
     var M = c_lora.dim[1]()
     var c_tensor_lora = from_ndbuffer_row_major(c_lora)  # LayoutTensor[3]
-    alias N = c_shape.get[2]()
-    alias B = c_shape.get[0]()
+    comptime N = c_shape.get[2]()
+    comptime B = c_shape.get[0]()
     constrained[
         c_shape.has_value[2]() and c_shape.get[0]() == 3,
         "the outer dimension of c_shape must be known and equal to 3",
     ]()
-    alias N_Total = B * N
+    comptime N_Total = B * N
     # Create an empty (null-backed) 2D NDBuffer for C with only shape/stride set.
     # This ensures GroupGEMM does NOT write into C directly; any changes to the
     # final C output must happen exclusively via the epilogue function.
@@ -132,7 +132,7 @@ fn shrink_qkv_permute_3mn_sm100[
                 * Input view is row-major (M, 3N).
                 * Output view is row-major (3, M, N) with head-major tiles.
         """
-        alias N = c_shape.get[2]()
+        comptime N = c_shape.get[2]()
         var i = idx[0]
         var j = idx[1]
         var new_j, new_k = divmod(j, N)

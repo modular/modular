@@ -18,24 +18,10 @@ from gpu.host import DeviceContext
 from gpu.host.info import GPUInfo
 
 
-fn expect_eq[
-    dtype: DType, size: Int, *Ts: Writable
-](val: SIMD[dtype, size], expected: SIMD[dtype, size], *messages: *Ts) raises:
-    if val != expected:
-        var message = String(messages)
-        raise Error("expect_eq failed: ", message)
-
-
-fn expect_eq[*Ts: Writable](val: Bool, expected: Bool, *messages: *Ts) raises:
-    if val != expected:
-        var message = String(messages)
-        raise Error("expect_eq failed: ", message)
-
-
 fn api() -> String:
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        alias api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+        comptime api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
         @parameter
         if api == "gpu":

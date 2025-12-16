@@ -36,7 +36,7 @@ from ..tile_scheduler import RasterOrder
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -77,10 +77,12 @@ struct TileScheduler[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ]:
-    alias cluster_size = cluster_shape[0] * cluster_shape[1] * cluster_shape[2]
-    alias log_cluster_m = FastDiv[DType.uint32](cluster_shape[0])
-    alias log_cluster_n = FastDiv[DType.uint32](cluster_shape[1])
-    alias log_cluster_k = FastDiv[DType.uint32](cluster_shape[2])
+    comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
+        1
+    ] * Self.cluster_shape[2]
+    comptime log_cluster_m = FastDiv[DType.uint32](Self.cluster_shape[0])
+    comptime log_cluster_n = FastDiv[DType.uint32](Self.cluster_shape[1])
+    comptime log_cluster_k = FastDiv[DType.uint32](Self.cluster_shape[2])
 
     var cluster_dim: StaticTuple[Int32, 3]
     var log_cluster_dim_m: FastDiv[DType.uint32]
@@ -112,7 +114,7 @@ struct TileScheduler[
         ],
     ):
         constrained[
-            block_swizzle_size in [0, 1, 2, 4, 8],
+            Self.block_swizzle_size in [0, 1, 2, 4, 8],
             "block_swizzle_size must be 0, 1, 2, 4, or 8",
         ]()
 
@@ -129,7 +131,7 @@ struct TileScheduler[
     fn work_info_from_clc_response(
         result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
     ) -> WorkInfo:
-        alias asm = """{
+        comptime asm = """{
             .reg .pred p1;
             .reg .b128 clc_result;
             ld.shared.b128 clc_result, [$4];
@@ -163,7 +165,7 @@ struct TileScheduler[
     ) -> WorkInfo:
         var normalized_m = Int(work_info.m) / Self.log_cluster_m
         var normalized_n = Int(work_info.n) / Self.log_cluster_n
-        alias log_block_swizzle_size = FastDiv[DType.uint32](
+        comptime log_block_swizzle_size = FastDiv[DType.uint32](
             Self.block_swizzle_size
         )
 
@@ -238,7 +240,7 @@ struct TileScheduler[
     fn fetch_next_work(
         self,
         work_info: WorkInfo,
-        consumer_state: PipelineState[num_stages],
+        consumer_state: PipelineState[Self.num_stages],
     ) -> WorkInfo:
         # num_stages == 0 implies there is only one wave. Only initial
         # work info is valid, next work info is invalid.
@@ -262,9 +264,9 @@ struct TileScheduler[
     @always_inline
     fn advance_to_next_work(
         self,
-        mut clc_state: PipelineState[num_stages],
-    ) -> PipelineState[num_stages]:
-        alias multicast = True if Self.cluster_size > 1 else False
+        mut clc_state: PipelineState[Self.num_stages],
+    ) -> PipelineState[Self.num_stages]:
+        comptime multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
         var pred: UInt32 = 1 if lane_id < UInt(Self.cluster_size) else 0
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())

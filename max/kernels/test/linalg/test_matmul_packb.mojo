@@ -20,15 +20,15 @@ from testing import assert_equal
 
 from utils.index import Index
 
-alias type = DType.float32
-alias simd_size: Int = simd_width_of[DType.float32]()
-alias simd_cols: Int = 4
-alias kernel_cols: Int = simd_cols * simd_size
-alias width = 2 * kernel_cols
+comptime type = DType.float32
+comptime simd_size: Int = simd_width_of[DType.float32]()
+comptime simd_cols: Int = 4
+comptime kernel_cols: Int = simd_cols * simd_size
+comptime width = 2 * kernel_cols
 
-alias N: Int = 128
-alias K: Int = 128
-alias kc = 128
+comptime N: Int = 128
+comptime K: Int = 128
+comptime kc = 128
 
 
 @export(ABI="C")

@@ -28,7 +28,7 @@ fn test_elementwise_print[
 ](c01: LayoutTensor[c_type, c_layout], ctx: DeviceContext) raises:
     var M = c01.dim[0]()
     var N = c01.dim[1]() // 2
-    alias simd_width = simd_width_of[
+    comptime simd_width = simd_width_of[
         c_type, target = get_gpu_target["sm_80"]()
     ]()
 
@@ -64,7 +64,7 @@ fn runtime_row_major[
 fn test_dual_matmul[
     N: Int = 512, K: Int = 512
 ](ctx: DeviceContext, M: Int = 512) raises:
-    alias dst_type = DType.float32
+    comptime dst_type = DType.float32
     var layout_c01 = runtime_row_major[2 * N](M)
     var mat_c01 = ManagedLayoutTensor[dst_type](layout_c01, ctx)
     test_elementwise_print(

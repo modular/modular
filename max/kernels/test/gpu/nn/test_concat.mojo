@@ -36,7 +36,7 @@ fn _create_buffer_host[
 ]:
     var total_size: Int = product(dims)
     var mem_ptr = UnsafePointer[Scalar[dtype]].alloc(total_size)
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var buffer = LayoutTensor[dtype, layout, MutAnyOrigin](
         mem_ptr, RuntimeLayout[layout].row_major(dims)
     )
@@ -46,14 +46,14 @@ fn _create_buffer_host[
 fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     print("== test_concat_4_inputs_rank5")
 
-    alias rank = 5
-    alias dtype = DType.float32
+    comptime rank = 5
+    comptime dtype = DType.float32
 
-    alias d0 = 1
-    alias d1 = 128
-    alias d2 = 32
-    alias d3 = 64
-    alias d4 = 1
+    comptime d0 = 1
+    comptime d1 = 128
+    comptime d2 = 32
+    comptime d3 = 64
+    comptime d4 = 1
 
     var input_layout = Layout.row_major(d0, d1, d2, d3, d4)
     var output_layout = Layout.row_major(d0, d1, d2, d3, 4)
@@ -76,7 +76,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     var input_2_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
     var input_3_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
 
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var input_0_device_ref = LayoutTensor[dtype, layout](
         input_0_device,
         RuntimeLayout[layout].row_major(input_shape),
@@ -106,7 +106,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         RuntimeLayout[layout].row_major(output_shape),
     )
 
-    alias B_SIZE = 32
+    comptime B_SIZE = 32
 
     @parameter
     @always_inline
@@ -119,7 +119,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
             rebind[SIMD[dtype, width]](val + 1),
         )
 
-    alias kernel = _concat_inner_most_single_dim[
+    comptime kernel = _concat_inner_most_single_dim[
         output_layout=layout,
         inputs_layout=layout,
         dtype=dtype,
@@ -173,7 +173,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
             for j in range(d1):
                 for k in range(d2):
                     for l in range(d3):
-                        alias tail_val = 1 if test_epilogue else 0
+                        comptime tail_val = 1 if test_epilogue else 0
                         var not_match_0 = (
                             output_host[i, j, k, l, 0]
                             != input_0_host[i, j, k, l, 0] + tail_val

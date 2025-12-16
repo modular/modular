@@ -87,11 +87,11 @@ fn simd_store_into_managed_tensor_slice[
     var flat_index = tensor._compute_offset(indices)
 
     # Store alignment cannot exceed the data type's alignment.
-    alias max_alignment = _gcd_pow2[
+    comptime max_alignment = _gcd_pow2[
         tensor.alignment, element_alignment * align_of[dtype]()
     ]()
 
-    alias static_stride = tensor._static_strides.at[rank - 1]()
+    comptime static_stride = tensor._static_strides.at[rank - 1]()
 
     # Stride = 1
     @parameter
@@ -141,6 +141,156 @@ fn simd_store_into_managed_tensor_slice[
 
 
 @doc_private
+@register_internal("simd_store_into_tensor_pointer")
+@no_inline
+fn simd_store_into_tensor_pointer[
+    dtype: DType, rank: Int, simd_width: Int, element_alignment: Int = 1
+](
+    ptr: UnsafePointer[Scalar[dtype]],
+    strides: IndexList[rank],
+    indices: IndexList[rank],
+    value: SIMD[dtype, simd_width],
+):
+    """Store a SIMD vector to raw tensor components.
+
+    This function is GPU-safe because it only takes trivial types (pointer,
+    IndexList) that can be properly captured in GPU kernel closures. Use this
+    instead of simd_store_into_managed_tensor_slice when generating code for
+    GPU kernels.
+
+    Parameters:
+        dtype: The data type of tensor elements.
+        rank: The rank (number of dimensions) of the tensor.
+        simd_width: The SIMD width for the load operation.
+        element_alignment: The element alignment for the load.
+
+    Args:
+        ptr: The raw pointer to tensor data.
+        strides: The runtime strides of the tensor.
+        indices: The indices to store into.
+        value: The value to store.
+    """
+    # Compute flat index from multi-dimensional indices and strides
+    var flat_index = 0
+
+    @parameter
+    for i in range(rank):
+        flat_index += Int(indices[i]) * Int(strides[i])
+
+    # Store alignment cannot exceed the data type's alignment.
+    comptime max_alignment = _gcd_pow2[
+        element_alignment, element_alignment * align_of[dtype]()
+    ]()
+
+    var last_stride = Int(strides[rank - 1]) if rank > 0 else 1
+
+    # Stride = 1
+    @parameter
+    @always_inline
+    fn store_stride1():
+        @parameter
+        if dtype is DType.bool:
+            var v = value.cast[DType.uint8]()
+            ptr.bitcast[UInt8]().store(flat_index, v)
+        else:
+            ptr.store[alignment=max_alignment](flat_index, value)
+
+    # Stride > 1
+    @parameter
+    @always_inline
+    fn store_strided(stride: Int):
+        @parameter
+        if dtype is DType.bool:
+            var v = value.cast[DType.uint8]()
+            strided_store(
+                v,
+                ptr.bitcast[UInt8]().offset(flat_index),
+                stride,
+            )
+        else:
+            return strided_store(value, ptr.offset(flat_index), stride)
+
+    # Handle different stride cases
+    if last_stride == 0:
+        # Broadcast case: load single value and splat
+        return ptr.store[alignment=max_alignment](0, value)
+    elif last_stride == 1:
+        store_stride1()
+    else:
+        store_strided(last_stride)
+
+
+# GPU-safe load function that takes raw components (pointer, strides) instead of
+# ManagedTensorSlice. This avoids capturing ManagedTensorSlice in GPU kernels,
+# which doesn't work correctly due to closure capture limitations.
+@doc_private
+@register_internal("simd_load_from_tensor_pointer")
+@always_inline
+fn simd_load_from_tensor_pointer[
+    dtype: DType,
+    rank: Int,
+    simd_width: Int,
+    element_alignment: Int = 1,
+](
+    ptr: UnsafePointer[Scalar[dtype]],
+    strides: IndexList[rank],
+    indices: IndexList[rank],
+) -> SIMD[dtype, simd_width]:
+    """Load a SIMD vector from raw tensor components.
+
+    This function is GPU-safe because it only takes trivial types (pointer,
+    IndexList) that can be properly captured in GPU kernel closures. Use this
+    instead of simd_load_from_managed_tensor_slice when generating code for
+    GPU kernels.
+
+    Parameters:
+        dtype: The data type of tensor elements.
+        rank: The rank (number of dimensions) of the tensor.
+        simd_width: The SIMD width for the load operation.
+        element_alignment: The element alignment for the load.
+
+    Args:
+        ptr: The raw pointer to tensor data.
+        strides: The runtime strides of the tensor.
+        indices: The indices to load from.
+
+    Returns:
+        A SIMD vector with the loaded values.
+    """
+    # Compute flat index from multi-dimensional indices and strides
+    var flat_index = 0
+
+    @parameter
+    for i in range(rank):
+        flat_index += Int(indices[i]) * Int(strides[i])
+
+    var last_stride = Int(strides[rank - 1]) if rank > 0 else 1
+
+    # Handle different stride cases
+    if last_stride == 0:
+        # Broadcast case: load single value and splat
+        return ptr.load(flat_index)
+    elif last_stride == 1:
+        # Contiguous case: direct SIMD load
+        @parameter
+        if dtype is DType.bool:
+            var v = ptr.bitcast[UInt8]().load[width=simd_width](flat_index)
+            return v.cast[dtype]()
+        else:
+            return ptr.load[width=simd_width](flat_index)
+    else:
+        # Strided case: gather load
+        @parameter
+        if dtype is DType.bool:
+            var v = strided_load[simd_width](
+                ptr.bitcast[UInt8]().offset(flat_index), last_stride
+            )
+            return v.cast[dtype]()
+        else:
+            return strided_load[simd_width](ptr.offset(flat_index), last_stride)
+
+
+@doc_private
 @register_internal("simd_load_from_managed_tensor_slice")
 @no_inline
 fn simd_load_from_managed_tensor_slice[
@@ -154,13 +304,13 @@ fn simd_load_from_managed_tensor_slice[
     indices: IndexList[rank],
 ) -> SIMD[dtype, simd_width]:
     var flat_index = tensor._compute_offset(indices)
-    alias static_stride = tensor._static_strides.at[rank - 1]()
+    comptime static_stride = tensor._static_strides.at[rank - 1]()
 
     # Load alignment cannot exceed the data type's alignment.
-    alias max_alignment = _gcd_pow2[
+    comptime max_alignment = _gcd_pow2[
         tensor.alignment, element_alignment * align_of[dtype]()
     ]()
-    alias invariant = not tensor.io_spec.mut
+    comptime invariant = not tensor.io_spec.mut
 
     # Stride = 1
     @parameter
@@ -395,7 +545,7 @@ fn _mixed_precision_output_fusion_hook_impl[
             element_alignment=_elem_align,
         ](tensor, rebind[IndexList[rank]](i), rebind[SIMD[dst_dtype, _w]](v))
 
-    alias mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
+    comptime mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
         shape=src_shape,
         strides=src_strides,
         alignment=static_spec.alignment,
@@ -438,7 +588,7 @@ fn _mixed_precision_compute_output_fusion_hook_impl[
     ](i: IndexList[src_rank], v: SIMD[src_dtype, _w]) -> SIMD[src_dtype, _w]:
         return v
 
-    alias mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
+    comptime mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
         shape=src_shape,
         strides=static_spec.strides,
         alignment=static_spec.alignment,
@@ -527,18 +677,18 @@ fn _mixed_precision_input_fusion_hook_impl[
 # ManagedTensorSlice class
 # ===----------------------------------------------------------------------=== #
 
-alias OutputTensor = ManagedTensorSlice[io_spec=Output]
-alias InputTensor = ManagedTensorSlice[io_spec=Input]
+comptime OutputTensor = ManagedTensorSlice[io_spec=Output]
+comptime InputTensor = ManagedTensorSlice[io_spec=Input]
 
-alias _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
-alias _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput]
-alias _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput]
+comptime _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
+comptime _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput]
+comptime _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput]
 
-alias _FusedComputeOutputTensor = ManagedTensorSlice[
+comptime _FusedComputeOutputTensor = ManagedTensorSlice[
     io_spec=_FusedComputeOutput
 ]
 
-alias DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
+comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
     io_spec=IOUnknown,
     static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
 ]
@@ -554,7 +704,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[dtype, rank],
-](DevicePassable, ImplicitlyCopyable, Movable, Stringable, Writable):
+](DevicePassable, ImplicitlyCopyable, Stringable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -567,24 +717,24 @@ struct ManagedTensorSlice[
     """
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyType = LayoutTensor[
-        dtype, static_spec.to_layout(), MutAnyOrigin
+    comptime device_type: AnyType = LayoutTensor[
+        Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
     ]
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self.to_layout_tensor()
 
     @staticmethod
     fn get_type_name() -> String:
         return (
             "ManagedTensorSlice[mut = "
-            + String(mut)
+            + String(Self.mut)
             + ", dtype = "
-            + String(dtype)
+            + String(Self.dtype)
             + ", rank = "
-            + String(rank)
+            + String(Self.rank)
             + ", static_spec (as Layout) = "
-            + String(static_spec.to_layout())
+            + String(Self.static_spec.to_layout())
             + "]"
         )
 
@@ -602,24 +752,24 @@ struct ManagedTensorSlice[
             + "]"
         )
 
-    alias address_space = static_spec.address_space
-    alias alignment = static_spec.alignment
-    alias exclusive = static_spec.exclusive
-    alias _static_shape = static_spec.shape
-    alias _static_strides = static_spec.strides
+    comptime address_space = Self.static_spec.address_space
+    comptime alignment = Self.static_spec.alignment
+    comptime exclusive = Self.static_spec.exclusive
+    comptime _static_shape = Self.static_spec.shape
+    comptime _static_strides = Self.static_spec.strides
 
-    alias _in_lambda = static_spec.in_lambda
-    alias _out_lambda = static_spec.out_lambda
+    comptime _in_lambda = Self.static_spec.in_lambda
+    comptime _out_lambda = Self.static_spec.out_lambda
 
-    var _ptr: UnsafePointer[Scalar[dtype]]
-    var _spec: RuntimeTensorSpec[dtype, rank]
-    var _runtime_strides: IndexList[rank]
+    var _ptr: UnsafePointer[Scalar[Self.dtype]]
+    var _spec: RuntimeTensorSpec[Self.dtype, Self.rank]
+    var _runtime_strides: IndexList[Self.rank]
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[dtype]],
-        slices: InlineArray[Slice, rank],
-        slicer_spec: RuntimeTensorSpec[dtype, rank],
+        ptr: UnsafePointer[Scalar[Self.dtype]],
+        slices: InlineArray[Slice, Self.rank],
+        slicer_spec: RuntimeTensorSpec[Self.dtype, Self.rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer, array of slices and
         tensor spec.
@@ -648,26 +798,26 @@ struct ManagedTensorSlice[
         var stop = _slice_to_tuple[stop_fn](slices)
         var step = _slice_to_tuple[step_fn](slices)
 
-        var adjusted_shape = IndexList[rank]()
-        for i in range(rank):
+        var adjusted_shape = IndexList[Self.rank]()
+        for i in range(Self.rank):
             adjusted_shape[i] = Int(ceil((stop[i] - start[i]) / step[i]))
-        var slice_spec = RuntimeTensorSpec[dtype](adjusted_shape)
+        var slice_spec = RuntimeTensorSpec[Self.dtype](adjusted_shape)
 
         var slicer_strides = _row_major_strides(adjusted_shape)
         var start_offset = _dot_prod(start, slicer_strides)
 
-        var strides = IndexList[rank]()
+        var strides = IndexList[Self.rank]()
 
         @parameter
-        for i in range(rank):
+        for i in range(Self.rank):
             strides[i] = step[i] * slicer_strides[i]
 
         self = Self(ptr.offset(start_offset), slice_spec, strides)
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[dtype]],
-        shape: IndexList[rank],
+        ptr: UnsafePointer[Scalar[Self.dtype]],
+        shape: IndexList[Self.rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer and shape.
 
@@ -676,14 +826,14 @@ struct ManagedTensorSlice[
         engine.
         """
         self._ptr = ptr
-        self._spec = RuntimeTensorSpec[dtype, rank](shape)
+        self._spec = RuntimeTensorSpec[Self.dtype, Self.rank](shape)
         self._runtime_strides = _row_major_strides(shape)
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[dtype]],
-        shape: IndexList[rank],
-        strides: IndexList[rank],
+        ptr: UnsafePointer[Scalar[Self.dtype]],
+        shape: IndexList[Self.rank],
+        strides: IndexList[Self.rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer, shape, and strides.
 
@@ -693,22 +843,12 @@ struct ManagedTensorSlice[
         """
         self = Self(
             ptr,
-            RuntimeTensorSpec[dtype, rank](shape),
+            RuntimeTensorSpec[Self.dtype, Self.rank](shape),
             strides,
         )
 
-    @doc_private
-    fn __init__(out self, ndbuffer: NDBuffer[dtype, rank]):
-        """Initializes a ManagedTensorSlice from an NDBuffer.
-
-        Note that forwarding of static shape, strides, and lambdas won't work.
-        """
-        self = Self(
-            ndbuffer.data.mut_cast[True]().as_any_origin(), ndbuffer.get_shape()
-        )
-
     @always_inline
-    fn __getitem__(self, indices: IndexList[rank]) -> Scalar[dtype]:
+    fn __getitem__(self, indices: IndexList[Self.rank]) -> Scalar[Self.dtype]:
         """Gets the value at the specified indices.
 
         Args:
@@ -718,14 +858,14 @@ struct ManagedTensorSlice[
           The value at the specified indices.
         """
         constrained[
-            not static_spec.in_lambda,
+            not Self.static_spec.in_lambda,
             "Direct load on fused tensor is forbidden",
         ]()
         var offset = _dot_prod(indices, self.strides())
         return self._ptr[offset]
 
     @always_inline
-    fn __getitem__(self, *indices: Int) -> Scalar[dtype]:
+    fn __getitem__(self, *indices: Int) -> Scalar[Self.dtype]:
         """Gets the value at the specified indices.
 
         Args:
@@ -735,16 +875,17 @@ struct ManagedTensorSlice[
           The value at the specified indices.
         """
         constrained[
-            not static_spec.in_lambda,
+            not Self.static_spec.in_lambda,
             "Direct load on fused tensor is forbidden",
         ]()
         debug_assert(
-            len(indices) == rank, "mismatch between requested index and rank"
+            len(indices) == Self.rank,
+            "mismatch between requested index and rank",
         )
-        return self[IndexList[rank](indices)]
+        return self[IndexList[Self.rank](indices)]
 
     @always_inline
-    fn __setitem__(self, *indices: Int, val: Scalar[dtype]):
+    fn __setitem__(self, *indices: Int, val: Scalar[Self.dtype]):
         """Stores the value at the specified indices.
 
         Args:
@@ -753,16 +894,19 @@ struct ManagedTensorSlice[
 
         """
         constrained[
-            not static_spec.out_lambda,
+            not Self.static_spec.out_lambda,
             "Direct store on fused tensor is forbidden",
         ]()
         debug_assert(
-            len(indices) == rank, "mismatch between requested index and rank"
+            len(indices) == Self.rank,
+            "mismatch between requested index and rank",
         )
-        self[IndexList[rank](indices)] = val
+        self[IndexList[Self.rank](indices)] = val
 
     @always_inline
-    fn __setitem__(self, indices: IndexList[rank], val: Scalar[dtype]):
+    fn __setitem__(
+        self, indices: IndexList[Self.rank], val: Scalar[Self.dtype]
+    ):
         """Stores the value at the specified indices.
 
         Args:
@@ -771,13 +915,13 @@ struct ManagedTensorSlice[
 
         """
         constrained[
-            not static_spec.out_lambda,
+            not Self.static_spec.out_lambda,
             "Direct store on fused tensor is forbidden",
         ]()
         var offset = _dot_prod(indices, self.strides())
         self._ptr[offset] = val
 
-    fn spec(self) -> RuntimeTensorSpec[dtype, rank]:
+    fn spec(self) -> RuntimeTensorSpec[Self.dtype, Self.rank]:
         """Gets the `TensorSpec` of this tensor slice, which provides meta-data
         about the tensor slice.
 
@@ -787,13 +931,13 @@ struct ManagedTensorSlice[
         return self._spec
 
     @always_inline
-    fn shape(self) -> IndexList[rank]:
+    fn shape(self) -> IndexList[Self.rank]:
         """Gets the shape of this tensor slice, as an `IndexList`.
 
         Returns:
             The shape of this tensor slice.
         """
-        return _make_partially_static_index_list[rank, Self._static_shape](
+        return _make_partially_static_index_list[Self.rank, Self._static_shape](
             self._spec.shape
         )
 
@@ -829,15 +973,15 @@ struct ManagedTensorSlice[
             return Self._static_shape.get[index]()
 
     @always_inline
-    fn strides(self) -> IndexList[rank]:
+    fn strides(self) -> IndexList[Self.rank]:
         """Gets the strides of this tensor slice, as an `IndexList`.
 
         Returns:
             The strides of this tensor slice.
         """
-        return _make_partially_static_index_list[rank, Self._static_strides](
-            self._runtime_strides
-        )
+        return _make_partially_static_index_list[
+            Self.rank, Self._static_strides
+        ](self._runtime_strides)
 
     @always_inline
     fn stride_length(self, index: Int) -> Int:
@@ -880,13 +1024,15 @@ struct ManagedTensorSlice[
         var product: Int = 1
 
         @parameter
-        for i in range(rank):
+        for i in range(Self.rank):
             product *= self.dim_size[i]()
 
         return product
 
     @always_inline
-    fn unsafe_ptr[_dtype: DType = dtype](self) -> UnsafePointer[Scalar[_dtype]]:
+    fn unsafe_ptr[
+        _dtype: DType = Self.dtype
+    ](self) -> UnsafePointer[Scalar[_dtype]]:
         """Get the pointer stored in this tensor slice.
 
         Since this method obtains the pointer stored in this tensor slice, it
@@ -907,7 +1053,7 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
-    ](self, index: IndexList[_rank]) -> SIMD[dtype, width]:
+    ](self, index: IndexList[_rank]) -> SIMD[Self.dtype, width]:
         """Gets data from this tensor slice as a `SIMD`.
 
         Parameters:
@@ -922,12 +1068,12 @@ struct ManagedTensorSlice[
             Data from this tensor slice at dimension `index`.
         """
         constrained[
-            input == IO.Input or input == IO.Unknown,
+            Self.input == IO.Input or Self.input == IO.Unknown,
             "loading not supported for output tensors",
         ]()
 
-        constrained[_rank == rank]()
-        var ridx = rebind[IndexList[rank]](index)
+        constrained[_rank == Self.rank]()
+        var ridx = rebind[IndexList[Self.rank]](index)
         return simd_load_from_managed_tensor_slice[
             simd_width=width, element_alignment=element_alignment
         ](self, ridx)
@@ -939,18 +1085,18 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
-    ](self, index: IndexList[_rank]) capturing -> SIMD[dtype, width]:
-        constrained[_rank == rank]()
-        var ridx = rebind[IndexList[rank]](index)
+    ](self, index: IndexList[_rank]) capturing -> SIMD[Self.dtype, width]:
+        constrained[_rank == Self.rank]()
+        var ridx = rebind[IndexList[Self.rank]](index)
 
-        alias in_lambda = static_spec.in_lambda
-        alias alignment = static_spec.alignment
-        alias address_space = static_spec.address_space
-        alias strides = static_spec.strides
+        comptime in_lambda = Self.static_spec.in_lambda
+        comptime alignment = Self.static_spec.alignment
+        comptime address_space = Self.static_spec.address_space
+        comptime strides = Self.static_spec.strides
 
         @parameter
         if in_lambda:
-            alias in_fn = in_lambda.value()
+            comptime in_fn = in_lambda.value()
             return in_fn[width, element_alignment](ridx)
         else:
             return simd_load_from_managed_tensor_slice[
@@ -963,18 +1109,18 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
-    ](self, index: IndexList[_rank]) -> SIMD[dtype, width]:
-        constrained[_rank == rank]()
-        var ridx = rebind[IndexList[rank]](index)
-        alias in_lambda = static_spec.in_lambda
+    ](self, index: IndexList[_rank]) -> SIMD[Self.dtype, width]:
+        constrained[_rank == Self.rank]()
+        var ridx = rebind[IndexList[Self.rank]](index)
+        comptime in_lambda = Self.static_spec.in_lambda
         constrained[Bool(in_lambda)]()
-        alias in_fn = in_lambda.value()
+        comptime in_fn = in_lambda.value()
         return in_fn[width, element_alignment](ridx)
 
     @always_inline
-    fn _compute_offset(self, index: IndexList[rank]) -> Int:
+    fn _compute_offset(self, index: IndexList[Self.rank]) -> Int:
         @parameter
-        if rank == 0:
+        if Self.rank == 0:
             return 0
 
         # Special case for NVidia GPU on shared memory.
@@ -988,7 +1134,7 @@ struct ManagedTensorSlice[
             var offset: Int32 = 0
 
             @parameter
-            for i in range(rank):
+            for i in range(Self.rank):
 
                 @parameter
                 if Self._static_strides.at[i]().is_dynamic():
@@ -1006,7 +1152,7 @@ struct ManagedTensorSlice[
         var offset = 0
 
         @parameter
-        for i in range(rank):
+        for i in range(Self.rank):
 
             @parameter
             if Self._static_strides.at[i]().is_dynamic():
@@ -1025,10 +1171,10 @@ struct ManagedTensorSlice[
     ](
         self: ManagedTensorSlice[
             mut=True,
-            static_spec=static_spec,
+            static_spec = Self.static_spec,
         ],
         index: IndexList[_rank],
-        val: SIMD[dtype, width],
+        val: SIMD[Self.dtype, width],
     ):
         """Sets data in this tensor slice from a `SIMD`.
 
@@ -1041,8 +1187,8 @@ struct ManagedTensorSlice[
             index: An `IndexList` of size `_rank` to indicate the dimension of the tensor slice to set data in.
             val: The data to set into this tensor slice.
         """
-        constrained[_rank == rank]()
-        var ridx = rebind[IndexList[rank]](index)
+        constrained[_rank == Self.rank]()
+        var ridx = rebind[IndexList[Self.rank]](index)
 
         simd_store_into_managed_tensor_slice[
             simd_width=width,
@@ -1057,21 +1203,21 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](
-        self: ManagedTensorSlice[mut=True, static_spec=static_spec],
+        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec],
         index: IndexList[_rank],
-        val: SIMD[dtype, width],
+        val: SIMD[Self.dtype, width],
     ) capturing:
-        constrained[_rank == rank]()
-        var ridx = rebind[IndexList[rank]](index)
+        constrained[_rank == Self.rank]()
+        var ridx = rebind[IndexList[Self.rank]](index)
 
-        alias out_lambda = static_spec.out_lambda
-        alias alignment = static_spec.alignment
-        alias address_space = static_spec.address_space
-        alias strides = static_spec.strides
+        comptime out_lambda = Self.static_spec.out_lambda
+        comptime alignment = Self.static_spec.alignment
+        comptime address_space = Self.static_spec.address_space
+        comptime strides = Self.static_spec.strides
 
         @parameter
         if out_lambda:
-            alias out_fn = out_lambda.value()
+            comptime out_fn = out_lambda.value()
             out_fn[width, element_alignment](ridx, val)
         else:
             simd_store_into_managed_tensor_slice[
@@ -1087,17 +1233,17 @@ struct ManagedTensorSlice[
         element_alignment: Int = 1,
     ](
         self: ManagedTensorSlice[
-            io_spec = IOSpec[True, input](),
-            static_spec=static_spec,
+            io_spec = IOSpec[True, Self.input](),
+            static_spec = Self.static_spec,
         ],
         index: IndexList[_rank],
-        val: SIMD[dtype, width],
+        val: SIMD[Self.dtype, width],
     ):
-        constrained[_rank == rank]()
-        var ridx = rebind[IndexList[rank]](index)
-        alias out_lambda = static_spec.out_lambda
+        constrained[_rank == Self.rank]()
+        var ridx = rebind[IndexList[Self.rank]](index)
+        comptime out_lambda = Self.static_spec.out_lambda
         constrained[Bool(out_lambda)]()
-        alias out_fn = out_lambda.value()
+        comptime out_fn = out_lambda.value()
         out_fn[width, element_alignment](ridx, val)
 
     @always_inline
@@ -1106,18 +1252,18 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](
-        self: ManagedTensorSlice[mut=True, static_spec=static_spec],
+        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec],
         index: IndexList[_rank],
-        val: SIMD[dtype, width],
-    ) capturing -> SIMD[dtype, width]:
-        constrained[_rank == rank]()
-        var ridx = rebind[IndexList[rank]](index)
+        val: SIMD[Self.dtype, width],
+    ) capturing -> SIMD[Self.dtype, width]:
+        constrained[_rank == Self.rank]()
+        var ridx = rebind[IndexList[Self.rank]](index)
 
-        alias out_compute_lambda = static_spec.out_compute_lambda
+        comptime out_compute_lambda = Self.static_spec.out_compute_lambda
 
         @parameter
         if out_compute_lambda:
-            alias out_fn = out_compute_lambda.value()
+            comptime out_fn = out_compute_lambda.value()
             return out_fn[width](ridx, val)
         else:
             return val
@@ -1131,11 +1277,11 @@ struct ManagedTensorSlice[
         self,
         new_runtime_shape: IndexList[new_rank],
         new_runtime_strides: IndexList[new_rank],
-        offset_ptr: OptionalReg[UnsafePointer[Scalar[dtype]]] = None,
+        offset_ptr: OptionalReg[UnsafePointer[Scalar[Self.dtype]]] = None,
         out result: ManagedTensorSlice[
             rank=new_rank,
-            io_spec=io_spec,
-            static_spec = static_spec.with_layout[new_rank](
+            io_spec = Self.io_spec,
+            static_spec = Self.static_spec.with_layout[new_rank](
                 new_static_shape, new_static_strides
             ),
         ],
@@ -1161,9 +1307,11 @@ struct ManagedTensorSlice[
     @always_inline
     fn to_layout_tensor(
         self,
-        out result: LayoutTensor[dtype, static_spec.to_layout(), MutAnyOrigin],
+        out result: LayoutTensor[
+            Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
+        ],
     ):
-        alias layout = static_spec.to_layout()
+        comptime layout = Self.static_spec.to_layout()
         return type_of(result)(
             self.unsafe_ptr(),
             type_of(result.runtime_layout)(
@@ -1186,7 +1334,7 @@ struct ManagedTensorSlice[
             writer.write(val)
 
         var shape = List[Int]()
-        for i in range(rank):
+        for i in range(Self.rank):
             shape.append(self.shape()[i])
 
         # TODO(1937): make this work with all valid strides
@@ -1260,12 +1408,12 @@ fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
 # VariadicTensors
 # ===----------------------------------------------------------------------=== #
 
-alias InputVariadicTensors = VariadicTensors[io_spec=Input]
-alias OutputVariadicTensors = VariadicTensors[io_spec=Output]
+comptime InputVariadicTensors = VariadicTensors[io_spec=Input]
+comptime OutputVariadicTensors = VariadicTensors[io_spec=Output]
 
-alias _MutableInputVariadicTensors = VariadicTensors[io_spec=MutableInput]
-alias _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
-alias _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
+comptime _MutableInputVariadicTensors = VariadicTensors[io_spec=MutableInput]
+comptime _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
+comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
 
 
 @fieldwise_init
@@ -1279,11 +1427,11 @@ struct VariadicTensors[
     io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
-](ImplicitlyCopyable, Movable, Sized):
+](ImplicitlyCopyable, Sized):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 
-    var _tensors: StaticTuple[DynamicTensor[dtype, rank], size]
+    var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
 
     fn __len__(self) -> Int:
         """Returns the number of variadic arguments in the pack.
@@ -1291,14 +1439,14 @@ struct VariadicTensors[
         Returns:
             The number of variadic arguments.
         """
-        return size
+        return Self.size
 
     fn __getitem__[
         index: Int
     ](
         self,
         out result: ManagedTensorSlice[
-            io_spec=io_spec, static_spec = static_specs[index]
+            io_spec = Self.io_spec, static_spec = Self.static_specs[index]
         ],
     ):
         """Returns the tensor at the given position in the variadic argument
@@ -1310,7 +1458,7 @@ struct VariadicTensors[
         Returns:
             The tensor at the specified index.
         """
-        constrained[index < size]()
+        constrained[index < Self.size]()
         var tensor = self._tensors[index]
         return {tensor._ptr, tensor._spec, tensor._runtime_strides}
 

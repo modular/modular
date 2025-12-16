@@ -32,18 +32,8 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.nn import ReturnLogits, Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -270,48 +260,24 @@ class InternVLModel(
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for InternVL."""
         return InternVLConfig.get_kv_params(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         """Gets the number of hidden layers from the HuggingFace configuration."""
         return InternVLConfig.get_num_layers(huggingface_config)
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the KV cache required for the InternVL model in bytes."""
-        return estimate_kv_cache_size(
-            params=InternVLConfig.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=len(devices),
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            num_layers=InternVLConfig.get_num_layers(
-                huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-            devices=devices,
-        )
 
     @classmethod
     def estimate_activation_memory(
@@ -565,7 +531,7 @@ class InternVLModel(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.input_symbols()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(
@@ -627,12 +593,13 @@ class InternVLModel(
     ) -> list[PagedCacheValues]:
         kv_params = InternVLConfig.get_kv_params(
             huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
+            pipeline_config=self.pipeline_config,
+            devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.input_symbols()[0]
+        fetch_types = self.kv_params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):
@@ -874,11 +841,16 @@ class InternVLModel(
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextAndVisionContext],
+        replica_batches: Sequence[Sequence[TextAndVisionContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the InternVL model."""
+
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
 
         # First marshal out the pixel values, since we'll overwrite them.
         pixel_values = self._prepare_vision_inputs(context_batch)
@@ -938,28 +910,4 @@ class InternVLModel(
             # Set vision model inputs to None after the first step
             pixel_values=None,
             kv_cache_inputs=prev_inputs.kv_cache_inputs,
-        )
-
-    def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        """Loads and initializes the KVCacheManager for the InternVL model."""
-        return load_kv_manager(
-            params=InternVLConfig.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            num_layers=InternVLConfig.get_num_layers(
-                huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            page_size=self.kv_cache_config.kv_cache_page_size,
-            session=session,
         )

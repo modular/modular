@@ -39,7 +39,7 @@ This project uses Bazel for building. Commands should be run through the
 # Run GPU tests with specific hardware
 ./bazelw test --config=remote-a10 //max/kernels/test/gpu/...  # For A10 GPU
 ./bazelw test --config=remote-h100 //max/kernels/test/gpu/... # For H100 GPU
-./bazelw test --config=remote-mi300 //max/kernels/test/gpu/... # For MI300 GPU
+./bazelw test --config=remote-mi355 //max/kernels/test/gpu/... # For MI300 GPU
 ```
 
 ### Running Mojo Files Directly
@@ -95,7 +95,7 @@ bd //KGEN/tools/mojo -- /path/to/file.mojo
 
 ```mojo
 from linalg.matmul import matmul
-from internal_utils import DeviceNDBuffer, HostNDBuffer
+from layout import Layout, LayoutTensor
 from gpu.host import DeviceContext
 ```
 

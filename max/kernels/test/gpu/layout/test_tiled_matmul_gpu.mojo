@@ -51,15 +51,15 @@ fn naive_matmul[
 
 fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
     print("=== test_naive_matmul_kernel")
-    alias M = 8
-    alias N = 8
-    alias K = 8
-    alias BM = 4
-    alias BN = 4
+    comptime M = 8
+    comptime N = 8
+    comptime K = 8
+    comptime BM = 4
+    comptime BN = 4
 
-    alias layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
-    alias layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
-    alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
+    comptime layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
+    comptime layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
+    comptime layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
     var mat_a = ManagedLayoutTensor[DType.float32, layout_a](ctx)
     var mat_b = ManagedLayoutTensor[DType.float32, layout_b](ctx)
@@ -69,7 +69,7 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
     arange(mat_b.tensor())
     _ = mat_c.tensor().fill(0)
 
-    alias naive_matmul_kernel = naive_matmul[
+    comptime naive_matmul_kernel = naive_matmul[
         layout_c, layout_a, layout_b, BM, BN
     ]
 
@@ -182,21 +182,21 @@ fn sram_blocked_matmul[
 
 fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
     print("=== test_sram_blocked_matmul")
-    alias M = 8
-    alias N = 8
-    alias K = 8
-    alias BM = 4
-    alias BN = 4
-    alias BK = 4
+    comptime M = 8
+    comptime N = 8
+    comptime K = 8
+    comptime BM = 4
+    comptime BN = 4
+    comptime BK = 4
 
-    alias TH_M = 2
-    alias TH_N = 2
+    comptime TH_M = 2
+    comptime TH_N = 2
 
-    alias layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
-    alias layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
-    alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
+    comptime layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
+    comptime layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
+    comptime layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    alias thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
+    comptime thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
 
     var mat_a = ManagedLayoutTensor[DType.float32, layout_a](ctx)
     var mat_b = ManagedLayoutTensor[DType.float32, layout_b](ctx)
@@ -206,7 +206,7 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
     arange(mat_b.tensor())
     _ = mat_c.tensor().fill(0)
 
-    alias sram_blocked_matmul_kernel = sram_blocked_matmul[
+    comptime sram_blocked_matmul_kernel = sram_blocked_matmul[
         layout_c, layout_a, layout_b, thread_layout, BM, BN, BK
     ]
 
@@ -272,16 +272,16 @@ fn single_warp_mma_sync_m16n8k8[
 
 fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     print("=== single_warp_tf32_m16n8k8_matmul")
-    alias M = 16
-    alias N = 8
-    alias K = 8
+    comptime M = 16
+    comptime N = 8
+    comptime K = 8
 
-    alias TH_M = 4
-    alias TH_N = 8
+    comptime TH_M = 4
+    comptime TH_N = 8
 
-    alias layout_a = Layout.row_major(M, K)
-    alias layout_b = Layout.col_major(K, N)
-    alias layout_c = Layout.row_major(M, N)
+    comptime layout_a = Layout.row_major(M, K)
+    comptime layout_b = Layout.col_major(K, N)
+    comptime layout_c = Layout.row_major(M, N)
 
     var mat_a = ManagedLayoutTensor[DType.float32, layout_a](ctx)
     var mat_b = ManagedLayoutTensor[DType.float32, layout_b](ctx)
@@ -294,21 +294,21 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     # MMA layout are copied from CUTLASS:
     # https://sourcegraph.com/github.com/NVIDIA/cutlass@ffa34e70756b0bc744e1dfcc115b5a991a68f132/-/blob/include/cute/atom/mma_traits_sm80.hpp?L167
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
-    alias layout_a_mma = Layout(
+    comptime layout_a_mma = Layout(
         IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
         IntTuple(IntTuple(16, 1), IntTuple(8, 64)),
     )
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
-    alias layout_b_mma = Layout(
+    comptime layout_b_mma = Layout(
         IntTuple(IntTuple(4, 8), 2), IntTuple(IntTuple(8, 1), 32)
     )
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
-    alias layout_c_mma = Layout(
+    comptime layout_c_mma = Layout(
         IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
         IntTuple(IntTuple(32, 1), IntTuple(16, 8)),
     )
 
-    alias single_warp_mma_sync_m16n8k8_kernel_kernel = single_warp_mma_sync_m16n8k8[
+    comptime single_warp_mma_sync_m16n8k8_kernel_kernel = single_warp_mma_sync_m16n8k8[
         layout_c, layout_a, layout_b, layout_c_mma, layout_a_mma, layout_b_mma
     ]
 
@@ -431,17 +431,17 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
 
 fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     print("=== test_sram_blocked_matmul_dynamic_nd_buffer")
-    alias M = 8
-    alias N = 8
-    alias K = 8
-    alias BM = 4
-    alias BN = 4
-    alias BK = 4
+    comptime M = 8
+    comptime N = 8
+    comptime K = 8
+    comptime BM = 4
+    comptime BN = 4
+    comptime BK = 4
 
-    alias TH_M = 2
-    alias TH_N = 2
+    comptime TH_M = 2
+    comptime TH_N = 2
 
-    alias thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
+    comptime thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
 
     var mat_c_ptr = UnsafePointer[Float32].alloc(M * N)
     var mat_a_ptr = UnsafePointer[Float32].alloc(M * K)
@@ -472,7 +472,7 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
         mat_b_dev.unsafe_ptr(), dynamic_shape=Index(K, N)
     )
 
-    alias sram_blocked_matmul_dynamic_nd_buffer_kernel = sram_blocked_matmul_dynamic_nd_buffer[
+    comptime sram_blocked_matmul_dynamic_nd_buffer_kernel = sram_blocked_matmul_dynamic_nd_buffer[
         thread_layout, mat_c.shape, mat_a.shape, mat_b.shape, BM, BN, BK
     ]
 

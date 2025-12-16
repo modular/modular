@@ -21,7 +21,7 @@ from layout._utils import ManagedLayoutTensor
 
 @fieldwise_init
 @register_passable
-struct Dim(ImplicitlyCopyable, Movable, Stringable):
+struct Dim(ImplicitlyCopyable, Stringable):
     var m: Int
     var n: Int
     var k: Int
@@ -54,11 +54,11 @@ struct MMA(TiledOp):
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
-        alias dtype = dst.dtype
+        comptime dtype = dst.dtype
 
-        alias M = dst.shape[0]()
-        alias N = dst.shape[1]()
-        alias K = lhs.shape[1]()
+        comptime M = dst.shape[0]()
+        comptime N = dst.shape[1]()
+        comptime K = lhs.shape[1]()
 
         for m in range(M):
             for n in range(N):
@@ -76,17 +76,16 @@ struct MMA_Vec(TiledOp):
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
-        alias M = dst.shape[0]()
-        alias N = dst.shape[1]()
-        alias K = lhs.shape[1]()
+        comptime M = dst.shape[0]()
+        comptime N = dst.shape[1]()
+        comptime K = lhs.shape[1]()
 
-        alias width = simd_width_of[dst.dtype]() * 2
+        comptime width = simd_width_of[dst.dtype]() * 2
 
         for m in range(M):
             for n in range(N):
 
-                @parameter
-                fn dot[width: Int](k: Int):
+                fn dot[width: Int](k: Int) unified {mut}:
                     dst.store[width](
                         m,
                         n,
@@ -97,7 +96,7 @@ struct MMA_Vec(TiledOp):
                         * rhs.load[width](n, k).cast[dst.dtype](),
                     )
 
-                vectorize[dot, width, size=K]()
+                vectorize[width, size=K](dot)
 
 
 fn gemm_l2_cache[
@@ -105,16 +104,16 @@ fn gemm_l2_cache[
 ](
     dst: LayoutTensor[mut=True, *_, **_], lhs: LayoutTensor, rhs: LayoutTensor
 ) raises:
-    alias M = dst.shape[0]()
-    alias N = dst.shape[1]()
-    alias K = lhs.shape[1]()
+    comptime M = dst.shape[0]()
+    comptime N = dst.shape[1]()
+    comptime K = lhs.shape[1]()
 
     # Dimensions of the Operation
-    alias op_dim = Dim(M, N, K)
+    comptime op_dim = Dim(M, N, K)
 
     # L1 and L2 Tiile ranges
-    alias l1_size = op_dim.subrange(L1)
-    alias l2_size = L1.subrange(L2)
+    comptime l1_size = op_dim.subrange(L1)
+    comptime l2_size = L1.subrange(L2)
 
     # Cache matrix to materialize L2 transposed tiles
     var l2_rhs_cache = ManagedLayoutTensor[
@@ -158,16 +157,16 @@ fn gemm_l2_cache[
 fn gemm_l1_cache[
     mma: TiledOp, L1: Dim, L2: Dim
 ](dst: LayoutTensor[mut=True, *_, **_], lhs: LayoutTensor, rhs: LayoutTensor):
-    alias M = dst.shape[0]()
-    alias N = dst.shape[1]()
-    alias K = lhs.shape[1]()
+    comptime M = dst.shape[0]()
+    comptime N = dst.shape[1]()
+    comptime K = lhs.shape[1]()
 
     # Dimensions of the Operation
-    alias op_dim = Dim(M, N, K)
+    comptime op_dim = Dim(M, N, K)
 
     # L1 and L2 Tiile ranges
-    alias l1_size = op_dim.subrange(L1)
-    alias l2_size = L1.subrange(L2)
+    comptime l1_size = op_dim.subrange(L1)
+    comptime l2_size = L1.subrange(L2)
 
     # Cache the L1 RHS and LHS tiles to reuse across the k_1 loop
     # The RHS tile is also cached to minimize the transpose operatipons.

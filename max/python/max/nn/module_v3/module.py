@@ -21,14 +21,13 @@ import functools
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from max import graph
+from max.driver import CPU, Device, DLPackArray
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor, _session
+from max.graph import Graph, TensorType
 from rich.pretty import pretty_repr
 from typing_extensions import Self, dataclass_transform
-
-from ... import graph
-from ...driver import Device, DLPackArray
-from ...experimental import functional as F
-from ...experimental.tensor import Tensor, _session
-from ...graph import Graph
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
@@ -438,7 +437,11 @@ class Module:
         finally:
             self.load_state_dict(parameters)
 
-    def compile(self, *input_types: graph.Type[Any]) -> Callable[..., Any]:
+    def compile(
+        self,
+        *input_types: graph.Type[Any],
+        weights: Mapping[str, DLPackArray] | None = None,
+    ) -> Callable[..., Any]:
         """Compiles the module to an optimized executable through graph tracing.
 
         This method performs symbolic tracing of the module's ``__call__`` method
@@ -493,6 +496,16 @@ class Module:
                 ``__call__``. Must match the number and order of arguments.
                 Each should be a :obj:`max.graph.Type` (typically
                 :obj:`TensorType`) describing the shape and dtype.
+            weights: Mapping of parameter names to weight data. Weights should
+                be on CPU and will be transfered to the target device as part
+                of model initialization. If not passed, the model's parameters
+                will be used as the weights.
+
+                XXX: We could just separate compilation from loading model
+                loading :/
+                Yeah that's definitely the right fix. We can do this temporarily
+                to unblock but absolutely the root cause of this whole problem
+                is the fact that we combine compilation and loading into one step.
 
         Returns:
             Callable[..., Any]
@@ -507,13 +520,14 @@ class Module:
             RuntimeError: If graph construction fails due to incompatible
                 operations or parameter access issues.
         """
-
         with Graph(type(self).__qualname__, input_types=input_types) as graph:
             # Wrap the graph inputs in Tensors
-            inputs = [Tensor(value=input.tensor) for input in graph.inputs]
+            inputs = [Tensor.from_graph_value(input) for input in graph.inputs]
 
             def as_weight(name: str, tensor: Tensor):  # noqa: ANN202
-                return F.constant_external(name, tensor.type)
+                # Weights are always on host and then moved to the device in init
+                type = TensorType(tensor.dtype, tensor.shape, CPU())
+                return F.constant_external(name, type).to(tensor.device)
 
             # Temporarily replace the parameters with external constants
             # while building the graph.
@@ -538,7 +552,23 @@ class Module:
 
         # Compile the graph with module parameters as weights
         session = _session()
-        weights = dict(self.parameters)
+
+        # Avoid realizing parameters to a device if at all possible.
+        # Most users should pass CPU weights to this method explicitly.
+        if weights is None:
+            # - Weights are loaded from the host directly and then moved onto the
+            #   device during init
+            # - Holding a reference to the parameter would cause it to be realized
+            #   when passing weights to compilation
+            # - Instead, if a parameter is not real we reset it to _after_ the move
+            #   to CPU
+            weight_tensors = {k: t.to(CPU()) for k, t in self.parameters}
+            self.apply_to_parameters(
+                lambda name, data: data
+                if data.real
+                else weight_tensors[name].to(data.device)
+            )
+            weights = weight_tensors
         compiled = F.functional(session.load(graph, weights_registry=weights))
 
         if unary:
@@ -632,7 +662,8 @@ def module_dataclass(  # noqa: ANN201
 
     def decorator(cls: type[Module]) -> type[Module]:
         decorated = dataclass_decorator(cls)
-        decorated.__rich_repr__ = _module_dataclass_rich_repr  # type: ignore
+        if cls.__rich_repr__ is Module.__rich_repr__:
+            decorated.__rich_repr__ = _module_dataclass_rich_repr  # type: ignore
         return decorated
 
     return decorator(cls) if cls else decorator

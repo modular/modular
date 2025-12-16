@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import EmbeddingsContext, PipelineTask
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
@@ -35,6 +35,7 @@ mpnet_arch = SupportedArchitecture(
     },
     pipeline_model=MPNetPipelineModel,
     tokenizer=TextTokenizer,
+    context_type=EmbeddingsContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

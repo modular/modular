@@ -74,6 +74,11 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         # Flatten our batch for consistent indexing.
         eos_token_list = list(self._eos_token_id)
 
+        # Reserve KV cache blocks for the batch.
+        for kv_manager in self.kv_managers:
+            for context in batch.values():
+                kv_manager.alloc(context, num_steps=num_steps)
+
         # Prepare the batch.
         model_inputs, num_steps, bitmask, context_batch = self.prepare_batch(
             [batch], num_steps
@@ -168,8 +173,10 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         # Prepare the response, pruning away completed requests as we go.
         res: dict[RequestID, TextGenerationOutput] = {}
         tracer.push("prepare_response")
-        for batch_index, (request_id, context) in enumerate(batch.items()):
-            num_valid_tokens = min(num_steps, tokens_to_generate[request_id])
+        for batch_index, context in enumerate(context_batch):
+            num_valid_tokens = min(
+                num_steps, tokens_to_generate[context.request_id]
+            )
             for step in range(num_valid_tokens):
                 # Convert to a Python scalar to improve serialization performance.
                 next_token = int(generated_tokens_host[batch_index, step])
@@ -179,7 +186,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
                 if context.status.is_done:
                     break
 
-            res[request_id] = context.to_generation_output()
+            res[context.request_id] = context.to_generation_output()
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.

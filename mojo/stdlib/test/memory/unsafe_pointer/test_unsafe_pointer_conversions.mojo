@@ -86,11 +86,11 @@ def test_v2_immutable_any_converts_to_v1():
 # V1 -> V2 tests
 
 
-fn v2_mutable(_p: UnsafeMutPointer[Int]):
+fn v2_mutable(_p: MutUnsafePointer[Int]):
     pass
 
 
-fn v2_immutable(_p: UnsafeImmutPointer[Int]):
+fn v2_immutable(_p: ImmutUnsafePointer[Int]):
     pass
 
 
@@ -148,6 +148,16 @@ def test_v1_immutable_any_converts_to_v2():
     v2_mutable_any(p)
     v2_immutable_any(p)
     v2_unbound(p)
+
+
+def test_v1_to_v2_external():
+    var x = 42
+    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer[Int]()
+    _: UnsafePointer[Int, ImmutOrigin.external] = LegacyUnsafePointer[Int]()
+    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer(to=x)
+    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer[
+        Int, origin = MutOrigin.external
+    ]()
 
 
 def main():

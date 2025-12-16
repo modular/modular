@@ -124,7 +124,7 @@ trait QuantizedGemm:
 
 
 struct _block_Q4_0:
-    alias group_size = 32
+    comptime group_size = 32
 
     var base_scale: Float16
     var q_bits: InlineArray[UInt8, Self.group_size // 2]
@@ -211,7 +211,7 @@ struct qgemm_Q4_0(QuantizedGemm):
 
         var sum: Int32 = 0
 
-        alias b_zero_point = 8
+        comptime b_zero_point = 8
 
         for i in range(_block_Q4_0.group_size):
             sum += a_quant_data[i].cast[DType.int32]() * (
@@ -478,7 +478,7 @@ fn reference_gemm[
     var N = b.dim[0]()
     var K = a.dim[1]()
 
-    alias grain_size = 128
+    comptime grain_size = 128
 
     var total_work = M * N
     var num_workers = ceildiv(total_work, grain_size)
@@ -527,7 +527,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
     def _build_b_buffer(
         N: Int, K: Int
     ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
-        return qgemm.build_b_buffer(N, K)
+        return Self.qgemm.build_b_buffer(N, K)
 
     @staticmethod
     def _pack_b_buffer(
@@ -542,7 +542,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
                 b.runtime_layout.shape.value.canonicalize()
             ),
         )
-        qgemm.pack_b_buffer(b, b_packed)
+        Self.qgemm.pack_b_buffer(b, b_packed)
         return b_packed
 
     def __init__(out self, M: Int, N: Int, K: Int):

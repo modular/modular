@@ -32,4 +32,8 @@ if [[ ! -d "$clang_root" ]]; then
   clang_root="$repo_root/../+http_archive+clang-$platform"
 fi
 
-exec "$clang_root/bin/clang++" "$@"
+"$clang_root/bin/clang++" "$@"
+
+if [[ -n "${PARSE_HEADER:-}" ]]; then
+  touch "${PARSE_HEADER}"
+fi

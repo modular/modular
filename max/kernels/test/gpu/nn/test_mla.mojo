@@ -84,8 +84,8 @@ fn test[
     ]()
 
     # Query, key, value dimensions.
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
-    alias kv_num_heads = num_heads // group
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -137,7 +137,7 @@ fn test[
         randn[mask_type](mask_ptr, mask_size)
 
     # Construct buffers.
-    alias layout_4d = Layout.row_major[4]()
+    comptime layout_4d = Layout.row_major[4]()
     var q = LayoutTensor[qkv_type, layout_4d](
         q_ptr,
         RuntimeLayout[layout_4d].row_major(
@@ -191,7 +191,7 @@ fn test[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct layout tensor buffers.
-    alias q_layout = Layout.row_major(
+    comptime q_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
     )
     var q_device = LayoutTensor[qkv_type, q_layout](
@@ -200,7 +200,7 @@ fn test[
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
-    alias k_layout = Layout.row_major(
+    comptime k_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
     )
     var k_device = LayoutTensor[qkv_type, k_layout](
@@ -221,7 +221,7 @@ fn test[
             Index(batch_size, num_heads, seq_len, num_keys)
         ),
     )
-    alias output_layout = Layout.row_major(
+    comptime output_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
     )
     var output_device = LayoutTensor[qkv_type, output_layout](
@@ -231,8 +231,8 @@ fn test[
         ),
     )
 
-    alias q_tile_num_rows = 32
-    alias k_tile_num_rows = 128
+    comptime q_tile_num_rows = 32
+    comptime k_tile_num_rows = 128
 
     @parameter
     @always_inline
@@ -274,7 +274,7 @@ fn test[
             )
 
     if is_benchmark():
-        alias nrun = 200
+        comptime nrun = 200
 
         # Warmup
         kernel_launch(ctx)
@@ -293,7 +293,7 @@ fn test[
     @parameter
     if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-        alias output_ref_layout = Layout.row_major(
+        comptime output_ref_layout = Layout.row_major(
             Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
         )
         var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
@@ -307,8 +307,13 @@ fn test[
         @parameter
         if use_causal_mask:
             var k_operand = LayoutTensorMHAOperand(k_device)
-            var null_valid_length = NDBuffer[DType.uint32, 1](
-                UnsafePointer[UInt32](), Index(0)
+            var null_valid_length = LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+            ](
+                UnsafePointer[UInt32](),
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    Index(0)
+                ),
             )
             mha_gpu_naive[_is_cache_length_accurate=True,](
                 q_device,
@@ -316,12 +321,7 @@ fn test[
                 k_operand,
                 CausalMask(),
                 output_ref_device,
-                ManagedTensorSlice[
-                    io_spec=IOUnknown,
-                    static_spec = StaticTensorSpec[
-                        DType.uint32, 1
-                    ].create_unknown(),
-                ](null_valid_length),
+                null_valid_length,
                 scale,
                 batch_size,
                 seq_len,
@@ -430,7 +430,7 @@ fn test_prefill[
         cache_num_heads,
     )
 
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
 
     var q_size = batch_size * seq_len * num_heads * depth
     var k_size = batch_size * num_keys * num_heads * kv_depth
@@ -513,28 +513,28 @@ fn test_prefill[
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
     # construct device buffers
-    alias q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
+    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
     var q_device = LayoutTensor[qkv_type, q_layout](
         q_device_ptr.unsafe_ptr(),
         RuntimeLayout[q_layout].row_major(
             Index(batch_size * seq_len, num_heads, depth)
         ),
     )
-    alias k_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
+    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
     var k_device = LayoutTensor[qkv_type, k_layout](
         k_device_ptr.unsafe_ptr(),
         RuntimeLayout[k_layout].row_major(
             Index(batch_size * num_keys, num_heads, kv_depth)
         ),
     )
-    alias v_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
+    comptime v_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
     var v_device = LayoutTensor[qkv_type, v_layout](
         v_device_ptr.unsafe_ptr(),
         RuntimeLayout[v_layout].row_major(
             Index(batch_size * num_keys, num_heads, kv_depth)
         ),
     )
-    alias cache_layout = Layout.row_major(
+    comptime cache_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, cache_num_heads, cache_depth
     )
     var cache_device = LayoutTensor[qkv_type, cache_layout](
@@ -543,7 +543,9 @@ fn test_prefill[
             Index(batch_size, num_keys, cache_num_heads, cache_depth)
         ),
     )
-    alias output_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, num_heads, kv_depth
+    )
     var output_device = LayoutTensor[qkv_type, output_layout](
         output_device_ptr.unsafe_ptr(),
         RuntimeLayout[output_layout].row_major(
@@ -579,7 +581,9 @@ fn test_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank, softmax_type = DType.float32](
+        flare_mla_prefill[
+            rank = q.rank, softmax_type = DType.float32, use_fa4=True
+        ](
             output_device,
             q_device,
             k_device,
@@ -595,7 +599,7 @@ fn test_prefill[
         )
 
     if is_benchmark():
-        alias nrun = 200
+        comptime nrun = 200
 
         # Warmup
         for i in range(20):
@@ -673,7 +677,7 @@ fn test_prefill[
                     v_ref[b, s, h, d + kv_depth] = 0
 
     # view q_device as a rank 4 buffer
-    alias q_layout_4d = Layout.row_major(
+    comptime q_layout_4d = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
     )
     var q_device_rank4 = LayoutTensor[qkv_type, q_layout_4d](
@@ -694,7 +698,7 @@ fn test_prefill[
         batch_size * seq_len * num_heads * depth
     )
     # create device buffers for K_ref and V_ref
-    alias k_layout_4d = Layout.row_major(
+    comptime k_layout_4d = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
     )
     var k_ref_device = LayoutTensor[qkv_type, k_layout_4d](
@@ -703,7 +707,7 @@ fn test_prefill[
             Index(batch_size, num_keys, num_heads, depth)
         ),
     )
-    alias v_layout_4d = Layout.row_major(
+    comptime v_layout_4d = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
     )
     var v_ref_device = LayoutTensor[qkv_type, v_layout_4d](
@@ -712,7 +716,7 @@ fn test_prefill[
             Index(batch_size, num_keys, num_heads, depth)
         ),
     )
-    alias output_layout_4d = Layout.row_major(
+    comptime output_layout_4d = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
     )
     var output_ref_device = LayoutTensor[qkv_type, output_layout_4d](
@@ -726,8 +730,11 @@ fn test_prefill[
     ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
-    var null_valid_length = NDBuffer[DType.uint32, 1](
-        UnsafePointer[UInt32](), Index(0)
+    var null_valid_length = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        UnsafePointer[UInt32](),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(k_ref_device)
@@ -740,10 +747,7 @@ fn test_prefill[
         v_ref_operand,
         CausalMask(),
         output_ref_device,
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](null_valid_length),
+        null_valid_length,
         scale,
         batch_size,
         seq_len,
@@ -831,8 +835,8 @@ fn test_cascade_prefill[
         chunk_size,
     )
 
-    alias scale = Float32(0.125)
-    alias accum_type = get_accum_type[qkv_type]()
+    comptime scale = Float32(0.125)
+    comptime accum_type = get_accum_type[qkv_type]()
 
     var total_iters = ceildiv(num_keys, chunk_size)
     var q_size = batch_size * seq_len * num_heads * depth
@@ -928,42 +932,46 @@ fn test_cascade_prefill[
     ctx.enqueue_copy(input_row_offsets_device_ptr, input_row_offsets)
 
     # construct device buffers
-    alias q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
+    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
     var q_device = LayoutTensor[qkv_type, q_layout](
         q_device_ptr.unsafe_ptr(),
         RuntimeLayout[q_layout].row_major(
             Index(batch_size * seq_len, num_heads, depth)
         ),
     )
-    alias k_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
+    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
     var k_device = LayoutTensor[qkv_type, k_layout](
         k_device_ptr.unsafe_ptr(),
         RuntimeLayout[k_layout].row_major(
             Index(batch_size * num_keys, num_heads, kv_depth)
         ),
     )
-    alias v_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
+    comptime v_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
     var v_device = LayoutTensor[qkv_type, v_layout](
         v_device_ptr.unsafe_ptr(),
         RuntimeLayout[v_layout].row_major(
             Index(batch_size * num_keys, num_heads, kv_depth)
         ),
     )
-    alias k_chunk_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
+    comptime k_chunk_layout = Layout.row_major(
+        UNKNOWN_VALUE, num_heads, kv_depth
+    )
     var k_chunk_device = LayoutTensor[qkv_type, k_chunk_layout](
         k_chunk_device_ptr.unsafe_ptr(),
         RuntimeLayout[k_chunk_layout].row_major(
             Index(batch_size * chunk_size, num_heads, kv_depth)
         ),
     )
-    alias v_chunk_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, kv_depth)
+    comptime v_chunk_layout = Layout.row_major(
+        UNKNOWN_VALUE, num_heads, kv_depth
+    )
     var v_chunk_device = LayoutTensor[qkv_type, v_chunk_layout](
         v_chunk_device_ptr.unsafe_ptr(),
         RuntimeLayout[v_chunk_layout].row_major(
             Index(batch_size * chunk_size, num_heads, kv_depth)
         ),
     )
-    alias cache_layout = Layout.row_major(
+    comptime cache_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, cache_num_heads, cache_depth
     )
     var cache_device = LayoutTensor[qkv_type, cache_layout](
@@ -972,7 +980,7 @@ fn test_cascade_prefill[
             Index(batch_size, num_keys, cache_num_heads, cache_depth)
         ),
     )
-    alias output_layout_3d = Layout.row_major(
+    comptime output_layout_3d = Layout.row_major(
         UNKNOWN_VALUE, num_heads, kv_depth
     )
     var output_device = LayoutTensor[qkv_type, output_layout_3d](
@@ -1091,7 +1099,7 @@ fn test_cascade_prefill[
 
     # create device pointers for K_ref and V_ref
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-    alias output_ref_layout = Layout.row_major(
+    comptime output_ref_layout = Layout.row_major(
         UNKNOWN_VALUE, num_heads, kv_depth
     )
     var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
@@ -1124,7 +1132,9 @@ fn test_cascade_prefill[
     )
 
     # create reference output
-    flare_mla_prefill[rank = q_device.rank, softmax_type = DType.float32](
+    flare_mla_prefill[
+        rank = q_device.rank, softmax_type = DType.float32, use_fa4=False
+    ](
         output_ref_device,
         q_device,
         k_device,
@@ -1258,7 +1268,7 @@ fn test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
-    ](140, 140, ctx)
+    ](120, 120, ctx)
     test_prefill[
         DType.bfloat16,
         depth=192,

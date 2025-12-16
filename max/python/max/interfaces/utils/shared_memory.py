@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 import weakref
 from multiprocessing import shared_memory
@@ -23,8 +24,13 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from max.profiler import Tracer
 
 logger = logging.getLogger(__name__)
+
+SHARED_MEMORY_WATERMARK = float(os.getenv("MODULAR_MAX_SHM_WATERMARK", 0.9))
+LAST_WARNING = time.monotonic()
+WARNING_INTERVAL = 30.0  # seconds
 
 
 def can_allocate(size: int) -> bool:
@@ -43,8 +49,7 @@ def can_allocate(size: int) -> bool:
         # If we can't check capacity, assume we can allocate.
         return True
 
-    watermark = float(os.getenv("MODULAR_MAX_SHM_WATERMARK", "0.8"))
-    return size < available * watermark
+    return size < available * SHARED_MEMORY_WATERMARK
 
 
 class SharedMemoryArray:
@@ -73,7 +78,19 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
         SharedMemoryArray if successful, None if shared memory is full or creation fails
     """
     # Check shared memory capacity.
-    if not can_allocate(arr.nbytes) or arr.nbytes == 0:
+    if not can_allocate(arr.nbytes):
+        global LAST_WARNING
+        if time.monotonic() - LAST_WARNING > WARNING_INTERVAL:
+            LAST_WARNING = time.monotonic()
+            logger.warning(
+                "Unable to allocate shared memory for array (size: %d bytes). "
+                "Consider increasing the shared memory watermark (set MODULAR_MAX_SHM_WATERMARK), "
+                "expanding /dev/shm capacity, or reducing concurrency.",
+                arr.nbytes,
+            )
+        return None
+
+    elif arr.nbytes == 0:
         return None
 
     try:
@@ -121,21 +138,24 @@ def open_shm_array(meta: dict[str, Any]) -> npt.NDArray[Any]:
         RuntimeError: If the shared memory segment cannot be opened or mapped
             (e.g., insufficient permissions or ENOMEM under memory pressure).
     """
-    try:
-        shm = shared_memory.SharedMemory(name=meta["name"])
-    except (OSError, FileNotFoundError) as e:
-        raise RuntimeError(
-            f"Failed to open shared memory array in consumer: {e}"
-        ) from e
+    with Tracer("open_shm_array_file"):
+        try:
+            shm = shared_memory.SharedMemory(name=meta["name"])
+        except (OSError, FileNotFoundError) as e:
+            raise RuntimeError(
+                f"Failed to open shared memory array in consumer: {e}"
+            ) from e
 
     # Create numpy array view into shared memory
-    arr: npt.NDArray[Any] = np.ndarray(
-        shape=meta["shape"], dtype=np.dtype(meta["dtype"]), buffer=shm.buf
-    )
+    with Tracer("creating_ndarray_from_shm.buf"):
+        arr: npt.NDArray[Any] = np.ndarray(
+            shape=meta["shape"], dtype=np.dtype(meta["dtype"]), buffer=shm.buf
+        )
 
     # Mode: register cleanup and mark for deletion when last reference closes.
     weakref.finalize(arr, shm.close)
-    shm.unlink()
+    with Tracer("unlinking_shared_memory"):
+        shm.unlink()
 
     # NOTE: we could reduce shared memory pressure by returning a copy here.
     return arr

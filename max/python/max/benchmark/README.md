@@ -2,9 +2,8 @@
 
 This directory contains tools to benchmark the performance of an LLM model
 server—measuring throughput, latency, and resource utilization. You can use
-these scripts to compare other serving backends such as
-[vLLM](https://github.com/vllm-project/vllm) and
-[TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM) against MAX.
+these scripts to compare other serving backends, namely
+[vLLM](https://github.com/vllm-project/vllm), against MAX.
 
 > [!NOTE]
 > This benchmarking script is also available with the `max benchmark` command,

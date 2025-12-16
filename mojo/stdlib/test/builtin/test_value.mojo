@@ -18,28 +18,26 @@ from testing import assert_equal, assert_false, assert_true, TestSuite
 # Triviality Struct
 # ===-----------------------------------------------------------------------===#
 
-alias EVENT_TRIVIAL = 0b1  # 1
-alias EVENT_INIT = 0b10  # 2
-alias EVENT_DEL = 0b100  # 4
-alias EVENT_COPY = 0b1000  # 8
-alias EVENT_MOVE = 0b10000  # 16
+comptime EVENT_TRIVIAL = 0b1  # 1
+comptime EVENT_INIT = 0b10  # 2
+comptime EVENT_DEL = 0b100  # 4
+comptime EVENT_COPY = 0b1000  # 8
+comptime EVENT_MOVE = 0b10000  # 16
 
 
-struct ConditionalTriviality[O: MutOrigin, //, T: Movable & Copyable](
-    Copyable, Movable
-):
-    var events: Pointer[List[Int], O]
+struct ConditionalTriviality[O: MutOrigin, //, T: Copyable](Copyable):
+    var events: Pointer[List[Int], Self.O]
 
     fn add_event(mut self, event: Int):
         self.events[].append(event)
 
-    fn __init__(out self, ref [O]events: List[Int]):
+    fn __init__(out self, ref [Self.O]events: List[Int]):
         self.events = Pointer(to=events)
         self.add_event(EVENT_INIT)
 
     fn __del__(deinit self):
         @parameter
-        if T.__del__is_trivial:
+        if Self.T.__del__is_trivial:
             self.add_event(EVENT_DEL | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_DEL)
@@ -48,7 +46,7 @@ struct ConditionalTriviality[O: MutOrigin, //, T: Movable & Copyable](
         self.events = other.events
 
         @parameter
-        if T.__copyinit__is_trivial:
+        if Self.T.__copyinit__is_trivial:
             self.add_event(EVENT_COPY | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_COPY)
@@ -57,16 +55,16 @@ struct ConditionalTriviality[O: MutOrigin, //, T: Movable & Copyable](
         self.events = other.events
 
         @parameter
-        if T.__moveinit__is_trivial:
+        if Self.T.__moveinit__is_trivial:
             self.add_event(EVENT_MOVE | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_MOVE)
 
 
-struct StructInheritTriviality[T: Movable & Copyable](Movable & Copyable):
-    alias __moveinit__is_trivial = T.__moveinit__is_trivial
-    alias __copyinit__is_trivial = T.__copyinit__is_trivial
-    alias __del__is_trivial = T.__del__is_trivial
+struct StructInheritTriviality[T: Copyable](Copyable):
+    comptime __moveinit__is_trivial = Self.T.__moveinit__is_trivial
+    comptime __copyinit__is_trivial = Self.T.__copyinit__is_trivial
+    comptime __del__is_trivial = Self.T.__del__is_trivial
 
 
 # ===-----------------------------------------------------------------------===#
@@ -74,7 +72,7 @@ struct StructInheritTriviality[T: Movable & Copyable](Movable & Copyable):
 # ===-----------------------------------------------------------------------===#
 
 
-def _test_type_trivial[T: Movable & Copyable]():
+def _test_type_trivial[T: Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
@@ -95,7 +93,7 @@ def test_type_trivial():
     _test_type_trivial[Int]()
 
 
-def _test_type_not_trivial[T: Movable & Copyable]():
+def _test_type_not_trivial[T: Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
@@ -109,7 +107,7 @@ def test_type_not_trivial():
     _test_type_not_trivial[String]()
 
 
-def _test_type_inherit_triviality[T: Movable & Copyable]():
+def _test_type_inherit_triviality[T: Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)
     var value_copy = value.copy()
@@ -131,7 +129,7 @@ def test_type_inherit_triviality():
     # _test_type_inherit_triviality[InlineArray[InlineArray[Int, 4], 4]]()
 
 
-def _test_type_inherit_non_triviality[T: Movable & Copyable]():
+def _test_type_inherit_non_triviality[T: Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)
     var value_copy = value.copy()

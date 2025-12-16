@@ -30,6 +30,7 @@ from max.interfaces import (
 )
 from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
 from max.kv_cache import (
+    InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
@@ -47,8 +48,8 @@ from max.serve.scheduler.base import (
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
 
 from .base import SchedulerProgress
+from .batch_constructor import TextBatchConstructor
 from .config import TokenGenerationSchedulerConfig
-from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -88,14 +89,9 @@ class DecodeScheduler(Scheduler):
         self.prefill_reqs: dict[RequestID, TextContext] = {}
         self.inflight_transfers: dict[RequestID, TransferReqData] = {}
 
-        # Create Transfer Engine
-        if self.paged_manager.num_replicas > 1:
-            raise ValueError(
-                "DecodeScheduler does not support data parallelism"
-            )
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager._replica_managers[0].device_tensors,
+            tensors=self.paged_manager.device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
@@ -107,7 +103,7 @@ class DecodeScheduler(Scheduler):
         self.scheduler_logger = SchedulerLogger()
         # None corresponds to the default destination address.
         # TODO: delete the default destination address.
-        self.remote_endpoints: set[str | None] = set()
+        self.remote_endpoints: set[str] = set()
 
         # We are parameterizing the offload of queue draining to allow for
         # the use case where we want to drain the queue in the main thread.
@@ -121,7 +117,7 @@ class DecodeScheduler(Scheduler):
                 TextContext | TextAndVisionContext
             ](
                 self.request_queue,
-                max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,
+                max_items_per_drain=self.scheduler_config.max_batch_size * 2,
             )
 
     @traced
@@ -152,17 +148,25 @@ class DecodeScheduler(Scheduler):
         request_id: RequestID,
         data: TextContext,
         dst_idxs: list[int],
+        dst_replica_idx: int,
     ) -> None:
         """Pushes a request to the prefill socket.
 
         Args:
             request_id: The ID of the request to send
             data: The context containing the request data
+            dst_idxs: The destination block indices for the request
+            replica_idx: The replica the request is on for Decode
 
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
         """
-
+        # TODO: Do not crash the scheduler if a request does not have a target endpoint.
+        #       Instead we should validate this in the frontend.
+        if data.target_endpoint is None:
+            raise ValueError(
+                f"Target endpoint is not specified for the request {request_id}"
+            )
         if data.target_endpoint not in self.remote_endpoints:
             self.dispatcher.send_request_nowait(
                 self.transfer_engine.metadata,
@@ -184,7 +188,8 @@ class DecodeScheduler(Scheduler):
                 id=request_id,
                 context=data,
                 transfer_engine_name=self.transfer_engine.name,
-                block_ids=dst_idxs,
+                dst_block_ids=dst_idxs,
+                dst_replica_idx=dst_replica_idx,
             ),
             data.target_endpoint,
         )
@@ -197,7 +202,7 @@ class DecodeScheduler(Scheduler):
         else:
             items = drain_queue(
                 self.request_queue,
-                max_items=self.scheduler_config.max_batch_size_tg * 2,
+                max_items=self.scheduler_config.max_batch_size * 2,
             )
 
         for context in items:
@@ -208,7 +213,7 @@ class DecodeScheduler(Scheduler):
             and (
                 len(self.batch_constructor.all_tg_reqs) + len(self.prefill_reqs)
             )
-            < self.scheduler_config.max_batch_size_tg
+            < self.scheduler_config.max_batch_size
             and (
                 self.paged_manager is None
                 or self.paged_manager.free_blocks_pct > 0.1
@@ -221,27 +226,34 @@ class DecodeScheduler(Scheduler):
 
             # Claim the slot with the paged manager
             if not self.paged_manager.contains(req_id):
-                self.paged_manager.external_claim(req_id)
+                replica_idx = self.batch_constructor.get_next_replica_idx()
+                self.paged_manager.claim(req_id, replica_idx=replica_idx)
 
-            # Prefetch memory for Context Encoding eagerly, this only needs to be
-            # for one step.
-            if not self.paged_manager.maybe_reserve(context, 1):
-                # If we don't have enough space in the paged manager
-                # return this to the request queue.
+            # Allocate enough memory needed to run the request for one step.
+            # The blocks allocated here will be written via a KVCache transfer
+            # from prefill -> decode.
+            try:
+                self.paged_manager.alloc(context, 1)
+            except InsufficientBlocksError:
+                # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
                 self.pending_reqs.move_to_end(req_id, last=False)
                 self.paged_manager.release(req_id)
                 break
 
             # Send to the Prefill Node
+            dst_replica_idx = self.paged_manager.get_replica(req_id)
             dst_idxs = self.paged_manager.get_req_blocks(req_id)
             self.prefill_reqs[req_id] = context
-            self.send_prefill_request(req_id, context, dst_idxs)
+            self.send_prefill_request(
+                req_id, context, dst_idxs, dst_replica_idx
+            )
 
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
-            # Remove it from the active batch.
-            if self.batch_constructor.cancel_request(req_id):
+            if self.batch_constructor.contains(req_id):
+                # Remove it from the active batch.
+                self.batch_constructor.release_request(req_id)
                 # Send the cancelled result back to the response q
                 self.response_queue.put_nowait(
                     {req_id: SchedulerResult.cancelled()}
@@ -249,11 +261,21 @@ class DecodeScheduler(Scheduler):
 
             # If it is pending prefill, remove the pending request.
             elif req_id in self.prefill_reqs:
+                data = self.prefill_reqs[req_id]
+
                 # Remove from pending requests.
                 del self.prefill_reqs[req_id]
 
+                # TODO: Do not crash the scheduler if a request does not have a target endpoint.
+                #       Instead we should validate this in the frontend.
+                if data.target_endpoint is None:
+                    raise ValueError(
+                        f"Target endpoint is not specified for the request {req_id}."
+                    )
                 # Send a cancel request to the prefill node
-                self.dispatcher.send_request_nowait(CancelRequest(id=req_id))
+                self.dispatcher.send_request_nowait(
+                    CancelRequest(id=req_id), data.target_endpoint
+                )
 
                 # Send the cancelled result back to the response q
                 self.response_queue.put_nowait(
@@ -266,10 +288,12 @@ class DecodeScheduler(Scheduler):
                 )
 
     def check_for_completed_transfers(self) -> None:
-        """Updates the active batch by adding new requests from the decode queue and managing memory prefetching.
+        """Checks for the completion of KVCache transfers.
 
-        Adds new requests to the batch up to the maximum batch size. For each request, attempts to prefetch
-        required memory. If prefetch fails, handles preemption by returning newer requests to the decode queue.
+        For transfers that have been completed, we will mark the request as ready
+        for token generation by enqueuing it into the text batch constructor.
+
+        We also ensure that the metadata is cleaned up in the transfer engine.
         """
 
         request_ids = list(self.inflight_transfers.keys())
@@ -292,7 +316,8 @@ class DecodeScheduler(Scheduler):
 
             # Remove from pending prefill requests and add to TG requests.
             context = self.prefill_reqs.pop(request_id)
-            self.batch_constructor.enqueue_new_request(context)
+            dst_replica_idx = self.paged_manager.get_replica(request_id)
+            self.batch_constructor.enqueue_new_request(context, dst_replica_idx)
 
         # Manage for cancelled requests
         self._handle_cancelled_requests()
@@ -307,17 +332,20 @@ class DecodeScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        self.batch_constructor.move_completed_ce_requests_to_tg(
-            inputs.batches,
-            responses,
-        )
-
-        # remove terminated requests from the batch
-        num_terminated_reqs = (
-            self.batch_constructor.release_terminated_requests(
-                responses,
+        pruned_ids = (
+            self.batch_constructor.advance_requests_and_collect_invalid_ids(
+                inputs.batches
             )
         )
+        for request_id in pruned_ids:
+            del responses[request_id]
+
+        # Release terminated requests
+        num_terminated_requests = 0
+        for request_id, response in responses.items():
+            if response.is_done:
+                self.batch_constructor.release_request(request_id)
+                num_terminated_requests += 1
 
         # send the responses to the API process
         self.response_queue.put_nowait(
@@ -327,7 +355,7 @@ class DecodeScheduler(Scheduler):
             }
         )
 
-        return num_terminated_reqs
+        return num_terminated_requests
 
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes decode requests.
@@ -418,9 +446,6 @@ def load_decode_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        dispatcher=DecodeDispatcherClientV2(
-            bind_addr=settings.dispatcher_config.transport_config.bind_address,
-            default_dest_addr=settings.dispatcher_config.transport_config.default_destination_address,
-        ),
+        dispatcher=DecodeDispatcherClientV2(bind_addr=settings.di_bind_address),
         offload_queue_draining=pipeline_config.experimental_background_queue,
     )

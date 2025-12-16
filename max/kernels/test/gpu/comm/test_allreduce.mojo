@@ -14,19 +14,26 @@
 import time
 from math import floor
 from sys import size_of, has_amd_gpu_accelerator
+from itertools import product
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from comm.allreduce import MAX_GPUS, Signal, _allreduce_naive_single, allreduce
+from comm import Signal, MAX_GPUS, group_start, group_end
+from comm.allreduce import (
+    _allreduce_naive_single,
+    allreduce,
+    elementwise_epilogue_type,
+)
 import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
+from collections.optional import OptionalReg
 
 from utils import IndexList, StaticTuple
 
 # Shared test configurations
-alias test_lengths = (
+comptime test_lengths = (
     0,  # No elements
     8 * 1024,  # Small latency bound
     128 * 1024,  # Larger latency bound
@@ -36,8 +43,8 @@ alias test_lengths = (
 )
 
 # Test hyperparameters.
-alias test_dtypes = (DType.bfloat16, DType.float32)
-alias test_gpu_counts = (2, 4, 8)
+comptime test_dtypes = (DType.bfloat16, DType.float32)
+comptime test_gpu_counts = (2, 4, 8)
 
 
 fn _pretty_print_float(val: Float64) -> String:
@@ -50,9 +57,9 @@ fn _pretty_print_float(val: Float64) -> String:
 
 
 fn _human_memory(size: Int) -> String:
-    alias KB = 1024
-    alias MB = KB * KB
-    alias GB = MB * KB
+    comptime KB = 1024
+    comptime MB = KB * KB
+    comptime GB = MB * KB
 
     if size >= GB:
         return _pretty_print_float(Float64(size) / GB) + "GB"
@@ -73,15 +80,16 @@ fn allreduce_test[
     *,
     use_multimem: Bool,
     use_quickreduce: Bool = False,
+    use_custom_epilogue: Bool = False,
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     # Using multimem with zero length raises CUDA_ERROR_INVALID_VALUE
     # when setting up the buffers.
     if use_multimem and length == 0:
         return
 
-    alias num_warmups = 5
-    alias num_iters = 100
-    alias num_buffers = 1 if use_multimem else ngpus
+    comptime num_warmups = 5
+    comptime num_iters = 100
+    comptime num_buffers = 1 if use_multimem else ngpus
 
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
@@ -186,20 +194,27 @@ fn allreduce_test[
         _alignment: Int,
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
         out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
-            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
+            rebind[IndexList[rank]](coords),
+            rebind[SIMD[dtype, _width]](
+                -val  # Negate to distinguish from default epilogue
+            ),
         )
 
     # Warm up.
     for _ in range(num_warmups):
+        group_start()
 
         @parameter
         for i in range(ngpus):
             allreduce[
                 ngpus=ngpus,
-                output_lambda = outputs_lambda[input_index=i],
+                output_lambda = OptionalReg[elementwise_epilogue_type](
+                    outputs_lambda[input_index=i]
+                ) if use_custom_epilogue else None,
                 use_multimem=use_multimem,
                 use_quickreduce=use_quickreduce,
             ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+        group_end()
 
     # Synchronize all devices.
     for i in range(ngpus):
@@ -214,15 +229,19 @@ fn allreduce_test[
     start_t_mojo = time.perf_counter_ns()
 
     for _ in range(num_iters):
+        group_start()
 
         @parameter
         for i in range(ngpus):
             allreduce[
                 ngpus=ngpus,
-                output_lambda = outputs_lambda[input_index=i],
+                output_lambda = OptionalReg[elementwise_epilogue_type](
+                    outputs_lambda[input_index=i]
+                ) if use_custom_epilogue else None,
                 use_multimem=use_multimem,
                 use_quickreduce=use_quickreduce,
             ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+        group_end()
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -253,13 +272,16 @@ fn allreduce_test[
 
             # Warm-up RCCL.
             for _ in range(num_warmups):
-                vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
-                    rebind[
-                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
-                    ](in_bufs),
-                    out_bufs_vendor,
-                    list_of_ctx,
-                )
+                with vendor_ccl.group():
+
+                    @parameter
+                    for i in range(ngpus):
+                        vendor_ccl.allreduce[ngpus=ngpus](
+                            in_bufs,
+                            out_bufs_vendor[i],
+                            rank_sigs,
+                            list_of_ctx[i],
+                        )
 
             for i in range(ngpus):
                 list_of_ctx[i].synchronize()
@@ -267,13 +289,17 @@ fn allreduce_test[
             # Benchmark RCCL.
             start_t_rccl = time.perf_counter_ns()
             for _ in range(num_iters):
-                vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
-                    rebind[
-                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
-                    ](in_bufs),
-                    out_bufs_vendor,
-                    list_of_ctx,
-                )
+                with vendor_ccl.group():
+
+                    @parameter
+                    for i in range(ngpus):
+                        vendor_ccl.allreduce[ngpus=ngpus](
+                            in_bufs,
+                            out_bufs_vendor[i],
+                            rank_sigs,
+                            list_of_ctx[i],
+                        )
+
             for i in range(ngpus):
                 list_of_ctx[i].synchronize()
             end_t_rccl = time.perf_counter_ns()
@@ -297,15 +323,18 @@ fn allreduce_test[
     for i in range(ngpus):
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
 
+    var mocl_expected_sum = (
+        expected_sum if not use_custom_epilogue else -expected_sum
+    )
     # Verify results
     for i in range(ngpus):
         for j in range(length):
             try:
-                assert_almost_equal(host_buffers[i][j], expected_sum)
+                assert_almost_equal(host_buffers[i][j], mocl_expected_sum)
             except e:
                 print("Verification failed at GPU", i, "index", j)
                 print("Value:", host_buffers[i][j])
-                print("Expected:", expected_sum)
+                print("Expected:", mocl_expected_sum)
                 raise e
 
     # (RCCL verification is performed above within the benchmark block.)
@@ -314,13 +343,19 @@ fn allreduce_test[
     for i in range(ngpus):
         host_buffers[i].free()
     _ = signal_buffers^
+    _ = in_bufs_list^
+    _ = out_bufs_list^
 
 
 fn _get_test_str[
-    dtype: DType, use_multimem: Bool, use_quickreduce: Bool = False
+    dtype: DType,
+    use_multimem: Bool,
+    use_quickreduce: Bool = False,
+    use_custom_epilogue: Bool = False,
 ](ngpus: Int, length: Int) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
     var quickreduce_tag = "-quickreduce" if use_quickreduce else ""
+    var epilogue_tag = "-custom_epilogue" if use_custom_epilogue else ""
     return String(
         "====allreduce-",
         dtype,
@@ -328,6 +363,7 @@ fn _get_test_str[
         ngpus,
         multimem_tag,
         quickreduce_tag,
+        epilogue_tag,
         "-",
         _human_memory(size_of[dtype]() * length),
     )
@@ -336,8 +372,8 @@ fn _get_test_str[
 def allreduce_naive_test() -> None:
     """Explicit smoke test for the allreduce naive path."""
     print("====allreduce-naive-smoke-DType.float32-2-8Ki elements")
-    alias ngpus = 2
-    alias length = 8 * 1024
+    comptime ngpus = 2
+    comptime length = 8 * 1024
 
     # Create contexts for two devices
     var ctxs = List[DeviceContext]()
@@ -432,8 +468,13 @@ fn run_allreduce_sweep[
 ]() raises:
     # Run tests for each configuration.
     @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
-        alias num_gpus = test_gpu_counts[gpu_idx]
+    for gpu_idx, dtype_idx, length_idx, use_custom_epilogue in product(
+        range(len(test_gpu_counts)),
+        range(len(test_dtypes)),
+        range(len(test_lengths)),
+        List(True, False, __list_literal__=()),
+    ):
+        comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() < num_gpus:
             break
 
@@ -442,47 +483,44 @@ fn run_allreduce_sweep[
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
-        # Test all cases for this configuration.
-        @parameter
-        for dtype_idx in range(len(test_dtypes)):
-            alias dtype = test_dtypes[dtype_idx]
+        comptime dtype = test_dtypes[dtype_idx]
+        comptime length = test_lengths[length_idx]
 
-            @parameter
-            for length_idx in range(len(test_lengths)):
-                alias length = test_lengths[length_idx]
-
+        print(
+            _get_test_str[
+                dtype, use_multimem, use_quickreduce, use_custom_epilogue
+            ](num_gpus, length)
+        )
+        try:
+            allreduce_test[
+                dtype=dtype,
+                rank=1,
+                ngpus=num_gpus,
+                use_multimem=use_multimem,
+                use_quickreduce=use_quickreduce,
+                use_custom_epilogue=use_custom_epilogue,
+            ](ctx, length)
+        except e:
+            if "OUT_OF_MEMORY" in String(e):
                 print(
-                    _get_test_str[dtype, use_multimem, use_quickreduce](
-                        num_gpus, length
-                    )
+                    "Out of memory error occurred for ",
+                    _get_test_str[
+                        dtype,
+                        use_multimem,
+                        use_quickreduce,
+                        use_custom_epilogue,
+                    ](num_gpus, length),
                 )
-                try:
-                    allreduce_test[
-                        dtype=dtype,
-                        rank=1,
-                        ngpus=num_gpus,
-                        use_multimem=use_multimem,
-                        use_quickreduce=use_quickreduce,
-                    ](ctx, length)
-                except e:
-                    if "OUT_OF_MEMORY" in String(e):
-                        print(
-                            "Out of memory error occurred for ",
-                            _get_test_str[dtype, use_multimem, use_quickreduce](
-                                num_gpus, length
-                            ),
-                        )
-                    elif (
-                        use_multimem
-                        and "multimem is only supported on SM90+ GPUs"
-                        in String(e)
-                    ):
-                        print(
-                            "Skipping multimem test - SM90+ not supported by"
-                            " compilation target"
-                        )
-                    else:
-                        raise e
+            elif (
+                use_multimem
+                and "multimem is only supported on SM90+ GPUs" in String(e)
+            ):
+                print(
+                    "Skipping multimem test - SM90+ not supported by"
+                    " compilation target"
+                )
+            else:
+                raise e
 
 
 def main():

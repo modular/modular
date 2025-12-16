@@ -77,14 +77,14 @@ fn amd_scheduling_hints[
 
     """
 
-    alias NUM_THREADS = 256
-    alias threads_per_row = BK // simd_width_of[input_type]()
-    alias rows_per_thread_block = NUM_THREADS // threads_per_row
-    alias a_loads_per_thread = BM // rows_per_thread_block
-    alias b_loads_per_thread = BN // rows_per_thread_block
-    alias mmas_per_warp_m = WM // MMA_M
-    alias mmas_per_warp_n = WN // MMA_N
-    alias k_tiles_count = BK // MMA_K
+    comptime NUM_THREADS = 256
+    comptime threads_per_row = BK // simd_width_of[input_type]()
+    comptime rows_per_thread_block = NUM_THREADS // threads_per_row
+    comptime a_loads_per_thread = BM // rows_per_thread_block
+    comptime b_loads_per_thread = BN // rows_per_thread_block
+    comptime mmas_per_warp_m = WM // MMA_M
+    comptime mmas_per_warp_n = WN // MMA_N
+    comptime k_tiles_count = BK // MMA_K
 
     # scheduler_hint[0] For MFMA after DS_WRITE and VMEM_READ
     # scheduler_hint[1] For MFMA after VMEM_READ
@@ -141,20 +141,20 @@ fn copy_local_to_dram_32_32_8[
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
     var buffer = make_amd_buffer_resource(dst_base)
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
-    alias num_stores_per_thread = dst_fragments.layout.size()
+    comptime num_stores_per_thread = dst_fragments.layout.size()
 
-    alias M = src.layout.shape[0].value()
-    alias N = src.layout.shape[1].value()
+    comptime M = src.layout.shape[0].value()
+    comptime N = src.layout.shape[1].value()
 
     @parameter
     for n in range(N):
 
         @parameter
         for m in range(M):
-            alias src_idx = 4 * n + 16 * m
-            alias i = 4 * n + m + ((m // 4) * 12)
+            comptime src_idx = 4 * n + 16 * m
+            comptime i = 4 * n + m + ((m // 4) * 12)
 
-            alias dst_static_idx = dst_fragments.layout(i)
+            comptime dst_static_idx = dst_fragments.layout(i)
             var dst_idx = dst_frag_offset
 
             @parameter
@@ -168,7 +168,7 @@ fn copy_local_to_dram_32_32_8[
                 src.runtime_element_layout,
             )
 
-            alias element_stride = dst_fragments.element_layout.stride[
+            comptime element_stride = dst_fragments.element_layout.stride[
                 1
             ].value()
 
@@ -182,7 +182,7 @@ fn copy_local_to_dram_32_32_8[
 
                 @parameter
                 for i in range(dst_fragments.element_layout.size()):
-                    alias element_offset = dst_fragments.element_layout(i)
+                    comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
                         Int32(dst_idx + element_offset),
@@ -204,34 +204,34 @@ struct AMD_MMA[
     BK: Int,
     WK: Int,
 ]:
-    alias type_alignment = align_of[SIMD[in_type, Self.simd_width]]()
-    alias tensor_core_mma = TiledTensorCore[
-        out_type,
-        in_type,
-        shape,
-        k_group_size,
-        transpose_b,
+    comptime type_alignment = align_of[SIMD[Self.in_type, Self.simd_width]]()
+    comptime tensor_core_mma = TiledTensorCore[
+        Self.out_type,
+        Self.in_type,
+        Self.shape,
+        Self.k_group_size,
+        Self.transpose_b,
     ]()
 
-    alias SharedMemTileType[smem_layout: Layout] = LayoutTensor[
-        in_type,
+    comptime SharedMemTileType[smem_layout: Layout] = LayoutTensor[
+        Self.in_type,
         smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment = Self.type_alignment,
     ]
 
-    alias MMARegTileType[num_mmas: Int] = LayoutTensor[
-        in_type,
-        Layout.row_major(num_mmas * num_k_tiles, simd_width),
+    comptime MMARegTileType[num_mmas: Int] = LayoutTensor[
+        Self.in_type,
+        Layout.row_major(num_mmas * Self.num_k_tiles, Self.simd_width),
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         alignment = Self.type_alignment,
     ]
 
-    alias SharedMemWarpTileType[
+    comptime SharedMemWarpTileType[
         warp_rows: Int, smem_layout: Layout
-    ] = Self.SharedMemTileType[smem_layout].TileType[warp_rows, WK]
+    ] = Self.SharedMemTileType[smem_layout].TileType[warp_rows, Self.WK]
 
 
 @always_inline
@@ -242,7 +242,7 @@ fn mma[
 ](
     a_tiles: MMATileBuffers[mma_type=MMAType],
     b_tiles: MMATileBuffers[mma_type=MMAType],
-    c_reg_tile: LayoutTensor,
+    c_reg_tile: LayoutTensor[mut=True, **_],
 ):
     """
     AMD-style MMA operation wrapper for the AMD_MMA struct.
@@ -292,35 +292,39 @@ struct MMATileBuffers[
     # Tensor types for different memory regions
 
     # Shared memory allocation for matrix data shared across the block
-    alias SharedMemTileType = mma_type.SharedMemTileType[smem_layout]
+    comptime SharedMemTileType = Self.mma_type.SharedMemTileType[
+        Self.smem_layout
+    ]
     var shared_mem_tile: Self.SharedMemTileType
 
     # Tile view optimized for matrix multiplication acceleration (MMA) operations
-    var shared_mem_warp_tile: mma_type.SharedMemWarpTileType[
-        warp_rows, smem_layout
+    var shared_mem_warp_tile: Self.mma_type.SharedMemWarpTileType[
+        Self.warp_rows, Self.smem_layout
     ]
 
     # Buffer for loading data from global memory before transferring to shared memory
-    alias MMARegTileType = mma_type.MMARegTileType[num_mmas]
+    comptime MMARegTileType = Self.mma_type.MMARegTileType[Self.num_mmas]
     var load_reg_tile: Self.MMARegTileType
 
     # Register-level storage for matrix data during computation
-    var mma_reg_tile: Self.MMARegTileType.StaticSplitType[mma_type.num_k_tiles]
+    var mma_reg_tile: Self.MMARegTileType.StaticSplitType[
+        Self.mma_type.num_k_tiles
+    ]
 
     # Global memory iterator for input tensor
-    alias iter_type = tensor_type.TileType[
-        block_rows, stride
-    ].TiledIteratorType[block_rows, mma_type.BK, axis=1]
+    comptime iter_type = Self.tensor_type.TileType[
+        Self.block_rows, Self.stride
+    ].TiledIteratorType[Self.block_rows, Self.mma_type.BK, axis=1]
     var gmem_iter: Self.iter_type
 
     var global_offset: UInt
 
-    var tensor: Pointer[tensor_type, tensor_origin]
+    var tensor: Pointer[Self.tensor_type, Self.tensor_origin]
 
     @always_inline
     fn __init__(
         out self,
-        ref [tensor_origin]tensor: tensor_type,
+        ref [Self.tensor_origin]tensor: Self.tensor_type,
         warp_idx: Int,
         warp_k_idx: Int,
         block_idx: Int,
@@ -335,18 +339,18 @@ struct MMATileBuffers[
         """
         self.shared_mem_tile = Self.SharedMemTileType.stack_allocation()
         self.shared_mem_warp_tile = self.shared_mem_tile.tile[
-            warp_rows, mma_type.WK
+            Self.warp_rows, Self.mma_type.WK
         ](warp_idx, warp_k_idx)
         self.load_reg_tile = Self.MMARegTileType.stack_allocation()
         self.mma_reg_tile = Self.MMARegTileType.stack_allocation().split[
-            mma_type.num_k_tiles
+            Self.mma_type.num_k_tiles
         ]()
-        self.gmem_iter = tensor.tile[block_rows, stride](
+        self.gmem_iter = tensor.tile[Self.block_rows, Self.stride](
             block_idx, 0
-        ).tiled_iterator[block_rows, mma_type.BK, axis=1](0, 0)
-        self.global_offset = UInt(stride * (block_rows * block_idx))
+        ).tiled_iterator[Self.block_rows, Self.mma_type.BK, axis=1](0, 0)
+        self.global_offset = UInt(Self.stride * (Self.block_rows * block_idx))
         # TODO: remove rebind once MOCO-1905 is fixed
-        self.tensor = rebind[Pointer[tensor_type, tensor_origin]](
+        self.tensor = rebind[Pointer[Self.tensor_type, Self.tensor_origin]](
             Pointer(to=tensor)
         )
 
@@ -357,35 +361,35 @@ struct MMATileBuffers[
         Uses structured thread cooperation to efficiently transfer data.
         """
         copy_local_to_shared[
-            thread_layout=thread_layout,
-            swizzle = mma_type.swizzle,
+            thread_layout = Self.thread_layout,
+            swizzle = Self.mma_type.swizzle,
             thread_scope = ThreadScope.BLOCK,
             row_major=True,
         ](
-            self.shared_mem_tile.vectorize[1, mma_type.simd_width](),
-            self.load_reg_tile.vectorize[1, mma_type.simd_width](),
+            self.shared_mem_tile.vectorize[1, Self.mma_type.simd_width](),
+            self.load_reg_tile.vectorize[1, Self.mma_type.simd_width](),
         )
 
     @always_inline
     fn load_from_dram(mut self) -> None:
         """Load data from global memory (DRAM) to thread-local memory."""
         copy_dram_to_local[
-            src_thread_layout=thread_layout,
+            src_thread_layout = Self.thread_layout,
             thread_scope = ThreadScope.BLOCK,
         ](
-            self.load_reg_tile.vectorize[1, mma_type.simd_width](),
-            self.gmem_iter[].vectorize[1, mma_type.simd_width](),
+            self.load_reg_tile.vectorize[1, Self.mma_type.simd_width](),
+            self.gmem_iter[].vectorize[1, Self.mma_type.simd_width](),
             self.tensor[],
             self.global_offset,
         )
 
-        self.global_offset += UInt(mma_type.BK)
+        self.global_offset += UInt(Self.mma_type.BK)
         self.gmem_iter._incr()
 
     @always_inline
     fn get_reg_tile[
         k_tile_idx: Int
-    ](self) -> Self.MMARegTileType.SplitElementType[mma_type.num_k_tiles]:
+    ](self) -> Self.MMARegTileType.SplitElementType[Self.mma_type.num_k_tiles]:
         """Get a specific K-dimension tile from the register buffer.
 
         Parameters:
@@ -400,19 +404,23 @@ struct MMATileBuffers[
     fn load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
         @parameter
         if is_a:
-            mma_type.tensor_core_mma.mma_op.load_a[swizzle = mma_type.swizzle](
+            Self.mma_type.tensor_core_mma.mma_op.load_a[
+                swizzle = Self.mma_type.swizzle
+            ](
                 self.shared_mem_warp_tile,
                 self.mma_reg_tile[k_tile_idx]
-                .tile[num_mmas, mma_type.simd_width](k_tile_idx, 0)
-                .vectorize[1, mma_type.simd_width](),
+                .tile[Self.num_mmas, Self.mma_type.simd_width](k_tile_idx, 0)
+                .vectorize[1, Self.mma_type.simd_width](),
                 UInt(k_tile_idx),
             )
         else:
-            mma_type.tensor_core_mma.mma_op.load_b[swizzle = mma_type.swizzle](
+            Self.mma_type.tensor_core_mma.mma_op.load_b[
+                swizzle = Self.mma_type.swizzle
+            ](
                 self.shared_mem_warp_tile,
                 self.mma_reg_tile[k_tile_idx]
-                .tile[num_mmas, mma_type.simd_width](k_tile_idx, 0)
-                .vectorize[1, mma_type.simd_width](),
+                .tile[Self.num_mmas, Self.mma_type.simd_width](k_tile_idx, 0)
+                .vectorize[1, Self.mma_type.simd_width](),
                 UInt(k_tile_idx),
             )
 
@@ -461,9 +469,9 @@ fn compute_relative_error_kernel[
     var abs_diff = abs(comp_val - ref_val)
 
     # Compute denominator with epsilon to prevent division by zero
-    alias epsilon = Scalar[dtype](1e-8) if dtype == DType.float32 else Scalar[
-        dtype
-    ](1e-4)
+    comptime epsilon = Scalar[dtype](
+        1e-8
+    ) if dtype == DType.float32 else Scalar[dtype](1e-4)
     var denominator = max(abs(ref_val), epsilon)
 
     # Compute relative error
@@ -504,15 +512,15 @@ fn max_reduce_kernel[
     var local_relative_error = relative_error.ptr[offset * elements * Int(bid)]
 
     # Parallel reduction loop: for(int i = elements >> 1; i > 0; i = i >> 1)
-    var i = UInt(elements) >> 1
+    var i = elements >> 1
     while i > 0:
         # Check bounds: threadIdx.x < i && offset * (elements * blockIdx.x + threadIdx.x + i) < maxIdx
-        var current_idx = offset * Int(UInt(elements) * bid + tid + i)
+        var current_idx = offset * (elements * Int(bid) + Int(tid) + i)
 
-        if tid < i and current_idx < max_idx:
+        if Int(tid) < i and current_idx < max_idx:
             var max_val = max(
                 local_relative_error[offset * Int(tid)],
-                local_relative_error[offset * Int(tid + i)],
+                local_relative_error[offset * Int(tid) + i],
             )
             local_relative_error[Int(tid)] = max_val
 
@@ -568,7 +576,7 @@ fn compare_equal[
     )
 
     # Compute the relative error between the reference and computed tensors
-    alias rel_error_kernel = compute_relative_error_kernel[dtype, layout]
+    comptime rel_error_kernel = compute_relative_error_kernel[dtype, layout]
     gpu_ctx.enqueue_function_checked[rel_error_kernel, rel_error_kernel](
         reference,
         computed,
@@ -586,7 +594,7 @@ fn compare_equal[
         var num_threadblocks = ceildiv(i, 1024)
         var num_elements = i if i < 1024 else 1024
 
-        alias reduce_kernel = max_reduce_kernel[dtype, layout]
+        comptime reduce_kernel = max_reduce_kernel[dtype, layout]
         gpu_ctx.enqueue_function_checked[reduce_kernel, reduce_kernel](
             max_relative_error,
             num_elements,

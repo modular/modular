@@ -53,7 +53,7 @@ def test_get_linkage_name_parameterized():
 
 def test_get_linkage_name_on_itself():
     var name = get_linkage_name[_current_target]()
-    assert_equal(name, "stdlib::sys::info::_current_target()")
+    assert_equal(name, "std::sys::info::_current_target()")
 
 
 def test_get_function_name():
@@ -82,7 +82,7 @@ def test_get_type_name():
     assert_equal(name, "Int")
 
     name = get_type_name[Int, qualified_builtins=True]()
-    assert_equal(name, "stdlib.builtin.int.Int")
+    assert_equal(name, "std.builtin.int.Int")
 
 
 def test_get_type_name_nested():
@@ -99,7 +99,7 @@ def test_get_type_name_simd():
 
     name = get_type_name[SIMD[DType.uint16, 4], qualified_builtins=True]()
     assert_equal(
-        name, "stdlib.builtin.simd.SIMD[stdlib.builtin.dtype.DType.uint16, 4]"
+        name, "std.builtin.simd.SIMD[std.builtin.dtype.DType.uint16, 4]"
     )
 
 
@@ -127,7 +127,7 @@ def test_get_type_name_non_scalar_simd_value():
         name,
         (
             "test_reflection.Foo[SIMD[DType.float32, 4], "
-            '[1, 2, 3, 4] : SIMD[DType.float32, 4], True, None, {"hello", 5}]'
+            '[1, 2, 3, 4] : SIMD[DType.float32, 4], True, None, {"hello\0", 5}]'
         ),
     )
 
@@ -139,7 +139,7 @@ def test_get_type_name_non_scalar_simd_value():
         (
             "test_reflection.Foo[SIMD[DType.bool, 4], "
             "[True, False, True, False] : SIMD[DType.bool, 4], "
-            'True, None, {"hello", 5}]'
+            'True, None, {"hello\0", 5}]'
         ),
     )
 
@@ -152,7 +152,7 @@ def test_get_type_name_struct():
             "test_reflection.Foo["
             "test_reflection.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
             "{3, 4.0999999999999996 : SIMD[DType.float64, 1]}, "
-            'True, None, {"hello", 5}]'
+            'True, None, {"hello\0", 5}]'
         ),
     )
 
@@ -164,25 +164,25 @@ def test_get_type_name_partially_bound_type():
         (
             "test_reflection.Foo["
             "test_reflection.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
-            '{3, 0.125 : SIMD[DType.float64, 1]}, ?, None, {"hello", 5}]'
+            '{3, 0.125 : SIMD[DType.float64, 1]}, ?, None, {"hello\0", 5}]'
         ),
     )
 
 
 def test_get_type_name_unprintable():
     var name = get_type_name[CompilationTarget[_current_target()]]()
-    assert_equal(name, "stdlib.sys.info.CompilationTarget[<unprintable>]")
+    assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
 
 
 def test_get_type_name_alias():
-    alias T = Bar[5]
+    comptime T = Bar[5]
     var name = get_type_name[T]()
     assert_equal(
         name, "test_reflection.Bar[5, 1.29999995 : SIMD[DType.float32, 1]]"
     )
 
     # Also test parametric aliases (i.e. unbound parameters).
-    alias R = Bar[_]
+    comptime R = Bar[_]
     name = get_type_name[R]()
     assert_equal(
         name, "test_reflection.Bar[?, 1.29999995 : SIMD[DType.float32, 1]]"

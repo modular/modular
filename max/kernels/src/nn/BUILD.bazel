@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 mojo_library(
     name = "nn",
@@ -8,14 +8,13 @@ mojo_library(
     docs_base_path = "kernels",
     validate_missing_docs = False,
     deps = [
-        "@mojo//:_cudnn",
-        "@mojo//:_cufft",
-        "@mojo//:kv_cache",
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:quantization",
-        "@mojo//:register",
-        "@mojo//:stdlib",
-        "@mojo//:tensor",
+        "//max:_cudnn",
+        "//max:_cufft",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:quantization",
+        "//max:register",
+        "@mojo//:std",
     ],
 )

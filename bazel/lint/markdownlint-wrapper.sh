@@ -15,13 +15,13 @@
 
 set -euo pipefail
 
-readonly binary=$(find $PWD -name markdownlint -path "*markdownlint_*")
-readonly config=$(find $BUILD_WORKSPACE_DIRECTORY -name .markdownlint.yaml -path "*bazel/lint*")
+binary=$(find "$PWD" -name markdownlint -path "*markdownlint_*")
+config=$(find "$BUILD_WORKSPACE_DIRECTORY" -name .markdownlint.yaml -path "*bazel/lint*")
 
 if [[ -n "${FAST:-}" ]]; then
     cd "$BUILD_WORKSPACE_DIRECTORY"
-    paths=$(git diff --diff-filter=d --name-only $(git merge-base origin/main HEAD) -- '*.md' '*.mdx' ':!:third-party/*')
-    if [ ! -n "$paths" ]; then
+    paths=$(git diff --diff-filter=d --name-only "$(git merge-base origin/main HEAD)" -- '*.md' '*.mdx' ':!:third-party/*')
+    if [ -z "$paths" ]; then
         # markdownlint will just print help if no input paths, short circuit here
         exit 0
     fi
@@ -31,8 +31,10 @@ else
     paths="."
 fi
 
+# Intentionally disable this, we want $paths to split into multiple args
+# shellcheck disable=SC2086
 JS_BINARY__CHDIR="$BUILD_WORKSPACE_DIRECTORY" \
   "$binary" --config "$config" \
   --ignore-path "$BUILD_WORKSPACE_DIRECTORY/.gitignore" \
   --ignore "$BUILD_WORKSPACE_DIRECTORY/third-party" \
-  "$@" "$paths" 2>&1 | sed 's/^/error: /'
+  "$@" $paths 2>&1 | sed 's/^/error: /'

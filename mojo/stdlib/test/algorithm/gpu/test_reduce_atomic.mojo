@@ -14,32 +14,30 @@
 from math import ceildiv
 from os.atomic import Atomic
 
-from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, TestSuite
 
 
 @fieldwise_init
-struct FillStrategy(ImplicitlyCopyable, Movable):
+struct FillStrategy(ImplicitlyCopyable):
     var value: Int
 
-    alias LINSPACE = Self(0)
-    alias NEG_LINSPACE = Self(1)
-    alias SYMMETRIC_LINSPACE = Self(2)
-    alias ZEROS = Self(3)
-    alias ONES = Self(4)
+    comptime LINSPACE = Self(0)
+    comptime NEG_LINSPACE = Self(1)
+    comptime SYMMETRIC_LINSPACE = Self(2)
+    comptime ZEROS = Self(3)
+    comptime ONES = Self(4)
 
     fn __is__(self, other: Self) -> Bool:
         return self.value == other.value
 
 
 fn reduce(
-    res_add: UnsafePointer[Float32],
-    res_min: UnsafePointer[Float32],
-    res_max: UnsafePointer[Float32],
-    vec: UnsafePointer[Float32],
+    res_add: UnsafePointer[Float32, MutAnyOrigin],
+    res_min: UnsafePointer[Float32, MutAnyOrigin],
+    res_max: UnsafePointer[Float32, MutAnyOrigin],
+    vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
@@ -54,11 +52,12 @@ fn reduce(
 
 
 fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
-    alias BLOCK_SIZE = 32
-    alias n = 1024
-    alias F32 = DType.float32
+    comptime BLOCK_SIZE = 32
+    comptime n = 1024
+    comptime F32 = DType.float32
 
-    var vec_host = NDBuffer[F32, 1, MutAnyOrigin, DimList(n)].stack_allocation()
+    var stack = InlineArray[Float32, n](fill=0)
+    var vec_host = Span(stack)
 
     if fill_strategy is FillStrategy.LINSPACE:
         for i in range(n):
@@ -77,7 +76,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
             vec_host[i] = 1
 
     var vec_device = ctx.enqueue_create_buffer[F32](n)
-    vec_device.enqueue_copy_from(vec_host.data)
+    vec_device.enqueue_copy_from(vec_host.unsafe_ptr())
 
     var res_add_device = ctx.enqueue_create_buffer[F32](1)
     res_add_device.enqueue_fill(0)
@@ -88,7 +87,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var res_max_device = ctx.enqueue_create_buffer[F32](1)
     res_max_device.enqueue_fill(0)
 
-    alias kernel = reduce
+    comptime kernel = reduce
 
     ctx.enqueue_function_experimental[kernel](
         res_add_device,

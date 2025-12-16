@@ -60,7 +60,7 @@ def test_consistency_stringable():
 
 
 def _test_atomic[dtype: DType]():
-    alias scalar = Scalar[dtype]
+    comptime scalar = Scalar[dtype]
     var atom = Atomic[dtype](3)
 
     assert_equal(atom.load(), scalar(3))
@@ -92,7 +92,7 @@ def test_atomic():
 
 
 def _test_compare_exchange[dtype: DType]():
-    alias scalar = Scalar[dtype]
+    comptime scalar = Scalar[dtype]
     var atom = Atomic[dtype](3)
 
     # Successful cmpxchg
@@ -124,7 +124,7 @@ def test_comptime_atomic():
         atom -= 4
         return Int(atom.load())
 
-    alias value = comptime_fn()
+    comptime value = comptime_fn()
     assert_equal(value, 3)
 
 
@@ -133,7 +133,7 @@ def test_comptime_fence():
         fence()
         return 1
 
-    alias value = comptime_fn()
+    comptime value = comptime_fn()
     assert_equal(value, 1)
 
 
@@ -144,12 +144,12 @@ def test_comptime_compare_exchange():
         var success = atom.compare_exchange(expected, 42)
         return (success, expected, atom.load())
 
-    alias result_success = comptime_fn(0)
+    comptime result_success = comptime_fn(0)
     assert_true(result_success[0])
     assert_equal(result_success[1], 0)
     assert_equal(result_success[2], 42)
 
-    alias result_failure = comptime_fn(1)
+    comptime result_failure = comptime_fn(1)
     assert_false(result_failure[0])
     assert_equal(result_failure[1], 0)
     assert_equal(result_failure[2], 0)

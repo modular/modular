@@ -20,10 +20,10 @@ from testing import assert_equal
 fn test_composed_layout() raises:
     print("== test_composed_layout")
 
-    alias layout_a = Layout(IntTuple(6, 2), IntTuple(8, 2))
-    alias layout_b = Layout(IntTuple(4, 3), IntTuple(3, 1))
+    comptime layout_a = Layout(IntTuple(6, 2), IntTuple(8, 2))
+    comptime layout_b = Layout(IntTuple(4, 3), IntTuple(3, 1))
 
-    alias comp_layout = ComposedLayout[Layout, Layout, 0](layout_b, layout_a)
+    comptime comp_layout = ComposedLayout[Layout, Layout, 0](layout_b, layout_a)
 
     assert_equal(comp_layout(0), 0)
     assert_equal(comp_layout(1), 24)

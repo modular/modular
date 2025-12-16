@@ -1,0 +1,47 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "yarn-rotary-embeddings",
+    srcs = glob(["**/test_yarn_rotary_embeddings.py"]) + ["conftest.py"],
+    data = [
+        "//max/tests/integration/pipelines/python/gpt-oss/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/gpt-oss/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+    ],
+)

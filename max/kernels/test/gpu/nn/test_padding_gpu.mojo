@@ -32,7 +32,7 @@ fn test_pad_constant_gpu[
     verbose: Bool = False,
 ) raises:
     print("== test_pad_constant_gpu")
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
 
     # Create an input matrix
     var input_data = UnsafePointer[Scalar[dtype]].alloc(
@@ -118,7 +118,7 @@ fn test_pad_constant_gpu[
 
 
 def main():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     with DeviceContext() as ctx:
         var input_shape_1d = IndexList[1](32)
         # Create a padding array of the (before,after) form

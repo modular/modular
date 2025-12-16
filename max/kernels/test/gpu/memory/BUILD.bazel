@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _FILECHECK_TESTS = [
     "test_memory.mojo",
     "test_sharedmem_async_cp.mojo",
@@ -34,9 +36,9 @@ mojo_filecheck_test(
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:stdlib",
+        "//max:layout",
+        "//max:linalg",
+        "@mojo//:std",
     ],
 )
 
@@ -49,9 +51,9 @@ mojo_filecheck_test(
         ),
         target_compatible_with = ["//:has_gpu"],
         deps = [
-            "@mojo//:layout",
-            "@mojo//:linalg",
-            "@mojo//:stdlib",
+            "//max:layout",
+            "//max:linalg",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -64,9 +66,9 @@ mojo_filecheck_test(
         tags = ["gpu"],
         target_compatible_with = ["//:nvidia_gpu"],
         deps = [
-            "@mojo//:layout",
-            "@mojo//:linalg",
-            "@mojo//:stdlib",
+            "//max:layout",
+            "//max:linalg",
+            "@mojo//:std",
         ],
     )
     for src in [
@@ -84,9 +86,9 @@ mojo_test(
     tags = ["gpu"],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:stdlib",
+        "//max:layout",
+        "//max:linalg",
+        "@mojo//:std",
     ],
 )
 
@@ -96,9 +98,9 @@ mojo_test(
     tags = ["gpu"],
     target_compatible_with = ["//:h100_gpu"],
     deps = [
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:stdlib",
+        "//max:layout",
+        "//max:linalg",
+        "@mojo//:std",
     ],
 )
 
@@ -108,9 +110,9 @@ mojo_test(
     tags = ["gpu"],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:stdlib",
+        "//max:layout",
+        "//max:linalg",
+        "@mojo//:std",
     ],
 )
 
@@ -124,9 +126,9 @@ mojo_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:stdlib",
+        "//max:layout",
+        "//max:linalg",
+        "@mojo//:std",
     ],
 )
 
@@ -136,9 +138,9 @@ mojo_filecheck_test(
     tags = ["gpu"],
     target_compatible_with = ["//:h100_gpu"],
     deps = [
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:stdlib",
+        "//max:layout",
+        "//max:linalg",
+        "@mojo//:std",
     ],
 )
 
@@ -149,9 +151,9 @@ mojo_filecheck_test(
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:layout",
-            "@mojo//:linalg",
-            "@mojo//:stdlib",
+            "//max:layout",
+            "//max:linalg",
+            "@mojo//:std",
         ],
     )
     for src in glob(

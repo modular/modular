@@ -23,7 +23,12 @@ from max.nn import ReturnLogits
 from max.nn.comm.ep import EPConfig
 from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, MAXModelConfigBase
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfig,
+    MAXModelConfigBase,
+    PipelineConfig,
+)
 from transformers import AutoConfig
 
 
@@ -106,12 +111,17 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         page_size: int = 128,
-        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
+        data_parallel_degree = pipeline_config.model_config.data_parallel_degree
+        if len(devices) != data_parallel_degree:
+            raise ValueError(
+                "Number of devices must match data parallel degree"
+            )
         return KVCacheParams(
             dtype=cache_dtype,
             # n_kv_heads should always be 1 because we only cache a single latent vector
@@ -119,8 +129,9 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
             n_kv_heads=1,
             head_dim=huggingface_config.kv_lora_rank
             + huggingface_config.qk_rope_head_dim,
+            num_layers=DeepseekV3Config.get_num_layers(huggingface_config),
             cache_strategy=KVCacheStrategy.PAGED,
-            n_devices=n_devices,
+            devices=devices,
             page_size=page_size,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
@@ -128,3 +139,7 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
         )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers

@@ -16,7 +16,7 @@ from collections import OptionalReg
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, assert_almost_equal
+from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -43,12 +43,12 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     constrained[dtype is DType.float32, "goldens only for float32, currently"]()
 
     # Set up test hyperparameters.
-    alias batch_size = 2
-    alias start_positions = List[UInt32](0, 5)
-    alias seq_len = 3
-    alias max_seq_len = 16
-    alias num_layers = 1
-    var lookup_table = List[UInt32](0, 1)
+    comptime batch_size = 2
+    comptime start_positions: List[UInt32] = [0, 5]
+    comptime seq_len = 3
+    comptime max_seq_len = 16
+    comptime num_layers = 1
+    var lookup_table: List[UInt32] = [0, 1]
 
     fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         constrained[len(items) > 0, "empty list in _max"]()
@@ -64,22 +64,22 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         > (seq_len + Int(_max[DType.uint32, items=start_positions]())),
         "KV cache size smaller than sum of sequence length and start pos",
     ]()
-    alias num_heads = 2
-    alias dim = 128
-    alias head_dim = dim // num_heads
+    comptime num_heads = 2
+    comptime dim = 128
+    comptime head_dim = dim // num_heads
 
     # Create aliases for KV cache parameters.
-    alias kv_params = KVCacheStaticParams(
+    comptime kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    alias block_shape = IndexList[6](
+    comptime block_shape = IndexList[6](
         batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
     # The testdata is generated with mrope_section = (16, 8, 8),
     # but the expected input for the kernel is the original mrope_section
     # multiplied by 2, and prefix-summed.
-    alias mrope_section = IntTuple(32, 48, 64)
-    alias mrope_section_size = len(mrope_section)
+    comptime mrope_section = IntTuple(32, 48, 64)
+    comptime mrope_section_size = len(mrope_section)
 
     # Construct backing buffer and the KV cache itself.
     kv_cache_block_buffer = List[Scalar[dtype]](
@@ -139,10 +139,16 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     )
 
     # Create query tensor as a view of the query buffer.
-    input_row_offsets = HostNDBuffer[DType.uint32, 1](DimList(batch_size + 1))
+    var stack = InlineArray[UInt32, batch_size + 1](uninitialized=True)
+    input_row_offsets = LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+        stack,
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+            IndexList[1](batch_size + 1)
+        ),
+    )
     for i in range(batch_size):
-        input_row_offsets.tensor[i] = i * seq_len
-    input_row_offsets.tensor[batch_size] = batch_size * seq_len
+        input_row_offsets[i] = i * seq_len
+    input_row_offsets[batch_size] = batch_size * seq_len
 
     # Create position_ids tensor for testing explicit position encoding
     # Total sequence length across all batches
@@ -219,7 +225,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
                 q.get_shape().canonicalize()
             ),
         ),
-        input_row_offsets.to_layout_tensor(),
+        input_row_offsets,
         kv_collection,
         freqs_cis_table,
         OptionalReg(position_ids),

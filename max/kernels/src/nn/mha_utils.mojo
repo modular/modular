@@ -13,7 +13,7 @@
 
 
 from collections import OptionalReg
-from math import align_up, ceildiv, align_up
+from math import align_up, ceildiv
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     CompilationTarget,
@@ -56,21 +56,21 @@ from utils.numerics import min_or_neg_inf
 # ===-----------------------------------------------------------------------===#
 
 
-alias is_sm90 = ":90" in _accelerator_arch()
-alias is_sm100 = ":100" in _accelerator_arch()
-alias is_sm90or100 = is_sm90 or is_sm100
+comptime is_sm90 = "sm_90" in _accelerator_arch()
+comptime is_sm100 = "sm_100" in _accelerator_arch()
+comptime is_sm90or100 = is_sm90 or is_sm100
 
 
 @register_passable("trivial")
 struct FlashAttentionAlgorithm(
-    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
+    Defaultable, ImplicitlyCopyable, Stringable, Writable
 ):
     var _value: Int32
 
-    alias NAIVE = Self(0)
-    alias FLASH_ATTENTION_1 = Self(1)
-    alias FLASH_ATTENTION_2 = Self(2)
-    alias FLASH_ATTENTION_3 = Self(3)
+    comptime NAIVE = Self(0)
+    comptime FLASH_ATTENTION_1 = Self(1)
+    comptime FLASH_ATTENTION_2 = Self(2)
+    comptime FLASH_ATTENTION_3 = Self(3)
 
     fn __init__(out self):
         self._value = 3
@@ -122,7 +122,7 @@ struct FlashAttentionAlgorithm(
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
+struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -216,7 +216,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
         if not has_nvidia_gpu_accelerator():
             return 0
 
-        alias persistent = (
+        comptime persistent = (
             env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
         ) and sm_90
         sm_90_fa3 = sm_90 and (self.algorithm == 3)
@@ -241,10 +241,9 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
 
         num_smem_bytes = size_of[self.dtype]() * Int(num_smem_elements)
         if sm_90_fa3:
-            alias i64_size = size_of[DType.int64]()
+            comptime i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (
-                4 * i64_size + 2 * size_of[DType.uint32]() if persistent
-                != 0 else 0
+                4 * i64_size + 2 * size_of[DType.uint32]() if persistent else 0
             )
         return UInt(num_smem_bytes)
 
@@ -268,14 +267,14 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
         self.padded_depth = UInt(align_up(depth, UInt(swizzle_granularity)))
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
-        self.algorithm = algorithm.init(dtype)
+        self.algorithm = algorithm.init(Self.dtype)
         self.swizzle_mode = swizzle_mode
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
         if (
             is_sm90or100
-            and dtype.is_half_float()
+            and Self.dtype.is_half_float()
             and self.algorithm == FlashAttentionAlgorithm(3)
         ):
             # BM
@@ -293,7 +292,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
                 # (reg_per - depth//2 - 4) >= 3*BN//4
                 # BN <= (4*reg_per - 2*depth - 16)//3
                 reg_upper_bound = (4 * reg_per - 2 * Int(depth) - 16) // 3
-                alias persistent = (
+                comptime persistent = (
                     env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
                 )
                 smem_total = 227000
@@ -324,7 +323,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
             self.BK = BK.or_else(64)
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
-            alias use_experimental_cdna4_kernel = env_get_bool[
+            comptime use_experimental_cdna4_kernel = env_get_bool[
                 "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
             ]()
             # BN
@@ -334,23 +333,25 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 UInt(
-                    32 if dtype
+                    32 if Self.dtype
                     is DType.float32 else (
-                        128 if has_amd_gpu_accelerator() else 64
+                        (
+                            256 if use_experimental_cdna4_kernel else 128
+                        ) if has_amd_gpu_accelerator() else 64
                     )
                 )
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
-            var bk_type_factor = 1 if dtype is DType.float32 else 2
+            var bk_type_factor = 1 if Self.dtype is DType.float32 else 2
             self.BK = BK.or_else(
                 UInt(16 * bk_arch_factor * bk_type_factor)
             ) if has_nvidia_gpu_accelerator() else 32
             self.WN = WN.or_else(
-                32 if dtype is DType.float32 else self.num_keys_per_block
+                32 if Self.dtype is DType.float32 else self.num_keys_per_block
             )
         self.WM = WM.or_else(
             UInt(
-                32 if dtype
+                32 if Self.dtype
                 is DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
             )
         )
@@ -425,9 +426,9 @@ fn _copy_frag_to_smem_nvidia[
     swizzle to avoid bank conflict.
     """
 
-    alias simd_width = simd_width_of[p_smem_tile.dtype]()
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    comptime simd_width = simd_width_of[p_smem_tile.dtype]()
+    comptime num_m_mmas = WM // MMA_M
+    comptime num_n_mmas = WN // MMA_N
 
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
@@ -441,7 +442,7 @@ fn _copy_frag_to_smem_nvidia[
     )
     var p_reg_vecs = p_reg_tile.vectorize[1, Int(frag_simd_width)]()
 
-    alias swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, Int(BK)]()
+    comptime swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, Int(BK)]()
 
     @parameter
     for n_mma in range(num_n_mmas):
@@ -458,7 +459,7 @@ fn _copy_frag_to_smem_nvidia[
 
             @parameter
             for i in range(p_reg_vecs.shape[1]()):
-                alias offset_in_frag = type_of(p_smem_frag).layout(i)
+                comptime offset_in_frag = type_of(p_smem_frag).layout(i)
 
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
                 var offset_BMxBN = frag_offset + offset_in_frag
@@ -478,7 +479,7 @@ fn _copy_frag_to_smem_nvidia[
                 var tile_BMxBK = p_smem_iter.next_unsafe(
                     Int((offset_BMxBN % BN) // BK)
                 )[]
-                alias align = align_of[
+                comptime align = align_of[
                     SIMD[p_smem_iter.dtype, Int(frag_simd_width)]
                 ]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
@@ -514,9 +515,9 @@ fn _copy_frag_to_smem_amd[
     The BM x BN matrix is divided to BM x BK tiles, each tile is CONTIGUOUS for
     the 2nd mma. This function maps each fragment to the right BM x BK tile.
     """
-    alias simd_width = 1
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    comptime simd_width = 1
+    comptime num_m_mmas = WM // MMA_M
+    comptime num_n_mmas = WN // MMA_N
 
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
@@ -546,7 +547,7 @@ fn _copy_frag_to_smem_amd[
 
             @parameter
             for i in range(frag_simd_width):
-                alias offset_in_frag = BN * i
+                comptime offset_in_frag = BN * i
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
                 var offset_BMxBN = frag_offset + offset_in_frag
                 var offset_BMxBK = (offset_BMxBN // BN) * BK + offset_BMxBN % BK
@@ -597,7 +598,7 @@ fn _copy_frag_to_smem[
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="_copy_frag_to_smem",
+            operation = __get_current_function_name()
         ]()
 
 
@@ -636,7 +637,7 @@ fn get_start_and_end_for_partitions[
     # return (start, end)
 
 
-alias callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait] (
+comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait] (
     mask: mask_t, score_mod: score_mod_t
 ) raises capturing -> None
 
@@ -745,7 +746,7 @@ fn _dispatch_score_mod[
 # different numbers of arguments post-compilation.
 @register_passable("trivial")
 trait OptionallyStaticInt(Copyable, Intable):
-    alias static_value: OptionalReg[Int]
+    comptime static_value: OptionalReg[Int]
 
     fn as_uint32(self) -> UInt32:
         ...
@@ -755,7 +756,7 @@ trait OptionallyStaticInt(Copyable, Intable):
 # That is, if we have a static int, no argument should be passed.
 @register_passable("trivial")
 struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
-    alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
+    comptime static_value: OptionalReg[Int] = OptionalReg[Int](Self.value)
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -773,7 +774,7 @@ struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
 @register_passable("trivial")
 struct DynamicInt(OptionallyStaticInt):
     var value: UInt32
-    alias static_value: OptionalReg[Int] = None
+    comptime static_value: OptionalReg[Int] = None
 
     @always_inline("nodebug")
     fn __init__(out self, value: Int):
@@ -795,8 +796,8 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
 
 @register_passable("trivial")
 trait MHAPartitionScheme(Copyable):
-    alias do_partition: Bool
-    alias accum_dtype: DType
+    comptime do_partition: Bool
+    comptime accum_dtype: DType
 
     @always_inline
     fn num_partitions(self) -> UInt32:
@@ -811,10 +812,10 @@ trait MHAPartitionScheme(Copyable):
 
 @register_passable("trivial")
 struct NoPartition[dtype: DType](
-    Defaultable, ImplicitlyCopyable, MHAPartitionScheme, Movable
+    Defaultable, ImplicitlyCopyable, MHAPartitionScheme
 ):
-    alias do_partition: Bool = False
-    alias accum_dtype: DType = dtype
+    comptime do_partition: Bool = False
+    comptime accum_dtype: DType = Self.dtype
 
     @always_inline
     fn __init__(out self):
@@ -832,11 +833,9 @@ struct NoPartition[dtype: DType](
 
 
 @register_passable("trivial")
-struct SplitKPartition[dtype: DType](
-    ImplicitlyCopyable, MHAPartitionScheme, Movable
-):
-    alias do_partition: Bool = True
-    alias accum_dtype: DType = Self.dtype
+struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
+    comptime do_partition: Bool = True
+    comptime accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
     var num_partitions_value: UInt32
 

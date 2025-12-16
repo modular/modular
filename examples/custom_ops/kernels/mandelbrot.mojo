@@ -20,7 +20,7 @@ from tensor import OutputTensor, foreach
 
 from utils.index import IndexList
 
-alias float_dtype = DType.float32
+comptime float_dtype = DType.float32
 
 
 @compiler.register("mandelbrot")

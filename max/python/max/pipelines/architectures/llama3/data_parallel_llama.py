@@ -17,6 +17,8 @@ import copy
 from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -27,10 +29,9 @@ from max.graph import (
     Value,
     ops,
 )
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import Module
 from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.pipelines.lib.lora import LoRAManager
 
 from .llama3 import Llama3
@@ -77,7 +78,7 @@ class DataParallelLlama(Module):
     # Graph helpers.
     def input_types(
         self,
-        kv_manager: PagedKVCacheManager | NullKVCacheManager,
+        kv_params: KVCacheParams,
         lora_manager: LoRAManager | None,
     ) -> tuple[TensorType | BufferType, ...]:
         """Creates input tensor types used for building the graph.
@@ -102,7 +103,7 @@ class DataParallelLlama(Module):
         tokens and input_row_offsets into data parallel splits.
         """
         inputs = []
-        single_model_inputs = self.model.input_types(kv_manager, lora_manager)
+        single_model_inputs = self.model.input_types(kv_params, lora_manager)
         (
             token_type,
             input_row_offsets_type,
@@ -112,7 +113,7 @@ class DataParallelLlama(Module):
         self.num_kv_cache_inputs = len(single_model_kv_cache_inputs)
 
         flat_kv_cache_inputs: list[TensorType] = []
-        for input_symbols in kv_manager.input_symbols():
+        for input_symbols in kv_params.get_symbolic_inputs():
             flat_kv_cache_inputs.extend(input_symbols)
 
         data_parallel_split_type = TensorType(
@@ -187,7 +188,7 @@ def _assign_weight(module: Module, key: str, value: Any) -> None:
 
 def create_graph(
     config: Llama3Config,
-    kv_manager: PagedKVCacheManager | NullKVCacheManager,
+    kv_params: KVCacheParams,
     state_dict: dict[str, Any],
 ) -> tuple[Graph, dict[str, Any]]:
     model = DataParallelLlama(config)
@@ -203,8 +204,32 @@ def create_graph(
         weight_alignment=1,
         strict=True,
     )
-    inputs = model.input_types(kv_manager, None)
+    inputs = model.input_types(kv_params, None)
     with Graph("llama3", input_types=inputs) as graph:
         outputs = model._call_flat(*graph.inputs)
         graph.output(*outputs)
         return graph, model.state_dict()
+
+
+def compute_data_parallel_splits(
+    replica_batches: Sequence[Sequence[Any]],
+) -> npt.NDArray[np.int64]:
+    """Constructs splits for the data parallel execution.
+
+    Args:
+        replica_batches: A list of batches, each containing a sequence of contexts
+        that are on the same replica.
+
+    Returns:
+        Tensor: An int64 tensor with shape (self.num_replicas + 1) that
+        contains the number of requests on each device:
+        [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
+        or None if there is only one replica.
+    """
+    dp = len(replica_batches)
+    splits = np.zeros(dp + 1, dtype=np.int64)
+    for replica_idx, replica_batch in enumerate(replica_batches):
+        splits[replica_idx + 1] += len(replica_batch)
+    splits_summed = np.cumsum(splits)
+
+    return splits_summed

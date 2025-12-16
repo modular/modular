@@ -38,7 +38,7 @@ fn mma[
     mut b_tile: b_buffer_type,
 ):
     constrained[b_buffer_type._num_stages == 2, "b_tile.num_stages must be 2"]()
-    alias num_k_mmas2 = ceildiv(
+    comptime num_k_mmas2 = ceildiv(
         BK, tensor_core_mma.shape[2] * tensor_core_mma.group_size
     )
 
@@ -58,7 +58,7 @@ fn mma[
 
                 @parameter
                 if prefetch_function:
-                    alias prefetch_func = prefetch_function.value()
+                    comptime prefetch_func = prefetch_function.value()
                     prefetch_func()
 
         b_tile.copy_to_shared[i % 2]()

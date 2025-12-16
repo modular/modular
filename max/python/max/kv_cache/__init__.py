@@ -13,9 +13,9 @@
 
 from .null_cache_manager import NullKVCacheManager
 from .paged_cache import (
+    InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
-    PagedCacheInputSymbols,
     PagedKVCacheManager,
     TransferReqData,
     available_port,
@@ -27,10 +27,10 @@ from .registry import (
 )
 
 __all__ = [
+    "InsufficientBlocksError",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
     "NullKVCacheManager",
-    "PagedCacheInputSymbols",
     "PagedKVCacheManager",
     "TransferReqData",
     "available_port",

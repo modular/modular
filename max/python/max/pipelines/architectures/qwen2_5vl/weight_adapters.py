@@ -54,10 +54,20 @@ def convert_qwen2_5vl_model_state_dict(
     llm_state_dict: dict[str, WeightData] = {}
 
     for checkpoint_name, weight in state_dict.items():
-        if weight.data().dtype != DType.bfloat16:
-            weight_data = weight.data().astype(DType.bfloat16)
-        else:
-            weight_data = weight.data()
+        weight_data = weight.data()
+
+        # Normalize dtypes:
+        #   * FP8 tensors stay FP8 (we don't try to cast them on CPU).
+        #   * Quantization scales (.*_scale) keep their original precision.
+        #   * All other floating-point tensors → BF16.
+        if weight_data.dtype.is_float():
+            is_scale = checkpoint_name.endswith(
+                ".weight_scale"
+            ) or checkpoint_name.endswith(".input_scale")
+
+            if not weight_data.dtype.is_float8() and not is_scale:
+                weight_data = weight_data.astype(DType.bfloat16)
+
         # Special case for lm_head. Because config.tie_word_embeddings is true
         # for some Qwen2.5VL models and false for others.
         if checkpoint_name.startswith("lm_head."):

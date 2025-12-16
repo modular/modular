@@ -36,7 +36,7 @@ fn generate_alibi_bias[
     if num_heads.is_power_of_two():
         scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / num_heads))
     else:
-        alias floor_power_of_2 = prev_power_of_two(num_heads)
+        comptime floor_power_of_2 = prev_power_of_two(num_heads)
         if head_idx < floor_power_of_2:
             scale = exp2(
                 -((head_idx + 1).cast[dtype]() * 8.0 / floor_power_of_2)
@@ -60,9 +60,9 @@ fn generate_alibi_bias[
 
 def test_alibi_score_mod():
     print("test_alibi_score_mod")
-    alias dtype = DType.float32
-    alias width = 4
-    alias num_heads = 4
+    comptime dtype = DType.float32
+    comptime width = 4
+    comptime num_heads = 4
     var max_seq_len = 12
 
     var alibi_mod = AlibiScoreMod[num_heads]()
@@ -93,8 +93,8 @@ def test_alibi_score_mod():
 
 def test_identity_score_mod():
     print("test_identity_score_mod")
-    alias dtype = DType.float32
-    alias width = 4
+    comptime dtype = DType.float32
+    comptime width = 4
 
     var identity_mod = IdentityScoreMod()
     var reference = SIMD[dtype, width](0, 1, 2, 3)

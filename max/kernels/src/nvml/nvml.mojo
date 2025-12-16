@@ -28,9 +28,9 @@ from memory import (
 # Constants
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_NVML_LIBRARY_DIR = Path("/usr/lib/x86_64-linux-gnu")
-alias CUDA_NVML_LIBRARY_BASE_NAME = "libnvidia-ml"
-alias CUDA_NVML_LIBRARY_EXT = ".so"
+comptime CUDA_NVML_LIBRARY_DIR = Path("/usr/lib/x86_64-linux-gnu")
+comptime CUDA_NVML_LIBRARY_BASE_NAME = "libnvidia-ml"
+comptime CUDA_NVML_LIBRARY_EXT = ".so"
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -39,10 +39,12 @@ alias CUDA_NVML_LIBRARY_EXT = ".so"
 
 fn _get_nvml_library_paths() raises -> List[Path]:
     var paths = List[Path]()
-    var common_path = CUDA_NVML_LIBRARY_DIR / (
-        CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
-    )
-    paths.append(common_path)
+    var lib_name = CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
+    # Look for libnvidia-ml.so
+    paths.append(CUDA_NVML_LIBRARY_DIR / lib_name)
+    # Look for libnvida-ml.so.1
+    paths.append(CUDA_NVML_LIBRARY_DIR / (lib_name + ".1"))
+    # Look for libnvidia-ml.so.<driver>.<major>.<minor>
     for fd in CUDA_NVML_LIBRARY_DIR.listdir():
         var path = CUDA_NVML_LIBRARY_DIR / fd
         if CUDA_NVML_LIBRARY_BASE_NAME in String(fd):
@@ -50,7 +52,7 @@ fn _get_nvml_library_paths() raises -> List[Path]:
     return paths^
 
 
-alias CUDA_NVML_LIBRARY = _Global["CUDA_NVML_LIBRARY", _init_dylib]
+comptime CUDA_NVML_LIBRARY = _Global["CUDA_NVML_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> OwnedDLHandle:
@@ -61,9 +63,7 @@ fn _init_dylib() -> OwnedDLHandle:
         )
         return dylib^
     except e:
-        return abort[OwnedDLHandle](
-            String("CUDA NVML library initialization failed: ", e)
-        )
+        abort(String("CUDA NVML library initialization failed: ", e))
 
 
 @always_inline
@@ -82,7 +82,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
+struct DriverVersion(ImplicitlyCopyable, StringableRaising):
     var _value: List[String]
 
     fn __init__(out self, var value: List[String]):
@@ -111,102 +111,102 @@ struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Result(
-    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
-):
+struct Result(Equatable, ImplicitlyCopyable, Stringable, Writable):
     var code: Int32
 
-    alias SUCCESS = Self(0)
-    """The operation was successful"""
+    comptime SUCCESS = Self(0)
+    """The operation was successful."""
 
-    alias UNINITIALIZED = Self(1)
-    """NVML was not first initialized with nvmlInit()"""
+    comptime UNINITIALIZED = Self(1)
+    """NVML was not first initialized with `nvmlInit()`."""
 
-    alias INVALID_ARGUMENT = Self(2)
-    """A supplied argument is invalid"""
+    comptime INVALID_ARGUMENT = Self(2)
+    """A supplied argument is invalid."""
 
-    alias NOT_SUPPORTED = Self(3)
-    """The requested operation is not available on target device"""
+    comptime NOT_SUPPORTED = Self(3)
+    """The requested operation is not available on target device."""
 
-    alias NO_PERMISSION = Self(4)
-    """The current user does not have permission for operation"""
+    comptime NO_PERMISSION = Self(4)
+    """The current user does not have permission for operation."""
 
-    alias ALREADY_INITIALIZED = Self(5)
+    comptime ALREADY_INITIALIZED = Self(5)
     """Deprecated: Multiple initializations are now allowed through ref
-    counting"""
+    counting.
+    """
 
-    alias NOT_FOUND = Self(6)
-    """A query to find an object was unsuccessful"""
+    comptime NOT_FOUND = Self(6)
+    """A query to find an object was unsuccessful."""
 
-    alias INSUFFICIENT_SIZE = Self(7)
-    """An input argument is not large enough"""
+    comptime INSUFFICIENT_SIZE = Self(7)
+    """An input argument is not large enough."""
 
-    alias INSUFFICIENT_POWER = Self(8)
-    """A device's external power cables are not properly attached"""
+    comptime INSUFFICIENT_POWER = Self(8)
+    """A device's external power cables are not properly attached."""
 
-    alias DRIVER_NOT_LOADED = Self(9)
-    """NVIDIA driver is not loaded"""
+    comptime DRIVER_NOT_LOADED = Self(9)
+    """NVIDIA driver is not loaded."""
 
-    alias TIMEOUT = Self(10)
-    """User provided timeout passed"""
+    comptime TIMEOUT = Self(10)
+    """User provided timeout passed."""
 
-    alias IRQ_ISSUE = Self(11)
-    """NVIDIA Kernel detected an interrupt issue with a GPU"""
+    comptime IRQ_ISSUE = Self(11)
+    """NVIDIA Kernel detected an interrupt issue with a GPU."""
 
-    alias LIBRARY_NOT_FOUND = Self(12)
-    """NVML Shared Library couldn't be found or loaded"""
+    comptime LIBRARY_NOT_FOUND = Self(12)
+    """NVML Shared Library couldn't be found or loaded."""
 
-    alias FUNCTION_NOT_FOUND = Self(13)
-    """Local version of NVML doesn't implement this function"""
+    comptime FUNCTION_NOT_FOUND = Self(13)
+    """Local version of NVML doesn't implement this function."""
 
-    alias CORRUPTED_INFOROM = Self(14)
-    """infoROM is corrupted"""
+    comptime CORRUPTED_INFOROM = Self(14)
+    """The infoROM is corrupted."""
 
-    alias GPU_IS_LOST = Self(15)
-    """The GPU has fallen off the bus or has otherwise become inaccessible"""
+    comptime GPU_IS_LOST = Self(15)
+    """The GPU has fallen off the bus or has otherwise become inaccessible."""
 
-    alias RESET_REQUIRED = Self(16)
-    """The GPU requires a reset before it can be used again"""
+    comptime RESET_REQUIRED = Self(16)
+    """The GPU requires a reset before it can be used again."""
 
-    alias OPERATING_SYSTEM = Self(17)
-    """The GPU control device has been blocked by the operating system/cgroups"""
+    comptime OPERATING_SYSTEM = Self(17)
+    """The GPU control device has been blocked by the operating system/cgroups."""
 
-    alias LIB_RM_VERSION_MISMATCH = Self(18)
-    """RM detects a driver/library version mismatch"""
+    comptime LIB_RM_VERSION_MISMATCH = Self(18)
+    """RM detects a driver/library version mismatch."""
 
-    alias IN_USE = Self(19)
-    """An operation cannot be performed because the GPU is currently in use"""
+    comptime IN_USE = Self(19)
+    """An operation cannot be performed because the GPU is currently in use."""
 
-    alias MEMORY = Self(20)
-    """Insufficient memory"""
+    comptime MEMORY = Self(20)
+    """Insufficient memory."""
 
-    alias NO_DATA = Self(21)
-    """No data"""
+    comptime NO_DATA = Self(21)
+    """No data."""
 
-    alias VGPU_ECC_NOT_SUPPORTED = Self(22)
+    comptime VGPU_ECC_NOT_SUPPORTED = Self(22)
     """The requested vgpu operation is not available on target device, because
-    ECC is enabled"""
+    ECC is enabled.
+    """
 
-    alias INSUFFICIENT_RESOURCES = Self(23)
-    """Ran out of critical resources, other than memory"""
+    comptime INSUFFICIENT_RESOURCES = Self(23)
+    """Ran out of critical resources, other than memory."""
 
-    alias FREQ_NOT_SUPPORTED = Self(24)
-    """Ran out of critical resources, other than memory"""
+    comptime FREQ_NOT_SUPPORTED = Self(24)
+    """Ran out of critical resources, other than memory."""
 
-    alias ARGUMENT_VERSION_MISMATCH = Self(25)
-    """The provided version is invalid/unsupported"""
+    comptime ARGUMENT_VERSION_MISMATCH = Self(25)
+    """The provided version is invalid/unsupported."""
 
-    alias DEPRECATED = Self(26)
-    """The requested functionality has been deprecated"""
+    comptime DEPRECATED = Self(26)
+    """The requested functionality has been deprecated."""
 
-    alias NOT_READY = Self(27)
-    """The system is not ready for the request"""
+    comptime NOT_READY = Self(27)
+    """The system is not ready for the request."""
 
-    alias GPU_NOT_FOUND = Self(28)
-    """No GPUs were found"""
+    comptime GPU_NOT_FOUND = Self(28)
+    """No GPUs were found."""
 
-    alias UNKNOWN = Self(999)
-    """An internal driver error occurred"""
+    comptime UNKNOWN = Self(999)
+    """An internal driver error occurred."""
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -291,14 +291,14 @@ fn _check_error(err: Result) raises:
 
 @fieldwise_init
 @register_passable("trivial")
-struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
+struct EnableState(Equatable, ImplicitlyCopyable):
     var code: Int32
 
-    alias DISABLED = Self(0)
-    """Feature disabled"""
+    comptime DISABLED = Self(0)
+    """Feature disabled."""
 
-    alias ENABLED = Self(1)
-    """Feature enabled"""
+    comptime ENABLED = Self(1)
+    """Feature enabled."""
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -312,20 +312,20 @@ struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ClockType(EqualityComparable, ImplicitlyCopyable, Movable):
+struct ClockType(Equatable, ImplicitlyCopyable):
     var code: Int32
 
-    alias GRAPHICS = Self(0)
-    """Graphics clock domain"""
+    comptime GRAPHICS = Self(0)
+    """Graphics clock domain."""
 
-    alias SM = Self(1)
-    """SM clock domain"""
+    comptime SM = Self(1)
+    """SM clock domain."""
 
-    alias MEM = Self(2)
-    """Memory clock domain"""
+    comptime MEM = Self(2)
+    """Memory clock domain."""
 
-    alias VIDEO = Self(2)
-    """Video clock domain"""
+    comptime VIDEO = Self(2)
+    """Video clock domain."""
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -339,7 +339,7 @@ struct ClockType(EqualityComparable, ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl(Defaultable, ImplicitlyCopyable, Movable):
+struct _DeviceImpl(Defaultable, ImplicitlyCopyable):
     var handle: OpaquePointer
 
     @always_inline
@@ -368,7 +368,7 @@ struct Device(Writable):
 
     fn get_driver_version(self) raises -> DriverVersion:
         """Returns NVIDIA driver version."""
-        alias max_length = 16
+        comptime max_length = 16
         var driver_version_buffer = stack_allocation[max_length, c_char]()
 
         _check_error(
@@ -414,7 +414,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=Int(UInt(num_clocks)), fill=0)
+        var clocks = List[UInt32](length=Int(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -455,7 +455,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=Int(UInt(num_clocks)), fill=0)
+        var clocks = List[UInt32](length=Int(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -586,11 +586,11 @@ struct Device(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _EnableState(ImplicitlyCopyable, Movable):
+struct _EnableState(ImplicitlyCopyable):
     var state: Int32
 
-    alias DISABLED = _EnableState(0)  # Feature disabled
-    alias ENABLED = _EnableState(1)  # Feature enabled
+    comptime DISABLED = _EnableState(0)  # Feature disabled
+    comptime ENABLED = _EnableState(1)  # Feature enabled
 
     fn __eq__(self, other: Self) -> Bool:
         return self.state == other.state

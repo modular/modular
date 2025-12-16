@@ -13,9 +13,13 @@
 
 from max._core import __version__
 from max._core.driver import (
+    get_virtual_device_api,
     get_virtual_device_count,
+    get_virtual_device_target_arch,
     is_virtual_device_mode,
+    set_virtual_device_api,
     set_virtual_device_count,
+    set_virtual_device_target_arch,
 )
 from max._core_types.driver import DLPackArray
 
@@ -28,6 +32,8 @@ from .driver import (
     accelerator_api,
     accelerator_architecture_name,
     accelerator_count,
+    calculate_virtual_device_count,
+    calculate_virtual_device_count_from_cli,
     devices_exist,
     load_devices,
     scan_available_devices,
@@ -47,10 +53,17 @@ __all__ = [
     "Tensor",
     "accelerator_api",
     "accelerator_architecture_name",
+    "accelerator_count",
+    "calculate_virtual_device_count",
+    "calculate_virtual_device_count_from_cli",
     "devices_exist",
+    "get_virtual_device_api",
     "get_virtual_device_count",
+    "get_virtual_device_target_arch",
     "is_virtual_device_mode",
     "load_devices",
     "scan_available_devices",
+    "set_virtual_device_api",
     "set_virtual_device_count",
+    "set_virtual_device_target_arch",
 ]

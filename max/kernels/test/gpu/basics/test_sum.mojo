@@ -19,7 +19,7 @@ from gpu.host import DeviceContext
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
-alias dtype = DType.uint64
+comptime dtype = DType.uint64
 
 
 fn warp_sum_kernel[
@@ -36,8 +36,8 @@ fn warp_sum_kernel[
 
 
 def test_warp_sum(ctx: DeviceContext):
-    alias size = WARP_SIZE
-    alias BLOCK_SIZE = WARP_SIZE
+    comptime size = WARP_SIZE
+    comptime BLOCK_SIZE = WARP_SIZE
 
     # Allocate and initialize host memory
     var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
@@ -54,7 +54,7 @@ def test_warp_sum(ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    alias kernel = warp_sum_kernel[dtype=dtype]
+    comptime kernel = warp_sum_kernel[dtype=dtype]
     ctx.enqueue_function_checked[kernel, kernel](
         out_device,
         in_device,
@@ -100,8 +100,8 @@ fn block_sum_kernel[
 def test_block_sum(ctx: DeviceContext):
     # Initialize a block with several warps. The sum for each warp is tested
     # above.
-    alias BLOCK_SIZE = WARP_SIZE * 2
-    alias size = BLOCK_SIZE
+    comptime BLOCK_SIZE = WARP_SIZE * 2
+    comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory
     var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
@@ -118,7 +118,7 @@ def test_block_sum(ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    alias kernel = block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]
+    comptime kernel = block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]
     ctx.enqueue_function_checked[kernel, kernel](
         out_device,
         in_device,

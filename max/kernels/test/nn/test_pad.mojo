@@ -21,8 +21,8 @@ from testing import assert_equal
 fn test_pad_1d() raises:
     print("== test_pad_1d")
 
-    alias in_layout = Layout.row_major(3)
-    alias out_layout = Layout.row_major(6)
+    comptime in_layout = Layout.row_major(3)
+    comptime out_layout = Layout.row_major(6)
 
     # Create an input matrix of the form
     # [1, 2, 3]
@@ -65,8 +65,8 @@ fn test_pad_1d() raises:
 fn test_pad_reflect_1d() raises:
     print("== test_pad_reflect_1d")
 
-    alias in_layout = Layout.row_major(3)
-    alias out_layout = Layout.row_major(8)
+    comptime in_layout = Layout.row_major(3)
+    comptime out_layout = Layout.row_major(8)
 
     # Create an input matrix of the form
     # [1, 2, 3]
@@ -105,8 +105,8 @@ fn test_pad_reflect_1d() raises:
 fn test_pad_repeat_1d() raises:
     print("== test_pad_repeat_1d")
 
-    alias in_layout = Layout.row_major(3)
-    alias out_layout = Layout.row_major(8)
+    comptime in_layout = Layout.row_major(3)
+    comptime out_layout = Layout.row_major(8)
 
     # Create an input matrix of the form
     # [1, 2, 3]
@@ -145,8 +145,8 @@ fn test_pad_repeat_1d() raises:
 fn test_pad_2d() raises:
     print("== test_pad_2d")
 
-    alias in_layout = Layout.row_major(2, 2)
-    alias out_layout = Layout.row_major(3, 4)
+    comptime in_layout = Layout.row_major(2, 2)
+    comptime out_layout = Layout.row_major(3, 4)
 
     # Create an input matrix of the form
     # [[1, 2],
@@ -202,8 +202,8 @@ fn test_pad_2d() raises:
 fn test_pad_reflect_2d() raises:
     print("== test_pad_reflect_2d")
 
-    alias in_layout = Layout.row_major(2, 2)
-    alias out_layout = Layout.row_major(6, 3)
+    comptime in_layout = Layout.row_major(2, 2)
+    comptime out_layout = Layout.row_major(6, 3)
 
     # Create an input matrix of the form
     # [[1, 2],
@@ -269,8 +269,8 @@ fn test_pad_reflect_2d() raises:
 fn test_pad_repeat_2d() raises:
     print("== test_pad_repeat_2d")
 
-    alias in_layout = Layout.row_major(2, 2)
-    alias out_layout = Layout.row_major(6, 3)
+    comptime in_layout = Layout.row_major(2, 2)
+    comptime out_layout = Layout.row_major(6, 3)
 
     # Create an input matrix of the form
     # [[1, 2],
@@ -336,8 +336,8 @@ fn test_pad_repeat_2d() raises:
 fn test_pad_3d() raises:
     print("== test_pad_3d")
 
-    alias in_layout = Layout.row_major(1, 2, 2)
-    alias out_layout = Layout.row_major(2, 3, 3)
+    comptime in_layout = Layout.row_major(1, 2, 2)
+    comptime out_layout = Layout.row_major(2, 3, 3)
 
     # Create an input matrix of the form
     # [[[1, 2],
@@ -404,8 +404,8 @@ fn test_pad_3d() raises:
 # CHECK-LABEL: test_pad_reflect_3d
 fn test_pad_reflect_3d() raises:
     print("== test_pad_reflect_3d")
-    alias in_layout = Layout.row_major(2, 2, 2)
-    alias out_layout = Layout.row_major(4, 3, 3)
+    comptime in_layout = Layout.row_major(2, 2, 2)
+    comptime out_layout = Layout.row_major(4, 3, 3)
 
     # Create an input matrix of the form
     # [[[1, 2],
@@ -506,8 +506,8 @@ fn test_pad_reflect_3d() raises:
 # CHECK-LABEL: test_pad_reflect_3d_singleton
 fn test_pad_reflect_3d_singleton() raises:
     print("== test_pad_reflect_3d_singleton")
-    alias in_layout = Layout.row_major(1, 1, 1)
-    alias out_layout = Layout.row_major(2, 2, 5)
+    comptime in_layout = Layout.row_major(1, 1, 1)
+    comptime out_layout = Layout.row_major(2, 2, 5)
 
     # Create an input matrix of the form
     # [[[1]]]
@@ -574,10 +574,10 @@ fn test_pad_reflect_3d_singleton() raises:
 fn test_pad_reflect_4d_big_input() raises:
     print("== test_pad_reflect_4d_big_input")
 
-    alias in_layout = Layout.row_major(1, 1, 512, 512)
-    alias in_size = 1 * 1 * 512 * 512
-    alias out_layout = Layout.row_major(2, 3, 1024, 1024)
-    alias out_size = 2 * 3 * 1024 * 1024
+    comptime in_layout = Layout.row_major(1, 1, 512, 512)
+    comptime in_size = 1 * 1 * 512 * 512
+    comptime out_layout = Layout.row_major(2, 3, 1024, 1024)
+    comptime out_size = 2 * 3 * 1024 * 1024
 
     # create a big input matrix and fill it with ones
     var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
@@ -613,8 +613,8 @@ fn test_pad_reflect_4d_big_input() raises:
 # CHECK-LABEL: test_pad_repeat_3d
 fn test_pad_repeat_3d() raises:
     print("== test_pad_repeat_3d")
-    alias in_layout = Layout.row_major(2, 2, 2)
-    alias out_layout = Layout.row_major(5, 4, 3)
+    comptime in_layout = Layout.row_major(2, 2, 2)
+    comptime out_layout = Layout.row_major(5, 4, 3)
 
     # Create an input matrix of the form
     # [[[1, 2],

@@ -31,8 +31,8 @@ from utils import IndexList
 fn test_gpu_softmax(ctx: DeviceContext) raises:
     print("== test_gpu_softmax")
 
-    alias type = DType.float32
-    alias rank = 3
+    comptime type = DType.float32
+    comptime rank = 3
     var shape = IndexList[rank](3, 5, 515)
     var in_host_ptr = UnsafePointer[Scalar[type]].alloc(
         shape.flattened_length()
@@ -40,7 +40,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     var in_device_ptr = ctx.enqueue_create_buffer[type](
         shape.flattened_length()
     )
-    alias layout_dyn = Layout.row_major[rank]()
+    comptime layout_dyn = Layout.row_major[rank]()
     var in_host = LayoutTensor[type, layout_dyn](
         in_host_ptr, RuntimeLayout[layout_dyn].row_major(shape)
     )
@@ -128,16 +128,16 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
 
 def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     print("== test_gpu_softmax_half")
-    alias seed_val = 42
+    comptime seed_val = 42
     seed(seed_val)
 
-    alias ref_type = DType.float32
-    alias rank = 3
+    comptime ref_type = DType.float32
+    comptime rank = 3
 
     var shape = IndexList[rank](3, 5, 515)
     var length = shape.flattened_length()
 
-    alias layout_dyn = Layout.row_major[rank]()
+    comptime layout_dyn = Layout.row_major[rank]()
 
     var in_host_ref_ptr = UnsafePointer[Scalar[ref_type]].alloc(length)
     var in_device_ref_ptr = ctx.enqueue_create_buffer[ref_type](length)
@@ -221,15 +221,15 @@ fn test_gpu_online_softmax[
 ](ctx: DeviceContext) raises:
     print("== test_online_softmax")
 
-    alias type = DType.float32
-    alias rank = 3
-    alias seqlen = 256
+    comptime type = DType.float32
+    comptime rank = 3
+    comptime seqlen = 256
 
     # For testing purpose, call online softmax twice and each time updates half
     # seq_len. Limit to WM rows and arrange warps in N dim.
-    alias shape = IndexList[rank](1, WM, seqlen)
-    alias num_warps = seqlen // (2 * WN)
-    alias num_threads = num_warps * WARP_SIZE
+    comptime shape = IndexList[rank](1, WM, seqlen)
+    comptime num_warps = seqlen // (2 * WN)
+    comptime num_threads = num_warps * WARP_SIZE
 
     var in_host_ptr = UnsafePointer[Scalar[type]].alloc(
         shape.flattened_length()
@@ -241,7 +241,7 @@ fn test_gpu_online_softmax[
         shape.flattened_length()
     )
 
-    alias layout_dyn = Layout.row_major[rank]()
+    comptime layout_dyn = Layout.row_major[rank]()
     var in_host = LayoutTensor[type, layout_dyn](
         in_host_ptr, RuntimeLayout[layout_dyn].row_major(shape)
     )
@@ -266,7 +266,7 @@ fn test_gpu_online_softmax[
     rand[type](in_host_ptr, shape.flattened_length())
 
     ctx.enqueue_copy(in_device_ptr, in_host_ptr)
-    alias kernel = _online_softmax_kernel[
+    comptime kernel = _online_softmax_kernel[
         WM,
         WN,
         DType.float32,

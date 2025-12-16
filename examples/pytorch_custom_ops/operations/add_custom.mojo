@@ -33,6 +33,6 @@ struct AddConstantCustom[value: Int]:
         fn add_constant[
             width: Int
         ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
-            return x.load[width](idx) + value
+            return x.load[width](idx) + Self.value
 
         foreach[add_constant, target=target](outp, ctx)

@@ -22,17 +22,9 @@ import max._core.dialects.builtin
 import max._core.dialects.m
 from max.mlir import Context, Location
 
-# Many of the generated overloads for constructors are more specialized in
-# C++ than they are in Python. For example, `int32_t` and `int64_t` and `size_t`
-# all map to `int` in Python typing. It may not always be clear which of these
-# overloads will be run for a given set of inputs (though in most cases it's the first one)
-# but we disable mypy errors for shadowed overloads.
-#
+# C++ overloads on different int types look the same in Python, ignore these
 # mypy: disable-error-code="overload-cannot-match"
 
-# DiagnosticHandlers aren't a thing that Python can reasonably provided. In most cases
-# these are automatically provided, but there are a few custom verifiers not covered yet.
-# This binding prevents errors in those cases.
 DiagnosticHandler = Callable
 
 class ContextuallyEvaluatedAttrInterface(Protocol):
@@ -551,10 +543,6 @@ class GeneratorAttr(max._core.Attribute):
     ```
     """
 
-    @overload
-    def __init__(
-        self, body: max._core.dialects.builtin.TypedAttr, type: GeneratorType
-    ) -> None: ...
     @overload
     def __init__(
         self,
@@ -1162,36 +1150,28 @@ class SugarAttr(max._core.Attribute):
     """
     The `#kgen.sugar` attribute represents a syntax sugar overlaid on some other
     value e.g. an alias or expanded builtin function call. It maintains the
-    original unexpanded attribute value as well as the "one level expanded" and
+    original sugared form as well as the "one level expanded" form, and
     fully expanded "canonical" version of the attribute.
     """
 
-    @overload
     def __init__(
         self,
         kind: SugarKind,
+        member_name: max._core.dialects.builtin.StringAttr,
         sugared: max._core.dialects.builtin.TypedAttr,
-        original: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        kind: SugarKind,
-        sugared: max._core.dialects.builtin.TypedAttr,
-        original: max._core.dialects.builtin.TypedAttr,
-        canonical: max._core.dialects.builtin.TypedAttr,
-        type: max._core.Type,
+        expanded: max._core.dialects.builtin.TypedAttr,
+        canonical: max._core.dialects.builtin.TypedAttr = ...,
     ) -> None: ...
     @property
     def kind(self) -> SugarKind: ...
     @property
+    def member_name(self) -> max._core.dialects.builtin.StringAttr: ...
+    @property
     def sugared(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def original(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def expanded(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def canonical(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
 
 class SymbolConstantAttr(max._core.Attribute):
     """
@@ -1554,25 +1534,144 @@ class VariadicAttr(max._core.Attribute):
     @property
     def type(self) -> VariadicType: ...
 
-class VariadicMapAttr(max._core.Attribute):
+class VariadicConcatAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.map` attribute is used to convert from a variadic of
-    (type) value to a variadic of (type) value by repeatedly applying the
-    provided generator on each element of the variadic.
+    The `#kgen.variadic.concat` attribute is used to concatenate a variadic of
+    variadic (type) value.
+
+    Example:
+    ```mlir
+    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !variadic<!AnyType>
+    // ->
+    #kgen.variadic<[Int, Int, Float, Float]> : !variadic<!AnyType>
+    ```
     """
 
+    @overload
     def __init__(
         self,
         type: VariadicType,
-        variadic: max._core.dialects.builtin.TypedAttr,
-        generator: max._core.dialects.builtin.TypedAttr,
+        variadics: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        variadics: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type(self) -> VariadicType: ...
     @property
+    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicReduceAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
+    (type) value to a (type) value by repeatedly applying the provided reducer
+    on each element of the variadic.
+    """
+
+    def __init__(
+        self,
+        type: max._core.Type,
+        base: max._core.dialects.builtin.TypedAttr,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        generator: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def base(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicSizeAttr(max._core.Attribute):
+    @overload
+    def __init__(
+        self,
+        type: max._core.dialects.builtin.IndexType,
+        variadic: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: max._core.dialects.builtin.IndexType,
+        variadic: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IndexType: ...
+    @property
+    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicSplatAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.splat` creates a variadic by splatting the same value
+    to the given times.
+
+    Example:
+    ```mlir
+    #kgen.variadic.splat<Int, 5> : !variadic<!AnyType>
+    // ->
+    #kgen.variadic<[Int, Int, Int, Int, Int]> : !variadic<!AnyType>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        element: max._core.dialects.builtin.TypedAttr,
+        count: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        element: max._core.dialects.builtin.TypedAttr,
+        count: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> VariadicType: ...
+    @property
+    def element(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicZipAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.zip` attribute is used to zip a variadic of
+    variadic (type) value.
+
+    Example:
+    ```mlir
+    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !variadic<!variadic<!AnyType>>
+    // ->
+    #kgen.variadic<[[Int, Float], [Int, Float]]> : !variadic<!variadic<!AnyType>>
+    ```
+
+    At the moment, when the provided variadics are of different lengths, we zip
+    till the shortest variadic are consumed. In the future, we might want to
+    extend the attribute to accept an "default" value for "zip_longest".
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> VariadicType: ...
+    @property
+    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariantAttr(max._core.Attribute):
     """
@@ -1643,15 +1742,17 @@ class ArgConvention(enum.Enum):
 
     owned_in_mem = 3
 
-    mut = 4
+    deinit_mem = 4
 
-    ref = 5
+    mut = 5
 
-    mutref = 6
+    ref = 6
 
-    byref_result = 7
+    mutref = 7
 
-    byref_error = 8
+    byref_result = 8
+
+    byref_error = 9
 
 class ArgConventionAttr(max._core.Attribute):
     def __init__(self, arg0: Context, arg1: ArgConvention, /) -> None: ...
@@ -1703,6 +1804,8 @@ class FnEffects(enum.Enum):
     unified = 64
 
     register_passable = 128
+
+    extern = 256
 
 class InlineLevel(enum.Enum):
     automatic = 0
@@ -1819,7 +1922,9 @@ class POCAttr(max._core.Attribute):
 class SugarKind(enum.Enum):
     aibuiltin = 0
 
-    alias = 1
+    member_alias = 1
+
+    alias = 2
 
 class TailKind(enum.Enum):
     none = 0
@@ -1827,6 +1932,8 @@ class TailKind(enum.Enum):
     musttail = 1
 
     notail = 2
+
+    tail = 3
 
 class CallIndirectOp(max._core.Operation):
     """
@@ -1885,6 +1992,7 @@ class CallParamOp(max._core.Operation):
         results: Sequence[max._core.Type],
         callee: max._core.dialects.builtin.TypedAttr,
         operands: Sequence[max._core.Value[max._core.Type]],
+        tail_kind: TailKindAttr,
     ) -> None: ...
     @property
     def callee(self) -> max._core.dialects.builtin.TypedAttr: ...
@@ -1892,6 +2000,10 @@ class CallParamOp(max._core.Operation):
     def callee(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
     @property
     def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def tail_kind(self) -> TailKind: ...
+    @tail_kind.setter
+    def tail_kind(self, arg: TailKindAttr, /) -> None: ...
 
 class CaptureListCopyOp(max._core.Operation):
     """
@@ -2060,6 +2172,28 @@ class ClosureInitOp(max._core.Operation):
     def nested_fn_scope(self) -> max._core.Attribute | None: ...
     @nested_fn_scope.setter
     def nested_fn_scope(self, arg: max._core.Attribute, /) -> None: ...
+
+class CodegenReachableOp(max._core.Operation):
+    """
+    The `kgen.codegen.reachable` operation checks if
+    codegen into runtimne code is allowed or not.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        cond: max._core.dialects.builtin.TypedAttr,
+        message: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def cond(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @cond.setter
+    def cond(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
+    @property
+    def message(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @message.setter
+    def message(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
 
 class CompileOffloadOp(max._core.Operation):
     """
@@ -3681,7 +3815,16 @@ class UnreachableOp(max._core.Operation):
     """
 
     def __init__(
-        self, builder: max._core.OpBuilder, location: Location
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        is_after_unreachable_call: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def is_after_unreachable_call(self) -> bool: ...
+    @is_after_unreachable_call.setter
+    def is_after_unreachable_call(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
 class VariantCreateOp(max._core.Operation):
@@ -3838,7 +3981,7 @@ class PackageLinkOp(max._core.Operation):
 
     ```mlir
     kgen.package.link @foo
-      dependencies([@stdlib])
+      dependencies([@std])
       post_parse(dense_resource<...> : tensor<...xi8>)
     ```
     """
@@ -3913,7 +4056,7 @@ class SugaredTypeInterface(Protocol):
 
     def can_elide_sugar_for(
         self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> bool: ...
+    ) -> SugarKind | None: ...
     def get_cached_canonical_type(
         self, arg: max._core.Type, /
     ) -> max._core.Type | None: ...
@@ -4058,6 +4201,17 @@ class GeneratorType(max._core.Type):
     def body(self) -> max._core.Type | None: ...
     @property
     def metadata(self) -> GeneratorMetadataAttrInterface: ...
+
+class NeverType(max._core.Type):
+    """
+    A `!kgen.never` type represents a type that cannot be
+    constructed. This is used to represent functions that never return or
+    generic thrown types that resolve to a concrete type of "not actually
+    thrown".
+    ```
+    """
+
+    def __init__(self) -> None: ...
 
 class NoneType(max._core.Type):
     """

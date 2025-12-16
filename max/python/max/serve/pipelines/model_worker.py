@@ -13,11 +13,12 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from threading import Event
+from multiprocessing.synchronize import Event
 from typing import Any
 
 import uvloop
@@ -27,11 +28,11 @@ from max.interfaces import (
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.kv_cache.paged_cache import ResetPrefixCacheBackend
 from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_oom
+from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import (
     ProcessManager,
@@ -248,8 +249,9 @@ async def start_model_worker(
     worker_name = "MODEL_" + str(uuid.uuid4())
     logger.debug("Starting worker: %s", worker_name)
 
+    mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Model Worker") as proc:
-        alive = proc.ctx.Event()
+        alive = mp.Event()
         proc.start(
             ModelWorker(),
             alive,

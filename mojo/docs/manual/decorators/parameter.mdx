@@ -35,8 +35,8 @@ You can add the `@parameter` decorator to a `for` loop to create a loop that's
 The loop sequence and induction values must be valid parameter expressions (that
 is, expressions that evaluate at compile time). For example, if you use
 `for i in range(LIMIT)`, the expression `range(LIMIT)` defines the loop
-sequence. This is a valid parameter expression if `LIMIT` is a parameter, alias,
-or integer literal.
+sequence. This is a valid parameter expression if `LIMIT` is a parameter,
+`comptime` value, or integer literal.
 
 The compiler "unrolls" the loop by replacing the `for` loop with
 `LIMIT` copies of the loop body with different constant `i` values.
@@ -49,7 +49,7 @@ run-time values).
 from random import rand
 
 def main():
-    alias LIST_SIZE = 128
+    comptime LIST_SIZE = 128
 
     var list = List[Float64](length=LIST_SIZE, fill=0)
     rand(list.unsafe_ptr(), LIST_SIZE)

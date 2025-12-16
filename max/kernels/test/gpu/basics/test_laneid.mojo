@@ -30,8 +30,8 @@ fn kernel(
 
 
 fn test_grid_dim(ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size
     var output_host = UnsafePointer[Float32].alloc(buffer_size)
 
     for i in range(buffer_size):

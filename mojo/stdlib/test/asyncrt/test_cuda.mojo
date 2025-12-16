@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
-from memory import LegacyUnsafePointer as UnsafePointer
+from asyncrt_test_utils import create_test_device_context
 from gpu.host import DeviceContext, Dim
 from gpu.host._nvidia_cuda import (
     CUDA,
     CUcontext,
     CUDA_get_current_context,
 )
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 
 fn _run_cuda_context(ctx: DeviceContext) raises:
@@ -30,12 +29,12 @@ fn _run_cuda_context(ctx: DeviceContext) raises:
 
     with ctx.push_context() as cur_ctx:
         # cur_ctx is still equivalent to the ctx passed in.
-        expect_eq(CUDA(ctx), CUDA(cur_ctx))
-        expect_eq(CUDA(ctx.stream()), CUDA(cur_ctx.stream()))
+        assert_equal(Bool(CUDA(ctx)), Bool(CUDA(cur_ctx)))
+        assert_equal(Bool(CUDA(ctx.stream())), Bool(CUDA(cur_ctx.stream())))
         # Make sure that the current CUcontext matches the pushed CUcontext
-        expect_eq(cuda_ctx, CUDA_get_current_context())
+        assert_equal(Bool(cuda_ctx), Bool(CUDA_get_current_context()))
 
-    expect_eq(initial_ctx, CUDA_get_current_context())
+    assert_equal(Bool(initial_ctx), Bool(CUDA_get_current_context()))
     print("initial CUcontext:", initial_ctx)
     print("CUcontext:", cuda_ctx)
 
@@ -49,23 +48,25 @@ fn _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
 
     with ctx0.push_context() as cur_ctx0:
         # cur_ctx is still equivalent to the ctx passed in.
-        expect_eq(CUDA(ctx0), CUDA(cur_ctx0))
-        expect_eq(CUDA(ctx0.stream()), CUDA(cur_ctx0.stream()))
+        assert_equal(Bool(CUDA(ctx0)), Bool(CUDA(cur_ctx0)))
+        assert_equal(Bool(CUDA(ctx0.stream())), Bool(CUDA(cur_ctx0.stream())))
         # Make sure that the current CUcontext matches the pushed CUcontext
-        expect_eq(cuda_ctx0, CUDA_get_current_context())
+        assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))
 
         # Nested context pushes save, push and restore
         with ctx1.push_context() as cur_ctx1:
             # cur_ctx is still equivalent to the ctx passed in.
-            expect_eq(CUDA(ctx1), CUDA(cur_ctx1))
-            expect_eq(CUDA(ctx1.stream()), CUDA(cur_ctx1.stream()))
+            assert_equal(Bool(CUDA(ctx1)), Bool(CUDA(cur_ctx1)))
+            assert_equal(
+                Bool(CUDA(ctx1.stream())), Bool(CUDA(cur_ctx1.stream()))
+            )
             # Make sure that the current CUcontext matches the pushed CUcontext
-            expect_eq(cuda_ctx1, CUDA_get_current_context())
+            assert_equal(Bool(cuda_ctx1), Bool(CUDA_get_current_context()))
 
         # Make sure that the previously pushed CUcontext has been restored.
-        expect_eq(cuda_ctx0, CUDA_get_current_context())
+        assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))
 
-    expect_eq(initial_ctx, CUDA_get_current_context())
+    assert_equal(Bool(initial_ctx), Bool(CUDA_get_current_context()))
     print("initial CUcontext:", initial_ctx)
     print("CUcontext(id: 0):", cuda_ctx0)
     print("CUcontext(id: 1):", cuda_ctx1)
@@ -90,9 +91,9 @@ fn _run_cuda_external_function(ctx: DeviceContext) raises:
 
     # Signature of externally compiled kernel function
     fn vec_add_sig(
-        in0: UnsafePointer[Float32],
-        in1: UnsafePointer[Float32],
-        output: UnsafePointer[Float32],
+        in0: UnsafePointer[Float32, MutAnyOrigin],
+        in1: UnsafePointer[Float32, MutAnyOrigin],
+        output: UnsafePointer[Float32, MutAnyOrigin],
         len: Int,
     ):
         pass
@@ -154,8 +155,8 @@ $L__BB0_2:
 }
 """
 
-    alias LEN = 1024
-    alias BLOCK_DIM = 32
+    comptime LEN = 1024
+    comptime BLOCK_DIM = 32
 
     lhs = ctx.enqueue_create_buffer[DType.float32](LEN)
     lhs.enqueue_fill(2.0)
@@ -167,7 +168,7 @@ $L__BB0_2:
         function_name="_Z9vectorAddPKfS0_Pfi",
         asm=ptx,
     )
-    ctx.enqueue_function(
+    ctx.enqueue_function_checked(
         func,
         lhs,
         rhs,

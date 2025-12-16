@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 mojo_test(
     name = "test_nvml.mojo.test",
     srcs = ["test_nvml.mojo"],
@@ -10,7 +12,7 @@ mojo_test(
         "//conditions:default": [],
     }),
     deps = [
-        "@mojo//:nvml",
-        "@mojo//:stdlib",
+        "//max:nvml",
+        "@mojo//:std",
     ],
 )

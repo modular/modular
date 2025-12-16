@@ -204,11 +204,14 @@ async def _async_worker(
         else None
     )
     # Create Queues
-    scheduler_zmq_configs = SchedulerZmqConfigs(pipeline_task)
+    scheduler_zmq_configs = SchedulerZmqConfigs(
+        pipeline_task,
+        context_type=PIPELINE_REGISTRY.retrieve_context_type(pipeline_config),
+    )
     async with (
         start_telemetry_consumer(settings) as metric_client,
         start_model_worker(
-            model_factory=model_factory,  # type: ignore
+            model_factory=model_factory,
             pipeline_config=pipeline_config,
             settings=settings,
             metric_client=metric_client,

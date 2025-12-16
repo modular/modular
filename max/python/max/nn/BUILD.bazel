@@ -1,9 +1,10 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "nn",
     srcs = glob(["**/*.py"]),
-    imports = ["../.."],
     deps = [
         requirement("numpy"),
         requirement("msgspec"),

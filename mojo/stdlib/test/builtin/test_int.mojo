@@ -161,8 +161,6 @@ def test_indexer():
 def test_bool():
     assert_true(Int(5).__bool__())
     assert_false(Int(0).__bool__())
-    assert_true(Int(5).__as_bool__())
-    assert_false(Int(0).__as_bool__())
 
 
 def test_decimal_digit_count():

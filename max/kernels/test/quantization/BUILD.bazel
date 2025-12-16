@@ -1,13 +1,15 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
         tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
         deps = [
-            "@mojo//:quantization",
-            "@mojo//:stdlib",
+            "//max:quantization",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -26,7 +28,7 @@ mojo_test(
         "skip-external-ci-macos-15",
     ],
     deps = [
-        "@mojo//:quantization",
-        "@mojo//:stdlib",
+        "//max:quantization",
+        "@mojo//:std",
     ],
 )

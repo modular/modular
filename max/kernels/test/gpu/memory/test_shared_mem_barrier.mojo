@@ -35,5 +35,5 @@ fn test_shared_mem_barrier():
 
 def main():
     print("== test_shared_mem_barrier")
-    alias kernel = test_shared_mem_barrier
+    comptime kernel = test_shared_mem_barrier
     print(_compile_code[kernel, target = get_gpu_target["sm_90a"]()]())

@@ -34,8 +34,8 @@ from nn.conv_utils import (
 
 from utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
-alias dtype = DType.float32
+comptime simd_size: Int = simd_width_of[DType.float32]()
+comptime dtype = DType.float32
 
 
 # CHECK-LABEL: test_conv_epilogue
@@ -122,8 +122,8 @@ fn test[
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
-    alias layout_p2 = Layout.row_major[rank + 2]()
-    alias layout_p3 = Layout.row_major[rank + 3]()
+    comptime layout_p2 = Layout.row_major[rank + 2]()
+    comptime layout_p3 = Layout.row_major[rank + 3]()
     var input_shape = extend_shape(input_dims, N, C)
     var input = LayoutTensor[dtype, layout_p2](
         input_ptr, RuntimeLayout[layout_p2].row_major(input_shape)
@@ -156,7 +156,7 @@ fn test[
     if filter_packed:
         pack_filter(filter, packed_filter, num_groups)
 
-    alias conv_attr = ConvInfoStatic[rank]()
+    comptime conv_attr = ConvInfoStatic[rank]()
 
     @always_inline
     @parameter
@@ -214,9 +214,8 @@ fn test[
             )
 
             @always_inline
-            @__copy_capture(output_ref_ptr, bias_ptr)
             @parameter
-            fn body0[width: Int](offset: Int):
+            fn body0[width: Int](offset: Int) unified {var}:
                 output_ref_ptr.store(
                     offset,
                     10.0
@@ -226,15 +225,14 @@ fn test[
                     ),
                 )
 
-            vectorize[body0, simd_size](F)
+            vectorize[simd_size](F, body0)
 
     # Test epilogue
     @always_inline
     @parameter
     fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        @parameter
-        fn body1[width: Int](idx: Int):
+        fn body1[width: Int](idx: Int) unified {mut}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
@@ -246,7 +244,7 @@ fn test[
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
 
-        vectorize[body1, simd_size](f_size)
+        vectorize[simd_size](f_size, body1)
 
     @parameter
     if filter_packed:

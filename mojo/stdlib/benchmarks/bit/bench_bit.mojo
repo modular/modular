@@ -104,7 +104,7 @@ fn _build_list[start: Int, stop: Int]() -> List[Int]:
     return values^
 
 
-alias width = bit_width_of[Int]()
+comptime width = bit_width_of[Int]()
 
 
 @parameter

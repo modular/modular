@@ -20,17 +20,17 @@ from utils import IndexList
 
 @register_passable("trivial")
 struct BoxCoords[dtype: DType]:
-    var y1: Scalar[dtype]
-    var x1: Scalar[dtype]
-    var y2: Scalar[dtype]
-    var x2: Scalar[dtype]
+    var y1: Scalar[Self.dtype]
+    var x1: Scalar[Self.dtype]
+    var y2: Scalar[Self.dtype]
+    var x2: Scalar[Self.dtype]
 
     fn __init__(
         out self,
-        y1: Scalar[dtype],
-        x1: Scalar[dtype],
-        y2: Scalar[dtype],
-        x2: Scalar[dtype],
+        y1: Scalar[Self.dtype],
+        x1: Scalar[Self.dtype],
+        y2: Scalar[Self.dtype],
+        x2: Scalar[Self.dtype],
     ):
         self.y1 = y1
         self.x1 = x1
@@ -38,7 +38,7 @@ struct BoxCoords[dtype: DType]:
         self.x2 = x2
 
 
-alias unknown_layout_3d = Layout.row_major(
+comptime unknown_layout_3d = Layout.row_major(
     UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
 )
 

@@ -28,7 +28,7 @@ fn _test_local_import(mut python: Python) -> String:
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
             var foo = my_module.Foo("apple")
-            foo.bar = "orange"
+            foo.bar = PythonObject("orange")
             return String(foo.bar)
         return "no module, no fruit"
     except e:
@@ -36,7 +36,7 @@ fn _test_local_import(mut python: Python) -> String:
 
 
 fn _test_dynamic_import(mut python: Python, times: Int = 1) -> String:
-    alias INLINE_MODULE = """
+    comptime INLINE_MODULE = """
 called_already = False
 def hello(name):
     global called_already
@@ -62,9 +62,10 @@ fn _test_call(mut python: Python) -> String:
                 "carrot",
                 "bread",
                 "rice",
-                fruit="pear",
-                protein="fish",
-                cake="yes",
+                # TODO(MOCO-2945): Support variadic heterogenous kwargs
+                fruit=PythonObject("pear"),
+                protein=PythonObject("fish"),
+                cake=PythonObject("yes"),
             )
         )
     except e:
@@ -129,7 +130,7 @@ def test_object_properties():
     obj = Python.tuple(1, 2.4, True, "False")
     assert_equal(String(obj), "(1, 2.4, True, 'False')")
 
-    obj = None
+    obj = PythonObject(None)
     assert_equal(String(obj), "None")
 
     assert_equal(_test_execute_python_string(python), "ab")

@@ -13,11 +13,12 @@
 
 import asyncio
 import logging
+import multiprocessing
 import os
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from threading import Event
+from multiprocessing.synchronize import Event
 
 from max.serve.config import Settings
 from max.serve.kvcache_agent import start_kvcache_agent_service
@@ -77,8 +78,9 @@ async def start_kv_cache_service(
     process_name = "KVCACHE_AGENT_" + str(uuid.uuid4())
     logger.info("Starting KV Cache Agent: %s", process_name)
 
+    mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("KVCache Worker") as proc:
-        health = proc.ctx.Event()
+        health = mp.Event()
         proc.start(_kvcache_agent_process_fn, health, settings)
 
         await proc.ready(health, timeout=10)

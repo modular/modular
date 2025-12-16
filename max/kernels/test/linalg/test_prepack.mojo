@@ -24,21 +24,21 @@ from utils.index import IndexList
 fn test_prepack():
     print("== test_prepack")
 
-    alias k = 10
-    alias tile_k = 4
-    alias simd_size = 2
-    alias inner_size = 2 * simd_size
-    alias n = 12
-    alias tile_n = 8
-    alias type = DType.float32
+    comptime k = 10
+    comptime tile_k = 4
+    comptime simd_size = 2
+    comptime inner_size = 2 * simd_size
+    comptime n = 12
+    comptime tile_n = 8
+    comptime type = DType.float32
 
-    alias k_padded = ceildiv(k, tile_k) * tile_k
-    alias n_padded = ceildiv(n, tile_n) * tile_n
+    comptime k_padded = ceildiv(k, tile_k) * tile_k
+    comptime n_padded = ceildiv(n, tile_n) * tile_n
 
-    alias src_shape_dyn = DimList.create_unknown[2]()
-    alias dst_shape_dyn = DimList.create_unknown[2]()
-    alias src_shape_static = DimList(k, n)
-    alias dst_shape_static = DimList(k_padded, n_padded)
+    comptime src_shape_dyn = DimList.create_unknown[2]()
+    comptime dst_shape_dyn = DimList.create_unknown[2]()
+    comptime src_shape_static = DimList(k, n)
+    comptime dst_shape_static = DimList(k_padded, n_padded)
 
     var src_storage = NDBuffer[
         type, 1, MutAnyOrigin, Dim(n * k)

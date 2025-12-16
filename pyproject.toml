@@ -54,7 +54,6 @@ ignore = [
   "D104", # TODO: Enable missing docstrings in public packages
   "D105", # undocumented-magic-method
   "E402", # TODO: import top of file
-  "E712", # TODO: Unnecessary comparison to bool
   "E722", # bare except
   "E731", # TODO: Don't assign lambda
   "E741", # TODO: Ambiguous variable name
@@ -67,7 +66,6 @@ ignore = [
   "RUF010", # Use explicit conversion flag
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "RUF015", # Prefer `next(iter(iterable))` over single element slice
-  "SIM101", # Duplicate isinstance
   "SIM102", # Collapsible if
   "SIM105", # Suppressible exception
   "SIM108", # Use ternary operator

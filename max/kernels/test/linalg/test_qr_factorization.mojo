@@ -28,7 +28,7 @@ fn trmm[
 ](
     A: LayoutTensor[dtype, element_layout=element_layout, **_],
     B: LayoutTensor[dtype, element_layout=element_layout, **_],
-    C: LayoutTensor[dtype, element_layout=element_layout, **_],
+    C: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
 ):
     m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     k, n = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
@@ -51,7 +51,7 @@ fn a_mul_bt[
 ](
     A: LayoutTensor[dtype, element_layout=element_layout, **_],
     B: LayoutTensor[dtype, element_layout=element_layout, **_],
-    C: LayoutTensor[dtype, element_layout=element_layout, **_],
+    C: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
 ):
     m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     n, k = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
@@ -118,9 +118,9 @@ def main():
     rtol = 1e-3
     m, n = 80, 50
     min_mn = min(m, n)
-    alias a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    alias v_layout = Layout(UNKNOWN_VALUE)
-    alias T = Float32
+    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime v_layout = Layout(UNKNOWN_VALUE)
+    comptime T = Float32
     var a_ptr = UnsafePointer[T]().alloc(m * n)
     var a_ptr_copy = UnsafePointer[T]().alloc(m * n)
     var v_ptr = UnsafePointer[T]().alloc(min_mn)

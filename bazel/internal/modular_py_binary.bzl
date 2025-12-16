@@ -1,7 +1,9 @@
 """A helper macro for python scripts which helps setup various runtime dependencies."""
 
 load("@rules_python//python:defs.bzl", "py_binary")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load("//bazel/internal:config.bzl", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "runtime_sanitizer_env")  # buildifier: disable=bzl-visibility
+load(":modular_py_library.bzl", "modular_py_library")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
@@ -55,6 +57,7 @@ def modular_py_binary(
         "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
         "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
         "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
+        "MODULAR_MOJO_MAX_SYSTEM_LIBS": "$(MOJO_LINKER_SYSTEM_LIBS)",
     } | runtime_sanitizer_env()
 
     transitive_mojo_deps = name + ".mojo_deps"
@@ -87,6 +90,23 @@ def modular_py_binary(
         testonly = testonly,
         **kwargs
     )
+
+    if "manual" in tags:
+        # TODO: Remove once we run mypy-style lints in a separate test target
+        modular_py_library(
+            name = name + ".mypy_library",
+            data = data + extra_data,
+            toolchains = toolchains,
+            deps = deps + [
+                "@//bazel/internal:bazel_sitecustomize",
+            ],
+            testonly = True,
+            tags = [ALLOW_UNUSED_TAG],
+            srcs = srcs,
+            visibility = ["//visibility:private"],
+            imports = imports,
+            # NOTE: Intentionally exclude other attrs that shouldn't matter for mypy
+        )
 
     modular_py_venv(
         name = name + ".venv",

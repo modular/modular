@@ -36,7 +36,7 @@ from utils.index import Index
 
 from ._utils import roundeven_to_int32
 
-alias K_BATCH_SIZE = 512
+comptime K_BATCH_SIZE = 512
 """Defines the batch size of K used to pack A and unpack B weights."""
 
 
@@ -45,9 +45,9 @@ def matmul_qint4_pack_b[
 ](b: LayoutTensor[DType.uint8, **_], b_rot: LayoutTensor[DType.uint8, **_]):
     constrained[b.rank == 2]()
     constrained[b_rot.rank == 2]()
-    alias n_tiles = 2
-    alias n_groups = n_tiles * simd_width_of[DType.float32]()
-    alias bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
+    comptime n_tiles = 2
+    comptime n_groups = n_tiles * simd_width_of[DType.float32]()
+    comptime bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var N = b.dim[0]()
     var K = b.dim[1]() // bytes_per_group_int4 * group_size
@@ -92,7 +92,7 @@ fn _quantize_a_block[
 ](a_ptr: UnsafePointer[Scalar[dtype]]) -> Tuple[
     SIMD[aq_type, group_size], Float32
 ]:
-    alias a_zero_point = 128 if aq_type.is_unsigned() else 0
+    comptime a_zero_point = 128 if aq_type.is_unsigned() else 0
 
     var fp_data = a_ptr.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
@@ -184,6 +184,13 @@ fn _quantize_a_buffer[
             a_scale_ptr += tile_m * (ko_count // group_size)
 
         tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = am_ptr
+        _ = ko_count
+
+    # TODO(MOCO-2074): Suppress false positive unused var warning.
+    _ = a_quant_ptr
+    _ = a_scale_ptr
 
 
 fn _unpack_weights[
@@ -234,7 +241,9 @@ fn _unpack_weights[
 
                 @parameter
                 if needs_correction:
-                    alias a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+                    comptime a_zero_point = SIMD[DType.uint8, simd_width * 4](
+                        128
+                    )
                     var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
                     var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
                     var b_hi = bitcast[DType.int32, simd_width](b_data_i4_hi)
@@ -487,7 +496,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
                 var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
                 var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
 
-                alias a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+                comptime a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
 
                 b_column_sums[col] = dot_i8_to_i32_saturated_x86(
                     b_column_sums[col],
@@ -638,7 +647,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
                 var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
                 var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
 
-                alias a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+                comptime a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
 
                 var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
                 var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
@@ -924,7 +933,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         b_correction_ptr: UnsafePointer[Int32],
         mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
-        alias block_m = max(tile_m // 2, 1)
+        comptime block_m = max(tile_m // 2, 1)
         var c_int32_block = _Accumulator[
             DType.int32, block_m, tile_n * 2, simd_width
         ]()
@@ -1013,14 +1022,14 @@ fn _matmul_qint4_m_1[
     constrained[b.rank == 2]()
     constrained[c.rank == 2]()
 
-    alias simd_width = simd_width_of[DType.float32]()
-    alias bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
+    comptime simd_width = simd_width_of[DType.float32]()
+    comptime bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var N = b.dim[0]()
     var K = a_quant.dim[1]()
     var k_groups = K // group_size
 
-    alias grain_size = simd_width * 2
+    comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level())
@@ -1060,7 +1069,7 @@ fn _matmul_qint4_m_1[
 
             @parameter
             if elementwise_lambda_fn:
-                alias func = elementwise_lambda_fn.value()
+                comptime func = elementwise_lambda_fn.value()
 
                 @parameter
                 for nn in range(tile_n):
@@ -1072,6 +1081,9 @@ fn _matmul_qint4_m_1[
         tile[process_cols, VariadicList[Int](2, 1)](
             0, ceildiv(task_n_count, simd_width)
         )
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = task_n_start
+        _ = b_ptr
 
     sync_parallelize[task_func](num_workers)
 
@@ -1092,16 +1104,16 @@ fn _matmul_qint4_m_any[
     ],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
-    alias simd_width = simd_width_of[DType.float32]()
-    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
-    alias bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
+    comptime simd_width = simd_width_of[DType.float32]()
+    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var M = a_quant.dim[0]()
     var N = b.dim[0]()
     var K = a_quant.dim[1]()
     var k_groups = K // group_size
 
-    alias grain_size = simd_width * 2
+    comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level())
@@ -1124,7 +1136,7 @@ fn _matmul_qint4_m_any[
             fn process_cols[tile_n: Int](n_idx: Int):
                 var n = task_n_start + n_idx * simd_width
 
-                alias k_batch_groups = K_BATCH_SIZE // group_size
+                comptime k_batch_groups = K_BATCH_SIZE // group_size
 
                 var b_s8_buf = stack_allocation[
                     K_BATCH_SIZE * tile_n * simd_width,
@@ -1140,7 +1152,7 @@ fn _matmul_qint4_m_any[
                 # If the A matrix is quantized using an unsigned data type,
                 # then a zero point correction is required to the block int32
                 # accumulator.
-                alias needs_correction = aq_type.is_unsigned()
+                comptime needs_correction = aq_type.is_unsigned()
 
                 var b_correction_buf = stack_allocation[
                     k_batch_groups * tile_n * simd_width,
@@ -1211,7 +1223,7 @@ fn _matmul_qint4_m_any[
 
                         @parameter
                         if elementwise_lambda_fn:
-                            alias func = elementwise_lambda_fn.value()
+                            comptime func = elementwise_lambda_fn.value()
 
                             @parameter
                             for mm in range(tile_m):
@@ -1228,10 +1240,20 @@ fn _matmul_qint4_m_any[
                                     )
 
                 tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+                # TODO(MOCO-2074): Suppress false positive unused var warning.
+                _ = ak_ptr
+                _ = ak_scale_ptr
 
             tile[process_cols, VariadicList[Int](2, 1)](
                 0, ceildiv(task_n_count, simd_width)
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = ko_count
+            _ = ko_group
+
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = task_n_start
+        _ = b_ptr
 
     sync_parallelize[task_func](num_workers)
 
@@ -1248,14 +1270,14 @@ fn _matmul_qint4[
     ],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
-    alias simd_width = simd_width_of[DType.float32]()
-    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime simd_width = simd_width_of[DType.float32]()
+    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
 
     var M = a.dim[0]()
     var K = a.dim[1]()
     var k_groups = K // group_size
 
-    alias aq_type = kernel.aq_type()
+    comptime aq_type = kernel.aq_type()
 
     var a_quant_base_ptr = UnsafePointer[Scalar[aq_type]].alloc(
         M * K, alignment=alignment

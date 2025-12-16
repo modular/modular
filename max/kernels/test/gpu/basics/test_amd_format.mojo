@@ -20,11 +20,11 @@ from memory import memcmp, memcpy
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):
-    var data: InlineArray[UInt8, capacity]
+    var data: InlineArray[UInt8, Self.capacity]
     var pos: Int
 
     fn __init__(out self):
-        self.data = InlineArray[UInt8, capacity](fill=0)
+        self.data = InlineArray[UInt8, Self.capacity](fill=0)
         self.pos = 0
 
     fn write_bytes(mut self, bytes: Span[Byte, _]):
@@ -40,22 +40,10 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         )
         self.pos += len_bytes
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
-        """Write a sequence of Writable arguments to the provided Writer.
 
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
-        Args:
-            args: Sequence of arguments to write to this Writer.
-        """
-
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(self)
-
-
-fn check_float[dtype: DType, //, expected: StaticString](f8: Scalar[dtype]):
+fn check_float[
+    dtype: DType, //, expected: StaticString
+](f8: Scalar[dtype]) where dtype.is_floating_point():
     var f8_str = Buffer[len(expected)]()
     _write_float(f8_str, f8)
     var res = memcmp(
@@ -104,13 +92,13 @@ def main():
     # TODO(KERN-1259): Add tests for fnuz types when they're working
     with DeviceContext() as ctx:
         print("== test_format_float8_e5m2")
-        alias kernel_0 = test_format_float8_e5m2
+        comptime kernel_0 = test_format_float8_e5m2
         ctx.enqueue_function_checked[kernel_0, kernel_0](
             grid_dim=1, block_dim=1
         )
 
         print("== test_format_float8_e4m3fn")
-        alias kernel_1 = test_format_float8_e4m3fn
+        comptime kernel_1 = test_format_float8_e4m3fn
         ctx.enqueue_function_checked[kernel_1, kernel_1](
             grid_dim=1, block_dim=1
         )

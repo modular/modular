@@ -135,7 +135,7 @@ def while_loop(
 
     def wrap_while_block_function(  # noqa: ANN202
         user_func,  # noqa: ANN001
-        block_args: Iterable[mlir.BlockArgument],
+        block_args: Iterable[mlir.BlockArgument],  # type: ignore
         is_cond_block: bool = False,
     ):
         """Adapts a user-provided loop function to handle execution chain state.

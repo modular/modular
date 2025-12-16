@@ -24,101 +24,75 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.kv_cache.cache_params import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.nn.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
 )
-from max.nn.kv_cache.manager import RaggedKVCacheInputs
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.profiler import traced
 
-from .tp_cache_manager import PagedCacheInputSymbols, _TPPagedKVCacheManager
+from .tp_cache_manager import _TPPagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 
 
 class PagedKVCacheManager:
-    """Paged KVCache manager with data and tensor parallelism support. This is
-    essentially N _TPPagedKVCacheManagers in a trench coat.
+    """Paged KVCache manager with data and tensor parallelism support.
 
-    Basic usage:
+    .. code-block:: python
 
-    ```python
-    # Allocate metadata for requests in batch
-    kv_manager.external_claim(ctx1.request_id, replica_idx=0)
-    kv_manager.external_claim(ctx2.request_id, replica_idx=1)
+        # Allocate metadata for requests in batch
+        kv_manager.claim(ctx1.request_id, replica_idx=0)
+        kv_manager.claim(ctx2.request_id, replica_idx=1)
 
-    # Allocate blocks for these requests
-    kv_manager.prefetch(ctx1, num_steps=10)
-    kv_manager.prefetch(ctx2, num_steps=10)
+        # Allocate blocks for these requests
+        kv_manager.alloc(ctx1, num_steps=10)
+        kv_manager.alloc(ctx2, num_steps=10)
 
-    # Get KVCache inputs to feed to graph
-    kv_cache_inputs = kv_manager.fetch([ctx1, ctx2], num_steps=10)
+        # Get KVCache inputs to feed to graph
+        kv_cache_inputs = kv_manager.get_runtime_inputs([ctx1, ctx2], num_steps=10)
 
-    # Run model...
-    # Update requests with newly generated tokens
-    ctx1.update(42)
-    ctx2.update(42)
+        # Run model...
+        # Update requests with newly generated tokens
+        ctx1.update(42)
+        ctx2.update(42)
 
-    # Commit newly written blocks to prefix cache
-    kv_manager.step([ctx1, ctx2])
+        # Commit newly written blocks to prefix cache
+        kv_manager.step([ctx1, ctx2])
 
-    # Release metadata and KV blocks for these requests
-    kv_manager.release(ctx1.request_id)
-    kv_manager.release(ctx2.request_id)
-    ```
+        # Release metadata and KV blocks for these requests
+        kv_manager.release(ctx1.request_id)
+        kv_manager.release(ctx2.request_id)
     """
 
     def __init__(
         self,
         params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
-        num_layers: int,
-        devices: Sequence[Device],
         session: InferenceSession,
-        available_cache_memory: int,
-        zmq_endpoint_base: str | None = None,
-        page_size: int = 128,
+        total_num_pages: int,
+        total_num_host_pages: int = 0,
         enable_runtime_checks: bool = False,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
 
         Args:
             params: KV cache parameters including data parallelism settings
-            max_batch_size: The maximum number of active requests that the
-                manager should support. Note that this is the global maximum
-                batch size across all devices, so when data parallelism is
-                enabled, this would be split across all replicas of the cache.
-            max_seq_len: Maximum sequence length
-            num_layers: Number of model layers
-            devices: The devices to use for the KV cache manager.  If data
-                parallelism is enabled, the devices will be split into
-                ``params.data_parallel_degree`` groups.
-            session: Inference session
-            available_cache_memory: Total cache memory across all devices
-            page_size: Page size in tokens
+            session: The MAX Engine inference session
+            total_num_pages: The total number of pages to allocate
+            total_num_host_pages: The total number of host pages to allocate
             enable_runtime_checks: Whether to enable runtime checks
         """
         self.params = params
-        self.max_batch_size = max_batch_size
-        self.max_seq_len = max_seq_len
-        self.num_layers = num_layers
+        self.devices = [d.to_device() for d in params.devices]
 
-        max_batch_size_per_replica = (
-            max_batch_size // params.data_parallel_degree
-        )
-        cache_memory_per_replica = (
-            available_cache_memory // params.data_parallel_degree
-        )
-
-        # The effective total number of pages is .
         self.num_replicas = params.data_parallel_degree
-        assert len(devices) % self.num_replicas == 0, (
+        assert len(self.devices) % self.num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
-        self.devices = devices
-        self.devices_per_replica = split_into_groups(devices, self.num_replicas)
+        self.devices_per_replica = split_into_groups(
+            self.devices, self.num_replicas
+        )
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
         dp_1_params = params.copy_as_dp_1()
@@ -126,14 +100,10 @@ class PagedKVCacheManager:
             self._replica_managers.append(
                 _TPPagedKVCacheManager(
                     params=dp_1_params,
-                    max_batch_size=max_batch_size_per_replica,
-                    max_seq_len=max_seq_len,
-                    num_layers=num_layers,
+                    total_num_pages=total_num_pages,
+                    total_num_host_pages=total_num_host_pages,
                     devices=devices,
                     session=session,
-                    available_cache_memory=cache_memory_per_replica,
-                    zmq_endpoint_base=zmq_endpoint_base,
-                    page_size=page_size,
                     enable_runtime_checks=enable_runtime_checks,
                 )
             )
@@ -160,8 +130,8 @@ class PagedKVCacheManager:
             self._create_ragged_increment_cache_lengths_graph()
         )
 
-    def get_replica(self, context: TextGenerationContext) -> int:
-        return self._request_to_replica_idx[context.request_id]
+    def get_replica(self, request_id: RequestID) -> int:
+        return self._request_to_replica_idx[request_id]
 
     def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
         """Return idx of the replica that should be used for the given request."""
@@ -175,51 +145,60 @@ class PagedKVCacheManager:
         )
         return replica_idx
 
-    def get_data_parallel_splits(
-        self, context_batch: Sequence[TextGenerationContext]
-    ) -> Tensor:
-        """Constructs splits for the data parallel execution.
+    def get_pct_used_blocks_after_allocation(
+        self, ctx: TextGenerationContext, num_steps: int = 1
+    ) -> float:
+        """Get the percentage of blocks used after allocating for a request.
 
         Args:
-            context_batch: Sequence of requests. This must already be ordered
-                by replica index (so contexts that are on the same replica
-                are adjacent in the batch, and the replica must be in order).
+            ctx: The request context containing sequence information and token indices.
+            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
 
-        returns:
-            An int64 Tensor with shape (self.num_replicas + 1) that contains the
-            number of requests on each device:
-                [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
+        Returns:
+            The percentage of total blocks used after allocating for the request.
         """
-        splits = np.zeros(self.num_replicas + 1, dtype=np.int64)
-        for ctx in context_batch:
-            replica_index = self._request_to_replica_idx[ctx.request_id]
-            splits[replica_index + 1] += 1
-        splits = np.cumsum(splits)  # type: ignore
+        return self._replica_managers[
+            self._request_to_replica_idx[ctx.request_id]
+        ].get_pct_used_blocks_after_allocation(ctx, num_steps)
 
-        return Tensor.from_numpy(splits)
-
-    def maybe_reserve(
+    def alloc(
         self,
         data: TextGenerationContext,
         num_steps: int = 1,
-    ) -> bool:
+    ) -> None:
+        """Allocates blocks for a request to run for N steps.
+
+        This method allocates blocks needed by a request to run for N steps.
+        When prefix caching is enabled, some of the allocated blocks may be
+        retrieved from the prefix cache.
+
+        Args:
+            data: The text generation context for the request. The request ID
+                must already be assigned to a replica via `claim`.
+            num_steps: The number of steps to reserve blocks for. Default: 1.
+
+        Raises:
+            InsufficientBlocksError: If there are insufficient free blocks to
+            satisfy the allocation.
+        """
         assert data.request_id in self._request_to_replica_idx, (
             f"Request ID {data.request_id} must already be assigned to a "
-            "replica before prefetching"
+            "replica before reserving"
         )
         replica_idx = self._request_to_replica_idx[data.request_id]
-        return self._replica_managers[replica_idx].maybe_reserve(
-            data, num_steps
-        )
+        return self._replica_managers[replica_idx].alloc(data, num_steps)
 
-    def fetch(
+    def get_runtime_inputs(
         self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> list[RaggedKVCacheInputs]:
-        """Fetch KV cache blocks for a batch of requests.
+        """Get the graph inputs for a batch of requests.
+
+        This method will raise a RuntimeError if any request has insufficient blocks
+        already allocated to it to run for the given number of steps.
 
         Args:
             batch: Batch of requests
-            num_steps: Number of steps to fetch
+            num_steps: Number of steps to run for
         """
 
         batch_by_replica: list[list[TextGenerationContext]] = [
@@ -233,29 +212,18 @@ class PagedKVCacheManager:
         ret_list: list[RaggedKVCacheInputs] = []
         for replica_idx, ctxs in enumerate(batch_by_replica):
             ret_list.extend(
-                self._replica_managers[replica_idx].fetch(ctxs, num_steps)
+                self._replica_managers[replica_idx].get_runtime_inputs(
+                    ctxs, num_steps
+                )
             )
         return ret_list
-
-    def input_symbols(
-        self,
-        devices: Sequence[Device] | None = None,
-        num_layers: int | None = None,
-    ) -> Sequence[PagedCacheInputSymbols]:
-        input_symbols: list[PagedCacheInputSymbols] = []
-        for i, devices in enumerate(self.devices_per_replica):
-            symbols = self._replica_managers[i]._input_symbols(
-                devices, num_layers, dynamic_dim_prefix=f"replica_{i}_"
-            )
-            input_symbols.extend(symbols)
-        return input_symbols
 
     def release(self, request_id: RequestID) -> None:
         replica_idx = self._request_to_replica_idx.pop(request_id)
         self._request_count_per_replica[replica_idx] -= 1
         self._replica_managers[replica_idx].release(request_id)
 
-    def external_claim(
+    def claim(
         self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
         """Reserve a sequence ID for the given request ID."""
@@ -269,7 +237,7 @@ class PagedKVCacheManager:
             raise ValueError(
                 f"Request ID {request_id} is already claimed for replica {self._request_to_replica_idx[request_id]}"
             )
-        self._replica_managers[replica_idx].external_claim(request_id)
+        self._replica_managers[replica_idx].claim(request_id)
         self._request_to_replica_idx[request_id] = replica_idx
         self._request_count_per_replica[replica_idx] += 1
 
@@ -301,7 +269,7 @@ class PagedKVCacheManager:
             manager.reset_metrics()
 
     def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
-        input_symbols = self.input_symbols()
+        input_symbols = self.params.get_symbolic_inputs()
         cache_lengths_types = [
             input_symbols[i][1] for i in range(len(self.devices))
         ]
@@ -356,14 +324,13 @@ class PagedKVCacheManager:
 
         return graph
 
+    @traced
     def increment_cache_lengths(
         self,
         kv_cache_inputs: Sequence[RaggedKVCacheInputs],
         prev_model_inputs: Any,
     ) -> Sequence[RaggedKVCacheInputs]:
         """Prepares cache inputs for the next token in multistep execution.
-
-        **Updated to handle replicas**
 
         Updates the cache lengths for the next inference step without requiring device
         synchronization or memory copies. This is crucial for maintaining performance
@@ -376,14 +343,6 @@ class PagedKVCacheManager:
         Returns:
             Updated cache input tuples with incremented lengths.
         """
-        # TODO E2EOPT-640: Instead of having a separate graph for incrementing
-        # cache lengths when DP=1 and DP>1, we should try to consolidate them.
-        # This will eliminate a fair amount of code.
-        if self.num_replicas == 1:
-            return self._replica_managers[0].increment_cache_lengths(
-                kv_cache_inputs, prev_model_inputs
-            )
-
         blocks = [kv_cache_inputs[i].blocks for i in range(len(self.devices))]
         cache_lengths = [
             kv_cache_inputs[i].cache_lengths for i in range(len(self.devices))
@@ -392,7 +351,13 @@ class PagedKVCacheManager:
             kv_cache_inputs[i].lookup_table for i in range(len(self.devices))
         ]
 
-        assert hasattr(prev_model_inputs, "data_parallel_splits")
+        if self.params.data_parallel_degree > 1:
+            data_parallel_splits = prev_model_inputs.data_parallel_splits
+        else:
+            batch_size = cache_lengths[0].shape[0]
+            data_parallel_splits = Tensor.from_numpy(
+                np.array([0, batch_size], dtype=np.int64)
+            )
 
         # Update the cache_lengths of our batch by the previous sequence length.
         # Handle both single tensor and list of tensors for compatibility
@@ -405,7 +370,7 @@ class PagedKVCacheManager:
         row_offsets = row_offsets.to(self.devices[0])
 
         updated_cache_lengths = self.increment_cache_lengths_model.execute(
-            row_offsets, prev_model_inputs.data_parallel_splits, *cache_lengths
+            row_offsets, data_parallel_splits, *cache_lengths
         )
 
         start_idx = 0
@@ -433,60 +398,6 @@ class PagedKVCacheManager:
     def reset_prefix_cache(self) -> None:
         for manager in self._replica_managers:
             manager.reset_prefix_cache()
-
-    @classmethod
-    def max_supported_sequence_length(
-        cls, params: KVCacheParams, num_layers: int, memory_available: int
-    ) -> int:
-        """Return the maximum sequence length supported across all replicas.
-
-        This queries each data-parallel replica's tensor-parallel cache manager
-        for its per-replica maximum supported sequence length under the provided
-        memory budget, then returns the minimum of those values. Each per-replica
-        value is already rounded down to the nearest multiple of ``params.page_size``,
-        so the result is likewise page-aligned and safe for all replicas.
-
-        Args:
-            params: KV cache configuration parameters.
-            num_layers: Number of transformer layers contributing KV per token.
-            memory_available: Total cache memory budget in bytes.
-
-        Returns:
-            The maximum supported sequence length in tokens (multiple of
-            ``params.page_size``) that all replicas can support.
-        """
-        return _TPPagedKVCacheManager.max_supported_sequence_length(
-            params, num_layers, memory_available
-        )
-
-    @classmethod
-    def estimated_memory_size(
-        cls,
-        params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
-        num_layers: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        """Estimated memory size for the DPPagedKVCacheManager."""
-        dp_1_params = params.copy_as_dp_1()
-        mem_per_replica = available_cache_memory // params.data_parallel_degree
-        dp_device_groups = split_into_groups(
-            devices, params.data_parallel_degree
-        )
-        total_mem = 0
-        for dp_devices in dp_device_groups:
-            total_mem += _TPPagedKVCacheManager.estimated_memory_size(
-                params=dp_1_params,
-                max_batch_size=max_batch_size,
-                max_seq_len=max_seq_len,
-                num_layers=num_layers,
-                available_cache_memory=mem_per_replica,
-                devices=dp_devices,
-            )
-        return total_mem
 
     @classmethod
     def infer_optimal_batch_size(
@@ -534,3 +445,7 @@ class PagedKVCacheManager:
         return self._replica_managers[replica_idx].block_manager.get_req_blocks(
             request_id
         )
+
+    @property
+    def device_tensors(self) -> list[list[Tensor]]:
+        return [manager.device_tensors for manager in self._replica_managers]

@@ -20,8 +20,10 @@ from max.graph.weights import WeightData, Weights
 # Maps from Qwen3VL checkpoint names to Qwen3VLLanguageModel weight names.
 QWEN3_VL_MODEL_MAPPING = {
     "model.language_model.": "language_model.",
+    "lm_head.": "language_model.lm_head.",
     "model.visual.": "vision_encoder.",
     "vision_encoder.pos_embed.": "vision_encoder.pos_embed.embedding.",
+    "gate.weight": "gate.gate_score.weight",
 }
 
 

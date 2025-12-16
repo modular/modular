@@ -1,6 +1,8 @@
 load("//bazel:api.bzl", "mojo_library", "requirement")
 load(":custom_op_example.bzl", "custom_op_example_py_binary")
 
+package(default_visibility = ["//visibility:private"])
+
 filegroup(
     name = "kernel_sources",
     srcs = glob(["operations/*.mojo"]),
@@ -61,9 +63,9 @@ mojo_library(
     srcs = [":kernel_sources"],
     validate_missing_docs = False,
     deps = [
-        "@mojo//:compiler",
-        "@mojo//:layout",
-        "@mojo//:stdlib",
-        "@mojo//:tensor",
+        "//max:compiler",
+        "//max:layout",
+        "//max:tensor",
+        "@mojo//:std",
     ],
 )

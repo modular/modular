@@ -27,14 +27,14 @@ from typing import Any
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
-from max.kv_cache.paged_cache import ResetPrefixCacheFrontend
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
 )
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheFrontend
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
@@ -108,7 +108,10 @@ async def lifespan(
 
         # start model worker
         scheduler_zmq_configs = SchedulerZmqConfigs(
-            serving_settings.pipeline_task
+            serving_settings.pipeline_task,
+            context_type=PIPELINE_REGISTRY.retrieve_context_type(
+                serving_settings.pipeline_config
+            ),
         )
         worker_monitor = await exit_stack.enter_async_context(
             start_model_worker(
@@ -204,7 +207,7 @@ def fastapi_app(
         try:
             async with lifespan(app, settings, serving_settings):
                 yield
-        except BaseException:
+        except:
             logger.exception("Worker exception, Shutting down...")
             # Caught by uvicorn to shutdown the server
             os.kill(os.getpid(), signal.SIGINT)

@@ -13,8 +13,9 @@
 
 """Provides experimental tensor operations with eager execution capabilities.
 
-**Warning:** This module contains experimental APIs that are subject to change
-or removal in future versions. Use with caution in production environments.
+.. caution::
+  This module contains experimental APIs that are subject to change
+  or removal in future versions. Use with caution in production environments.
 
 This module provides the :class:`~max.experimental.tensor` class which supports
 eager execution of tensor operations, complementing the graph-based execution
@@ -50,17 +51,16 @@ import gc
 import sys
 import warnings
 import weakref
-from collections.abc import Iterable
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
-from itertools import chain
 from typing import Any, TypeVar
 
 from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
 
 from .. import _core, driver, engine, graph, mlir
-from .._core.dialects import builtin, kgen, mo
+from .._core.dialects import builtin
 from ..driver import (
     CPU,
     Accelerator,
@@ -73,11 +73,10 @@ from ..graph import (
     ShapeLike,
     TensorType,
     TensorValueLike,
-    Value,
     ops,
 )
-from ..graph.graph import _location
 from ..graph.ops.constant import NestedArray, Number
+from . import _passes
 from . import functional as F
 
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
@@ -133,7 +132,7 @@ def defaults(
     return (dtype or _default_dtype(device)), device
 
 
-def default_device(device: Device):  # noqa: ANN201
+def default_device(device: Device | graph.DeviceRef):  # noqa: ANN201
     """Context manager for setting the default device for tensor creation.
 
     Sets the default device used for tensor creation within the context. All
@@ -157,6 +156,8 @@ def default_device(device: Device):  # noqa: ANN201
     Returns:
         A context manager that sets the default device.
     """
+    if isinstance(device, graph.DeviceRef):
+        device = device.to_device()
     return contextvar_context(_DEFAULT_DEVICE, device)
 
 
@@ -185,6 +186,36 @@ def default_dtype(dtype: DType):  # noqa: ANN201
         A context manager that sets the default dtype.
     """
     return contextvar_context(_DEFAULT_DTYPE, dtype)
+
+
+@contextlib.contextmanager
+def defaults_like(like: Tensor | TensorType) -> Generator[None]:
+    """Context manager setting the default dtype and device for tensor creation.
+
+    Sets the default data type and device used for tensor creation within the
+    context. All tensors created inside the context block without explicit
+    dtypes or devices will use these parameters.
+
+    .. code-block:: python
+
+        from max.experimental import tensor
+        from max.driver import CPU
+        from max.dtype import DType
+
+        x = Tensor.zeros([1], dtype=DType.int32, device=CPU())
+        # Use int32 as default dtype in this context
+        with tensor.defaults_like(x):
+            y = tensor.Tensor.zeros((2, 3))  # int32, cpu
+            z = tensor.Tensor.zeros((2, 3), dtype=DType.float32)  # float32, cpu
+
+    Args:
+        tensor: A tensor to use as the default dtype and device for the context.
+
+    Returns:
+        A context manager that sets the default dtype and device.
+    """
+    with default_dtype(like.dtype), default_device(like.device):
+        yield
 
 
 def _session() -> engine.api.InferenceSession:
@@ -269,9 +300,9 @@ class Tensor(DLPackArray, HasTensorValue):
 
     #: Underlying memory for a realized tensor.
     storage: driver.Tensor | None
-    #: - For a realized tensor this is a graph input BufferValue
+    #: - For a (used) realized tensor this is a graph input BufferValue
     #: - For an unrealized tensor this is a value in the graph
-    _value: graph.BufferValue | graph.TensorValue
+    _value: graph.BufferValue | graph.TensorValue | None
     _real: bool = False
 
     def __init__(
@@ -280,17 +311,22 @@ class Tensor(DLPackArray, HasTensorValue):
         storage: driver.Tensor | None = None,
         value: graph.BufferValue | graph.TensorValue | None = None,
     ):
+        assert storage is not None or value is not None
         self.storage = storage
-        if value is not None:
-            self._value = value
-        else:
-            GRAPH.add_source(self)
+        self._value = value
         self.real = storage is not None
 
+    @property
+    def _backing_value(
+        self,
+    ) -> driver.Tensor | graph.BufferValue | graph.TensorValue:
+        if self.storage is not None:
+            return self.storage
+        assert self._value is not None
+        return self._value
+
     @classmethod
-    def from_graph_value(
-        cls, value: graph.TensorValue | graph.BufferValue
-    ) -> Tensor:
+    def from_graph_value(cls, value: graph.Value) -> Tensor:
         """Creates a tensor from a graph value.
 
         Constructs a tensor from an existing graph value, which can be either
@@ -305,6 +341,8 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A new tensor backed by the provided graph value.
         """
+        if not isinstance(value, (graph.TensorValue, graph.BufferValue)):
+            raise TypeError(f"{value=} must be a tensor or buffer value")
         return cls(value=value)
 
     @classmethod
@@ -333,6 +371,8 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A new tensor containing the data from the DLPack array.
         """
+        if isinstance(array, Tensor):
+            return array
         return Tensor(storage=driver.Tensor.from_dlpack(array))
 
     @classmethod
@@ -728,7 +768,12 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             TensorType: The type information for the tensor.
         """
-        type = self._value.type
+        value = self._backing_value
+        type = (
+            driver_tensor_type(value)
+            if isinstance(value, driver.Tensor)
+            else value.type
+        )
         return type.as_tensor() if isinstance(type, graph.BufferType) else type
 
     @property
@@ -741,7 +786,7 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             int: The number of dimensions in the tensor.
         """
-        return self._value.rank
+        return self._backing_value.rank
 
     @property
     def shape(self) -> graph.Shape:
@@ -752,7 +797,8 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Shape: The shape of the tensor.
         """
-        return self._value.shape
+        shape = self._backing_value.shape
+        return shape if isinstance(shape, graph.Shape) else graph.Shape(shape)
 
     @property
     def dtype(self) -> DType:
@@ -764,7 +810,7 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             DType: The data type of the tensor elements.
         """
-        return self._value.dtype
+        return self._backing_value.dtype
 
     @property
     def device(self) -> Device:
@@ -776,7 +822,8 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Device: The device where the tensor is stored.
         """
-        return self._value.device.to_device()
+        device = self._backing_value.device
+        return device if isinstance(device, Device) else device.to_device()
 
     @property
     def driver_tensor(self) -> driver.Tensor:
@@ -801,9 +848,13 @@ class Tensor(DLPackArray, HasTensorValue):
     def __tensorvalue__(self) -> graph.TensorValue:
         """Gets a TensorValue for the underlying data.
 
-        If self is backed by a BufferValue, this will do a `ops.buffer_load`.
+        If the tensor is backed by a BufferValue, calls `ops.buffer_load`.
         The load is for ordering mutable operations and will be optimized away.
         """
+        if self._value is None:
+            # This is a realized tensor that hasn't been used in the global
+            # compute graph yet, add it so it isn't freed before use.
+            GRAPH.add_source(self)
         if isinstance(self._value, graph.BufferValue):
             return self._value[...]
         assert isinstance(self._value, graph.TensorValue)
@@ -825,6 +876,10 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         self.real = False
 
+        if self._value is None:
+            # This is a realized tensor that hasn't been used in the global
+            # compute graph yet, add it so it isn't freed before use.
+            GRAPH.add_source(self)
         if isinstance(self._value, graph.BufferValue):
             return self._value
         assert isinstance(self._value, graph.TensorValue)
@@ -835,6 +890,8 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def _in_global_compute_graph(self) -> bool:
+        if self._value is None:
+            return True
         mlir_value = self._value.to_mlir()
         graph_op = mlir_value.owner.parent_op
         return graph_op == _core.Operation._from_cmlir(GRAPH.graph._mlir_op)
@@ -1081,6 +1138,46 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.mean(self, axis=axis)
 
+    def clip(
+        self,
+        *,
+        min: TensorValueLike | None = None,
+        max: TensorValueLike | None = None,
+    ) -> Tensor:
+        """Clips values outside a range to the boundaries of the range.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+
+            # Create a 2x4 tensor
+            x = tensor.Tensor.constant(
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]]
+            )
+
+            # Find max along last axis (within each row)
+            clipped_above = x.clip(max=3.)
+            # Result: [[1.2, 3., 2.1, 0.8], [2.3, 1.9, 3, 3.]]
+
+            clipped_below = x.clip(min=3.)
+            # Result: [[3., 3.5, 3., 3.], [3., 3., 4.2, 3.]]
+
+        Args:
+            min: The minimum value of the range. If not specified, do not
+                clip values for being too small.
+            max: The maximum value of the range. If not specified, do not
+                clip values for being too large.
+
+        Returns:
+            Tensor: A tensor containing the values clipped to the specified range.
+        """
+        x = self
+        if min is not None:
+            x = F.max(x, min)
+        if max is not None:
+            x = F.min(x, max)
+        return x
+
     def reshape(self, shape: ShapeLike) -> Tensor:
         """Reshapes the tensor to a new shape.
 
@@ -1291,6 +1388,17 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.logical_not(self)
 
 
+_SEED: ContextVar[Tensor] = ContextVar("_SEED")
+
+
+def seed() -> Tensor:
+    if (seed := _SEED.get()) is None:
+        seed = driver.Tensor(ops.random.SeedType)
+        seed[0] = 0
+        _SEED.set(Tensor(storage=seed))
+    return seed
+
+
 class ComputeGraph:
     """Computation graph for managing tensor operations.
 
@@ -1307,12 +1415,7 @@ class ComputeGraph:
     #: never need to be realized.
     unrealized: weakref.WeakValueDictionary[int, Tensor]
 
-    def __init__(
-        self,
-        context: mlir.Context | None = None,
-        sources: Iterable[Tensor] = (),
-        seed: int = 0,
-    ):
+    def __init__(self, context: mlir.Context | None = None, seed: int = 0):
         self.context = context or mlir.Context()
         self.sources = {}
 
@@ -1321,9 +1424,6 @@ class ComputeGraph:
 
         with self.graph:
             ops.random.set_seed(seed)
-
-        for source in sources:
-            self.add_source(source)
 
     async def evaluate(self, tensor: Tensor) -> None:
         """Evaluates and realizes the specified tensor.
@@ -1368,7 +1468,7 @@ class ComputeGraph:
         _core.lower(module, [builtin.passes.RemoveDeadValues()])
         # The graph symbol is public, so RemoveDeadValues won't remove
         # unused arguments. Do that explicitly.
-        _remove_unused_arguments(self.graph)
+        _passes.remove_unused_arguments(self.graph)
         inputs = [
             self.sources[input._mlir_value] for input in self.graph.inputs
         ]
@@ -1393,64 +1493,29 @@ class ComputeGraph:
             assert isinstance(storage, driver.Tensor)
             tensor.storage = storage
             tensor.real = True
+            tensor._value = None
+
+        # Remove any references to values in the old graph
+        for tensor in self.sources.values():
+            tensor._value = None
 
         # Reset the graph to a new empty graph with only inputs
         ComputeGraph.__init__(
-            self,
-            context=self.graph._context,
-            # - Re-add any sources that still have live references
-            # - All evaluated tensors become realized sources of a new graph
-            sources=chain(self.sources.values(), unrealized),
-            seed=seed.item(),
+            self, context=self.graph._context, seed=seed.item()
         )
 
     def add_source(self, tensor: Tensor) -> None:
         if tensor.storage is None:
             raise TypeError("Only realized tensors may be graph sources.")
 
-        op = _core.Operation._from_cmlir(self.graph._mlir_op)
-        assert isinstance(op, mo.GraphOp)
-        block = op.regions[0].front
-        # Update the GraphOP to reflect the new argument
-        with self.graph:
-            type = driver_tensor_type(tensor.storage).as_buffer().to_mlir()
-            inputs = op.function_type.inputs
-            op.function_type = builtin.FunctionType([*inputs, type])  # type: ignore
-            tensor._value = graph.BufferValue.from_mlir(
-                block.add_argument(type, _location())
-            )
-        self.sources[tensor._value._mlir_value] = tensor
+        type = driver_tensor_type(tensor.storage).as_buffer()
+        value = _passes.add_input(self.graph, type)
+        assert isinstance(value, graph.BufferValue)
+        tensor._value = value
+        self.sources[value._mlir_value] = tensor
 
     def add_unrealized(self, tensor: Tensor) -> None:
         self.unrealized[id(tensor)] = tensor
-
-
-def _remove_unused_arguments(graph: graph.Graph) -> None:
-    # Obviously this is deeply tied to the implementation of Graph.
-    #  - GraphOp should be simplified to have a single API for managing arguments
-    #  - Graph should expose this behavior
-    op = _core.Operation._from_cmlir(graph._mlir_op)
-    assert isinstance(op, mo.GraphOp)
-
-    block = op.regions[0].front
-    # reverse so indices don't during iteration+mutation
-    for i, input in reversed(list(enumerate(graph.inputs))):
-        if not input._mlir_value.num_uses:
-            block.erase_argument(i)
-
-    # graph.inputs is a cached_property, so reset it
-    graph.inputs = [Value.from_mlir(arg) for arg in block.arguments]
-
-    # update the graph op to correctly reflect the input changes
-    with graph:
-        op.function_type = builtin.FunctionType(  # type: ignore
-            [input.type.to_mlir() for input in graph.inputs],
-            op.function_type.results,
-        )
-        op.signature = kgen.FuncTypeGeneratorType([], op.function_type)  # type: ignore
-        op.discardable_attributes["argument_names"] = builtin.ArrayAttr(
-            [builtin.StringAttr(f"input{i}") for i in range(len(graph.inputs))]
-        )
 
 
 def driver_tensor_type(t: driver.Tensor) -> TensorType:

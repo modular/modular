@@ -30,7 +30,7 @@ from utils.index import Index, IndexList
 
 
 def test_causal_mask():
-    alias type = DType.int32
+    comptime type = DType.int32
 
     print("test_causal_mask")
     var mask = CausalMask()
@@ -109,12 +109,12 @@ def test_causal_mask_asm():
         assert_true("v_cndmask_b32_e64" in asm)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="test_causal_mask_asm",
+            operation = __get_current_function_name(),
         ]()
 
 
 def test_and_mask():
-    alias type = DType.int32
+    comptime type = DType.int32
 
     print("test_and_mask")
     # Or-ing a causal mask with a null mask should result in a causal mask.
@@ -153,7 +153,7 @@ def test_and_mask():
 def test_sliding_window_causal_mask():
     print("test_sliding_window_causal_mask")
 
-    alias mask = SlidingWindowCausalMask[3]()
+    comptime mask = SlidingWindowCausalMask[3]()
 
     @always_inline
     def check_status(
@@ -239,7 +239,7 @@ def test_sliding_window_causal_mask_asm():
         assert_true("v_cndmask_b32_e64" in asm)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="test_sliding_window_causal_mask_asm()",
+            operation = __get_current_function_name(),
         ]()
 
 

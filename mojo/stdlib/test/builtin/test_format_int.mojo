@@ -32,8 +32,8 @@ fn test_format_int() raises:
     assert_equal(_format_int(Int64.MIN_FINITE, 2), "-1" + "0" * 63)
 
     # i128
-    alias int128_max = Int128(UInt128(1) << 127) - 1
-    alias int128_min = Int128(UInt128(1) << 127)
+    comptime int128_max = Int128(UInt128(1) << 127) - 1
+    comptime int128_min = Int128(UInt128(1) << 127)
     assert_equal(
         _format_int(int128_max, 10),
         "170141183460469231731687303715884105727",
@@ -46,8 +46,8 @@ fn test_format_int() raises:
     assert_equal(_format_int(int128_min, 2), "-1" + "0" * 127)
 
     # i256
-    alias int256_max = Int256(UInt256(1) << 255) - 1
-    alias int256_min = Int256(UInt256(1) << 255)
+    comptime int256_max = Int256(UInt256(1) << 255) - 1
+    comptime int256_min = Int256(UInt256(1) << 255)
     assert_equal(
         _format_int(int256_max, 10),
         "57896044618658097711785492504343953926634992332820282019728792003956564819967",

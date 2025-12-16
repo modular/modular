@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_test")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "module_v3",
+    srcs = glob(["**/*.py"]),
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+    ],
+)

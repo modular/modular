@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OwnedKwargsDict
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 from python import Python, PythonObject
@@ -56,13 +55,11 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 @fieldwise_init
-struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Representable):
     var name: String
     var age: Int
 
@@ -80,11 +77,13 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
         )
 
     @staticmethod
-    fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:
+    fn _get_self_ptr(
+        py_self: PythonObject,
+    ) -> UnsafePointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
-            return abort[UnsafePointer[Self]](
+            abort(
                 String(
                     (
                         "Python method receiver object did not have the"
@@ -134,7 +133,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
         try:
             return PythonObject(Int(this_year) - self_ptr[].age)
         except e:
-            return abort[PythonObject](String("failed to get birth year: ", e))
+            abort(String("failed to get birth year: ", e))
 
     @staticmethod
     fn _with_first_last_name(
@@ -144,7 +143,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
         try:
             self_ptr[].name = String(first_name) + " " + String(last_name)
         except e:
-            return abort[PythonObject](String("failed to set name: ", e))
+            abort(String("failed to set name: ", e))
         return py_self
 
     @staticmethod
@@ -196,25 +195,31 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
             abort(String("failed to set age: ", e))
 
     @staticmethod
-    fn set_name_auto(self_ptr: UnsafePointer[Self], name: PythonObject):
+    fn set_name_auto(
+        self_ptr: UnsafePointer[Self, MutAnyOrigin],
+        name: PythonObject,
+    ):
         try:
             self_ptr[].name = String(name)
         except e:
             abort(String("failed to set name: ", e))
 
     @staticmethod
-    fn get_name_auto(self_ptr: UnsafePointer[Self]) raises -> PythonObject:
+    fn get_name_auto(
+        self_ptr: UnsafePointer[Self, MutAnyOrigin]
+    ) raises -> PythonObject:
         return PythonObject(self_ptr[].name)
 
     @staticmethod
     fn increment_age_auto(
-        self_ptr: UnsafePointer[Self], increment: PythonObject
+        self_ptr: UnsafePointer[Self, MutAnyOrigin],
+        increment: PythonObject,
     ) raises -> PythonObject:
         self_ptr[].age += Int(increment)
         return PythonObject(self_ptr[].age)
 
     @staticmethod
-    fn reset_auto(self_ptr: UnsafePointer[Self]):
+    fn reset_auto(self_ptr: UnsafePointer[Self, MutAnyOrigin]):
         self_ptr[].name = "Auto Reset Person"
         self_ptr[].age = 999
 
@@ -243,7 +248,8 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
 
     @staticmethod
     fn add_kwargs_to_age_auto(
-        self_ptr: UnsafePointer[Self], kwargs: OwnedKwargsDict[PythonObject]
+        self_ptr: UnsafePointer[Self, MutAnyOrigin],
+        kwargs: OwnedKwargsDict[PythonObject],
     ) raises -> PythonObject:
         """Test method with auto-convert self + kwargs that adds kwargs to person's age.
         """

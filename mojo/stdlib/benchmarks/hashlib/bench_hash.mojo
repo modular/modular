@@ -18,7 +18,7 @@ from hashlib._fnv1a import Fnv1a
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 # Source: https://www.101languages.net/arabic/most-common-arabic-words/
-alias words_ar: String = """
+comptime words_ar: String = """
 لا, من, هذا, أن, في, أنا, على, ما, هل,
  يا, و, لقد, ذلك, ماذا, أنت, هنا, لم, إلى, نعم, كان, هو, ان, هذه, هناك, عن, فى, كل, ليس, فقط, كنت, الآن, يجب, انا,
  لك, مع, شيء, لكن, لن, الذي, حسنا, كيف, سوف, هيا, نحن, إنه, ـ, أجل, لماذا, إذا, عندما, انه, كذلك, لي, الى, بعد, انت,
@@ -84,7 +84,7 @@ alias words_ar: String = """
 """
 
 # Source: https://github.com/tkaitchuck/ahash/blob/7d5c661a74b12d5bc5448b0b83fdb429190db1a3/tests/map_tests.rs#L9
-alias words_en: String = """
+comptime words_en: String = """
     a, ability, able, about, above, accept, according, account, across, act, action,
     activity, actually, add, address, administration, admit, adult, affect, after,
     again, against, age, agency, agent, ago, agree, agreement, ahead, air, all,
@@ -184,7 +184,7 @@ alias words_en: String = """
     yet, you, young, your, yourself"""
 
 # Source: https://www.101languages.net/hebrew/most-common-hebrew-words/
-alias words_he: String = """
+comptime words_he: String = """
 לא , את , אני , זה , אתה ,
  מה , הוא , לי, על, כן, לך, של, יש , בסדר , אבל , כל , שלי , טוב , עם, היא, אם, רוצה,
  שלך, היה, אנחנו, הם, אותך, יודע, אז, רק, אותו, יכול, אותי, יותר, הזה, אל, כאן, או,
@@ -256,7 +256,7 @@ alias words_he: String = """
 """
 
 # Source: https://www.101languages.net/latvian/most-common-latvian-words/
-alias words_lv: String = """
+comptime words_lv: String = """
     ir, es, un, tu, tas, ka, man, to, vai, ko, ar, kas, par, tā, kā, viņš, uz, no, tev,
     mēs, nav, jūs, bet, labi, jā, lai, nē, mani, ja, bija, viņa, esmu, viņu, tevi, esi,
     mums, tad, tikai, ne, viņi, kad, jums, arī, viss, nu, kur, pie, jau, tik, tur, te, vēl,
@@ -339,7 +339,7 @@ alias words_lv: String = """
 """
 
 # Source: https://www.101languages.net/polish/most-common-polish-words/
-alias words_pl: String = """
+comptime words_pl: String = """
 nie, to, się, w, na, i, z, co, jest, że, do, tak, jak, o, mnie, a, ale, mi, za, ja, ci, tu, ty, czy,
 tym, go, tego, tylko, jestem, po, cię, ma, już, mam, jesteś, może, pan, dla, coś, dobrze, wiem, jeśli,
 teraz, proszę, od, wszystko, tam, więc, masz, nic, on, być, gdzie, będzie, są, ten, mogę, ciebie,
@@ -414,7 +414,7 @@ proste, zacząć, myśl, wstawaj, rany, prawdziwe, takiej, jakiegoś, umrzeć, z
 """
 
 # Source: https://www.101languages.net/greek/most-common-greek-words/
-alias words_el: String = """
+comptime words_el: String = """
     να, το, δεν, θα, είναι, και, μου, με, ο, για, την, σου, τα, τον, η, τι, σε, που, του, αυτό, στο, ότι,
     από, τη, της, ναι, σας, ένα, εδώ, τους, αν, όχι, μια, μας, είσαι, αλλά, κι, οι, πρέπει, είμαι, ήταν,
     πολύ, στην, δε, γιατί, εγώ, τώρα, πως, εντάξει, τις, κάτι, ξέρω, μην, έχει, έχω, εσύ, θέλω, καλά,
@@ -492,7 +492,7 @@ alias words_el: String = """
 """
 
 # Source: https://www.101languages.net/russian/most-common-russian-words/
-alias words_ru: String = """
+comptime words_ru: String = """
 я, не, что, в, и, ты, это, на, с, он, вы, как, мы, да, а, мне, меня, у, нет, так, но, то, все, тебя, его,
 за, о, она, тебе, если, они, бы, же, ну, здесь, к, из, есть, чтобы, для, хорошо, когда, вас, только, по,
 вот, просто, был, знаю, нас, всё, было, от, может, кто, вам, очень, их, там, будет, уже, почему, еще,

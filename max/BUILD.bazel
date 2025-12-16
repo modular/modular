@@ -1,0 +1,44 @@
+load("@mojo//:mojo.bzl", "max_aliases")
+load("//bazel:api.bzl", "py_repl", "requirement")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+
+# gazelle:default_visibility //max:consumers
+
+package(default_visibility = ["//max:consumers"])
+
+package_group(
+    name = "consumers",
+    packages = [
+        "//",  # root BUILD.bazel file
+        "//GenericML/...",
+        "//Kernels/...",
+        "//SDK/...",
+        "//bazel/...",
+        "//docs/...",
+        "//examples/...",  # OSS only
+        "//max/...",
+        "//open-source/...",
+        "//open-source/max/max/...",
+        "//utils/...",
+    ],
+)
+
+max_aliases()
+
+alias(
+    name = "max",
+    actual = "//max/python/max/entrypoints:pipelines",
+    tags = [TOP_LEVEL_TAG],
+)
+
+py_repl(
+    name = "repl",
+    deps = [
+        "//max/python/max",
+        requirement("hypothesis"),
+        requirement("notebook"),
+        requirement("nvitop"),
+        requirement("rich"),
+        requirement("pytest"),
+    ],
+)

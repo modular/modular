@@ -298,8 +298,9 @@ To make a struct explicitly copyable, you need to:
 - Add the `Copyable` trait.
 - (Optionally) define a custom `__copyinit__()` method if needed.
 
-If you simply add the `Copyable` trait, Mojo will generate a default
-`__copyinit__()` method for you, which copies each field of the existing value
+By adding the `Copyable` trait, Mojo can generate a default
+`__copyinit__()` method for you unless you've written one yourself.
+This default method copies each field of the existing value
 into the new value. The `Copyable` trait also defines a default `copy()` method, which
 provides a more user-friendly way to copy a value than invoking the
 copy constructor directly.
@@ -473,7 +474,7 @@ To make a type *implicitly copyable*, add the `ImplicitlyCopyable` trait:
 
 ```mojo
 @fieldwise_init
-struct MyPair(ImplicitlyCopyable, Movable):
+struct MyPair(ImplicitlyCopyable):
     var first: Int
     var second: Int
 
@@ -485,7 +486,8 @@ def main():
 
 The `ImplicitlyCopyable` trait inherits from `Copyable`, so adding
 `ImplicitlyCopyable` to your type gives you a copy constructor and a default `copy()`
-method. The trait doesn't define any methods of its own: it serves as a signal
+method. (It also gives you automatic `Movable` conformance.)
+The trait doesn't define any methods of its own: it serves as a signal
 to the compiler that it can insert calls to `__copyinit__()` as needed. For
 example, in the previous example, the compiler might generate code equivalent
 to:
@@ -516,7 +518,7 @@ as an optimization.
 
 To make a type *movable*:
 
-- Add the `Movable` trait.
+- Add the `Movable` trait _or_ conform to `Copyable`.
 - (Optionally) implement a custom `__moveinit__()` method.
 
 Note that [register-passable values](/mojo/manual/decorators/register-passable)
@@ -527,7 +529,7 @@ Here's a movable version of the `MyPet` struct:
 
 ```mojo
 @fieldwise_init
-struct MyPet(Copyable, Movable):
+struct MyPet(Copyable):
     var name: String
     var age: Int
 ```
@@ -581,7 +583,7 @@ errors on heap-allocated data, such as use-after-free and double-free errors.
 :::note
 
 A move constructor is **not required** to transfer ownership of a
-value. If a value is copyable but not movable, Mojo can copy the value and
+value. Mojo can copy the value and
 invalidate the original instance. You can learn more in the section about
 [ownership
 transfer](/mojo/manual/values/ownership#transfer-arguments-var-and-).

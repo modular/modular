@@ -88,7 +88,7 @@ def test_write_int_padded():
 
 def test_hex_digits_to_hex_chars():
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-    alias S = StringSlice[origin_of(items)]
+    comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
     assert_equal("0001f525", String(S(ptr=ptr, length=8)))
@@ -114,7 +114,7 @@ def test_hex_digits_to_hex_chars():
 
 def test_write_hex():
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    alias S = StringSlice[origin_of(items)]
+    comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))
     assert_equal(r"\U0001f525", String(S(ptr=ptr, length=10)))

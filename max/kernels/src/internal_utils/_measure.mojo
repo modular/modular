@@ -17,7 +17,6 @@ from sys import simd_width_of
 
 from algorithm import elementwise, mean, sum, vectorize
 from algorithm.functional import unswitch
-from buffer import NDBuffer
 
 from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
@@ -80,12 +79,11 @@ fn kl_div[
 ) -> Scalar[
     out_type
 ]:
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    @parameter
-    fn kl_div_elementwise[simd_width: Int](idx: Int):
+    fn kl_div_elementwise[simd_width: Int](idx: Int) unified {mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
         var kl = kl_div(xi, yi)
@@ -98,7 +96,7 @@ fn kl_div[
         else:
             accum_simd += rebind[type_of(accum_simd)](kl)
 
-    vectorize[kl_div_elementwise, simd_width](len)
+    vectorize[simd_width](len, kl_div_elementwise)
 
     return accum_simd.reduce_add() + accum_scalar
 
@@ -149,15 +147,14 @@ fn correlation[
     var uu = Scalar[out_type]()
     var vv = Scalar[out_type]()
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var uv_simd = SIMD[out_type, simd_width]()
     var uu_simd = SIMD[out_type, simd_width]()
     var vv_simd = SIMD[out_type, simd_width]()
 
     @parameter
     fn accumulate[weighted: Bool]():
-        @parameter
-        fn apply_wfn[simd_width: Int](idx: Int):
+        fn apply_wfn[simd_width: Int](idx: Int) unified {mut}:
             var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
             var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
             var uw = ui
@@ -183,7 +180,7 @@ fn correlation[
                 uu_simd += rebind[type_of(uu_simd)](uuw)
                 vv_simd += rebind[type_of(vv_simd)](vvw)
 
-        vectorize[apply_wfn, simd_width](len)
+        vectorize[simd_width](len, apply_wfn)
 
     unswitch[accumulate](w.__bool__())
 
@@ -223,7 +220,7 @@ fn uncentered_unweighted_correlation[
     var uv = _dot[out_type=out_type](u, v, len)
     var uu = _dot[out_type=out_type](u, u, len)
     var vv = _dot[out_type=out_type](v, v, len)
-    alias eps = Scalar[out_type](1e-6)
+    comptime eps = Scalar[out_type](1e-6)
     return uv / (sqrt(uu * vv) + eps)
 
 
@@ -348,13 +345,13 @@ fn _div[
 fn _sum[
     dtype: DType, //
 ](src: UnsafePointer[Scalar[dtype]], len: Int) raises -> Scalar[dtype]:
-    return sum(NDBuffer[dtype, 1, address_space = src.address_space](src, len))
+    return sum(Span[Scalar[dtype]](ptr=src, length=len))
 
 
 fn _mean[
     dtype: DType, //
 ](src: UnsafePointer[Scalar[dtype]], len: Int) raises -> Scalar[dtype]:
-    return mean(NDBuffer[dtype, 1, address_space = src.address_space](src, len))
+    return mean(Span[Scalar[dtype]](ptr=src, length=len))
 
 
 fn _dot[
@@ -362,12 +359,11 @@ fn _dot[
 ](x: UnsafePointer[Scalar[dtype]], y: type_of(x), len: Int) -> Scalar[out_type]:
     # loads are the expensive part, so we use the (probably) smaller
     # input type for determining simd width.
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    @parameter
-    fn apply_fn[simd_width: Int](idx: Int):
+    fn apply_fn[simd_width: Int](idx: Int) unified {mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
 
@@ -379,6 +375,6 @@ fn _dot[
         else:
             accum_simd += rebind[type_of(accum_simd)](xi * yi)
 
-    vectorize[apply_fn, simd_width](len)
+    vectorize[simd_width](len, apply_fn)
 
     return accum_simd.reduce_add() + accum_scalar

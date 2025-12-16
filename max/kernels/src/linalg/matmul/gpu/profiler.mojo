@@ -18,11 +18,11 @@ from gpu.host import DeviceContext
 from gpu import sm_id
 
 
-alias MatmulWarpSpecializationWorkSpaceManager[
+comptime MatmulWarpSpecializationWorkSpaceManager[
     max_entries_per_warp: UInt32
 ] = BlackwellWarpProfilingWorkspaceManager[1, 1, 1, 4, max_entries_per_warp]
 
-alias MatmulProfileWarp[
+comptime MatmulProfileWarp[
     warp_role: UInt32, max_entries_per_warp: UInt32
 ] = BlackwellProfileWarp[
     MatmulWarpSpecializationWorkSpaceManager[max_entries_per_warp](),
@@ -38,7 +38,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     scheduler_warps: UInt32,
     epilogue_warps: UInt32,
     max_entries_per_warp: UInt32,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """
     This struct manages the profiling workspace. The workspaces consists of equal sized chunks, the total number of
     which is equal to the total number of active SMs. Each SM chunk consists of sequences of entries, with a maximum
@@ -53,34 +53,34 @@ struct BlackwellWarpProfilingWorkspaceManager[
     """
 
     # load, scheduler, mma, epilogue
-    alias total_warp_roles = 4
+    comptime total_warp_roles = 4
 
     # how many values will be recorded per entry
-    alias total_data_points = 7
+    comptime total_data_points = 7
 
     # this header shows what each value in an entry symbolizes in a csv friendly format
-    alias header = "time_start,time_end,sm_id,block_idx_x,block_idx_y,role,entry_idx\n"
+    comptime header = "time_start,time_end,sm_id,block_idx_x,block_idx_y,role,entry_idx\n"
 
-    alias sm_count = B200.sm_count
-    alias entries_per_sm = Self.total_warp_roles * Self.max_entries_per_warp
+    comptime sm_count = B200.sm_count
+    comptime entries_per_sm = Self.total_warp_roles * Self.max_entries_per_warp
 
     @staticmethod
     @parameter
     fn _get_warp_count[warp_role: UInt32]() -> UInt32:
         @parameter
         if warp_role == 0:
-            return load_warps
+            return Self.load_warps
         elif warp_role == 1:
-            return scheduler_warps
+            return Self.scheduler_warps
         elif warp_role == 2:
-            return mma_warps
+            return Self.mma_warps
         else:
-            return epilogue_warps
+            return Self.epilogue_warps
 
     @staticmethod
     @parameter
     fn _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:
-        return warp_role * max_entries_per_warp
+        return warp_role * Self.max_entries_per_warp
 
     @staticmethod
     @always_inline
@@ -126,7 +126,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
         workspace: Span[UInt64, MutAnyOrigin],
         timeline: Tuple[UInt64, UInt64],
     ):
-        alias total_threads = WARP_SIZE * Self._get_warp_count[warp_role]()
+        comptime total_threads = WARP_SIZE * Self._get_warp_count[warp_role]()
 
         var start_idx = Self._get_workspace_offset[warp_role](sm_idx, entry_idx)
 
@@ -185,13 +185,13 @@ struct BlackwellProfileWarp[
         max_entries_per_warp,
     ],
     warp_role: UInt32 = 0,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """
     This struct calculates execution time for a warp/s,
     and writes a single entry to the workspace.
     """
 
-    alias enable_profiling = max_entries_per_warp > 0
+    comptime enable_profiling = Self.max_entries_per_warp > 0
 
     var timeline: Tuple[UInt64, UInt64]
     var workspace: Span[UInt64, MutAnyOrigin]
@@ -220,7 +220,7 @@ struct BlackwellProfileWarp[
         @parameter
         if Self.enable_profiling:
             self.timeline[1] = global_perf_counter_ns()
-            WorkspaceManager.write_to_workspace[warp_role](
+            Self.WorkspaceManager.write_to_workspace[Self.warp_role](
                 sm_id(),
                 self.entry_idx,
                 self.workspace,

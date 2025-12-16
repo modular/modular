@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from gpu.host import DeviceContext
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 
 fn _run_memset[
@@ -42,8 +42,10 @@ fn _run_memset[
     for i in range(length):
         if i < 10:
             print("at index", i, "the value is", out_host[i])
-        expect_eq(
-            out_host[i], val, "at index ", i, " the value is ", out_host[i]
+        assert_equal(
+            out_host[i],
+            val,
+            String("at index ", i, " the value is ", out_host[i]),
         )
 
 
@@ -60,7 +62,9 @@ fn _run_memset_cascade[
         for i in range(length):
             if i < 10:
                 print("buf[", i, "] = ", buf[i])
-            expect_eq(buf[i], val, "at index ", i, " the value is ", buf[i])
+            assert_equal(
+                buf[i], val, String("at index ", i, " the value is ", buf[i])
+            )
 
 
 def test_memset():
@@ -69,7 +73,7 @@ def test_memset():
     print("-------")
     print("Running test_memset(" + ctx.name() + "):")
 
-    alias one_mb = 1024 * 1024
+    comptime one_mb = 1024 * 1024
 
     _run_memset[DType.uint8](ctx, 64, 12)
     _run_memset[DType.uint8](ctx, one_mb, 13)

@@ -15,27 +15,29 @@ from memory import (
     LegacyOpaquePointer as OpaquePointer,
     LegacyUnsafePointer as UnsafePointer,
 )
-from sys import has_amd_gpu_accelerator, size_of
+from sys import has_amd_gpu_accelerator
 from pathlib import Path
 from sys.ffi import _get_global_or_null, external_call
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import OwnedDLHandle, _Global
+from collections.optional import OptionalReg
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
-from comm.allreduce import MAX_GPUS
+from comm import MAX_GPUS
+from comm.allreduce import elementwise_epilogue_type
+from gpu.grid_controls import PDLLevel
 
-alias ncclComm_t = OpaquePointer
+comptime ncclComm_t = OpaquePointer
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct ncclResult_t(EqualityComparable, Writable):
+struct ncclResult_t(Equatable, Writable):
     var _value: Int32
-    alias ncclSuccess = Self(0)
+    comptime ncclSuccess = Self(0)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -51,7 +53,7 @@ struct ncclResult_t(EqualityComparable, Writable):
 @register_passable("trivial")
 struct ncclRedOp_t:
     var _value: Int32
-    alias ncclSum = Self(0)
+    comptime ncclSum = Self(0)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -61,28 +63,28 @@ struct ncclRedOp_t:
 @register_passable("trivial")
 struct ncclDataType_t:
     var _value: Int32
-    alias ncclFloat16 = Self(6)
-    alias ncclFloat32 = Self(7)
-    alias ncclBfloat16 = Self(9)
+    comptime ncclFloat16 = Self(6)
+    comptime ncclFloat32 = Self(7)
+    comptime ncclBfloat16 = Self(9)
 
     fn __init__(out self, value: Int):
         self._value = value
 
 
-alias RCCL_LIBRARY_PATHS = List[Path](
+comptime RCCL_LIBRARY_PATHS: List[Path] = [
     "librccl.so",
     "librccl.so.1",
     "/opt/rocm/lib/librccl.so",
     "/opt/rocm/lib/librccl.so.1",
-)
+]
 
 
-alias NCCL_LIBRARY_PATHS = List[Path](
+comptime NCCL_LIBRARY_PATHS: List[Path] = [
     "libnccl.so",
     "libnccl.so.2",
     "/usr/lib/x86_64-linux-gnu/libnccl.so",
     "/usr/lib/x86_64-linux-gnu/libnccl.so.2",
-)
+]
 
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)
@@ -94,7 +96,7 @@ fn _init_ccl_dylib() -> OwnedDLHandle:
         return _find_dylib["NCCL"](materialize[NCCL_LIBRARY_PATHS]())
 
 
-alias CCL_LIBRARY = _Global["CCL_LIBRARY", _init_ccl_dylib]
+comptime CCL_LIBRARY = _Global["CCL_LIBRARY", _init_ccl_dylib]
 
 
 @always_inline
@@ -105,7 +107,7 @@ fn _get_ccl_function[
 
 
 # Common function signatures for CCL APIs (shared by RCCL/NCCL)
-alias CCLAllReduceFn = fn (
+comptime CCLAllReduceFn = fn (
     OpaquePointer,
     OpaquePointer,
     Int,
@@ -115,7 +117,7 @@ alias CCLAllReduceFn = fn (
     OpaquePointer,
 ) -> ncclResult_t
 
-alias CCLAllGatherFn = fn (
+comptime CCLAllGatherFn = fn (
     OpaquePointer,
     OpaquePointer,
     Int,
@@ -126,12 +128,23 @@ alias CCLAllGatherFn = fn (
 
 
 # Paired wrappers grouped RCCl/NCCL for comparison
-fn ncclGroupStart() raises -> ncclResult_t:
-    return _get_ccl_function["ncclGroupStart", fn () -> ncclResult_t]()()
+struct _Group:
+    fn __init__(out self):
+        pass
+
+    fn __enter__(self) raises:
+        _check_ccl_ok(
+            _get_ccl_function["ncclGroupStart", fn () -> ncclResult_t]()()
+        )
+
+    fn __exit__(self) raises:
+        _check_ccl_ok(
+            _get_ccl_function["ncclGroupEnd", fn () -> ncclResult_t]()()
+        )
 
 
-fn ncclGroupEnd() raises -> ncclResult_t:
-    return _get_ccl_function["ncclGroupEnd", fn () -> ncclResult_t]()()
+fn group() -> _Group:
+    return _Group()
 
 
 fn ncclCommInitAll(
@@ -187,7 +200,7 @@ fn _ccl_stream_ptr(ctx: DeviceContext) raises -> OpaquePointer:
 
 
 @fieldwise_init
-struct Communicators(ImplicitlyCopyable, Movable):
+struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
 
@@ -236,45 +249,75 @@ fn _get_global_comms(ngpus: Int) raises -> Communicators:
     return ptr[]
 
 
+fn init_comms(ngpus: Int) raises:
+    """Pre-initialize NCCL/RCCL communicators.
+
+    Must be called from a single thread before using allreduce
+    from multiple threads. This ensures thread-safe initialization since
+    ncclCommInitAll is not designed for concurrent calls.
+    """
+    _ = _get_global_comms(ngpus)
+
+
 @parameter
 fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
+    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+    *,
+    use_multimem: Bool = False,
+    use_quickreduce: Bool = False,
 ](
-    inputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
-    outputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
-    list_of_ctx: List[DeviceContext],
+    input_buffers: InlineArray[
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+    ],
+    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    rank_sigs: InlineArray[UnsafePointer[comm.Signal], MAX_GPUS],
+    ctx: DeviceContext,
+    _max_num_blocks: Optional[Int] = None,
+    iteration: Int = 0,
 ) raises:
-    if ngpus < 1:
-        raise Error("ngpus must be >= 1")
-    if ngpus > MAX_GPUS:
-        raise Error("too many GPUs")
-    if len(list_of_ctx) != ngpus:
-        raise Error("ctx count must match ngpus")
+    """Per-GPU allreduce for use in multi-threaded contexts.
 
-    var count = inputs[0].num_elements()
-    var dtype_rccl = _dtype_to_ccl[dtype]()
+    Currently requires prior single-threaded call to init_comms, as thread-safe
+    version not yet implemented.
+    """
+    constrained[
+        not output_lambda,
+        "vendor_ccl allreduce does not support output epilogue lambdas yet",
+    ]()
+    constrained[
+        not use_multimem,
+        "vendor_ccl allreduce does not support multimem path",
+    ]()
+    constrained[
+        not use_quickreduce,
+        "vendor_ccl allreduce does not support quickreduce path",
+    ]()
+    # Determine this device's rank from its context id.
+    var device_rank = Int(ctx.id())
+    var count = input_buffers[0].num_elements()
+    var dtype_ccl = _dtype_to_ccl[dtype]()
     var op = ncclRedOp_t.ncclSum
     var comms = _get_global_comms(ngpus)
 
-    _check_ccl_ok(ncclGroupStart())
+    var input_buffer = input_buffers[0] if use_multimem else input_buffers[
+        device_rank
+    ]
 
-    for i in range(ngpus):
-        with list_of_ctx[i].push_context():
-            _check_ccl_ok(
-                _ccl_allreduce(
-                    inputs[i].data.bitcast[NoneType](),
-                    outputs[i].data.bitcast[NoneType](),
-                    count,
-                    dtype_rccl,
-                    op,
-                    comms.comms[i],
-                    list_of_ctx[i],
-                )
-            )
-
-    _check_ccl_ok(ncclGroupEnd())
+    _check_ccl_ok(
+        _ccl_allreduce(
+            input_buffer.data.bitcast[NoneType](),
+            output_buffer.data.bitcast[NoneType](),
+            count,
+            dtype_ccl,
+            op,
+            comms.comms[device_rank],
+            ctx,
+        )
+    )
 
 
 @parameter
@@ -327,22 +370,19 @@ fn allgather[
             list_of_ctx[i].enqueue_create_buffer[dtype](ngpus * count)
         )
 
-    _check_ccl_ok(ncclGroupStart())
-
-    for i in range(ngpus):
-        with list_of_ctx[i].push_context():
-            _check_ccl_ok(
-                _ccl_allgather(
-                    inputs[i].data.bitcast[NoneType](),
-                    recv_tmp[i].unsafe_ptr().bitcast[NoneType](),
-                    count,
-                    dtype_nccl,
-                    comms.comms[i],
-                    list_of_ctx[i],
+    with group():
+        for i in range(ngpus):
+            with list_of_ctx[i].push_context():
+                _check_ccl_ok(
+                    _ccl_allgather(
+                        inputs[i].data.bitcast[NoneType](),
+                        recv_tmp[i].unsafe_ptr().bitcast[NoneType](),
+                        count,
+                        dtype_nccl,
+                        comms.comms[i],
+                        list_of_ctx[i],
+                    )
                 )
-            )
-
-    _check_ccl_ok(ncclGroupEnd())
 
     for dev in range(ngpus):
         var ctx = list_of_ctx[dev]

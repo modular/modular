@@ -20,7 +20,7 @@ from testing import assert_equal
 
 
 def test_buffer_copy(ctx: SHMEMContext):
-    alias length = 1024
+    comptime length = 1024
 
     var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](length)
     var host_buffer_2 = ctx.enqueue_create_host_buffer[DType.float32](length)

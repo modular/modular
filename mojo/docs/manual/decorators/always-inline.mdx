@@ -51,7 +51,15 @@ The `"builtin"` argument is like `"nodebug"`, but even stricter. The `"builtin"`
 version of the decorator should only be used on functions that wrap a single
 MLIR operation that the compiler has special compile-time handling for. It
 allows the compiler to inline the function when it's used in a parameter
-context. This simplifies the generated IR and allows for further optimizations.
+context.
+
+:::caution
+
+Using this version of the decorator requires some knowledge of the Mojo compiler's
+internals. Using it outside of the standard library is not recommended. Use the
+standard `@always_inline` decorator or the `"nodebug"` version, instead.
+
+:::
 
 This version of the decorator does everything that `"nodebug"` does, plus two
 other behaviors:

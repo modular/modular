@@ -62,8 +62,8 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     print("Test creating streams with different priority values.")
     var priority_range = ctx.stream_priority_range()
 
-    alias length = 256
-    alias multiplier = Float32(2.5)
+    comptime length = 256
+    comptime multiplier = Float32(2.5)
 
     # Create host and device buffers
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -86,8 +86,8 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     var low_priority_stream = ctx.create_stream(
         priority=priority_range.least, blocking=True
     )
-    var func = ctx.compile_function[simple_kernel]()
-    low_priority_stream.enqueue_function(
+    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
+    low_priority_stream.enqueue_function_checked(
         func,
         input_device,
         output_device_low,
@@ -102,7 +102,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     var high_priority_stream = ctx.create_stream(
         priority=priority_range.greatest, blocking=False
     )
-    high_priority_stream.enqueue_function(
+    high_priority_stream.enqueue_function_checked(
         func,
         input_device,
         output_device_high,
@@ -131,7 +131,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
             priority=mid_priority, blocking=True
         )
         var output_device_mid = ctx.enqueue_create_buffer[DType.float32](length)
-        mid_priority_stream.enqueue_function(
+        mid_priority_stream.enqueue_function_checked(
             func,
             input_device,
             output_device_mid,
@@ -150,8 +150,8 @@ def test_multiple_priority_streams(ctx: DeviceContext):
     )
     var priority_range = ctx.stream_priority_range()
 
-    alias length = 512
-    alias num_kernels = 4
+    comptime length = 512
+    comptime num_kernels = 4
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -192,11 +192,11 @@ def test_multiple_priority_streams(ctx: DeviceContext):
             current_priority += step
             multiplier_val += Float32(0.5)
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
 
     # Launch kernels concurrently on all streams
     for i in range(len(streams)):
-        streams[i].enqueue_function(
+        streams[i].enqueue_function_checked(
             func,
             input_device,
             output_devices[i],
@@ -233,8 +233,8 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
         )
         return
 
-    alias length = 1024
-    alias iterations = 10
+    comptime length = 1024
+    comptime iterations = 10
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -256,11 +256,11 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
     var high_output_device = ctx.enqueue_create_buffer[DType.float32](length)
     var low_output_device = ctx.enqueue_create_buffer[DType.float32](length)
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
     # Launch multiple kernels on both streams to test priority behavior
     for i in range(iterations):
         # Launch on low priority stream first
-        low_priority_stream.enqueue_function(
+        low_priority_stream.enqueue_function_checked(
             func,
             input_device,
             low_output_device,
@@ -271,7 +271,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
         )
 
         # Then immediately launch on high priority stream
-        high_priority_stream.enqueue_function(
+        high_priority_stream.enqueue_function_checked(
             func,
             input_device,
             high_output_device,

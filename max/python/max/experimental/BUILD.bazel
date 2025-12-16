@@ -1,14 +1,16 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "experimental",
     srcs = [
         "__init__.py",
+        "_passes.py",
         "functional.py",
         "random.py",
         "tensor.py",
     ],
-    imports = ["../.."],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

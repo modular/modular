@@ -24,7 +24,7 @@ from utils.index import Index
 
 # Tile size for tiling in shared memory.
 # Thread block would have shape (tile_size, tile_size, 1)
-alias tile_size = 32
+comptime tile_size = 32
 
 
 fn matmul_sram(
@@ -135,9 +135,9 @@ fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul_sram")
 
     # Should be able to handle non-divisible values.
-    alias M = 513
-    alias N = 502
-    alias K = 511
+    comptime M = 513
+    comptime N = 502
+    comptime K = 511
 
     var a_host_ptr = alloc[Float32](M * K)
     var a_host = NDBuffer[DType.float32, 2, _, DimList(M, K)](a_host_ptr)

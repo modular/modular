@@ -119,22 +119,22 @@ from ._nvshmem import (
 # Types
 # ===----------------------------------------------------------------------=== #
 
-alias shmem_team_t = c_int
+comptime shmem_team_t = c_int
 
 
-struct SHMEMScope(EqualityComparable, ImplicitlyCopyable, Movable):
+struct SHMEMScope(Equatable, ImplicitlyCopyable):
     """Enables following the OpenSHMEM spec by default for put/get/iput/iget
     etc. While allowing NVIDIA extensions for block and warp scopes by passing a
     parameter."""
 
     var value: StaticString
 
-    alias default = Self("")
-    """Execute RMA operation at global scope"""
-    alias block = Self("_block")
-    """Execute RMA operation at thread block scope (NVIDIA extension)"""
-    alias warp = Self("_warp")
-    """Execute RMA operation at warp scope (NVIDIA extension)"""
+    comptime default = Self("")
+    """Execute RMA operation at global scope."""
+    comptime block = Self("_block")
+    """Execute RMA operation at thread block scope (NVIDIA extension)."""
+    comptime warp = Self("_warp")
+    """Execute RMA operation at warp scope (NVIDIA extension)."""
 
     fn __init__(out self, value: StaticString):
         self.value = value
@@ -147,21 +147,21 @@ struct SHMEMScope(EqualityComparable, ImplicitlyCopyable, Movable):
 # Constants
 # ===----------------------------------------------------------------------=== #
 
-alias SHMEM_TEAM_INVALID: shmem_team_t = NVSHMEM_TEAM_INVALID
-alias SHMEM_TEAM_SHARED: shmem_team_t = NVSHMEM_TEAM_SHARED
-alias SHMEM_TEAM_NODE: shmem_team_t = NVSHMEMX_TEAM_NODE
-alias SHMEM_TEAM_WORLD: shmem_team_t = NVSHMEM_TEAM_WORLD
+comptime SHMEM_TEAM_INVALID: shmem_team_t = NVSHMEM_TEAM_INVALID
+comptime SHMEM_TEAM_SHARED: shmem_team_t = NVSHMEM_TEAM_SHARED
+comptime SHMEM_TEAM_NODE: shmem_team_t = NVSHMEMX_TEAM_NODE
+comptime SHMEM_TEAM_WORLD: shmem_team_t = NVSHMEM_TEAM_WORLD
 
-alias SHMEM_CMP_EQ: c_int = NVSHMEM_CMP_EQ
-alias SHMEM_CMP_NE: c_int = NVSHMEM_CMP_NE
-alias SHMEM_CMP_GT: c_int = NVSHMEM_CMP_GT
-alias SHMEM_CMP_LE: c_int = NVSHMEM_CMP_LE
-alias SHMEM_CMP_LT: c_int = NVSHMEM_CMP_LT
-alias SHMEM_CMP_GE: c_int = NVSHMEM_CMP_GE
-alias SHMEM_CMP_SENTINEL: c_int = NVSHMEM_CMP_SENTINEL
+comptime SHMEM_CMP_EQ: c_int = NVSHMEM_CMP_EQ
+comptime SHMEM_CMP_NE: c_int = NVSHMEM_CMP_NE
+comptime SHMEM_CMP_GT: c_int = NVSHMEM_CMP_GT
+comptime SHMEM_CMP_LE: c_int = NVSHMEM_CMP_LE
+comptime SHMEM_CMP_LT: c_int = NVSHMEM_CMP_LT
+comptime SHMEM_CMP_GE: c_int = NVSHMEM_CMP_GE
+comptime SHMEM_CMP_SENTINEL: c_int = NVSHMEM_CMP_SENTINEL
 
-alias SHMEM_SIGNAL_SET: c_int = NVSHMEM_SIGNAL_SET
-alias SHMEM_SIGNAL_ADD: c_int = NVSHMEM_SIGNAL_ADD
+comptime SHMEM_SIGNAL_SET: c_int = NVSHMEM_SIGNAL_SET
+comptime SHMEM_SIGNAL_ADD: c_int = NVSHMEM_SIGNAL_ADD
 
 # ===----------------------------------------------------------------------=== #
 # 1: Library Setup, Exit, and Query Routines
@@ -197,7 +197,7 @@ fn shmem_init() raises:
         rocshmem_init()
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="shmem_init"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -222,7 +222,7 @@ fn shmem_init_thread(
         nvshmemx_init_thread(ctx, number_of_devices_node)
     else:
         CompilationTarget.unsupported_target_error[
-            operation="shmem_init_thread"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -261,7 +261,7 @@ fn shmem_finalize():
         rocshmem_finalize()
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="shmem_finalize",
+            operation = __get_current_function_name()
         ]()
 
 
@@ -281,7 +281,7 @@ fn shmem_my_pe() -> c_int:
         return rocshmem_my_pe()
     else:
         return CompilationTarget.unsupported_target_error[
-            c_int, operation="shmem_my_pe"
+            c_int, operation = __get_current_function_name()
         ]()
 
 
@@ -299,7 +299,7 @@ fn shmem_n_pes() -> c_int:
         return rocshmem_n_pes()
     else:
         return CompilationTarget.unsupported_target_error[
-            c_int, operation="shmem_n_pes"
+            c_int, operation = __get_current_function_name()
         ]()
 
 
@@ -340,7 +340,9 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
     elif has_amd_gpu_accelerator():
         return rocshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_malloc"]()
+        CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
         return UnsafePointer[Scalar[dtype]]()
 
 
@@ -381,7 +383,8 @@ fn shmem_calloc[
         return nvshmem_calloc[dtype](count, size)
     else:
         return CompilationTarget.unsupported_target_error[
-            UnsafePointer[Scalar[dtype]], operation="shmem_calloc"
+            UnsafePointer[Scalar[dtype]],
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -411,7 +414,7 @@ fn shmem_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
         rocshmem_free(ptr)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="shmem_free",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -447,7 +450,7 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
         return Int(rocshmem_team_my_pe(c_int(team)))
     else:
         return CompilationTarget.unsupported_target_error[
-            c_int, operation="shmem_team_my_pe"
+            c_int, operation = __get_current_function_name()
         ]()
 
 
@@ -484,7 +487,9 @@ fn shmem_get[
     if is_nvidia_gpu():
         nvshmem_get[scope](dest, source, nelems, pe)
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_get"]()
+        CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 fn shmem_get_nbi[
@@ -516,7 +521,9 @@ fn shmem_get_nbi[
     if is_nvidia_gpu():
         nvshmem_get_nbi[scope](dest, source, nelems, pe)
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_get_nbi"]()
+        CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 fn shmem_g[
@@ -540,7 +547,7 @@ fn shmem_g[
         return nvshmem_g(source, pe)
     else:
         return CompilationTarget.unsupported_target_error[
-            Scalar[dtype], operation="shmem_g"
+            Scalar[dtype], operation = __get_current_function_name()
         ]()
 
 
@@ -574,7 +581,9 @@ fn shmem_put[
     if is_nvidia_gpu():
         nvshmem_put[kind](dest, source, nelems, pe)
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_put"]()
+        CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 fn shmem_put_nbi[
@@ -609,7 +618,9 @@ fn shmem_put_nbi[
     if is_nvidia_gpu():
         nvshmem_put_nbi[kind](dest, source, nelems, pe)
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_put_nbi"]()
+        CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 fn shmem_p[
@@ -635,7 +646,9 @@ fn shmem_p[
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         rocshmem_p(dest, value, pe)
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_p"]()
+        CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -711,7 +724,7 @@ fn shmem_put_signal_nbi[
         )
     else:
         CompilationTarget.unsupported_target_error[
-            operation="shmem_put_signal_nbi"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -743,7 +756,7 @@ fn shmem_barrier_all():
         rocshmem_barrier_all()
     else:
         CompilationTarget.unsupported_target_error[
-            operation="shmem_barrier_all"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -781,7 +794,7 @@ fn shmem_signal_wait_until(
         nvshmem_signal_wait_until(sig_addr, cmp, cmp_value)
     else:
         CompilationTarget.unsupported_target_error[
-            operation="shmem_signal_wait_until"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -805,7 +818,9 @@ fn shmem_fence():
     if is_nvidia_gpu():
         nvshmem_fence()
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_fence"]()
+        CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -838,7 +853,7 @@ fn shmem_signal_op(
         nvshmemx_signal_op(sig_addr, signal, sig_op, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation="shmem_signal_op"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -867,7 +882,7 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
         rocshmem_barrier_all_wave(HIP(stream))
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="shmem_barrier_all_on_stream",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -890,7 +905,7 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
         _ = nvshmemx_cumodule_init(func)
     else:
         CompilationTarget.unsupported_target_error[
-            operation="shmem_cumodule_init",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -914,5 +929,5 @@ fn shmem_module_finalize(device_function: DeviceFunction) raises:
         _ = nvshmemx_cumodule_finalize(func)
     else:
         CompilationTarget.unsupported_target_error[
-            operation="shmem_module_finalize",
+            operation = __get_current_function_name(),
         ]()

@@ -1,10 +1,8 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _EXTRA_CONSTRAINTS = {
-    "test_reduce.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRTD-506
     "test_reduce_atomic.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -19,7 +17,7 @@ _EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

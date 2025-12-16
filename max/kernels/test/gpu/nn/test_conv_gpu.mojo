@@ -32,33 +32,33 @@ fn test_conv3d_gpu[
     pad: IndexList[3],
 ](ctx: DeviceContext) raises:
     print("test_conv3d: Testing 3D Convolution")
-    alias N = Int(input_layout.shape[0])
-    alias D = Int(input_layout.shape[1])
-    alias H = Int(input_layout.shape[2])
-    alias W = Int(input_layout.shape[3])
-    alias C = Int(input_layout.shape[4])
+    comptime N = Int(input_layout.shape[0])
+    comptime D = Int(input_layout.shape[1])
+    comptime H = Int(input_layout.shape[2])
+    comptime W = Int(input_layout.shape[3])
+    comptime C = Int(input_layout.shape[4])
 
-    alias Q = Int(filter_layout.shape[0])
-    alias R = Int(filter_layout.shape[1])
-    alias S = Int(filter_layout.shape[2])
-    alias F = Int(filter_layout.shape[4])
+    comptime Q = Int(filter_layout.shape[0])
+    comptime R = Int(filter_layout.shape[1])
+    comptime S = Int(filter_layout.shape[2])
+    comptime F = Int(filter_layout.shape[4])
 
-    alias pad_d = IndexList[2](pad[0], pad[0])
-    alias pad_h = IndexList[2](pad[1], pad[1])
-    alias pad_w = IndexList[2](pad[2], pad[2])
+    comptime pad_d = IndexList[2](pad[0], pad[0])
+    comptime pad_h = IndexList[2](pad[1], pad[1])
+    comptime pad_w = IndexList[2](pad[2], pad[2])
 
     # compute output dimensions, just working backwards to see what the output shape will be
-    alias D_out = (
+    comptime D_out = (
         D + pad_d[0] + pad_d[1] - dilation[0] * (Q - 1) - 1
     ) // stride[0] + 1
-    alias H_out = (
+    comptime H_out = (
         H + pad_h[0] + pad_h[1] - dilation[1] * (R - 1) - 1
     ) // stride[1] + 1
-    alias W_out = (
+    comptime W_out = (
         W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1
     ) // stride[2] + 1
 
-    alias output_layout = Layout.row_major(N, D_out, H_out, W_out, F)
+    comptime output_layout = Layout.row_major(N, D_out, H_out, W_out, F)
 
     # calculate flattened sizes, gotta know how much memory we need
     var input_size = input_layout.size()
@@ -105,14 +105,14 @@ fn test_conv3d_gpu[
     var output_buf = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
 
     # define grid and block dimensions for the gpu kernel
-    alias block_size = 16
+    comptime block_size = 16
     var grid_dim_x = ceildiv(
         W_out * H_out, block_size
     )  # collapsed width and height into 1 dimension
     var grid_dim_y = ceildiv(D_out, block_size)  # depth is the y dimension
     var grid_dim_z = N  # batch size is the z dimension
 
-    alias kernel = conv3d_gpu_naive_ndhwc_qrscf[
+    comptime kernel = conv3d_gpu_naive_ndhwc_qrscf[
         input_layout,
         filter_layout,
         output_layout,

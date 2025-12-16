@@ -29,6 +29,7 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
     TensorValueLike,
+    Weight,
     ops,
 )
 from max.nn import (
@@ -203,14 +204,48 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         position_ids: TensorValue,
         mrope_section: list[int],
     ) -> TensorValue:
-        # Get attributes from input.
+        # Keep attention stack in BF16.
         total_seq_len = x.shape[0]
+        self.kv_params.dtype = DType.bfloat16
 
-        # Call into fused qkv ragged matmul.
+        # Make sure activations are BF16 for the fused kernel.
+        x_in = x if x.dtype == DType.bfloat16 else ops.cast(x, DType.bfloat16)
+
+        # Helper: dequantize an FP8 weight to BF16 using its scale, if present.
+        def _dequant_w_to_bf16(
+            w: Weight, w_scale: Weight | None
+        ) -> TensorValue:
+            w_bf16 = ops.cast(w.to(x_in.device), DType.bfloat16)
+            if w_scale is None:
+                return w_bf16
+            s = ops.cast(w_scale.to(x_in.device), DType.bfloat16)
+            # Supports scalar or rowwise scales via broadcasting.
+            return w_bf16 * s
+
+        # Build BF16 WQKV for the fused kernel:
+        # - FP8 models: dequantize Q/K/V with their scales.
+        # - Non-FP8 models: just cast the concatenated weight to BF16.
+        if self.q_proj.weight.dtype.is_float8():
+            wq_bf16 = _dequant_w_to_bf16(
+                self.q_proj.weight, self.q_proj.weight_scale
+            )
+            wk_bf16 = _dequant_w_to_bf16(
+                self.k_proj.weight, self.k_proj.weight_scale
+            )
+            wv_bf16 = _dequant_w_to_bf16(
+                self.v_proj.weight, self.v_proj.weight_scale
+            )
+            wqkv_bf16 = ops.concat((wq_bf16, wk_bf16, wv_bf16), axis=0)
+        else:
+            wqkv_bf16 = self.wqkv
+            if wqkv_bf16.dtype != DType.bfloat16:
+                wqkv_bf16 = ops.cast(wqkv_bf16, DType.bfloat16)
+
+        # Fused QKV matmul: input and wqkv are both BF16 now.
         xq = fused_qkv_ragged_matmul(
             self.kv_params,
-            input=x,
-            wqkv=self.wqkv,
+            input=x_in,
+            wqkv=wqkv_bf16,
             bias=self.wqkv_bias,
             input_row_offsets=input_row_offsets,
             kv_collection=kv_collection,
@@ -218,9 +253,8 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             n_heads=self.n_heads,
         )
 
-        # Apply rope.
+        # Apply RoPE and flash attention (also in BF16).
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-
         freqs_cis = freqs_cis.to(xq.device)
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -233,7 +267,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             position_ids=position_ids,
             mrope_section=mrope_section,
         )
-        # Calculate Flash Attention.
+
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
@@ -245,7 +279,6 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         )
 
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
-
         return self.o_proj(attn_out)
 
     @property

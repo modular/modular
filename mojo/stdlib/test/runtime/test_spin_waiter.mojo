@@ -18,7 +18,7 @@ from utils.lock import SpinWaiter
 
 def test_spin_waiter():
     var waiter = SpinWaiter()
-    alias RUNS = 1000
+    comptime RUNS = 1000
     for _ in range(RUNS):
         waiter.wait()
     assert_true(True)

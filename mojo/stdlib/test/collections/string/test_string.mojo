@@ -168,10 +168,10 @@ def test_add():
     assert_equal("123abc", s3)
 
     var s4 = "x"
-    var s5 = s4.join(1, 2, 3)
+    var s5 = s4.join(Span([1, 2, 3]))
     assert_equal("1x2x3", s5)
 
-    var s6 = s4.join(s1, s2)
+    var s6 = s4.join(Span([s1, s2]))
     assert_equal("123xabc", s6)
 
     var s7 = String()
@@ -201,26 +201,28 @@ def test_add_string_slice():
 def test_string_join():
     var sep = ","
     var s0 = "abc"
-    var s1 = sep.join(s0, s0, s0, s0)
+    var s1 = sep.join(Span([s0, s0, s0, s0]))
     assert_equal("abc,abc,abc,abc", s1)
 
-    assert_equal(sep.join(1, 2, 3), "1,2,3")
+    assert_equal(sep.join(Span([1, 2, 3])), "1,2,3")
 
-    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
+    # TODO(MSTDL-2078): Continue supporting heterogenous String.join
+    #   arguments, somehow?
+    # assert_equal(sep.join(1, "abc", 3), "1,abc,3")
 
-    var s2 = ",".join(List[UInt8](1, 2, 3))
+    var s2 = ",".join(Span[UInt8]([1, 2, 3]))
     assert_equal(s2, "1,2,3")
 
-    var s3 = ",".join(List[UInt8](1, 2, 3, 4, 5, 6, 7, 8, 9))
+    var s3 = ",".join(Span[UInt8]([1, 2, 3, 4, 5, 6, 7, 8, 9]))
     assert_equal(s3, "1,2,3,4,5,6,7,8,9")
 
     var s4 = ",".join(List[UInt8]())
     assert_equal(s4, "")
 
-    var s5 = ",".join(List[UInt8](1))
+    var s5 = ",".join(Span[UInt8]([1]))
     assert_equal(s5, "1")
 
-    var s6 = ",".join(List[String]("1", "2", "3"))
+    var s6 = ",".join(Span[String](["1", "2", "3"]))
     assert_equal(s6, "1,2,3")
 
 
@@ -240,9 +242,9 @@ def test_ord():
     assert_equal(ord("🔥"), 128293)
 
     # Make sure they work in the parameter domain too
-    alias single_byte = ord("A")
+    comptime single_byte = ord("A")
     assert_equal(single_byte, 65)
-    alias single_byte2 = ord("!")
+    comptime single_byte2 = ord("!")
     assert_equal(single_byte2, 33)
 
     # TODO: change these to parameter domain when it work.
@@ -277,24 +279,11 @@ def test_string_indexing():
     assert_equal("!", str[-1])
     assert_equal("H", str[-len(str)])
     assert_equal("llo Mojo!!", str[2:])
-    assert_equal("lo Mojo!", str[3:-1:1])
+    assert_equal("lo Mojo!", str[3:-1])
     assert_equal("lo Moj", str[3:-3])
 
-    assert_equal("!!ojoM olleH", str[::-1])
-
-    assert_equal("leH", str[2::-1])
-
-    assert_equal("!oo le", str[::-2])
-
-    assert_equal("", str[:-1:-2])
-    assert_equal("", str[-50::-1])
     assert_equal("Hello Mojo!!", str[-50::])
-    assert_equal("!!ojoM olleH", str[:-50:-1])
     assert_equal("Hello Mojo!!", str[:50:])
-    assert_equal("H", str[::50])
-    assert_equal("!", str[::-50])
-    assert_equal("!", str[50::-50])
-    assert_equal("H", str[-50::50])
 
 
 def test_atol():
@@ -684,7 +673,7 @@ def test_rfind():
 
 
 def test_split():
-    alias S = StaticString
+    comptime S = StaticString
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
@@ -765,8 +754,8 @@ def test_split():
 
 
 def test_splitlines():
-    alias S = String
-    alias L = List[StaticString]
+    comptime S = String
+    comptime L = List[StaticString]
 
     # Test with no line breaks
     assert_equal(S("hello world").splitlines(), [StaticString("hello world")])
@@ -810,13 +799,13 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(bytes=List[UInt8](0xC2, 0x85))
-    var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
-    var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
+    var next_line = String(bytes=Span[Byte]([0xC2, 0x85]))
+    var unicode_line_sep = String(bytes=Span[Byte]([0xE2, 0x80, 0xA8]))
+    var unicode_paragraph_sep = String(bytes=Span[Byte]([0xE2, 0x80, 0xA9]))
 
     for u in [next_line^, unicode_line_sep^, unicode_paragraph_sep^]:
         item = StaticString("").join(
-            "hello", u, "world", u, "mojo", u, "language", u
+            Span(["hello", u, "world", u, "mojo", u, "language", u])
         )
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -963,26 +952,28 @@ def test_strip():
     # with default strip chars
     var empty_string = String()
     assert_true(empty_string.strip() == "")
-    alias comp_empty_string_stripped = String(String().strip())
+    comptime comp_empty_string_stripped = String(String().strip())
     assert_true(comp_empty_string_stripped == "")
 
     var space_string = " \t\n\r\v\f  "
     assert_true(space_string.strip() == "")
-    alias comp_space_string_stripped = String(" \t\n\r\v\f  ".strip())
+    comptime comp_space_string_stripped = String(" \t\n\r\v\f  ".strip())
     assert_true(comp_space_string_stripped == "")
 
     var str0 = "     n "
     assert_true(str0.strip() == "n")
-    alias comp_str0_stripped = String("     n ".strip())
+    comptime comp_str0_stripped = String("     n ".strip())
     assert_true(comp_str0_stripped == "n")
 
     var str1 = "string"
     assert_true(str1.strip() == "string")
-    alias comp_str1_stripped = String("string".strip())
+    comptime comp_str1_stripped = String("string".strip())
     assert_true(comp_str1_stripped == "string")
 
     var str2 = " \t\n\t\v\fsomething \t\n\t\v\f"
-    alias comp_str2_stripped = String(" \t\n\t\v\fsomething \t\n\t\v\f".strip())
+    comptime comp_str2_stripped = String(
+        " \t\n\t\v\fsomething \t\n\t\v\f".strip()
+    )
     assert_true(str2.strip() == "something")
     assert_true(comp_str2_stripped == "something")
 
@@ -990,14 +981,14 @@ def test_strip():
     var str3 = "mississippi"
     assert_true(str3.strip("mips") == "")
     assert_true(str3.strip("mip") == "ssiss")
-    alias comp_str3_stripped = String("mississippi".strip("mips"))
+    comptime comp_str3_stripped = String("mississippi".strip("mips"))
     assert_true(comp_str3_stripped == "")
 
     var str4 = " \n mississippimississippi \n "
     assert_true(str4.strip(" ") == "\n mississippimississippi \n")
     assert_true(str4.strip("\nmip ") == "ssissippimississ")
 
-    alias comp_str4_stripped = String(
+    comptime comp_str4_stripped = String(
         " \n mississippimississippi \n ".strip(" ")
     )
     assert_true(comp_str4_stripped == "\n mississippimississippi \n")
@@ -1072,7 +1063,6 @@ def test_removesuffix():
 
 def test_intable():
     assert_equal(Int("123"), 123)
-    assert_equal(Int("10", base=8), 8)
 
     with assert_raises():
         _ = Int("hi")
@@ -1198,29 +1188,29 @@ def test_string_char_slices_iter():
 
 def test_format_args():
     with assert_raises(contains="Index -1 not in *args"):
-        _ = "{-1} {0}".format("First")
+        _ = String("{-1} {0}").format("First")
 
     with assert_raises(contains="Index 1 not in *args"):
-        _ = "A {0} B {1}".format("First")
+        _ = String("A {0} B {1}").format("First")
 
     with assert_raises(contains="Index 1 not in *args"):
-        _ = "A {1} B {0}".format("First")
+        _ = String("A {1} B {0}").format("First")
 
     with assert_raises(contains="Index 1 not in *args"):
-        _ = "A {1} B {0}".format()
+        _ = String("A {1} B {0}").format()
 
     with assert_raises(
         contains="Automatic indexing require more args in *args"
     ):
-        _ = "A {} B {}".format("First")
+        _ = String("A {} B {}").format("First")
 
     with assert_raises(
         contains="Cannot both use manual and automatic indexing"
     ):
-        _ = "A {} B {1}".format("First", "Second")
+        _ = String("A {} B {1}").format("First", "Second")
 
     with assert_raises(contains="Index first not in kwargs"):
-        _ = "A {first} B {second}".format(1, 2)
+        _ = String("A {first} B {second}").format(1, 2)
 
     var s = " {} , {} {} !".format("Hello", "Beautiful", "World")
     assert_equal(s, " Hello , Beautiful World !")
@@ -1229,28 +1219,28 @@ def test_format_args():
         return "there is a single curly " + c + " left unclosed or unescaped"
 
     with assert_raises(contains=curly("{")):
-        _ = "{ {}".format(1)
+        _ = String("{ {}").format(1)
 
     with assert_raises(contains=curly("{")):
-        _ = "{ {0}".format(1)
+        _ = String("{ {0}").format(1)
 
     with assert_raises(contains=curly("{")):
-        _ = "{}{".format(1)
+        _ = String("{}{").format(1)
 
     with assert_raises(contains=curly("}")):
-        _ = "{}}".format(1)
+        _ = String("{}}").format(1)
 
     with assert_raises(contains=curly("{")):
-        _ = "{} {".format(1)
+        _ = String("{} {").format(1)
 
     with assert_raises(contains=curly("{")):
-        _ = "{".format(1)
+        _ = String("{").format(1)
 
     with assert_raises(contains=curly("}")):
-        _ = "}".format(1)
+        _ = String("}").format(1)
 
     with assert_raises(contains=""):
-        _ = "{}".format()
+        _ = String("{}").format()
 
     assert_equal("}}".format(), "}")
     assert_equal("{{".format(), "{")
@@ -1365,26 +1355,26 @@ def test_format_conversion_flags():
         in "{4} {0!r} {3} {1!r}".format(a, b, c, d, True)
     )
 
-    with assert_raises(contains='Conversion flag "x" not recognised.'):
-        _ = "{!x}".format(1)
+    with assert_raises(contains='Conversion flag "x" not recognized.'):
+        _ = String("{!x}").format(1)
 
     with assert_raises(contains="Empty conversion flag."):
-        _ = "{!}".format(1)
+        _ = String("{!}").format(1)
 
-    with assert_raises(contains='Conversion flag "rs" not recognised.'):
-        _ = "{!rs}".format(1)
+    with assert_raises(contains='Conversion flag "rs" not recognized.'):
+        _ = String("{!rs}").format(1)
 
-    with assert_raises(contains='Conversion flag "r123" not recognised.'):
-        _ = "{!r123}".format(1)
+    with assert_raises(contains='Conversion flag "r123" not recognized.'):
+        _ = String("{!r123}").format(1)
 
-    with assert_raises(contains='Conversion flag "r!" not recognised.'):
-        _ = "{!r!}".format(1)
+    with assert_raises(contains='Conversion flag "r!" not recognized.'):
+        _ = String("{!r!}").format(1)
 
-    with assert_raises(contains='Conversion flag "x" not recognised.'):
-        _ = "{0!x}".format(1)
+    with assert_raises(contains='Conversion flag "x" not recognized.'):
+        _ = String("{0!x}").format(1)
 
-    with assert_raises(contains='Conversion flag "r:d" not recognised.'):
-        _ = "{!r:d}".format(1)
+    with assert_raises(contains='Conversion flag "r:d" not recognized.'):
+        _ = String("{!r:d}").format(1)
 
 
 def test_float_conversion():
@@ -1437,29 +1427,30 @@ def test_uninit_ctor():
     assert_equal(s3._is_inline(), False)
 
 
-def test_unsafe_cstr():
-    var s1: String = "ab"
-    var p1 = s1.unsafe_cstr_ptr()
-    assert_equal(p1[0], ord("a"))
-    assert_equal(p1[1], ord("b"))
-    assert_equal(p1[2], 0)
+def test_as_c_string_slice_empty():
+    var string = String()
+    var cslice = string.as_c_string_slice()
+    assert_equal(len(string), 0)
+    assert_true(string.capacity() > 0)
+    # Safe to index `len(string)` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    assert_true(string.as_bytes() == cslice.as_bytes())
 
-    var s2: String = ""
-    var p2 = s2.unsafe_cstr_ptr()
-    assert_equal(p2[0], 0)
 
-    var s3 = String()
-    var p3 = s3.unsafe_cstr_ptr()
-    assert_equal(p3[0], 0)
+def test_as_c_string_slice_inlined():
+    var string = String("a")
+    var cslice = string.as_c_string_slice()
+    # Safe to index `len(string)` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    assert_true(string.as_bytes() == cslice.as_bytes())
 
-    # 24 bytes is out of line.
-    var s4: String = "abcdefghabcdefghabcdefgh"
-    var p4 = s4.unsafe_cstr_ptr()
-    assert_equal(p4[0], ord("a"))
-    assert_equal(p4[1], ord("b"))
-    assert_equal(p4[2], ord("c"))
-    assert_equal(p4[23], ord("h"))
-    assert_equal(p4[24], 0)
+
+def test_as_c_string_slice_heap():
+    var string = String("abcdefghijlmnopqrstuvwxyz")
+    var cslice = string.as_c_string_slice()
+    # Safe to index `len(string)` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    assert_true(string.as_bytes() == cslice.as_bytes())
 
 
 def test_variadic_ctors():
@@ -1495,14 +1486,8 @@ def test_sso():
     assert_equal(s._has_nul_terminator(), False)
     assert_equal(s, "hellof")
 
-    # Check that unsafe_cstr_ptr adds the nul terminator at the end.
-    var ptr = s.unsafe_cstr_ptr()
-    assert_equal(s._has_nul_terminator(), True)
-    assert_equal(ptr[len(s) - 1], ord("f"))
-    assert_equal(ptr[len(s)], 0)
-
     # Test StringLiterals behave the same when above SSO capacity.
-    alias long = "hellohellohellohellohellohellohellohellohellohellohello"
+    comptime long = "hellohellohellohellohellohellohellohellohellohellohello"
     s = String(long)
     assert_equal(len(s), 55)
     assert_equal(s.capacity(), 55)
@@ -1517,12 +1502,6 @@ def test_sso():
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), False)
     assert_equal(s, long + "f")
-
-    # Check that unsafe_cstr_ptr adds the nul terminator at the end.
-    ptr = s.unsafe_cstr_ptr()
-    assert_equal(s._has_nul_terminator(), True)
-    assert_equal(ptr[len(s) - 1], ord("f"))
-    assert_equal(ptr[len(s)], 0)
 
     # Empty strings are stored inline.
     s = String()
@@ -1539,7 +1518,9 @@ def test_sso():
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = UInt((Int(String.INLINE_CAPACITY) * 2 + 7) & ~7)
+    comptime expected_capacity = UInt(
+        (Int(String.INLINE_CAPACITY) * 2 + 7) & ~7
+    )
     assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 
@@ -1561,13 +1542,13 @@ def test_sso():
 
 
 def test_copyinit():
-    alias sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
     @parameter
     for sizes_index in range(len(sizes)):
-        alias current_size = sizes[sizes_index]
+        comptime current_size = sizes[sizes_index]
         x = ""
         for i in range(current_size):
             x += String(i)[0]

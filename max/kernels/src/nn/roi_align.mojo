@@ -27,9 +27,9 @@ struct Weighted2DPoint[dtype: DType]:
 
     var y: Int
     var x: Int
-    var w: Scalar[dtype]
+    var w: Scalar[Self.dtype]
 
-    fn __init__(out self, y: Int, x: Int, weight: Scalar[dtype]):
+    fn __init__(out self, y: Int, x: Int, weight: Scalar[Self.dtype]):
         self.y = y
         self.x = x
         self.w = weight
@@ -175,7 +175,7 @@ fn roi_align_nhwc[
 
     var pooled_height = output_height
     var pooled_width = output_width
-    alias offset = Float32(0.5 if aligned else 0.0)
+    comptime offset = Float32(0.5 if aligned else 0.0)
 
     for ri in range(n_regions):
         # Region coordinates and batch index

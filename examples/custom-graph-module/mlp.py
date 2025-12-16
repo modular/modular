@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/build-an-mlp-block.mdx
+# DOC: max/develop/build-an-mlp-block.mdx
 
 from __future__ import annotations
 

@@ -53,7 +53,7 @@ def simple_shift(ctx: SHMEMContext):
     var target_device = ctx.enqueue_create_buffer[DType.int32](1)
     var target_host = ctx.enqueue_create_host_buffer[DType.int32](1)
 
-    ctx.enqueue_function[simple_shift_kernel](
+    ctx.enqueue_function_checked[simple_shift_kernel, simple_shift_kernel](
         target_device, grid_dim=1, block_dim=1
     )
     ctx.barrier_all()

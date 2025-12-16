@@ -1,6 +1,9 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _NO_ASAN = [
+    "test_dict.mojo",  # TODO(MOCO-2852): Compilation timeout on ASAN
     "test_list.mojo",  # TODO(MOCO-2316): Takes too long to compile
 ]
 
@@ -58,7 +61,7 @@ _EXPECT_CRASH = [
         expect_crash = src in _EXPECT_CRASH,
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -76,7 +79,7 @@ _EXPECT_CRASH = [
         data = [src],  # NOTE: some tests attempt to read their source files
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -92,7 +95,7 @@ _EXPECT_CRASH = [
         size = "large",
         srcs = [src],
         mojo_deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
         # mojo build flags specified in RUN lines.
         # Asan has different exit codes due to signal handling.

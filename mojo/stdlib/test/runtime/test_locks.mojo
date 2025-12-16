@@ -24,8 +24,8 @@ def test_basic_lock():
     var lock = BlockingSpinLock()
     var rawCounter = 0
     var counter = Atomic[DType.int64](0)
-    alias maxI = 100
-    alias maxJ = 100
+    comptime maxI = 100
+    comptime maxJ = 100
 
     @parameter
     async fn inc():

@@ -41,7 +41,7 @@ struct DummyHasher(Hasher):
 
 
 @fieldwise_init
-struct SomeHashableStruct(Hashable, ImplicitlyCopyable, Movable):
+struct SomeHashableStruct(Hashable, ImplicitlyCopyable):
     var _value: Int64
 
     fn __hash__[H: Hasher](self, mut hasher: H):
@@ -129,7 +129,7 @@ def test_update_with_bytes():
     assert_equal(hasher^.finish(), 58)
 
 
-alias _hash_with_hasher = hash[
+comptime _hash_with_hasher = hash[
     _, HasherType = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 ]
 

@@ -67,21 +67,21 @@ def test_kernel_1[
     benchmark: Bool = False,
     prob_shape: IndexList[3] = IndexList[3](1, 1, 1),
 ](ctx: DeviceContext):
-    alias M = prob_shape[0]
-    alias N = prob_shape[1]
-    alias K = prob_shape[2]
+    comptime M = prob_shape[0]
+    comptime N = prob_shape[1]
+    comptime K = prob_shape[2]
 
     print(M, "x", N, "x", K)
 
     var a = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
     random(a.tensor[update=False]())
-    alias b_layout = Layout.row_major(K, N)
+    comptime b_layout = Layout.row_major(K, N)
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
     random(b.tensor[update=False]())
     var c = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
     var c_ref = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
 
-    alias b_vendor_layout = Layout.row_major(
+    comptime b_vendor_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var b_vendor = ManagedLayoutTensor[b_type, b_vendor_layout](ctx)
@@ -100,11 +100,11 @@ def test_kernel_1[
             for n in range(N):
                 b_vendor_tensor[k, n] = b_tensor[k, n]
 
-    alias kernel = kernel_1[
+    comptime kernel = kernel_1[
         M, N, K, transpose_b=transpose_b, BLOCKSIZE=BLOCKSIZE
     ]
     # Use 1D thread block for memory coalescing
-    alias BLOCKSIZE = 32
+    comptime BLOCKSIZE = 32
 
     ctx.enqueue_function_checked[kernel, kernel](
         c.device_tensor(),
@@ -117,8 +117,8 @@ def test_kernel_1[
     ctx.synchronize()
 
     if benchmark:
-        alias num_runs = 50
-        alias num_warmup = 20
+        comptime num_runs = 50
+        comptime num_warmup = 20
 
         @always_inline
         @parameter

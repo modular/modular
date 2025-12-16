@@ -1,9 +1,10 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "pipelines",
     srcs = glob(["*.py"]),
-    imports = ["../../.."],
     deps = [
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",

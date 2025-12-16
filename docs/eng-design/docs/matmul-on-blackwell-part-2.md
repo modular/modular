@@ -1066,7 +1066,7 @@ The UMMA descriptor `idesc` follows a similar pattern, except it’s 32 bits and
 encodes other information about the sparsity, data type, whether the matrices
 are transposed or not, and other information. We refer the readers to our
 [source
-code](https://github.com/modular/modular/blob/386dba7051e1455b145ff2d33bcadfeb971ac7ed/mojo/stdlib/stdlib/gpu/mma_sm100.mojo#L737)
+code](https://github.com/modular/modular/blob/386dba7051e1455b145ff2d33bcadfeb971ac7ed/mojo/stdlib/std/gpu/mma_sm100.mojo#L737)
 for the detailed encoding.
 
 ### Swizzling mathematics

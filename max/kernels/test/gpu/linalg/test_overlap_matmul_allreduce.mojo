@@ -15,7 +15,8 @@ from sys import size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from comm.allreduce import MAX_GPUS, Signal, allreduce
+from comm.allreduce import allreduce
+from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
@@ -24,7 +25,7 @@ from testing import assert_almost_equal
 
 from utils import IndexList, StaticTuple
 
-alias overlap_with_dpl = True
+comptime overlap_with_dpl = True
 
 
 fn overlap_matmul_allreduce_test[
@@ -123,9 +124,9 @@ fn overlap_matmul_allreduce_test[
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # Create the list of NDBuffers.
-    alias A_static_shape = DimList(m.dim, k.dim)
-    alias B_static_shape = DimList(n.dim, k.dim)
-    alias C_static_shape = DimList(m.dim, n.dim)
+    comptime A_static_shape = DimList(m.dim, k.dim)
+    comptime B_static_shape = DimList(n.dim, k.dim)
+    comptime C_static_shape = DimList(m.dim, n.dim)
     var As = InlineArray[
         NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape], ngpus
     ](fill={})
@@ -248,13 +249,13 @@ fn overlap_matmul_allreduce_test[
 
 def main():
     # Test hyperparameters.
-    alias test_dtypes = (DType.bfloat16,)
-    alias test_gpu_counts = (4, 8)
+    comptime test_dtypes = (DType.bfloat16,)
+    comptime test_gpu_counts = (4, 8)
 
     # Run tests for each configuration.
     @parameter
     for gpu_idx in range(len(test_gpu_counts)):
-        alias num_gpus = test_gpu_counts[gpu_idx]
+        comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() < num_gpus:
             break
 
@@ -266,7 +267,7 @@ def main():
         # Test all cases for this configuration.
         @parameter
         for dtype_idx in range(len(test_dtypes)):
-            alias dtype = test_dtypes[dtype_idx]
+            comptime dtype = test_dtypes[dtype_idx]
 
             overlap_matmul_allreduce_test[
                 dtype=dtype,

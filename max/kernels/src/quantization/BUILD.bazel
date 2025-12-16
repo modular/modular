@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 mojo_library(
     name = "quantization",
@@ -8,7 +8,7 @@ mojo_library(
     docs_base_path = "kernels",
     validate_missing_docs = False,
     deps = [
-        "@mojo//:linalg",
-        "@mojo//:stdlib",
+        "//max:linalg",
+        "@mojo//:std",
     ],
 )

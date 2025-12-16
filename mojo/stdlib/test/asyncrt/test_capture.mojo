@@ -11,19 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from gpu import *
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 
 fn vec_func[
     op: fn (Float32, Float32) capturing [_] -> Float32
 ](
-    in0: UnsafePointer[Float32],
-    in1: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+    in0: UnsafePointer[Float32, MutAnyOrigin],
+    in1: UnsafePointer[Float32, MutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
@@ -47,7 +46,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     print("-")
     print("run_captured_func(", captured, "):")
 
-    alias length = 1024
+    comptime length = 1024
 
     var in0 = ctx.enqueue_create_buffer[DType.float32](length)
     var in1 = ctx.enqueue_create_buffer[DType.float32](length)
@@ -66,7 +65,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
 
     var block_dim = 32
 
-    alias kernel = vec_func[add_with_captured]
+    comptime kernel = vec_func[add_with_captured]
     # TODO(MAXPLAT-335): Make compile_function_experimental support this case.
     var kernel_func = ctx.compile_function_checked[kernel, kernel]()
     ctx.enqueue_function_checked(
@@ -83,7 +82,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
         for i in range(length):
             if i < 10:
                 print("at index", i, "the value is", out_host[i])
-            expect_eq(
+            assert_equal(
                 out_host[i],
                 i + 2 + captured,
                 String("at index ", i, " the value is ", out_host[i]),

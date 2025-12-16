@@ -26,7 +26,7 @@ def test_tuple_basic():
     assert_equal(len(IntTuple(1, IntTuple(2, 3))), 2)
 
     # Test single integer value tuple
-    alias t0: IntTuple = 5
+    comptime t0: IntTuple = 5
     assert_equal(String(t0), "5")
 
     # Test simple tuple compositions
@@ -56,10 +56,10 @@ def test_tuple_basic():
     # assert_equal(String(tt), "(5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 81)")
 
     # Tests interaction with compiler interpreter
-    alias works = IntTuple(IntTuple(2, 2), IntTuple(2, 3))
+    comptime works = IntTuple(IntTuple(2, 2), IntTuple(2, 3))
     assert_equal(String(works), "((2, 2), (2, 3))")
 
-    alias works_too = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
+    comptime works_too = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
     assert_equal(String(works_too), "((2, 2), (2, 2))")
 
     # Tests IntTuple equality operations
@@ -80,16 +80,16 @@ def test_tuple_basic():
 def test_tuple_slicing():
     print("== test_tuple_slicing")
 
-    alias tr = IntTuple(0, 1, 2, 3, 4)
-    alias sl0 = String(tr[-1])
-    alias sl1 = String(tr[-2])
-    alias sl2 = String(tr[1:4])
-    alias sl3 = String(tr[1:5:2])
-    alias sl4 = String(tr[:])
-    alias sl5 = String(tr[:5:2])
-    alias sl6 = String(tr[-3:])
-    alias sl7 = String(tr[-3:-1])
-    alias sl8 = String(tr[:-1])
+    comptime tr = IntTuple(0, 1, 2, 3, 4)
+    comptime sl0 = String(tr[-1])
+    comptime sl1 = String(tr[-2])
+    comptime sl2 = String(tr[1:4])
+    comptime sl3 = String(tr[1:5:2])
+    comptime sl4 = String(tr[:])
+    comptime sl5 = String(tr[:5:2])
+    comptime sl6 = String(tr[-3:])
+    comptime sl7 = String(tr[-3:-1])
+    comptime sl8 = String(tr[:-1])
     assert_equal(sl0, "4")
     assert_equal(sl1, "3")
     assert_equal(sl2, "(1, 2, 3)")
@@ -104,15 +104,15 @@ def test_tuple_slicing():
 def test_tuple_basic_ops():
     print("== test_tuple_basic_ops")
 
-    alias p0 = product(2)
-    alias p1 = product(IntTuple(3, 2))
-    alias p2 = product(IntTuple(IntTuple(2, 3), 4))
-    alias p3 = product([[2, 3], 4])
+    comptime p0 = product(2)
+    comptime p1 = product(IntTuple(3, 2))
+    comptime p2 = product(IntTuple(IntTuple(2, 3), 4))
+    comptime p3 = product([[2, 3], 4])
     assert_equal(String(p0), "2")
     assert_equal(String(p1), "6")
     assert_equal(String(p2), "24")
 
-    alias tt = IntTuple(
+    comptime tt = IntTuple(
         5,
         7,
         2,
@@ -120,34 +120,34 @@ def test_tuple_basic_ops():
         42,
     )
 
-    alias f = flatten(tt)
+    comptime f = flatten(tt)
     assert_equal(String(f), "(5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42)")
 
-    alias tt_unknown = to_unknown(tt)
+    comptime tt_unknown = to_unknown(tt)
     assert_equal(
         String(tt_unknown),
         "(-1, -1, -1, (-1, -1, (-1, -1, (-1, -1, -1))), -1)",
     )
 
-    alias ts = IntTuple(0, 1, IntTuple(-2, 3), -4)
+    comptime ts = IntTuple(0, 1, IntTuple(-2, 3), -4)
     assert_equal(String(abs(ts)), "(0, 1, (2, 3), 4)")
 
-    alias tm = IntTuple(0, 1, IntTuple(2, 3), 4)
+    comptime tm = IntTuple(0, 1, IntTuple(2, 3), 4)
     assert_equal(String(mul(tm, 4)), "(0, 4, (8, 12), 16)")
 
-    alias s = sum(IntTuple(IntTuple(2, 3), 4))
+    comptime s = sum(IntTuple(IntTuple(2, 3), 4))
     assert_equal(s, 9)
 
-    alias ip1 = inner_product(IntTuple(2), IntTuple(3))
-    alias ip2 = inner_product(IntTuple(1, 2), IntTuple(3, 2))
-    alias ip3 = inner_product(
+    comptime ip1 = inner_product(IntTuple(2), IntTuple(3))
+    comptime ip2 = inner_product(IntTuple(1, 2), IntTuple(3, 2))
+    comptime ip3 = inner_product(
         IntTuple(IntTuple(2, 3), 4), IntTuple(IntTuple(2, 1), 2)
     )
     assert_equal(ip1, 6)
     assert_equal(ip2, 7)
     assert_equal(ip3, 15)
 
-    alias m0 = tuple_max(
+    comptime m0 = tuple_max(
         IntTuple(1, 2, 3, IntTuple(4, 5), IntTuple(7, 8, 9, 10))
     )
     assert_equal(m0, 10)
@@ -168,13 +168,13 @@ def test_tuple_basic_ops():
 def test_sorted():
     print("== test_sorted")
 
-    alias t0 = sorted(IntTuple(7, 3, 1, 5, 0))
+    comptime t0 = sorted(IntTuple(7, 3, 1, 5, 0))
     assert_equal(String(t0), "(0, 1, 3, 5, 7)")
 
-    alias t1 = sorted(IntTuple(IntTuple(7, 3), IntTuple(1, 5, 0)))
+    comptime t1 = sorted(IntTuple(IntTuple(7, 3), IntTuple(1, 5, 0)))
     assert_equal(String(t1), "((1, 5, 0), (7, 3))")
 
-    alias t2 = sorted(IntTuple(IntTuple(7, 3), IntTuple(1, IntTuple(5, 0))))
+    comptime t2 = sorted(IntTuple(IntTuple(7, 3), IntTuple(1, IntTuple(5, 0))))
     assert_equal(String(t2), "((1, (5, 0)), (7, 3))")
 
     assert_true(IntTuple(4, 6, 8) < IntTuple(5, 6, 7))
@@ -237,14 +237,14 @@ def test_prefix_product():
 def test_crd2idx():
     print("== test_crd2idx")
 
-    alias cx0 = crd2idx(IntTuple(0, 0), IntTuple(4, 2), IntTuple(1, 4))
-    alias cx1 = crd2idx(IntTuple(1, 0), IntTuple(4, 2), IntTuple(1, 4))
-    alias cx2 = crd2idx(IntTuple(2, 0), IntTuple(4, 2), IntTuple(1, 4))
-    alias cx3 = crd2idx(IntTuple(3, 0), IntTuple(4, 2), IntTuple(1, 4))
-    alias cx4 = crd2idx(IntTuple(0, 1), IntTuple(4, 2), IntTuple(1, 4))
-    alias cx5 = crd2idx(IntTuple(1, 1), IntTuple(4, 2), IntTuple(1, 4))
-    alias cx6 = crd2idx(IntTuple(2, 1), IntTuple(4, 2), IntTuple(1, 4))
-    alias cx7 = crd2idx(IntTuple(3, 1), IntTuple(4, 2), IntTuple(1, 4))
+    comptime cx0 = crd2idx(IntTuple(0, 0), IntTuple(4, 2), IntTuple(1, 4))
+    comptime cx1 = crd2idx(IntTuple(1, 0), IntTuple(4, 2), IntTuple(1, 4))
+    comptime cx2 = crd2idx(IntTuple(2, 0), IntTuple(4, 2), IntTuple(1, 4))
+    comptime cx3 = crd2idx(IntTuple(3, 0), IntTuple(4, 2), IntTuple(1, 4))
+    comptime cx4 = crd2idx(IntTuple(0, 1), IntTuple(4, 2), IntTuple(1, 4))
+    comptime cx5 = crd2idx(IntTuple(1, 1), IntTuple(4, 2), IntTuple(1, 4))
+    comptime cx6 = crd2idx(IntTuple(2, 1), IntTuple(4, 2), IntTuple(1, 4))
+    comptime cx7 = crd2idx(IntTuple(3, 1), IntTuple(4, 2), IntTuple(1, 4))
     assert_equal(cx0, 0)
     assert_equal(cx1, 1)
     assert_equal(cx2, 2)
@@ -258,14 +258,14 @@ def test_crd2idx():
 def test_idx2crd():
     print("== test_idx2crd")
 
-    alias xc0 = idx2crd(0, IntTuple(4, 2), IntTuple(1, 4))
-    alias xc1 = idx2crd(1, IntTuple(4, 2), IntTuple(1, 4))
-    alias xc2 = idx2crd(2, IntTuple(4, 2), IntTuple(1, 4))
-    alias xc3 = idx2crd(3, IntTuple(4, 2), IntTuple(1, 4))
-    alias xc4 = idx2crd(4, IntTuple(4, 2), IntTuple(1, 4))
-    alias xc5 = idx2crd(5, IntTuple(4, 2), IntTuple(1, 4))
-    alias xc6 = idx2crd(6, IntTuple(4, 2), IntTuple(1, 4))
-    alias xc7 = idx2crd(7, IntTuple(4, 2), IntTuple(1, 4))
+    comptime xc0 = idx2crd(0, IntTuple(4, 2), IntTuple(1, 4))
+    comptime xc1 = idx2crd(1, IntTuple(4, 2), IntTuple(1, 4))
+    comptime xc2 = idx2crd(2, IntTuple(4, 2), IntTuple(1, 4))
+    comptime xc3 = idx2crd(3, IntTuple(4, 2), IntTuple(1, 4))
+    comptime xc4 = idx2crd(4, IntTuple(4, 2), IntTuple(1, 4))
+    comptime xc5 = idx2crd(5, IntTuple(4, 2), IntTuple(1, 4))
+    comptime xc6 = idx2crd(6, IntTuple(4, 2), IntTuple(1, 4))
+    comptime xc7 = idx2crd(7, IntTuple(4, 2), IntTuple(1, 4))
     assert_equal(String(xc0), "(0, 0)")
     assert_equal(String(xc1), "(1, 0)")
     assert_equal(String(xc2), "(2, 0)")
@@ -278,13 +278,13 @@ def test_idx2crd():
 
 def test_weakly_congruent():
     print("== test_weakly_congruent")
-    alias a = IntTuple(1)
-    alias b = IntTuple(2)
+    comptime a = IntTuple(1)
+    comptime b = IntTuple(2)
 
     assert_true(weakly_congruent(a, a))
 
-    alias a0 = IntTuple(IntTuple(1))
-    alias b0 = IntTuple(IntTuple(2))
+    comptime a0 = IntTuple(IntTuple(1))
+    comptime b0 = IntTuple(IntTuple(2))
     assert_true(weakly_congruent(a, a0))
     assert_true(weakly_congruent(b, b0))
     assert_true(weakly_congruent(a, b0))
@@ -297,27 +297,27 @@ def test_weakly_congruent():
     assert_true(weakly_congruent(b0, b0))
     assert_true(weakly_congruent(a0, b0))
 
-    alias a1 = IntTuple(1, 1)
+    comptime a1 = IntTuple(1, 1)
     assert_true(weakly_congruent(a, a1))
     assert_false(weakly_congruent(a0, a1))
     assert_true(weakly_congruent(a1, a1))
 
-    alias a2 = IntTuple(1, IntTuple(1, 1))
+    comptime a2 = IntTuple(1, IntTuple(1, 1))
     assert_true(weakly_congruent(a, a2))
     assert_false(weakly_congruent(a0, a2))
     assert_true(weakly_congruent(a1, a2))
 
-    alias b1 = IntTuple(2, 2)
+    comptime b1 = IntTuple(2, 2)
     assert_true(weakly_congruent(b, b1))
     assert_false(weakly_congruent(b0, b1))
     assert_true(weakly_congruent(a1, b1))
 
-    alias b2 = IntTuple(2, IntTuple(2, 2))
+    comptime b2 = IntTuple(2, IntTuple(2, 2))
     assert_false(weakly_congruent(a2, b0))
     assert_false(weakly_congruent(a2, a1))
     assert_true(weakly_congruent(a2, b2))
 
-    alias b3 = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
+    comptime b3 = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
     assert_false(weakly_congruent(a0, b3))
     assert_true(weakly_congruent(a1, b3))
     assert_true(weakly_congruent(a2, b3))
@@ -325,9 +325,9 @@ def test_weakly_congruent():
 
 def test_weakly_compatible():
     print("== test_weakly_compatible")
-    alias a = IntTuple(16)
-    alias b = IntTuple(12)
-    alias c = IntTuple(8)
+    comptime a = IntTuple(16)
+    comptime b = IntTuple(12)
+    comptime c = IntTuple(8)
     assert_true(weakly_compatible(a, a))
     assert_true(weakly_compatible(b, b))
     assert_true(weakly_compatible(c, c))
@@ -335,7 +335,7 @@ def test_weakly_compatible():
     assert_false(weakly_compatible(a, c))
     assert_true(weakly_compatible(c, a))
 
-    alias a0 = IntTuple(IntTuple(16))
+    comptime a0 = IntTuple(IntTuple(16))
     assert_true(weakly_compatible(a0, a0))
     assert_true(weakly_compatible(a, a0))
     assert_false(weakly_compatible(a0, a))
@@ -344,21 +344,21 @@ def test_weakly_compatible():
     assert_false(weakly_compatible(b, a0))
     assert_false(weakly_compatible(a0, b))
 
-    alias a1 = IntTuple(2, 8)
+    comptime a1 = IntTuple(2, 8)
     assert_true(weakly_compatible(a1, a1))
     assert_true(weakly_compatible(a, a1))
     assert_false(weakly_compatible(a0, a1))
     assert_false(weakly_compatible(a1, a0))
     assert_true(weakly_compatible(a1, IntTuple(2, IntTuple(2, 4))))
 
-    alias a2 = IntTuple(IntTuple(2, 8))
+    comptime a2 = IntTuple(IntTuple(2, 8))
     assert_true(weakly_compatible(a2, a2))
     assert_true(weakly_compatible(a, a2))
     assert_true(weakly_compatible(c, a2))
     assert_true(weakly_compatible(a0, a2))
     assert_false(weakly_compatible(a2, a0))
 
-    alias a3 = IntTuple(IntTuple(2, IntTuple(4, 2)))
+    comptime a3 = IntTuple(IntTuple(2, IntTuple(4, 2)))
     assert_true(weakly_compatible(a3, a3))
     assert_true(weakly_compatible(a, a3))
     assert_true(weakly_compatible(c, a3))
@@ -370,16 +370,16 @@ def test_weakly_compatible():
 
 def test_fill_like():
     print("== test_fill_like")
-    alias t1 = IntTuple(2, IntTuple(2, 2), IntTuple(1))
-    alias t2 = IntTuple(IntTuple(3, 4), 2, IntTuple(3))
+    comptime t1 = IntTuple(2, IntTuple(2, 2), IntTuple(1))
+    comptime t2 = IntTuple(IntTuple(3, 4), 2, IntTuple(3))
     assert_equal(fill_like(t1, 0), IntTuple(0, IntTuple(0, 0), IntTuple(0)))
     assert_equal(fill_like(t2, 1), IntTuple(IntTuple(1, 1), 1, IntTuple(1)))
 
 
 def test_reverse():
     print("== test_reverse")
-    alias t1 = IntTuple(2, IntTuple(3, 4))
-    alias t2 = IntTuple(IntTuple(1, 2), 3, 4, IntTuple(5, 6, 7))
+    comptime t1 = IntTuple(2, IntTuple(3, 4))
+    comptime t2 = IntTuple(IntTuple(1, 2), 3, 4, IntTuple(5, 6, 7))
     assert_equal(reverse(t1), IntTuple(IntTuple(4, 3), 2))
     assert_equal(reverse(t2), IntTuple(IntTuple(7, 6, 5), 4, 3, IntTuple(2, 1)))
 

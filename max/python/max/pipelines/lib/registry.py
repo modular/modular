@@ -19,15 +19,18 @@ import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
+    EmbeddingsContext,
+    Pipeline,
     PipelineTask,
     PipelineTokenizer,
+    TextGenerationContext,
     TextGenerationRequest,
 )
 from max.nn.kv_cache import KVCacheStrategy
@@ -49,19 +52,17 @@ from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
 from .pipeline_variants.text_generation import TextGenerationPipeline
-from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .speculative_decoding import (
+    EAGLESpeculativeDecodingPipeline,
+    SpeculativeMethod,
+    StandaloneSpeculativeDecodingPipeline,
+)
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
-PipelineTypes = Union[  # noqa: UP007 (This breaks a mypy check, unsure why)
-    TextGenerationPipeline[TextContext],
-    EmbeddingsPipeline,
-    AudioGeneratorPipeline,
-    SpeculativeDecodingTextGenerationPipeline,
-    SpeechTokenGenerationPipeline,
-]
+PipelineTypes: TypeAlias = Pipeline[Any, Any]
 
 
 def get_pipeline_for_task(
@@ -69,13 +70,31 @@ def get_pipeline_for_task(
 ) -> (
     type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline]
-    | type[SpeculativeDecodingTextGenerationPipeline]
     | type[AudioGeneratorPipeline]
+    | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
+    | type[EAGLESpeculativeDecodingPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
-        if pipeline_config.draft_model_config is not None:
-            return SpeculativeDecodingTextGenerationPipeline
+        if pipeline_config._speculative_config is not None:
+            assert (
+                pipeline_config._speculative_config.speculative_method
+                is not None
+            )
+            if (
+                pipeline_config._speculative_config.speculative_method
+                == SpeculativeMethod.STANDALONE
+            ):
+                return StandaloneSpeculativeDecodingPipeline
+            elif (
+                pipeline_config._speculative_config.speculative_method
+                == SpeculativeMethod.EAGLE
+            ):
+                return EAGLESpeculativeDecodingPipeline
+            else:
+                raise ValueError(
+                    f"Unsupported speculative method: {pipeline_config._speculative_config.speculative_method}"
+                )
         else:
             return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -84,10 +103,6 @@ def get_pipeline_for_task(
         return AudioGeneratorPipeline
     elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
         return SpeechTokenGenerationPipeline
-    else:
-        raise ValueError(
-            f"PipelineTask ({task}) does not have supported Pipeline"
-        )
 
 
 @dataclass(frozen=False)
@@ -155,6 +170,13 @@ class SupportedArchitecture:
     default_weights_format: WeightsFormat
     """The weights format expected by the `pipeline_model`."""
 
+    context_type: type[TextGenerationContext] | type[EmbeddingsContext]
+    """The context class type that this architecture uses for managing request state and inputs.
+
+    This should be a class (not an instance) that implements either the `TextGenerationContext`
+    or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
+    """
+
     rope_type: RopeType = RopeType.none
     """The type of RoPE (Rotary Position Embedding) used by the model."""
 
@@ -195,10 +217,17 @@ class SupportedArchitecture:
 
     supports_empty_batches: bool = False
     """Whether the architecture can handle empty batches during inference.
-    
+
     When set to True, the pipeline can process requests with zero-sized batches
     without errors. This is useful for certain execution modes and expert parallelism.
     Most architectures do not require empty batch support and should leave this as False.
+    """
+
+    requires_max_batch_context_length: bool = False
+    """Whether the architecture requires a max batch context length to be specified.
+
+    If True and max_batch_context_length is not specified, we will default to
+    the max sequence length of the model.
     """
 
     @property
@@ -236,7 +265,7 @@ class PipelineRegistry:
         self.architectures[architecture.name] = architecture
 
     def retrieve_architecture(
-        self, huggingface_repo: HuggingFaceRepo
+        self, huggingface_repo: HuggingFaceRepo, use_module_v3: bool = False
     ) -> SupportedArchitecture | None:
         # Retrieve model architecture names
         hf_config = self.get_active_huggingface_config(
@@ -251,6 +280,8 @@ class PipelineRegistry:
             return None
 
         for architecture_name in architecture_names:
+            if use_module_v3:
+                architecture_name += "_ModuleV3"
             if architecture_name in self.architectures:
                 return self.architectures[architecture_name]
 
@@ -352,7 +383,8 @@ class PipelineRegistry:
             arch = self.architectures[override_architecture]
         else:
             arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                use_module_v3=pipeline_config.use_module_v3,
             )
 
         if arch is None:
@@ -409,7 +441,8 @@ class PipelineRegistry:
             arch = self.architectures[override_architecture]
         else:
             arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                use_module_v3=pipeline_config.use_module_v3,
             )
 
         # Load HuggingFace Config
@@ -462,15 +495,34 @@ class PipelineRegistry:
             ],
             tokenizer,
         )
+
+        # For speculative decoding, retrieve draft model's architecture
+        factory_kwargs: dict[str, Any] = {
+            "pipeline_config": pipeline_config,
+            "pipeline_model": arch.pipeline_model,
+            "eos_token_id": tokenizer.eos,
+            "weight_adapters": arch.weight_adapters,
+            "tokenizer": typed_tokenizer,
+        }
+
+        # If using speculative decoding, add draft model-specific parameters
+        if pipeline_config.draft_model_config is not None:
+            draft_arch = self.retrieve_architecture(
+                huggingface_repo=pipeline_config.draft_model_config.huggingface_weight_repo,
+                use_module_v3=pipeline_config.use_module_v3,
+            )
+            if draft_arch is None:
+                raise ValueError(
+                    f"MAX-Optimized architecture not found for draft model "
+                    f"'{pipeline_config.draft_model_config.model_path}'"
+                )
+            factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
+            factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters
+
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
             functools.partial(  # type: ignore
-                pipeline_class,
-                pipeline_config=pipeline_config,
-                pipeline_model=arch.pipeline_model,
-                eos_token_id=tokenizer.eos,
-                weight_adapters=arch.weight_adapters,
-                tokenizer=typed_tokenizer,
+                pipeline_class, **factory_kwargs
             ),
         )
 
@@ -480,6 +532,35 @@ class PipelineRegistry:
             )
 
         return tokenizer, pipeline_factory
+
+    def retrieve_context_type(
+        self, pipeline_config: PipelineConfig
+    ) -> type[TextGenerationContext] | type[EmbeddingsContext]:
+        """Retrieve the context class type associated with the architecture for the given pipeline configuration.
+
+        The context type defines how the pipeline manages request state and inputs during
+        model execution. Different architectures may use different context implementations
+        that adhere to either the TextGenerationContext or EmbeddingsContext protocol.
+
+        Args:
+            pipeline_config: The configuration for the pipeline.
+
+        Returns:
+            The context class type associated with the architecture, which implements
+            either the TextGenerationContext or EmbeddingsContext protocol.
+
+        Raises:
+            ValueError: If no supported architecture is found for the given model repository.
+        """
+        if arch := self.retrieve_architecture(
+            huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+            use_module_v3=pipeline_config.use_module_v3,
+        ):
+            return arch.context_type
+
+        raise ValueError(
+            f"MAX Optimized architecture not supported for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+        )
 
     def retrieve_pipeline_task(
         self, pipeline_config: PipelineConfig
@@ -497,7 +578,8 @@ class PipelineRegistry:
             ValueError: If no supported architecture is found for the given model repository.
         """
         if arch := self.retrieve_architecture(
-            huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+            huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+            use_module_v3=pipeline_config.use_module_v3,
         ):
             return arch.task
 

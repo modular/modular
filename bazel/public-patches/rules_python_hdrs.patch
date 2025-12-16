@@ -1,0 +1,12 @@
+diff --git a/python/private/hermetic_runtime_repo_setup.bzl b/python/private/hermetic_runtime_repo_setup.bzl
+index 46495e49..ba2d015c 100644
+--- a/python/private/hermetic_runtime_repo_setup.bzl
++++ b/python/private/hermetic_runtime_repo_setup.bzl
+@@ -126,6 +126,7 @@ def define_hermetic_runtime_toolchain_impl(
+     )
+     cc_library(
+         name = "python_headers",
++        hdrs = [":includes"],
+         deps = [":python_headers_abi3"] + select({
+             "@bazel_tools//src/conditions:windows": [":interface"],
+             "//conditions:default": [],

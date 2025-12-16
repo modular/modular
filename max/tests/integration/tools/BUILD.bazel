@@ -1,0 +1,108 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "debugging_utils",
+    testonly = True,
+    srcs = [
+        "debugging_utils.py",
+    ],
+    deps = [
+        ":generate_llm_logits",
+        "//max/python/max/driver",
+        "//max/python/max/entrypoints",
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "create_pipelines",
+    testonly = True,
+    srcs = ["create_pipelines.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
+        "//max/tests/integration/pipelines/python/internvl:torch_utils",
+        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
+        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("einops"),  # Req'd by replit
+        requirement("timm"),  # Required by InternVL.
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("peft"),  # Required for LoRA support
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+    ],
+)
+
+modular_py_library(
+    name = "run_models",
+    testonly = True,
+    srcs = ["run_models.py"],
+    imports = ["."],
+    deps = [
+        ":create_pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("requests"),
+    ],
+)
+
+modular_py_binary(
+    name = "generate_llm_logits",
+    testonly = True,
+    srcs = [
+        "generate_llm_logits.py",
+    ],
+    data = [
+        "//max/tests/integration/pipelines/python/llama3/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/pipelines/python/llama3/testdata"
+        ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    imports = ["."],
+    main = "generate_llm_logits.py",
+    deps = [
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
+        "//max/tests/integration/pipelines/python/internvl:torch_utils",
+        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
+        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("click"),
+        requirement("einops"),  # Req'd by replit
+        requirement("pillow"),
+        requirement("requests"),
+        requirement("timm"),  # Required by InternVL.
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("peft"),  # Required for LoRA support
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        ":create_pipelines",
+        ":run_models",
+    ] + select({
+        "//:has_gpu": [
+            requirement("gptqmodel"),
+            requirement("datasets"),  # Required by gptqmodel
+            requirement("device-smi"),  # Required by gptqmodel
+            requirement("logbar"),  # Required by gptqmodel
+            requirement("threadpoolctl"),  # Required by gptqmodel
+            requirement("tokenicer"),  # Required by gptqmodel
+            requirement("optimum"),
+        ],
+        "//conditions:default": [],
+    }),
+)

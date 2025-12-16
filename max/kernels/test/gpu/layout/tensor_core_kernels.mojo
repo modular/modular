@@ -156,18 +156,18 @@ def test_load_and_mma_and_multiply_operands[
     shape: IndexList[3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext):
-    alias M = shape[0]
-    alias N = shape[1]
-    alias K = shape[2]
+    comptime M = shape[0]
+    comptime N = shape[1]
+    comptime K = shape[2]
 
     var lhs = ManagedLayoutTensor[dtype, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor())
-    alias rhs_layout = Layout.row_major(
+    comptime rhs_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var rhs = ManagedLayoutTensor[dtype, rhs_layout](ctx)
     arange(rhs.tensor())
-    alias mma_load_and_print_kernel_fn = mma_load_and_multiply[
+    comptime mma_load_and_print_kernel_fn = mma_load_and_multiply[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
 
@@ -188,13 +188,13 @@ def test_load_and_mma_and_multiply_operands[
 def test_write_res_operand[
     dst_dtype: DType, dtype: DType, shape: IndexList[3]
 ](ctx: DeviceContext):
-    alias M = shape[0]
-    alias N = shape[1]
-    alias K = shape[2]
+    comptime M = shape[0]
+    comptime N = shape[1]
+    comptime K = shape[2]
 
     var dst = ManagedLayoutTensor[dst_dtype, Layout.row_major(M, N)](ctx)
     _ = dst.tensor().fill(0)
-    alias mma_load_and_print_kernel_fn = mma_write_operand_kernel[
+    comptime mma_load_and_print_kernel_fn = mma_write_operand_kernel[
         dst_dtype, dtype, dst.layout, shape
     ]
     ctx.enqueue_function_checked[
@@ -233,13 +233,13 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
-    alias thread_layout = Layout.row_major(WARP_SIZE // 4, 4)
+    comptime thread_layout = Layout.row_major(WARP_SIZE // 4, 4)
     copy_dram_to_sram[thread_layout=thread_layout](a_smem, lhs)
     copy_dram_to_sram[thread_layout=thread_layout](b_smem, rhs)
     barrier()
 
-    alias a_simd_width = mma.a_reg_type.size
-    alias b_simd_width = mma.b_reg_type.size
+    comptime a_simd_width = mma.a_reg_type.size
+    comptime b_simd_width = mma.b_reg_type.size
     var a_reg_tile = (
         LayoutTensor[
             dtype,
@@ -325,16 +325,16 @@ def test_load_operands_ldmatrix[
     shape: IndexList[3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext):
-    alias M = shape[0]
-    alias N = shape[1]
-    alias K = shape[2]
+    comptime M = shape[0]
+    comptime N = shape[1]
+    comptime K = shape[2]
 
     var lhs = ManagedLayoutTensor[dtype, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor())
     var rhs = ManagedLayoutTensor[dtype, Layout.row_major(K, N)](ctx)
     arange(rhs.tensor())
 
-    alias mma_load_and_print_kernel_fn = mma_load_and_print_operands_kernel_ldmatrix[
+    comptime mma_load_and_print_kernel_fn = mma_load_and_print_operands_kernel_ldmatrix[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
     ctx.enqueue_function_checked[

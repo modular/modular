@@ -46,21 +46,23 @@ struct Tensor[
     rank: Int, //,
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank],
-](ImplicitlyCopyable, Movable):
-    alias size = Int(static_spec.shape.product())
+](ImplicitlyCopyable):
+    comptime size = Int(Self.static_spec.shape.product())
 
-    var slice: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-    var buffer: DeviceBuffer[dtype]
+    var slice: ManagedTensorSlice[
+        io_spec = Self.io_spec, static_spec = Self.static_spec
+    ]
+    var buffer: DeviceBuffer[Self.dtype]
 
     fn __init__(out self, ctx: DeviceContext) raises:
-        self.buffer = ctx.enqueue_create_buffer[dtype](Self.size)
+        self.buffer = ctx.enqueue_create_buffer[Self.dtype](Self.size)
 
         self.slice = ManagedTensorSlice[
-            io_spec=io_spec, static_spec=static_spec
+            io_spec = Self.io_spec, static_spec = Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
-            Self.static_spec.shape.into_index_list[rank](),
-            Self.static_spec.strides.into_index_list[rank](),
+            Self.static_spec.shape.into_index_list[Self.rank](),
+            Self.static_spec.strides.into_index_list[Self.rank](),
         )
 
     fn rand(self) raises -> Self:
@@ -73,7 +75,7 @@ struct Tensor[
             iota(host_buffer.unsafe_ptr(), Self.size)
             return self
 
-    fn fill(self, value: Scalar[dtype]) raises -> Self:
+    fn fill(self, value: Scalar[Self.dtype]) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             var ptr = host_buffer.unsafe_ptr()
             for i in range(Self.size):
@@ -99,16 +101,16 @@ struct Tensor[
 
 def top_k():
     print("Running top-k benchmark...")
-    alias batch_size = 30_000
-    alias K = 32
-    alias els = batch_size * K
-    alias rank = 2
-    alias val_dtype = DType.float32
-    alias idx_dtype = DType.int32
+    comptime batch_size = 30_000
+    comptime K = 32
+    comptime els = batch_size * K
+    comptime rank = 2
+    comptime val_dtype = DType.float32
+    comptime idx_dtype = DType.int32
 
-    alias shape = DimList(batch_size, K)
-    alias val_spec = StaticTensorSpec[val_dtype, rank](shape)
-    alias idx_spec = StaticTensorSpec[idx_dtype, rank](shape)
+    comptime shape = DimList(batch_size, K)
+    comptime val_spec = StaticTensorSpec[val_dtype, rank](shape)
+    comptime idx_spec = StaticTensorSpec[idx_dtype, rank](shape)
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -119,7 +121,7 @@ def top_k():
     var b = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, els * log2_floor(K))
     var elements = ThroughputMeasure(BenchMetric.elements, els)
-    var metrics = List(flops, elements)
+    var metrics = [flops, elements]
 
     @parameter
     def top_k_cpu():
@@ -153,18 +155,18 @@ def top_k():
 
 def matmul():
     print("Running matmul benchmark...")
-    alias M = 1028
-    alias K = 1028
-    alias N = 1028
+    comptime M = 1028
+    comptime K = 1028
+    comptime N = 1028
 
-    alias rank = 2
-    alias dtype = DType.float32
+    comptime rank = 2
+    comptime dtype = DType.float32
 
-    alias FLOPS = M * N * (2 * K - 1)
+    comptime FLOPS = M * N * (2 * K - 1)
 
-    alias a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
-    alias b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
-    alias c_spec = StaticTensorSpec[dtype, rank](DimList(M, N))
+    comptime a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
+    comptime b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
+    comptime c_spec = StaticTensorSpec[dtype, rank](DimList(M, N))
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -175,7 +177,7 @@ def matmul():
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
-    var metrics = List(flops, elements)
+    var metrics = [flops, elements]
 
     @parameter
     def matmul_cpu():
@@ -218,18 +220,18 @@ def matmul():
 
 def tensor_core_mma():
     print("Running tensor core mma benchmark...")
-    alias M = 4096
-    alias N = 4096
-    alias K = 4096
+    comptime M = 4096
+    comptime N = 4096
+    comptime K = 4096
 
-    alias rank = 2
-    alias dtype = DType.float16
+    comptime rank = 2
+    comptime dtype = DType.float16
 
-    alias FLOPS = M * N * (2 * K - 1)
+    comptime FLOPS = M * N * (2 * K - 1)
 
-    alias a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
-    alias b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
-    alias c_spec = StaticTensorSpec[DType.float32, rank](DimList(M, N))
+    comptime a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
+    comptime b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
+    comptime c_spec = StaticTensorSpec[DType.float32, rank](DimList(M, N))
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -240,9 +242,9 @@ def tensor_core_mma():
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
-    var metrics = List(flops, elements)
+    var metrics = [flops, elements]
 
-    alias perform_validation = False
+    comptime perform_validation = False
 
     @parameter
     if perform_validation:
@@ -286,21 +288,21 @@ def tensor_core_mma():
 
 
 def run_conv1d[impl: StaticString]():
-    alias nBatches = 128
-    alias nChannels = 8
-    alias sequenceLength = 1024 * 128
-    alias kWidth = 4
-    alias kNThreads = 128
-    alias kNElts = 4
+    comptime nBatches = 128
+    comptime nChannels = 8
+    comptime sequenceLength = 1024 * 128
+    comptime kWidth = 4
+    comptime kNThreads = 128
+    comptime kNElts = 4
 
-    alias dtype = DType.bfloat16
+    comptime dtype = DType.bfloat16
 
-    alias x_spec = StaticTensorSpec[dtype, 3](
+    comptime x_spec = StaticTensorSpec[dtype, 3](
         DimList(nBatches, nChannels, sequenceLength)
     )
-    alias w_spec = StaticTensorSpec[dtype, 2](DimList(nChannels, kWidth))
-    alias b_spec = StaticTensorSpec[dtype, 1](DimList(nChannels))
-    alias xx2Dshape = StaticTensorSpec[dtype, 2](
+    comptime w_spec = StaticTensorSpec[dtype, 2](DimList(nChannels, kWidth))
+    comptime b_spec = StaticTensorSpec[dtype, 1](DimList(nChannels))
+    comptime xx2Dshape = StaticTensorSpec[dtype, 2](
         DimList(nBatches * nChannels, sequenceLength)
     )
     runOnCPU = False

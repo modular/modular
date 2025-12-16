@@ -19,8 +19,8 @@ from testing import *
 
 # TODO: rewrite c-layout comments according to the new struct.
 def test_maybe_partial_load():
-    alias simd_size = 4
-    alias size = simd_size + 1
+    comptime simd_size = 4
+    comptime size = simd_size + 1
 
     var a = InlineArray[Float32, size](uninitialized=True)
     for i in range(size):
@@ -38,7 +38,7 @@ def test_maybe_partial_load():
 def test_accumulate[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
 ]():
-    alias type = DType.float32
+    comptime type = DType.float32
 
     # A: [[ 0.0, 0.0 ],
     #     [ 1.0, 1.0 ],
@@ -53,8 +53,8 @@ def test_accumulate[
     # 4 x 0.0 denotes 0.0, 0.0, 0.0, 0.0
     # B: [[4 x 0.0, 4 x 0.0, 4 x 1.0, 4 x 1.0],
     #     [4 x 2.0, 4 x 2.0, 4 x 3.0, 4 x 3.0]]
-    alias b_size = 2 * num_cols * simd_size * length
-    alias kernel_width = num_cols * simd_size
+    comptime b_size = 2 * num_cols * simd_size * length
+    comptime kernel_width = num_cols * simd_size
     var b = InlineArray[Scalar[type], b_size](uninitialized=True)
 
     for i in range(2 * length):
@@ -130,7 +130,7 @@ def test_accumulate[
 def test_accumulate_with_offsets[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
 ]():
-    alias type = DType.float32
+    comptime type = DType.float32
 
     # A: [[ 0.0, 0.0 ],
     #     [ 1.0, 1.0 ],
@@ -145,8 +145,8 @@ def test_accumulate_with_offsets[
     # 4 x 0.0 denotes 0.0, 0.0, 0.0, 0.0
     # B: [[4 x 0.0, 4 x 0.0, 4 x 1.0, 4 x 1.0],
     #     [4 x 2.0, 4 x 2.0, 4 x 3.0, 4 x 3.0]]
-    alias b_size = 2 * num_cols * simd_size * length
-    alias kernel_width = num_cols * simd_size
+    comptime b_size = 2 * num_cols * simd_size * length
+    comptime kernel_width = num_cols * simd_size
     var b = InlineArray[Scalar[type], b_size](uninitialized=True)
 
     for i in range(2 * length):
@@ -157,7 +157,9 @@ def test_accumulate_with_offsets[
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
     var a_base_stack = InlineArray[Int32, num_rows](uninitialized=True)
-    var a_base_offsets = NDBuffer[DType.int32, 1, _, num_rows](a_base_stack)
+    var a_base_offsets = NDBuffer[DType.int32, 1, _, num_rows](
+        a_base_stack.unsafe_ptr()
+    )
     a_base_offsets[0] = 0
     a_base_offsets[1] = length
 
@@ -242,12 +244,12 @@ def test_accumulate_with_offsets[
 def test_load_store[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
 ]():
-    alias type = DType.float32
-    alias size = simd_size + 1
-    alias residual = 1
-    alias row_size = num_cols * simd_size + residual
-    alias one_vec = SIMD[type, simd_size](1.0)
-    alias residual_vec = SIMD[type, simd_size](-1.0, 0.0, 0.0, 0.0)
+    comptime type = DType.float32
+    comptime size = simd_size + 1
+    comptime residual = 1
+    comptime row_size = num_cols * simd_size + residual
+    comptime one_vec = SIMD[type, simd_size](1.0)
+    comptime residual_vec = SIMD[type, simd_size](-1.0, 0.0, 0.0, 0.0)
 
     var a = InlineArray[Scalar[type], num_rows * row_size](uninitialized=True)
 

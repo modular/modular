@@ -8,6 +8,8 @@ load(
     "strip_prefix",
 )
 
+package(default_visibility = ["//max:consumers"])
+
 _RUN_BENCHMARKS = [
     "algorithm/parallelize_overhead.mojo",
     "nn/bench_gather_reduce.mojo",
@@ -19,43 +21,13 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "gpu/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "gpu/bench_ep_dispatch.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
+    "gpu/bench_ep_combine.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
     "nn/bench_gather_reduce.mojo": ["@platforms//:incompatible"],  # TODO(KERN-464): re-enable and remove this tag
     "gpu/bench_gemv.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2412
-    "gpu/bench_pdl_copy.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2415
-    "gpu/bench_normalization.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "gpu/bench_elementwise.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "gpu/bench_mha.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "gpu/bench_bmm.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "gpu/bench_kv_cache_ragged_rope.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "gpu/bench_reduce.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "gpu/bench_stencil.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "gpu/bench_kv_cache_ragged_qkv_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -68,18 +40,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "gpu/bench_kv_cache_ragged_flash_attention.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "gpu/bench_kv_cache_ragged_flash_attention_paged.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "gpu/bench_grouped_matmul.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2477
     "gpu/bench_topk.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -105,11 +65,11 @@ _CPU_TESTS = glob(
         enable_assertions = False,
         target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:comm",
-            "@mojo//:internal_utils",
-            "@mojo//:layout",
-            "@mojo//:nn",
-            "@mojo//:stdlib",
+            "//max:comm",
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:nn",
+            "@mojo//:std",
         ],
     )
     for src in _CPU_TESTS
@@ -132,11 +92,11 @@ _CPU_TESTS = glob(
         enable_assertions = False,
         target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:comm",
-            "@mojo//:internal_utils",
-            "@mojo//:layout",
-            "@mojo//:nn",
-            "@mojo//:stdlib",
+            "//max:comm",
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:nn",
+            "@mojo//:std",
         ],
     )
     for src in _RUN_BENCHMARKS
@@ -146,14 +106,23 @@ _CPU_TESTS = glob(
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
+        data = select({
+            "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
+            "//conditions:default": [],
+        }),
         enable_assertions = False,
+        env = select({
+            "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+            "//conditions:default": {},
+        }),
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:comm",
-            "@mojo//:internal_utils",
-            "@mojo//:layout",
-            "@mojo//:nn",
-            "@mojo//:stdlib",
+            "//max:comm",
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:nn",
+            "//max:shmem",
+            "@mojo//:std",
         ],
     )
     for src in glob(["gpu/*.mojo"])
@@ -183,7 +152,6 @@ pkg_files(
     ),
     prefix = "kernel-benchmark",
     strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )
 
 pkg_filegroup(
@@ -192,5 +160,4 @@ pkg_filegroup(
         ":kernel_benchmark_input_files",
         "//max/kernels/benchmarks/autotune:autotune_files",
     ],
-    visibility = ["//visibility:public"],
 )

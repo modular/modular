@@ -132,8 +132,8 @@ def test_split_k_reduce_rank3[
     ctx.enqueue_copy(work_space_device, work_space_host)
     ctx.enqueue_copy(epilogue_data_device, epilogue_data_host)
 
-    alias c_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    alias work_space_layout = Layout.row_major(
+    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime work_space_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
 
@@ -166,7 +166,7 @@ def test_split_k_reduce_rank3[
 
     ctx.enqueue_copy(c_host, c_device)
 
-    alias rtol = 1e-4 if c_type is DType.float32 else 1e-2
+    comptime rtol = 1e-4 if c_type is DType.float32 else 1e-2
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i], rtol=rtol):
             print(

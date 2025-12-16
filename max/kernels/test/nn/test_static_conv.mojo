@@ -43,12 +43,12 @@ fn test[
 ]() raises:
     # Output Shape.
     # fmt: off
-    alias HO = (H + pad_h[0] + pad_h[1] - dilation[1] * (R - 1) - 1) // stride[0] + 1
-    alias WO = (W + pad_w[0] + pad_w[1] - dilation[0] * (S - 1) - 1) // stride[1] + 1
+    comptime HO = (H + pad_h[0] + pad_h[1] - dilation[1] * (R - 1) - 1) // stride[0] + 1
+    comptime WO = (W + pad_w[0] + pad_w[1] - dilation[0] * (S - 1) - 1) // stride[1] + 1
     # fmt: on
-    alias type = DType.float32
-    alias simd_size = simd_width_of[type]()
-    alias num_groups = 1
+    comptime type = DType.float32
+    comptime simd_size = simd_width_of[type]()
+    comptime num_groups = 1
 
     var conv_shape = ConvShape[2](
         n=N,
@@ -75,8 +75,8 @@ fn test[
     rand[type](input_ptr, N * H * W * C)
     rand[type](filter_ptr, R * S * C * F)
 
-    alias layout_4d = Layout.row_major[4]()
-    alias layout_5d = Layout.row_major[5]()
+    comptime layout_4d = Layout.row_major[4]()
+    comptime layout_5d = Layout.row_major[5]()
     var input = LayoutTensor[type, Layout.row_major(N, H, W, C)](input_ptr)
     var filter = LayoutTensor[type, layout_4d](
         filter_ptr, RuntimeLayout[layout_4d].row_major(Index(R, S, C, F))
@@ -90,8 +90,8 @@ fn test[
     )
 
     # Pre-packed filter for dynamic shapes.
-    alias micro_kernel_width_default = get_direct_conv_micro_kernel_width()
-    alias micro_kernel_f_size_default = micro_kernel_width_default * simd_size
+    comptime micro_kernel_width_default = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_f_size_default = micro_kernel_width_default * simd_size
     var rounded_F_dynamic = (
         ceildiv(F, micro_kernel_f_size_default) * micro_kernel_f_size_default
     )
@@ -114,7 +114,7 @@ fn test[
     pack_filter(filter, packed_filter_dynamic, num_groups)
 
     # Conv attributes.
-    alias conv_attr_dynamic = ConvInfoStatic[2]()
+    comptime conv_attr_dynamic = ConvInfoStatic[2]()
 
     ConvDirectNHWC[
         input.layout,  # input shape
@@ -135,20 +135,20 @@ fn test[
         conv_shape,
     )
 
-    alias conv_attr_static = ConvInfoStatic[2](
+    comptime conv_attr_static = ConvInfoStatic[2](
         IntTuple(pad_h[0], pad_w[0], pad_h[1], pad_w[1]),
         IntTuple(stride[0], stride[1]),
         IntTuple(dilation[0], dilation[1]),
         num_groups,
     )
 
-    alias micro_kernel_shape = get_micro_kernel_shape[
+    comptime micro_kernel_shape = get_micro_kernel_shape[
         2, WO, F, conv_attr_static, simd_size
     ]()
-    alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
-    alias num_f_micro_tiles = ceildiv(F, micro_kernel_f_size)
-    alias rounded_F_static = num_f_micro_tiles * micro_kernel_f_size
-    alias packed_filter_layout = Layout.row_major(
+    comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
+    comptime num_f_micro_tiles = ceildiv(F, micro_kernel_f_size)
+    comptime rounded_F_static = num_f_micro_tiles * micro_kernel_f_size
+    comptime packed_filter_layout = Layout.row_major(
         num_f_micro_tiles, R, S, C, micro_kernel_f_size
     )
     var packed_filter_ptr_static = UnsafePointer[Scalar[type]].alloc(

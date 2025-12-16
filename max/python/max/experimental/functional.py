@@ -13,7 +13,7 @@
 
 """Provides experimental functional APIs for tensor operations.
 
-.. warning::
+.. caution::
     This module contains experimental APIs that are subject to change or
     removal in future versions. Use with caution in production environments.
 
@@ -123,6 +123,9 @@ cast = functional(ops.cast)
 #: Splits a tensor into chunks along a dimension.
 #: See :func:`max.graph.ops.chunk` for details.
 chunk = functional(ops.chunk)
+#: Multiply two complex-valued tensors.
+#: See :func:`max.graph.ops.complex.mul` for details.
+complex_mul = functional(ops.complex.mul)
 #: Concatenates a list of tensors along an axis.
 #: See :func:`max.graph.ops.concat` for details.
 concat = functional(ops.concat)
@@ -189,6 +192,9 @@ greater_equal = functional(ops.greater_equal)
 #: Creates a Hann window.
 #: See :func:`max.graph.ops.hann_window` for details.
 hann_window = functional(ops.hann_window)
+#: Applies inplace custom operation.
+#: See :func:`max.graph.ops.inplace_custom` for details.
+inplace_custom = functional(ops.inplace_custom)
 #: Computes the inverse real FFT.
 #: See :func:`max.graph.ops.irfft` for details.
 irfft = functional(ops.irfft)

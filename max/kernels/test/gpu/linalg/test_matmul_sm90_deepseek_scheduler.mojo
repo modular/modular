@@ -21,12 +21,12 @@ from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from utils.index import Index
 
 # Helper to calculate wgmma_shape based on dtype and BN
-alias wgmma_shape[BN: Int, a_dtype: DType] = Index(
+comptime wgmma_shape[BN: Int, a_dtype: DType] = Index(
     64, BN, 32
 ) if a_dtype is DType.float8_e4m3fn else Index(64, BN, 16)
 
 # Helper to calculate num_consumer based on BM
-alias get_num_consumer[BM: Int] = 1 if BM == 64 else 2
+comptime get_num_consumer[BM: Int] = 1 if BM == 64 else 2
 
 
 def main():

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from sys import external_call, size_of
+from sys import external_call, size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -111,8 +111,8 @@ fn create_error_async_values_and_destruct_error(
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
         async_len,
-        err.unsafe_cstr_ptr(),
-        err.byte_length(),
+        err.data.as_string_slice().unsafe_ptr(),
+        err.data.byte_length(),
     )
 
 
@@ -492,7 +492,6 @@ fn mgp_tensor_extract_tensor_spec[
 @register_internal("mgp.tensor.extract.buffer")
 @no_inline
 fn mgp_tensor_extract_buffer[
-    tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
 ](buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin]) -> NDBuffer[
@@ -645,7 +644,7 @@ fn mgp_buffer_concat[
     inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], *_],
     call_ctx: DeviceContextPtr,
 ) raises:
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var output_lt = LayoutTensor[DType.int8, layout_1d](
         output.data,
         RuntimeLayout[layout_1d].row_major(IndexList[1](len(output))),
@@ -900,6 +899,11 @@ fn DTypeFloat4E2M1TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float4_e2m1fn._mlir_value
 
 
+@register_internal("float8_e8m0fnu")
+fn DTypeFloat8E8M0FnuTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+    return DType.float8_e8m0fnu._mlir_value
+
+
 @register_internal("float8_e5m2")
 fn DTypeFloat8E5M2TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e5m2._mlir_value
@@ -1112,7 +1116,7 @@ fn build_static_tensor_specs[
     address_space: AddressSpace,
     exclusive: Bool,
 ) -> StaticTensorSpec[dtype, rank]:
-    alias SpecType = StaticTensorSpec[dtype, rank]
+    comptime SpecType = StaticTensorSpec[dtype, rank]
 
     return SpecType(
         shape, strides, alignment, address_space, exclusive, None, None, None
@@ -1336,7 +1340,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
 
 
 @register_passable("trivial")
-struct MyIntReg(ImplicitlyCopyable, Movable):
+struct MyIntReg(ImplicitlyCopyable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1350,7 +1354,7 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
 
 
 @register_passable
-struct MyIntReg2(ImplicitlyCopyable, Movable):
+struct MyIntReg2(ImplicitlyCopyable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1394,15 +1398,15 @@ fn test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
 # AnyAsyncValueRef is a C++ struct. The runtime passes a reference to it.
 # Therefore, we alias it to OpaquePointer which will have the same bitwidth as
 # C++'s pointers.
-alias AnyAsyncValueRefPtr = OpaquePointer
+comptime AnyAsyncValueRefPtr = OpaquePointer
 
 # TensorBufferRef is a C++ struct. Primitives should always manipulate a
 # reference to it. Therefore, it is modeled here as an OpaquePointer.
-alias TensorBufferRefPtr = OpaquePointer
+comptime TensorBufferRefPtr = OpaquePointer
 
 # StateContext is a C++ struct. Primitives should always manipulate a reference
 # to it. Therefore, it is modeled here as an OpaquePointer.
-alias StateContextRef = OpaquePointer
+comptime StateContextRef = OpaquePointer
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1418,13 +1422,12 @@ fn mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
 
 @register_internal("mogg.async.__del__")
 @no_inline
-fn mogg_async_del(async_ptr: AnyAsyncValueRefPtr):
+fn mogg_async_del(async_ptr: UnsafePointer[AnyAsyncValueRefPtr], size: Int):
     """
     Decrement the AnyAsyncValueRef. Typically called at the end of a kernel for
     all input and output operands.
     """
-    var ptr = UnsafePointer(to=async_ptr)
-    external_call["MGP_RT_DestructAsyncRefs", NoneType](1, ptr, False)
+    external_call["MGP_RT_DestructAsyncRefs", NoneType](size, async_ptr, False)
 
 
 @register_internal("mogg.async.unpack")
@@ -1433,9 +1436,11 @@ fn mogg_async_unpack[T: AnyTrivialRegType](async_ptr: AnyAsyncValueRefPtr) -> T:
     """
     Returns the value stored in the AnyAsyncValueRef.
     """
-    return external_call["MGP_RT_GetValueFromAsync", OpaquePointer](
+    var ptr = external_call["MGP_RT_GetValueFromAsync", OpaquePointer](
         async_ptr
-    ).bitcast[T]()[0]
+    ).bitcast[T]()
+
+    return UnsafePointer[T].__getitem__(ptr, 0)
 
 
 struct MoggAsyncPackHelper:
@@ -1486,6 +1491,32 @@ struct MoggAsyncPackHelper:
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
+    fn __init__(
+        out self, var data: Some[Movable], async_ptr: AnyAsyncValueRefPtr
+    ):
+        """
+        Packs a generic Movable value into the asynchronous context.
+        Used for opaque types like SIMDPair.
+        """
+        comptime Type = type_of(data)
+
+        # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
+        @always_inline("nodebug")
+        fn erased_destructor(ptr: UnsafePointer[UInt8]):
+            ptr.bitcast[Type]().destroy_pointee()
+
+        var dst_ptr = external_call[
+            "MGP_RT_MojoValueAllocateBuffer", UnsafePointer[UInt8]
+        ](size_of[Type](), align_of[Type]())
+
+        dst_ptr.bitcast[Type]().init_pointee_move(data^)
+
+        external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
+            dst_ptr,
+            erased_destructor,
+            async_ptr,
+        )
+
 
 @register_internal("mogg.async.pack")
 @no_inline
@@ -1513,20 +1544,54 @@ fn mogg_async_pack_borrow(
     external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
 
 
-@register_internal("mogg.async.pack.untracked")
 @no_inline
-fn mogg_async_pack_untracked(
+fn mogg_async_pack_borrow_v2[
+    buffer_rank: Int,
+    dtype: DType, //,
+    spec_rank: Int,
+    is_tensor: Bool,
+](
     borrower: AnyAsyncValueRefPtr,
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
+    mem: TensorBufferRefPtr,
 ):
     """
-    Borrows an async value. This differs from `mogg.async.pack.borrow` in that
-    it does not actually borrow anything. Instead, it assumes the input data is
-    managed externally. This is used for constants which must stay alive across
-    iterations and destroyed at the very end only.
+    Borrows an async value. This differs from `mogg.async.pack` which assigns a
+    value to the given async value in that it's a simple refcount increment.
     """
-    external_call["MGP_RT_BufferUntracked", NoneType](
-        borrower, buffer.data, len(buffer)
+
+    @parameter
+    if is_tensor:
+        external_call["MGP_RT_TensorBorrowV2", NoneType](
+            borrower,
+            buffer.data,
+            bytecount_with_dtype[dtype](buffer.dynamic_shape),
+            spec_rank,
+            UnsafePointer(to=buffer.dynamic_shape.data),
+            dtype,
+            mem,
+        )
+    else:
+        external_call["MGP_RT_BufferBorrowV2", NoneType](
+            borrower, buffer.data, len(buffer), mem
+        )
+
+
+@no_inline
+fn mogg_async_pack_borrow_v2[
+    spec_rank: Int,  # unused
+    is_tensor: Bool,  # unused
+](
+    borrower: AnyAsyncValueRefPtr,
+    buffer: TensorBufferRefPtr,
+    mem: TensorBufferRefPtr,
+):
+    """
+    Borrows an async value. This differs from `mogg.async.pack` which assigns a
+    value to the given async value in that it's a simple refcount increment.
+    """
+    external_call["MGP_RT_BufferBorrowForTensorRef", NoneType](
+        borrower, buffer, mem
     )
 
 
@@ -1557,7 +1622,7 @@ fn mogg_tensor_init[
     """
     Helper for constructing a ManagedTensorSlice.
     """
-    alias static_spec = StaticTensorSpec[dtype, rank](
+    comptime static_spec = StaticTensorSpec[dtype, rank](
         static_shape,
         static_stride,
         alignment,
@@ -1588,8 +1653,8 @@ fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
     """Indicates to the C++ runtime that the kernel has failed."""
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
-        err.unsafe_cstr_ptr(),
-        err.byte_length(),
+        err.data.as_string_slice().unsafe_ptr(),
+        err.data.byte_length(),
     )
 
 
@@ -1641,14 +1706,30 @@ fn tmp_reshape_contiguous_buffer[
 fn tmp_mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
-) -> TensorBufferRefPtr:
+) -> Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr]:
     """
-    Get a reference to the cached TensorBufferRef.
+    Get a reference to the cached tensor.
     """
-    return external_call["TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr](
+    var buffer_size: UInt64 = 0
+    var buffer_data = OpaquePointer()
+
+    var buffer_ref = external_call[
+        "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
+    ](
         buffer_slot,
         ctx,
+        UnsafePointer(to=buffer_size),
+        UnsafePointer(to=buffer_data),
     )
+
+    var buffer = NDBuffer[DType.int8, 1](
+        buffer_data.bitcast[Int8](), Index(buffer_size)
+    )
+    var res = Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr](
+        buffer, buffer_ref
+    )
+
+    return res
 
 
 @register_internal("tmp.mgp.buffer.remove_cached")
@@ -1757,3 +1838,28 @@ fn all_zeros(indices: IndexList) -> Bool:
         if indices[i] != 0:
             return False
     return True
+
+
+fn get_buffer_mem_storage_handle(
+    buffer: OpaquePointer, type: Int, memStorageHandle: OpaquePointer
+):
+    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
+        buffer, type, memStorageHandle
+    )
+
+
+@register_internal("pop.select")
+@always_inline
+fn select[T: AnyTrivialRegType](cond: Bool, true_case: T, false_case: T) -> T:
+    if cond:
+        return true_case
+
+    return false_case
+
+
+@register_internal("pop.simd.select")
+@always_inline
+fn simd_select[
+    T: AnyTrivialRegType
+](cond: Bool, true_case: T, false_case: T) -> T:
+    return select(cond, true_case, false_case)

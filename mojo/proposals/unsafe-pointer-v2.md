@@ -83,10 +83,10 @@ struct UnsafePointer[
 - `origin` defaults to `MutAnyOrigin`, bypassing lifetime tracking
 - Allows unsafe implicit conversions (immutable → mutable, origin casts)
 
-## `UnsafePointerV2` API
+## `UnsafePointer` (v2) API
 
 ```mojo
-struct UnsafePointerV2[
+struct UnsafePointer[
     mut: Bool, //, # ✅ Inferred mutability, no default
     type: AnyType,
     origin: Origin[mut], # ✅ Non-defaulted origin, must be explicit
@@ -95,8 +95,8 @@ struct UnsafePointerV2[
 ]:
     ...
 
-alias UnsafeMutPointer[...] = UnsafePointerV2[mut=True, ...]
-alias UnsafeImmutPointer[...] = UnsafePointerV2[mut=False, ...]
+alias MutUnsafePointer[...] = UnsafePointer[mut=True, ...]
+alias ImmutUnsafePointer[...] = UnsafePointer[mut=False, ...]
 ```
 
 **Improvements:**
@@ -109,8 +109,8 @@ alias UnsafeImmutPointer[...] = UnsafePointerV2[mut=False, ...]
 
 | Mojo | C++ | Rust |
 | --- | --- | --- |
-| `UnsafeImmutPointer[T]` | `const T*` | `*const T` |
-| `UnsafeMutPointer[T]` | `T*` | `*mut T` |
+| `ImmutUnsafePointer[T]` | `const T*` | `*const T` |
+| `MutUnsafePointer[T]` | `T*` | `*mut T` |
 
 ---
 
@@ -118,9 +118,9 @@ alias UnsafeImmutPointer[...] = UnsafePointerV2[mut=False, ...]
 
 `UnsafePointer` is deeply integrated across the codebase.
 Changing its interface directly would break a large amount of code, both
-internally and in the community. `UnsafePointerV2` provides a transition path,
-allowing incremental migration and validation before replacing `UnsafePointer`
-entirely.
+internally and in the community. `UnsafePointer` (v2) provides a transition
+path, allowing incremental migration and validation before replacing
+`UnsafePointer` entirely.
 
 ---
 
@@ -142,28 +142,6 @@ entirely.
 
 ---
 
-## Migration Guidelines
-
-Developers should start updating their code to the v2 API using the new
-`UnsafeMutPointer` and `UnsafeImmutPointer` aliases where possible.
-Use `UnsafePointerV2` directly only when these aliases don’t apply.
-
-These aliases will remain stable across the migration, while `UnsafePointerV2`
-itself will eventually be renamed back to `UnsafePointer`.
-
-### Example Migration Steps
-
-#### **25.7**
-
-- Replace `UnsafePointer` with `UnsafePointerV2` or the new aliases.
-- Fix any unsafe implicit casts.
-
-#### **26.1**
-
-- Rename `UnsafePointerV2` to `UnsafePointer`.
-
----
-
 ## Alternative Approaches Considered
 
 1. **Using `@implicit(deprecated=True)`**
@@ -180,3 +158,143 @@ itself will eventually be renamed back to `UnsafePointer`.
    and defaults), an alias alone isn’t sufficient.
    - Mojo’s alias system also prevents initializer syntax for aliases, making
    this option impractical.
+
+---
+
+## Migration Guide: From `LegacyUnsafePointer` to the New `UnsafePointer`
+
+This guide walks through updating your Mojo codebase to use the new, safer
+`UnsafePointer` API.  
+
+### Step 1 — Rename Old `UnsafePointer` to `LegacyUnsafePointer`
+
+Rename every usage of the old `UnsafePointer` to `LegacyUnsafePointer`.
+This preserves prior behavior and prevents mixing old and new pointer APIs.
+
+This is a mechanical rename and does not change runtime semantics.
+
+### Step 2 — Migrate Code to the New `UnsafePointer`
+
+Once the old type is renamed, begin replacing `LegacyUnsafePointer` with the new
+`UnsafePointer`.  
+The new pointer type requires you to explicitly specify the mutability and
+origin to make pointer behavior clearer and safer.
+
+#### Using `UnsafePointer` as a Function Argument
+
+Function arguments that accept pointers must now state their mutability using
+`mut=True` or `mut=False`.
+
+```mojo
+fn read_pointer(ptr: UnsafePointer[mut=False, Int]):
+    var n = ptr[]
+
+fn write_pointer(ptr: UnsafePointer[mut=True, Int]):
+    ptr[] = 42
+```
+
+- `mut=False` means the pointee cannot be modified through this pointer.
+- `mut=True` means the pointee may be mutated.
+
+#### Using `UnsafePointer` as a Return Type
+
+Returning a pointer requires specifying its origin, which tells the compiler
+where the pointer came from and who manages its lifetime. [Read more about
+lifetimes here](https://docs.modular.com/mojo/manual/values/lifetimes/).
+
+```mojo
+fn pointer_to(
+    mut string: String,
+) -> UnsafePointer[String, origin_of(string)]:
+    return UnsafePointer(to=string)
+```
+
+#### Storing an `UnsafePointer` to a heap allocation
+
+Heap-allocated memory must use an explicit `external` origin.
+This indicates that the lifetime of the memory is managed manually rather than
+by Mojo.
+
+```mojo
+struct MyList:
+    var _data: UnsafePointer[Int, MutOrigin.external]
+    var _len: Int
+
+    fn __init__(out self, *, length: Int):
+        self._data = alloc[Int](length)
+        self._len = length
+
+    fn __del__(deinit self):
+        # Always free external memory you allocate.
+        self._data.free()
+```
+
+- `MutOrigin.external` communicates that memory is externally managed.
+
+#### Exposing an `UnsafePointer` to a heap allocation
+
+When returning a pointer to a heap allocation from inside a struct, the origin
+must reflect that the memory belongs to a member of `self.`
+
+When possible, prefer using the safe `Pointer` or `Span` types instead of an
+`UnsafePointer`.
+
+```mojo
+struct MyList:
+    var _data: UnsafePointer[Int, MutOrigin.external]
+    var _len: Int
+
+    fn unsafe_ptr[
+        mut: Bool, 
+        origin: Origin[mut], //
+    ](ref [origin] self) -> UnsafePointer[Int, origin]:
+        return self._data
+                .mut_cast[mut]()
+                .unsafe_origin_cast[origin]()
+```
+
+#### Using `UnsafePointer` in FFI
+
+Most FFI calls can pass pointers directly using `external_call`.
+
+```mojo
+fn wrap_c_func(
+    read_ptr: UnsafePointer[mut=False, Int32],
+    write_ptr: UnsafePointer[mut=True, UInt],
+):
+    # C signature:
+    # void c_func(const int32_t*, size_t*)
+    external_call["c_func", NoneType](read_ptr, write_ptr)
+```
+
+If an FFI function returns a pointer, its origin should often be `external`
+since the memory comes from outside Mojo.
+
+```mojo
+fn wrap_c_func(
+    length: UInt,
+    out result: UnsafePointer[Int32, ImmutOrigin.external],
+):
+    # C signature:
+    # const char* c_func(size_t)
+    result = external_call["c_func", type_of(result)](length)
+```
+
+#### Using `UnsafePointer` in GPU kernels
+
+Similar to that of `LayoutTensor`, the origin must be specified.
+
+```mojo
+fn kernel(
+    ptr: UnsafePointer[Float32, MutAnyOrigin]
+):
+    ...
+
+def main():
+    with DeviceContext() as ctx:
+        var size = 128
+        var buf = ctx.enqueue_create_buffer[DType.float32](size)
+        ctx.enqueue_function_checked[kernel, kernel](buf)
+        
+        # ...
+```

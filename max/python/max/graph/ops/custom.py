@@ -122,7 +122,7 @@ def custom(
 
 def inplace_custom(
     name: str,
-    device: DeviceRef,
+    device: Device | DeviceRef,
     values: Sequence[Value[Any]],
     out_types: Sequence[Type[Any]] | None = None,
     parameters: dict[str, bool | int | str | DType] | None = None,
@@ -166,6 +166,7 @@ def inplace_custom(
         TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values
     ]
 
+    device = DeviceRef.from_device(device)
     chain_operand = graph.device_chains[device]
 
     (*results, out_chain), custom_op = graph._add_op_get_op_with_results(

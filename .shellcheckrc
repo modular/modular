@@ -1,0 +1,6 @@
+# Allow opening any `source`d file, even if not specified as input
+external-sources=true
+
+# We intentionally do not use shebang to set the interpreter type as most or
+# all of our shell scripts supports both Bash and zsh. So, disable the warning.
+disable=SC2148

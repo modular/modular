@@ -32,39 +32,41 @@ from .mha_gfx942 import Attention, MHAAttentionConfig
 @fieldwise_init
 struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
     # share shared memory for k and v
-    alias shared_kv = True
+    comptime shared_kv = True
     # shared memory for the full tile vs BK blocks
-    alias full_kv = False
+    comptime full_kv = False
     # pad the depth for v smem
-    alias depth_padded = True
+    comptime depth_padded = True
     # double buffer
-    alias double_buffer = False
+    comptime double_buffer = False
 
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:
         return block_idx.y if Self.token_gen else MHAAttentionConfig[
-            token_gen, config, 1
+            Self.token_gen, Self.config, 1
         ].q_head_idx()
 
     @staticmethod
     @always_inline
     fn q_tile_idx() -> UInt:
         return Self.q_head_idx() if Self.token_gen else MHAAttentionConfig[
-            token_gen, config, 1
+            Self.token_gen, Self.config, 1
         ].q_tile_idx()
 
     @staticmethod
     @always_inline
     fn kv_head_idx() -> UInt:
         return 0 if Self.token_gen else MHAAttentionConfig[
-            token_gen, config, 1
+            Self.token_gen, Self.config, 1
         ].kv_head_idx()
 
     @staticmethod
     @always_inline
     fn get_mma_shape() -> IndexList[3]:
-        return MHAAttentionConfig[token_gen, config, 1].get_mma_shape()
+        return MHAAttentionConfig[
+            Self.token_gen, Self.config, 1
+        ].get_mma_shape()
 
     @staticmethod
     @always_inline
@@ -72,25 +74,19 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
         return (
             q_depth
             * (
-                block_idx.y
-                + config.num_heads * Self.q_tile_idx() * config.block_m()
-            ) if not token_gen else q_depth
+                block_idx.x
+                + Self.config.num_heads
+                * Self.q_tile_idx()
+                * Self.config.block_m()
+            ) if not Self.token_gen else q_depth
             * Self.q_tile_idx()
-            * config.block_m()
+            * Self.config.block_m()
         )
 
     @staticmethod
     @always_inline
     fn get_output_offset[output_depth: UInt]() -> UInt32:
-        return (
-            output_depth
-            * (
-                block_idx.y
-                + config.num_heads * Self.q_tile_idx() * config.block_m()
-            ) if not token_gen else output_depth
-            * Self.q_tile_idx()
-            * config.block_m()
-        )
+        return Self.get_q_offset[output_depth]()
 
 
 __extension Attention:
@@ -100,10 +96,10 @@ __extension Attention:
         # cache_num_heads: Int,
         # cache_depth: Int,
     ](mut self, k_rope: k_rope_t):
-        alias cache_num_heads = 1
-        alias cache_depth = 576
+        comptime cache_num_heads = 1
+        comptime cache_depth = 576
         constrained[Self.BN == Self.depth, "BN must be equal to depth"]()
-        alias simd_width = simd_width_of[Self.q_type]()
+        comptime simd_width = simd_width_of[Self.q_type]()
 
         constrained[Self.BK == 32, "BK must be 32"]()
 
@@ -167,7 +163,7 @@ __extension Attention:
                 num_stages = Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
-            alias k_rope_gmem_layout = Layout(
+            comptime k_rope_gmem_layout = Layout(
                 IntTuple(Int(Self.BN), Int(cache_depth)),
                 IntTuple(Int(cache_num_heads * cache_depth), 1),
             )
@@ -177,8 +173,8 @@ __extension Attention:
                 {Int(cache_num_heads * cache_depth), 1},
             )
 
-            alias cache_group = self.num_heads // UInt(cache_num_heads)
-            alias rope_depth = q_depth - Int(Self.depth)
+            comptime cache_group = self.num_heads // UInt(cache_num_heads)
+            comptime rope_depth = q_depth - Int(Self.depth)
 
             var k_rope_tile = LayoutTensor[
                 k_rope_t.dtype,
@@ -233,6 +229,8 @@ __extension Attention:
                 prefetched_b_tile=True,
             ](k_rope_buffer)
 
+            self.scale_p_reg()
+
             self.mask_apply(
                 kv_tile_start_row,
                 kv_tile_num_rows,
@@ -249,7 +247,9 @@ __extension Attention:
             var end = min(i + Self.BN, self.num_keys)
             loop_over_kvcache[Int(Self.BN)](i, end, end != self.num_keys)
 
-        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
+        self.out_reg_buffer.apply_softmax_denominator(
+            self.softmax.rowsum_tensor
+        )
 
         self.store_output()
 

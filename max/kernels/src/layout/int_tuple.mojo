@@ -60,13 +60,11 @@ from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
-from memory import LegacyUnsafePointer as UnsafePointer, memcpy
+from memory import memcpy
 from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
 from utils import IndexList
-
-alias INT_TUPLE_VALIDATION = False
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:
@@ -135,7 +133,7 @@ struct IntArray(ImplicitlyCopyable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: UnsafePointer[Int]
+    var _data: UnsafePointer[Int, MutOrigin.external]
     var _size: Int
 
     @always_inline("nodebug")
@@ -145,7 +143,7 @@ struct IntArray(ImplicitlyCopyable):
         Args:
             size: Number of integers to allocate space for. Defaults to 0.
         """
-        self._data = UnsafePointer[Int].alloc(size)
+        self._data = alloc[Int](size)
         self._size = size
 
     @always_inline("nodebug")
@@ -160,7 +158,7 @@ struct IntArray(ImplicitlyCopyable):
         self._size = existing._size
         if existing.owning():
             var size = existing.size()
-            self._data = UnsafePointer[Int].alloc(size)
+            self._data = alloc[Int](size)
             self.copy_from(0, existing, size)
         else:
             self._data = existing._data
@@ -186,13 +184,16 @@ struct IntArray(ImplicitlyCopyable):
             The integer value at the specified index.
 
         Note:
-            Bounds checking is only performed when `INT_TUPLE_VALIDATION` is enabled.
+            Bounds checking is performed when assertions are enabled (e.g., -D ASSERT=all).
         """
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if idx < 0 or idx >= self.size():
-                abort("Index out of bounds")
+        debug_assert(
+            idx >= 0 and idx < self.size(),
+            "IntArray index out of bounds: ",
+            idx,
+            " (size: ",
+            self.size(),
+            ")",
+        )
 
         return self._data[idx]
 
@@ -205,13 +206,16 @@ struct IntArray(ImplicitlyCopyable):
             value: The integer value to store at the specified index.
 
         Note:
-            Bounds checking is only performed when `INT_TUPLE_VALIDATION` is enabled.
+            Bounds checking is performed when assertions are enabled (e.g., -D ASSERT=all).
         """
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if idx < 0 or idx >= self.size():
-                abort("Index out of bounds")
+        debug_assert(
+            idx >= 0 and idx < self.size(),
+            "IntArray index out of bounds: ",
+            idx,
+            " (size: ",
+            self.size(),
+            ")",
+        )
 
         self._data[idx] = value
 
@@ -264,7 +268,7 @@ struct IntArray(ImplicitlyCopyable):
         )
 
 
-alias UNKNOWN_VALUE = -1
+comptime UNKNOWN_VALUE = -1
 """Special value indicating an unknown or unspecified dimension.
 
 This constant is used throughout the `IntTuple` system to represent dimensions
@@ -276,20 +280,26 @@ that are not known at compile time or have not been specified.
 struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
     """Iterator for traversing elements of an IntTuple."""
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
+    """The iterator type for IntTuple iteration.
 
-    alias Element = IntTuple
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
-    var src: Pointer[IntTuple, origin]
+    comptime Element = IntTuple
+
+    var src: Pointer[IntTuple, Self.origin]
     """Pointer to the source IntTuple being iterated."""
 
     var idx: Int
     """Current position in the iteration."""
 
     @always_inline("nodebug")
-    fn __init__(out self, src: Pointer[IntTuple, origin], idx: Int):
+    fn __init__(out self, src: Pointer[IntTuple, Self.origin], idx: Int):
         """Initialize the iterator with a source IntTuple and starting index."""
         self.src = src
         self.idx = idx
@@ -317,11 +327,10 @@ struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
 
 struct IntTuple(
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Intable,
     Iterable,
-    Movable,
     Sized,
     Stringable,
     Writable,
@@ -336,16 +345,22 @@ struct IntTuple(
     and dimension handling in high-performance computing contexts.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _IntTupleIter[ImmutOrigin.cast_from[iterable_origin]]
+    """The iterator type for IntTuple iteration.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     var _store: IntArray
     """The underlying storage for the `IntTuple`.
     Int values are represented with positive numbers.
     Sub-tuples are represented with a negative offset from the current position."""
 
-    alias MinimumValue = -0xFFFE
+    comptime MinimumValue = -0xFFFE
     """Minimum allowed value for integers in an `IntTuple`.
 
     This constant defines the lower bound for integer values that can be stored
@@ -409,14 +424,11 @@ struct IntTuple(
 
         Performance:
             - Minimal allocation (just a single element for length).
-            - Structure validation only performed when `INT_TUPLE_VALIDATION` is enabled.
+            - Structure validation performed when assertions are enabled.
         """
         self._store = IntArray(1)
         self._store[0] = 0
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+        self.validate_structure()
 
     @always_inline("nodebug")
     fn __init__(out self, *, num_elems: Int):
@@ -429,14 +441,11 @@ struct IntTuple(
             num_elems: The number of elements to allocate space for.
 
         Note:
-            Structure validation only performed when `INT_TUPLE_VALIDATION` is enabled.
+            Structure validation performed when assertions are enabled.
         """
         self._store = IntArray(num_elems + 1)
         self._store[0] = num_elems
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+        self.validate_structure()
 
     @always_inline("nodebug")
     fn __init__(out self, *elements: Int):
@@ -462,27 +471,22 @@ struct IntTuple(
 
             - Pre-allocates exact memory needed for efficiency.
             - Validates that all values are above `MinimumValue`. If any value is
-              less than `MinimumValue`, aborts with an error message.
-            - Structure validation only performed when `INT_TUPLE_VALIDATION` is
-              enabled.
+              less than `MinimumValue`, assertion fails with an error message.
+            - Structure validation performed when assertions are enabled.
         """
         var size = len(elements)
         self._store = IntArray(size + 1)
         self._store[0] = size
         for i in range(size):
             var value = elements[i]
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                if value < Self.MinimumValue:
-                    abort(
-                        "Only integers greater than MinimumValue are supported"
-                    )
+            debug_assert(
+                value >= Self.MinimumValue,
+                "IntTuple value must be >= MinimumValue: ",
+                value,
+            )
             self._store[i + 1] = value
 
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+        self.validate_structure()
 
     @implicit
     @always_inline
@@ -494,18 +498,15 @@ struct IntTuple(
         Args:
             value: The integer value to store in the tuple.
         """
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if value < Self.MinimumValue:
-                abort("Only integers greater than MinimumValue are supported")
+        debug_assert(
+            value >= Self.MinimumValue,
+            "IntTuple value must be >= MinimumValue: ",
+            value,
+        )
         self._store = IntArray(2)
         self._store[0] = 1
         self._store[1] = value
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+        self.validate_structure()
 
     @always_inline("nodebug")
     fn __init__(out self, *elements: IntTuple, __list_literal__: () = ()):
@@ -527,9 +528,7 @@ struct IntTuple(
         for i in range(num_elems):
             storage = self._insert(i, storage, elements[i])
 
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+        self.validate_structure()
 
     @always_inline("nodebug")
     fn __init__(out self, *, var _owned: IntArray):
@@ -554,7 +553,7 @@ struct IntTuple(
         Notes:
 
             - Preserves nested structure of elements in the slice.
-            - Structure validation only performed when `INT_TUPLE_VALIDATION` is enabled.
+            - Structure validation performed when assertions are enabled.
         """
         var size = 0
         var len = 0
@@ -572,9 +571,7 @@ struct IntTuple(
             storage = self._insert(pos, storage, existing[i])
             pos += 1
 
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+        self.validate_structure()
 
     @always_inline
     fn __init__(out self, dimlist: DimList):
@@ -590,7 +587,7 @@ struct IntTuple(
 
             - Converts undefined dimensions to `UNKNOWN_VALUE`.
             - Validates that all values are above `MinimumValue`. If any value is
-              less than `MinimumValue`, aborts with an error message.
+              less than `MinimumValue`, assertion fails with an error message.
         """
         var size = len(dimlist) + 1
         self._store = IntArray(size)
@@ -599,20 +596,16 @@ struct IntTuple(
         var i = 0
         for dim in dimlist.value:
             var value = dim.get() if dim else UNKNOWN_VALUE
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                if value < Self.MinimumValue:
-                    abort(
-                        "Only integers greater than MinimumValue are supported"
-                    )
+            debug_assert(
+                value >= Self.MinimumValue,
+                "IntTuple value must be >= MinimumValue: ",
+                value,
+            )
 
             self._store[i + 1] = value
             i += 1
 
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+        self.validate_structure()
 
     @always_inline("nodebug")
     fn __init__[
@@ -741,14 +734,16 @@ struct IntTuple(
             A new `IntTuple` with the replacement applied.
 
         Note:
-            If the index is out of bounds and `INT_TUPLE_VALIDATION` is enabled,
-            aborts with an error message.
+            If the index is out of bounds, assertion fails with an error message.
         """
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if idx < 0 or idx >= len(self):
-                abort("Index out of bounds")
+        debug_assert(
+            idx >= 0 and idx < len(self),
+            "IntTuple index out of bounds: ",
+            idx,
+            " (length: ",
+            len(self),
+            ")",
+        )
 
         var result = IntTuple()
         for i in range(len(self)):
@@ -771,14 +766,16 @@ struct IntTuple(
             int_value: The integer value to insert at the specified index.
 
         Note:
-            If the index is out of bounds and `INT_TUPLE_VALIDATION` is enabled,
-            aborts with an error message.
+            If the index is out of bounds, assertion fails with an error message.
         """
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if idx < 0 or idx >= len(self):
-                abort("Index out of bounds")
+        debug_assert(
+            idx >= 0 and idx < len(self),
+            "IntTuple index out of bounds: ",
+            idx,
+            " (length: ",
+            len(self),
+            ")",
+        )
 
         self._store[idx + 1] = int_value
 
@@ -902,11 +899,10 @@ struct IntTuple(
             - This operation requires reallocating the underlying `IntArray` storage to accommodate
             the new elements, which may impact performance for large tuples.
         """
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if not self._store.owning():
-                abort("Can't modify a sub-tuple.")
+        debug_assert(
+            self._store.owning(),
+            "Can't modify a non-owning IntTuple (sub-tuple reference)",
+        )
 
         if len(elements) == 0:
             return
@@ -938,10 +934,7 @@ struct IntTuple(
 
         # Update store data
         self._store = new_store
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+        self.validate_structure()
 
     @always_inline
     fn extend(mut self, tuple: IntTuple):
@@ -961,11 +954,10 @@ struct IntTuple(
               to accommodate the new elements, which may impact performance for large tuples.
             - If the input tuple is empty, this method returns without making any changes.
         """
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if not self._store.owning():
-                abort("Can't modify a sub-tuple.")
+        debug_assert(
+            self._store.owning(),
+            "Can't modify a non-owning IntTuple (sub-tuple reference)",
+        )
 
         if len(tuple) == 0:
             return
@@ -994,10 +986,7 @@ struct IntTuple(
 
         # Update store data
         self._store = new_store
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+        self.validate_structure()
 
     @always_inline
     @staticmethod
@@ -1081,22 +1070,17 @@ struct IntTuple(
         based on the tuple's structure. This helps detect memory corruption or
         implementation errors.
 
-        Aborts execution with an error message if validation fails.
+        Assertion fails with an error message if validation fails.
         """
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            # Basic structure validation: ensure size is at least header + elements
-            var len = self._store[0]
-            if self._store.size() < len + 1:
-                abort(
-                    String(
-                        "Invalid tuple structure: size ",
-                        self._store.size(),
-                        " is less than required ",
-                        len + 1,
-                    )
-                )
+        # Basic structure validation: ensure size is at least header + elements
+        var len = self._store[0]
+        debug_assert(
+            self._store.size() >= len + 1,
+            "Invalid IntTuple structure: size ",
+            self._store.size(),
+            " is less than required ",
+            len + 1,
+        )
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -1136,15 +1120,17 @@ struct IntTuple(
             An `IntTuple` containing either a single value or a sub-tuple.
 
         Notes:
-            If index validation is enabled and the index is out of bounds,
-            aborts with an error message.
+            If index is out of bounds, assertion fails with an error message.
         """
         var idx = len(self) + _idx if _idx < 0 else _idx
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if idx < 0 or idx >= len(self):
-                abort("Index out of bounds.")
+        debug_assert(
+            idx >= 0 and idx < len(self),
+            "IntTuple index out of bounds: ",
+            idx,
+            " (length: ",
+            len(self),
+            ")",
+        )
 
         # The int value or the (negated) offset to the tuple
         var val = self._store[idx + 1]
@@ -1220,14 +1206,16 @@ struct IntTuple(
             True if the element at index i is a value, False if it's a tuple.
 
         Notes:
-            If index validation is enabled and the index is out of bounds,
-            aborts with an error message.
+            If index is out of bounds, assertion fails with an error message.
         """
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if i < 0 or i >= len(self):
-                abort("Index out of bounds.")
+        debug_assert(
+            i >= 0 and i < len(self),
+            "IntTuple index out of bounds: ",
+            i,
+            " (length: ",
+            len(self),
+            ")",
+        )
 
         return self._store[i + 1] >= Self.MinimumValue
 
@@ -1780,7 +1768,7 @@ fn tuple_max(t: IntTuple) -> Int:
     fn reducer(a: Int, b: IntTuple) -> Int:
         return max(a, Int(b) if is_int(b) else tuple_max(b))
 
-    alias int_min_val = 0
+    comptime int_min_val = 0
     return reduce[reducer](t, int_min_val)
 
 
@@ -1949,11 +1937,13 @@ fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     Note:
         If either input contains `UNKNOWN_VALUE`, the result will be `UNKNOWN_VALUE`.
     """
-
-    @parameter
-    if INT_TUPLE_VALIDATION:
-        if len(a) != len(b):
-            abort(String("Tuple sizes don't match: ", len(a), " != ", len(b)))
+    debug_assert(
+        len(a) == len(b),
+        "Tuple sizes don't match: ",
+        len(a),
+        " != ",
+        len(b),
+    )
     if is_int(a):
         if UNKNOWN_VALUE in (Int(a), Int(b)):
             return UNKNOWN_VALUE
@@ -1975,13 +1965,15 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
         The inner product as an `Int`.
 
     Note:
-        If the input tuples have different lengths, `abort()` will be called.
+        If the input tuples have different lengths, assertion fails.
     """
-
-    @parameter
-    if INT_TUPLE_VALIDATION:
-        if len(a) != len(b):
-            abort(String("Tuple sizes don't match: ", len(a), " != ", len(b)))
+    debug_assert(
+        len(a) == len(b),
+        "Tuple sizes don't match: ",
+        len(a),
+        " != ",
+        len(b),
+    )
     if is_int(a):
         return Int(a) * Int(b)
     var r: Int = 0
@@ -2246,7 +2238,7 @@ fn prefix_product(a: IntTuple, init: Int) -> IntTuple:
     if len(a) == 0:
         return IntTuple()
     # Short-circuit for single integer
-    if is_int(a) == 1:
+    if is_int(a):
         return init
 
     var init_tuple = IntTuple(init)
@@ -2268,11 +2260,13 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
     """
     if is_tuple(a):
         if is_tuple(init):  # tuple tuple
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                if len(a) != len(init):
-                    abort("len(a) != len(init)")
+            debug_assert(
+                len(a) == len(init),
+                "Tuple sizes don't match in prefix_product: len(a)=",
+                len(a),
+                " len(init)=",
+                len(init),
+            )
             return apply_zip[_prefix_product2](a, init)
         else:  # tuple "int"
             var v_init = Int(init)
@@ -2287,11 +2281,10 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
                 v_init = UNKNOWN_VALUE if is_unknown else v_init * product(v)
             return r
     else:
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            if is_tuple(init):  # "int" tuple
-                abort("'int' tuple not allowed")  # Error
+        debug_assert(
+            not is_tuple(init),
+            "Invalid prefix_product: 'int' tuple case not allowed",
+        )
 
         if is_tuple(init):  # "int" tuple
             return IntTuple()
@@ -2299,7 +2292,7 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
             return init.owned_copy()
 
 
-fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
+fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
     """Performs division operation between shape tuples.
 
     Handles four cases:
@@ -2309,6 +2302,9 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     3. int-tuple: Returns `shape_div(a, product(b))`
     4. int-int: Enforces the divisibility condition `a % b == 0 || b % a == 0` when possible
        Returns `a / b` with rounding away from `0` (that is, `1` or `-1` when `a < b`)
+
+    Parameters:
+        check: Whether to check for incompatible shapes.
 
     Args:
         a: The dividend `IntTuple`.
@@ -2325,28 +2321,26 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     """
     if is_tuple(a):
         if is_tuple(b):  # tuple tuple
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                if len(a) != len(b):
-                    abort(
-                        String(
-                            "Tuple sizes don't match: ", len(a), " != ", len(b)
-                        )
-                    )
-            return apply_zip[shape_div](a, b)
+            debug_assert(
+                len(a) == len(b),
+                "Tuple sizes don't match in shape_div: ",
+                len(a),
+                " != ",
+                len(b),
+            )
+            return apply_zip[shape_div[check]](a, b)
         else:  # tuple "int"
             var vb = Int(b)
             var r = IntTuple()
             for v in a:
-                r.append(shape_div(v, vb))
+                r.append(shape_div[check](v, vb))
                 var prod_v = IntTuple(product(v))
-                vb = Int(shape_div(vb, prod_v))
+                vb = Int(shape_div[check](vb, prod_v))
             return r
     else:
         if is_tuple(b):  # "int" tuple
             var prod_b = IntTuple(product(b))
-            return shape_div(a, prod_b)
+            return shape_div[check](a, prod_b)
         else:  # "int" "int"
             var va = Int(a)
             var vb = Int(b)
@@ -2355,9 +2349,14 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                 return UNKNOWN_VALUE
 
             @parameter
-            if INT_TUPLE_VALIDATION:
-                if not (va % vb == 0 or vb % va == 0):
-                    abort(String("Incompatible shape values: ", va, " ", vb))
+            if check:
+                debug_assert(
+                    va % vb == 0 or vb % va == 0,
+                    "Incompatible shape values: ",
+                    va,
+                    " ",
+                    vb,
+                )
 
             return va // vb if va % vb == 0 else signum(va * vb)
 
@@ -2437,22 +2436,28 @@ fn idx2crd2(
 
     if is_tuple(idx):
         if is_tuple(shape):  # tuple tuple tuple
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                if len(idx) != len(shape) or len(idx) != len(stride):
-                    abort("input shapes mismatch")
+            debug_assert(
+                len(idx) == len(shape) and len(idx) == len(stride),
+                "idx2crd input shapes mismatch: len(idx)=",
+                len(idx),
+                " len(shape)=",
+                len(shape),
+                " len(stride)=",
+                len(stride),
+            )
 
             return apply_zip[idx2crd2](idx, shape, stride)
         else:  # tuple "int" "int"
-            return abort[IntTuple]("Illegal inputs")  # Error
+            abort("Illegal inputs")  # Error
     else:
         if is_tuple(shape):  # "int" tuple tuple
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                if len(shape) != len(stride):
-                    abort("input shapes mismatch")
+            debug_assert(
+                len(shape) == len(stride),
+                "idx2crd input shapes mismatch: len(shape)=",
+                len(shape),
+                " len(stride)=",
+                len(stride),
+            )
 
             @parameter
             fn idx2crd2(shape: IntTuple, stride: IntTuple) -> IntTuple:
@@ -2610,30 +2615,34 @@ fn crd2idx(
 
     if is_tuple(crd):
         if is_tuple(shape):  # tuple tuple tuple
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                if len(crd) != len(shape) or len(crd) != len(stride):
-                    abort("Shape mismatch")
+            debug_assert(
+                len(crd) == len(shape) and len(crd) == len(stride),
+                "crd2idx shape mismatch: len(crd)=",
+                len(crd),
+                " len(shape)=",
+                len(shape),
+                " len(stride)=",
+                len(stride),
+            )
             var r: Int = 0
             for z in zip(crd, shape, stride):
                 r += crd2idx(z[0], z[1], z[2])
             return r
         else:  # tuple "int" "int"
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                abort("Illegal input types")
+            # This case can occur in generic code with composed layouts
+            # Return 0 as a fallback.
             return 0
     else:
         var int_crd: Int = 0 if len(crd) == 0 else Int(crd)
 
         if is_tuple(shape):  # "int" tuple tuple
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                if len(shape) != len(stride):
-                    abort("Can't compute idx, shape != stride")
+            debug_assert(
+                len(shape) == len(stride),
+                "crd2idx shape mismatch: len(shape)=",
+                len(shape),
+                " len(stride)=",
+                len(stride),
+            )
             if len(shape) == 0:
                 return 0
             var result: Int = 0
@@ -2760,7 +2769,7 @@ fn depth(src: IntTuple) -> Int:
     return res
 
 
-alias IntList = List[Int]
+comptime IntList = List[Int]
 """
 A type alias for a List of integers with ownership.
 
@@ -2816,11 +2825,13 @@ fn _flat_apply_invperm(tuple: IntTuple, perm: IntList) -> IntTuple:
 
 fn _flat_compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
     """Helper function that computes compact order for flattened inputs."""
-
-    @parameter
-    if INT_TUPLE_VALIDATION:
-        if len(shape) != len(order):
-            abort("Shape and order must have the same size")
+    debug_assert(
+        len(shape) == len(order),
+        "compact_order shape/order mismatch: len(shape)=",
+        len(shape),
+        " len(order)=",
+        len(order),
+    )
 
     var perm = _sorted_perm(order)
     var sorted_shape = _flat_apply_perm(shape, perm)

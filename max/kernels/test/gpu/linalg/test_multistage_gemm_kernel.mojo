@@ -26,17 +26,17 @@ fn multistage_gemm_simple[
     c_type: DType = DType.bfloat16,
     transpose_b: Bool = False,
 ](ctx: DeviceContext,) raises:
-    alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
-    alias config = kernels.ampere_128x128_4
+    comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
+    comptime config = kernels.ampere_128x128_4
 
-    alias a_layout = Layout.row_major(M, K)
-    alias b_layout = Layout.row_major(
+    comptime a_layout = Layout.row_major(M, K)
+    comptime b_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
-    alias c_layout = Layout.row_major(M, N)
+    comptime c_layout = Layout.row_major(M, N)
 
     # Dispatch w/o split K
-    alias gemm_kernel_type = multistage_gemm_kernel[
+    comptime gemm_kernel_type = multistage_gemm_kernel[
         c_type,
         c_layout,
         a_type,

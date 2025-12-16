@@ -37,9 +37,9 @@ from testing import assert_almost_equal, assert_true
 
 from utils.index import Index, IndexList
 
-alias alignment = 64
-alias some_constant = 20
-alias do_benchmarking = False
+comptime alignment = 64
+comptime some_constant = 20
+comptime do_benchmarking = False
 
 
 @parameter
@@ -244,9 +244,9 @@ def test_matmul[
     print("== test_matmul")
     var errors: Int
     var kernel_type_m = m if mixed_kernels else 0
-    alias a_shape = DimList.create_unknown[2]()
-    alias b_shape = DimList.create_unknown[2]()
-    alias c_shape = DimList.create_unknown[2]()
+    comptime a_shape = DimList.create_unknown[2]()
+    comptime b_shape = DimList.create_unknown[2]()
+    comptime c_shape = DimList.create_unknown[2]()
 
     var a_ptr = UnsafePointer[Scalar[a_type]].alloc(m * k, alignment=alignment)
     var b_ptr = UnsafePointer[Scalar[b_type]].alloc(k * n, alignment=alignment)
@@ -604,9 +604,9 @@ def test_batched_matmul[
 
 
 def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
-    alias c_type = DType.float32
-    alias a_type = DType.float32
-    alias b_type = DType.float32
+    comptime c_type = DType.float32
+    comptime a_type = DType.float32
+    comptime b_type = DType.float32
 
     var c_ptr = UnsafePointer[Scalar[c_type]].alloc(
         batch * m * n, alignment=alignment

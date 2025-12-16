@@ -32,20 +32,18 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 @fieldwise_init
-struct PyArrayObject[dtype: DType](ImplicitlyCopyable, Movable):
+struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     """
     Container for a numpy array.
 
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype]]
     var nd: Int
     var dimensions: UnsafePointer[Int]
     var strides: UnsafePointer[Int]
@@ -60,7 +58,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable, Movable):
 
 @export
 fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
-    alias dtype = DType.int32
+    comptime dtype = DType.int32
 
     print("Hello from mojo_incr_np_array")
 

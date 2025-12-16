@@ -24,12 +24,12 @@ from gpu.globals import WARPGROUP_SIZE
 from gpu.tcgen05 import *
 from gpu.sync import named_barrier
 from memory import LegacyUnsafePointer as UnsafePointer
-from stdlib.bit import prev_power_of_two
+from std.bit import prev_power_of_two
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -39,7 +39,7 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
     # Whether work tile is completely OOB.
     var is_valid_tile: Bool
 
-    alias INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
+    comptime INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
 
     @always_inline
     fn is_valid(self) -> Bool:
@@ -79,13 +79,16 @@ struct TileScheduler[
     block_swizzle_size: Int = 8,
     num_split_k: Int = 1,
 ]:
-    alias UnderlyingScheduler = B200TileScheduler[
-        num_stages, cluster_shape, rasterize_order, block_swizzle_size
+    comptime UnderlyingScheduler = B200TileScheduler[
+        Self.num_stages,
+        Self.cluster_shape,
+        Self.rasterize_order,
+        Self.block_swizzle_size,
     ]
-    alias BM = reduction_tile_shape[0]
-    alias MMA_N = reduction_tile_shape[1]
-    alias BK = reduction_tile_shape[2]
-    alias ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
+    comptime BM = Self.reduction_tile_shape[0]
+    comptime MMA_N = Self.reduction_tile_shape[1]
+    comptime BK = Self.reduction_tile_shape[2]
+    comptime ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
 
     var locks_ptr: UnsafePointer[Int32]
     var scheduler: Self.UnderlyingScheduler
@@ -111,8 +114,8 @@ struct TileScheduler[
         self.scheduler = Self.UnderlyingScheduler(
             cluster_dim, clc_response_ptr, full_mbar_ptr, empty_mbar_ptr
         )
-        self.total_k_tiles = ceildiv(mnk[2], reduction_tile_shape[2])
-        self.k_tiles_per_split = ceildiv(self.total_k_tiles, num_split_k)
+        self.total_k_tiles = ceildiv(mnk[2], Self.reduction_tile_shape[2])
+        self.k_tiles_per_split = ceildiv(self.total_k_tiles, Self.num_split_k)
         self.locks_ptr = locks_ptr.bitcast[Int32]()
 
     @always_inline
@@ -136,15 +139,15 @@ struct TileScheduler[
     @always_inline
     fn advance_to_next_work(
         self,
-        mut clc_state: PipelineState[num_stages],
-    ) -> PipelineState[num_stages]:
+        mut clc_state: PipelineState[Self.num_stages],
+    ) -> PipelineState[Self.num_stages]:
         return self.scheduler.advance_to_next_work(clc_state)
 
     @always_inline
     fn fetch_next_work(
         self,
         work_info: WorkInfo,
-        consumer_state: PipelineState[num_stages],
+        consumer_state: PipelineState[Self.num_stages],
     ) -> WorkInfo:
         var underlying_workinfo = B200WorkInfo(
             work_info.m, work_info.n, work_info.k_start, work_info.is_valid_tile
@@ -211,7 +214,7 @@ struct TileScheduler[
         layout: Layout,
         width: Int,
     ]() -> Layout:
-        alias new_shape = IntTuple(layout.shape[0].value(), width)
+        comptime new_shape = IntTuple(layout.shape[0].value(), width)
         return Layout(new_shape, layout.stride)
 
     @always_inline
@@ -241,7 +244,7 @@ struct TileScheduler[
                 width += widths[i]
             return width
 
-        alias current_width = _get_current_width(widths, curr_stage)
+        comptime current_width = _get_current_width(widths, curr_stage)
 
         return type_of(result)(tensor.ptr + current_width)
 
@@ -260,19 +263,19 @@ struct TileScheduler[
         epilogue_thread_idx: UInt,
         reduction_tile_idx: UInt32,
     ):
-        alias data_paths = 16  # same as lanes
-        alias bits = 256
+        comptime data_paths = 16  # same as lanes
+        comptime bits = 256
         # only load from TMEM when not using split-k
-        alias total_rep = Self.ROW_SIZE // 8
+        comptime total_rep = Self.ROW_SIZE // 8
 
         # 128 is a magic number that is provided by the NVCC backend.
         # register size that is greater than that will not compile.
-        alias widths_per_stage = Self._get_widths_per_stage[128]()
-        alias widths = widths_per_stage[0]
-        alias num_widths = widths_per_stage[1]
+        comptime widths_per_stage = Self._get_widths_per_stage[128]()
+        comptime widths = widths_per_stage[0]
+        comptime num_widths = widths_per_stage[1]
 
         # alias stage_rep = width_per_stage // 8
-        alias fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
+        comptime fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
         # alias stage_frag_size = stage_rep * fragment_size
 
         var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
@@ -282,8 +285,8 @@ struct TileScheduler[
             reduction_workspace, reduction_tile_idx
         )
 
-        alias REDUCTION_BM = Self.BM // 4 if Self.BM == 128 else Self.BM // 2
-        alias REDUCTION_BN = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
+        comptime REDUCTION_BM = Self.BM // 4 if Self.BM == 128 else Self.BM // 2
+        comptime REDUCTION_BN = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
         var warp_id_x = local_warp_id if Self.BM == 128 else local_warp_id % 2
         var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
 
@@ -296,9 +299,9 @@ struct TileScheduler[
 
         @parameter
         for stage in range(num_widths):
-            alias stage_width = widths[stage]
-            alias stage_rep = stage_width // 8
-            alias stage_frag_size = stage_rep * fragment_size
+            comptime stage_width = widths[stage]
+            comptime stage_rep = stage_width // 8
+            comptime stage_frag_size = stage_rep * fragment_size
 
             var stage_frag_upper = tcgen05_ld[
                 datapaths=data_paths,
@@ -334,15 +337,15 @@ struct TileScheduler[
                 1, 2
             ]().distribute[Layout.row_major(8, 4)](lane_id())
 
-            alias num_m = reduction_frag_upper.layout.shape[0].value()
-            alias num_n = reduction_frag_upper.layout.shape[1].value()
+            comptime num_m = reduction_frag_upper.layout.shape[0].value()
+            comptime num_n = reduction_frag_upper.layout.shape[1].value()
 
             @parameter
             for m in range(num_m):
 
                 @parameter
                 for n in range(num_n):
-                    alias i = m * num_n + n
+                    comptime i = m * num_n + n
 
                     var v2_upper = rebind[reduction_frag_upper.element_type](
                         SIMD[accum_type, 2](

@@ -32,7 +32,7 @@ from testing.prop import PropTest
 
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
-from testing.prop.strategy import *
+from testing.prop.strategy import SIMD, List
 
 
 def test_mojo_issue_698():
@@ -76,8 +76,8 @@ def test_list():
     assert_equal(7, list[-1])
 
 
-struct WeirdList[T: AnyType]:
-    fn __init__(out self, var *values: T, __list_literal__: ()):
+struct WeirdList[T: ImplicitlyDestructible]:
+    fn __init__(out self, var *values: Self.T, __list_literal__: ()):
         pass
 
 
@@ -698,12 +698,12 @@ def test_list_iter_bounds():
 def test_list_span():
     var vs = [1, 2, 3]
 
-    var es = vs[1:]
+    var es = List(vs[1:])
     assert_equal(es[0], 2)
     assert_equal(es[1], 3)
     assert_equal(len(es), 2)
 
-    es = vs[:-1]
+    es = List(vs[:-1])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(len(es), 2)
@@ -718,7 +718,7 @@ def test_list_span():
     assert_equal(es[2], 1)
     assert_equal(len(es), 3)
 
-    es = vs[:]
+    es = List(vs[:])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(es[2], 3)
@@ -735,7 +735,7 @@ def test_list_span():
 
     assert_equal(0, len(vs[:-1:-2]))
     assert_equal(0, len(vs[-50::-1]))
-    es = vs[-50::]
+    es = List(vs[-50::])
     assert_equal(3, len(es))
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
@@ -745,7 +745,7 @@ def test_list_span():
     assert_equal(es[0], 3)
     assert_equal(es[1], 2)
     assert_equal(es[2], 1)
-    es = vs[:50:]
+    es = List(vs[:50:])
     assert_equal(3, len(es))
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
@@ -879,7 +879,7 @@ def test_list_contains():
     assert_true(1 in x)
     assert_false(4 in x)
 
-    # TODO: implement List.__eq__ for Self[Copyable & Movable & Comparable]
+    # TODO: implement List.__eq__ for Self[Copyable & Comparable]
     # var y = List[List[Int]]()
     # y.append([1, 2])
     # assert_equal([1, 2] in y,True)
@@ -907,6 +907,19 @@ def test_list_eq_ne():
     assert_true(l6 == l7)
     assert_false(l6 != l7)
     assert_false(l6 == l8)
+
+
+struct NonEquatable(Copyable):
+    pass
+
+
+def test_list_conditional_conformances():
+    assert_true(conforms_to(List[Int], Equatable))
+    # TODO(MSTDL-2077):
+    #   This should pass, but does not due to Unconditional Conformances
+    # assert_false(conforms_to(List[NonEquatable], Equatable))
+
+    assert_true(conforms_to(List[Int], Writable))
 
 
 def test_list_init_span():
@@ -1006,13 +1019,13 @@ def test_uninit_ctor():
 
 
 def _test_copyinit_trivial_types[dt: DType]():
-    alias sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
     @parameter
     for sizes_index in range(len(sizes)):
-        alias current_size = sizes[sizes_index]
+        comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
             x.append(i)
@@ -1028,7 +1041,7 @@ def _test_copyinit_trivial_types[dt: DType]():
 
 
 def test_copyinit_trivial_types_dtypes():
-    alias dtypes = (
+    comptime dtypes = (
         DType.int64,
         DType.int32,
         DType.float64,

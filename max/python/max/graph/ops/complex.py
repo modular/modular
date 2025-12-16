@@ -15,6 +15,7 @@
 from ..dim import StaticDim
 from ..value import TensorValue, TensorValueLike
 from .reshape import reshape
+from .stack import stack
 
 
 def as_interleaved_complex(x: TensorValueLike) -> TensorValue:
@@ -40,3 +41,33 @@ def as_interleaved_complex(x: TensorValueLike) -> TensorValue:
         raise ValueError("The last dimension must be divisible by 2.")
     new_shape = shape[:-1] + [last.dim // 2, 2]
     return reshape(g, new_shape)
+
+
+def mul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Multiply two complex valued tensors.
+
+    Complex numbers are represented as a 2-dimensional vector in the
+    last dimension.
+
+    Args:
+        lhs: A complex number valued symbolic tensor.
+        rhs: A complex number valued symbolic tensor.
+
+    Returns:
+        The result of multiplying the input values as a complex
+        number valued symbolic tensor.
+    """
+    lhs = TensorValue(lhs)
+    rhs = TensorValue(rhs)
+
+    if not (lhs.shape and rhs.shape and lhs.shape[-1] == rhs.shape[-1] == 2):
+        raise ValueError(
+            "Complex-valued tensors must be 2-dimensional vectors in "
+            f"their last dimension. Got {lhs.type=}, {rhs.type=}."
+        )
+
+    lhs_real, lhs_imag = lhs[..., 0], lhs[..., 1]
+    rhs_real, rhs_imag = rhs[..., 0], rhs[..., 1]
+    out_real = (lhs_real * rhs_real) - (lhs_imag * rhs_imag)
+    out_imag = (lhs_real * rhs_imag) + (lhs_imag * rhs_real)
+    return stack([out_real, out_imag], axis=-1)

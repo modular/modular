@@ -55,7 +55,7 @@ def test_operation[
     scalar = prefix + suffix
     pairwise = scalar + "x2 "
 
-    alias target = get_gpu_target[target_arch]()
+    comptime target = get_gpu_target[target_arch]()
     assert_true(scalar in _compile_code[op_fn[width=1], target=target]())
     assert_true(pairwise in _compile_code[op_fn[width=2], target=target]())
     assert_true(pairwise in _compile_code[op_fn[width=8], target=target]())
@@ -162,7 +162,7 @@ def main():
 
     test_cast()
 
-    alias device = GPUInfo.from_name[_accelerator_arch()]()
+    comptime device = GPUInfo.from_name[_accelerator_arch()]()
 
     @parameter
     if device == B200:

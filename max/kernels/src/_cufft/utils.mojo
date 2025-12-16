@@ -22,10 +22,12 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUFFT_LIBRARY_PATHS = List[Path](
+comptime CUDA_CUFFT_LIBRARY_PATHS: List[Path] = [
+    "libcufft.so.12",
+    "/usr/local/cuda/lib64/libcufft.so.12",
     "libcufft.so.11",
     "/usr/local/cuda/lib64/libcufft.so.11",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -43,7 +45,7 @@ fn _on_error_msg() -> Error:
     )
 
 
-alias CUDA_CUFFT_LIBRARY = _Global[
+comptime CUDA_CUFFT_LIBRARY = _Global[
     "CUDA_CUFFT_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
 ]()
 

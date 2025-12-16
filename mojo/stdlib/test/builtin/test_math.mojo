@@ -50,12 +50,12 @@ def test_min():
     assert_equal(UInt(0), min(UInt(0), UInt(1)))
     assert_equal(UInt(1), min(UInt(1), UInt(42)))
 
-    alias F = SIMD[DType.float32, 4]
+    comptime F = SIMD[DType.float32, 4]
     var f = F(-10.5, -5.0, 5.0, 10.0)
     assert_equal(min(f, F(-9.0, -6.0, -4.0, 10.5)), F(-10.5, -6.0, -4.0, 10.0))
     assert_equal(min(f, -4.0), F(-10.5, -5.0, -4.0, -4.0))
 
-    alias I = SIMD[DType.int32, 4]
+    comptime I = SIMD[DType.int32, 4]
     var i = I(-10, -5, 5, 10)
     assert_equal(min(i, I(-9, -6, -4, 11)), I(-10, -6, -4, 10))
     assert_equal(min(i, -4), I(-10, -5, -4, -4))
@@ -74,12 +74,12 @@ def test_max():
     assert_equal(UInt(1), max(UInt(0), UInt(1)))
     assert_equal(UInt(2), max(UInt(1), UInt(2)))
 
-    alias F = SIMD[DType.float32, 4]
+    comptime F = SIMD[DType.float32, 4]
     var f = F(-10.5, -5.0, 5.0, 10.0)
     assert_equal(max(f, F(-9.0, -6.0, -4.0, 10.5)), F(-9.0, -5.0, 5.0, 10.5))
     assert_equal(max(f, -4.0), F(-4.0, -4.0, 5.0, 10.0))
 
-    alias I = SIMD[DType.int32, 4]
+    comptime I = SIMD[DType.int32, 4]
     var i = I(-10, -5, 5, 10)
     assert_equal(max(i, I(-9, -6, -4, 11)), I(-9, -5, 5, 11))
     assert_equal(max(i, -4), I(-4, -4, 5, 10))
@@ -108,27 +108,27 @@ def test_round():
     assert_equal(expected, round(lhs))
 
     # Ensure that round works on float literal
-    alias r1 = round(2.3)
+    comptime r1 = round(2.3)
     assert_equal(r1, 2.0)
-    alias r2 = round(2.3324, 2)
+    comptime r2 = round(2.3324, 2)
     assert_equal(r2, 2.33)
 
 
 def test_pow():
-    alias F = SIMD[DType.float32, 4]
+    comptime F = SIMD[DType.float32, 4]
     var base = F(0.0, 1.0, 2.0, 3.0)
     assert_equal(pow(base, 2.0), F(0.0, 1.0, 4.0, 9.0))
     assert_equal(pow(base, Int(2)), F(0.0, 1.0, 4.0, 9.0))
-    alias I = SIMD[DType.int32, 4]
+    comptime I = SIMD[DType.int32, 4]
     assert_equal(pow(I(0, 1, 2, 3), Int(2)), I(0, 1, 4, 9))
 
 
 def test_isnan():
     # Check that we can run llvm intrinsics returning bool at comptime.
-    alias x1 = isnan(SIMD[DType.float32, 4](SIMD[DType.float64, 4](1.0)))
+    comptime x1 = isnan(SIMD[DType.float32, 4](SIMD[DType.float64, 4](1.0)))
     assert_equal(x1, SIMD[DType.bool, 4](fill=False))
 
-    alias x2 = isnan(SIMD[DType.float32, 4](FloatLiteral.nan))
+    comptime x2 = isnan(SIMD[DType.float32, 4](FloatLiteral.nan))
     assert_equal(x2, SIMD[DType.bool, 4](fill=True))
 
 

@@ -90,8 +90,8 @@ def load_scheduler(
             offload_queue_draining=pipeline_config.experimental_background_queue,
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
-        assert hasattr(pipeline, "speech_lm_pipeline")
-        paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager
+        assert hasattr(pipeline, "kv_manager")
+        paged_manager = pipeline.kv_manager
         assert isinstance(paged_manager, PagedKVCacheManager)
 
         assert pipeline_config.ce_delay_ms is not None
@@ -99,11 +99,10 @@ def load_scheduler(
         assert pipeline_config.max_length is not None
 
         token_gen_config = AudioGenerationSchedulerConfig(
-            max_batch_size_tg=pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.max_batch_size,
             max_forward_steps_tg=pipeline_config.max_num_steps
             if pipeline_config.max_num_steps != -1
             else 1,
-            max_batch_size_ce=pipeline_config.max_batch_size,
             max_seq_len=pipeline_config.max_length,
             target_tokens_per_batch_ce=pipeline_config.prefill_chunk_size,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,

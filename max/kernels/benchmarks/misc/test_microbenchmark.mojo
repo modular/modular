@@ -22,7 +22,7 @@ from microbenchmark import Benchmarkable
 
 from utils.index import Index
 
-alias alignment = 64
+comptime alignment = 64
 
 
 fn gemm_naive[
@@ -45,7 +45,7 @@ fn gemm_naive[
 
 @fieldwise_init
 struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
-    Benchmarkable, ImplicitlyCopyable, Movable
+    Benchmarkable, ImplicitlyCopyable
 ):
     var m: Int
     var n: Int
@@ -124,7 +124,7 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
 
 @fieldwise_init
 struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
-    Benchmarkable, ImplicitlyCopyable, Movable
+    Benchmarkable, ImplicitlyCopyable
 ):
     var m: Int
     var n: Int

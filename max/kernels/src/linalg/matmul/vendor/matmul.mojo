@@ -56,14 +56,14 @@ fn matmul[
         )
         return
     else:
-        alias epilogue = elementwise_lambda_fn.value()
+        comptime epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        alias use_32b_simd = (
+        comptime use_32b_simd = (
             has_nvidia_gpu_accelerator()
             and ctx.default_device_info.compute >= B200.compute
         )
-        alias simd_size = 32 // size_of[c.type]() if use_32b_simd else (
+        comptime simd_size = 32 // size_of[c.type]() if use_32b_simd else (
             simd_width_of[c.type, target = get_gpu_target()]()
         )
 
@@ -101,10 +101,13 @@ fn matmul[
             c.num_elements()
         )
 
-        # We do not want to mark c as `mut` in the function signature, so we
-        # create a new shallow copy of c as a temporary buffer.
-        var c_tmp = c
-        c_tmp.data = tmp_device_buffer.unsafe_ptr()
+        # Construct a new buffer with external origin pointing to the temporary storage.
+        var c_tmp = NDBuffer[c.type, 2, MutOrigin.external](
+            rebind[UnsafePointer[Scalar[c.type], MutOrigin.external]](
+                tmp_device_buffer.unsafe_ptr()
+            ),
+            IndexList[2](c.dim[0](), c.dim[1]()),
+        )
 
         matmul[
             transpose_b=transpose_b,

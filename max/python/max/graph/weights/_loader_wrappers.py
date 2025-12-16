@@ -22,16 +22,3 @@ except ImportError:
     class GGUFWeights:  # type: ignore
         def __init__(self, *args, **kwargs):
             raise ImportError("Unable to load gguf file, gguf not installed")
-
-
-try:
-    import torch  # type: ignore # noqa: F401
-
-    from .load_pytorch import PytorchWeights
-except ImportError:
-
-    class PytorchWeights:  # type: ignore
-        def __init__(self, *args, **kwargs):
-            raise ImportError(
-                "Unable to load pytorch file, torch not installed"
-            )

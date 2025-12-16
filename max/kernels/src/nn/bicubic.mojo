@@ -87,7 +87,7 @@ fn cubic_kernel(x: SIMD) -> type_of(x):
         Weight contribution based on the distance.
     """
     # Use a = -0.75 to match the PyTorch bicubic filter.
-    alias a = type_of(x)(-0.75)
+    comptime a = type_of(x)(-0.75)
     var abs_x = abs(x)
     var abs_x_squared = abs_x * abs_x
     var abs_x_cubed = abs_x_squared * abs_x
@@ -295,7 +295,7 @@ fn resize_bicubic[
 
         # Use a fixed block size to avoid exceeding CUDA thread limits.
         var block_size = 256
-        alias kernel = gpu_bicubic_kernel[
+        comptime kernel = gpu_bicubic_kernel[
             output.dtype, input.layout, output.layout, output.address_space
         ]
         ctx.get_device_context().enqueue_function_checked[kernel, kernel](

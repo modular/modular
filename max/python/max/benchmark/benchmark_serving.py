@@ -27,6 +27,7 @@ import random
 import re
 import resource
 import statistics
+import subprocess
 import sys
 import time
 import warnings
@@ -45,6 +46,7 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 if TYPE_CHECKING:
+    from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
     from max.diagnostics.gpu import BackgroundRecorder as GPUBackgroundRecorder
     from max.diagnostics.gpu import GPUStats
 
@@ -71,15 +73,11 @@ from max.benchmark.benchmark_shared.datasets import (
     SonnetBenchmarkDataset,
     VisionArenaBenchmarkDataset,
 )
-from max.benchmark.benchmark_shared.lora_driver import (
-    LoRADriver,
-    LoRAOutputFormat,
-    benchmark_lora_loading,
-    benchmark_lora_unloading,
+from max.benchmark.benchmark_shared.lora_benchmark_manager import (
+    LoRABenchmarkManager,
 )
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
-    LoRAMetrics,
     StandardPercentileMetrics,
     ThroughputMetrics,
 )
@@ -92,10 +90,10 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncOutput,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
-    compute_metrics_delta,
-    fetch_and_parse_metrics,
+    collect_server_metrics,
     print_server_metrics,
 )
+from max.diagnostics.gpu import GPUDiagContext
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     "This command runs comprehensive benchmark tests on a model server to"
@@ -140,6 +138,47 @@ def set_ulimit(target_soft_limit: int = 65535) -> None:
             resource.setrlimit(resource_type, (target_soft_limit, current_hard))
         except ValueError as e:
             print(f"Fail to set RLIMIT_NOFILE: {e}")
+
+
+def get_default_trace_path() -> str:
+    """Get the default trace output path."""
+    workspace_path = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+    if workspace_path:
+        return os.path.join(workspace_path, "profile.nsys-rep")
+    return "./profile.nsys-rep"
+
+
+def assert_nvidia_gpu() -> None:
+    """Raise an exception if no NVIDIA GPUs are available."""
+    with GPUDiagContext() as ctx:
+        stats = ctx.get_stats()
+        if not stats:
+            raise RuntimeError(
+                "No GPUs detected. The --trace flag currently only works with NVIDIA GPUs."
+            )
+        if not any(gpu_name.startswith("nv") for gpu_name in stats):
+            raise RuntimeError(
+                "The --trace flag currently only works with NVIDIA GPUs. "
+                f"Found GPUs: {list(stats.keys())}"
+            )
+
+
+def start_trace(output_path: str, session_name: str | None = None) -> None:
+    """Start nsys profiling session."""
+    cmd = ["nsys", "start", "-o", output_path, "--force-overwrite", "true"]
+    if session_name:
+        cmd.extend(["--session", session_name])
+    logger.info(f"Starting nsys trace: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+
+
+def stop_trace(session_name: str | None = None) -> None:
+    """Stop nsys profiling session."""
+    cmd = ["nsys", "stop"]
+    if session_name:
+        cmd.extend(["--session", session_name])
+    logger.info(f"Stopping nsys trace: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
 
 
 async def get_request(
@@ -276,6 +315,7 @@ def calculate_metrics(
     skip_first_n_requests: int,
     max_concurrency: int | None,
     collect_gpu_stats: bool,
+    server_metrics: ParsedMetrics | None = None,
 ) -> tuple[BenchmarkMetrics, list[int]]:
     actual_output_lens: list[int] = []
     nonempty_response_chunks = 0
@@ -433,6 +473,7 @@ def calculate_metrics(
         gpu_utilization=gpu_utilization,
         cpu_utilization_user=cpu_metrics.get("user_percent"),
         cpu_utilization_system=cpu_metrics.get("system_percent"),
+        server_metrics=server_metrics,
     )
 
     return metrics, actual_output_lens
@@ -552,8 +593,7 @@ async def run_single_turn_benchmark(
     temperature: float,
     top_p: float,
     top_k: int | None,
-    lora_configs: dict[str, str] | None,
-    lora_request_ratio: float,
+    lora_manager: LoRABenchmarkManager | None,
 ) -> list[RequestFuncOutput]:
     """Run single-turn benchmark scenario."""
     if timing_data is None:
@@ -573,6 +613,7 @@ async def run_single_turn_benchmark(
             return await request_driver.request(request_func_input)
 
     tasks: list[asyncio.Task[RequestFuncOutput]] = []
+    request_idx = 0
     async for request in get_request(
         input_requests, request_rate, timing_data, burstiness
     ):
@@ -588,9 +629,10 @@ async def run_single_turn_benchmark(
             filter(None, (request.output_len, max_output_len)), default=None
         )
 
+        # Determine which LoRA to use for this request
         lora_id = None
-        if lora_configs and random.random() < lora_request_ratio:
-            lora_id = random.choice(list(lora_configs.keys()))
+        if lora_manager:
+            lora_id = lora_manager.get_lora_for_request(request_idx)
 
         request_func_input = RequestFuncInput(
             model=model_id if lora_id is None else lora_id,
@@ -608,6 +650,7 @@ async def run_single_turn_benchmark(
         tasks.append(
             asyncio.create_task(limited_request_func(request_func_input))
         )
+        request_idx += 1
 
     outputs = await asyncio.gather(*tasks)
 
@@ -626,8 +669,7 @@ async def run_multiturn_benchmark(
     delay_between_chat_turns: int | None,
     skip_first_n_requests: int,
     ignore_first_turn_stats: bool,
-    lora_configs: dict[str, str] | None,
-    lora_request_ratio: float,
+    lora_manager: LoRABenchmarkManager | None,
     warmup_delay_ms: float,
     max_concurrency: int | None,
 ) -> list[RequestFuncOutput]:
@@ -644,10 +686,12 @@ async def run_multiturn_benchmark(
     # the first session finishes before the second session starts
     async def limited_chat_session_driver(
         chat_session: ChatSession,
+        session_idx: int,
     ) -> list[RequestFuncOutput]:
+        # Determine which LoRA to use for this chat session
         lora_id = None
-        if lora_configs and random.random() < lora_request_ratio:
-            lora_id = random.choice(list(lora_configs.keys()))
+        if lora_manager:
+            lora_id = lora_manager.get_lora_for_request(session_idx)
 
         if semaphore is None:
             return await chat_session_driver(
@@ -681,7 +725,7 @@ async def run_multiturn_benchmark(
         if warmup_delay_ms > 0 and max_concurrency and idx < max_concurrency:
             await asyncio.sleep(warmup_delay_ms / 1000)
         tasks.append(
-            asyncio.create_task(limited_chat_session_driver(chat_session))
+            asyncio.create_task(limited_chat_session_driver(chat_session, idx))
         )
 
     session_outputs: list[list[RequestFuncOutput]] = await asyncio.gather(
@@ -858,9 +902,9 @@ async def benchmark(
     warmup_delay_ms: float,
     ignore_first_turn_stats: bool,
     timing_data: dict[str, list[float]] | None,
-    lora_request_ratio: float,
-    lora_configs: dict[str, str] | None,
-    max_concurrent_lora_ops: int,
+    lora_manager: LoRABenchmarkManager | None,
+    trace_path: str | None = None,
+    trace_session: str | None = None,
 ) -> dict[str, Any]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
@@ -870,17 +914,11 @@ async def benchmark(
         )
         skip_first_n_requests = 0
 
-    # Initialize LoRA metrics
-    lora_metrics = LoRAMetrics()
-
-    # Benchmark LoRA loading if configs provided
-    if lora_configs:
+    # Benchmark LoRA loading if manager provided
+    if lora_manager:
         logger.info("Starting LoRA loading benchmark...")
-        await benchmark_lora_loading(
+        await lora_manager.benchmark_loading(
             api_url=base_url,
-            lora_configs=lora_configs,
-            metrics=lora_metrics,
-            max_concurrent=max_concurrent_lora_ops,
         )
 
     request_driver_class: type[RequestDriver] = REQUEST_DRIVER_CLASSES[backend]
@@ -946,6 +984,10 @@ async def benchmark(
                     " collection"
                 )
 
+        # Start nsys trace if enabled (before timing to exclude trace overhead)
+        if trace_path:
+            start_trace(trace_path, trace_session)
+
         benchmark_start_time = time.perf_counter_ns()
         if max_benchmark_duration_s is None:
             benchmark_should_end_time = None
@@ -958,11 +1000,15 @@ async def benchmark(
         baseline_server_metrics = None
         if collect_server_stats:
             try:
-                baseline_server_metrics = fetch_and_parse_metrics(
-                    backend=backend,
-                    base_url=base_url,
+                baseline_server_metrics = collect_server_metrics(
+                    backend, base_url
                 )
-                logger.info("Captured baseline server metrics")
+                logger.info(
+                    f"Captured baseline server metrics: "
+                    f"{len(baseline_server_metrics.counters)} counters, "
+                    f"{len(baseline_server_metrics.gauges)} gauges, "
+                    f"{len(baseline_server_metrics.histograms)} histograms"
+                )
             except Exception as e:
                 logger.warning(
                     f"Failed to capture baseline server metrics: {e}"
@@ -984,52 +1030,55 @@ async def benchmark(
             else base_driver
         )
 
-        if not num_chat_sessions:
-            # single-turn chat scenario
-            outputs = await run_single_turn_benchmark(
-                input_requests=input_requests,
-                request_rate=request_rate,
-                burstiness=burstiness,
-                timing_data=timing_data,
-                semaphore=semaphore,
-                benchmark_should_end_time=benchmark_should_end_time,
-                request_driver=request_driver,
-                model_id=model_id,
-                api_url=api_url,
-                max_output_len=max_output_len,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                lora_configs=lora_configs,
-                lora_request_ratio=lora_request_ratio,
-            )
-        else:
-            # multi-turn chat scenario
-            outputs = await run_multiturn_benchmark(
-                chat_sessions=chat_sessions,
-                max_requests=max_requests,
-                semaphore=semaphore,
-                benchmark_should_end_time=benchmark_should_end_time,
-                request_driver=request_driver,
-                model_id=model_id,
-                api_url=api_url,
-                tokenizer=tokenizer,
-                delay_between_chat_turns=delay_between_chat_turns,
-                skip_first_n_requests=skip_first_n_requests,
-                ignore_first_turn_stats=ignore_first_turn_stats,
-                lora_configs=lora_configs,
-                lora_request_ratio=lora_request_ratio,
-                warmup_delay_ms=warmup_delay_ms,
-                max_concurrency=max_concurrency,
-            )
+        try:
+            if not num_chat_sessions:
+                # single-turn chat scenario
+                outputs = await run_single_turn_benchmark(
+                    input_requests=input_requests,
+                    request_rate=request_rate,
+                    burstiness=burstiness,
+                    timing_data=timing_data,
+                    semaphore=semaphore,
+                    benchmark_should_end_time=benchmark_should_end_time,
+                    request_driver=request_driver,
+                    model_id=model_id,
+                    api_url=api_url,
+                    max_output_len=max_output_len,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    lora_manager=lora_manager,
+                )
+            else:
+                # multi-turn chat scenario
+                outputs = await run_multiturn_benchmark(
+                    chat_sessions=chat_sessions,
+                    max_requests=max_requests,
+                    semaphore=semaphore,
+                    benchmark_should_end_time=benchmark_should_end_time,
+                    request_driver=request_driver,
+                    model_id=model_id,
+                    api_url=api_url,
+                    tokenizer=tokenizer,
+                    delay_between_chat_turns=delay_between_chat_turns,
+                    skip_first_n_requests=skip_first_n_requests,
+                    ignore_first_turn_stats=ignore_first_turn_stats,
+                    lora_manager=lora_manager,
+                    warmup_delay_ms=warmup_delay_ms,
+                    max_concurrency=max_concurrency,
+                )
 
-        # Close pbar if it was created
-        if pbar is not None:
-            pbar.close()
+            # Close pbar if it was created
+            if pbar is not None:
+                pbar.close()
 
-        benchmark_duration = (
-            time.perf_counter_ns() - benchmark_start_time
-        ) / 1e9
+            benchmark_duration = (
+                time.perf_counter_ns() - benchmark_start_time
+            ) / 1e9
+        finally:
+            # Stop nsys trace if enabled (after timing to exclude trace overhead)
+            if trace_path:
+                stop_trace(trace_session)
 
     if print_inputs_and_outputs:
         print("Generated output text:")
@@ -1043,12 +1092,9 @@ async def benchmark(
                 }
             )
 
-    if lora_configs:
-        await benchmark_lora_unloading(
+    if lora_manager:
+        await lora_manager.benchmark_unloading(
             api_url=base_url,
-            lora_configs=lora_configs,
-            metrics=lora_metrics,
-            max_concurrent=max_concurrent_lora_ops,
         )
 
     gpu_metrics: list[dict[str, GPUStats]] | None = None
@@ -1061,36 +1107,29 @@ async def benchmark(
     else:
         cpu_metrics = {}
 
-    # Parse server-side metrics from Prometheus endpoint
+    # Collect server-side metrics from Prometheus endpoint (with delta from baseline)
     server_metrics = None
     if collect_server_stats:
         try:
-            final_server_metrics = fetch_and_parse_metrics(
-                backend=backend,
-                base_url=base_url,
+            server_metrics = collect_server_metrics(
+                backend, base_url, baseline_server_metrics
             )
-
-            # Compute delta if we have baseline metrics
             if baseline_server_metrics is not None:
-                server_metrics = compute_metrics_delta(
-                    baseline=baseline_server_metrics,
-                    final=final_server_metrics,
-                )
                 logger.info(
-                    f"Computed server metrics delta: {len(server_metrics.counters)} counters, "
+                    f"Computed server metrics delta: "
+                    f"{len(server_metrics.counters)} counters, "
                     f"{len(server_metrics.gauges)} gauges, "
                     f"{len(server_metrics.histograms)} histograms"
                 )
             else:
-                # If no baseline, use final metrics as-is
-                server_metrics = final_server_metrics
                 logger.info(
-                    f"Collected {len(server_metrics.counters)} counters, "
+                    f"Collected server metrics: "
+                    f"{len(server_metrics.counters)} counters, "
                     f"{len(server_metrics.gauges)} gauges, "
-                    f"{len(server_metrics.histograms)} histograms from server"
+                    f"{len(server_metrics.histograms)} histograms"
                 )
         except Exception as e:
-            logger.warning(f"Failed to parse server metrics: {e}")
+            logger.warning(f"Failed to collect server metrics: {e}")
 
     metrics, actual_output_lens = calculate_metrics(
         outputs=outputs,
@@ -1101,6 +1140,7 @@ async def benchmark(
         skip_first_n_requests=skip_first_n_requests,
         max_concurrency=max_concurrency,
         collect_gpu_stats=collect_gpu_stats,
+        server_metrics=server_metrics,
     )
     achieved_request_rate = 0.0
     if timing_data and timing_data.get("intervals"):
@@ -1211,88 +1251,90 @@ async def benchmark(
     print("=" * 50)
 
     # Print LoRA benchmark results
-    if lora_configs:
+    if lora_manager:
         print_section(title=" LoRA Adapter Benchmark Results ", char="=")
         print(
             "{:<40} {:<10}".format(
-                "Total LoRA loads:", lora_metrics.total_loads
+                "Total LoRA loads:", lora_manager.metrics.total_loads
             )
         )
         print(
             "{:<40} {:<10}".format(
-                "Total LoRA unloads:", lora_metrics.total_unloads
+                "Total LoRA unloads:", lora_manager.metrics.total_unloads
             )
         )
 
-        if lora_metrics.load_times_ms:
+        if lora_manager.metrics.load_times_ms:
             print_section(title="LoRA Load Times")
             print(
                 "{:<40} {:<10.2f}".format(
                     "Mean load time:",
-                    statistics.mean(lora_metrics.load_times_ms),
+                    statistics.mean(lora_manager.metrics.load_times_ms),
                 )
             )
             print(
                 "{:<40} {:<10.2f}".format(
                     "Median load time:",
-                    statistics.median(lora_metrics.load_times_ms),
+                    statistics.median(lora_manager.metrics.load_times_ms),
                 )
             )
             print(
                 "{:<40} {:<10.2f}".format(
-                    "Min load time:", min(lora_metrics.load_times_ms)
+                    "Min load time:", min(lora_manager.metrics.load_times_ms)
                 )
             )
             print(
                 "{:<40} {:<10.2f}".format(
-                    "Max load time:", max(lora_metrics.load_times_ms)
+                    "Max load time:", max(lora_manager.metrics.load_times_ms)
                 )
             )
-            if len(lora_metrics.load_times_ms) > 1:
+            if len(lora_manager.metrics.load_times_ms) > 1:
                 print(
                     "{:<40} {:<10.2f}".format(
                         "Std dev load time:",
-                        statistics.stdev(lora_metrics.load_times_ms),
+                        statistics.stdev(lora_manager.metrics.load_times_ms),
                     )
                 )
 
-        if lora_metrics.unload_times_ms:
+        if lora_manager.metrics.unload_times_ms:
             print_section(title="LoRA Unload Times")
             print(
                 "{:<40} {:<10.2f}".format(
                     "Mean unload time:",
-                    statistics.mean(lora_metrics.unload_times_ms),
+                    statistics.mean(lora_manager.metrics.unload_times_ms),
                 )
             )
             print(
                 "{:<40} {:<10.2f}".format(
                     "Median unload time:",
-                    statistics.median(lora_metrics.unload_times_ms),
+                    statistics.median(lora_manager.metrics.unload_times_ms),
                 )
             )
             print(
                 "{:<40} {:<10.2f}".format(
-                    "Min unload time:", min(lora_metrics.unload_times_ms)
+                    "Min unload time:",
+                    min(lora_manager.metrics.unload_times_ms),
                 )
             )
             print(
                 "{:<40} {:<10.2f}".format(
-                    "Max unload time:", max(lora_metrics.unload_times_ms)
+                    "Max unload time:",
+                    max(lora_manager.metrics.unload_times_ms),
                 )
             )
-            if len(lora_metrics.unload_times_ms) > 1:
+            if len(lora_manager.metrics.unload_times_ms) > 1:
                 print(
                     "{:<40} {:<10.2f}".format(
                         "Std dev unload time:",
-                        statistics.stdev(lora_metrics.unload_times_ms),
+                        statistics.stdev(lora_manager.metrics.unload_times_ms),
                     )
                 )
 
         print("=" * 50)
 
     # Print server-side metrics if available
-    if server_metrics:
-        print_server_metrics(server_metrics)
+    if metrics.server_metrics:
+        print_server_metrics(metrics.server_metrics)
 
     result = {
         "duration": benchmark_duration,
@@ -1350,27 +1392,19 @@ async def benchmark(
     }
 
     # Add LoRA metrics to result if available
-    if lora_configs:
+    if lora_manager:
         result["lora_metrics"] = {
-            "total_loads": lora_metrics.total_loads,
-            "total_unloads": lora_metrics.total_unloads,
-            "load_times_ms": lora_metrics.load_times_ms,
-            "unload_times_ms": lora_metrics.unload_times_ms,
+            "total_loads": lora_manager.metrics.total_loads,
+            "total_unloads": lora_manager.metrics.total_unloads,
+            "load_times_ms": lora_manager.metrics.load_times_ms,
+            "unload_times_ms": lora_manager.metrics.unload_times_ms,
         }
 
     # Add server-side metrics to result if available
-    if server_metrics:
-        # Extract prefill/decode stats for easy access
-        prefill_hist = server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
-        )
-        decode_hist = server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
-        )
-
+    if metrics.server_metrics:
         result["server_metrics"] = {
-            "counters": server_metrics.counters,
-            "gauges": server_metrics.gauges,
+            "counters": metrics.server_metrics.counters,
+            "gauges": metrics.server_metrics.gauges,
             "histograms": {
                 name: {
                     "buckets": hist.buckets,
@@ -1378,19 +1412,13 @@ async def benchmark(
                     "count": hist.count,
                     "mean": hist.mean,
                 }
-                for name, hist in server_metrics.histograms.items()
+                for name, hist in metrics.server_metrics.histograms.items()
             },
-            # Add prefill/decode breakdown for easy access
-            "prefill_batch_execution_time_ms": (
-                prefill_hist.mean if prefill_hist else None
-            ),
-            "prefill_batch_count": (
-                int(prefill_hist.count) if prefill_hist else 0
-            ),
-            "decode_batch_execution_time_ms": (
-                decode_hist.mean if decode_hist else None
-            ),
-            "decode_batch_count": int(decode_hist.count) if decode_hist else 0,
+            # Convenience fields for prefill/decode breakdown
+            "prefill_batch_execution_time_ms": metrics.mean_prefill_batch_time_ms,
+            "prefill_batch_count": metrics.prefill_batch_count,
+            "decode_batch_execution_time_ms": metrics.mean_decode_batch_time_ms,
+            "decode_batch_count": metrics.decode_batch_count,
         }
 
     return result
@@ -1610,21 +1638,25 @@ def main(args: argparse.Namespace) -> None:
             num_chat_sessions=args.num_chat_sessions,
         )
 
-    # Generate LoRA configurations if needed
-    # TODO: make lora_configs a dataclass type than a dict[str, str]
-    lora_configs = None
-    if args.num_loras > 0 or args.lora_paths:
-        driver = LoRADriver(
-            model_id=model_id,
-            lora_rank=args.lora_rank,
-            num_loras=args.num_loras,
-            lora_target_modules=args.lora_target_modules,
-            lora_output_dir=args.lora_output_dir,
-            lora_paths=args.lora_paths,
-            lora_server_path=args.lora_server_path,
-            output_format=LoRAOutputFormat.PATH,  # benchmark_serving uses path format
+    lora_manager = None
+    if args.lora_paths:
+        num_requests = (
+            len(input_requests)
+            if not args.num_chat_sessions
+            else len(chat_sessions)
         )
-        lora_configs = driver.generate_loras()
+
+        lora_manager = LoRABenchmarkManager(
+            lora_paths=args.lora_paths,
+            num_requests=num_requests,
+            traffic_ratios=args.per_lora_traffic_ratio
+            if args.per_lora_traffic_ratio
+            else None,
+            uniform_ratio=args.lora_uniform_traffic_ratio,
+            seed=args.seed,
+            max_concurrent_lora_ops=args.max_concurrent_lora_ops,
+        )
+        lora_manager.log_traffic_distribution()
 
     if args.max_concurrency is not None:
         try:
@@ -1651,6 +1683,15 @@ def main(args: argparse.Namespace) -> None:
 
     # Resolve the appropriate backend for this request type
     resolved_backend = resolve_backend_for_chat(backend=backend, chat=chat)
+
+    # Handle trace flag
+    trace_path = None
+    if args.trace:
+        assert_nvidia_gpu()
+        trace_path = (
+            args.trace_file if args.trace_file else get_default_trace_path()
+        )
+        logger.info(f"Tracing enabled, output: {trace_path}")
 
     logger.info("Starting benchmark run")
     benchmark_result: dict[str, Any] = asyncio.run(
@@ -1683,9 +1724,9 @@ def main(args: argparse.Namespace) -> None:
             warmup_delay_ms=args.chat_warmup_delay_ms,
             ignore_first_turn_stats=args.ignore_first_turn_stats,
             timing_data=None,
-            lora_request_ratio=args.lora_request_ratio,
-            lora_configs=lora_configs,
-            max_concurrent_lora_ops=args.max_concurrent_lora_ops,
+            lora_manager=lora_manager,
+            trace_path=trace_path,
+            trace_session=args.trace_session,
         )
     )
 

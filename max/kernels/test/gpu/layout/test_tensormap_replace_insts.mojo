@@ -53,9 +53,9 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         num_of_tensormaps, dtype, cta_tile_layout, desc_layout
     ],
 ):
-    alias M = cta_tile_layout.shape[0].value()
-    alias N = cta_tile_layout.shape[1].value()
-    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime M = cta_tile_layout.shape[0].value()
+    comptime N = cta_tile_layout.shape[1].value()
+    comptime expected_bytes = cta_tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
@@ -96,12 +96,12 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
 def test_tma_replace_global_addr_in_gmem_descriptor[
     src_layout: Layout,
 ](ctx: DeviceContext):
-    alias M = src_layout.shape[0].value()
-    alias N = src_layout.shape[1].value()
+    comptime M = src_layout.shape[0].value()
+    comptime N = src_layout.shape[1].value()
 
-    alias num_of_tensormaps = 4
+    comptime num_of_tensormaps = 4
 
-    alias dst_layout = Layout.row_major(num_of_tensormaps * M, N)
+    comptime dst_layout = Layout.row_major(num_of_tensormaps * M, N)
 
     var old_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
     var new_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
@@ -136,7 +136,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
 
     ctx.synchronize()
 
-    alias kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
+    comptime kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         type_of(template_tma_tensormap).dtype,
         num_of_tensormaps,
         src_layout,  # src layout
@@ -190,9 +190,9 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
         num_of_tensormaps, dtype, cta_tile_layout, desc_layout
     ],
 ):
-    alias M = cta_tile_layout.shape[0].value()
-    alias N = cta_tile_layout.shape[1].value()
-    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime M = cta_tile_layout.shape[0].value()
+    comptime N = cta_tile_layout.shape[1].value()
+    comptime expected_bytes = cta_tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
@@ -253,11 +253,11 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
 def test_tma_replace_global_addr_in_smem_descriptor[
     src_layout: Layout,
 ](ctx: DeviceContext):
-    alias M = src_layout.shape[0].value()
-    alias N = src_layout.shape[1].value()
+    comptime M = src_layout.shape[0].value()
+    comptime N = src_layout.shape[1].value()
 
-    alias num_of_tensormaps = 4
-    alias dst_layout = Layout.row_major(num_of_tensormaps * M, N)
+    comptime num_of_tensormaps = 4
+    comptime dst_layout = Layout.row_major(num_of_tensormaps * M, N)
 
     var old_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
     var new_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
@@ -292,7 +292,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
 
     ctx.synchronize()
 
-    alias kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
+    comptime kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         type_of(template_tma_tensormap).dtype,
         num_of_tensormaps,
         src_layout,  # src layout
@@ -345,9 +345,9 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
         num_of_subtensors, dtype, cta_tile_layout, desc_layout
     ],
 ):
-    alias tile_M = cta_tile_layout.shape[0].value()
-    alias tile_N = cta_tile_layout.shape[1].value()
-    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime tile_M = cta_tile_layout.shape[0].value()
+    comptime tile_N = cta_tile_layout.shape[1].value()
+    comptime expected_bytes = cta_tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
@@ -429,11 +429,11 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     size_of_subtensors: Int,
     swizzle_mode: TensorMapSwizzle,
 ](ctx: DeviceContext, subtensors_m: IndexList[size_of_subtensors]):
-    alias M = src_layout.shape[0].value()
-    alias N = src_layout.shape[1].value()
+    comptime M = src_layout.shape[0].value()
+    comptime N = src_layout.shape[1].value()
 
-    alias cta_tile_M = cta_tile_layout.shape[0].value()
-    alias cta_tile_N = cta_tile_layout.shape[1].value()
+    comptime cta_tile_M = cta_tile_layout.shape[0].value()
+    comptime cta_tile_N = cta_tile_layout.shape[1].value()
 
     constrained[
         N == cta_tile_N,
@@ -451,7 +451,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
             " support CUDA versions < 12.5"
         ),
     )
-    alias num_of_subtensors = size_of_subtensors - 1
+    comptime num_of_subtensors = size_of_subtensors - 1
 
     var old_src = ManagedLayoutTensor[
         dtype, Layout.row_major(cta_tile_M, cta_tile_N)
@@ -462,7 +462,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         Index(cta_tile_M, cta_tile_N), swizzle_mode=swizzle_mode
     ](ctx, old_src.device_tensor())
 
-    alias dst_layout = Layout.row_major(
+    comptime dst_layout = Layout.row_major(
         num_of_subtensors * cta_tile_M, cta_tile_N
     )
 
@@ -492,7 +492,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
 
     ctx.synchronize()
 
-    alias kernel = test_tma_replace_global_dim_in_smem_descriptor_kernel[
+    comptime kernel = test_tma_replace_global_dim_in_smem_descriptor_kernel[
         dtype,
         num_of_subtensors,
         src_layout,  # new src layout
@@ -511,7 +511,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         block_dim=(cta_tile_M * cta_tile_N),
     )
 
-    alias swizzle = make_swizzle[dtype, swizzle_mode]()
+    comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
     dest_tile = LayoutTensor[
         dtype, Layout.row_major(cta_tile_M, cta_tile_N), MutAnyOrigin

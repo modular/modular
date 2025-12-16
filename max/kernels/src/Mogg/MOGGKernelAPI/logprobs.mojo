@@ -20,17 +20,18 @@ from gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
 from runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
-from tensor.transitional import managed_tensor_slice_to_ndbuffer
 
 from utils.index import IndexList
 
 
 struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
-    alias num_elements = 2**levels - 1
-    var k_array: InlineArray[Scalar[k_dtype], Self.num_elements]
-    var v_array: InlineArray[Scalar[v_dtype], Self.num_elements]
+    comptime num_elements = 2**Self.levels - 1
+    var k_array: InlineArray[Scalar[Self.k_dtype], Self.num_elements]
+    var v_array: InlineArray[Scalar[Self.v_dtype], Self.num_elements]
 
-    fn __init__(out self, *, fill_k: Scalar[k_dtype], fill_v: Scalar[v_dtype]):
+    fn __init__(
+        out self, *, fill_k: Scalar[Self.k_dtype], fill_v: Scalar[Self.v_dtype]
+    ):
         self.k_array = InlineArray[size = Self.num_elements](fill=fill_k)
         self.v_array = InlineArray[size = Self.num_elements](fill=fill_v)
 
@@ -43,7 +44,7 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
         var current_index = 0
 
         @parameter
-        for level in range(levels - 1):
+        for level in range(Self.levels - 1):
             # Must ensure:
             # arr[cur] < arr[left] && arr[cur] < arr[right]
             var left_index = current_index * 2 + 1
@@ -61,9 +62,9 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
                 current_index = smaller_index
 
 
-alias logit_dtype = DType.float32
-alias token_dtype = DType.uint32
-alias offset_dtype = DType.uint32
+comptime logit_dtype = DType.float32
+comptime token_dtype = DType.uint32
+comptime offset_dtype = DType.uint32
 
 
 fn compute_log_probabilities_1tok[
@@ -191,7 +192,7 @@ struct LogProbabilitiesRagged:
                         lp_output_offsets=lp_output_offsets,
                     )
 
-            alias block_size = 64
+            comptime block_size = 64
             ctx.get_device_context().enqueue_function_checked[
                 raw_lp_kernel, raw_lp_kernel
             ](

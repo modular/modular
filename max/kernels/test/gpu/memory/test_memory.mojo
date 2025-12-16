@@ -14,7 +14,6 @@
 from math import iota
 
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
 
 
 # CHECK-LABEL: test_memset_async
@@ -24,8 +23,8 @@ fn test_memset_async(ctx: DeviceContext) raises:
     @parameter
     @always_inline
     fn test_memset[dtype: DType](val: Scalar[dtype]) raises:
-        alias length = 4
-        var data = UnsafePointer[Scalar[dtype]].alloc(length)
+        comptime length = 4
+        var data = alloc[Scalar[dtype]](length)
         var data_device = ctx.enqueue_create_buffer[dtype](length)
         ctx.enqueue_copy(data_device, data)
         # iota(data, length, 0)

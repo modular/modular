@@ -15,7 +15,6 @@ from sys import simd_width_of
 
 from algorithm import elementwise
 from benchmark import Bench, BenchConfig, Bencher, BenchId
-from buffer import NDBuffer
 
 from utils.index import Index, IndexList
 
@@ -25,10 +24,7 @@ from utils.index import Index, IndexList
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = NDBuffer[DType.int, 1, MutAnyOrigin, n].stack_allocation()
-
-    for i in range(len(vector)):
-        vector[i] = -1
+    var vector = InlineArray[Scalar[DType.int], n](fill=-1)
 
     @always_inline
     @parameter

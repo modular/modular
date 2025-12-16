@@ -27,7 +27,7 @@ from testing import assert_true
 
 def test_copy_dram_to_sram_async(ctx: DeviceContext):
     print("== test_copy_dram_to_sram_async")
-    alias tensor_layout = Layout.row_major(4, 16)
+    comptime tensor_layout = Layout.row_major(4, 16)
     var tensor = ManagedLayoutTensor[DType.float32, tensor_layout](ctx)
     arange(tensor.tensor())
 
@@ -58,7 +58,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
                 if sram_tensor[r, c] != r * 16 + Int(col_offset) + c:
                     flag[] = False
 
-    alias kernel = copy_to_sram_test_kernel[tensor_layout]
+    comptime kernel = copy_to_sram_test_kernel[tensor_layout]
     var ptr = UnsafePointer(to=check_state).bitcast[Scalar[DType.bool]]()
     ctx.enqueue_function_checked[kernel, kernel](
         tensor.device_tensor(),

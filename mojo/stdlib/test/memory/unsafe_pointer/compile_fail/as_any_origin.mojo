@@ -17,7 +17,7 @@
 fn test_as_any_origin_fails_if_mutability_is_unbound[
     T: AnyType
 ](p: UnsafePointer[T, **_]):
-    # CHECK: constraint failed: An UnsafePointer with unbound mutability cannot be cast to 'AnyOrigin'.
+    # CHECK: ambiguous call to 'as_any_origin'
     var _p = p.as_any_origin()
 
 

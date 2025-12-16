@@ -269,59 +269,6 @@ def get_bilinear_interpolation_weights_and_indices(
 
 
 @traced
-def mrope_pos_ids_3d(
-    grid_thw: npt.NDArray[np.integer[Any]],
-    spatial_merge_size: int,
-) -> npt.NDArray[np.int32]:
-    """Calculate the rope index based on image and video's temporal, height, and width in LLM using NumPy.
-    This is used in the vision transformer to calculate the rotary position embeddings.
-    Converted the original implementation from torch to numpy. Original implementation from:
-    https://github.com/vllm-project/vllm/blob/9fce7bee745230d61c60ad467966790553b0ba48/vllm/model_executor/models/qwen3_vl.py#L409
-
-    Args:
-        grid_thw: Array of shape [num_images, 3] with (t, h, w) for each image/video
-        spatial_merge_size: Factor for downscaling spatial dimensions
-
-    Returns:
-        pos_ids: Array of shape [seq_len, 2] with (h, w) for each position, dtype=int32
-    """
-    pos_ids = []
-    for t, h, w in grid_thw:
-        # Create height position IDs
-        hpos_ids = (
-            np.broadcast_to(np.arange(h).reshape(-1, 1), (h, w))
-            .reshape(
-                h // spatial_merge_size,
-                spatial_merge_size,
-                w // spatial_merge_size,
-                spatial_merge_size,
-            )
-            .transpose(0, 2, 1, 3)
-            .flatten()
-        )
-
-        # Create width position IDs
-        wpos_ids = (
-            np.broadcast_to(np.arange(w).reshape(1, -1), (h, w))
-            .reshape(
-                h // spatial_merge_size,
-                spatial_merge_size,
-                w // spatial_merge_size,
-                spatial_merge_size,
-            )
-            .transpose(0, 2, 1, 3)
-            .flatten()
-        )
-
-        # Stack height and width position IDs
-        coords = np.stack([hpos_ids, wpos_ids], axis=-1)
-        # Repeat for temporal dimension
-        pos_ids.append(np.tile(coords, (t, 1)))
-
-    return np.concatenate(pos_ids, axis=0).astype(np.int32)
-
-
-@traced
 def get_seqlens(
     grid_thw: npt.NDArray[np.int32],
 ) -> tuple[

@@ -26,7 +26,7 @@ def main():
 def test_debug_assert():
     print("== test_debug_assert")
     debug_assert(True, "ok")
-    debug_assert(3, Error("also ok"))
+    debug_assert(Bool(3), Error("also ok"))
     # CHECK: is reached
     print("is reached")
 

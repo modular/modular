@@ -45,8 +45,8 @@ from testing import assert_equal, assert_raises, TestSuite
 
 from utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
-alias dtype = DType.float32
+comptime simd_size: Int = simd_width_of[DType.float32]()
+comptime dtype = DType.float32
 
 
 @always_inline
@@ -176,15 +176,15 @@ fn test_conv_transposed[
     var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
 
     # Find the tile size used in packing.
-    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     # Rounded C and F size for pre-packed filter.
     # alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
-    alias input_layout = Layout.row_major[rank + 2]()
+    comptime input_layout = Layout.row_major[rank + 2]()
     var input_shape = extend_shape(input_dims, N, C)
     var input = LayoutTensor[dtype, input_layout](
         input_ptr,
@@ -260,9 +260,9 @@ fn test_conv_transposed[
             )
 
             @always_inline
-            @__copy_capture(output_ref_ptr, bias_ptr)
-            @parameter
-            fn body0[width: Int](offset: Int):
+            fn body0[
+                width: Int
+            ](offset: Int) unified {var output_ref_ptr, var bias_ptr}:
                 output_ref_ptr.store(
                     offset,
                     10.0
@@ -272,10 +272,10 @@ fn test_conv_transposed[
                     ),
                 )
 
-            vectorize[body0, simd_size](F)
+            vectorize[simd_size](F, body0)
 
     # Test.
-    alias conv_attr = ConvInfoStatic[input_layout.rank() - 2]()
+    comptime conv_attr = ConvInfoStatic[input_layout.rank() - 2]()
 
     # Test epilogue
     @always_inline
@@ -283,8 +283,7 @@ fn test_conv_transposed[
     @parameter
     fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        @parameter
-        fn body1[width: Int](idx: Int):
+        fn body1[width: Int](idx: Int) unified {var}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
@@ -302,7 +301,7 @@ fn test_conv_transposed[
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
 
-        vectorize[body1, simd_size](f_size)
+        vectorize[simd_size](f_size, body1)
 
     ConvTransposedPacked[
         _,  # input origin

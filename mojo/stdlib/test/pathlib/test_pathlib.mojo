@@ -93,7 +93,7 @@ def test_read_write():
 
 
 def test_read_write_bytes():
-    alias data = "hello world".as_bytes()
+    comptime data = "hello world".as_bytes()
     with NamedTemporaryFile() as tmp:
         var file = Path(tmp.name)
         file.write_bytes(data)

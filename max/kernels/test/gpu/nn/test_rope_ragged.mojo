@@ -13,7 +13,7 @@
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, assert_almost_equal
+from internal_utils import assert_almost_equal
 from layout import *
 from layout._utils import ManagedLayoutTensor
 from memory import memcpy
@@ -35,23 +35,23 @@ def test_rope_ragged_gpu[
     constrained[dtype is DType.float32, "goldens only for float32, currently"]()
 
     # Set up test hyperparameters - same as CPU test
-    alias batch_size = 2
-    alias seq_len = 3
-    alias max_seq_len = 16
-    alias num_heads = 2
-    alias dim = 16
-    alias head_dim = dim // num_heads
+    comptime batch_size = 2
+    comptime seq_len = 3
+    comptime max_seq_len = 16
+    comptime num_heads = 2
+    comptime dim = 16
+    comptime head_dim = dim // num_heads
 
     # Define layouts for all tensors
-    alias q_layout = Layout(
+    comptime q_layout = Layout(
         IntTuple(batch_size * seq_len, num_heads, head_dim),
         IntTuple(num_heads * head_dim, head_dim, 1),
     )
-    alias input_row_offsets_layout = Layout(
+    comptime input_row_offsets_layout = Layout(
         IntTuple(batch_size + 1), IntTuple(1)
     )
-    alias start_pos_layout = Layout(IntTuple(batch_size), IntTuple(1))
-    alias freqs_cis_layout = Layout(
+    comptime start_pos_layout = Layout(IntTuple(batch_size), IntTuple(1))
+    comptime freqs_cis_layout = Layout(
         IntTuple(max_seq_len, rope_dim), IntTuple(rope_dim, 1)
     )
 

@@ -25,10 +25,12 @@ def register_all_models() -> None:
 
     from .deepseekV2 import deepseekV2_arch
     from .deepseekV3 import deepseekV3_arch
+    from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
     from .gemma3 import gemma3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gpt_oss import gpt_oss_arch
+    from .gpt_oss_module_v3 import gpt_oss_module_v3_arch
     from .granite import granite_arch
     from .idefics3 import idefics3_arch
     from .internvl import internvl_arch
@@ -51,10 +53,12 @@ def register_all_models() -> None:
         exaone_arch,
         deepseekV2_arch,
         deepseekV3_arch,
+        eagle_llama_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
         granite_arch,
         gpt_oss_arch,
+        gpt_oss_module_v3_arch,
         internvl_arch,
         idefics3_arch,
         llama_arch,

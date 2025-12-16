@@ -176,7 +176,7 @@ def test_hash_simd_values():
 
 
 def test_hash_at_compile_time():
-    alias h = hash[HasherType=Fnv1a]("hello")
+    comptime h = hash[HasherType=Fnv1a]("hello")
     assert_equal(h, 11831194018420276491)
 
 

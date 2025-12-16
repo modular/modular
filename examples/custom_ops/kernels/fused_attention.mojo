@@ -187,8 +187,8 @@ fn fused_attention_cpu[
     V: LayoutTensor,
     O: LayoutTensor[mut=True, *_, **_],
 ):
-    alias N = K.shape[0]()
-    alias D = K.shape[1]()
+    comptime N = K.shape[0]()
+    comptime D = K.shape[1]()
 
     @parameter
     for tile_n in range(N // BN):
@@ -270,9 +270,9 @@ fn matmul[
                         lhs[m, k].cast[res.dtype]()
                     ) * rebind[res.element_type](rhs[k, n].cast[res.dtype]())
     else:
-        alias M = res.shape[0]()
-        alias N = res.shape[1]()
-        alias K = lhs.shape[1]()
+        comptime M = res.shape[0]()
+        comptime N = res.shape[1]()
+        comptime K = lhs.shape[1]()
 
         out_sram = LayoutTensor[
             res.dtype,
@@ -281,7 +281,7 @@ fn matmul[
             address_space = AddressSpace.SHARED,
         ].stack_allocation()
 
-        alias BK = 8
+        comptime BK = 8
 
         constrained[K % 8 == 0, "K needs to be a multiple of 8"]()
 
@@ -328,8 +328,8 @@ fn fused_attention_kernel[
     V: LayoutTensor[v_dtype, v_layout, MutAnyOrigin],
     O: LayoutTensor[o_dtype, o_layout, MutAnyOrigin],
 ):
-    alias N = Q.shape[0]()
-    alias D = Q.shape[1]()
+    comptime N = Q.shape[0]()
+    comptime D = Q.shape[1]()
 
     Q_tile = Q.tile[BN, D](Int(block_idx.y), 0)
 
@@ -349,7 +349,7 @@ fn fused_attention_kernel[
         .fill(0)
     )
 
-    alias BN_1 = 8
+    comptime BN_1 = 8
 
     for tile_n_idx in range(N // BN_1):
         K_tile = K.tile[BN_1, D](tile_n_idx, 0)
@@ -375,7 +375,7 @@ def fused_attention_gpu[
     V: LayoutTensor,
     O: LayoutTensor[mut=True, *_, **_],
 ):
-    alias kernel_func = fused_attention_kernel[
+    comptime kernel_func = fused_attention_kernel[
         Q.dtype,
         Q.layout,
         K.dtype,

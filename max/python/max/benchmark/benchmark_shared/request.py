@@ -669,9 +669,10 @@ async def async_request_lora_unload(
 REQUEST_DRIVER_CLASSES: dict[Backend, type[RequestDriver]] = {
     Backend.vllm: OpenAICompletionsRequestDriver,
     Backend.vllm_chat: OpenAIChatCompletionsRequestDriver,
-    Backend.trt_llm: TRTLLMRequestDriver,
     Backend.modular: OpenAICompletionsRequestDriver,
     Backend.modular_chat: OpenAIChatCompletionsRequestDriver,
     Backend.sglang: OpenAICompletionsRequestDriver,
     Backend.sglang_chat: OpenAIChatCompletionsRequestDriver,
+    Backend.trtllm: OpenAICompletionsRequestDriver,
+    Backend.trtllm_chat: OpenAIChatCompletionsRequestDriver,
 }

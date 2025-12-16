@@ -29,12 +29,12 @@ from memory import memcpy
 from utils import IndexList, StaticTuple
 
 
-struct CoordinateTransformationMode(ImplicitlyCopyable, Movable):
+struct CoordinateTransformationMode(ImplicitlyCopyable):
     var value: Int
-    alias HalfPixel = CoordinateTransformationMode(0)
-    alias AlignCorners = CoordinateTransformationMode(1)
-    alias Asymmetric = CoordinateTransformationMode(2)
-    alias HalfPixel1D = CoordinateTransformationMode(3)
+    comptime HalfPixel = CoordinateTransformationMode(0)
+    comptime AlignCorners = CoordinateTransformationMode(1)
+    comptime Asymmetric = CoordinateTransformationMode(2)
+    comptime HalfPixel1D = CoordinateTransformationMode(3)
 
     @always_inline
     fn __init__(out self, value: Int):
@@ -76,12 +76,12 @@ fn coord_transform[
         return 0
 
 
-struct RoundMode(ImplicitlyCopyable, Movable):
+struct RoundMode(ImplicitlyCopyable):
     var value: Int
-    alias HalfDown = RoundMode(0)
-    alias HalfUp = RoundMode(1)
-    alias Floor = RoundMode(2)
-    alias Ceil = RoundMode(3)
+    comptime HalfDown = RoundMode(0)
+    comptime HalfUp = RoundMode(1)
+    comptime Floor = RoundMode(2)
+    comptime Ceil = RoundMode(3)
 
     @always_inline
     fn __init__(out self, value: Int):
@@ -93,9 +93,9 @@ struct RoundMode(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct InterpolationMode(ImplicitlyCopyable, Movable):
+struct InterpolationMode(ImplicitlyCopyable):
     var value: Int
-    alias Linear = InterpolationMode(0)
+    comptime Linear = InterpolationMode(0)
 
     @always_inline
     fn __eq__(self, other: InterpolationMode) -> Bool:
@@ -103,9 +103,7 @@ struct InterpolationMode(ImplicitlyCopyable, Movable):
 
 
 @register_passable("trivial")
-struct Interpolator[mode: InterpolationMode](
-    Defaultable, ImplicitlyCopyable, Movable
-):
+struct Interpolator[mode: InterpolationMode](Defaultable, ImplicitlyCopyable):
     var cubic_coeff: Float32
 
     @always_inline
@@ -120,7 +118,7 @@ struct Interpolator[mode: InterpolationMode](
     @always_inline
     fn filter_length() -> Int:
         @parameter
-        if mode == InterpolationMode.Linear:
+        if Self.mode == InterpolationMode.Linear:
             return 1
         else:
             constrained[False, "InterpolationMode not supported"]()
@@ -129,7 +127,7 @@ struct Interpolator[mode: InterpolationMode](
     @always_inline
     fn filter(self, x: Float32) -> Float32:
         @parameter
-        if mode == InterpolationMode.Linear:
+        if Self.mode == InterpolationMode.Linear:
             return linear_filter(x)
         else:
             constrained[False, "InterpolationMode not supported"]()
@@ -375,7 +373,7 @@ fn _resize[
         var resize_dim = resize_dims[dim_idx]
         out_shape[resize_dim] = output.dim(resize_dim)
 
-        alias dyn_layout = Layout.row_major[input.rank]()
+        comptime dyn_layout = Layout.row_major[input.rank]()
         var in_buf = LayoutTensor[dtype, dyn_layout](
             in_ptr, RuntimeLayout[dyn_layout].row_major(in_shape)
         )

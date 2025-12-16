@@ -16,16 +16,15 @@ from random import random_float64
 
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext, HostBuffer
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, TestSuite
 
 
 fn simd_add_kernel[
     width: Int
 ](
-    a_span: UnsafePointer[Float32],
-    b_span: UnsafePointer[Float32],
-    c_span: UnsafePointer[Float32],
+    a_span: UnsafePointer[Float32, MutAnyOrigin],
+    b_span: UnsafePointer[Float32, MutAnyOrigin],
+    c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
@@ -39,9 +38,9 @@ fn simd_add_kernel[
 fn simd_mult_kernel[
     width: Int
 ](
-    a_span: UnsafePointer[Float32],
-    b_span: UnsafePointer[Float32],
-    c_span: UnsafePointer[Float32],
+    a_span: UnsafePointer[Float32, MutAnyOrigin],
+    b_span: UnsafePointer[Float32, MutAnyOrigin],
+    c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
@@ -55,9 +54,9 @@ fn simd_mult_kernel[
 fn simd_fma_kernel[
     width: Int
 ](
-    a_span: UnsafePointer[Float32],
-    b_span: UnsafePointer[Float32],
-    c_span: UnsafePointer[Float32],
+    a_span: UnsafePointer[Float32, MutAnyOrigin],
+    b_span: UnsafePointer[Float32, MutAnyOrigin],
+    c_span: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
@@ -102,9 +101,9 @@ fn host_elementwise_fma(
 
 
 def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
-    alias thread_count = 32
-    alias block_count = 1
-    alias buff_size = thread_count * block_count * width
+    comptime thread_count = 32
+    comptime block_count = 1
+    comptime buff_size = thread_count * block_count * width
 
     var a_host = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
     var b_host = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
@@ -134,7 +133,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
 
     @parameter
     if mode == "add":
-        alias kernel = simd_add_kernel[width]
+        comptime kernel = simd_add_kernel[width]
 
         ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
@@ -146,7 +145,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
         host_elementwise_add(a_host, b_host, c_expected, buff_size)
 
     elif mode == "mult":
-        alias kernel = simd_mult_kernel[width]
+        comptime kernel = simd_mult_kernel[width]
 
         ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
@@ -158,7 +157,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
         host_elementwise_mult(a_host, b_host, c_expected, buff_size)
 
     else:
-        alias kernel = simd_fma_kernel[width]
+        comptime kernel = simd_fma_kernel[width]
 
         # Execute kernel on GPU
         ctx.enqueue_function_experimental[kernel](

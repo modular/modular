@@ -95,6 +95,7 @@ from .conv_utils import (
     reorder_padding,
 )
 from .shapes import get_sliding_window_out_dim
+from nn.pad_gpu import pad_constant as pad_constant_gpu
 
 
 @fieldwise_init
@@ -102,13 +103,13 @@ struct Naive2dConvolution[
     output_type: DType,
     input_type: DType,
     filter_type: DType,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
-    var output: UnsafePointer[Scalar[output_type]]
-    var input: UnsafePointer[Scalar[input_type]]
-    var filter: UnsafePointer[Scalar[filter_type]]
+    var output: UnsafePointer[Scalar[Self.output_type]]
+    var input: UnsafePointer[Scalar[Self.input_type]]
+    var filter: UnsafePointer[Scalar[Self.filter_type]]
     var pad_d: IndexList[2]
     var pad_h: IndexList[2]
     var pad_w: IndexList[2]
@@ -123,9 +124,9 @@ struct Naive2dConvolution[
 
     @staticmethod
     fn run(
-        output: UnsafePointer[Scalar[output_type]],
-        input: UnsafePointer[Scalar[input_type]],
-        filter: UnsafePointer[Scalar[filter_type]],
+        output: UnsafePointer[Scalar[Self.output_type]],
+        input: UnsafePointer[Scalar[Self.input_type]],
+        filter: UnsafePointer[Scalar[Self.filter_type]],
         output_shape: IndexList[5],
         input_shape: IndexList[5],
         filter_shape: IndexList[5],
@@ -138,7 +139,7 @@ struct Naive2dConvolution[
     ):
         # Create an instance of the convolution op.
         var naive2d_convolution = Naive2dConvolution[
-            output_type, input_type, filter_type
+            Self.output_type, Self.input_type, Self.filter_type
         ](
             output,
             input,
@@ -159,9 +160,9 @@ struct Naive2dConvolution[
 
     fn __init__(
         out self,
-        output: UnsafePointer[Scalar[output_type]],
-        input: UnsafePointer[Scalar[input_type]],
-        filter: UnsafePointer[Scalar[filter_type]],
+        output: UnsafePointer[Scalar[Self.output_type]],
+        input: UnsafePointer[Scalar[Self.input_type]],
+        filter: UnsafePointer[Scalar[Self.filter_type]],
         output_shape: IndexList[5],
         input_shape: IndexList[5],
         filter_shape: IndexList[5],
@@ -209,7 +210,7 @@ struct Naive2dConvolution[
         producing a single scalar value at the given output tensor index.
         """
         # Initialize the result of this point.
-        var value: Scalar[output_type] = 0
+        var value: Scalar[Self.output_type] = 0
 
         # Input dims.
         var D = self.input_shape[1]
@@ -268,8 +269,8 @@ struct Naive2dConvolution[
                                 )
                             ]
                             value += (
-                                input_val.cast[output_type]()
-                                * filter_val.cast[output_type]()
+                                input_val.cast[Self.output_type]()
+                                * filter_val.cast[Self.output_type]()
                             )
 
         # Store the computed output at the given output position..
@@ -325,9 +326,8 @@ fn _reduce_output[
         # Use all threads in reduction.
         var reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
-        @parameter
         @always_inline
-        fn sum[width: Int](offset: Int):
+        fn sum[width: Int](offset: Int) unified {mut}:
             var tid_output_offset = reduce_range[0] * F + offset
             var vec = scratch.load[width=width](tid_output_offset)
             # The number of partitions here is typically small.
@@ -339,11 +339,11 @@ fn _reduce_output[
                 )
             output.store(tid_output_offset, vec)
 
-        vectorize[sum, simd_size, unroll_factor=4](reduce_range[1] * F)
+        vectorize[simd_size, unroll_factor=4](reduce_range[1] * F, sum)
 
         @parameter
         if elementwise_epilogue:
-            alias epilogue = elementwise_epilogue.value()
+            comptime epilogue = elementwise_epilogue.value()
             for m in range(reduce_range[0], reduce_range[0] + reduce_range[1]):
                 var nhowo = _m_to_n_ho_wo_nhwc(
                     m, output_space_dims[0], output_space_dims[1]
@@ -376,7 +376,7 @@ struct ConvDirectNHWC[
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[conv_attr_rank],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
     The tile factor for C and F are chosen by a heuristic prioritizing C.
@@ -388,11 +388,17 @@ struct ConvDirectNHWC[
     Assume F is divisible at least by simd_size.
     """
 
-    var output: LayoutTensor[output_type, output_layout, output_origin]
-    var input: LayoutTensor[input_type, input_layout, input_origin]
-    var filter: LayoutTensor[filter_type, filter_layout, filter_origin]
+    var output: LayoutTensor[
+        Self.output_type, Self.output_layout, Self.output_origin
+    ]
+    var input: LayoutTensor[
+        Self.input_type, Self.input_layout, Self.input_origin
+    ]
+    var filter: LayoutTensor[
+        Self.filter_type, Self.filter_layout, Self.filter_origin
+    ]
 
-    var conv_shape: ConvShape[conv_attr_rank]
+    var conv_shape: ConvShape[Self.conv_attr_rank]
 
     # Support partition in 4 dims: (n, c, f, ho_or_howo). If the input is
     # padded, the output spatial dims are merged into one as howo. If not
@@ -402,54 +408,60 @@ struct ConvDirectNHWC[
     var cf_tile_size: IndexList[2]
 
     # If shapes and attributes are known at compile time
-    alias packed_and_fully_static = conv_attr.all_known() and input_layout.shape.all_known[
-        1, input_layout.rank()
-    ]() and output_layout.shape.all_known[
-        1, output_layout.rank()
-    ]() and filter_layout.shape.all_known() and filter_packed
+    comptime packed_and_fully_static = Self.conv_attr.all_known() and Self.input_layout.shape.all_known[
+        1, Self.input_layout.rank()
+    ]() and Self.output_layout.shape.all_known[
+        1, Self.output_layout.rank()
+    ]() and Self.filter_layout.shape.all_known() and Self.filter_packed
 
     @staticmethod
     fn run(
-        output: LayoutTensor[output_type, output_layout, output_origin],
-        input: LayoutTensor[input_type, input_layout, input_origin],
-        filter: LayoutTensor[filter_type, filter_layout, filter_origin],
-        conv_shape: ConvShape[conv_attr_rank],
+        output: LayoutTensor[
+            Self.output_type, Self.output_layout, Self.output_origin
+        ],
+        input: LayoutTensor[
+            Self.input_type, Self.input_layout, Self.input_origin
+        ],
+        filter: LayoutTensor[
+            Self.filter_type, Self.filter_layout, Self.filter_origin
+        ],
+        conv_shape: ConvShape[Self.conv_attr_rank],
     ) raises:
-        constrained[conv_attr_rank == input_layout.rank() - 2]()
-        alias simd_size = simd_width_of[output_type]()
+        constrained[Self.conv_attr_rank == Self.input_layout.rank() - 2]()
+        comptime simd_size = simd_width_of[Self.output_type]()
         # TODO: extend to 1d/3d.
-        alias WO = Int(
-            output_layout.shape[output.rank - 2]
+        comptime WO = Int(
+            Self.output_layout.shape[output.rank - 2]
         ) if input.rank == 4 else UNKNOWN_VALUE
-        alias F = Int(output_layout.shape[output.rank - 1])
-        alias micro_kernel_shape = get_micro_kernel_shape[
-            conv_attr_rank,
+        comptime F = Int(Self.output_layout.shape[output.rank - 1])
+        comptime micro_kernel_shape = get_micro_kernel_shape[
+            Self.conv_attr_rank,
             WO,
             F,
-            conv_attr,
+            Self.conv_attr,
             simd_size,
         ]()
-        alias micro_kernel_height = micro_kernel_shape[0]
-        alias micro_kernel_width = micro_kernel_shape[1]
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime micro_kernel_height = micro_kernel_shape[0]
+        comptime micro_kernel_width = micro_kernel_shape[1]
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
-        var cf_tile_size = get_conv_tile_shape[filter_type](
+        var cf_tile_size = get_conv_tile_shape[Self.filter_type](
             conv_shape.c,
             conv_shape.filter_window_flat_size(),
             micro_kernel_width,
         )
 
         @parameter
-        if conv_attr.num_groups != UNKNOWN_VALUE:
+        if Self.conv_attr.num_groups != UNKNOWN_VALUE:
             constrained[
-                filter_packed or conv_attr.num_groups == 1,
+                Self.filter_packed or Self.conv_attr.num_groups == 1,
                 (
                     "if number of conv groups is statically known, conv filter"
                     " must be prepacked when num_groups > 1"
                 ),
             ]()
 
-        if conv_shape.num_groups > 1 and not filter_packed:
+        if conv_shape.num_groups > 1 and not Self.filter_packed:
             raise Error("grouped conv requires packed filter")
         if conv_shape.c % conv_shape.num_groups != 0:
             raise Error("channel count must be divisible by group count")
@@ -468,9 +480,11 @@ struct ConvDirectNHWC[
         var output_size = output.size()
         var scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
-            output_ptr = UnsafePointer[Scalar[output_type]].alloc(scratch_size)
+            output_ptr = UnsafePointer[Scalar[Self.output_type]].alloc(
+                scratch_size
+            )
         var output_scratch = LayoutTensor[
-            output_type, Layout.row_major(UNKNOWN_VALUE)
+            Self.output_type, Layout.row_major(UNKNOWN_VALUE)
         ](
             output_ptr,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -502,27 +516,27 @@ struct ConvDirectNHWC[
             # TODO: Need to have a more robust way to compute task_id_c
             var task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
             var task_output = LayoutTensor[
-                output_type, output_layout, output_origin
+                Self.output_type, Self.output_layout, Self.output_origin
             ](
                 output_scratch.ptr.offset(task_id_c * output_size),
-                RuntimeLayout[output_layout].row_major(
+                RuntimeLayout[Self.output_layout].row_major(
                     output.runtime_layout.shape.value.canonicalize()
                 ),
             )
 
             var instance = ConvDirectNHWC[
-                input_layout,
-                filter_layout,
-                output_layout,
-                input_origin,
-                filter_origin,
-                output_origin,
-                input_type,
-                filter_type,
-                output_type,
-                filter_packed,
-                conv_attr,
-                elementwise_epilogue,
+                Self.input_layout,
+                Self.filter_layout,
+                Self.output_layout,
+                Self.input_origin,
+                Self.filter_origin,
+                Self.output_origin,
+                Self.input_type,
+                Self.filter_type,
+                Self.output_type,
+                Self.filter_packed,
+                Self.conv_attr,
+                Self.elementwise_epilogue,
             ](
                 task_output,
                 input,
@@ -540,7 +554,7 @@ struct ConvDirectNHWC[
             _reduce_output[
                 simd_size,
                 # Only support channel partition for 2D shapes (ResNet).
-                elementwise_epilogue = elementwise_epilogue if input.rank
+                elementwise_epilogue = Self.elementwise_epilogue if input.rank
                 == 4 else None,
             ](
                 output_scratch.ptr,
@@ -578,11 +592,11 @@ struct ConvDirectNHWC[
 
         # TODO: Extend to 1D/3D.
         # fmt: off
-        alias apply_static_shape_optimization = \
+        comptime apply_static_shape_optimization = \
             self.packed_and_fully_static \
             and padded \
-            and conv_attr.num_groups == 1 \
-            and input_layout.rank() == 4
+            and Self.conv_attr.num_groups == 1 \
+            and Self.input_layout.rank() == 4
         # fmt: on
 
         @always_inline
@@ -642,16 +656,16 @@ struct ConvDirectNHWC[
         padded: Bool, last_c_tile: Bool
     ](self, n: Int, g: Int, c_tile_offset: Int, c_tile_size: Int):
         """Loop over F tiles."""
-        alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-        alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-        alias simd_size = simd_width_of[output_type]()
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
+        comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         # TODO: Extend the merged loop to support 1d and 3d.
         # For now, only merge HO and WO dims for 2D conv w/o padding.
-        alias merge_output_space_loops = (
+        comptime merge_output_space_loops = (
             not padded
-        ) and input_layout.rank() == 4
+        ) and Self.input_layout.rank() == 4
 
         @always_inline
         @parameter
@@ -748,8 +762,8 @@ struct ConvDirectNHWC[
             "Use Height x 1 kernel for residual in F.",
         ]()
 
-        alias simd_size = simd_width_of[output_type]()
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Base input offsets.
         var input_base_stack = InlineArray[Int32, micro_kernel_height](
@@ -768,10 +782,10 @@ struct ConvDirectNHWC[
                 + c_tile_offset
             )
 
-        alias alignment = align_of[SIMD[output_type, simd_size]]()
+        comptime alignment = align_of[SIMD[Self.output_type, simd_size]]()
 
         var acc = _Accumulator[
-            output_type,
+            Self.output_type,
             micro_kernel_height,
             micro_kernel_width,
             simd_size,
@@ -791,10 +805,12 @@ struct ConvDirectNHWC[
                 self.conv_shape.f,
                 self.conv_shape.f_per_group() % simd_size,
             )
-        var filter_ptr: UnsafePointer[Scalar[filter_type]] = self.filter.ptr
+        var filter_ptr: UnsafePointer[
+            Scalar[Self.filter_type]
+        ] = self.filter.ptr
 
         @parameter
-        if filter_packed:
+        if Self.filter_packed:
             # Move the pointer to the current group's start.
             filter_ptr = _get_group_filter_base(
                 self.filter,
@@ -825,7 +841,7 @@ struct ConvDirectNHWC[
                 # each c, we access micro_kernel_f_size contiguous elements.
                 # These contiguous segments are strided by F.
                 @parameter
-                if not filter_packed:
+                if not Self.filter_packed:
                     filter_ptr = self.filter.ptr.offset(
                         (s + r * self.conv_shape.s())
                         * self.conv_shape.c
@@ -838,7 +854,7 @@ struct ConvDirectNHWC[
                     micro_kernel_height,
                     micro_kernel_width,
                     simd_size,
-                    has_residual and not filter_packed,
+                    has_residual and not Self.filter_packed,
                     prefetch_offset=4,
                 ](
                     input_base_offsets,
@@ -850,7 +866,7 @@ struct ConvDirectNHWC[
                 )
 
                 # Shift C*f to get the next point in stencil (s+1) for FRSCf layout.
-                if filter_packed:
+                if Self.filter_packed:
                     filter_ptr = filter_ptr.offset(
                         self.conv_shape.c_per_group() * micro_kernel_f_size
                     )
@@ -862,8 +878,8 @@ struct ConvDirectNHWC[
         )
 
         @parameter
-        if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
-            alias epilogue = elementwise_epilogue.value()
+        if Self.elementwise_epilogue.__bool__() and last_c_tile.__bool__():
+            comptime epilogue = Self.elementwise_epilogue.value()
 
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
@@ -902,7 +918,7 @@ struct ConvDirectNHWC[
         self,
         output_micro_tile: LayoutTensor[
             mut=True,
-            output_type,
+            Self.output_type,
             Layout.row_major(
                 micro_kernel_height, micro_kernel_width * simd_size
             ),
@@ -922,7 +938,7 @@ struct ConvDirectNHWC[
             for idx1 in range(micro_kernel_width):
                 output_micro_tile.store[width=simd_size](
                     Index(idx0, idx1 * simd_size),
-                    SIMD[output_type, simd_size](0.0),
+                    SIMD[Self.output_type, simd_size](0.0),
                 )
 
     @always_inline
@@ -933,10 +949,10 @@ struct ConvDirectNHWC[
         has_residual: Bool,
     ](
         self,
-        output_base: UnsafePointer[Scalar[output_type]],
+        output_base: UnsafePointer[Scalar[Self.output_type]],
         output_micro_tile: LayoutTensor[
             mut=True,
-            output_type,
+            Self.output_type,
             Layout.row_major(
                 micro_kernel_height, micro_kernel_width * simd_size
             ),
@@ -979,8 +995,13 @@ struct ConvDirectNHWC[
                     )
 
             @parameter
-            if output_layout.shape[output_layout.rank() - 1] != UNKNOWN_VALUE:
-                alias F = Int(output_layout.shape[output_layout.rank() - 1])
+            if (
+                Self.output_layout.shape[Self.output_layout.rank() - 1]
+                != UNKNOWN_VALUE
+            ):
+                comptime F = Int(
+                    Self.output_layout.shape[Self.output_layout.rank() - 1]
+                )
                 output_ptr = output_ptr.offset(F)
             else:
                 output_ptr = output_ptr.offset(self.conv_shape.f)
@@ -995,12 +1016,12 @@ struct ConvDirectNHWC[
         self,
         output_micro_tile: LayoutTensor[
             mut=True,
-            output_type,
+            Self.output_type,
             Layout.row_major(
                 micro_kernel_height, micro_kernel_width * simd_size
             ),
         ],
-        output_base: UnsafePointer[Scalar[output_type]],
+        output_base: UnsafePointer[Scalar[Self.output_type]],
     ):
         """Store a micro tile from the output buffer.
         Parameters:
@@ -1037,8 +1058,13 @@ struct ConvDirectNHWC[
                     output_ptr.store(j * simd_size, output_vec)
 
             @parameter
-            if output_layout.shape[output_layout.rank() - 1] != UNKNOWN_VALUE:
-                alias F = Int(output_layout.shape[output_layout.rank() - 1])
+            if (
+                Self.output_layout.shape[Self.output_layout.rank() - 1]
+                != UNKNOWN_VALUE
+            ):
+                comptime F = Int(
+                    Self.output_layout.shape[Self.output_layout.rank() - 1]
+                )
                 output_ptr = output_ptr.offset(F)
             else:
                 output_ptr = output_ptr.offset(self.conv_shape.f)
@@ -1057,23 +1083,23 @@ struct ConvDirectNHWC[
         ],
         input_offset: Int,
         c_tile_size: Int,
-        input: UnsafePointer[Scalar[input_type]],
-        filter: UnsafePointer[Scalar[filter_type]],
+        input: UnsafePointer[Scalar[Self.input_type]],
+        filter: UnsafePointer[Scalar[Self.filter_type]],
         mut acc: _Accumulator[
-            output_type,
+            Self.output_type,
             micro_kernel_height,
             micro_kernel_width,
             simd_size,
         ],
     ):
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         var F = self.output.dim[3]()
-        var filter_stride = micro_kernel_f_size if filter_packed else F
+        var filter_stride = micro_kernel_f_size if Self.filter_packed else F
 
         acc.accumulate[
             prefetch_offset=prefetch_offset,
-            partial_load_b = has_residual and not filter_packed,
+            partial_load_b = has_residual and not Self.filter_packed,
         ](
             c_tile_size,
             input,
@@ -1097,22 +1123,22 @@ struct ConvDirectNHWC[
         self,
         c_tile_size: Int,
         input_stride: Int,
-        input_base: UnsafePointer[Scalar[input_type]],
-        filter_base: UnsafePointer[Scalar[filter_type]],
+        input_base: UnsafePointer[Scalar[Self.input_type]],
+        filter_base: UnsafePointer[Scalar[Self.filter_type]],
         mut acc_in: _Accumulator[
-            output_type, micro_kernel_height, micro_kernel_width, simd_size
+            Self.output_type, micro_kernel_height, micro_kernel_width, simd_size
         ],
     ):
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         var F = self.output.dim[3]()
-        var filter_stride = micro_kernel_f_size if filter_packed else F
+        var filter_stride = micro_kernel_f_size if Self.filter_packed else F
 
         # NOTE: To avoid initial load and final store after accumulation, this
         # function is rewritten to use a subset of storage in acc_in for rows
         # in range [row_start, row_stop].
         var acc = _Accumulator[
-            output_type,
+            Self.output_type,
             micro_kernel_height,
             micro_kernel_width,
             simd_size,
@@ -1122,7 +1148,7 @@ struct ConvDirectNHWC[
 
         acc.accumulate[
             prefetch_offset=prefetch_offset,
-            partial_load_b = has_residual and not filter_packed,
+            partial_load_b = has_residual and not Self.filter_packed,
         ](
             c_tile_size,
             input_base,
@@ -1142,9 +1168,9 @@ struct ConvDirectNHWC[
         c_tile_offset: Int,
         c_tile_size: Int,
     ):
-        alias simd_size = simd_width_of[output_type]()
-        alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-        alias micro_kernel_width = micro_kernel_f_size // simd_size
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+        comptime micro_kernel_width = micro_kernel_f_size // simd_size
 
         @always_inline
         @parameter
@@ -1191,17 +1217,17 @@ struct ConvDirectNHWC[
         c_tile_offset: Int,
         c_tile_size: Int,
     ):
-        alias simd_size = simd_width_of[output_type]()
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Current group index.
         var g = self.conv_shape.f_to_group(f_tile_offset)
 
         # Filter pointer to the current cf tile offset location.
-        var filter_ptr: UnsafePointer[Scalar[filter_type]]
+        var filter_ptr: UnsafePointer[Scalar[Self.filter_type]]
 
         @parameter
-        if filter_packed:
+        if Self.filter_packed:
             # Move the pointer to the current group's start.
             filter_ptr = _get_group_filter_base(
                 self.filter, g, self.conv_shape.f_per_group()
@@ -1239,17 +1265,17 @@ struct ConvDirectNHWC[
         # [right_pad_impact_start, WO)
         var left_pad_impact_end = ceildiv(
             self.conv_shape.pad_w[0],
-            self.conv_shape.stride[input_layout.rank() - 3],
+            self.conv_shape.stride[Self.input_layout.rank() - 3],
         )
         var right_pad_impact_start = (
             self.conv_shape.w()
             + self.conv_shape.pad_w[0]
             - self.conv_shape.s()
-            * self.conv_shape.dilation[input_layout.rank() - 3]
-        ) // self.conv_shape.stride[input_layout.rank() - 3] + 1
+            * self.conv_shape.dilation[Self.input_layout.rank() - 3]
+        ) // self.conv_shape.stride[Self.input_layout.rank() - 3] + 1
 
         @parameter
-        if input_layout.rank() == 3:
+        if Self.input_layout.rank() == 3:
             self.output_space_loop_1d[
                 micro_kernel_height,
                 micro_kernel_width,
@@ -1267,7 +1293,7 @@ struct ConvDirectNHWC[
                 left_pad_impact_end,
                 right_pad_impact_start,
             )
-        elif input_layout.rank() == 4:
+        elif Self.input_layout.rank() == 4:
             self.output_space_loop_2d[
                 micro_kernel_height,
                 micro_kernel_width,
@@ -1285,7 +1311,7 @@ struct ConvDirectNHWC[
                 left_pad_impact_end,
                 right_pad_impact_start,
             )
-        elif input_layout.rank() == 5:
+        elif Self.input_layout.rank() == 5:
             self.output_space_loop_3d[
                 micro_kernel_height,
                 micro_kernel_width,
@@ -1325,7 +1351,7 @@ struct ConvDirectNHWC[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simd_width_of[output_type]()
+        comptime simd_size = simd_width_of[Self.output_type]()
 
         # Offset by -pad_w because s loop starts from the leftmost neighbor
         # in padding. The kernel skip the padding point and increment the
@@ -1342,11 +1368,11 @@ struct ConvDirectNHWC[
                 height,
                 micro_kernel_width,
                 simd_size,
-                filter_packed,
+                Self.filter_packed,
                 effected_by_padding,
                 has_residual,
                 last_c_tile,
-                elementwise_epilogue=elementwise_epilogue,
+                elementwise_epilogue = Self.elementwise_epilogue,
             ](
                 output_base,
                 input_base,
@@ -1373,6 +1399,9 @@ struct ConvDirectNHWC[
             right_pad_impact_start,
             self.conv_shape.wo(),
         )
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = input_base
+        _ = output_base
 
     fn output_space_loop_2d[
         micro_kernel_height: Int,
@@ -1395,7 +1424,7 @@ struct ConvDirectNHWC[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simd_width_of[output_type]()
+        comptime simd_size = simd_width_of[Self.output_type]()
 
         for ho in range(
             self.partition.ho_or_howo_offset,
@@ -1423,11 +1452,11 @@ struct ConvDirectNHWC[
                     height,
                     micro_kernel_width,
                     simd_size,
-                    filter_packed,
+                    Self.filter_packed,
                     effected_by_padding,
                     has_residual,
                     last_c_tile,
-                    elementwise_epilogue=elementwise_epilogue,
+                    elementwise_epilogue = Self.elementwise_epilogue,
                 ](
                     output_base,
                     input_base,
@@ -1454,6 +1483,9 @@ struct ConvDirectNHWC[
                 right_pad_impact_start,
                 self.conv_shape.wo(),
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = input_base
+            _ = output_base
 
     fn output_space_loop_3d[
         micro_kernel_height: Int,
@@ -1476,7 +1508,7 @@ struct ConvDirectNHWC[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simd_width_of[output_type]()
+        comptime simd_size = simd_width_of[Self.output_type]()
 
         for do in range(0, self.conv_shape.do()):
             var d = do * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
@@ -1514,11 +1546,11 @@ struct ConvDirectNHWC[
                         height,
                         micro_kernel_width,
                         simd_size,
-                        filter_packed,
+                        Self.filter_packed,
                         effected_by_padding,
                         has_residual,
                         last_c_tile,
-                        elementwise_epilogue=elementwise_epilogue,
+                        elementwise_epilogue = Self.elementwise_epilogue,
                     ](
                         output_base,
                         input_base,
@@ -1546,18 +1578,21 @@ struct ConvDirectNHWC[
                     right_pad_impact_start,
                     self.conv_shape.wo(),
                 )
+                # TODO(MOCO-2074): Suppress false positive unused var warning.
+                _ = input_base
+                _ = output_base
 
     fn _f_tile_loop_static[
         last_c_tile: Bool
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
-        constrained[conv_attr_rank == input_layout.rank() - 2]()
-        alias WO = Int(output_layout.shape[2])  # NHWC
-        alias F = Int(output_layout.shape[3])  # NHWC
-        alias simd_size = simd_width_of[output_type]()
-        alias micro_kernel_shape = get_micro_kernel_shape[
-            conv_attr_rank, WO, F, conv_attr, simd_size
+        constrained[Self.conv_attr_rank == Self.input_layout.rank() - 2]()
+        comptime WO = Int(Self.output_layout.shape[2])  # NHWC
+        comptime F = Int(Self.output_layout.shape[3])  # NHWC
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_shape = get_micro_kernel_shape[
+            Self.conv_attr_rank, WO, F, Self.conv_attr, simd_size
         ]()
-        alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
+        comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 
         var f_round_by_simd = (
             (self.partition.f_offset + self.partition.f_size) // simd_size
@@ -1616,22 +1651,22 @@ struct ConvDirectNHWC[
         micro kernel 1 x micro_kernel_width for (1) and (3) and exploits the
         default micro kernel for (2).
         """
-        alias simd_size = simd_width_of[output_type]()
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
-        alias H = Int(input_layout.shape[1])  # NHWC
-        alias W = Int(input_layout.shape[2])  # NHWC
-        alias C = Int(input_layout.shape[3])  # NHWC
-        alias R = Int(filter_layout.shape[1])  # FRSCf
-        alias S = Int(filter_layout.shape[2])  # FRSCf
-        alias HO = Int(output_layout.shape[1])  # NHWC
-        alias WO = Int(output_layout.shape[2])  # NHWC
-        alias F = Int(output_layout.shape[3])  # NHWC
+        comptime H = Int(Self.input_layout.shape[1])  # NHWC
+        comptime W = Int(Self.input_layout.shape[2])  # NHWC
+        comptime C = Int(Self.input_layout.shape[3])  # NHWC
+        comptime R = Int(Self.filter_layout.shape[1])  # FRSCf
+        comptime S = Int(Self.filter_layout.shape[2])  # FRSCf
+        comptime HO = Int(Self.output_layout.shape[1])  # NHWC
+        comptime WO = Int(Self.output_layout.shape[2])  # NHWC
+        comptime F = Int(Self.output_layout.shape[3])  # NHWC
 
-        var filter_base: UnsafePointer[Scalar[filter_type]]
+        var filter_base: UnsafePointer[Scalar[Self.filter_type]]
 
         @parameter
-        if filter_packed:
+        if Self.filter_packed:
             filter_base = self.filter.ptr.offset(
                 f_tile_offset * C * R * S + c_tile_offset * micro_kernel_f_size
             )
@@ -1642,7 +1677,7 @@ struct ConvDirectNHWC[
 
         var input_curr_image = self.input.ptr.offset(n * W * H * C)
         var output_curr_image = self.output.ptr.offset(n * WO * HO * F)
-        var conv_attr_dyn = materialize[conv_attr]()
+        var conv_attr_dyn = materialize[Self.conv_attr]()
 
         for ho in range(
             self.partition.ho_or_howo_offset,
@@ -1685,10 +1720,10 @@ struct ConvDirectNHWC[
                 # micro kernel height for left and right boundaries.
                 # IF WO is just 1-2 points more than micro kernel height, the
                 # following would divide the row evely by two micro kernels.
-                alias micro_kernel_height_lbound = min(
+                comptime micro_kernel_height_lbound = min(
                     micro_kernel_height, WO // 2
                 )
-                alias micro_kernel_height_rbound = min(
+                comptime micro_kernel_height_rbound = min(
                     micro_kernel_height, WO - WO // 2
                 )
                 # Left boundary
@@ -1747,9 +1782,9 @@ struct ConvDirectNHWC[
 
                 # Middle points are the points not updated by micro kernels
                 # on left or right boundary
-                alias num_middle_points = WO - micro_kernel_height_lbound - micro_kernel_height_rbound
+                comptime num_middle_points = WO - micro_kernel_height_lbound - micro_kernel_height_rbound
                 # `tile` can't handle zero tile size.
-                alias micro_kernel_height_middle = num_middle_points % micro_kernel_height if num_middle_points % micro_kernel_height > 0 else 1
+                comptime micro_kernel_height_middle = num_middle_points % micro_kernel_height if num_middle_points % micro_kernel_height > 0 else 1
                 tile[
                     update_middle,
                     VariadicList[Int](
@@ -1789,13 +1824,13 @@ struct ConvDirectNHWC[
     ](
         self,
         input_base: UnsafePointer[
-            Scalar[input_type]
+            Scalar[Self.input_type]
         ],  # points to (ho, wo) mapped in input
         filter_base: UnsafePointer[
-            Scalar[filter_type]
+            Scalar[Self.filter_type]
         ],  # point to filter in cf tile
         output_base: UnsafePointer[
-            Scalar[output_type]
+            Scalar[Self.output_type]
         ],  # point to (ho, wo) in output
         f_tile_offset: Int,
         f_tile_size: Int,
@@ -1809,25 +1844,25 @@ struct ConvDirectNHWC[
         if micro_kernel_height == 0:
             return
 
-        alias simd_size = simd_width_of[output_type]()
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
-        alias R = Int(filter_layout.shape[1])  # FRSCf
-        alias S = Int(filter_layout.shape[2])  # FRSCf
-        alias C = Int(input_layout.shape[3])  # NHWC
-        alias s_stride_in_input = conv_attr.dilations()[1] * C
-        alias wo_stride_in_input = conv_attr.strides()[1] * C
-        alias filter_S_stride = C * micro_kernel_f_size
-        alias filter_F_stride = R * S * filter_S_stride
+        comptime R = Int(Self.filter_layout.shape[1])  # FRSCf
+        comptime S = Int(Self.filter_layout.shape[2])  # FRSCf
+        comptime C = Int(Self.input_layout.shape[3])  # NHWC
+        comptime s_stride_in_input = Self.conv_attr.dilations()[1] * C
+        comptime wo_stride_in_input = Self.conv_attr.strides()[1] * C
+        comptime filter_S_stride = C * micro_kernel_f_size
+        comptime filter_F_stride = R * S * filter_S_stride
 
-        alias output_tile_layout = Layout.row_major(
+        comptime output_tile_layout = Layout.row_major(
             micro_kernel_height, micro_kernel_width * simd_size
         )
         var output_tile_stack = InlineArray[
-            Scalar[output_type], output_tile_layout.size()
+            Scalar[Self.output_type], output_tile_layout.size()
         ](uninitialized=True)
         var output_micro_tile = LayoutTensor[
-            output_type,
+            Self.output_type,
             output_tile_layout,
         ](output_tile_stack)
 
@@ -1846,16 +1881,16 @@ struct ConvDirectNHWC[
             ](output_base, output_micro_tile)
 
         var acc = _Accumulator[
-            output_type, micro_kernel_height, micro_kernel_width, simd_size
+            Self.output_type, micro_kernel_height, micro_kernel_width, simd_size
         ]()
         acc.load(output_micro_tile.ptr, micro_kernel_width * simd_size)
 
-        alias W = Int(input_layout.shape[2])  # NHWC
-        alias H = Int(input_layout.shape[1])  # NHWC
-        alias WO = Int(output_layout.shape[2])  # NHWC
+        comptime W = Int(Self.input_layout.shape[2])  # NHWC
+        comptime H = Int(Self.input_layout.shape[1])  # NHWC
+        comptime WO = Int(Self.output_layout.shape[2])  # NHWC
         # Shift in input H when shifting 1 in filter stencil' R dimension.
         var h_shift = 0
-        var conv_attr_dyn = materialize[conv_attr]()
+        var conv_attr_dyn = materialize[Self.conv_attr]()
         # h index in input image
         var h = ho * conv_attr_dyn.strides()[0] - conv_attr_dyn.pad_bottom()
         for r in range(R):
@@ -1873,25 +1908,26 @@ struct ConvDirectNHWC[
                 # Adjustment of micro kernel height for left padding
                 # The first left_adjust x micro_kernel_width registers are
                 # ignored because they fall in padding.
-                alias left_adjust = max(
+                comptime left_adjust = max(
                     ceildiv(
-                        conv_attr.pad_left() - s * conv_attr.dilations()[1],
-                        conv_attr.strides()[1],
+                        Self.conv_attr.pad_left()
+                        - s * Self.conv_attr.dilations()[1],
+                        Self.conv_attr.strides()[1],
                     ),
                     0,
                 ) if padded_left else 0
                 # Adjustment of micro kernel height for right padding
                 # The last left_adjust x micro_kernel_width registers are ignored.
                 # fmt: off
-                alias right_adjust = max(
-                    WO - 1 - (W - 1 + conv_attr.pad_left() - s * conv_attr.dilations()[1])
-                             // conv_attr.strides()[1],
+                comptime right_adjust = max(
+                    WO - 1 - (W - 1 + Self.conv_attr.pad_left() - s * Self.conv_attr.dilations()[1])
+                             // Self.conv_attr.strides()[1],
                     0,
                 ) if padded_right else 0
                 # fmt: on
 
                 # Revised calculation of tile_height to avoid cases of tile_height<=0.
-                alias tile_height = micro_kernel_height - left_adjust - right_adjust
+                comptime tile_height = micro_kernel_height - left_adjust - right_adjust
 
                 @parameter
                 if tile_height > 0:
@@ -1927,11 +1963,11 @@ struct ConvDirectNHWC[
         ](output_micro_tile, output_base)
 
         # Apply elmentwise epilogue to the
-        alias F = Int(output_layout.shape[3])  # NHWC
+        comptime F = Int(Self.output_layout.shape[3])  # NHWC
 
         @parameter
-        if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
-            alias epilogue = elementwise_epilogue.value()
+        if Self.elementwise_epilogue.__bool__() and last_c_tile.__bool__():
+            comptime epilogue = Self.elementwise_epilogue.value()
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
             var f_tile_size_bounded = (
@@ -2055,7 +2091,7 @@ fn conv1d_update_wo_tile[
     n: Int,
     wo: Int,
 ):
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Input stride when s increments by 1
     var input_stride_by_s = conv_shape.dilation[0] * conv_shape.c
@@ -2122,7 +2158,7 @@ fn conv1d_update_wo_tile[
     # Apply elementwise epilogue if necessary
     @parameter
     if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
-        alias epilogue = elementwise_epilogue.value()
+        comptime epilogue = elementwise_epilogue.value()
         # If has residual, the tile size has been extended to a simd_size.
         # Here needs to use the real bound F.
         var f_tile_size_bounded: Int
@@ -2224,7 +2260,7 @@ fn conv2d_update_wo_tile[
     n: Int,
     howo: IndexList[2],
 ):
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Input stride to neighbor point in the filter window (R, S).
     var input_stride_by_s = conv_shape.dilation[1] * conv_shape.c
@@ -2300,7 +2336,7 @@ fn conv2d_update_wo_tile[
     @parameter
     # if elementwise_epilogue_enabled and last_c_tile:
     if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
-        alias epilogue = elementwise_epilogue.value()
+        comptime epilogue = elementwise_epilogue.value()
 
         # If has residual, the tile size has been extended to a simd_size.
         # Here needs to use the real bound F.
@@ -2406,7 +2442,7 @@ fn conv3d_update_wo_tile[
     n: Int,
     dohowo: IndexList[3],
 ):
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Input stride to neighbor point in the filter window (Q, R, S).
     # fmt: off
@@ -2484,7 +2520,7 @@ fn conv3d_update_wo_tile[
     # Apply elmentwise epilogue to the
     @parameter
     if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
-        alias epilogue = elementwise_epilogue.value()
+        comptime epilogue = elementwise_epilogue.value()
 
         # If has residual, the tile size has been extended to a simd_size.
         # Here needs to use the real bound F.
@@ -2529,9 +2565,9 @@ fn pack_filter_shape_impl[
     Returns:
         The output shape.
     """
-    alias simd_size = simd_width_of[filter_type]()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime simd_size = simd_width_of[filter_type]()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     debug_assert(
         F % num_groups == 0,
@@ -2569,9 +2605,9 @@ fn pack_conv_filter_shape[
         The output shape.
     """
 
-    alias simd_size = simd_width_of[filter.dtype]()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime simd_size = simd_width_of[filter.dtype]()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Filter is in RSCF layout. The last dim is F no matter it's 1d, 2d, or 3d.
     var F = filter.dim[filter.rank - 1]()
@@ -2613,7 +2649,7 @@ fn pack_filter_shape[
     Returns:
         The output shape.
     """
-    alias simd_size = simd_width_of[filter_type]()
+    comptime simd_size = simd_width_of[filter_type]()
 
     var F = filter.dim[filter.rank - 1]()  # RSCF layout
 
@@ -2623,7 +2659,7 @@ fn pack_filter_shape[
     )
     var F_per_group = F // num_groups
 
-    alias conv_attr = ConvInfoStatic[filter.rank - 2](
+    comptime conv_attr = ConvInfoStatic[filter.rank - 2](
         pad=reorder_padding[filter.rank - 2](IntTuple(paddings)),
         stride=IntTuple(strides),
         dilation=IntTuple(dilations),
@@ -2631,15 +2667,17 @@ fn pack_filter_shape[
     )
 
     # TODO: extend to 1D/3D.
-    alias WO = output_shape.at[
+    comptime WO = output_shape.at[
         2
     ]().get() if filter.rank == 4 and output_shape.at[
         2
     ]().has_value() else UNKNOWN_VALUE
-    alias F_NHWC = output_shape.at[filter.rank - 1]().get() if output_shape.at[
+    comptime F_NHWC = output_shape.at[
+        filter.rank - 1
+    ]().get() if output_shape.at[
         filter.rank - 1
     ]().has_value() else UNKNOWN_VALUE
-    alias micro_kernel_shape = get_micro_kernel_shape[
+    comptime micro_kernel_shape = get_micro_kernel_shape[
         filter.rank - 2,
         WO,
         F_NHWC,
@@ -2647,8 +2685,8 @@ fn pack_filter_shape[
         simd_size,
     ]()
 
-    alias micro_kernel_width = micro_kernel_shape[1]
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime micro_kernel_width = micro_kernel_shape[1]
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # FSCf/FRSCf/FQRSCf layout.
     var packed_shape = IndexList[filter.rank + 1]()
@@ -2677,7 +2715,7 @@ fn _get_group_filter_base(
     # Output pointer points to the start of the current group.
 
     var micro_kernel_f_size = packed_filter.dim[packed_filter.rank - 1]()
-    alias rank = packed_filter.rank
+    comptime rank = packed_filter.rank
 
     var filter_window_size = 1
 
@@ -2711,12 +2749,14 @@ fn pack_filter(
         "Type mismatch between the filter and the packed filter.",
     ]()
 
-    alias simd_size = simd_width_of[filter.dtype]()
-    alias f_size_default = get_direct_conv_micro_kernel_width() * simd_size
+    comptime simd_size = simd_width_of[filter.dtype]()
+    comptime f_size_default = get_direct_conv_micro_kernel_width() * simd_size
 
     @parameter
     if packed_filter.layout.shape[packed_filter.rank - 1] != UNKNOWN_VALUE:
-        alias f_size = Int(packed_filter.layout.shape[packed_filter.rank - 1])
+        comptime f_size = Int(
+            packed_filter.layout.shape[packed_filter.rank - 1]
+        )
         pack_filter[simd_size, f_size](filter, packed_filter, num_groups)
     else:
         pack_filter[simd_size, f_size_default](
@@ -2997,13 +3037,17 @@ fn conv_nhwc_direct[
     @parameter
     fn description_fn() -> String:
         return ";".join(
-            trace_arg("input", input.runtime_layout.shape.value),
-            trace_arg("filter", filter.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
-            "group=" + String(num_groups),
-            "stride=" + "x".join(stride),
-            "padding_h=" + "x".join(pad_h),
-            "padding_w=" + "x".join(pad_w),
+            Span(
+                [
+                    trace_arg("input", input.runtime_layout.shape.value),
+                    trace_arg("filter", filter.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    "group=" + String(num_groups),
+                    "stride=" + "x".join(Span([stride])),
+                    "padding_h=" + "x".join(Span([pad_h])),
+                    "padding_w=" + "x".join(Span([pad_w])),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
@@ -3028,11 +3072,10 @@ fn conv_nhwc_direct[
         fn elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
-            alias simd_size = simd_width_of[output_type]()
+            comptime simd_size = simd_width_of[output_type]()
 
             @always_inline
-            @parameter
-            fn body[width: Int](idx: Int):
+            fn body[width: Int](idx: Int) unified {mut}:
                 # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input.rank]](coords)
                 curr_coords[input.rank - 1] += idx
@@ -3040,7 +3083,7 @@ fn conv_nhwc_direct[
                 var vec = output.load[width=width](curr_coords)
                 elementwise_lambda(curr_coords, vec)
 
-            vectorize[body, simd_size](f_size)
+            vectorize[simd_size](f_size, body)
 
         ConvDirectNHWC[
             input_layout,
@@ -3111,7 +3154,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
         return
 
     for co in range(C_out):
-        alias accum_type = get_accum_type[output_type]()
+        comptime accum_type = get_accum_type[output_type]()
         var value = Scalar[accum_type](0)
         for r in range(R):
             for s in range(S):
@@ -3130,7 +3173,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
 
         @parameter
         if maybe_epilogue_func:
-            alias epilogue_func = maybe_epilogue_func.value()
+            comptime epilogue_func = maybe_epilogue_func.value()
             epilogue_func(
                 IndexList[4](Int(n), Int(h), Int(w), co),
                 value.cast[output_type](),
@@ -3154,7 +3197,7 @@ fn check_cudnn_error(stat: cudnnStatus_t):
 
 
 @register_passable
-struct CuDNNConvMeta(ImplicitlyCopyable, Movable):
+struct CuDNNConvMeta(ImplicitlyCopyable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
@@ -3425,14 +3468,112 @@ fn conv_gpu[
     output: LayoutTensor[mut=True, output_type, output_layout, MutAnyOrigin],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
-    padding: IndexList[conv_rank],
+    padding: IndexList[2 * conv_rank],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
     constrained[conv_rank == input.rank - 2]()
-    alias block_size = 16
 
-    alias conv_gpu_n = conv2d_gpu_naive_nhwc_rscf[
+    var has_asymmetric_padding = False
+    var pad_before = IndexList[conv_rank](0)
+
+    @parameter
+    for i in range(conv_rank):
+        pad_before[i] = padding[2 * i]
+        var after = padding[2 * i + 1]
+        if pad_before[i] != after:
+            has_asymmetric_padding = True
+
+    if has_asymmetric_padding:
+        # Pre-pad on GPU so downstream kernels (including cuDNN) can assume symmetric padding.
+        comptime full_rank = input_layout.rank()
+        var paddings_tensor = LayoutTensor[
+            DType.int, Layout(2 * full_rank), MutAnyOrigin
+        ].stack_allocation()
+
+        @parameter
+        for axis in range(full_rank):
+            paddings_tensor[2 * axis] = 0
+            paddings_tensor[2 * axis + 1] = 0
+
+        @parameter
+        for i in range(conv_rank):
+            var axis = i + 1  # skip batch axis
+            paddings_tensor[2 * axis] = padding[2 * i]  # before
+            paddings_tensor[2 * axis + 1] = padding[2 * i + 1]  # after
+
+        var input_shape = rebind[IndexList[full_rank]](
+            input.runtime_layout.shape.value.canonicalize()
+        )
+        var padded_shape = IndexList[full_rank]()
+
+        @parameter
+        for axis in range(full_rank):
+            var before = 0
+            var after = 0
+            if axis > 0 and axis < full_rank - 1:
+                var spatial_idx = axis - 1
+                before = padding[2 * spatial_idx]
+                after = padding[2 * spatial_idx + 1]
+            padded_shape[axis] = Int(input_shape[axis]) + before + after
+
+        var padded_elements = padded_shape.flattened_length()
+        var tmp_buffer = ctx.enqueue_create_buffer[input_type](padded_elements)
+        var padded_device_buffer = tmp_buffer.unsafe_ptr()
+        var zero_scalar = Scalar[input_type](0)
+
+        pad_constant_gpu[full_rank, input_type, DType.int](
+            padded_device_buffer,
+            padded_shape,
+            input.ptr,
+            input_shape,
+            paddings_tensor.ptr,
+            zero_scalar,
+            ctx,
+        )
+
+        var padded_input = LayoutTensor[
+            input_type,
+            Layout.row_major[full_rank](),
+            MutAnyOrigin,
+        ](
+            padded_device_buffer,
+            RuntimeLayout[Layout.row_major[full_rank]()].row_major(
+                padded_shape
+            ),
+        )
+
+        var zero_padding = IndexList[2 * conv_rank](0)
+
+        conv_gpu[
+            Layout.row_major[full_rank](),
+            filter_layout,
+            output_layout,
+            input_type,
+            filter_type,
+            output_type,
+            maybe_epilogue_func,
+            filter_is_fcrs,
+        ](
+            padded_input,
+            filter,
+            output,
+            stride,
+            dilation,
+            zero_padding,
+            num_groups,
+            ctx,
+        )
+
+        return
+
+    # We can now use pad_before (which is now confirmed equal to pad_after) as
+    # the symmetric padding.
+    var symmetric_padding = pad_before
+
+    comptime block_size = 16
+
+    comptime conv_gpu_n = conv2d_gpu_naive_nhwc_rscf[
         input_layout,
         filter_layout,
         output_layout,
@@ -3443,7 +3584,7 @@ fn conv_gpu[
         maybe_epilogue_func,
     ]
 
-    alias conv_gpu_3d = conv3d_gpu_naive_ndhwc_qrscf[
+    comptime conv_gpu_3d = conv3d_gpu_naive_ndhwc_qrscf[
         input_layout,
         filter_layout,
         output_layout,
@@ -3466,7 +3607,7 @@ fn conv_gpu[
 
             @parameter
             if maybe_epilogue_func:
-                alias epilogue = maybe_epilogue_func.value()
+                comptime epilogue = maybe_epilogue_func.value()
                 var output_tmp_data = ctx.enqueue_create_buffer[output_type](
                     output.size()
                 )
@@ -3501,7 +3642,7 @@ fn conv_gpu[
                     ),
                     rebind[IndexList[2]](stride),
                     rebind[IndexList[2]](dilation),
-                    rebind[IndexList[2]](padding),
+                    rebind[IndexList[2]](symmetric_padding),
                     num_groups,
                     ctx,
                 )
@@ -3512,7 +3653,7 @@ fn conv_gpu[
                 fn epilogue_wrapper[
                     _width: Int, _rank: Int, alignment: Int = 1
                 ](coords: IndexList[_rank]):
-                    alias align = align_of[SIMD[output_type, _width]]()
+                    comptime align = align_of[SIMD[output_type, _width]]()
                     vec = output_tmp.load[width=_width](
                         rebind[IndexList[4]](coords)
                     )
@@ -3552,7 +3693,7 @@ fn conv_gpu[
                     ),
                     rebind[IndexList[2]](stride),
                     rebind[IndexList[2]](dilation),
-                    rebind[IndexList[2]](padding),
+                    rebind[IndexList[2]](symmetric_padding),
                     num_groups,
                     ctx,
                 )
@@ -3567,7 +3708,7 @@ fn conv_gpu[
                 output,
                 stride,
                 dilation,
-                padding,
+                symmetric_padding,
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -3582,7 +3723,7 @@ fn conv_gpu[
             output,
             stride,
             dilation,
-            padding,
+            symmetric_padding,
             grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
             block_dim=(block_size, block_size),
         )
@@ -3654,7 +3795,7 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
 
     # ============= convolution =============
     for co in range(C_out):
-        alias accum_type = get_accum_type[output_type]()
+        comptime accum_type = get_accum_type[output_type]()
         var value = Scalar[accum_type](0)
 
         for q in range(Q):
@@ -3690,7 +3831,7 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
 
         @parameter
         if maybe_epilogue_func:
-            alias epilogue_func = maybe_epilogue_func.value()
+            comptime epilogue_func = maybe_epilogue_func.value()
             epilogue_func(
                 IndexList[5](
                     Int(n), Int(d_out_idx), Int(h_out_idx), Int(w_out_idx), co

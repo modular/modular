@@ -17,7 +17,8 @@ from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
+from buffer.buffer import partial_simd_load, partial_simd_store
+from layout import Layout, LayoutTensor, RuntimeTuple
 
 from utils.index import Index, IndexList
 
@@ -34,16 +35,16 @@ struct LoadStore_i8mm[
     tile_rows: Int,
     tile_columns: Int,
 ]:
-    alias num_simd_cols = tile_columns // simd_size
+    comptime num_simd_cols = Self.tile_columns // Self.simd_size
     var output_tile: _Accumulator[
-        dtype, tile_rows, Self.num_simd_cols, simd_size
+        Self.dtype, Self.tile_rows, Self.num_simd_cols, Self.simd_size
     ]
     var skip_boundary_check: Bool
 
     @always_inline
     fn __init__(out self, skip_boundary_check: Bool):
         self.output_tile = _Accumulator[
-            dtype, tile_rows, Self.num_simd_cols, simd_size
+            Self.dtype, Self.tile_rows, Self.num_simd_cols, Self.simd_size
         ]()
         self.skip_boundary_check = skip_boundary_check
 
@@ -54,7 +55,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _load_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -62,11 +63,11 @@ struct LoadStore_i8mm[
         var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
         @parameter
-        for idx0 in range(tile_rows):
+        for idx0 in range(Self.tile_rows):
 
             @parameter
-            for idx1 in range(tile_columns // simd_size):
-                var c_data: SIMD[dtype, simd_size] = 0
+            for idx1 in range(Self.tile_columns // Self.simd_size):
+                var c_data: SIMD[Self.dtype, Self.simd_size] = 0
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
                 ):
@@ -75,8 +76,10 @@ struct LoadStore_i8mm[
                     )
                     var t1 = c_ptr_loc.load[width=2](
                         c_stride * (2 * idx0 + 1) + 2 * idx1
-                    ) if not single_row else SIMD[dtype, 2](0)
-                    c_data = rebind[SIMD[dtype, simd_size]](t0.join(t1))
+                    ) if not Self.single_row else SIMD[Self.dtype, 2](0)
+                    c_data = rebind[SIMD[Self.dtype, Self.simd_size]](
+                        t0.join(t1)
+                    )
                 elif idx1 * 2 <= c_bound[1]:
                     var t0 = partial_simd_load[2](
                         c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
@@ -89,15 +92,17 @@ struct LoadStore_i8mm[
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
-                    ) if not single_row else SIMD[dtype, 2](0)
-                    c_data = rebind[SIMD[dtype, simd_size]](t0.join(t1))
+                    ) if not Self.single_row else SIMD[Self.dtype, 2](0)
+                    c_data = rebind[SIMD[Self.dtype, Self.simd_size]](
+                        t0.join(t1)
+                    )
 
                 self.output_tile[idx0, idx1] = c_data
 
     @always_inline
     fn _store_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -105,10 +110,10 @@ struct LoadStore_i8mm[
         var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
         @parameter
-        for idx0 in range(tile_rows):
+        for idx0 in range(Self.tile_rows):
 
             @parameter
-            for idx1 in range(tile_columns // simd_size):
+            for idx1 in range(Self.tile_columns // Self.simd_size):
                 var c_data = self.output_tile[idx0, idx1]
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
@@ -120,7 +125,7 @@ struct LoadStore_i8mm[
                     )
 
                     @parameter
-                    if not single_row:
+                    if not Self.single_row:
                         c_ptr_loc.offset(
                             c_stride * (2 * idx0 + 1) + 2 * idx1
                         ).store(
@@ -135,7 +140,7 @@ struct LoadStore_i8mm[
                     )
 
                     @parameter
-                    if not single_row:
+                    if not Self.single_row:
                         partial_simd_store(
                             c_ptr_loc.offset(
                                 c_stride * (2 * idx0 + 1) + 2 * idx1
@@ -157,8 +162,8 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -176,24 +181,29 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
+        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
 
         var n_outer_idx = tile_n_k_idx[0] // (kernel_cols // 2)
         var kl = tile_n_k_idx[1]
-        var b_ptr = b_packed._offset(Index(n_outer_idx, kl // 8, 0))
+
+        var b_offset = b_packed.runtime_layout(
+            RuntimeTuple[b_packed.layout.shape](Index(n_outer_idx, kl // 8, 0))
+        )
+        var b_ptr = b_packed.ptr.offset(b_offset)
 
         # This inner kernels works with non-transposed A.
         var K = a.dim(1)
-        var a_ptr = a.data.offset(
+        var a_ptr = a.ptr.offset(
             global_offset.M * K + 2 * global_offset.K + 2 * kl
         )
 
         # Prefetch B matrix.
-        alias prefetch_distance = get_matmul_prefetch_b_distance_k()
+        comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
         constrained[simd_size == 4]()
 
         @parameter
         if prefetch_distance > 0:
-            alias prefetch_offset = prefetch_distance * kernel_cols
+            comptime prefetch_offset = prefetch_distance * kernel_cols
 
             @parameter
             for idx in range(kernel_cols // simd_size):
@@ -207,7 +217,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
 
             @parameter
             for idx1 in range(kernel_cols // simd_size):
-                alias alignment = align_of[SIMD[c_local.dtype, simd_size]]()
+                comptime alignment = align_of[SIMD[c_local.dtype, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
                 var b_val = b_ptr.offset(16 * idx1).load[
                     width = simd_size * 4, alignment=alignment
@@ -223,9 +233,9 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         simd_size: Int,
     ](
         self,
-        c: NDBuffer,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        c: LayoutTensor[mut=True, **_],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
@@ -234,20 +244,21 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows2, TileN, TileK) tile.
         """
+        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
 
-        alias kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
-        alias single_row = (kernel_rows == 1)
+        comptime kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
+        comptime single_row = (kernel_rows == 1)
 
         var c_stride = c.dim[1]()
 
-        var c_ptr = c.data.offset(global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr.offset(global_offset.M * c_stride + global_offset.N)
 
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )
 
         var acc = LoadStore_i8mm[
-            c.type,
+            c.dtype,
             simd_size,
             single_row,
             kernel_rows2,
@@ -259,7 +270,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                 acc._initialize_c_tile()
             else:
                 acc._load_c_tile(
-                    rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                    rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -274,7 +285,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                     Index(idx_n, idx_k),
                 )
             acc._store_c_tile(
-                rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

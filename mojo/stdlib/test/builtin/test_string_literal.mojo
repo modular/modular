@@ -29,11 +29,11 @@ def test_add():
 
 
 def test_mul():
-    alias `3`: Int = 3
-    alias `u3`: UInt = 3
-    alias static_concat_0 = "mojo" * 3
-    alias static_concat_1 = "mojo" * `3`
-    alias static_concat_2 = "mojo" * Int(`u3`)
+    comptime `3`: Int = 3
+    comptime `u3`: UInt = 3
+    comptime static_concat_0 = "mojo" * 3
+    comptime static_concat_1 = "mojo" * `3`
+    comptime static_concat_2 = "mojo" * Int(`u3`)
     assert_equal(static_concat_0, static_concat_1)
     assert_equal(static_concat_1, static_concat_2)
     assert_equal("mojomojomojo", static_concat_0)
@@ -254,7 +254,7 @@ def test_layout():
     # assert_equal(empty[0], 0)
 
     # Test non-empty StringLiteral C string
-    var ptr = "hello".unsafe_cstr_ptr()
+    var ptr = "hello".as_c_string_slice().unsafe_ptr()
     assert_equal(ptr[0], ord("h"))
     assert_equal(ptr[1], ord("e"))
     assert_equal(ptr[2], ord("l"))
@@ -348,6 +348,11 @@ def test_float_conversion():
     assert_equal(Float64("4.5"), 4.5)
     with assert_raises():
         _ = ("not a float").__float__()
+
+
+# If this compiles, then the format method does not raise.
+fn _test_format_does_not_raise():
+    var _hello = "Hello, {}! I am {} years old.".format("world", 42)
 
 
 def main():
