@@ -112,7 +112,7 @@ dependencies = [
   # nsight-sql-tool
   "sqlalchemy>=2.0.29",
 
-  # perfsect_v2
+  # perfsect
   "responses>=0.23.3",
 
   # mblack
