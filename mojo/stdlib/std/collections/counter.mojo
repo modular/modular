@@ -268,7 +268,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         _constrained_conforms_to[
             conforms_to(Self.V, Representable),
             Parent=Self,
-            Element=Self.V,
+            Element = Self.V,
             ParentConformsTo="Stringable",
             ElementConformsTo="Representable",
         ]()
