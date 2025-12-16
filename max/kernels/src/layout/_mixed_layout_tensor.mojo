@@ -82,7 +82,7 @@ struct MixedLayoutTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.

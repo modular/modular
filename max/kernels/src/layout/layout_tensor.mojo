@@ -653,7 +653,7 @@ struct LayoutTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.
@@ -1884,7 +1884,7 @@ struct LayoutTensor[
         """Computes element-wise exponential function.
 
         Returns a new tensor containing the
-        [element-wise exponential](/mojo/stdlib/math/math/exp/) of the input tensor.
+        [element-wise exponential](/mojo/std/math/math/exp/) of the input tensor.
 
         Returns:
             A new tensor containing the element-wise exponential.
@@ -5337,7 +5337,7 @@ struct LayoutTensor[
         destination tensors, assigning each thread one or more elements to copy.
 
         Optionally, use the
-        [`vectorize()`]((/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
+        [`vectorize()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
         method to get vectorized views of both tensors before calling
         `distribute()`. This allows each thread to copy multiple elements of the
         tensor. For example:
@@ -5349,9 +5349,9 @@ struct LayoutTensor[
         ```
 
         The copy operation is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](/mojo/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](/mojo/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
 
         Constraints:
@@ -6360,9 +6360,9 @@ fn cp_async_k_major[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](/mojo/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](/mojo/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - K-major layout is particularly beneficial for matrix multiplication
         operations where the inner dimension (K) is accessed contiguously.
@@ -6605,9 +6605,9 @@ fn copy_dram_to_sram_async[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](/mojo/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](/mojo/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - The maximum size of each element that can be copied is 16 bytes.
     """
