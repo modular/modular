@@ -880,6 +880,9 @@ class BlackTestCase(BlackBaseTestCase):
         self.assertEqual(mblack.get_features_used(node), {Feature.POS_ONLY_ARGUMENTS})
         node = mblack.lib2to3_parse("def fn(a, /, b): ...")
         self.assertEqual(mblack.get_features_used(node), {Feature.POS_ONLY_ARGUMENTS})
+        # Mojo uses // (double slash) as the infer-only marker
+        node = mblack.lib2to3_parse("def foo(a, //, b): pass")
+        self.assertEqual(mblack.get_features_used(node), {Feature.POS_ONLY_ARGUMENTS})
         node = mblack.lib2to3_parse("def fn(): yield a, b")
         self.assertEqual(mblack.get_features_used(node), set())
         node = mblack.lib2to3_parse("def fn(): return a, b")

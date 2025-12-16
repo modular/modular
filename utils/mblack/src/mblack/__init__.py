@@ -87,6 +87,7 @@ from mblack.mode import (
     supports_feature,
 )
 from mblack.nodes import (
+    SLASHES,
     STARS,
     is_number_token,
     is_simple_decorator_expression,
@@ -1235,7 +1236,7 @@ def get_features_used(  # noqa: C901
             if "_" in n.value:
                 features.add(Feature.NUMERIC_UNDERSCORES)
 
-        elif n.type == token.SLASH:
+        elif n.type in SLASHES:
             if n.parent and n.parent.type in {
                 syms.typedargslist,
                 syms.typedparamslist,

@@ -76,7 +76,8 @@ comptime TypeToTypeWrap[
 # Reduce a variadic to a variadic
 comptime ReduceVariadicAndIdxToVariadic[
     From: type_of(AnyType),
-    To: type_of(AnyType), //,
+    To: type_of(AnyType),
+    //,
     *,
     Variadic: VariadicOf[From],
     Reducer: ReduceVariadicIdxGeneratorTypeGenerator[VariadicOf[To], From],
@@ -92,7 +93,8 @@ comptime ReduceVariadicAndIdxToVariadic[
 ]
 
 comptime MapVariadicAndIdxToType[
-    From: type_of(AnyType), //,
+    From: type_of(AnyType),
+    //,
     *,
     To: type_of(AnyType),
     Variadic: VariadicOf[From],
@@ -103,7 +105,8 @@ comptime MapVariadicAndIdxToType[
 ]
 
 comptime MapTypeToType[
-    From: type_of(AnyType), //,
+    From: type_of(AnyType),
+    //,
     *,
     To: type_of(AnyType),
     Variadic: __mlir_type[`!kgen.variadic<`, From, `>`],
@@ -123,7 +126,8 @@ comptime VariadicZip[T: type_of(AnyType), //, *Ts: VariadicOf[T]] = __mlir_attr[
 # mapping variadic to tuple is the only use case.
 comptime VariadicToTuple[
     From: type_of(AnyType),
-    To: type_of(AnyType), //,
+    To: type_of(AnyType),
+    //,
     VariadicToTypeGen: __mlir_type[
         `!lit.generator<<"Base": `,
         VariadicOf[To],

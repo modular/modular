@@ -90,7 +90,8 @@ MATH_OPERATORS: Final = {
     token.DOUBLESTAR,
 }
 STARS: Final = {token.STAR, token.DOUBLESTAR}
-VARARGS_SPECIALS: Final = STARS | {token.SLASH}
+SLASHES: Final = {token.SLASH, token.DOUBLESLASH}
+VARARGS_SPECIALS: Final = STARS | SLASHES
 VARARGS_PARENTS: Final = {
     syms.arglist,
     syms.argument,  # double star in arglist
