@@ -49,14 +49,16 @@ fn sum_kernel[
     a: UnsafePointer[Int32, MutAnyOrigin],
 ):
     """Efficient reduction of the vector a."""
+    comptime KERNEL_TPB: UInt = 512
     sums = stack_allocation[
-        Int(TPB),
+        Int(KERNEL_TPB),
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
     ]()
+
     global_tid = block_idx.x * block_dim.x + thread_idx.x
     tid = thread_idx.x
-    threads_in_grid = TPB * NUM_BLOCKS
+    threads_in_grid = KERNEL_TPB * NUM_BLOCKS
     var sum: Int32 = 0
 
     for i in range(global_tid, size, threads_in_grid):
@@ -68,10 +70,12 @@ fn sum_kernel[
     barrier()
 
     # Reduce until the first warp
-    active_threads = TPB
+
+    active_threads = KERNEL_TPB
+    comptime KERNEL_LOG_TPB = log2_floor(KERNEL_TPB)
 
     @parameter
-    for power in range(1, LOG_TPB - 4):
+    for power in range(1, KERNEL_LOG_TPB - 4):
         active_threads >>= 1
         if tid < active_threads:
             sums[tid] += sums[tid + active_threads]
