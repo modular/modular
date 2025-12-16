@@ -261,7 +261,12 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # better than directly using the raw weights size.
 
         # First, Calculate the lm_head/embed_tokens size.
-        lm_head_size = config.vocab_size * config.hidden_size * dtype
+        # There are always in Bf16.
+        lm_head_size = (
+            config.vocab_size
+            * config.hidden_size
+            * DType.bfloat16.size_in_bytes
+        )
         embed_tokens_size = lm_head_size
 
         # Subtract the lm_head/embed_tokens size from the weights size
@@ -271,7 +276,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # We don't use the MTP module for now, so subtract the MTP attn/moe size.
         # Estimate the MTP module size by assuming the MTP layer is of the same
         # size as a sparse model layer.
-        weights_size *= n_sparse_layers / (n_sparse_layers + n_mtp_layers)
+        weights_size = int(
+            weights_size * n_sparse_layers / (n_sparse_layers + n_mtp_layers)
+        )
 
         # Calculate the routing experts and the shared experts size.
         expert_size = (
