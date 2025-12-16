@@ -86,9 +86,11 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
     // Do not clear the `is_owned` parameter since it's not inferrable from the
     // operands to VariadicPack. It has to be set explicitly based on what
     // convention was used to construct the pack.
+    Type reboundTp = evaluator.getReboundType(currBinding.getType());
+    if (idx == 4) // Unpack and use element type to match pos_vararg convention.
+      reboundTp = sugarCast<VariadicType>(reboundTp).getElementType();
     if (idx != 1) // Index `1` is the `is_owned` parameter.
-      currBinding =
-          UnboundAttr::get(evaluator.getReboundType(currBinding.getType()));
+      currBinding = UnboundAttr::get(reboundTp);
     evaluator.appendIndexBinding(currBinding);
   }
   ASTType unboundVariadicPackType =
