@@ -1366,7 +1366,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "max_length": 516,
             "trust_remote_code": False,
             "prefill_chunk_size": 512,
-            "max_batch_size": 8,
             "ep_size": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
