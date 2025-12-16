@@ -46,7 +46,7 @@ class ThroughputMeasure:
             The throughput values as a floating point 64.
         """
         # TODO: do we need support other units of time (ms, ns)?
-        return (self.value) * 1e-9 / elapsed_sec
+        return (self.value * 1e-9) / elapsed_sec
 
 
 @dataclass
@@ -75,9 +75,7 @@ class Bench:
         s = [self.BENCH_LABEL, self.ITERS_LABEL, self.MET_LABEL] + metrics
         output += [",".join(s)]
 
-        metric_vals = [
-            f"{m.compute(self.met * 1e-3)}" for m in self.metric_list
-        ]
+        metric_vals = [f"{m.compute(self.met)}" for m in self.metric_list]
         vals = [self.name, self.iters, self.met] + metric_vals
         output += [",".join([str(v) for v in vals])]
 
