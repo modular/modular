@@ -10,7 +10,7 @@
 #include "AsyncRT/Runtime/TimerHeap.h"
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "AsyncRT/Support/UnknownLocationDecoder.h"
-#include "Runtime/MojoValue.h"
+#include "MLRT/Core/MojoValue.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
