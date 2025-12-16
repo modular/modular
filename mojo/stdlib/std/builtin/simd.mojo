@@ -1226,7 +1226,7 @@ struct SIMD[dtype: DType, size: Int](
             )
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __lshift__(self, rhs: Self) -> Self:
         """Returns `self << rhs`.
 
@@ -1244,7 +1244,7 @@ struct SIMD[dtype: DType, size: Int](
             mlir_value=__mlir_op.`pop.shl`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rshift__(self, rhs: Self) -> Self:
         """Returns `self >> rhs`.
 
@@ -1834,7 +1834,7 @@ struct SIMD[dtype: DType, size: Int](
         ), "must be an integral or bool type"
         return value | self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rlshift__(self, value: Self) -> Self:
         """Returns `value << self`.
 
@@ -1850,7 +1850,7 @@ struct SIMD[dtype: DType, size: Int](
         __comptime_assert Self.dtype.is_integral(), "must be an integral type"
         return value << self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rrshift__(self, value: Self) -> Self:
         """Returns `value >> self`.
 
