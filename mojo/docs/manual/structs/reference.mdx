@@ -41,9 +41,13 @@ to the next node:
 struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     comptime NodePointer = UnsafePointer[Self, MutOrigin.external]
 
-    var value: Optional[Self.ElementType]
-    var next: Self.NodePointer
 
+    var value: Optional[Self.ElementType] # The `Node`'s value
+    var next: Self.NodePointer # Pointer to the next `Node`
+
+
+    # Uses an `Optional` value to allow 'empty' Node construction
+    # that can be moved into newly allocated memory
     fn __init__(out self, value: Optional[Self.ElementType] = None):
         self.value = value
         self.next = Self.NodePointer()
@@ -73,10 +77,8 @@ And here's an example of that pattern:
 
 ```mojo
 @staticmethod
-fn makeNode(value: Self.ElementType) -> Self.NodePointer:
-    var node_ptr = alloc[Self](1)
-    if not node_ptr:
-        abort("Out of memory")
+fn make_node(value: Self.ElementType) -> Self.NodePointer:
+    node_ptr = alloc[Self](1)
     node_ptr.init_pointee_move(Self(value))
     return node_ptr
 ```
@@ -86,60 +88,70 @@ structures in Mojo.
 
 ## Linking nodes
 
-To link nodes, create a new node and set your `next` pointer
-to it. This sample shows how to `append` to a new node created
-with a value you supply:
+To link nodes, create a new node and set your `next` pointer to it.
+This example shows how to `append` a new node using a supplied value.
+If a `next` node already exists, the code frees it before appending
+the new node.
 
 ```mojo
 fn append(mut self, value: Self.ElementType):
-    self.next = Self.makeNode(value)
-```
-
-Be careful. This simple version overwrites any existing `next` link.
-If your list already _has_ nodes here, make sure you handle them or free them first!
-You’ll see ways to do that in the "Cleaning up" and "Destructors" sections below.
-
-## Walking the list
-
-To walk the list, follow the chain until you hit the end. Recursive code
-makes this simple to read. This sample prints the value of each pointer:
-
-```mojo
-@staticmethod
-fn print_list(node_ptr: Self.NodePointer):
-    var current_value: Optional[Self.ElementType] = node_ptr[].value
-    if current_value:
-        print(current_value.value(), end=" ")
-
-    if node_ptr[].next:
-        Self.print_list(node_ptr[].next) # recurse
-    else:
-        print() # newline
-```
-
-The pattern goes: check the value, print it if it exists, and
-walk to the next link.
-
-:::note
-Although this is a static method on the struct, you can
-implement this as an instance method if you prefer.
-:::
-
-## Cleaning up
-
-You allocated each node yourself, so you’re the one who frees them.
-This cleanup walks down the chain and frees each node as the
-recursion unwinds:
-
-```mojo
-fn free_chain(self):
+    # Free chain if replacing `next`
     if self.next:
         self.next[].free_chain()
         self.next.destroy_pointee()
         self.next.free()
+
+    self.next = Self.make_node(value)
 ```
 
-The “head” node stays allocated, unless you free it:
+## Walking the list
+
+To walk the list, follow the chain until you reach the end.
+Recursive code makes this easy to read. This example prints
+the value stored at each node:
+
+```mojo
+@staticmethod
+fn print_list(node_ptr: Self.NodePointer):
+    if not node_ptr:
+        print()
+        return
+
+    current_value: Optional[Self.ElementType] = node_ptr[].value
+    if current_value:
+        print(current_value.value(), end=" ")
+
+    if node_ptr[].next:
+        Self.print_list(node_ptr[].next)
+    else:
+        print()
+```
+
+The pattern is simple: check the value, print it if it exists,
+then move to the next link.
+
+:::note
+This example uses a static method, but you can also implement
+it as an instance method.
+:::
+
+## Cleaning up
+
+Because you allocate each node yourself, you’re also responsible
+for freeing it. This cleanup walks the chain and frees each node
+after destroying its pointee:
+
+```mojo
+fn free_chain(self):
+    current = self.next
+    while current:
+        next_node = current[].next
+        current.destroy_pointee()
+        current.free()
+        current = next_node
+```
+
+The “head” node stays allocated unless you explicitly free it yourself:
 
 ```mojo
 list_head[].free_chain()
@@ -149,15 +161,15 @@ list_head.free()
 
 ### Destructors
 
-When you build real Mojo data structures, you usually want a safe API
-that keeps users away from raw pointers. If you were putting together a
-complete linked-list type rather than a small demo of linkable
-nodes, the parent list would handle node allocation and freeing for you.
-It owns the nodes, so it also handles the cleanup in its
+When you build real Mojo data structures, you usually want a
+safe API that hides raw pointers from users. In a complete
+linked-list type (rather than a small demo of linkable nodes)
+the parent list handles node allocation and freeing. Because
+it owns the nodes, it also performs cleanup in its
 [destructor](/mojo/manual/lifecycle/death/).
 
-Here’s a small example from the Mojo Standard Library that shows how to
-deinitialize `self`:
+Here’s a small example based on the Mojo Standard Library that
+shows how to deinitialize `self`:
 
 ```mojo
 struct LinkedList[T]:
@@ -207,50 +219,56 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     # Constructs a `Node` with a `value` with heap allocation and
     # returns a pointer to the new `Node`.
     @staticmethod
-    fn makeNode(value: Self.ElementType) -> Self.NodePointer:
-        var node_ptr = alloc[Self](1)
-        if not node_ptr:
-            abort("Out of memory")
+    fn make_node(value: Self.ElementType) -> Self.NodePointer:
+        node_ptr = alloc[Self](1)
         node_ptr.init_pointee_move(Self(value))
         return node_ptr
 
     # Constructs a `Node` with allocated memory, assigns a value, appends
     # the pointer to `self.next`. Replaces any existing `next`.
     fn append(mut self, value: Self.ElementType):
-        self.next = Self.makeNode(value)
+        # Free chain if replacing `next`
+        if self.next:
+            self.next[].free_chain()
+            self.next.destroy_pointee()
+            self.next.free()
+
+        self.next = Self.make_node(value)
 
     # Prints the list starting at this pointer's pointee
     @staticmethod
     fn print_list(node_ptr: Self.NodePointer):
-        var current_value: Optional[Self.ElementType] = node_ptr[].value
+        if not node_ptr:
+            print("Empty list")
+            return
+
+        current_value: Optional[Self.ElementType] = node_ptr[].value
         if current_value:
             print(current_value.value(), end=" ")
+
         if node_ptr[].next:
             Self.print_list(node_ptr[].next)
         else:
             print()
 
-    # Release all successive allocated `Node` pointees. Does not release self.
+    # Releases all successively allocated `Node` pointees. Does not release self.
     fn free_chain(self):
-        if self.next:
-            self.next[].free_chain()
-            self.next.destroy_pointee() # clean up the instance
-            self.next.free() # free up the reserved memory
+        current = self.next
+        while current:
+            next_node = current[].next
+            current.destroy_pointee()
+            current.free()
+            current = next_node
 
 fn main():
-    # Construct a list from these values
-    var values: List[Element] = ["one", "one", "two", "three", "five", "eight"]
+    values: List[Element] = ["one", "one", "two", "three", "five", "eight"]
+    list_head = ListNode.make_node(values[0])
 
-    # Create an anchor for the head of the list
-    list_head = ListNode.makeNode(value=values[0])
-
-    # Iteratively add the rest of the linked list
     current = list_head
     for idx in range(1, len(values), 1):
         current[].append(values[idx])
         current = current[].next
 
-    # Walk the list and print the values
     ListNode.print_list(list_head)
 
     # Demonstrates cleanup. In short-lived programs, the OS reclaims memory at exit
