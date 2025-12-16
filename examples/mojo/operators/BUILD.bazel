@@ -9,7 +9,7 @@ mojo_binary(
         "my_complex.mojo",
     ],
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -22,6 +22,6 @@ mojo_test(
     ],
     main = "test_my_complex.mojo",
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

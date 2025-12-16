@@ -9,7 +9,7 @@ package(default_visibility = ["//max:consumers"])
         tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
         deps = [
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -29,6 +29,6 @@ mojo_test(
     ],
     deps = [
         "//max:quantization",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

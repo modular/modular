@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the `LayoutTensor` type for representing multidimensional data.
 """
+from builtin.variadics import Variadic
 from collections import OptionalReg
 from math import align_up, ceildiv, exp
 from math.math import _Expable
@@ -316,6 +317,32 @@ struct LayoutTensor[
     # `trait DevicePassable` implementation, to allow LayoutTensor to be passed directly to kernels
     comptime device_type: AnyType = Self
     """The device-side type representation."""
+
+    @staticmethod
+    fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
+        @parameter
+        if Self.mut:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self.OriginCastType[True, MutAnyOrigin],
+                    Self.OriginCastType[True, MutOrigin.external],
+                    Self.OriginCastType[False, ImmutAnyOrigin],
+                    Self.OriginCastType[False, ImmutOrigin.external],
+                ],
+            ]
+        else:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self.OriginCastType[False, ImmutAnyOrigin],
+                    Self.OriginCastType[False, ImmutOrigin.external],
+                ],
+            ]
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
@@ -3050,7 +3077,7 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        comptime num_tiles = stdlib.builtin.Variadic.size(tile_sizes)
+        comptime num_tiles = std.builtin.Variadic.size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3174,7 +3201,7 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        comptime num_tiles = stdlib.builtin.Variadic.size(tile_sizes)
+        comptime num_tiles = std.builtin.Variadic.size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3334,7 +3361,7 @@ struct LayoutTensor[
         ```
         """
 
-        comptime tiles_rank = stdlib.builtin.Variadic.size(tile_sizes)
+        comptime tiles_rank = std.builtin.Variadic.size(tile_sizes)
         comptime __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         constrained[
             __tiled_layout[1].rank() == tiles_rank,

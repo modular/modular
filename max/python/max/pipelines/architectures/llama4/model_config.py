@@ -143,6 +143,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
@@ -322,6 +323,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             num_hidden_layers=text_config.num_hidden_layers,
             kv_params=Llama4Config.get_kv_params(
                 huggingface_config=huggingface_config,
+                pipeline_config=pipeline_config,
                 devices=device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,

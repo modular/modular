@@ -26,7 +26,6 @@ from typing import (
     runtime_checkable,
 )
 
-import msgspec
 import numpy as np
 import numpy.typing as npt
 from max._core import xxhash
@@ -204,7 +203,8 @@ def _check_text_generation_output_implements_pipeline_output(
     return x
 
 
-class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
+@dataclass(kw_only=True)
+class TextGenerationOutput:
     """
     Represents the output of a text generation operation, combining token IDs,
     final generation status, request ID, and optional log probabilities for each token.
@@ -772,7 +772,8 @@ def hash_image(pixel_values: npt.NDArray[Any]) -> int:
     return int(np.uint64(hash_val).astype(np.int64))
 
 
-class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
+@dataclass(kw_only=True)
+class ImageMetadata:
     """Metadata about an image in the prompt.
 
     Each image corresponds to a range in the text token array [start_idx, end_idx).

@@ -273,7 +273,7 @@ fn distribute[
 
 @always_inline("nodebug")
 fn _vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
-    comptime rank = stdlib.builtin.Variadic.size(sizes)
+    comptime rank = std.builtin.Variadic.size(sizes)
 
     constrained[
         rank <= 3,

@@ -13,7 +13,7 @@
 
 from sys.intrinsics import _type_is_eq
 
-from stdlib.collections.list import _ListIter
+from std.collections.list import _ListIter
 from testing import TestSuite, assert_true
 
 

@@ -15,6 +15,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextContext
 
 # TODO(bduke): Replace with actual Llama4 model once implemented.
 from max.pipelines.lib import (
@@ -42,6 +43,7 @@ llama4_arch = SupportedArchitecture(
     pipeline_model=Llama4Model,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
+    context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     # NOTE: Llama 4 interleaves RoPE and NoPE (no positional encodings).

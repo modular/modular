@@ -115,6 +115,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
@@ -127,6 +128,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
             huggingface_config: The HuggingFace model configuration object
                 (:obj:`transformers.AutoConfig`).
             devices: The list of devices the model will run on.
+            pipeline_config: The MAX Engine pipeline configuration.
             kv_cache_config: The MAX Engine KV cache configuration settings
                 (:obj:`max.pipelines.max_config.KVCacheConfig`).
             cache_dtype: The desired data type for the KV cache
@@ -137,6 +139,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
         """
         return super().get_kv_params(
             huggingface_config.text_config,
+            pipeline_config,
             devices,
             kv_cache_config,
             cache_dtype,

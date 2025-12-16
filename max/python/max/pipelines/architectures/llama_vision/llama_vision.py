@@ -933,12 +933,14 @@ class LlamaVision(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return LlamaVisionConfig.get_kv_params(
             huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
             devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
@@ -1075,6 +1077,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         kv_params = cls.get_kv_params(
             huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
             devices=[DeviceRef.from_device(d) for d in devices],
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,

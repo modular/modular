@@ -19,7 +19,7 @@ import pytest
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config_enums import RopeType, SupportedEncoding
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
@@ -109,6 +109,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
         rope_type=RopeType.normal,
         weight_adapters={
@@ -130,6 +131,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
         rope_type=RopeType.normal,
         weight_adapters={
@@ -163,6 +165,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
     )
     assert arch1 != arch3
@@ -178,6 +181,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
     )
     assert arch1 != arch4
@@ -193,6 +197,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
     )
     assert arch1 != arch5
@@ -209,6 +214,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
     )
     assert arch1 != arch6
@@ -224,6 +230,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DUMMY_GEMMA_ARCH.pipeline_model,  # Different model
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
     )
     assert arch1 != arch7
@@ -239,6 +246,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.EMBEDDINGS_GENERATION,  # Different task
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
     )
     assert arch1 != arch8
@@ -254,6 +262,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=DUMMY_GEMMA_ARCH.tokenizer,  # Different tokenizer
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
     )
     assert arch1 != arch9
@@ -269,6 +278,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,  # Different format
     )
     assert arch1 != arch10
@@ -284,6 +294,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
         rope_type=RopeType.none,  # Different rope type
     )
@@ -303,6 +314,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
         weight_adapters={
             WeightsFormat.safetensors: different_adapter,  # Different weight adapters
@@ -321,6 +333,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
         multi_gpu_supported=False,  # Different multi_gpu_supported
     )
@@ -336,6 +349,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
         required_arguments={"enable_prefix_caching": False},
     )
@@ -352,6 +366,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
     )
 
@@ -365,6 +380,7 @@ def test_supported_architecture__eq__method() -> None:
         pipeline_model=DummyPipelineModel,
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
+        context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
         weight_adapters={},  # Empty dict
     )

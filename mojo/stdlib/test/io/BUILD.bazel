@@ -15,7 +15,7 @@ _FILECHECK_TESTS = [
             "full",
         ],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -31,7 +31,7 @@ _FILECHECK_TESTS = [
             "full",
         ],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

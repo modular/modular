@@ -60,7 +60,7 @@ from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
 
 from .. import _core, driver, engine, graph, mlir
-from .._core.dialects import builtin, kgen, mo
+from .._core.dialects import builtin
 from ..driver import (
     CPU,
     Accelerator,
@@ -73,11 +73,10 @@ from ..graph import (
     ShapeLike,
     TensorType,
     TensorValueLike,
-    Value,
     ops,
 )
-from ..graph.graph import _location
 from ..graph.ops.constant import NestedArray, Number
+from . import _passes
 from . import functional as F
 
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
@@ -1469,7 +1468,7 @@ class ComputeGraph:
         _core.lower(module, [builtin.passes.RemoveDeadValues()])
         # The graph symbol is public, so RemoveDeadValues won't remove
         # unused arguments. Do that explicitly.
-        _remove_unused_arguments(self.graph)
+        _passes.remove_unused_arguments(self.graph)
         inputs = [
             self.sources[input._mlir_value] for input in self.graph.inputs
         ]
@@ -1509,49 +1508,14 @@ class ComputeGraph:
         if tensor.storage is None:
             raise TypeError("Only realized tensors may be graph sources.")
 
-        op = _core.Operation._from_cmlir(self.graph._mlir_op)
-        assert isinstance(op, mo.GraphOp)
-        block = op.regions[0].front
-        # Update the GraphOP to reflect the new argument
-        with self.graph:
-            type = driver_tensor_type(tensor.storage).as_buffer().to_mlir()
-            inputs = op.function_type.inputs
-            op.function_type = builtin.FunctionType([*inputs, type])  # type: ignore
-            tensor._value = graph.BufferValue.from_mlir(
-                block.add_argument(type, _location())
-            )
-        self.sources[tensor._value._mlir_value] = tensor
+        type = driver_tensor_type(tensor.storage).as_buffer()
+        value = _passes.add_input(self.graph, type)
+        assert isinstance(value, graph.BufferValue)
+        tensor._value = value
+        self.sources[value._mlir_value] = tensor
 
     def add_unrealized(self, tensor: Tensor) -> None:
         self.unrealized[id(tensor)] = tensor
-
-
-def _remove_unused_arguments(graph: graph.Graph) -> None:
-    # Obviously this is deeply tied to the implementation of Graph.
-    #  - GraphOp should be simplified to have a single API for managing arguments
-    #  - Graph should expose this behavior
-    op = _core.Operation._from_cmlir(graph._mlir_op)
-    assert isinstance(op, mo.GraphOp)
-
-    block = op.regions[0].front
-    # reverse so indices don't during iteration+mutation
-    for i, input in reversed(list(enumerate(graph.inputs))):
-        if not input._mlir_value.num_uses:
-            block.erase_argument(i)
-
-    # graph.inputs is a cached_property, so reset it
-    graph.inputs = [Value.from_mlir(arg) for arg in block.arguments]
-
-    # update the graph op to correctly reflect the input changes
-    with graph:
-        op.function_type = builtin.FunctionType(  # type: ignore
-            [input.type.to_mlir() for input in graph.inputs],
-            op.function_type.results,
-        )
-        op.signature = kgen.FuncTypeGeneratorType([], op.function_type)  # type: ignore
-        op.discardable_attributes["argument_names"] = builtin.ArrayAttr(
-            [builtin.StringAttr(f"input{i}") for i in range(len(graph.inputs))]
-        )
 
 
 def driver_tensor_type(t: driver.Tensor) -> TensorType:

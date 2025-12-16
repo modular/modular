@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -36,6 +37,7 @@ qwen2_arch = SupportedArchitecture(
     },
     pipeline_model=Qwen2Model,
     tokenizer=TextTokenizer,
+    context_type=TextContext,
     rope_type=RopeType.normal,
     multi_gpu_supported=True,
     weight_adapters={

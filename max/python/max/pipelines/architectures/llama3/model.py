@@ -171,12 +171,17 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return Llama3Config.get_kv_params(
-            huggingface_config, devices, kv_cache_config, cache_dtype
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
 
     @classmethod
@@ -433,6 +438,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     ) -> list[PagedCacheValues]:
         kv_params = Llama3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
@@ -490,7 +496,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
-            data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
         )
 
         if model_config.data_parallel_degree > 1:

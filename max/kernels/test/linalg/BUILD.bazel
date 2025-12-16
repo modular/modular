@@ -44,7 +44,7 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -59,7 +59,7 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -76,7 +76,7 @@ lit_tests(
     mojo_deps = [
         "//max:internal_utils",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
 )

@@ -24,7 +24,7 @@ lit_tests(
     mojo_deps = [
         "//max:layout",
         "//max:shmem",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tags = [
         "gpu",
@@ -56,7 +56,7 @@ lit_tests(
     mojo_deps = [
         "//max:layout",
         "//max:shmem",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tags = [
         "gpu",

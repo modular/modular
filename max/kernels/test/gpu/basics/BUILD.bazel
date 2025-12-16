@@ -78,7 +78,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -101,7 +101,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -118,7 +118,7 @@ lit_tests(
         "//max:linalg",
         "//max:nn",
         "//max:quantization",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tags = ["gpu"],
 )

@@ -15,7 +15,7 @@ mojo_shared_library(
         "//conditions:default": [],
     }),
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 

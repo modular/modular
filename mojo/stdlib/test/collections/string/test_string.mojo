@@ -1188,29 +1188,29 @@ def test_string_char_slices_iter():
 
 def test_format_args():
     with assert_raises(contains="Index -1 not in *args"):
-        _ = "{-1} {0}".format("First")
+        _ = String("{-1} {0}").format("First")
 
     with assert_raises(contains="Index 1 not in *args"):
-        _ = "A {0} B {1}".format("First")
+        _ = String("A {0} B {1}").format("First")
 
     with assert_raises(contains="Index 1 not in *args"):
-        _ = "A {1} B {0}".format("First")
+        _ = String("A {1} B {0}").format("First")
 
     with assert_raises(contains="Index 1 not in *args"):
-        _ = "A {1} B {0}".format()
+        _ = String("A {1} B {0}").format()
 
     with assert_raises(
         contains="Automatic indexing require more args in *args"
     ):
-        _ = "A {} B {}".format("First")
+        _ = String("A {} B {}").format("First")
 
     with assert_raises(
         contains="Cannot both use manual and automatic indexing"
     ):
-        _ = "A {} B {1}".format("First", "Second")
+        _ = String("A {} B {1}").format("First", "Second")
 
     with assert_raises(contains="Index first not in kwargs"):
-        _ = "A {first} B {second}".format(1, 2)
+        _ = String("A {first} B {second}").format(1, 2)
 
     var s = " {} , {} {} !".format("Hello", "Beautiful", "World")
     assert_equal(s, " Hello , Beautiful World !")
@@ -1219,28 +1219,28 @@ def test_format_args():
         return "there is a single curly " + c + " left unclosed or unescaped"
 
     with assert_raises(contains=curly("{")):
-        _ = "{ {}".format(1)
+        _ = String("{ {}").format(1)
 
     with assert_raises(contains=curly("{")):
-        _ = "{ {0}".format(1)
+        _ = String("{ {0}").format(1)
 
     with assert_raises(contains=curly("{")):
-        _ = "{}{".format(1)
+        _ = String("{}{").format(1)
 
     with assert_raises(contains=curly("}")):
-        _ = "{}}".format(1)
+        _ = String("{}}").format(1)
 
     with assert_raises(contains=curly("{")):
-        _ = "{} {".format(1)
+        _ = String("{} {").format(1)
 
     with assert_raises(contains=curly("{")):
-        _ = "{".format(1)
+        _ = String("{").format(1)
 
     with assert_raises(contains=curly("}")):
-        _ = "}".format(1)
+        _ = String("}").format(1)
 
     with assert_raises(contains=""):
-        _ = "{}".format()
+        _ = String("{}").format()
 
     assert_equal("}}".format(), "}")
     assert_equal("{{".format(), "{")
@@ -1355,26 +1355,26 @@ def test_format_conversion_flags():
         in "{4} {0!r} {3} {1!r}".format(a, b, c, d, True)
     )
 
-    with assert_raises(contains='Conversion flag "x" not recognised.'):
-        _ = "{!x}".format(1)
+    with assert_raises(contains='Conversion flag "x" not recognized.'):
+        _ = String("{!x}").format(1)
 
     with assert_raises(contains="Empty conversion flag."):
-        _ = "{!}".format(1)
+        _ = String("{!}").format(1)
 
-    with assert_raises(contains='Conversion flag "rs" not recognised.'):
-        _ = "{!rs}".format(1)
+    with assert_raises(contains='Conversion flag "rs" not recognized.'):
+        _ = String("{!rs}").format(1)
 
-    with assert_raises(contains='Conversion flag "r123" not recognised.'):
-        _ = "{!r123}".format(1)
+    with assert_raises(contains='Conversion flag "r123" not recognized.'):
+        _ = String("{!r123}").format(1)
 
-    with assert_raises(contains='Conversion flag "r!" not recognised.'):
-        _ = "{!r!}".format(1)
+    with assert_raises(contains='Conversion flag "r!" not recognized.'):
+        _ = String("{!r!}").format(1)
 
-    with assert_raises(contains='Conversion flag "x" not recognised.'):
-        _ = "{0!x}".format(1)
+    with assert_raises(contains='Conversion flag "x" not recognized.'):
+        _ = String("{0!x}").format(1)
 
-    with assert_raises(contains='Conversion flag "r:d" not recognised.'):
-        _ = "{!r:d}".format(1)
+    with assert_raises(contains='Conversion flag "r:d" not recognized.'):
+        _ = String("{!r:d}").format(1)
 
 
 def test_float_conversion():

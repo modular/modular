@@ -183,6 +183,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         if isinstance(self, KVCacheMixin):
             self.kv_params = self.get_kv_params(
                 huggingface_config=huggingface_config,
+                pipeline_config=pipeline_config,
                 devices=self.device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=encoding.cache_dtype,
@@ -323,6 +324,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         kv_params = cls.get_kv_params(
             huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
             devices=[DeviceRef.from_device(d) for d in devices],
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,

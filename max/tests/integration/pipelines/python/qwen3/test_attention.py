@@ -21,14 +21,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheStrategy, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
-)
-from max.pipelines.architectures.qwen3.model_config import (
-    Qwen3Config as MaxQwen3Config,
 )
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -123,12 +119,12 @@ def generate_max_outputs(
     for weight_name, value in attention_weights.items():
         state_dict[weight_name] = value.cpu()
 
-    kv_cache_config = KVCacheConfig(cache_strategy=KVCacheStrategy.PAGED)
-    kv_params = MaxQwen3Config.get_kv_params(
-        huggingface_config=text_config,
-        devices=[DeviceRef.from_device(device)],
-        kv_cache_config=kv_cache_config,
-        cache_dtype=dtype,
+    kv_params = KVCacheParams(
+        dtype=dtype,
+        n_kv_heads=text_config.num_key_value_heads,
+        head_dim=text_config.head_dim,
+        num_layers=text_config.num_hidden_layers,
+        devices=[device_ref],
     )
 
     session = InferenceSession(devices=[Accelerator(0)])

@@ -55,6 +55,13 @@ def mock_huggingface_config() -> MagicMock:
     huggingface_config.moe_intermediate_size = 2048
     huggingface_config.hidden_size = 7168
 
+    # Additional attributes for estimate_weights_size
+    huggingface_config.num_hidden_layers = 61
+    huggingface_config.first_k_dense_replace = 1
+    huggingface_config.num_nextn_predict_layers = 1
+    huggingface_config.vocab_size = 129280
+    huggingface_config.n_shared_experts = 1
+
     return huggingface_config
 
 
@@ -98,3 +105,109 @@ def test_deepseekv3_memory_estimation_exact() -> None:
         pipeline_config, huggingface_config
     )
     assert mem == 549755813888
+
+
+def mock_weights_pipeline_config(
+    n_gpus: int, ep_size: int, dp_degree: int
+) -> MagicMock:
+    """Create a mock pipeline config for estimate_weights_size tests."""
+    huggingface_config = mock_huggingface_config()
+
+    pipeline_config = MagicMock()
+    pipeline_config.model_config = MagicMock()
+    pipeline_config.model_config.quantization_encoding = (
+        SupportedEncoding.float8_e4m3fn
+    )
+    pipeline_config.model_config.data_parallel_degree = dp_degree
+    pipeline_config.model_config.device_specs = [
+        MagicMock() for _ in range(n_gpus)
+    ]
+    pipeline_config.model_config.huggingface_config = huggingface_config
+    # Use a large enough weights size to account for the algorithm's subtractions.
+    # DeepSeek-V3 has ~671B parameters, ~700GB at FP8.
+    pipeline_config.model_config.weights_size.return_value = 700 * 1024**3
+    pipeline_config.ep_size = ep_size
+
+    return pipeline_config
+
+
+def compute_routing_experts_size() -> int:
+    """Compute the routing_experts_size from mock_huggingface_config values.
+
+    This matches the calculation in estimate_weights_size:
+    routing_experts_size = n_sparse_layers * n_routed_experts * expert_size
+    where expert_size = moe_intermediate_size * hidden_size * 3 * dtype
+    """
+    hf_config = mock_huggingface_config()
+    dtype = 1  # float8_e4m3fn size in bytes
+    n_sparse_layers = (
+        hf_config.num_hidden_layers - hf_config.first_k_dense_replace
+    )
+    expert_size = (
+        hf_config.moe_intermediate_size * hf_config.hidden_size * 3 * dtype
+    )
+    return n_sparse_layers * hf_config.n_routed_experts * expert_size
+
+
+def test_deepseekv3_estimate_weights_size_no_expert_parallelism() -> None:
+    """Test estimate_weights_size with ep_size=1 and multiple devices.
+
+    This is a regression test for a bug where ep_size=1 with multiple GPUs
+    would cause a ZeroDivisionError (n_nodes = 1 // 8 = 0).
+    """
+    deepseek_model = deepseekV3_arch.pipeline_model
+
+    # EP=1 (no expert parallelism), 8 GPUs, DP=1
+    pipeline_config = mock_weights_pipeline_config(
+        n_gpus=8, ep_size=1, dp_degree=1
+    )
+
+    # This should not raise ZeroDivisionError
+    mem = deepseek_model.estimate_weights_size(pipeline_config)
+    assert mem > 0
+
+
+def test_deepseekv3_estimate_weights_size_routing_experts_scaling() -> None:
+    """Verify routing experts memory scales correctly with EP configurations.
+
+    Currently, ep_size must be either 1 (no EP) or a multiple of n_gpus_per_node
+    (EP across full nodes). Mixed EP/TP strategies are not yet supported.
+
+    For supported configurations:
+    - EP=1: routing_experts_memory = routing_experts_size (full copy)
+    - EP=n_gpus*n_nodes: routing_experts_memory = routing_experts_size / n_nodes
+    """
+    deepseek_model = deepseekV3_arch.pipeline_model
+    routing_experts_size = compute_routing_experts_size()
+    n_gpus = 8
+
+    # Convert to int since the memory estimation involves some float arithmetic.
+    # EP=1: no expert parallelism
+    mem_ep1 = int(
+        deepseek_model.estimate_weights_size(
+            mock_weights_pipeline_config(n_gpus=n_gpus, ep_size=1, dp_degree=1)
+        )
+    )
+    # EP=8: single node with full EP (n_nodes=1)
+    mem_ep8 = int(
+        deepseek_model.estimate_weights_size(
+            mock_weights_pipeline_config(n_gpus=n_gpus, ep_size=8, dp_degree=1)
+        )
+    )
+    # EP=16: two nodes (n_nodes=2)
+    mem_ep16 = int(
+        deepseek_model.estimate_weights_size(
+            mock_weights_pipeline_config(n_gpus=n_gpus, ep_size=16, dp_degree=1)
+        )
+    )
+
+    # Verify the routing experts contribution:
+    # EP=1: full routing_experts_size (no split)
+    # EP=8 (n_nodes=1): routing_experts_size / 1 = routing_experts_size
+    # EP=16 (n_nodes=2): routing_experts_size / 2
+
+    # EP=1 vs EP=8: EP=1 has full routing_experts_size, EP=8 has routing_experts_size
+    assert mem_ep1 == mem_ep8  # Both have full routing_experts_size (n_nodes=1)
+
+    # EP=8 vs EP=16: EP=16 splits across 2 nodes, so routing_experts_size / 2
+    assert mem_ep8 - mem_ep16 == routing_experts_size // 2

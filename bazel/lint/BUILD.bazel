@@ -146,7 +146,7 @@ command(
 mojo_binary(
     name = "check_licenses",
     srcs = [":check_licenses.mojo"],
-    deps = ["@mojo//:stdlib"],
+    deps = ["@mojo//:std"],
 )
 
 command(

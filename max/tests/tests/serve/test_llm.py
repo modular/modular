@@ -36,7 +36,9 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
     IdentityPipelineTokenizer,
     PipelineConfig,
 )
@@ -46,6 +48,24 @@ from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(autouse=True)
+def patch_pipeline_registry_context_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Patch PIPELINE_REGISTRY.retrieve_context_type to always return TextContext."""
+
+    def _mock_retrieve_context_type(
+        pipeline_config: PipelineConfig,
+    ) -> type[TextContext]:
+        return TextContext
+
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_context_type",
+        _mock_retrieve_context_type,
+    )
 
 
 @dataclass(frozen=True)

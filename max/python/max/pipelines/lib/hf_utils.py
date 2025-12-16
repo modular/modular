@@ -26,7 +26,7 @@ import re
 import struct
 import time
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Any, cast
 
@@ -108,9 +108,13 @@ def try_to_load_from_cache(
     )
 
 
+@lru_cache(maxsize=64)
 def validate_hf_repo_access(repo_id: str, revision: str) -> None:
     """
     Validate repository access and raise clear, user-friendly errors.
+
+    Results are cached to avoid redundant HuggingFace API calls when the same
+    repository is validated multiple times within a process.
 
     Args:
         repo_id: The HuggingFace repository ID to validate

@@ -128,6 +128,37 @@ def test_regions_and_blocks(mlir_context) -> None:  # noqa: ANN001
     assert isinstance(ip, InsertPoint)
 
 
+def test_block_contents(mlir_context: mlir.Context) -> None:
+    loc = mlir.Location.current
+    assert loc
+
+    module = builtin.ModuleOp(loc)
+    block = module.body
+    builder = OpBuilder(block.end)
+    graph = mo.GraphOp(builder, loc, "hello", [], [], is_subgraph=False)
+
+    assert isinstance(block, Block)
+    assert len(block) == 1
+    [op] = block
+    assert block[0] == block[-1] == op == graph
+
+
+def test_op_operands() -> None:
+    input_type = TensorType(DType.float32, [1], DeviceRef.GPU())
+    with Graph("empty", input_types=[input_type, input_type]) as graph:
+        with graph._context, mlir.Location.unknown() as location:
+            assert isinstance(location, mlir.Location)
+            builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
+            x, y = graph.inputs
+            params = kgen.ParamDeclArrayAttr([])
+            op = rmo.AddOp(builder, location, x.to_mlir(), y.to_mlir(), params)
+            op.verify()
+
+        assert len(op.operands) == 2
+        assert op.operands[0].value == x.to_mlir()
+        assert op.operands[1].value == y.to_mlir()
+
+
 def test_device_ref_attr(mlir_context) -> None:  # noqa: ANN001
     attr = m.DeviceRefAttr("cpu", 0)
     assert attr.label == "cpu"

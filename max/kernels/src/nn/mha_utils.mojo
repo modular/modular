@@ -13,7 +13,7 @@
 
 
 from collections import OptionalReg
-from math import align_up, ceildiv, align_up
+from math import align_up, ceildiv
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     CompilationTarget,
@@ -335,7 +335,9 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
                 UInt(
                     32 if Self.dtype
                     is DType.float32 else (
-                        128 if has_amd_gpu_accelerator() else 64
+                        (
+                            256 if use_experimental_cdna4_kernel else 128
+                        ) if has_amd_gpu_accelerator() else 64
                     )
                 )
             )

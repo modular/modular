@@ -97,6 +97,7 @@ class KVCacheMixin(Protocol):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,

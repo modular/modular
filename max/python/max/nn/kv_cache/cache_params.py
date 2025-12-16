@@ -22,11 +22,7 @@ from functools import reduce
 from operator import mul
 
 from max.dtype import DType
-from max.graph import (
-    BufferType,
-    DeviceRef,
-    TensorType,
-)
+from max.graph import BufferType, DeviceRef, TensorType
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups

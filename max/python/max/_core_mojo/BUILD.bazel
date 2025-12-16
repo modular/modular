@@ -6,7 +6,7 @@ modular_py_library(
     name = "_core_mojo",
     srcs = glob(["**/*.py"]),
     data = glob(["**/*.mojo"]) + [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     deps = [
         requirement("numpy"),

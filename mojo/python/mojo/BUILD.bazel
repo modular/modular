@@ -8,7 +8,7 @@ modular_py_library(
     name = "mojo",
     srcs = glob(["**/*.py"]),
     data = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     imports = [".."],
 )

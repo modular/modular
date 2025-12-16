@@ -13,12 +13,15 @@
 
 import logging
 
-logging.basicConfig(
-    level=logging.DEBUG,
-)
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
+from max.pipelines.core import TextContext
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+
+logging.basicConfig(
+    level=logging.DEBUG,
+)
 
 request = {
     "model": "echo",
@@ -30,6 +33,24 @@ request = {
     ],
     "stream": False,
 }
+
+
+@pytest.fixture(autouse=True)
+def patch_pipeline_registry_context_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Patch PIPELINE_REGISTRY.retrieve_context_type to always return TextContext."""
+
+    def _mock_retrieve_context_type(
+        pipeline_config: PipelineConfig,
+    ) -> type[TextContext]:
+        return TextContext
+
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_context_type",
+        _mock_retrieve_context_type,
+    )
 
 
 @pytest.mark.asyncio

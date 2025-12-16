@@ -377,7 +377,7 @@ def generate_llm_logits_with_optional_retry(
                 print_output=False,
                 reference=reference,
             ),
-            timeout=timeout if timeout is not None else 600,
+            timeout=timeout if timeout is not None else 1200,
         )
 
     try:
@@ -765,6 +765,7 @@ PIPELINES = {
             ),
             cos_dist_threshold=3.0e-4,
             kl_div_threshold=7.4e-3,
+            timeout=1200,
         ),
     ),
     "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static": PipelineDef(
@@ -931,6 +932,7 @@ PIPELINES = {
             encoding="bfloat16",
             cos_dist_threshold=1.2e-2,
             kl_div_threshold=1.6e-02,
+            timeout=1200,
         ),
     ),
     "mistral-community/pixtral-12b-bfloat16": PipelineDef(

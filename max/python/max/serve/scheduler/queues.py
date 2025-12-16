@@ -24,57 +24,30 @@ import zmq
 from max.interfaces import (
     BaseContext,
     BaseContextType,
+    EmbeddingsContext,
     PipelineOutput,
     PipelineOutputType,
     PipelineTask,
     RequestID,
     SchedulerResult,
+    TextGenerationContext,
 )
 from max.interfaces.queue import MAXPullQueue, MAXPushQueue
-from max.pipelines.architectures.qwen2_5vl.context import (
-    Qwen2_5VLTextAndVisionContext,
-)
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-)
-from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.serve.queue.zmq_queue import ZmqConfig
 from max.serve.scheduler.base import sleep_with_backoff
 
 logger = logging.getLogger("max.serve")
 
 
-def _get_request_type_from_pipeline_task(
-    pipeline_task: PipelineTask,
-) -> Any:
-    if pipeline_task in [
-        PipelineTask.TEXT_GENERATION,
-        PipelineTask.EMBEDDINGS_GENERATION,
-    ]:
-        return (
-            # TODO: Add custom context types here automatically as they are supported.
-            TextContext
-            | TextAndVisionContext
-            | Qwen2_5VLTextAndVisionContext
-            | Qwen3VLTextAndVisionContext
-        )
-    elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
-        return TTSContext
-    else:
-        raise ValueError(
-            f"no request payload for pipeline task ({pipeline_task})"
-        )
-
-
 class SchedulerZmqConfigs:
     def __init__(
         self,
         pipeline_task: PipelineTask,
+        context_type: type[TextGenerationContext] | type[EmbeddingsContext],
     ) -> None:
-        request_type = _get_request_type_from_pipeline_task(pipeline_task)
         response_type = pipeline_task.output_type
 
-        self.request_queue_config = ZmqConfig[BaseContext](request_type)
+        self.request_queue_config = ZmqConfig[BaseContext](context_type)
         self.response_queue_config = ZmqConfig[
             dict[RequestID, SchedulerResult[PipelineOutput]]
         ](response_type)

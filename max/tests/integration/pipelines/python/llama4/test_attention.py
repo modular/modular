@@ -23,13 +23,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import RotaryEmbedding
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
-from max.pipelines import KVCacheConfig
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.pipelines.architectures.llama4.layers.attention import (
     _Llama4TextAttention,
-)
-from max.pipelines.architectures.llama4.model_config import (
-    Llama4Config as MaxLlama4Config,
 )
 from test_common.context_utils import create_text_context
 from transformers.masking_utils import (
@@ -161,11 +157,11 @@ def generate_max_outputs(
         state_dict[weight_name] = value.cpu()
 
     text_config = config.text_config
-    kv_cache_config = KVCacheConfig(cache_strategy=KVCacheStrategy.PAGED)
-    kv_params = MaxLlama4Config.get_kv_params(
-        huggingface_config=config,
-        kv_cache_config=kv_cache_config,
-        cache_dtype=dtype,
+    kv_params = KVCacheParams(
+        dtype=dtype,
+        n_kv_heads=text_config.num_key_value_heads,
+        head_dim=text_config.head_dim,
+        num_layers=text_config.num_hidden_layers,
         devices=[DeviceRef.from_device(device)],
     )
 

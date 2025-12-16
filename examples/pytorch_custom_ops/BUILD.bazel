@@ -66,6 +66,6 @@ mojo_library(
         "//max:compiler",
         "//max:layout",
         "//max:tensor",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

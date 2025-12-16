@@ -2918,15 +2918,16 @@ wheels = [
 
 [[package]]
 name = "kepler"
-version = "0.2.4"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "psutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "rich", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5c/73/8333bd5449fbe855368d03021bec36648b5bf3c559ec88c3c5219fe42d1a/kepler-0.2.4.tar.gz", hash = "sha256:2132b545bc218c74d1a4ba3a7b063715a5ae502ee43bfa15f57aea7670e5794c", size = 70285, upload-time = "2025-12-04T01:16:21.41Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/0d/e26f806e86c64fdb36ad3c8031aa6ae62b2f9c6ff8ca74cb17eb086715cc/kepler-0.3.0.tar.gz", hash = "sha256:88927fb03e3354e21d7e75f05842a1d3b0a73a9a0ec003dd3bc204ae0c3f06b1", size = 141738, upload-time = "2025-12-08T23:09:27.785Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/eb/f7/29438bb5c67e7a106115c6fdd75ca9b93f362e232a46647f00d98b44278d/kepler-0.2.4-py3-none-any.whl", hash = "sha256:c87141c1f614fe2b8df3e32cc1c18f2d9cfa6e9749bcf7c63ab1219c1d385ab8", size = 14903, upload-time = "2025-12-04T01:16:20.388Z" },
+    { url = "https://files.pythonhosted.org/packages/60/ab/90d3da48a0e92c20180d2b884f8ca79b763c60e2db8540deb020f1655834/kepler-0.3.0-py3-none-any.whl", hash = "sha256:de31972a21e7b2626d7e92d7ab27ab90e2aba396eef7997d99cb3cc9967cca81", size = 15236, upload-time = "2025-12-08T23:09:26.208Z" },
 ]
 
 [[package]]

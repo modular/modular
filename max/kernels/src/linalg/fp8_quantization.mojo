@@ -29,7 +29,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
 from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 from algorithm import elementwise
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, max_finite, min_finite

@@ -140,6 +140,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
@@ -166,6 +167,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
+            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
         )
 
     @staticmethod
@@ -315,6 +317,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             return_logits=return_logits,
             kv_params=Gemma3Config.get_kv_params(
                 huggingface_config=huggingface_config,
+                pipeline_config=pipeline_config,
                 devices=device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,

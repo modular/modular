@@ -108,17 +108,17 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return DeepseekV3Config.get_kv_params(
             huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
             devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
-            # DP should always set to the number of devices.
-            data_parallel_degree=len(devices),
         )
 
     def _create_model_config(
@@ -136,10 +136,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         kv_params = DeepseekV3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
-            data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
         )
 
         dtype = self.encoding.dtype
@@ -290,9 +290,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # The shared experts are duplicated on each device.
         total_size += shared_experts_size * n_gpus_per_node
 
-        # The routing experts are split across the nodes.
-        n_nodes = pipeline_config.ep_size // n_gpus_per_node
-        total_size += routing_experts_size // n_nodes
+        ep_size = max(pipeline_config.ep_size, 1)
+        if ep_size == 1:
+            total_size += routing_experts_size
+        else:
+            # we don't support mixing EP and TP strategies yet.
+            # ep_size must be equal to n_gpus_per_node * n_nodes
+            assert ep_size % n_gpus_per_node == 0
+            n_nodes = ep_size // n_gpus_per_node
+            total_size += routing_experts_size // n_nodes
 
         # Add back the lm_head/embed_tokens size, they will never be duplicated.
         total_size += lm_head_size + embed_tokens_size

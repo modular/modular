@@ -70,7 +70,7 @@ _EXPECT_FAIL = [
         expect_fail = src in _EXPECT_FAIL,
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -87,7 +87,7 @@ _EXPECT_FAIL = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -102,7 +102,7 @@ lit_tests(
     size = "large",
     srcs = _LIT_TESTS,
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

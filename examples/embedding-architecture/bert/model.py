@@ -117,12 +117,14 @@ class BertPipelineModel(PipelineModel[TextContext]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return BertConfig.get_kv_params(
             huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
             devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,

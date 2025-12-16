@@ -13,6 +13,8 @@
 
 import queue
 import time
+from dataclasses import fields, is_dataclass
+from typing import Any
 
 import numpy as np
 import pytest
@@ -21,7 +23,6 @@ from max.interfaces import (
     ImageMetadata,
     RequestID,
     SharedMemoryArray,
-    msgpack_eq,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -32,6 +33,52 @@ from max.serve.queue.zmq_queue import (
     ZmqPushSocket,
     generate_zmq_ipc_path,
 )
+
+
+def dataclass_equal(left: Any, right: Any) -> bool:
+    """Deep equality for dataclasses, handling numpy arrays and nested dataclasses.
+
+    - Requires both `left` and `right` to be dataclass instances of the same type.
+    - For each field:
+        * If both values are dataclasses, compare them recursively.
+        * If both values are numpy arrays, use np.array_equal.
+        * Otherwise, use regular ==.
+    """
+
+    def _eq(lv: Any, rv: Any) -> bool:
+        # Identity fast-path
+        if lv is rv:
+            return True
+
+        # Nested dataclasses: recurse
+        if is_dataclass(lv) and is_dataclass(rv):
+            if type(lv) is not type(rv):
+                return False
+            for f in fields(lv):
+                if not _eq(getattr(lv, f.name), getattr(rv, f.name)):
+                    return False
+            return True
+
+        # NumPy array handling
+        if isinstance(lv, np.ndarray) or isinstance(rv, np.ndarray):
+            if not (isinstance(lv, np.ndarray) and isinstance(rv, np.ndarray)):
+                return False  # one is array, the other is not
+            return np.array_equal(lv, rv)
+
+        # Fallback: normal equality
+        return lv == rv
+
+    if not (is_dataclass(left) and is_dataclass(right)):
+        raise TypeError("dataclass_equal expects two dataclass instances")
+
+    if type(left) is not type(right):
+        return False
+
+    for f in fields(left):
+        if not _eq(getattr(left, f.name), getattr(right, f.name)):
+            return False
+
+    return True
 
 
 def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
@@ -59,7 +106,7 @@ def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
     received_context = pull_socket.get_nowait()
 
     assert context[0] == received_context[0]
-    assert msgpack_eq(context[1], received_context[1])
+    assert dataclass_equal(context[1], received_context[1])
 
 
 def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
@@ -160,7 +207,7 @@ def test_zmq_push_pull_queue_with_complex_data() -> None:
     result = pull_queue.get_nowait()
 
     assert result[0] == test_data[0]
-    assert msgpack_eq(result[1], test_data[1])
+    assert dataclass_equal(result[1], test_data[1])
 
 
 def test_zmq_push_pull_queue_with_custom_serialization() -> None:
@@ -180,7 +227,7 @@ def test_zmq_push_pull_queue_with_custom_serialization() -> None:
         result = pull_queue.get_nowait()
 
         assert result[0] == test_data[0]
-        assert msgpack_eq(result[1], test_data[1])
+        assert dataclass_equal(result[1], test_data[1])
     finally:
         push_queue.close()
         pull_queue.close()

@@ -50,9 +50,7 @@ _EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "//max:layout",
-            "//max:tensor",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -71,9 +69,7 @@ _EXTRA_CONSTRAINTS = {
         ],
         main = src,
         deps = [
-            "//max:layout",
-            "//max:tensor",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _CPU_TESTS

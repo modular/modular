@@ -38,33 +38,32 @@ class Olmo2Config(Llama3Config):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         """Override the default Llama3Config.get_kv_params to use head_dim from config.
         Olmo2 models have an explicit head_dim field in their configuration,
         unlike Llama models where it needs to be calculated.
         Args:
             huggingface_config: The HuggingFace configuration object.
+            pipeline_config: The MAX Engine pipeline configuration.
             devices: Devices to use for the KV cache.
             kv_cache_config: Configuration for KV cache.
             cache_dtype: Data type for the cache.
         Returns:
             KVCacheParams object with the correct head_dim from config.
         """
-        if hasattr(huggingface_config, "head_dim"):
-            head_dim = getattr(huggingface_config, "head_dim")  # noqa: B009
-        else:
-            head_dim = getattr(huggingface_config, "hidden_size") // getattr(  # noqa: B009
-                huggingface_config, "num_attention_heads"
+        data_parallel_degree = pipeline_config.model_config.data_parallel_degree
+        if data_parallel_degree > 1:
+            raise ValueError(
+                "Data parallelism is not supported for Olmo2 models"
             )
-
         return KVCacheParams(
             dtype=cache_dtype,
             n_kv_heads=getattr(huggingface_config, "num_key_value_heads"),  # noqa: B009
-            head_dim=head_dim,
+            head_dim=Olmo2Config.get_head_dim(huggingface_config),
             num_layers=Olmo2Config.get_num_layers(huggingface_config),
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
@@ -72,22 +71,25 @@ class Olmo2Config(Llama3Config):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
+            data_parallel_degree=data_parallel_degree,
         )
 
     @staticmethod
-    def calculate_attention_multiplier(
-        huggingface_config: AutoConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> float:
+    def get_head_dim(huggingface_config: AutoConfig) -> int:
+        if hasattr(huggingface_config, "head_dim"):
+            return huggingface_config.head_dim
+        else:
+            return (
+                huggingface_config.hidden_size
+                // huggingface_config.num_attention_heads
+            )
+
+    @staticmethod
+    def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:
         """The attention multiplier for Olmo2 models.
         Uses the explicit head_dim from the config instead of calculating it.
         Args:
             huggingface_config: The HuggingFace configuration object.
-            devices: Devices to use for the model.
-            kv_cache_config: Configuration for KV cache.
-            cache_dtype: Data type for the cache.
         Returns:
             The attention multiplier value.
         """
@@ -95,15 +97,7 @@ class Olmo2Config(Llama3Config):
             huggingface_config,
             "attention_multiplier",
             math.sqrt(
-                1.0
-                / float(
-                    Olmo2Config.get_kv_params(
-                        huggingface_config=huggingface_config,
-                        devices=devices,
-                        kv_cache_config=kv_cache_config,
-                        cache_dtype=cache_dtype,
-                    ).head_dim
-                )
+                1.0 / float(Olmo2Config.get_head_dim(huggingface_config))
             ),
         )
 
@@ -120,7 +114,6 @@ class Olmo2Config(Llama3Config):
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
-        data_parallel_degree: int = 1,
     ) -> Olmo2Config:
         """Generate an Olmo2Config from the provided parameters.
         This method largely delegates to Llama3Config.generate but ensures
@@ -151,7 +144,6 @@ class Olmo2Config(Llama3Config):
             return_logits=return_logits,
             norm_method=norm_method,
             attention_bias=attention_bias,
-            data_parallel_degree=data_parallel_degree,
         )
 
         device_refs = [
@@ -162,6 +154,7 @@ class Olmo2Config(Llama3Config):
         # Override the KV parameters and attention multiplier with Olmo2-specific calculations
         olmo2_kv_params = Olmo2Config.get_kv_params(
             huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
             devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
@@ -169,9 +162,6 @@ class Olmo2Config(Llama3Config):
 
         olmo2_attention_multiplier = Olmo2Config.calculate_attention_multiplier(
             huggingface_config=huggingface_config,
-            devices=device_refs,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
         )
 
         # Return a new Olmo2Config with the corrected parameters

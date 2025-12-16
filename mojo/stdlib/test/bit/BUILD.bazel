@@ -16,7 +16,7 @@ _DISABLED_ASSERTIONS = [
         ],
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

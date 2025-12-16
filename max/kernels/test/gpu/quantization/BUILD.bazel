@@ -6,7 +6,7 @@ _DEPS = [
     "//max:internal_utils",
     "//max:linalg",
     "//max:quantization",
-    "@mojo//:stdlib",
+    "@mojo//:std",
 ]
 
 _FP8_FP4_TESTS = [

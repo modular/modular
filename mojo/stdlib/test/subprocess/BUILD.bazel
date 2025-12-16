@@ -24,7 +24,7 @@ _PLATFORM_CONSTRAINTS = {
         ],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

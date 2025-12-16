@@ -31,7 +31,7 @@ _DISABLED_ASSERTIONS = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -53,7 +53,7 @@ _DISABLED_ASSERTIONS = [
             "//conditions:default": [],
         }) if src == "test_sorting_network.mojo" else [],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

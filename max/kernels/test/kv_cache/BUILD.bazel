@@ -10,7 +10,7 @@ package(default_visibility = ["//max:consumers"])
             "//max:internal_utils",
             "//max:kv_cache",
             "//max:nn",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(["**/*.mojo"])

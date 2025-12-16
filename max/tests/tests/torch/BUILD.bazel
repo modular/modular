@@ -18,7 +18,7 @@ modular_py_test(
         "//max:MOGGPrimitives",
         "//max:compiler_internal",
         "//max:tensor",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tags = ["gpu"],
     target_compatible_with = select({

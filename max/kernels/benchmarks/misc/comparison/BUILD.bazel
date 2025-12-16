@@ -23,7 +23,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "bench_baseline_lib",
     srcs = [
-        "bench_blackwell_decode.py",
         "bench_blackwell_mla_decode.py",
     ],
     # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
@@ -36,6 +35,7 @@ modular_py_library(
         blackwell_bench_wheel("deep-gemm"),
         requirement("packaging"),
         requirement("torch"),
+        ":bench_decode_lib",
         "//max/kernels/benchmarks/autotune:bencher_utils",
         "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
         "//max/kernels/benchmarks/misc/utils:bench_utils",
@@ -68,6 +68,34 @@ modular_py_binary(
 # Moved to kbench. Please run the following:
 # kbench bench_mla_decode.yaml --param engine:"[modular_max, flashinfer]"
 
+# Shared library for MHA decode benchmark functions
+modular_py_library(
+    name = "bench_decode_lib",
+    srcs = ["bench_blackwell_decode.py"],
+    imports = ["."],
+    deps = [
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        blackwell_bench_wheel("flashinfer"),
+        requirement("torch"),
+        "//max/python/max",
+    ],
+)
+
+# MHA decode benchmark: MAX vs FlashInfer (TensorRT-LLM backend)
+modular_py_binary(
+    name = "bench_decode",
+    srcs = ["bench_blackwell_decode_main.py"],
+    main = "bench_blackwell_decode_main.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":bench_decode_lib",
+    ],
+)
+
 # Grouped GEMM benchmark using DeepGEMM baseline
 modular_py_binary(
     name = "bench_grouped_gemm",
@@ -88,12 +116,9 @@ modular_py_binary(
 
 # TODO: This can be removed and `bench_decode` can be directly with `kbench`.
 # Parameter sweep for MHA decode benchmark
-# Note: This target depends on bench_decode at runtime for importing benchmark functions.
-# The sweep_decode.py uses sys.path to import from the same directory.
 modular_py_binary(
     name = "sweep_decode",
     srcs = ["sweep_decode.py"],
-    imports = ["."],
     main = "sweep_decode.py",
     tags = [
         "gpu",
@@ -101,9 +126,27 @@ modular_py_binary(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        blackwell_bench_wheel("flashinfer"),
+        ":bench_decode_lib",
         requirement("torch"),
-        "//max/python/max",
+    ],
+)
+
+# AllReduce benchmark: NCCL vs SGLang custom allreduce
+# SGLang's custom allreduce (cross_device_reduce_1stage) is optimized for
+# small message sizes (<256KB) using NVLink P2P communication.
+# Run with torchrun for multi-GPU benchmarks:
+#   pip install sglang[all]
+#   torchrun --nproc_per_node=4 $(bazel-bin path) --num-bytes 16384 262144
+modular_py_binary(
+    name = "bench_allreduce",
+    srcs = ["bench_allreduce.py"],
+    main = "bench_allreduce.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        requirement("torch"),
+        "//max/python/max/support",
     ],
 )

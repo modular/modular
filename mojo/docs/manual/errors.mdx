@@ -113,12 +113,12 @@ MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
 ```output
 #0 0x0000000102bf4ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
 #1 0x0000000102b339e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
-#2 0x000000010266468c stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:159:38
+#2 0x000000010266468c std::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/std/builtin/error.mojo:159:38
 #3 0x000000010266468c stacktrace_error::func2()_REMOVED_ARG /Users/ken/tmp/stack/stacktrace_error.mojo:14:16
 #4 0x000000010266468c stacktrace_error::func1() /Users/ken/tmp/stack/stacktrace_error.mojo:18:10
 #5 0x000000010266468c stacktrace_error::main() /Users/ken/tmp/stack/stacktrace_error.mojo:22:10
-#6 0x000000010266468c stdlib::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error::main()" open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:88:18
-#7 0x000000010266468c main open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:103:4
+#6 0x000000010266468c std::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error::main()" open-source/max/mojo/stdlib/std/builtin/_startup.mojo:88:18
+#7 0x000000010266468c main open-source/max/mojo/stdlib/std/builtin/_startup.mojo:103:4
 
 Unhandled exception caught during execution: Intentional error
 ```
@@ -190,12 +190,12 @@ Intentional error
 --------------------
 #0 0x0000000102d24ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
 #1 0x0000000102c639e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
-#2 0x00000001026d4694 stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:159:38
+#2 0x00000001026d4694 std::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/std/builtin/error.mojo:159:38
 #3 0x00000001026d4694 stacktrace_error_capture::func2()_REMOVED_ARG /Users/ken/tmp/stack/stacktrace_error_capture.mojo:14:16
 #4 0x00000001026d4694 stacktrace_error_capture::func1() /Users/ken/tmp/stack/stacktrace_error_capture.mojo:18:10
 #5 0x00000001026d4694 stacktrace_error_capture::main() /Users/ken/tmp/stack/stacktrace_error_capture.mojo:23:14
-#6 0x00000001026d4694 stdlib::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error_capture::main()" open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:88:18
-#7 0x00000001026d4694 main open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:103:4
+#6 0x00000001026d4694 std::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error_capture::main()" open-source/max/mojo/stdlib/std/builtin/_startup.mojo:88:18
+#7 0x00000001026d4694 main open-source/max/mojo/stdlib/std/builtin/_startup.mojo:103:4
 ```
 
 Without enabling stack trace generation, the output is:

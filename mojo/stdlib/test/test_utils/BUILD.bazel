@@ -10,6 +10,6 @@ mojo_library(
     srcs = glob(["**/*.mojo"]),
     validate_missing_docs = True,
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

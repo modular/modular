@@ -38,7 +38,7 @@ mojo_filecheck_test(
     deps = [
         "//max:layout",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -53,7 +53,7 @@ mojo_filecheck_test(
         deps = [
             "//max:layout",
             "//max:linalg",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -68,7 +68,7 @@ mojo_filecheck_test(
         deps = [
             "//max:layout",
             "//max:linalg",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in [
@@ -88,7 +88,7 @@ mojo_test(
     deps = [
         "//max:layout",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -100,7 +100,7 @@ mojo_test(
     deps = [
         "//max:layout",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -112,7 +112,7 @@ mojo_test(
     deps = [
         "//max:layout",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -128,7 +128,7 @@ mojo_test(
     deps = [
         "//max:layout",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -140,7 +140,7 @@ mojo_filecheck_test(
     deps = [
         "//max:layout",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -153,7 +153,7 @@ mojo_filecheck_test(
         deps = [
             "//max:layout",
             "//max:linalg",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(

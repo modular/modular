@@ -193,13 +193,18 @@ class Qwen3VLModel(
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen3VL."""
         return Qwen3VLConfig.get_kv_params(
-            huggingface_config, devices, kv_cache_config, cache_dtype
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
 
     # TODO: Seems like a common pattern. Implement in a base class?

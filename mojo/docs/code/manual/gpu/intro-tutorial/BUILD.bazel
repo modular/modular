@@ -11,7 +11,7 @@ MOJO_SRCS = glob(["*.mojo"])
         target_compatible_with = ["//:has_gpu"],
         deps = [
             "//max:layout",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in MOJO_SRCS

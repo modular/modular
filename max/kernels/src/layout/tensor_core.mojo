@@ -78,7 +78,7 @@ from layout.swizzle import (
     make_ldmatrix_swizzle,
 )
 from memory.unsafe import bitcast
-from stdlib.builtin.simd import _has_native_f8_support
+from std.builtin.simd import _has_native_f8_support
 
 from utils import IndexList
 from utils.index import Index

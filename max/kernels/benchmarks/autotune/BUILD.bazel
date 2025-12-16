@@ -36,7 +36,7 @@ modular_py_binary(
         "//max:quantization",
         "//max:register",
         "//max:shmem",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     deps = [
         requirement("click"),
@@ -70,7 +70,7 @@ modular_py_binary(
         "//max:nn",
         "//max:quantization",
         "//max:register",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     deps = [
         ":kbench",
@@ -93,7 +93,7 @@ modular_py_binary(
         "//max:nn",
         "//max:quantization",
         "//max:register",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     deps = [
         ":kbench",
@@ -142,7 +142,7 @@ modular_py_test(
         "//max:nn",
         "//max:quantization",
         "//max:register",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
         # FIXME

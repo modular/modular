@@ -22,7 +22,7 @@ from gpu.host.info import H100
 from gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 
 from utils.index import Index, IndexList
 

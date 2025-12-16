@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
+
 """
 This script is used for the CI "Max Serve Smoke Test" workflow.
 It does two things:
@@ -211,7 +213,7 @@ def write_github_output(key: str, value: str) -> None:
             f.write(f"{key}={value}\n")
 
 
-def gracefully_stop_process(process: Popen) -> None:  # type: ignore
+def gracefully_stop_process(process: Popen[bytes]) -> None:
     process.send_signal(signal.SIGINT)  # Sends ctrl-c (usually works)
     try:
         process.wait(5)
@@ -241,7 +243,7 @@ class EvalSummary:
 
 
 def build_eval_summary(
-    results: Sequence[Mapping],  # type: ignore
+    results: Sequence[Mapping[str, Any]],
     startup_time_seconds: float,
 ) -> list[EvalSummary]:
     """
@@ -304,7 +306,7 @@ def print_samples(samples: LmEvalSamples, print_cot: bool) -> None:
 
 def start_server(
     cmd: list[str], extra_env: dict[str, str]
-) -> tuple[Popen, float]:  # type: ignore
+) -> tuple[Popen[bytes], float]:
     env = os.environ.copy()
     env.update(extra_env)
 
@@ -409,8 +411,9 @@ def smoke_test(
     if print_cot and not print_responses:
         raise ValueError("--print-cot must be used with --print-responses")
 
-    if output_path and _inside_bazel() and not output_path.is_absolute():
-        output_path = Path(os.getenv("BUILD_WORKSPACE_DIRECTORY")) / output_path  # type: ignore
+    build_workspace = os.getenv("BUILD_WORKSPACE_DIRECTORY")
+    if output_path and build_workspace and not output_path.is_absolute():
+        output_path = Path(build_workspace) / output_path
 
     model = hf_model_path.lower().strip()
     cmd = get_server_cmd(framework, model)

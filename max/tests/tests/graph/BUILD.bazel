@@ -28,7 +28,7 @@ modular_py_test(
     imports = ["."],
     mojo_deps = [
         "//max/tests/integration:test_user_op",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     deps = [
         "//max/python/max/dtype",

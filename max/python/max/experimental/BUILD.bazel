@@ -6,6 +6,7 @@ modular_py_library(
     name = "experimental",
     srcs = [
         "__init__.py",
+        "_passes.py",
         "functional.py",
         "random.py",
         "tensor.py",

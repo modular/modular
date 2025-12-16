@@ -206,12 +206,14 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return DeepseekV2Config.get_kv_params(
             huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
             devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
@@ -280,6 +282,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
     ) -> list[PagedCacheValues]:
         kv_params = self.get_kv_params(
             huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
@@ -337,12 +340,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 key: value.data() for key, value in self.weights.items()
             }
 
-        kv_params = DeepseekV2Config.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
+        kv_params = self.kv_params
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model_config.device_specs

@@ -14,7 +14,7 @@ mojo_library(
     deps = [
         "//max:compiler",
         "//max:tensor",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ] + select({
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
         "//conditions:default": [],
@@ -30,7 +30,7 @@ mojo_library(
         "//max:compiler_internal",
         "//max:register",
         "//max:tensor",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -43,7 +43,7 @@ mojo_library(
         "//max:compiler",
         "//max:register",
         "//max:tensor",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -56,6 +56,6 @@ mojo_library(
         "//max:compiler_internal",
         "//max:register",
         "//max:tensor",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

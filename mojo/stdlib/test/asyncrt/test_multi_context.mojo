@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from gpu import *
 from gpu.host import DeviceContext
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 
 fn vec_func(
@@ -83,21 +83,25 @@ fn _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             if i < 10:
                 print("at index", i, "the value is", out_host1[i])
                 print("at index", i, "the value is", out_host2[i])
-            expect_eq(
+            assert_equal(
                 out_host1[i],
                 i + 2,
-                "at index ",
-                i,
-                " the value is ",
-                out_host1[i],
+                String(
+                    "at index ",
+                    i,
+                    " the value is ",
+                    out_host1[i],
+                ),
             )
-            expect_eq(
+            assert_equal(
                 out_host2[i],
                 i + 2,
-                "at index ",
-                i,
-                " the value is ",
-                out_host2[i],
+                String(
+                    "at index ",
+                    i,
+                    " the value is ",
+                    out_host2[i],
+                ),
             )
 
 

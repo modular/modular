@@ -13,7 +13,6 @@
 
 from collections import OptionalReg
 from math import ceildiv, recip
-from math.constants import log2e
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
@@ -86,9 +85,9 @@ trait RegisterBuffer:
     fn zero(self):
         ...
 
-    fn get_reg_tile(
-        self,
-    ) -> LocalLayoutTensor[Self.reg_dtype, Self.reg_tile_layout,]:
+    fn get_reg_tile[
+        stage: Int = 0
+    ](self,) -> LocalLayoutTensor[Self.reg_dtype, Self.reg_tile_layout,]:
         ...
 
 
@@ -843,7 +842,7 @@ struct QRegisterBuffer[
         ]()[k_idx]
 
     @always_inline
-    fn get_reg_tile(self) -> Self.RegisterTileType:
+    fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
     @always_inline
@@ -904,7 +903,7 @@ struct OutputRegisterBuffer[
         _ = self.reg_tile.fill(0)
 
     @always_inline
-    fn get_reg_tile(self) -> Self.RegisterTileType:
+    fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
 
@@ -923,6 +922,7 @@ struct PRegisterBuffer[
     mma_shape: IndexList[3],
     k_group_size: Int,
     tr_load_enabled: Bool = False,
+    num_stages: Int = 1,
 ](RegisterMMABuffer):
     comptime reg_dtype = Self.accum_type_
     comptime mma_dtype = Self.dtype
@@ -933,17 +933,26 @@ struct PRegisterBuffer[
         Self.num_n_mmas * Self.num_m_mmas, Self.output_frag_size
     )
 
+    comptime reg_tile_layout_ = Layout.row_major(
+        Self.num_stages * Self.num_n_mmas * Self.num_m_mmas,
+        Self.output_frag_size,
+    )
+
+    comptime RegisterTileType_ = LocalLayoutTensor[
+        Self.accum_type_,
+        Self.reg_tile_layout_,
+    ]
+
     comptime RegisterTileType = LocalLayoutTensor[
         Self.accum_type_,
         Self.reg_tile_layout,
     ]
-
     comptime MMATileType = LocalLayoutTensor[
         Self.mma_dtype,
         Self.mma_tile_layout,
     ]
 
-    var reg_tile: Self.RegisterTileType
+    var reg_tile: Self.RegisterTileType_
 
     comptime shared_memory_layout = blocked_product(
         Layout.row_major(Self.BM, Self.BK),
@@ -964,11 +973,13 @@ struct PRegisterBuffer[
             Scalar[Self.dtype], address_space = AddressSpace.SHARED, **_
         ],
     ):
-        self.reg_tile = Self.RegisterTileType.stack_allocation()
+        self.reg_tile = Self.RegisterTileType_.stack_allocation()
         self.shared_memory_tile = Self.SharedMemoryTileType(shared_ptr)
 
     @always_inline
-    fn get_mma_tile_reg[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+    fn get_mma_tile_reg[
+        tile_idx: Int, k_idx: Int, stage: Int = 0
+    ](self) -> Self.MMATileType:
         comptime OutputTileType = LocalLayoutTensor[
             Self.mma_dtype,
             Layout.row_major(Self.num_m_mmas, Self.output_frag_size),
@@ -976,10 +987,13 @@ struct PRegisterBuffer[
 
         var out = OutputTileType.stack_allocation()
 
+        var reg_tile = self.reg_tile.split[Self.num_stages]()[stage]
+
         @parameter
         if Self.tr_load_enabled:
             # if tr loads are used then we don't need any packing logic
             # just convert the registers to bf16
+
             @parameter
             if Self.mma_shape[0] == 32:
                 constrained[
@@ -989,7 +1003,7 @@ struct PRegisterBuffer[
 
                 @parameter
                 for j in range(Self.output_frag_size):
-                    out[0, j] = self.reg_tile[tile_idx, j].cast[Self.dtype]()
+                    out[0, j] = reg_tile[tile_idx, j].cast[Self.mma_dtype]()
             elif Self.mma_shape[0] == 16:
                 constrained[
                     Self.output_frag_size == 4,
@@ -997,18 +1011,20 @@ struct PRegisterBuffer[
                 ]()
 
                 var mma_reg_tile = Self.MMATileType.stack_allocation()
-                var reg_tile_split = self.reg_tile.split[
-                    Self.num_n_mmas // 2
-                ]()[tile_idx]
+                var reg_tile_split = reg_tile.split[Self.num_n_mmas // 2]()[
+                    tile_idx
+                ]
 
                 @parameter
                 for m, j in itertools.product(
                     range(Self.num_m_mmas), range(Self.output_frag_size)
                 ):
-                    mma_reg_tile[m, j] = reg_tile_split[m, j].cast[Self.dtype]()
+                    mma_reg_tile[m, j] = reg_tile_split[m, j].cast[
+                        Self.mma_dtype
+                    ]()
                     mma_reg_tile[m, Self.output_frag_size + j] = reg_tile_split[
                         m + Self.num_m_mmas, j
-                    ].cast[Self.dtype]()
+                    ].cast[Self.mma_dtype]()
                 return mma_reg_tile
             else:
                 constrained[
@@ -1020,17 +1036,14 @@ struct PRegisterBuffer[
             # and transpose the v tile when writing to the shared memory
             @parameter
             for j in range(4):
-                out[0, 2 * j] = self.reg_tile[tile_idx, j].cast[
+                out[0, 2 * j] = reg_tile[tile_idx, j].cast[Self.mma_dtype]()
+                out[0, 2 * j + 1] = reg_tile[tile_idx, 4 + j].cast[
                     Self.mma_dtype
                 ]()
-
-                out[0, 2 * j + 1] = self.reg_tile[tile_idx, 4 + j].cast[
+                out[0, 2 * j + 8] = reg_tile[tile_idx, 8 + j].cast[
                     Self.mma_dtype
                 ]()
-                out[0, 2 * j + 8] = self.reg_tile[tile_idx, 8 + j].cast[
-                    Self.mma_dtype
-                ]()
-                out[0, 2 * j + 8 + 1] = self.reg_tile[tile_idx, 12 + j].cast[
+                out[0, 2 * j + 8 + 1] = reg_tile[tile_idx, 12 + j].cast[
                     Self.mma_dtype
                 ]()
         return rebind[Self.MMATileType](
@@ -1062,9 +1075,11 @@ struct PRegisterBuffer[
         return mma_reg_tile
 
     @always_inline
-    fn get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+    fn get_mma_tile[
+        tile_idx: Int, k_idx: Int, stage: Int = 0
+    ](self) -> Self.MMATileType:
         return self.get_mma_tile_reg[
-            tile_idx, k_idx
+            tile_idx, k_idx, stage
         ]() if not Self.shared_memory_backed else self.get_mma_tile_shared[
             tile_idx, k_idx
         ]()
@@ -1075,18 +1090,27 @@ struct PRegisterBuffer[
         return Self.mma_dtype
 
     @always_inline
-    fn vectorize(
+    fn vectorize[
+        stage: Int = 0
+    ](
         self,
-    ) -> Self.RegisterTileType.VectorizedType[1, Self.output_frag_size]:
-        return self.reg_tile.vectorize[1, Self.output_frag_size]()
+        out res: Self.RegisterTileType.VectorizedType[1, Self.output_frag_size],
+    ):
+        return rebind[type_of(res)](
+            self.reg_tile.split[Self.num_stages]()[stage].vectorize[
+                1, Self.output_frag_size
+            ]()
+        )
 
     @always_inline
-    fn zero(self):
-        _ = self.reg_tile.fill(0)
+    fn zero[stage: Int = 0](self):
+        _ = self.reg_tile.split[Self.num_stages]()[stage].fill(0)
 
     @always_inline
-    fn get_reg_tile(self) -> Self.RegisterTileType:
-        return self.reg_tile
+    fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+        return rebind[Self.RegisterTileType](
+            self.reg_tile.split[Self.num_stages]()[stage]
+        )
 
     @always_inline
     fn get_shared_memory_tile(

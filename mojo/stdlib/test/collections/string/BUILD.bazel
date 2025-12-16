@@ -31,7 +31,7 @@ _LIT_TESTS = [
         data = [src],  # NOTE: some tests attempt to read their source files
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -46,7 +46,7 @@ lit_tests(
     size = "large",
     srcs = _LIT_TESTS,
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

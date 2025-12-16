@@ -45,7 +45,7 @@ _EXTRA_CONSTRAINTS = {
             "//conditions:default": [],
         }),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -60,7 +60,7 @@ _EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -75,7 +75,7 @@ lit_tests(
     srcs = _LIT_TESTS,
     gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tags = ["gpu"],
 )

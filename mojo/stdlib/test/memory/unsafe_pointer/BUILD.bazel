@@ -15,7 +15,7 @@ package(default_visibility = ["//visibility:private"])
             "//conditions:default": [],
         }),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

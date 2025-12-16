@@ -6,7 +6,7 @@ mojo_library(
     name = "my_math",
     srcs = glob(["src/my_math/*.mojo"]),
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -15,7 +15,7 @@ mojo_binary(
     srcs = ["src/example.mojo"],
     deps = [
         ":my_math",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -27,7 +27,7 @@ mojo_test(
     ],
     deps = [
         ":my_math",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -39,6 +39,6 @@ mojo_test(
     ],
     deps = [
         ":my_math",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
