@@ -50,7 +50,7 @@ def test_recording(include_responses: bool) -> None:
     recorder = ListRecorder()
     app = FastAPI()
     app.add_middleware(
-        middleware.RecorderMiddleware,  # type: ignore
+        middleware.RecorderMiddleware,
         recorder=recorder,
         include_responses=include_responses,
     )
@@ -255,7 +255,7 @@ def test_lifespan() -> None:
 
 def test_not_required_lifespan() -> None:
     app = FastAPI()
-    app.add_middleware(middleware.RecorderMiddleware, recorder=ListRecorder())  # type: ignore
+    app.add_middleware(middleware.RecorderMiddleware, recorder=ListRecorder())
 
     @app.get("/hello")
     def hello_handler() -> str:

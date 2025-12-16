@@ -39,6 +39,8 @@ _TESTONLY_DEPS = [
     "timm",
     "torchmetrics",
     "torchvision",
+    "vllm",
+    "xgrammar",
     "zhconv",
 ]
 
@@ -61,9 +63,9 @@ def targets():
         name = "torch@multiple",
         actual = select({{
             "@@//:amd_gpu": ":torch@2.9.1.dev20251204+rocm7.0.2.lw.git351ff442",
-            "@@//:nvidia_gpu": ":torch@2.9.1+cu128",
-            "@platforms//os:macos": ":torch@2.9.1",
-            "//conditions:default": ":torch@2.9.1+cpu",
+            "@@//:nvidia_gpu": ":torch@2.9.0+cu128",
+            "@platforms//os:macos": ":torch@2.9.0",
+            "//conditions:default": ":torch@2.9.0+cpu",
         }}),
     )
 
@@ -71,10 +73,10 @@ def targets():
         name = "torchaudio@multiple",
         actual = select({{
             "@@//:amd_gpu": ":torchaudio@2.9.0+rocm7.0.2.gite3c6ee2b",
-            "@@//:nvidia_gpu": ":torchaudio@2.9.1+cu128",
-            "@platforms//os:macos": ":torchaudio@2.9.1",
-            "@@//:linux_aarch64": ":torchaudio@2.9.1",
-            "//conditions:default": ":torchaudio@2.9.1+cpu",
+            "@@//:nvidia_gpu": ":torchaudio@2.9.0+cu128",
+            "@platforms//os:macos": ":torchaudio@2.9.0",
+            "@@//:linux_aarch64": ":torchaudio@2.9.0",
+            "//conditions:default": ":torchaudio@2.9.0+cpu",
         }}),
     )
 
@@ -83,10 +85,10 @@ def targets():
         testonly = True,
         actual = select({{
             "@@//:amd_gpu": ":torchvision@0.24.0+rocm7.0.2.gitb919bd0c",
-            "@@//:nvidia_gpu": ":torchvision@0.24.1+cu128",
-            "@platforms//os:macos": ":torchvision@0.24.1",
-            "@@//:linux_aarch64": ":torchvision@0.24.1",
-            "//conditions:default": ":torchvision@0.24.1+cpu",
+            "@@//:nvidia_gpu": ":torchvision@0.24.0+cu128",
+            "@platforms//os:macos": ":torchvision@0.24.0",
+            "@@//:linux_aarch64": ":torchvision@0.24.0",
+            "//conditions:default": ":torchvision@0.24.0+cpu",
         }}),
     )
 
@@ -95,7 +97,7 @@ def targets():
         testonly = True,
         actual = select({{
             "@@//:amd_gpu": ":triton@3.5.1+rocm7.0.2.gita272dfa8",
-            "//conditions:default": ":triton@3.5.1",
+            "//conditions:default": ":triton@3.5.0",
         }}),
     )
 
