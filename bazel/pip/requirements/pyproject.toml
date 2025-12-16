@@ -12,7 +12,6 @@ dependencies = [
   "boto3",
   "click>=8.1",
   "codeowners",
-  "compressed-tensors",
   "cyclopts",
   "datasets",
   "device-smi",
@@ -147,12 +146,12 @@ dependencies = [
 
 [dependency-groups]
 amd = [
-  "torch==2.8.0",
-  "torchaudio==2.8.0",
-  "torchvision",
+  "torch==2.9.1",
+  "torchaudio",
+  "torchvision==0.24.1",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "pytorch-triton-rocm; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
   "lm-eval[api,ifeval,math]>=0.4.9.1",
@@ -166,9 +165,13 @@ amd = [
 ]
 
 cpu = [
-  "torch==2.8.0",
-  "torchaudio==2.8.0",
-  "torchvision",
+  "torch==2.9.1",
+  "torchaudio",
+  "torchvision==0.24.1+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.24.1; platform_machine != 'x86_64'",
+
+  "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+
 
   "accelerate",
   "lm-eval[api,ifeval,math]>=0.4.9.1",
@@ -182,11 +185,13 @@ cpu = [
 ]
 
 nvidia = [
-  "torch==2.8.0",
-  "torchaudio==2.8.0",
-  "torchvision",
+  "torch==2.9.1",
+  "torchaudio",
+  "torchvision==0.24.1",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "compressed-tensors; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
   "lm-eval[api,ifeval,math]>=0.4.9.1",
@@ -219,22 +224,24 @@ environments = [
 
 [tool.uv.sources]
 torch = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0/torch-2.8.0%2Brocm7.0.0.git64359f59-cp312-cp312-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torch-2.9.1.dev20251204%2Brocm7.0.2.lw.git351ff442-cp312-cp312-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchvision = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0/torchvision-0.23.0%2Brocm7.0.0.git824e8c87-cp312-cp312-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchvision-0.24.0%2Brocm7.0.2.gitb919bd0c-cp312-cp312-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchaudio = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0/torchaudio-2.8.0%2Brocm7.0.0.git6e1c7fe9-cp312-cp312-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchaudio-2.9.0%2Brocm7.0.2.gite3c6ee2b-cp312-cp312-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
-pytorch-triton-rocm = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0/pytorch_triton_rocm-3.4.0%2Brocm7.0.0.gitf9e5bf54-cp312-cp312-linux_x86_64.whl" },
+triton = [
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/triton-3.5.1%2Brocm7.0.2.gita272dfa8-cp312-cp312-linux_x86_64.whl" , group = "amd" },
+  { index = "pytorch-cpu", group = "cpu" },
+  { index = "pytorch-nvidia", group = "nvidia" },
 ]
 gptqmodel = [
   { url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl" },

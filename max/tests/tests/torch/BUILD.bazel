@@ -13,6 +13,7 @@ modular_py_test(
     env = {
         "MODULAR_PYTORCH_CUSTOM_OPS": "$(rootpath //max/tests/tests/torch/custom_ops)",
         "MODULAR_TORCH_MEMORY_PERCENT": "0.9",
+        "TORCH_COMPILE_FORCE_DISABLE_CACHES": "True",
     },
     mojo_deps = [
         "//max:MOGGPrimitives",
