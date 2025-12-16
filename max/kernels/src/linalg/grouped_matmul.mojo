@@ -99,7 +99,9 @@ fn naive_grouped_matmul[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[transpose_b, "Only support transposed B in grouped matmul."]()
+    __comptime_assert (
+        transpose_b
+    ), "Only support transposed B in grouped matmul."
 
     comptime kernel = naive_grouped_matmul_kernel[
         c_type,
@@ -273,8 +275,8 @@ fn grouped_matmul_kernel_sm100[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: Int,
 ):
-    constrained[transpose_b, "Only support transposed B in layout"]()
-    constrained[num_threads == 128 or num_threads == 256]()
+    __comptime_assert transpose_b, "Only support transposed B in layout"
+    __comptime_assert num_threads == 128 or num_threads == 256
 
     M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
     comptime N = c.layout.shape[1].value()
@@ -360,12 +362,12 @@ fn grouped_matmul_kernel_sm100[
     comptime a_size = a_smem_layout.size()
     comptime b_size = b_smem_layout.size()
 
-    constrained[
-        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
-    ]()
+    __comptime_assert (
+        (a_size * size_of[a_type]()) % 128
+    ) == 0, "preserve alignment"
+    __comptime_assert (
+        (b_size * size_of[b_type]()) % 16
+    ) == 0, "preserve alignment"
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
@@ -437,8 +439,8 @@ fn grouped_matmul_kernel_sm100[
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
-                constrained[((a_offset * size_of[a_type]()) % 128) == 0]()
-                constrained[((b_offset * size_of[b_type]()) % 128) == 0]()
+                __comptime_assert ((a_offset * size_of[a_type]()) % 128) == 0
+                __comptime_assert ((b_offset * size_of[b_type]()) % 128) == 0
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
@@ -606,8 +608,8 @@ fn grouped_matmul_sm100[
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
-    constrained[K % BK == 0]()
-    constrained[BK == 64]()
+    __comptime_assert K % BK == 0
+    __comptime_assert BK == 64
 
     # hard coded 64 for BK
 
@@ -957,7 +959,7 @@ fn grouped_matmul_amd[
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
-    constrained[K % BK == 0]()
+    __comptime_assert K % BK == 0
 
     var a_tensor = from_ndbuffer_row_major(a)
     var b_tensor = LayoutTensor[
@@ -1106,10 +1108,9 @@ fn grouped_matmul[
             mma_shape=umma_shape,
             cluster_shape=cluster_shape,
         )
-        constrained[
-            K % BK == 0,
-            "b_shape[2] must be a multiple of BK. Got " + String(K),
-        ]()
+        __comptime_assert (
+            K % BK == 0
+        ), "b_shape[2] must be a multiple of BK. Got " + String(K)
 
         grouped_matmul_sm100_persistent[
             transpose_b=transpose_b,
@@ -1177,10 +1178,12 @@ fn grouped_matmul_vendor[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[transpose_b, "Only support transposed B in grouped matmul."]()
-    constrained[
-        a_type == b_type, "A and B must have the same dtype for vendor BLAS"
-    ]()
+    __comptime_assert (
+        transpose_b
+    ), "Only support transposed B in grouped matmul."
+    __comptime_assert (
+        a_type == b_type
+    ), "A and B must have the same dtype for vendor BLAS"
     # Push the device context to ensure correct CUDA context
     for i in range(num_active_experts):
         var expert_id = expert_ids[i]

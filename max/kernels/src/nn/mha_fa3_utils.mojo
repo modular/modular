@@ -671,7 +671,7 @@ fn q_smem_shape[
     ]
 ):
     comptime L = res.size
-    constrained[L in (3, 4, 5)]()
+    __comptime_assert L in (3, 4, 5)
 
     @parameter
     if L == 3:  # prefill
@@ -702,7 +702,7 @@ fn q_gmem_shape[
     ]
 ):
     comptime L = res.size
-    constrained[L in (3, 4, 5)]()
+    __comptime_assert L in (3, 4, 5)
 
     @parameter
     if L == 3:  # prefill
@@ -1044,7 +1044,7 @@ fn q_coord[
         head_idx: q_head_idx if prefill, kv_head_idx if decoding.
     """
     comptime rank: Int = res.size
-    constrained[rank in (3, 4, 5)]()
+    __comptime_assert rank in (3, 4, 5)
 
     res = {}
 

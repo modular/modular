@@ -29,7 +29,7 @@ fn _fill_strides_indexlist[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    constrained[rank > 0]()
+    __comptime_assert rank > 0
     strides[rank - 1] = 1
 
     @parameter
@@ -168,7 +168,7 @@ fn _pad_constant_impl[
     var row_length = input_tensor.dim(input_tensor.rank - 1)
     var total_rows = input_tensor.size() // row_length
 
-    constrained[threads_per_row > 0 and max_threads % threads_per_row == 0]()
+    __comptime_assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
 

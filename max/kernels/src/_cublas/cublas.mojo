@@ -113,13 +113,10 @@ fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
     elif mojo_type is DType.uint8:
         return DataType.R_4F_E2M1
     else:
-        constrained[
-            mojo_type is DType.bfloat16,
-            (
-                "Only support FP32, FP16, BF16, E4M3, E5M2, and E2M1x2 (UInt8)."
-                " Please extend it if more types are needed."
-            ),
-        ]()
+        __comptime_assert mojo_type is DType.bfloat16, (
+            "Only support FP32, FP16, BF16, E4M3, E5M2, and E2M1x2 (UInt8)."
+            " Please extend it if more types are needed."
+        )
         return DataType.R_16BF
 
 

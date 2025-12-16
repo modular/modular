@@ -567,10 +567,9 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        constrained[
-            width <= Self.local_window_size,
-            "SIMD width of chunked mask must be <= local window size",
-        ]()
+        __comptime_assert (
+            width <= Self.local_window_size
+        ), "SIMD width of chunked mask must be <= local window size"
 
         var k_start_idx = coord.data[3]
         var k_end_idx = k_start_idx + width - 1
@@ -750,10 +749,9 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
     ) -> SIMD[dtype, width]:
         comptime index_type = coord.element_type
 
-        constrained[
-            width <= Self.window_size,
-            "SIMD width of sliding window mask must be <= window size",
-        ]()
+        __comptime_assert (
+            width <= Self.window_size
+        ), "SIMD width of sliding window mask must be <= window size"
 
         var q_idx = coord[2]
         var k_idx = coord[3]
@@ -1017,10 +1015,10 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
             ]
         ] = None,
     ):
-        constrained[
-            Self.layout_.rank() in (3, 4),
-            "Expected rank 3 or 4 for mask tensor",
-        ]()
+        __comptime_assert Self.layout_.rank() in (
+            3,
+            4,
+        ), "Expected rank 3 or 4 for mask tensor"
         self.mask_tensor = mask_tensor
         self.start_pos = start_pos
         self.is_multiple_of_2 = (

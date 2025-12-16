@@ -582,10 +582,10 @@ fn moe_create_indices_bucket_group_kernel[
     in the token_expert_order tensor. For our example the restore_token_order would be [0, 2, 1, 3, 4, 5]
     """
 
-    constrained[
-        num_threads in (32, 64),
-        "Only support 32 or 64 threads per warp",
-    ]()
+    __comptime_assert num_threads in (
+        32,
+        64,
+    ), "Only support 32 or 64 threads per warp"
 
     comptime BucketParamsType = _BucketGroupParams[num_threads, input_type]
     comptime SmemVectorType = LayoutTensor[
@@ -599,10 +599,9 @@ fn moe_create_indices_bucket_group_kernel[
     # Allocate shared memory for temporary storage of matching token indices
     var smem = SmemVectorType.stack_allocation()
 
-    constrained[
-        expected_count % BucketParamsType.width == 0,
-        "Expected count must be a multiple of the simd width",
-    ]()
+    __comptime_assert (
+        expected_count % BucketParamsType.width == 0
+    ), "Expected count must be a multiple of the simd width"
 
     var bucket_group_params = BucketParamsType(topk_ids.dim(1))
 
@@ -671,9 +670,9 @@ fn moe_create_indices[
     topk_ids: LayoutTensor[input_type, **_],
     context: DeviceContextPtr,
 ) raises:
-    constrained[
-        is_gpu[target](), "Creating MoE indices is only supported on GPU"
-    ]()
+    __comptime_assert is_gpu[
+        target
+    ](), "Creating MoE indices is only supported on GPU"
 
     var cuda_ctx = context.get_device_context()
 

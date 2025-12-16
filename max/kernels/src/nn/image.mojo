@@ -80,14 +80,14 @@ struct ImageData[
             data: A 4d buffer containing the actual data.
             _layout: Data layout tag.
         """
-        constrained[Self.static_image_layout == Image2DLayout.UNKNOWN]()
+        __comptime_assert Self.static_image_layout == Image2DLayout.UNKNOWN
         self.data = data
         self.dynamic_image_layout = _layout
 
     fn __init__(
         out self, data: LayoutTensor[Self.dtype, Self.layout, Self.origin]
     ):
-        constrained[Self.static_image_layout != Image2DLayout.UNKNOWN]()
+        __comptime_assert Self.static_image_layout != Image2DLayout.UNKNOWN
         self.data = data
         self.dynamic_image_layout = Self.static_image_layout
 
@@ -102,7 +102,7 @@ struct ImageData[
         Returns:
             The image data with static data layout.
         """
-        constrained[Self.static_image_layout == Image2DLayout.UNKNOWN]()
+        __comptime_assert Self.static_image_layout == Image2DLayout.UNKNOWN
         return ImageData[Self.layout, Self.dtype, new_static_image_layout](
             self.data
         )

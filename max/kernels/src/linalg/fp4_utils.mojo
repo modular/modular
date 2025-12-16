@@ -60,22 +60,20 @@ fn cast_uint_to_fp4e2m1[
     out_dtype: DType,
     out_width: Int,
 ](x: SIMD[in_dtype, in_width]) -> SIMD[out_dtype, out_width]:
-    constrained[
-        in_dtype in (DType.uint32, DType.uint16, DType.uint8),
-        "input_dtype must be uint32, uint16 or uint8",
-    ]()
+    __comptime_assert in_dtype in (
+        DType.uint32,
+        DType.uint16,
+        DType.uint8,
+    ), "input_dtype must be uint32, uint16 or uint8"
 
     comptime FP4_E2M1_WIDTH = 4
     comptime FP4_E2M1_MASK = pow(2, FP4_E2M1_WIDTH) - 1
     comptime num_fp4_values = bit_width_of[in_dtype]() // FP4_E2M1_WIDTH
 
-    constrained[
-        in_width * num_fp4_values == out_width,
-        (
-            "size mismatch: input_width * num_fp4_values must be equal to"
-            " output_width"
-        ),
-    ]()
+    __comptime_assert in_width * num_fp4_values == out_width, (
+        "size mismatch: input_width * num_fp4_values must be equal to"
+        " output_width"
+    )
 
     var result = SIMD[out_dtype, out_width]()
 
@@ -95,10 +93,11 @@ fn cast_fp_to_fp4e2m1[
     dtype: DType,
     width: Int, //,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    constrained[
-        dtype in (DType.float32, DType.bfloat16, DType.float16),
-        "dtype must be float32, bfloat16 or float16",
-    ]()
+    __comptime_assert dtype in (
+        DType.float32,
+        DType.bfloat16,
+        DType.float16,
+    ), "dtype must be float32, bfloat16 or float16"
     # for float4_e2m1fn has only 16 values
     # (x >= 0.0) & (x <= 0.25)] => 0.0
     # (x > 0.25) & (x < 0.75)] => 0.5
@@ -137,11 +136,10 @@ fn cast_fp_to_fp4e2m1[
 fn cast_fp32_to_fp4e2m1[
     width: Int, //,
 ](x: SIMD[DType.float32, width]) -> UInt32:
-    constrained[
-        is_nvidia_gpu() and _is_sm_100x_or_newer(),
-        "only supported on NVIDIA GPUs with SM 100 or newer",
-    ]()
-    constrained[width == 8, "width must be 8"]()
+    __comptime_assert (
+        is_nvidia_gpu() and _is_sm_100x_or_newer()
+    ), "only supported on NVIDIA GPUs with SM 100 or newer"
+    __comptime_assert width == 8, "width must be 8"
 
     comptime asm_code = """{
 .reg .b8 byte0;
@@ -161,10 +159,9 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
 
 
 fn cast_f4e2m1x2_to_fp16x2(x: Scalar[DType.uint8]) -> SIMD[DType.float16, 2]:
-    constrained[
-        is_nvidia_gpu() and _is_sm_100x_or_newer(),
-        "only supported on NVIDIA GPUs with SM 100 or newer",
-    ]()
+    __comptime_assert (
+        is_nvidia_gpu() and _is_sm_100x_or_newer()
+    ), "only supported on NVIDIA GPUs with SM 100 or newer"
 
     comptime asm_code = """{
 .reg .b8 byte0;
@@ -297,14 +294,12 @@ fn convert_ref_scales_to_mxfp8_format[
     a_scales: NDBuffer[mut=True, scales_type, 5, *_],
     b_scales: NDBuffer[mut=True, scales_type, 5, *_],
 ):
-    constrained[
-        ref_scales_type == DType.float32,
-        "Only support float32 reference scales",
-    ]()
-    constrained[
-        scales_type == DType.float8_e8m0fnu,
-        "Only support float8_e8m0fnu scales",
-    ]()
+    __comptime_assert (
+        ref_scales_type == DType.float32
+    ), "Only support float32 reference scales"
+    __comptime_assert (
+        scales_type == DType.float8_e8m0fnu
+    ), "Only support float8_e8m0fnu scales"
 
     var M = m.value
     var N = n.value

@@ -165,10 +165,9 @@ struct ConvShape[rank: Int](ImplicitlyCopyable):
     fn output_flat_coord_to_input_offset(
         self, n: Int, output_flat_coord: Int
     ) -> Int:
-        constrained[
-            Self.rank == 1 or Self.rank == 2 or Self.rank == 3,
-            "Only support 1d, 2d, and 3d convolution.",
-        ]()
+        __comptime_assert (
+            Self.rank == 1 or Self.rank == 2 or Self.rank == 3
+        ), "Only support 1d, 2d, and 3d convolution."
 
         @parameter
         if Self.rank == 1:
@@ -327,15 +326,13 @@ fn get_conv2d_shape[
     dilation: IndexList[2],
     num_groups: Int,
 ) -> ConvShape[2]:
-    constrained[
-        input.rank == 4 and output.rank == 4,
-        "Input and output must be rank 4",
-    ]()
-    constrained[data_layout == Image2DLayout.NHWC]()
-    constrained[
-        (filter.rank == 4 and filter_layout == Image2DLayout.RSCF)
-        or (filter.rank == 5 and filter_layout == Image2DLayout.FRSCf)
-    ]()
+    __comptime_assert (
+        input.rank == 4 and output.rank == 4
+    ), "Input and output must be rank 4"
+    __comptime_assert data_layout == Image2DLayout.NHWC
+    __comptime_assert (
+        filter.rank == 4 and filter_layout == Image2DLayout.RSCF
+    ) or (filter.rank == 5 and filter_layout == Image2DLayout.FRSCf)
 
     var filter_dims: IndexList[2]
 
@@ -498,10 +495,9 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         input_c: Int,
         filter_c: Int,
     ):
-        constrained[
-            Self.rank == 3 or Self.rank == 2 or Self.rank == 1,
-            "Only support 1d/2d/3d/ conv attributes",
-        ]()
+        __comptime_assert (
+            Self.rank == 3 or Self.rank == 2 or Self.rank == 1
+        ), "Only support 1d/2d/3d/ conv attributes"
 
         var num_groups = UNKNOWN_VALUE
         if input_c != UNKNOWN_VALUE and filter_c != UNKNOWN_VALUE:

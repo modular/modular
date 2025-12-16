@@ -190,7 +190,7 @@ fn random[
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
-    constrained[not is_nvidia_gpu(), "Cannot run random on the gpu"]()
+    __comptime_assert not is_nvidia_gpu(), "Cannot run random on the gpu"
 
     @parameter
     fn filler(i: Int) -> Scalar[tensor.dtype]:

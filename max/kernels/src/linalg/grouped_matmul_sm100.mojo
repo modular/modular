@@ -329,7 +329,7 @@ fn stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.layout.stride[0].value()
     comptime stride1 = dst.layout.stride[1].value()
-    constrained[stride1 == 1, "stride1 must be 1. Got: " + String(stride1)]()
+    __comptime_assert stride1 == 1, "stride1 must be 1. Got: " + String(stride1)
     comptime shape0 = dst.layout.shape[
         1
     ].value() if not transpose_c else dst.layout.shape[0].value()
@@ -433,7 +433,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
 
     # assume N dimension is static
     comptime simd_size = simd_width_of[c_type]()
@@ -627,17 +627,16 @@ fn multi_stage_store_C[
             else:
                 c_tma_op.wait_group[0]()
         else:
-            constrained[
-                transpose_c, "Unaligned handling only supports transpose_c"
-            ]()
-            constrained[
-                MMA_M == 256 or cta_group == 1,
+            __comptime_assert (
+                transpose_c
+            ), "Unaligned handling only supports transpose_c"
+            __comptime_assert MMA_M == 256 or cta_group == 1, (
                 "Unaligned handling only supports MMA_M == 256 or cta_group =="
                 " 1. Got "
                 + String(MMA_M)
                 + " and "
-                + String(cta_group),
-            ]()
+                + String(cta_group)
+            )
 
             comptime chunkM = st_matrix_swizzle.bytes() // size_of[c_type]()
             comptime vec_chunkM = chunkM // simd_size
@@ -646,12 +645,11 @@ fn multi_stage_store_C[
                 chunk_num, stageN, vec_chunkM
             )
             comptime thread_num = num_output_warps * UInt(WARP_SIZE)
-            constrained[
-                logical_c_layout.size() % Int(thread_num) == 0,
+            __comptime_assert logical_c_layout.size() % Int(thread_num) == 0, (
                 "logical_c_layout.size() must be a multiple of thread_num. Got "
                 + String(logical_c_layout.size())
-                + ".",
-            ]()
+                + "."
+            )
             comptime value_shape = logical_c_layout.size() // Int(thread_num)
             comptime cM = c.shape[1]()
 
@@ -718,12 +716,11 @@ fn zero_output[
     comptime output_N = output_tile_shape[1]
     comptime stride = c.layout.stride[0].value()
     var ptr = c.ptr + coord[1] * stride + coord[0]
-    constrained[
-        thread_num * simd_size >= output_N,
+    __comptime_assert thread_num * simd_size >= output_N, (
         "output_N must be less than thread_num * simd_size. Got "
         + String(output_N)
-        + ".",
-    ]()
+        + "."
+    )
     comptime row_thread_num = UInt32(output_N // simd_size)
     comptime cN = c.shape[1]()
     var row_boundary = UInt32(cN - coord[0]) // simd_size
@@ -783,7 +780,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
 ):
-    constrained[c_type is not DType.float32, "c_type cannot be float32"]()
+    __comptime_assert c_type is not DType.float32, "c_type cannot be float32"
 
     comptime num_output_warps = 4
 
@@ -1277,10 +1274,7 @@ fn _grouped_matmul_sm100_persistent[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -1290,10 +1284,9 @@ fn _grouped_matmul_sm100_persistent[
     comptime BN = MMA_N // cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        (MMA_M != 128) or (MMA_N % 32 == 0),
-        "if MMA_M is 128, then MMA_N must be a multiple of 32",
-    ]()
+    __comptime_assert (MMA_M != 128) or (
+        MMA_N % 32 == 0
+    ), "if MMA_M is 128, then MMA_N must be a multiple of 32"
 
     comptime cluster_shape = config.cluster_shape
 
@@ -1335,10 +1328,9 @@ fn _grouped_matmul_sm100_persistent[
         == 32 else TensorMapSwizzle.SWIZZLE_32B
     )
     # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
-    constrained[
-        (not (transpose_c and cta_group == 2)) or MMA_M == 256,
-        "swapAB is only supported for MMA_M == 256",
-    ]()
+    __comptime_assert (
+        not (transpose_c and cta_group == 2)
+    ) or MMA_M == 256, "swapAB is only supported for MMA_M == 256"
     var c_tma_op = create_tma_tile[
         c_tma_tile_shape if not transpose_c else Index(
             c_tma_tile_shape[0], c_swizzle.bytes() // size_of[c_type]()
@@ -1390,16 +1382,15 @@ fn _grouped_matmul_sm100_persistent[
         smem_leftover // producer_consumer_smem_per_stage
     )
 
-    constrained[
-        max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"
-    ]()
+    __comptime_assert (
+        max_pipeline_stages >= 1
+    ), "Max pipeline stages must be at least 1"
 
     @parameter
     if num_pipeline_stages:
-        constrained[
-            num_pipeline_stages.value() <= max_pipeline_stages,
-            "Pipeline stage must be less than or equal to max pipeline stages",
-        ]()
+        __comptime_assert (
+            num_pipeline_stages.value() <= max_pipeline_stages
+        ), "Pipeline stage must be less than or equal to max pipeline stages"
 
     comptime pipeline_stage = num_pipeline_stages.value() if num_pipeline_stages else max_pipeline_stages
     comptime producer_consumer_smem = producer_consumer_smem_per_stage * Int(
@@ -1443,10 +1434,9 @@ fn _grouped_matmul_sm100_persistent[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    constrained[
-        cluster_shape[1] == 1,
-        "cluster_shape[1] must be 1. Got " + String(cluster_shape[1]),
-    ]()
+    __comptime_assert (
+        cluster_shape[1] == 1
+    ), "cluster_shape[1] must be 1. Got " + String(cluster_shape[1])
 
     var grid_dim = (
         Int(B200.sm_count),

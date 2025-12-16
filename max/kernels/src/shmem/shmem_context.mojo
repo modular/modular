@@ -174,10 +174,9 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        constrained[
-            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
-            "SHMEMContext is currently only available on NVIDIA and AMD GPUs",
-        ]()
+        __comptime_assert (
+            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        ), "SHMEMContext is currently only available on NVIDIA and AMD GPUs"
         shmem_init()
         var mype = shmem_team_my_pe(team)
         self._ctx = DeviceContext(device_id=Int(mype))
@@ -218,10 +217,9 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        constrained[
-            has_nvidia_gpu_accelerator(),
-            "SHMEMContext is currently only available on NVIDIA GPUs",
-        ]()
+        __comptime_assert (
+            has_nvidia_gpu_accelerator()
+        ), "SHMEMContext is currently only available on NVIDIA GPUs"
 
         shmem_init_thread(ctx)
         self._ctx = ctx

@@ -165,10 +165,10 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config]:
         mbar: MBarType,
         smem: Self.SMemType,
     ):
-        constrained[
+        __comptime_assert (
             Self.config.padded_depth % Self.config.num_mma_stages == 0
-        ]()
-        constrained[Self.config.BN % Self.config.num_mma_stages == 0]()
+        )
+        __comptime_assert Self.config.BN % Self.config.num_mma_stages == 0
         self.kv_pipeline = {mbar}
         self.smem = smem
         self.kv_pipeline.state._phase = 1
@@ -181,10 +181,10 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config]:
         ],
         smem: Self.SMemType,
     ):
-        constrained[
+        __comptime_assert (
             Self.config.padded_depth % Self.config.num_mma_stages == 0
-        ]()
-        constrained[Self.config.BN % Self.config.num_mma_stages == 0]()
+        )
+        __comptime_assert Self.config.BN % Self.config.num_mma_stages == 0
         self.kv_pipeline = kv_pipeline
         self.smem = smem
         self.kv_pipeline.state._phase = 1
@@ -386,10 +386,9 @@ struct SM100MLA[
             Self.PartitionType,
         ],
     ):
-        constrained[Self.MMA_M == 64 or Self.MMA_M == 128]()
-        constrained[_is_decoding[Self.MaxSeqLenType]() == False]()
-        constrained[
-            Self.config.supported(),
+        __comptime_assert Self.MMA_M == 64 or Self.MMA_M == 128
+        __comptime_assert _is_decoding[Self.MaxSeqLenType]() == False
+        __comptime_assert Self.config.supported(), (
             "depth = "
             + String(Self.config.depth)
             + "\nBN = "
@@ -399,13 +398,12 @@ struct SM100MLA[
             + "\ntmem_used = "
             + String(Self.config.tmem_used)
             + "\nsmem_used = "
-            + String(Self.config.smem_used),
-        ]()
-        constrained[
-            not Self.SchedulerType.may_advance,
-            "Persistent kernels not yet supported with FA4",
-        ]()
-        constrained[Self.UMMA0Type.num_stages == Self.UMMA1Type.num_stages]()
+            + String(Self.config.smem_used)
+        )
+        __comptime_assert (
+            not Self.SchedulerType.may_advance
+        ), "Persistent kernels not yet supported with FA4"
+        __comptime_assert Self.UMMA0Type.num_stages == Self.UMMA1Type.num_stages
 
         mask = pack.mask
         score_mod = pack.score_mod
@@ -418,10 +416,9 @@ struct SM100MLA[
 
         comptime num_qo = Self.config.num_qo()
         # TODO: We may want to support num_qo>2 for depth=64?
-        constrained[
-            num_qo == 1 or num_qo == 2,
-            "Currently only support num_qo == 1 or 2",
-        ]()
+        __comptime_assert (
+            num_qo == 1 or num_qo == 2
+        ), "Currently only support num_qo == 1 or 2"
         q_smem = external_memory[
             Scalar[Self.qkv_type],
             address_space = AddressSpace.SHARED,
@@ -462,13 +459,10 @@ struct SM100MLA[
         comptime num_reg_correction = 80
         comptime num_reg_other = 32
 
-        constrained[
-            not Self.PartitionType.do_partition,
-            (
-                "Neither partitioning nor decoding are supported by the 2-q"
-                " implementation."
-            ),
-        ]()
+        __comptime_assert not Self.PartitionType.do_partition, (
+            "Neither partitioning nor decoding are supported by the 2-q"
+            " implementation."
+        )
 
         var warp_idx: UInt32 = warp.broadcast(warp_id())
         if warp_idx == 0:
@@ -621,7 +615,7 @@ struct SM100MLA[
         num_keys: UInt32,
         mask: Self.MaskType,
     ):
-        constrained[size_of[Self.accum_type]() == 4]()
+        __comptime_assert size_of[Self.accum_type]() == 4
 
         o0_tmem = tmem_addr + Self.config.TMEM_O0
         o1_tmem = tmem_addr + Self.config.TMEM_O1
@@ -681,8 +675,8 @@ struct SM100MLA[
                 if change:
                     # TODO: experiment with different batch sizes.
                     # The idea here is to both pipeline, and reduce peak register use.
-                    constrained[load_iters > 1]()
-                    constrained[Self.config.depth % batch_size == 0]()
+                    __comptime_assert load_iters > 1
+                    __comptime_assert Self.config.depth % batch_size == 0
 
                     var o_tmem: UInt32
 
@@ -883,7 +877,7 @@ struct SM100MLA[
         ](kv_row: UInt32) -> Scalar[Self.accum_type]:
             # break up into sets of 32
             # minimize wait time by using smallest first
-            constrained[Self.config.BN == 64, String(Self.config.BN)]()
+            __comptime_assert Self.config.BN == 64, String(Self.config.BN)
             comptime BM = Self.config.BM // 2
             comptime batch_size = 32
             comptime has_remainder = (Self.config.BN % batch_size) != 0
@@ -976,14 +970,14 @@ struct SM100MLA[
             comptime batch_size = 32
             comptime num_batch_iters = vs_len // batch_size
             comptime remainder = vs_len % batch_size
-            constrained[num_batch_iters > 0]()
+            __comptime_assert num_batch_iters > 0
             comptime BatchTileType = TMemTile[
                 Self.qkv_type, Self.config.BM // 2, batch_size * exp_simd
             ]
             comptime RemainderTileType = TMemTile[
                 Self.qkv_type, Self.config.BM // 2, remainder * exp_simd
             ]
-            constrained[(Self.config.BN % exp_simd) == 0]()
+            __comptime_assert (Self.config.BN % exp_simd) == 0
 
             vs = s.vectorize[exp_simd]()
             # We batch stores, e.g. use `tcgen_05.st.x32`.
@@ -1173,7 +1167,9 @@ struct SM100MLA[
             tmem_addr + Self.config.TMEM_O0 + warp_group_idx * Self.padded_depth
         )
         # wait on the o_pipeline producer
-        constrained[size_of[Self.output_type]() == size_of[Self.qkv_type]()]()
+        __comptime_assert (
+            size_of[Self.output_type]() == size_of[Self.qkv_type]()
+        )
         if num_output_rows > 0:
             o_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
@@ -1272,10 +1268,9 @@ struct SM100MLA[
         var head = Int(block_idx.y)
         comptime last_dim = Self.descriptor_shape[2]
 
-        constrained[
-            Self.kv_depth % last_dim == 0,
-            "padded_depth must be a multiple of last descriptor dimension",
-        ]()
+        __comptime_assert (
+            Self.kv_depth % last_dim == 0
+        ), "padded_depth must be a multiple of last descriptor dimension"
         comptime iters = Self.kv_depth // last_dim
 
         comptime smem_base_layout = Layout.row_major(Self.BM // 2, last_dim)

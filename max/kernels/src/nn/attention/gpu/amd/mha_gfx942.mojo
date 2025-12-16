@@ -123,7 +123,7 @@ __extension Attention:
     fn mha_prefill(
         mut self,
     ):
-        constrained[Self.BK == 32, "BK must be 32"]()
+        __comptime_assert Self.BK == 32, "BK must be 32"
 
         @always_inline
         @parameter
@@ -223,7 +223,7 @@ __extension Attention:
         qk_max_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
         num_partitions: Int,
     ):
-        constrained[Self.BK == 32, "BK must be 32"]()
+        __comptime_assert Self.BK == 32, "BK must be 32"
 
         @always_inline
         @parameter

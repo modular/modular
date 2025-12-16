@@ -61,7 +61,9 @@ fn random_normal[
     fn generate[
         width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
-        constrained[width <= 8]()  # NormalRandom generates 8 values at a time
+        __comptime_assert (
+            width <= 8
+        )  # NormalRandom generates 8 values at a time
 
         var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
 

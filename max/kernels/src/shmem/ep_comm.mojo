@@ -305,10 +305,9 @@ struct BlockwiseFP8TokenFormat[
     @always_inline
     @staticmethod
     fn scales_size() -> Int:
-        constrained[
-            Self.hid_dim % Self.group_size == 0,
-            "hid_dim must be divisible by 128",
-        ]()
+        __comptime_assert (
+            Self.hid_dim % Self.group_size == 0
+        ), "hid_dim must be divisible by 128"
         return align_up(
             Self.hid_dim // Self.group_size * size_of[Self.scales_dtype](),
             Self.alignment,
@@ -342,10 +341,9 @@ struct BlockwiseFP8TokenFormat[
         ]()
 
         comptime n_threads_per_group = Self.group_size // src_width
-        constrained[
-            WARP_SIZE % n_threads_per_group == 0,
-            "Each warp must process a multiple of quantization groups",
-        ]()
+        __comptime_assert (
+            WARP_SIZE % n_threads_per_group == 0
+        ), "Each warp must process a multiple of quantization groups"
 
         for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
             var loaded_vec = src_p.load[
@@ -480,11 +478,10 @@ fn dispatch_kernel[
     comptime n_local_experts = n_experts // n_ranks
     comptime n_warps = num_threads // WARP_SIZE
     comptime n_comm_sms = n_sms - n_aux_sms
-    constrained[
-        n_local_experts <= n_warps,
+    __comptime_assert n_local_experts <= n_warps, (
         "EP dispatch: number of experts per rank must be less than or equal to "
-        + String(n_warps),
-    ]()
+        + String(n_warps)
+    )
 
     comptime top_k = topk_ids.shape[1]()
     comptime hid_dim = input_tokens.shape[1]()
@@ -753,11 +750,11 @@ fn dispatch_cb_kernel[
     comptime top_k = token_fmt_type.top_k
     comptime hid_dim = token_fmt_type.hid_dim
     comptime msg_bytes = token_fmt_type.msg_size()
-    constrained[
-        n_local_experts <= n_warps,
-        "EP dispatch: local experts per device should be less than "
-        + String(WARP_SIZE),
-    ]()
+    __comptime_assert (
+        n_local_experts <= n_warps
+    ), "EP dispatch: local experts per device should be less than " + String(
+        WARP_SIZE
+    )
 
     comptime recv_layout_static = Layout.row_major(
         n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes
@@ -1025,15 +1022,14 @@ fn combine_kernel[
 
     comptime hid_dim = input_tokens.shape[1]()
 
-    constrained[
-        msg_bytes == hid_dim * size_of[Scalar[input_type]](),
-        "EP combine: input shape doesn't match message size.",
-    ]()
-    constrained[
-        msg_bytes % byte_simd_width == 0,
-        "EP combine: message size must be divisible by "
-        + String(byte_simd_width),
-    ]()
+    __comptime_assert (
+        msg_bytes == hid_dim * size_of[Scalar[input_type]]()
+    ), "EP combine: input shape doesn't match message size."
+    __comptime_assert (
+        msg_bytes % byte_simd_width == 0
+    ), "EP combine: message size must be divisible by " + String(
+        byte_simd_width
+    )
 
     comptime send_layout_static = Layout.row_major(
         n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes
@@ -1216,15 +1212,14 @@ fn combine_cb_kernel[
 
     comptime hid_dim = output_tokens.shape[2]()
 
-    constrained[
-        msg_bytes == hid_dim * size_of[Scalar[output_type]](),
-        "EP combine: output shape doesn't match message size.",
-    ]()
-    constrained[
-        msg_bytes % byte_simd_width == 0,
-        "EP combine: message size must be divisible by "
-        + String(byte_simd_width),
-    ]()
+    __comptime_assert (
+        msg_bytes == hid_dim * size_of[Scalar[output_type]]()
+    ), "EP combine: output shape doesn't match message size."
+    __comptime_assert (
+        msg_bytes % byte_simd_width == 0
+    ), "EP combine: message size must be divisible by " + String(
+        byte_simd_width
+    )
 
     var recv_buf_layout = RuntimeLayout[
         Layout.row_major(max_tokens_per_rank, top_k, msg_bytes),
@@ -1348,14 +1343,12 @@ fn fused_silu_kernel[
     comptime simd_width = simd_width_of[input_dtype]()
 
     # This should also make sure the input and output tensors has static shape.
-    constrained[
-        input_dim == output_dim * 2,
-        "Input dimension must be twice the output dimension.",
-    ]()
-    constrained[
-        output_dim % simd_width == 0,
-        "Output dimension must be divisible by the SIMD width.",
-    ]()
+    __comptime_assert (
+        input_dim == output_dim * 2
+    ), "Input dimension must be twice the output dimension."
+    __comptime_assert (
+        output_dim % simd_width == 0
+    ), "Output dimension must be divisible by the SIMD width."
 
     var tid = Int(thread_idx.x)
     var bid = Int(block_idx.x)
@@ -1425,20 +1418,17 @@ fn fused_silu_fp8_kernel[
     comptime output_dim = output_tensor.shape[1]()
     comptime simd_width = simd_width_of[input_dtype]()
 
-    constrained[
-        input_dim == output_dim * 2,
-        "Input dimension must be twice the output dimension.",
-    ]()
-    constrained[
-        output_dim % simd_width == 0,
-        "Output dimension must be divisible by the SIMD width.",
-    ]()
+    __comptime_assert (
+        input_dim == output_dim * 2
+    ), "Input dimension must be twice the output dimension."
+    __comptime_assert (
+        output_dim % simd_width == 0
+    ), "Output dimension must be divisible by the SIMD width."
 
     comptime n_threads_per_group = group_size // simd_width
-    constrained[
-        WARP_SIZE % n_threads_per_group == 0,
-        "Each warp must process a multiple of quantization groups",
-    ]()
+    __comptime_assert (
+        WARP_SIZE % n_threads_per_group == 0
+    ), "Each warp must process a multiple of quantization groups"
     comptime fp8_max_t = Scalar[fp8_dtype].MAX_FINITE.cast[accum_dtype]()
 
     var tid = Int(thread_idx.x)

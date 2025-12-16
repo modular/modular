@@ -88,7 +88,7 @@ fn memcpy_or_fuse[
             var load = input.load[width=simd_width](index)
 
             # Convert the linearized address back to the n-D indices.
-            constrained[_rank == 1]()
+            __comptime_assert _rank == 1
             var out_index = _get_start_indices_of_nth_subvolume[0](
                 index[0] + typed_offset,
                 out_shape,
@@ -644,7 +644,7 @@ fn concat[
     inputs: StaticTuple[LayoutTensor[dtype, inputs_layout, MutAnyOrigin], *_],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    constrained[is_valid_target[target](), "not a valid target"]()
+    __comptime_assert is_valid_target[target](), "not a valid target"
 
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(context)
@@ -1090,7 +1090,7 @@ fn fused_concat[
     output: LayoutTensor[mut=True, dtype, output_layout],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[is_valid_target[target](), "not a valid target"]()
+    __comptime_assert is_valid_target[target](), "not a valid target"
 
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(ctx)

@@ -29,7 +29,7 @@ def compute_group_stats[
     Scalar[t],
     Scalar[t],
 ]:
-    constrained[vec.rank == 1, "vec must be rank 1"]()
+    __comptime_assert vec.rank == 1, "vec must be rank 1"
     var sum_val = Scalar[t]()
     var sum_sq = Scalar[t]()
     for i in range(size):

@@ -284,18 +284,15 @@ fn allreduce[
     Currently requires prior single-threaded call to init_comms, as thread-safe
     version not yet implemented.
     """
-    constrained[
-        not output_lambda,
-        "vendor_ccl allreduce does not support output epilogue lambdas yet",
-    ]()
-    constrained[
-        not use_multimem,
-        "vendor_ccl allreduce does not support multimem path",
-    ]()
-    constrained[
-        not use_quickreduce,
-        "vendor_ccl allreduce does not support quickreduce path",
-    ]()
+    __comptime_assert (
+        not output_lambda
+    ), "vendor_ccl allreduce does not support output epilogue lambdas yet"
+    __comptime_assert (
+        not use_multimem
+    ), "vendor_ccl allreduce does not support multimem path"
+    __comptime_assert (
+        not use_quickreduce
+    ), "vendor_ccl allreduce does not support quickreduce path"
     # Determine this device's rank from its context id.
     var device_rank = Int(ctx.id())
     var count = input_buffers[0].num_elements()

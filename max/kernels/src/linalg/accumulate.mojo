@@ -57,11 +57,11 @@ struct _Accumulator[
 
     @always_inline
     fn __init__(out self):
-        constrained[
+        __comptime_assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
-        ]()
+        )
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
         self._storage = NDBuffer[
             Self.dtype,
@@ -77,21 +77,21 @@ struct _Accumulator[
             Self.dtype, 1, _, Self.num_rows * Self.num_cols * Self.simd_width
         ],
     ):
-        constrained[
+        __comptime_assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
-        ]()
+        )
         self._storage = other_storage
 
     # NOTE: This is NOT a deepcopy; self uses the same _storage as other.
     @always_inline
     fn __copyinit__(out self, other: Self):
-        constrained[
+        __comptime_assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
-        ]()
+        )
         self._storage = other._storage
 
     @staticmethod
@@ -763,7 +763,7 @@ struct _Accumulator[
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
-        constrained[not CompilationTarget.has_neon()]()
+        __comptime_assert not CompilationTarget.has_neon()
 
         comptime kernel_width = Self.num_cols * Self.simd_width
         var b_ptr = b
@@ -828,7 +828,7 @@ struct _Accumulator[
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
-        constrained[not CompilationTarget.has_neon()]()
+        __comptime_assert not CompilationTarget.has_neon()
 
         comptime kernel_width = Self.num_cols * Self.simd_width
         var b_ptr = b
@@ -894,7 +894,7 @@ struct _Accumulator[
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
-        constrained[not CompilationTarget.has_neon()]()
+        __comptime_assert not CompilationTarget.has_neon()
 
         comptime kernel_width = Self.num_cols * Self.simd_width
         var b_ptr = b
@@ -995,7 +995,7 @@ struct _Accumulator[
         partial_load_b_size: OptionalReg[Int] = None,
     ):
         """Accumulation optimized for NEON."""
-        constrained[CompilationTarget.has_neon()]()
+        __comptime_assert CompilationTarget.has_neon()
 
         @parameter
         @always_inline
@@ -1055,7 +1055,7 @@ struct _Accumulator[
         partial_load_b_size: OptionalReg[Int] = None,
     ):
         """Accumulation optimized for NEON."""
-        constrained[CompilationTarget.has_neon()]()
+        __comptime_assert CompilationTarget.has_neon()
 
         @parameter
         @always_inline
@@ -1118,7 +1118,7 @@ struct _Accumulator[
         partial_load_b_size: OptionalReg[Int] = None,
     ):
         """Accumulation optimized for NEON."""
-        constrained[CompilationTarget.has_neon()]()
+        __comptime_assert CompilationTarget.has_neon()
 
         @parameter
         @always_inline

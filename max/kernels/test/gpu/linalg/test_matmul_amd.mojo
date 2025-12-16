@@ -46,10 +46,9 @@ fn test[
     N: Optional[Int] = None,
     K: Optional[Int] = None,
 ](ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
-    constrained[
-        Bool(N) and Bool(K),
-        "This test currently requires static N and K.",
-    ]()
+    __comptime_assert Bool(N) and Bool(
+        K
+    ), "This test currently requires static N and K."
 
     print(m, "x", n, "x", k)
 

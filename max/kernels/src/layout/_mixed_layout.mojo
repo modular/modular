@@ -75,18 +75,17 @@ struct MixedLayout[
             shape: The shape as a MixedTuple.
             stride: The stride as a MixedTuple.
         """
-        constrained[
-            type_of(shape).__len__() == type_of(stride).__len__(),
-            String(
-                (
-                    "Shape and stride must have the same length, but got shape"
-                    " length: "
-                ),
-                type_of(shape).__len__(),
-                " stride length: ",
-                type_of(stride).__len__(),
+        __comptime_assert (
+            type_of(shape).__len__() == type_of(stride).__len__()
+        ), String(
+            (
+                "Shape and stride must have the same length, but got shape"
+                " length: "
             ),
-        ]()
+            type_of(shape).__len__(),
+            " stride length: ",
+            type_of(stride).__len__(),
+        )
         self.shape = shape
         self.stride = stride
 

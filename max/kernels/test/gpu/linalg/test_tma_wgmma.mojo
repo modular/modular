@@ -64,7 +64,7 @@ fn _load_a_reg_tile[
         *_, **_,
     ],
 ):
-    constrained[ret.layout[0].shape[0].value() > 0]()
+    __comptime_assert ret.layout[0].shape[0].value() > 0
     ret = type_of(ret).stack_allocation()
     var tid = thread_idx.x
     comptime WGMMA_M = wgmma_shape[0]
@@ -75,7 +75,9 @@ fn _load_a_reg_tile[
 
     comptime num_wgmma_m = ceildiv(rows, WGMMA_M)
     comptime num_wgmma_k = ceildiv(cols, WGMMA_K)
-    constrained[num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()]()
+    __comptime_assert (
+        num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()
+    )
 
     comptime simd_size = 4 // size_of[dtype]()
     var vret = ret.vectorize[1, simd_size]()

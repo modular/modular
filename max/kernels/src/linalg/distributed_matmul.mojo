@@ -249,13 +249,13 @@ fn _matmul_allreduce_split_n[
     This way we can perform `num_partitions` independent matmul + allreduce kernels, and overlap some of the computation.
     """
 
-    constrained[
-        not b_static_shape.at[0]().is_dynamic(), "N dimension must be static"
-    ]()
+    __comptime_assert not b_static_shape.at[
+        0
+    ]().is_dynamic(), "N dimension must be static"
     comptime n = b_static_shape.get[0]()
-    constrained[
-        n % num_partitions == 0, "num_partitions doesn't split evenly N"
-    ]()
+    __comptime_assert (
+        n % num_partitions == 0
+    ), "num_partitions doesn't split evenly N"
     comptime n_part = n // num_partitions
     var m = c_temp_buffers[0].dim[0]()
     var k = b_buffers[0].dim[1]()
@@ -382,7 +382,7 @@ fn matmul_allreduce[
     This way we can perform `num_partitions` independent matmul + allreduce kernels, and overlap some of the computation.
     """
 
-    constrained[partition_dim == 0 or partition_dim == 1]()
+    __comptime_assert partition_dim == 0 or partition_dim == 1
 
     @parameter
     if not num_partitions.dim.is_dynamic() and num_partitions.dim.get() == 1:
@@ -421,10 +421,9 @@ fn matmul_allreduce[
             )
 
     else:
-        constrained[
-            not num_partitions.dim.is_dynamic(),
-            "for split_n num_partitions must be a constant",
-        ]()
+        __comptime_assert (
+            not num_partitions.dim.is_dynamic()
+        ), "for split_n num_partitions must be a constant"
         _matmul_allreduce_split_n[
             ngpus=ngpus,
             num_partitions = num_partitions.dim.get(),

@@ -427,7 +427,7 @@ struct ConvDirectNHWC[
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
     ) raises:
-        constrained[Self.conv_attr_rank == Self.input_layout.rank() - 2]()
+        __comptime_assert Self.conv_attr_rank == Self.input_layout.rank() - 2
         comptime simd_size = simd_width_of[Self.output_type]()
         # TODO: extend to 1d/3d.
         comptime WO = Int(
@@ -453,13 +453,12 @@ struct ConvDirectNHWC[
 
         @parameter
         if Self.conv_attr.num_groups != UNKNOWN_VALUE:
-            constrained[
-                Self.filter_packed or Self.conv_attr.num_groups == 1,
-                (
-                    "if number of conv groups is statically known, conv filter"
-                    " must be prepacked when num_groups > 1"
-                ),
-            ]()
+            __comptime_assert (
+                Self.filter_packed or Self.conv_attr.num_groups == 1
+            ), (
+                "if number of conv groups is statically known, conv filter"
+                " must be prepacked when num_groups > 1"
+            )
 
         if conv_shape.num_groups > 1 and not Self.filter_packed:
             raise Error("grouped conv requires packed filter")
@@ -757,10 +756,9 @@ struct ConvDirectNHWC[
         c_tile_size: Int,
         output_flat_coord: Int,
     ):
-        constrained[
-            not has_residual or (has_residual and micro_kernel_width == 1),
-            "Use Height x 1 kernel for residual in F.",
-        ]()
+        __comptime_assert not has_residual or (
+            has_residual and micro_kernel_width == 1
+        ), "Use Height x 1 kernel for residual in F."
 
         comptime simd_size = simd_width_of[Self.output_type]()
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
@@ -1585,7 +1583,7 @@ struct ConvDirectNHWC[
     fn _f_tile_loop_static[
         last_c_tile: Bool
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
-        constrained[Self.conv_attr_rank == Self.input_layout.rank() - 2]()
+        __comptime_assert Self.conv_attr_rank == Self.input_layout.rank() - 2
         comptime WO = Int(Self.output_layout.shape[2])  # NHWC
         comptime F = Int(Self.output_layout.shape[3])  # NHWC
         comptime simd_size = simd_width_of[Self.output_type]()
@@ -2048,10 +2046,9 @@ fn accumulate_wo_tile_1d[
         # Skip this point's neighbor if it's in padding.
         @parameter
         if effected_by_padding:
-            constrained[
-                micro_kernel_height == 1,
-                "The tile must only have 1 point when effected bypadding.",
-            ]()
+            __comptime_assert (
+                micro_kernel_height == 1
+            ), "The tile must only have 1 point when effected bypadding."
             var w_nbr = w + s * dilation
             if w_nbr < 0 or w_nbr >= W:
                 continue
@@ -2744,10 +2741,9 @@ fn pack_filter(
     """This packs the filter form RSCF to FRSCf.
     Use the default micro kernel size for dynamic shapes."""
 
-    constrained[
-        filter.dtype == packed_filter.dtype,
-        "Type mismatch between the filter and the packed filter.",
-    ]()
+    __comptime_assert (
+        filter.dtype == packed_filter.dtype
+    ), "Type mismatch between the filter and the packed filter."
 
     comptime simd_size = simd_width_of[filter.dtype]()
     comptime f_size_default = get_direct_conv_micro_kernel_width() * simd_size
@@ -2794,11 +2790,11 @@ fn pack_filter[
     """
 
     # The micro kernel should be multiple of simd_size in F dimension.
-    constrained[micro_kernel_f_size % simd_size == 0]()
+    __comptime_assert micro_kernel_f_size % simd_size == 0
 
     # The input simd size should not exceed filter type's simd size.
     # E.x. we can pack int8 filter based on int32 simd size.
-    constrained[simd_size <= simd_width_of[filter.dtype]()]()
+    __comptime_assert simd_size <= simd_width_of[filter.dtype]()
 
     # Product of filter dims upto (rank - 1).
     var outer_dims_prod = 1
@@ -2934,9 +2930,9 @@ fn conv_shape[
     Returns:
         The output shape.
     """
-    constrained[strides_buf.rank == 1]()
-    constrained[dilations_buf.rank == 1]()
-    constrained[paddings_buf.rank == 1]()
+    __comptime_assert strides_buf.rank == 1
+    __comptime_assert dilations_buf.rank == 1
+    __comptime_assert paddings_buf.rank == 1
 
     if input_buf.rank < 3:
         raise Error("[convolution] requires (input_rank >= 3)")
@@ -3022,16 +3018,13 @@ fn conv_nhwc_direct[
     pad_w: IndexList[2],
     num_groups: Int,
 ) raises:
-    constrained[conv_info_rank == input_layout.rank() - 2]()
-    constrained[
-        input_type == filter_type and input_type == output_type,
-        "conv input/output/filter types must be the same.",
-    ]()
-    constrained[
-        (filter_packed and filter.rank == input.rank + 1)
-        or (not filter_packed and filter.rank == input.rank),
-        "Filter and input ranks mismatch.",
-    ]()
+    __comptime_assert conv_info_rank == input_layout.rank() - 2
+    __comptime_assert (
+        input_type == filter_type and input_type == output_type
+    ), "conv input/output/filter types must be the same."
+    __comptime_assert (filter_packed and filter.rank == input.rank + 1) or (
+        not filter_packed and filter.rank == input.rank
+    ), "Filter and input ranks mismatch."
 
     @always_inline
     @parameter
@@ -3472,7 +3465,7 @@ fn conv_gpu[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[conv_rank == input.rank - 2]()
+    __comptime_assert conv_rank == input.rank - 2
 
     var has_asymmetric_padding = False
     var pad_before = IndexList[conv_rank](0)

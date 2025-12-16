@@ -51,9 +51,9 @@ fn tile[
                  input tensor rank.
         output: The output tensor. Has the same dimensions and type as input.
     """
-    constrained[
-        input.rank == output.rank, "input and output must have the same rank"
-    ]()
+    __comptime_assert (
+        input.rank == output.rank
+    ), "input and output must have the same rank"
 
     if input.rank > 4:
         raise Error(
@@ -251,7 +251,7 @@ fn tile_shape[
     Returns:
         The output shape.
     """
-    constrained[repeats_buf.rank == 1, "repeats_buf must be of rank 1"]()
+    __comptime_assert repeats_buf.rank == 1, "repeats_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::TileOp` prevents testing this with static rank.

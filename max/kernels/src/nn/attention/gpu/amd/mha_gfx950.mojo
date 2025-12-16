@@ -502,8 +502,8 @@ __extension Attention:
 
     @always_inline
     fn mha_prefill_experimental(mut self):
-        constrained[Self.BK == 32, "BK must be 32"]()
-        constrained[Self.depth == 128, "depth must be 128"]()
+        __comptime_assert Self.BK == 32, "BK must be 32"
+        __comptime_assert Self.depth == 128, "depth must be 128"
 
         comptime num_threads = config.num_threads()
         var warp_id = UInt32(

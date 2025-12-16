@@ -689,13 +689,12 @@ struct PagedKVCache[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.dtype]]:
-        constrained[
-            tile_size <= Self.page_size and Self.page_size % tile_size == 0,
-            (
-                "Invalid tile size for PagedKVCache. tile_size must be less"
-                " than or equal to the page size and divisible by the page size"
-            ),
-        ]()
+        __comptime_assert (
+            tile_size <= Self.page_size and Self.page_size % tile_size == 0
+        ), (
+            "Invalid tile size for PagedKVCache. tile_size must be less"
+            " than or equal to the page size and divisible by the page size"
+        )
 
         var full_block_idx = self._get_idx(
             batch_idx, head_idx, start_tok_idx, head_dim_idx
@@ -782,7 +781,7 @@ struct ContinuousBatchingKVCacheCollection[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        constrained[blocks.rank == 6]()
+        __comptime_assert blocks.rank == 6
         self.blocks = rebind[self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
@@ -881,7 +880,7 @@ struct PagedKVCacheCollection[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        constrained[blocks.rank == 6]()
+        __comptime_assert blocks.rank == 6
         self.blocks = rebind[Self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
@@ -897,18 +896,16 @@ struct PagedKVCacheCollection[
 
     @always_inline
     fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
-        constrained[
-            not Self.kv_params.is_mla,
-            "Cannot call get_value_cache for MLA cache",
-        ]()
+        __comptime_assert (
+            not Self.kv_params.is_mla
+        ), "Cannot call get_value_cache for MLA cache"
         return self._get_cache[1](layer_idx)
 
     @always_inline
     fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
-        constrained[
-            kv_idx >= 0 and kv_idx < 2,
-            "Invalid kv_idx for KV cache",
-        ]()
+        __comptime_assert (
+            kv_idx >= 0 and kv_idx < 2
+        ), "Invalid kv_idx for KV cache"
         return self.CacheType(
             Self.CacheType.blocks_type(
                 self.blocks.ptr

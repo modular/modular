@@ -150,7 +150,7 @@ fn count_wavefronts[
     num_banks: Int = 32,
     max_memop_bytes: Int = 16,
 ]() -> WaveFrontSummary:
-    constrained[thread_layout.size() == num_banks]()
+    __comptime_assert thread_layout.size() == num_banks
     comptime layout = vectorize_distribute_layout[
         *element_tile_sizes,
         data_layout=data_layout,
@@ -161,8 +161,8 @@ fn count_wavefronts[
     # layout[2]: individual memory accesses
     #
     comptime coalesced_element = coalesce(layout[0])
-    constrained[Int(coalesced_element.stride) == 1]()
-    constrained[coalesced_element.rank() == 1]()
+    __comptime_assert Int(coalesced_element.stride) == 1
+    __comptime_assert coalesced_element.rank() == 1
     comptime element_bytes = coalesced_element.size() * type_bytes
     comptime bytes_per_op = element_bytes if element_bytes < max_memop_bytes else max_memop_bytes
     comptime ops_per_element = element_bytes // bytes_per_op
@@ -172,14 +172,12 @@ fn count_wavefronts[
     var banks = StaticTuple[Int, num_banks]()
     # TODO: 6 bytes should be convertible to 4 + 2 byte ops, or 3x 2-byte ops.
     # Not a high priority, as these will likely result in poor performance anyway.
-    constrained[
-        element_bytes % bytes_per_op == 0,
-        "vectorization should divide evenly by memop size used",
-    ]()
-    constrained[
-        bytes_per_op % bytes_per_bank == 0,
-        "for efficiency, we should at least write 4 bytes at a time.",
-    ]()
+    __comptime_assert (
+        element_bytes % bytes_per_op == 0
+    ), "vectorization should divide evenly by memop size used"
+    __comptime_assert (
+        bytes_per_op % bytes_per_bank == 0
+    ), "for efficiency, we should at least write 4 bytes at a time."
     var wavefronts = WaveFrontSummary()
     wavefronts.expected_wavefronts = (
         layout[2].size() * ops_per_element * num_phases

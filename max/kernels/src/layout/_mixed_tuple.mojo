@@ -406,14 +406,15 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         Returns:
             The inner product of the two values.
         """
-        constrained[
-            Self.__len__() == MixedTuple[*other_types].__len__(),
-            "Length of MixedTuple (",
-            String(Self.__len__()),
-            ") and MixedTuple[*other_types] (",
-            String(MixedTuple[*other_types].__len__()),
-            ") must match",
-        ]()
+        __comptime_assert (
+            Self.__len__() == MixedTuple[*other_types].__len__()
+        ), (
+            "Length of MixedTuple ("
+            + String(Self.__len__())
+            + ") and MixedTuple[*other_types] ("
+            + String(MixedTuple[*other_types].__len__())
+            + ") must match"
+        )
         var result = 0
 
         @parameter
@@ -450,14 +451,15 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         """Check if this tuple's elements are equal to the other tuple's elements.
         """
 
-        constrained[
-            Self.__len__() == MixedTuple[*other_types].__len__(),
-            "Length of MixedTuple (",
-            String(Self.__len__()),
-            ") and MixedTuple[*other_types] (",
-            String(MixedTuple[*other_types].__len__()),
-            ") must match",
-        ]()
+        __comptime_assert (
+            Self.__len__() == MixedTuple[*other_types].__len__()
+        ), (
+            "Length of MixedTuple ("
+            + String(Self.__len__())
+            + ") and MixedTuple[*other_types] ("
+            + String(MixedTuple[*other_types].__len__())
+            + ") must match"
+        )
 
         @parameter
         for i in range(Self.__len__()):
@@ -551,13 +553,10 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         # For the test cases in test_mixed_layout (which are all non-nested), this works
         # Deep nesting like MixedTuple(A, MixedTuple(B, MixedTuple(C))) is not yet supported
 
-        constrained[
-            flat_size == Self.__len__(),
-            (
-                "flatten() currently only supports non-nested MixedTuples -"
-                " nested tuple flattening not yet implemented"
-            ),
-        ]()
+        __comptime_assert flat_size == Self.__len__(), (
+            "flatten() currently only supports non-nested MixedTuples -"
+            " nested tuple flattening not yet implemented"
+        )
 
         # For non-nested tuples, just copy elements directly
         @parameter

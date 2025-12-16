@@ -355,10 +355,9 @@ fn store_C[
     comptime remainder_elements = elements_per_row - main_load_elements
 
     # if i do have non-power of 2, then remainder_elements must be divisible by 32 (can extend to support more values later)
-    constrained[
-        remainder_elements % 32 == 0,
-        "remainder_elements must be divisible by 32",
-    ]()
+    __comptime_assert (
+        remainder_elements % 32 == 0
+    ), "remainder_elements must be divisible by 32"
 
     comptime main_repetition = main_load_elements // 8
     comptime remainder_repetitions = remainder_elements // 8
@@ -881,10 +880,7 @@ fn blackwell_kernel_6[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]

@@ -35,15 +35,15 @@ fn matmul_naive[
     A: LayoutTensor[elt, layoutA, MutAnyOrigin],
     B: LayoutTensor[elt, layoutB, MutAnyOrigin],
 ):
-    constrained[len(layoutC) == 2]()
-    constrained[len(layoutA) == 2]()
-    constrained[len(layoutB) == 2]()
+    __comptime_assert len(layoutC) == 2
+    __comptime_assert len(layoutA) == 2
+    __comptime_assert len(layoutB) == 2
     comptime M: Int = size(layoutC.shape[0])
     comptime N: Int = size(layoutC.shape[1])
     comptime K: Int = size(layoutA.shape[1])
-    constrained[M == size(layoutA.shape[0])]()
-    constrained[N == size(layoutB.shape[1])]()
-    constrained[K == size(layoutB.shape[0])]()
+    __comptime_assert M == size(layoutA.shape[0])
+    __comptime_assert N == size(layoutB.shape[1])
+    __comptime_assert K == size(layoutB.shape[0])
     for m in range(M):
         for n in range(N):
             C[m, n] = Scalar[elt]()
@@ -92,10 +92,10 @@ fn matmul_ukern[
     comptime Align: Int = size_of[elt]() * width
     comptime Astride: Int = stride[elt](nr * width)
     comptime CstoreReps: Int = nr * width // Astride
-    constrained[CstoreReps * Astride == nr * width]()
+    __comptime_assert CstoreReps * Astride == nr * width
     comptime CstoresPer: Int = Astride // width
-    constrained[CstoresPer * width == Astride]()
-    constrained[CstoresPer * CstoreReps == nr]()
+    __comptime_assert CstoresPer * width == Astride
+    __comptime_assert CstoresPer * CstoreReps == nr
     # for n0 in range(CstoreReps):
     #   for n1 in range(CstoresPer):
 
@@ -214,72 +214,72 @@ fn matmul[
     comptime WNr = W * Nr
     comptime Stride = stride[elt](WNr)
 
-    constrained[len(layoutC) == 2]()
-    constrained[len(layoutA) == 2]()
-    constrained[len(layoutB) == 2]()
+    __comptime_assert len(layoutC) == 2
+    __comptime_assert len(layoutA) == 2
+    __comptime_assert len(layoutB) == 2
     # I am assuming that the `shape` and `stride` are congruent (i.e., equal length)
     # so that I don't need to check both here.
-    constrained[len(layoutC.shape[0]) == 3]()
-    constrained[len(layoutC.shape[1]) == 4]()
-    constrained[len(layoutA.shape[0]) == 3]()
-    constrained[len(layoutA.shape[1]) == 4]()
-    constrained[len(layoutB.shape[0]) == 3]()
-    constrained[len(layoutB.shape[1]) == 3]()
+    __comptime_assert len(layoutC.shape[0]) == 3
+    __comptime_assert len(layoutC.shape[1]) == 4
+    __comptime_assert len(layoutA.shape[0]) == 3
+    __comptime_assert len(layoutA.shape[1]) == 4
+    __comptime_assert len(layoutB.shape[0]) == 3
+    __comptime_assert len(layoutB.shape[1]) == 3
 
     # Matrix C
-    constrained[size(layoutC.shape[0].tuple()[0]) == Mr]()
-    constrained[size(layoutC.shape[0].tuple()[1]) * Mr == Mc]()
-    constrained[size(layoutC.shape[0].tuple()[2]) * Mc == M]()
+    __comptime_assert size(layoutC.shape[0].tuple()[0]) == Mr
+    __comptime_assert size(layoutC.shape[0].tuple()[1]) * Mr == Mc
+    __comptime_assert size(layoutC.shape[0].tuple()[2]) * Mc == M
 
-    constrained[size(layoutC.shape[1].tuple()[0]) == Stride]()
-    constrained[size(layoutC.shape[1].tuple()[1]) * Stride == WNr]()
-    constrained[size(layoutC.shape[1].tuple()[2]) * WNr == Nc]()
-    constrained[size(layoutC.shape[1].tuple()[3]) * Nc == N]()
+    __comptime_assert size(layoutC.shape[1].tuple()[0]) == Stride
+    __comptime_assert size(layoutC.shape[1].tuple()[1]) * Stride == WNr
+    __comptime_assert size(layoutC.shape[1].tuple()[2]) * WNr == Nc
+    __comptime_assert size(layoutC.shape[1].tuple()[3]) * Nc == N
 
-    constrained[size(layoutC.stride[0].tuple()[0]) == Stride]()
-    constrained[size(layoutC.stride[0].tuple()[1]) == Mr * Nc]()
-    constrained[size(layoutC.stride[0].tuple()[2]) == Mc * N]()
+    __comptime_assert size(layoutC.stride[0].tuple()[0]) == Stride
+    __comptime_assert size(layoutC.stride[0].tuple()[1]) == Mr * Nc
+    __comptime_assert size(layoutC.stride[0].tuple()[2]) == Mc * N
 
-    constrained[size(layoutC.stride[1].tuple()[0]) == 1]()
-    constrained[size(layoutC.stride[1].tuple()[1]) == Mr * Stride]()
-    constrained[size(layoutC.stride[1].tuple()[2]) == Mr * WNr]()
-    constrained[size(layoutC.stride[1].tuple()[3]) == Mc * Nc]()
+    __comptime_assert size(layoutC.stride[1].tuple()[0]) == 1
+    __comptime_assert size(layoutC.stride[1].tuple()[1]) == Mr * Stride
+    __comptime_assert size(layoutC.stride[1].tuple()[2]) == Mr * WNr
+    __comptime_assert size(layoutC.stride[1].tuple()[3]) == Mc * Nc
 
     # Matrix A
-    constrained[size(layoutA.shape[0].tuple()[0]) == Mr]()
-    constrained[size(layoutA.shape[0].tuple()[1]) * Mr == Mc]()
-    constrained[size(layoutA.shape[0].tuple()[2]) * Mc == M]()
+    __comptime_assert size(layoutA.shape[0].tuple()[0]) == Mr
+    __comptime_assert size(layoutA.shape[0].tuple()[1]) * Mr == Mc
+    __comptime_assert size(layoutA.shape[0].tuple()[2]) * Mc == M
 
-    constrained[size(layoutA.shape[1].tuple()[0]) == Stride]()
-    constrained[size(layoutA.shape[1].tuple()[1]) * Stride == WNr]()
-    constrained[size(layoutA.shape[1].tuple()[2]) * WNr == Kc]()
-    constrained[size(layoutA.shape[1].tuple()[3]) * Kc == K]()
+    __comptime_assert size(layoutA.shape[1].tuple()[0]) == Stride
+    __comptime_assert size(layoutA.shape[1].tuple()[1]) * Stride == WNr
+    __comptime_assert size(layoutA.shape[1].tuple()[2]) * WNr == Kc
+    __comptime_assert size(layoutA.shape[1].tuple()[3]) * Kc == K
 
-    constrained[size(layoutA.stride[0].tuple()[0]) == Stride]()
-    constrained[size(layoutA.stride[0].tuple()[1]) == Mr * Kc]()
-    constrained[size(layoutA.stride[0].tuple()[2]) == Mc * K]()
+    __comptime_assert size(layoutA.stride[0].tuple()[0]) == Stride
+    __comptime_assert size(layoutA.stride[0].tuple()[1]) == Mr * Kc
+    __comptime_assert size(layoutA.stride[0].tuple()[2]) == Mc * K
 
-    constrained[size(layoutA.stride[1].tuple()[0]) == 1]()
-    constrained[size(layoutA.stride[1].tuple()[1]) == Mr * Stride]()
-    constrained[size(layoutA.stride[1].tuple()[2]) == Mr * WNr]()
-    constrained[size(layoutA.stride[1].tuple()[3]) == Mc * Kc]()
+    __comptime_assert size(layoutA.stride[1].tuple()[0]) == 1
+    __comptime_assert size(layoutA.stride[1].tuple()[1]) == Mr * Stride
+    __comptime_assert size(layoutA.stride[1].tuple()[2]) == Mr * WNr
+    __comptime_assert size(layoutA.stride[1].tuple()[3]) == Mc * Kc
 
     # Matrix B
-    constrained[size(layoutB.shape[0].tuple()[0]) == Stride]()
-    constrained[size(layoutB.shape[0].tuple()[1]) * Stride == Kc]()
-    constrained[size(layoutB.shape[0].tuple()[2]) * Kc == K]()
+    __comptime_assert size(layoutB.shape[0].tuple()[0]) == Stride
+    __comptime_assert size(layoutB.shape[0].tuple()[1]) * Stride == Kc
+    __comptime_assert size(layoutB.shape[0].tuple()[2]) * Kc == K
 
-    constrained[size(layoutB.shape[1].tuple()[0]) == WNr]()
-    constrained[size(layoutB.shape[1].tuple()[1]) * WNr == Nc]()
-    constrained[size(layoutB.shape[1].tuple()[2]) * Nc == N]()
+    __comptime_assert size(layoutB.shape[1].tuple()[0]) == WNr
+    __comptime_assert size(layoutB.shape[1].tuple()[1]) * WNr == Nc
+    __comptime_assert size(layoutB.shape[1].tuple()[2]) * Nc == N
 
-    constrained[size(layoutB.stride[0].tuple()[0]) * Stride == WNr * Kc]()
-    constrained[size(layoutB.stride[0].tuple()[1]) == WNr]()
-    constrained[size(layoutB.stride[0].tuple()[2]) == Nc * Kc]()
+    __comptime_assert size(layoutB.stride[0].tuple()[0]) * Stride == WNr * Kc
+    __comptime_assert size(layoutB.stride[0].tuple()[1]) == WNr
+    __comptime_assert size(layoutB.stride[0].tuple()[2]) == Nc * Kc
 
-    constrained[size(layoutB.stride[1].tuple()[0]) == 1]()
-    constrained[size(layoutB.stride[1].tuple()[1]) == WNr * Kc]()
-    constrained[size(layoutB.stride[1].tuple()[2]) == Nc * K]()
+    __comptime_assert size(layoutB.stride[1].tuple()[0]) == 1
+    __comptime_assert size(layoutB.stride[1].tuple()[1]) == WNr * Kc
+    __comptime_assert size(layoutB.stride[1].tuple()[2]) == Nc * K
 
     comptime Ptr = UnsafePointer[Scalar[elt]]
     var pc: UnsafePointer[Scalar[elt]] = C.ptr
@@ -391,8 +391,8 @@ fn vectorize_flat[
     stride_a: List[Int],
     stride_b: List[Int],
 ](a: UnsafePointer[Scalar[elt_a]], b: UnsafePointer[Scalar[elt_b]]):
-    constrained[len(shape) == len(stride_a)]()
-    constrained[len(shape) == len(stride_b)]()
+    __comptime_assert len(shape) == len(stride_a)
+    __comptime_assert len(shape) == len(stride_b)
 
     @parameter
     if len(shape) == 1:
@@ -550,91 +550,91 @@ fn matmulb2b[
     comptime Stride = stride[elt](WNr)
     comptime Kc = Nc
 
-    constrained[len(layoutD) == 2]()
-    constrained[len(layoutA) == 2]()
-    constrained[len(layoutB) == 2]()
-    constrained[len(layoutC) == 2]()
+    __comptime_assert len(layoutD) == 2
+    __comptime_assert len(layoutA) == 2
+    __comptime_assert len(layoutB) == 2
+    __comptime_assert len(layoutC) == 2
 
-    constrained[len(layoutD.shape[0]) == 3]()
-    constrained[len(layoutD.shape[1]) == 4]()
-    constrained[len(layoutA.shape[0]) == 3]()
-    constrained[len(layoutA.shape[1]) == 4]()
-    constrained[len(layoutB.shape[0]) == 3]()
-    constrained[len(layoutB.shape[1]) == 3]()
-    constrained[len(layoutC.shape[0]) == 3]()
-    constrained[len(layoutC.shape[1]) == 3]()
+    __comptime_assert len(layoutD.shape[0]) == 3
+    __comptime_assert len(layoutD.shape[1]) == 4
+    __comptime_assert len(layoutA.shape[0]) == 3
+    __comptime_assert len(layoutA.shape[1]) == 4
+    __comptime_assert len(layoutB.shape[0]) == 3
+    __comptime_assert len(layoutB.shape[1]) == 3
+    __comptime_assert len(layoutC.shape[0]) == 3
+    __comptime_assert len(layoutC.shape[1]) == 3
 
     # Matrix D
-    constrained[size(layoutD.shape[0].tuple()[0]) == Mr]()
-    constrained[size(layoutD.shape[0].tuple()[1]) * Mr == Mc]()
-    constrained[size(layoutD.shape[0].tuple()[2]) * Mc == M]()
+    __comptime_assert size(layoutD.shape[0].tuple()[0]) == Mr
+    __comptime_assert size(layoutD.shape[0].tuple()[1]) * Mr == Mc
+    __comptime_assert size(layoutD.shape[0].tuple()[2]) * Mc == M
 
-    constrained[size(layoutD.shape[1].tuple()[0]) == Stride]()
-    constrained[size(layoutD.shape[1].tuple()[1]) * Stride == WNr]()
-    constrained[size(layoutD.shape[1].tuple()[2]) * WNr == Nc]()
-    constrained[size(layoutD.shape[1].tuple()[3]) * Nc == N]()
+    __comptime_assert size(layoutD.shape[1].tuple()[0]) == Stride
+    __comptime_assert size(layoutD.shape[1].tuple()[1]) * Stride == WNr
+    __comptime_assert size(layoutD.shape[1].tuple()[2]) * WNr == Nc
+    __comptime_assert size(layoutD.shape[1].tuple()[3]) * Nc == N
 
-    constrained[size(layoutD.stride[0].tuple()[0]) == Stride]()
-    constrained[size(layoutD.stride[0].tuple()[1]) == Mr * Nc]()
-    constrained[size(layoutD.stride[0].tuple()[2]) == Mc * N]()
+    __comptime_assert size(layoutD.stride[0].tuple()[0]) == Stride
+    __comptime_assert size(layoutD.stride[0].tuple()[1]) == Mr * Nc
+    __comptime_assert size(layoutD.stride[0].tuple()[2]) == Mc * N
 
-    constrained[size(layoutD.stride[1].tuple()[0]) == 1]()
-    constrained[size(layoutD.stride[1].tuple()[1]) == Mr * Stride]()
-    constrained[size(layoutD.stride[1].tuple()[2]) == Mr * WNr]()
-    constrained[size(layoutD.stride[1].tuple()[3]) == Mc * Nc]()
+    __comptime_assert size(layoutD.stride[1].tuple()[0]) == 1
+    __comptime_assert size(layoutD.stride[1].tuple()[1]) == Mr * Stride
+    __comptime_assert size(layoutD.stride[1].tuple()[2]) == Mr * WNr
+    __comptime_assert size(layoutD.stride[1].tuple()[3]) == Mc * Nc
 
     # Matrix A
-    constrained[size(layoutA.shape[0].tuple()[0]) == Mr]()
-    constrained[size(layoutA.shape[0].tuple()[1]) * Mr == Mc]()
-    constrained[size(layoutA.shape[0].tuple()[2]) * Mc == M]()
+    __comptime_assert size(layoutA.shape[0].tuple()[0]) == Mr
+    __comptime_assert size(layoutA.shape[0].tuple()[1]) * Mr == Mc
+    __comptime_assert size(layoutA.shape[0].tuple()[2]) * Mc == M
 
-    constrained[size(layoutA.shape[1].tuple()[0]) == Stride]()
-    constrained[size(layoutA.shape[1].tuple()[1]) * Stride == WNr]()
-    constrained[size(layoutA.shape[1].tuple()[2]) * WNr == Kc]()
-    constrained[size(layoutA.shape[1].tuple()[3]) * Kc == K]()
+    __comptime_assert size(layoutA.shape[1].tuple()[0]) == Stride
+    __comptime_assert size(layoutA.shape[1].tuple()[1]) * Stride == WNr
+    __comptime_assert size(layoutA.shape[1].tuple()[2]) * WNr == Kc
+    __comptime_assert size(layoutA.shape[1].tuple()[3]) * Kc == K
 
-    constrained[size(layoutA.stride[0].tuple()[0]) == Stride]()
-    constrained[size(layoutA.stride[0].tuple()[1]) == Mr * Kc]()
-    constrained[size(layoutA.stride[0].tuple()[2]) == Mc * K]()
+    __comptime_assert size(layoutA.stride[0].tuple()[0]) == Stride
+    __comptime_assert size(layoutA.stride[0].tuple()[1]) == Mr * Kc
+    __comptime_assert size(layoutA.stride[0].tuple()[2]) == Mc * K
 
-    constrained[size(layoutA.stride[1].tuple()[0]) == 1]()
-    constrained[size(layoutA.stride[1].tuple()[1]) == Mr * Stride]()
-    constrained[size(layoutA.stride[1].tuple()[2]) == Mr * WNr]()
-    constrained[size(layoutA.stride[1].tuple()[3]) == Mc * Kc]()
+    __comptime_assert size(layoutA.stride[1].tuple()[0]) == 1
+    __comptime_assert size(layoutA.stride[1].tuple()[1]) == Mr * Stride
+    __comptime_assert size(layoutA.stride[1].tuple()[2]) == Mr * WNr
+    __comptime_assert size(layoutA.stride[1].tuple()[3]) == Mc * Kc
 
     # Matrix B
-    constrained[size(layoutB.shape[0].tuple()[0]) == Stride]()
-    constrained[size(layoutB.shape[0].tuple()[1]) * Stride == Kc]()
-    constrained[size(layoutB.shape[0].tuple()[2]) * Kc == K]()
+    __comptime_assert size(layoutB.shape[0].tuple()[0]) == Stride
+    __comptime_assert size(layoutB.shape[0].tuple()[1]) * Stride == Kc
+    __comptime_assert size(layoutB.shape[0].tuple()[2]) * Kc == K
 
-    constrained[size(layoutB.shape[1].tuple()[0]) == WNr]()
-    constrained[size(layoutB.shape[1].tuple()[1]) * WNr == Nc]()
-    constrained[size(layoutB.shape[1].tuple()[2]) * Nc == L]()
+    __comptime_assert size(layoutB.shape[1].tuple()[0]) == WNr
+    __comptime_assert size(layoutB.shape[1].tuple()[1]) * WNr == Nc
+    __comptime_assert size(layoutB.shape[1].tuple()[2]) * Nc == L
 
-    constrained[size(layoutB.stride[0].tuple()[0]) * Stride == WNr * Nc]()
-    constrained[size(layoutB.stride[0].tuple()[1]) == WNr]()
-    constrained[size(layoutB.stride[0].tuple()[2]) == Nc * Kc]()
+    __comptime_assert size(layoutB.stride[0].tuple()[0]) * Stride == WNr * Nc
+    __comptime_assert size(layoutB.stride[0].tuple()[1]) == WNr
+    __comptime_assert size(layoutB.stride[0].tuple()[2]) == Nc * Kc
 
-    constrained[size(layoutB.stride[1].tuple()[0]) == 1]()
-    constrained[size(layoutB.stride[1].tuple()[1]) == WNr * Kc]()
-    constrained[size(layoutB.stride[1].tuple()[2]) == Nc * K]()
+    __comptime_assert size(layoutB.stride[1].tuple()[0]) == 1
+    __comptime_assert size(layoutB.stride[1].tuple()[1]) == WNr * Kc
+    __comptime_assert size(layoutB.stride[1].tuple()[2]) == Nc * K
 
     # Matrix C
-    constrained[size(layoutC.shape[0].tuple()[0]) == Stride]()
-    constrained[size(layoutC.shape[0].tuple()[1]) * Stride == Kc]()
-    constrained[size(layoutC.shape[0].tuple()[2]) * Kc == L]()
+    __comptime_assert size(layoutC.shape[0].tuple()[0]) == Stride
+    __comptime_assert size(layoutC.shape[0].tuple()[1]) * Stride == Kc
+    __comptime_assert size(layoutC.shape[0].tuple()[2]) * Kc == L
 
-    constrained[size(layoutC.shape[1].tuple()[0]) == WNr]()
-    constrained[size(layoutC.shape[1].tuple()[1]) * WNr == Nc]()
-    constrained[size(layoutC.shape[1].tuple()[2]) * Nc == N]()
+    __comptime_assert size(layoutC.shape[1].tuple()[0]) == WNr
+    __comptime_assert size(layoutC.shape[1].tuple()[1]) * WNr == Nc
+    __comptime_assert size(layoutC.shape[1].tuple()[2]) * Nc == N
 
-    constrained[size(layoutC.stride[0].tuple()[0]) * Stride == WNr * Kc]()
-    constrained[size(layoutC.stride[0].tuple()[1]) == WNr]()
-    constrained[size(layoutC.stride[0].tuple()[2]) == N * Kc]()
+    __comptime_assert size(layoutC.stride[0].tuple()[0]) * Stride == WNr * Kc
+    __comptime_assert size(layoutC.stride[0].tuple()[1]) == WNr
+    __comptime_assert size(layoutC.stride[0].tuple()[2]) == N * Kc
 
-    constrained[size(layoutC.stride[1].tuple()[0]) == 1]()
-    constrained[size(layoutC.stride[1].tuple()[1]) == WNr * Kc]()
-    constrained[size(layoutC.stride[1].tuple()[2]) == Nc * Kc]()
+    __comptime_assert size(layoutC.stride[1].tuple()[0]) == 1
+    __comptime_assert size(layoutC.stride[1].tuple()[1]) == WNr * Kc
+    __comptime_assert size(layoutC.stride[1].tuple()[2]) == Nc * Kc
 
     var pa: UnsafePointer[Scalar[elt]] = A.ptr
     var pd: UnsafePointer[Scalar[elt]] = D.ptr
@@ -794,16 +794,16 @@ fn bench_b2b[
     comptime WNr: Int = W * Nr
     comptime Stride: Int = stride[elt](WNr)
     comptime Kc = Nc
-    constrained[Nc % Stride == 0]()
-    constrained[Kc % (Kr * Stride) == 0]()
+    __comptime_assert Nc % Stride == 0
+    __comptime_assert Kc % (Kr * Stride) == 0
 
-    constrained[Mc % Mr == 0]()
-    constrained[Nc % WNr == 0]()
+    __comptime_assert Mc % Mr == 0
+    __comptime_assert Nc % WNr == 0
 
-    constrained[M % Mc == 0]()
-    constrained[K % Kc == 0]()
-    constrained[L % Nc == 0]()
-    constrained[N % Nc == 0]()
+    __comptime_assert M % Mc == 0
+    __comptime_assert K % Kc == 0
+    __comptime_assert L % Nc == 0
+    __comptime_assert N % Nc == 0
 
     comptime layout_D: Layout = Layout(
         IntTuple(
@@ -973,13 +973,13 @@ fn main() raises -> None:
     comptime Nc = 20 * Nr * W
     comptime Stride = stride[DType.float32](W * Nr)
     comptime Kc = Nc
-    constrained[Kc % Stride == 0]()
+    __comptime_assert Kc % Stride == 0
     comptime M = 4 * Mc
     comptime N = 6 * Nc
     comptime K = 2 * Kc
     comptime L = 5 * Kc
     print("Multiplying M =", M, "; N =", N, "; K =", K, "; L =", L, "\n")
-    constrained[Kc == Nc, "b2b requires Kc == Nc"]()
+    __comptime_assert Kc == Nc, "b2b requires Kc == Nc"
     var do_benchmark: Bool = False
     var args = argv()
     for i in range(len(args)):

@@ -113,14 +113,11 @@ fn tma_umma_kernel_ss[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    constrained[num_threads == 128 or num_threads == 256]()
-    constrained[
-        a_type == b_type and a_type in (DType.float8_e4m3fn, DType.bfloat16),
-        (
-            "a_type and b_type must be the same and either float8_e4m3fn or"
-            " bfloat16"
-        ),
-    ]()
+    __comptime_assert num_threads == 128 or num_threads == 256
+    __comptime_assert a_type == b_type and a_type in (
+        DType.float8_e4m3fn,
+        DType.bfloat16,
+    ), "a_type and b_type must be the same and either float8_e4m3fn or bfloat16"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -173,12 +170,12 @@ fn tma_umma_kernel_ss[
     comptime a_size = a_smem_layout.size()
     comptime b_size = b_smem_layout.size()
 
-    constrained[
-        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
-    ]()
+    __comptime_assert (
+        (a_size * size_of[a_type]()) % 128
+    ) == 0, "preserve alignment"
+    __comptime_assert (
+        (b_size * size_of[b_type]()) % 16
+    ) == 0, "preserve alignment"
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
@@ -392,7 +389,7 @@ fn tma_umma_kernel_ts[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    constrained[num_threads == 128 or num_threads == 256]()
+    __comptime_assert num_threads == 128 or num_threads == 256
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -402,14 +399,12 @@ fn tma_umma_kernel_ts[
     comptime num_m_mmas = BM // MMA_M
     comptime num_n_mmas = BN // MMA_N
 
-    constrained[
-        num_m_mmas == 1 and num_n_mmas == 1,
-        "num_m_mmas and num_n_mmas must be 1",
-    ]()
-    constrained[
-        a_type == b_type and a_type == DType.bfloat16,
-        "a_type and b_type must be the same and bfloat16 type",
-    ]()
+    __comptime_assert (
+        num_m_mmas == 1 and num_n_mmas == 1
+    ), "num_m_mmas and num_n_mmas must be 1"
+    __comptime_assert (
+        a_type == b_type and a_type == DType.bfloat16
+    ), "a_type and b_type must be the same and bfloat16 type"
     comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]() if transpose_b else tile_layout_mn_major[
@@ -439,9 +434,9 @@ fn tma_umma_kernel_ts[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    constrained[
-        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
-    ]()
+    __comptime_assert (
+        (b_size * size_of[b_type]()) % 16
+    ) == 0, "preserve alignment"
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 

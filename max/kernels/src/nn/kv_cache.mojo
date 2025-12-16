@@ -316,13 +316,12 @@ fn _fused_qkv_matmul_kv_cache_impl[
     comptime cache_t = collection_t.CacheType
     comptime cache_dtype = cache_t.dtype
 
-    constrained[
-        cache_dtype == dtype,
-        "Expected cache dtype ",
-        String(cache_dtype),
-        " to match input dtype ",
-        String(dtype),
-    ]()
+    __comptime_assert cache_dtype == dtype, (
+        "Expected cache dtype "
+        + String(cache_dtype)
+        + " to match input dtype "
+        + String(dtype)
+    )
 
     comptime kv_params = cache_t.kv_params
     comptime N = Int(weight.layout.shape[0])
@@ -963,14 +962,13 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     var kv_params = k_cache.kv_params
     comptime rms_norm_cols = Int(gamma.layout.shape[0])
 
-    constrained[
-        gamma.layout.shape[0] != UNKNOWN_VALUE, "Need static shape for gamma"
-    ]()
-    constrained[
+    __comptime_assert (
+        gamma.layout.shape[0] != UNKNOWN_VALUE
+    ), "Need static shape for gamma"
+    __comptime_assert (
         rms_norm_cols <= Int(kv_collection.kv_params.head_size)
-        or not per_head_norm,
-        "Length of gamma must be smaller or equal to head size",
-    ]()
+        or not per_head_norm
+    ), "Length of gamma must be smaller or equal to head size"
 
     var shape = IndexList[rank]()
     shape[0] = Int(total_seq_len)
@@ -988,11 +986,11 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     fn key_cache_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        constrained[
-            rank_ == rank,
-            "rms_norm_key_cache input lambda index should have rank "
-            + String(rank),
-        ]()
+        __comptime_assert (
+            rank_ == rank
+        ), "rms_norm_key_cache input lambda index should have rank " + String(
+            rank
+        )
 
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
@@ -1128,14 +1126,13 @@ def rms_norm_kv_cache_ragged_paged[
     var kv_params = k_cache.kv_params
     comptime rms_norm_cols = Int(gamma.layout.shape[0])
 
-    constrained[
-        gamma.layout.shape[0] != UNKNOWN_VALUE, "Need static shape for gamma"
-    ]()
-    constrained[
+    __comptime_assert (
+        gamma.layout.shape[0] != UNKNOWN_VALUE
+    ), "Need static shape for gamma"
+    __comptime_assert (
         rms_norm_cols <= Int(kv_collection.kv_params.head_size)
-        or not per_head_norm,
-        "Length of gamma must be smaller or equal to head size",
-    ]()
+        or not per_head_norm
+    ), "Length of gamma must be smaller or equal to head size"
 
     var shape = IndexList[rank]()
     shape[0] = Int(total_seq_len)
@@ -1153,11 +1150,11 @@ def rms_norm_kv_cache_ragged_paged[
     fn key_cache_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        constrained[
-            rank_ == rank,
-            "rms_norm_key_cache input lambda index should have rank "
-            + String(rank),
-        ]()
+        __comptime_assert (
+            rank_ == rank
+        ), "rms_norm_key_cache input lambda index should have rank " + String(
+            rank
+        )
 
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(

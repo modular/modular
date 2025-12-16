@@ -77,7 +77,7 @@ fn kernel_3[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: Int,
 ):
-    constrained[num_threads == 128 or num_threads == 256]()
+    __comptime_assert num_threads == 128 or num_threads == 256
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -151,12 +151,12 @@ fn kernel_3[
     comptime a_size = a_smem_layout.size()
     comptime b_size = b_smem_layout.size()
 
-    constrained[
-        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
-    ]()
+    __comptime_assert (
+        (a_size * size_of[a_type]()) % 128
+    ) == 0, "preserve alignment"
+    __comptime_assert (
+        (b_size * size_of[b_type]()) % 16
+    ) == 0, "preserve alignment"
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
@@ -244,8 +244,8 @@ fn kernel_3[
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
-                constrained[((a_offset * size_of[a_type]()) % 128) == 0]()
-                constrained[((b_offset * size_of[b_type]()) % 128) == 0]()
+                __comptime_assert ((a_offset * size_of[a_type]()) % 128) == 0
+                __comptime_assert ((b_offset * size_of[b_type]()) % 128) == 0
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
@@ -375,10 +375,7 @@ fn blackwell_kernel_3[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]

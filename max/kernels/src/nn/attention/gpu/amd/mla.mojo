@@ -98,10 +98,10 @@ __extension Attention:
     ](mut self, k_rope: k_rope_t):
         comptime cache_num_heads = 1
         comptime cache_depth = 576
-        constrained[Self.BN == Self.depth, "BN must be equal to depth"]()
+        __comptime_assert Self.BN == Self.depth, "BN must be equal to depth"
         comptime simd_width = simd_width_of[Self.q_type]()
 
-        constrained[Self.BK == 32, "BK must be 32"]()
+        __comptime_assert Self.BK == 32, "BK must be 32"
 
         @always_inline
         @parameter

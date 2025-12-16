@@ -490,7 +490,7 @@ struct TMemTile[
         @parameter
         @always_inline
         fn load_fn[pow_two: Int, offset: Int]():
-            constrained[pow_two + offset <= repeat]()
+            __comptime_assert pow_two + offset <= repeat
 
             @parameter
             if pow_two > 0:
@@ -670,7 +670,7 @@ struct SM100TensorAccumulatorSS[
         c_scale: UInt32,
         elect: Int32,
     ):
-        constrained[stage_idx == 0]()
+        __comptime_assert stage_idx == 0
         bulk_mma[
             Self.a_layout,
             Self.b_layout,
@@ -735,7 +735,7 @@ struct SM100TensorAccumulatorTS[
     fn mma[
         *, stage_idx: Int = 0
     ](a: UInt32, b: Self.BType, c: UInt32, *, c_scale: UInt32, elect: Int32):
-        constrained[stage_idx == 0]()
+        __comptime_assert stage_idx == 0
         bulk_mma[
             Self.b_layout,
             num_k_mmas = Self.num_k_mmas,
@@ -1053,7 +1053,7 @@ fn bulk_mma[
     c_scale: UInt32,
     elect: Int32,
 ):
-    constrained[num_k_mmas >= 1 and num_k_mmas <= 16]()
+    __comptime_assert num_k_mmas >= 1 and num_k_mmas <= 16
     comptime mma_string = build_mma_ts(
         String(kind),
         layout_b,
@@ -1164,13 +1164,12 @@ fn elect_mma_arrive[
         elect: `elect()`.
     """
 
-    constrained[
-        cta_group in (1, 2),
-        String("Unsupported cta group: ", cta_group),
-    ]()
+    __comptime_assert cta_group in (1, 2), String(
+        "Unsupported cta group: ", cta_group
+    )
 
     comptime type = mbar_ptr.type
-    constrained[size_of[type]() == 8, "mbar_ptr must be 8 bytes"]()
+    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         """{
@@ -1191,7 +1190,7 @@ fn elect_mma_arrive[
 fn maximum[
     dtype: DType, BN: Int, //, *, width: Int = 8
 ](x: LocalTensor[dtype, Layout.row_major(BN)]) -> SIMD[dtype, width]:
-    constrained[BN % width == 0]()
+    __comptime_assert BN % width == 0
     vx = x.vectorize[width]()
     acc = vx[0]
 
@@ -1211,7 +1210,7 @@ fn maximum[
 ](
     x: LocalTensor[dtype, Layout.row_major(BN)], init: SIMD[dtype, width]
 ) -> SIMD[dtype, width]:
-    constrained[BN % width == 0]()
+    __comptime_assert BN % width == 0
     vx = x.vectorize[width]()
     acc = rebind[vx.element_type](init)
 
@@ -1226,7 +1225,7 @@ fn maximum[
 fn sum[
     dtype: DType, BN: Int, //, *, width: Int = 8
 ](x: LocalTensor[dtype, Layout.row_major(BN)]) -> SIMD[dtype, 2]:
-    constrained[BN % width == 0]()
+    __comptime_assert BN % width == 0
     vx = x.vectorize[width]()
     acc = vx[0]
 
@@ -1278,12 +1277,13 @@ fn mha_sm100_dispatch[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
 ) raises:
-    constrained[
-        config.dtype == KVType.dtype and config.dtype == q_type,
-        "config, kv, and q types must all match for FA3.",
-    ]()
+    __comptime_assert (
+        config.dtype == KVType.dtype and config.dtype == q_type
+    ), "config, kv, and q types must all match for FA3."
     comptime decoding: Bool = _is_decoding[MaxPromptLenType]()
-    constrained[not decoding, "this implementation does not support decoding"]()
+    __comptime_assert (
+        not decoding
+    ), "this implementation does not support decoding"
     comptime fa4_config = FA4Config(
         num_q_heads=Int(config.num_heads),
         group=group,
@@ -1341,7 +1341,7 @@ fn mha_sm100_dispatch[
     ](ctx, q, num_rows_q)
     k_tma_op = k.create_tma_tile[BN, fa4_config.depth, swizzle_mode](ctx)
     v_tma_op = v.create_tma_tile[BN, fa4_config.depth, swizzle_mode](ctx)
-    constrained[BM == 256]()
+    __comptime_assert BM == 256
     comptime SchedulerType = TransientScheduler[BM, fa4_config.num_q_heads]
     var scheduler: SchedulerType = SchedulerType()
 
@@ -2004,11 +2004,11 @@ struct KVProducerPipeline[dtype: DType, config: FA4Config]:
         mbar: MBarType,
         smem: Self.SMemType,
     ):
-        constrained[
+        __comptime_assert (
             Self.config.padded_depth % Self.config.num_mma_stages == 0
-        ]()
-        constrained[Self.config.BN % Self.config.num_mma_stages == 0]()
-        constrained[Self.kv_elements == Self.VType.layout.size()]()
+        )
+        __comptime_assert Self.config.BN % Self.config.num_mma_stages == 0
+        __comptime_assert Self.kv_elements == Self.VType.layout.size()
         self.kv_pipeline = {mbar}
         self.smem = smem
         self.kv_pipeline.state._phase = 1
@@ -2021,11 +2021,11 @@ struct KVProducerPipeline[dtype: DType, config: FA4Config]:
         ],
         smem: Self.SMemType,
     ):
-        constrained[
+        __comptime_assert (
             Self.config.padded_depth % Self.config.num_mma_stages == 0
-        ]()
-        constrained[Self.config.BN % Self.config.num_mma_stages == 0]()
-        constrained[Self.kv_elements == Self.VType.layout.size()]()
+        )
+        __comptime_assert Self.config.BN % Self.config.num_mma_stages == 0
+        __comptime_assert Self.kv_elements == Self.VType.layout.size()
         self.kv_pipeline = kv_pipeline
         self.smem = smem
         self.kv_pipeline.state._phase = 1
@@ -2782,13 +2782,10 @@ struct SM100MHA2Q[
         comptime num_reg_correction = 104
         comptime num_reg_other = 40
 
-        constrained[
-            not Self.PartitionType.do_partition,
-            (
-                "Neither partitioning nor decoding are supported by the 2-q"
-                " implementation."
-            ),
-        ]()
+        __comptime_assert not Self.PartitionType.do_partition, (
+            "Neither partitioning nor decoding are supported by the 2-q"
+            " implementation."
+        )
 
         var warp_idx: UInt32 = warp.broadcast(warp_id())
         if warp_idx == 0:
@@ -3010,10 +3007,9 @@ struct SM100MHA2Q[
         var head = Int(block_idx.y)
         comptime last_dim = Self.descriptor_shape[2]
 
-        constrained[
-            Self.padded_depth % last_dim == 0,
-            "padded_depth must be a multiple of last descriptor dimension",
-        ]()
+        __comptime_assert (
+            Self.padded_depth % last_dim == 0
+        ), "padded_depth must be a multiple of last descriptor dimension"
         comptime iters = Self.padded_depth // last_dim
 
         comptime smem_base_layout = Layout.row_major(Self.BM // 2, last_dim)
@@ -3355,14 +3351,14 @@ struct SM100MHA2Q[
             comptime batch_size = 32
             comptime num_batch_iters = vs_len // batch_size
             comptime remainder = vs_len % batch_size
-            constrained[num_batch_iters > 0]()
+            __comptime_assert num_batch_iters > 0
             comptime BatchTileType = TMemTile[
                 Self.qkv_type, Self.config.BM // 2, batch_size * exp_simd
             ]
             comptime RemainderTileType = TMemTile[
                 Self.qkv_type, Self.config.BM // 2, remainder * exp_simd
             ]
-            constrained[(Self.config.BN % exp_simd) == 0]()
+            __comptime_assert (Self.config.BN % exp_simd) == 0
 
             vs = s.vectorize[exp_simd]()
             # We batch stores, e.g. use `tcgen_05.st.x32`.
@@ -3554,7 +3550,9 @@ struct SM100MHA2Q[
             + warp_group_idx * Self.config.padded_depth
         )
         # wait on the o_pipeline producer
-        constrained[size_of[Self.output_type]() == size_of[Self.qkv_type]()]()
+        __comptime_assert (
+            size_of[Self.output_type]() == size_of[Self.qkv_type]()
+        )
         if num_output_rows > 0:
             o_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
@@ -3597,7 +3595,7 @@ struct SM100MHA2Q[
         num_keys: UInt32,
         mask: Self.MaskType,
     ):
-        constrained[size_of[Self.accum_type]() == 4]()
+        __comptime_assert size_of[Self.accum_type]() == 4
 
         o0_tmem = tmem_addr + Self.config.TMEM_O0
         o1_tmem = tmem_addr + Self.config.TMEM_O1

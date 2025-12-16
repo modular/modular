@@ -172,9 +172,9 @@ struct ROCSHMEMInitAttr:
     var args: ROCSHMEMInitArgs
 
     fn __init__(out self, mpi_comm: UnsafePointer[MPIComm]):
-        constrained[
-            size_of[Self]() == 144, "ROCSHMEMInitAttr must be 144 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 144
+        ), "ROCSHMEMInitAttr must be 144 bytes"
         self.version = (1 << 16) + size_of[ROCSHMEMInitAttr]()
         self.mpi_comm = mpi_comm
         self.args = ROCSHMEMInitArgs()
@@ -186,9 +186,9 @@ struct ROCSHMEMInitArgs:
     var content: InlineArray[Byte, 96]
 
     fn __init__(out self):
-        constrained[
-            size_of[Self]() == 128, "ROCSHMEMInitArgs must be 128 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 128
+        ), "ROCSHMEMInitArgs must be 128 bytes"
         self.version = (1 << 16) + size_of[ROCSHMEMInitArgs]()
         self.uid_args = ROCSHMEMUniqueIDArgs()
         self.content = InlineArray[Byte, 96](fill=0)
@@ -201,9 +201,9 @@ struct ROCSHMEMUniqueIDArgs:
     var nranks: c_int
 
     fn __init__(out self):
-        constrained[
-            size_of[Self]() == 24, "ROCSHMEMUniqueIDArgs must be 24 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 24
+        ), "ROCSHMEMUniqueIDArgs must be 24 bytes"
         self.version = (1 << 16) + size_of[ROCSHMEMUniqueIDArgs]()
         self.id = UnsafePointer[ROCSHMEMUniqueID]()
         self.myrank = 0
@@ -215,9 +215,9 @@ struct ROCSHMEMUniqueID:
     var internal: InlineArray[Byte, 124]
 
     fn __init__(out self):
-        constrained[
-            size_of[Self]() == 128, "rocshmem_uniqueid_t must be 128 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 128
+        ), "rocshmem_uniqueid_t must be 128 bytes"
         self.version = (1 << 16) + size_of[ROCSHMEMUniqueID]()
         self.internal = InlineArray[Byte, 124](fill=0)
 

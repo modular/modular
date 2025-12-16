@@ -104,13 +104,10 @@ struct StaticTensorSpec[
         self.out_compute_lambda = out_compute_lambda
 
     fn __init__(out self, shape: DimList):
-        constrained[
-            Self.rank > 0,
-            (
-                "initializing `StaticTensorSpec` with just a shape only"
-                " supports rank 1 to 3"
-            ),
-        ]()
+        __comptime_assert Self.rank > 0, (
+            "initializing `StaticTensorSpec` with just a shape only"
+            " supports rank 1 to 3"
+        )
         debug_assert(
             len(shape) == Self.rank,
             (

@@ -37,7 +37,9 @@ fn mma[
     mut a_tile: a_register_buffer_type,
     mut b_tile: b_buffer_type,
 ):
-    constrained[b_buffer_type._num_stages == 2, "b_tile.num_stages must be 2"]()
+    __comptime_assert (
+        b_buffer_type._num_stages == 2
+    ), "b_tile.num_stages must be 2"
     comptime num_k_mmas2 = ceildiv(
         BK, tensor_core_mma.shape[2] * tensor_core_mma.group_size
     )

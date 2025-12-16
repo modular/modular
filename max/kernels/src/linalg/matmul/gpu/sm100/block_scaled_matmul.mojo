@@ -1123,17 +1123,13 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
-    constrained[
-        sfa_dtype == sfb_dtype == MXFP8_SF_DTYPE,
-        "Only support MXFP8_SF_DTYPE (F8-UE8M0) for scales",
-    ]()
+    __comptime_assert (
+        sfa_dtype == sfb_dtype == MXFP8_SF_DTYPE
+    ), "Only support MXFP8_SF_DTYPE (F8-UE8M0) for scales"
 
-    constrained[not config.AB_swapped, "swap AB is not supported"]()
+    __comptime_assert not config.AB_swapped, "swap AB is not supported"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -1143,88 +1139,69 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
+    __comptime_assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
 
-    constrained[
-        config.k_group_size == 1,
-        "Only support k_group_size == 1",
-    ]()
+    __comptime_assert config.k_group_size == 1, "Only support k_group_size == 1"
 
-    constrained[
-        config.num_split_k == 1,
-        "Only support split_k == 1",
-    ]()
+    __comptime_assert config.num_split_k == 1, "Only support split_k == 1"
 
-    constrained[
-        config.num_pipeline_stages % config.k_group_size == 0,
-        "num_pipeline_stages must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        config.num_pipeline_stages % config.k_group_size == 0
+    ), "num_pipeline_stages must be a multiple of k_group_size"
 
-    constrained[
-        sfa_dtype == sfb_dtype and sfa_dtype == MXFP8_SF_DTYPE,
-        "Only support F8-UE8M0 scales",
-    ]()
+    __comptime_assert (
+        sfa_dtype == sfb_dtype and sfa_dtype == MXFP8_SF_DTYPE
+    ), "Only support F8-UE8M0 scales"
 
-    constrained[
+    __comptime_assert (
         a_tensor.rank == b_tensor.rank == c_tensor.rank
-        and a_tensor.rank in (2, 3),
-        (
-            "a_tensor, b_tensor, and c_tensor must have the same rank and be 2D"
-            " (non-batched) or 3D (batched) tensors"
-        ),
-    ]()
+        and a_tensor.rank in (2, 3)
+    ), (
+        "a_tensor, b_tensor, and c_tensor must have the same rank and be 2D"
+        " (non-batched) or 3D (batched) tensors"
+    )
 
     comptime is_batched_matmul = a_tensor.rank == 3
 
-    constrained[
-        a_scales_tensor.rank == b_scales_tensor.rank,
-        (
-            "a_scales and b_scales must be 5D (non-batched) or 6D (batched)"
-            " tensors"
-        ),
-    ]()
+    __comptime_assert (
+        a_scales_tensor.rank == b_scales_tensor.rank
+    ), "a_scales and b_scales must be 5D (non-batched) or 6D (batched) tensors"
 
-    constrained[
-        a_scales_tensor.rank == (6 if is_batched_matmul else 5),
-        "a_scales must be 6D (batched) or 5D (non-batched) tensors",
-    ]()
+    __comptime_assert a_scales_tensor.rank == (
+        6 if is_batched_matmul else 5
+    ), "a_scales must be 6D (batched) or 5D (non-batched) tensors"
 
-    constrained[
+    __comptime_assert (
         sfa_layout.shape[3 if is_batched_matmul else 2].value()
         == sfb_layout.shape[3 if is_batched_matmul else 2].value()
-        == SF_ATOM_M[0],
-        "",
-    ]()
-    constrained[
+        == SF_ATOM_M[0]
+    ), ""
+    __comptime_assert (
         sfa_layout.shape[4 if is_batched_matmul else 3].value()
         == sfb_layout.shape[4 if is_batched_matmul else 3].value()
-        == SF_ATOM_M[1],
-        "",
-    ]()
-    constrained[
+        == SF_ATOM_M[1]
+    ), ""
+    __comptime_assert (
         sfa_layout.shape[5 if is_batched_matmul else 4].value()
         == sfb_layout.shape[5 if is_batched_matmul else 4].value()
-        == SF_ATOM_K,
-        "",
-    ]()
+        == SF_ATOM_K
+    ), ""
 
     @parameter
     if config.cta_group == 2:
-        constrained[
-            MMA_M == 256 and MMA_N in (128, 256),
-            "Only support cta_group == 2 with MMA_M == 256",
-        ]()
+        __comptime_assert MMA_M == 256 and MMA_N in (
+            128,
+            256,
+        ), "Only support cta_group == 2 with MMA_M == 256"
 
     else:
-        constrained[
-            MMA_M == 128 and MMA_N in (128, 256),
-            (
-                "Only support MMA_M == 128 and MMA_N in (128, 256) when"
-                " cta_group == 1"
-            ),
-        ]()
+        __comptime_assert MMA_M == 128 and MMA_N in (128, 256), (
+            "Only support MMA_M == 128 and MMA_N in (128, 256) when cta_group"
+            " == 1"
+        )
 
     # convert a non-batched tensor to a batched tensor if needed so we can use the same kernel for both non-batched and batched matmuls
     var a_tensor_batched = _convert_input_to_batched_tensor(a_tensor)
@@ -1237,18 +1214,16 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var M_maybe_swapped = a_tensor_batched.dim[1]()
     var N_maybe_swapped = b_tensor_batched.dim[1]()
 
-    constrained[
+    __comptime_assert (
         a_tensor_batched.layout.shape[2].value()
-        == b_tensor_batched.layout.shape[2].value(),
-        "A and B K dimension does not match",
-    ]()
+        == b_tensor_batched.layout.shape[2].value()
+    ), "A and B K dimension does not match"
 
     comptime K = a_tensor_batched.layout.shape[2].value()
 
-    constrained[
-        ceildiv(K, BK) % Int(config.k_group_size) == 0,
-        "K iterations must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        ceildiv(K, BK) % Int(config.k_group_size) == 0
+    ), "K iterations must be a multiple of k_group_size"
 
     comptime cluster_shape = config.cluster_shape
 
@@ -1259,6 +1234,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         __tile_layout = Layout.row_major(a_tma_tile_shape),
     ](ctx, a_tensor_batched)
 
+    # fmt: off
     comptime b_tma_tile_shape = Index(
         1, BN // (cluster_shape[0] // config.cta_group), BK
     ) if transpose_b else Index(
@@ -1279,10 +1255,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         1, config.output_tile_shape[0], config.output_tile_shape[1]
     ) if (MMA_M == 256 or config.cta_group == 1) else c_tma_tile_shape_mma128
 
-    constrained[
-        (not config.AB_swapped) or config.c_swizzle.bytes() == 128,
-        "Only support 128B swizzle mode when AB_swapped is True",
-    ]()
+    __comptime_assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
 
     comptime c_tma_tile_shape_final = c_tma_tile_shape if not config.AB_swapped else Index(
         1, c_tma_tile_shape[0], config.c_swizzle.bytes() // size_of[c_type]()
@@ -1292,6 +1265,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         swizzle_mode = config.c_swizzle,
         __tile_layout = Layout.row_major(c_tma_tile_shape_final),
     ](ctx, c_tensor_batched)
+    # fmt: on
 
     comptime scales_5d_layout[layout: Layout] = Layout.row_major(
         layout.shape[0].value() if is_batched_matmul else 1,
@@ -1519,8 +1493,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
-    constrained[c_type is not DType.float32, "c_type cannot be float32"]()
-    constrained[transpose_b, "only support k-major B"]()
+    __comptime_assert c_type is not DType.float32, "c_type cannot be float32"
+    __comptime_assert transpose_b, "only support k-major B"
 
     comptime num_output_warps = 4
 
@@ -1553,12 +1527,11 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime SFB_NUM_COLS = MMA_N // 32
     comptime stage_stride_cols = config.mma_shape[1]
 
-    constrained[
+    __comptime_assert (
         config.num_accum_pipeline_stages * UInt(MMA_N)
         + UInt(SFA_NUM_COLS + SFB_NUM_COLS) * config.num_pipeline_stages
-        <= NUM_TMEM_COLS,
-        "sfa_tmem and sfb_tmem exceed tmem_cols",
-    ]()
+        <= NUM_TMEM_COLS
+    ), "sfa_tmem and sfb_tmem exceed tmem_cols"
 
     comptime num_m_mmas = BM // (config.mma_shape[0] // config.cta_group)
     comptime num_n_mmas = BN // (config.mma_shape[1] // config.cta_group)

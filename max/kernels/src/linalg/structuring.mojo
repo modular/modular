@@ -267,10 +267,9 @@ struct SMemTileArrayType[
         Args:
             unsafe_ptr: Shared memory pointer.
         """
-        constrained[
-            Self.layout.all_dims_known(),
-            "Layout must be known at compile time.",
-        ]()
+        __comptime_assert (
+            Self.layout.all_dims_known()
+        ), "Layout must be known at compile time."
 
         self.ptr = unsafe_ptr
 

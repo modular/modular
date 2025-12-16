@@ -164,12 +164,12 @@ fn top_k[
         ctx: The device call context.
         k: Per batch element k value.
     """
-    constrained[
-        input.rank == out_vals.rank, "input.rank must match out_vals.rank"
-    ]()
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert (
+        input.rank == out_vals.rank
+    ), "input.rank must match out_vals.rank"
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
 
     var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
 
@@ -178,10 +178,9 @@ fn top_k[
 
     @parameter
     if is_cpu[target]():
-        constrained[
-            out_idx_type is DType.int64,
-            "out_idx_type must be int64 for cpu",
-        ]()
+        __comptime_assert (
+            out_idx_type is DType.int64
+        ), "out_idx_type must be int64 for cpu"
 
         comptime grain_size = 1000
         _top_k_cpu[largest=largest](
@@ -229,12 +228,12 @@ fn _top_k_cpu[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
-    constrained[
-        input.rank == out_vals.rank, "input.rank must match out_vals.rank"
-    ]()
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert (
+        input.rank == out_vals.rank
+    ), "input.rank must match out_vals.rank"
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
     var shape = input.runtime_layout.shape.value.canonicalize()
 
     @__copy_capture(shape)
@@ -400,10 +399,10 @@ fn fused_token_sampling_cpu[
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
-    constrained[out_idx_type is DType.int64, "out_idx_type must be int64"]()
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
+    __comptime_assert out_idx_type is DType.int64, "out_idx_type must be int64"
 
     bound_max_k = 255 if max_k == -1 else max_k
 
@@ -487,12 +486,12 @@ fn _top_k_sampling[
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
-    constrained[
-        input.rank == out_vals.rank, "input.rank must match out_vals.rank"
-    ]()
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert (
+        input.rank == out_vals.rank
+    ), "input.rank must match out_vals.rank"
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
 
     # Now reshape for sampling
     var orig_in_shape: IndexList[input.rank] = rebind[IndexList[input.rank]](
@@ -748,10 +747,9 @@ fn _block_reduce_topk[
     a final warp-level reduction to compute the block-wide maximum.
     """
     comptime MAX_BLOCK_SIZE = 1024
-    constrained[
-        MAX_BLOCK_SIZE % WARP_SIZE == 0,
-        "block size must be a multiple of the warp size",
-    ]()
+    __comptime_assert (
+        MAX_BLOCK_SIZE % WARP_SIZE == 0
+    ), "block size must be a multiple of the warp size"
 
     # Calculate sizes for shared memory allocation
     comptime p_width = simd_width_of[DType.int]()
@@ -1333,17 +1331,16 @@ fn _topk_gpu[
     (https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/tensorrt_llm/kernels/samplingTopKKernels.cu).
 
     """
-    constrained[input_buf.rank == 2, "rank must be 2"]()
-    constrained[
-        not (sampling and not largest),
-        "sampling not supported for largest=False",
-    ]()
-    constrained[
-        input_buf.rank == out_vals.rank, "input.rank must match out_vals.rank"
-    ]()
-    constrained[
-        input_buf.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert input_buf.rank == 2, "rank must be 2"
+    __comptime_assert not (
+        sampling and not largest
+    ), "sampling not supported for largest=False"
+    __comptime_assert (
+        input_buf.rank == out_vals.rank
+    ), "input.rank must match out_vals.rank"
+    __comptime_assert (
+        input_buf.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
 
     # Use largest number of threads per block
     var batch_size = (
@@ -1570,7 +1567,7 @@ fn topk_gpu[
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
-    constrained[input.rank > 0, "Input rank must be positive"]()
+    __comptime_assert input.rank > 0, "Input rank must be positive"
     var orig_in_shape = rebind[IndexList[input.rank]](
         input.runtime_layout.shape.value.canonicalize()
     )
@@ -1785,9 +1782,9 @@ fn fused_token_sampling_gpu[
         )
         return
 
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
 
     var bound_max_k = 255 if max_k == -1 else max_k
 
@@ -1850,10 +1847,9 @@ fn apply_gumbel_noise_kernel[
 
     var num_tokens = input.dim[0]()
 
-    constrained[
-        simd_width % 4 == 0,
-        "SIMD width must be divisible by 4 to match RNG output size.",
-    ]()
+    __comptime_assert (
+        simd_width % 4 == 0
+    ), "SIMD width must be divisible by 4 to match RNG output size."
 
     # split workload across blocks
     with PDL():

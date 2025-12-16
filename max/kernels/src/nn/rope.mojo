@@ -136,26 +136,24 @@ fn rope_ragged[
 ) raises:
     @parameter
     for i in range(len(x.layout.shape)):
-        constrained[
-            x.layout.shape[i].is_value(),
+        __comptime_assert x.layout.shape[i].is_value(), (
             "x.layout.shape["
             + String(i)
             + "] must be a scalar, was "
-            + String(x.layout.shape[i]),
-        ]()
-    constrained[
-        x.layout.shape[1].all_known() and x.layout.shape[2].all_known(),
+            + String(x.layout.shape[i])
+        )
+    __comptime_assert (
+        x.layout.shape[1].all_known() and x.layout.shape[2].all_known()
+    ), (
         "x.shape[1] (num_heads) and x.shape[2] (head_dim) must be static, was "
-        + String(x.layout.shape),
-    ]()
-    constrained[
-        input_row_offsets.layout.all_dims_known(),
-        "input_row_offsets shape must be statically shaped",
-    ]()
-    constrained[
-        freqs_cis.layout.all_dims_known(),
-        "freqs_cis shape must be statically shaped",
-    ]()
+        + String(x.layout.shape)
+    )
+    __comptime_assert (
+        input_row_offsets.layout.all_dims_known()
+    ), "input_row_offsets shape must be statically shaped"
+    __comptime_assert (
+        freqs_cis.layout.all_dims_known()
+    ), "freqs_cis shape must be statically shaped"
     debug_assert(
         input_row_offsets.shape[0]() - 1 == start_pos.shape[0](),
         (
@@ -174,7 +172,7 @@ fn rope_ragged[
     fn rope_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        constrained[rank == 3, "Invalid rank passed to rope kernel"]()
+        __comptime_assert rank == 3, "Invalid rank passed to rope kernel"
 
         @parameter
         if width == 1:
@@ -258,12 +256,11 @@ fn rope_ragged[
 
         @parameter
         for i in range(len(mrope_section.value())):
-            constrained[
-                Int(mrope_section.value()[i]) % kernel_simd_width == 0,
-                "mrope_section must be divisible by rope kernel simd_width",
-            ]()
+            __comptime_assert (
+                Int(mrope_section.value()[i]) % kernel_simd_width == 0
+            ), "mrope_section must be divisible by rope kernel simd_width"
 
-    constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
+    __comptime_assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
     @parameter
     if is_cpu[target]():

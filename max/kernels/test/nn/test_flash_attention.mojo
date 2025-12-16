@@ -600,7 +600,7 @@ def test_case_split_kv[
     ),
 ](cfg: TestCaseConfig[batch_rank]):
     # For now only allow Q.shape = [B, S, H, D].
-    constrained[batch_rank == 2]()
+    __comptime_assert batch_rank == 2
 
     seed(42)
 

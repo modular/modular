@@ -163,16 +163,15 @@ fn flare_mla_decoding[
     This kernel handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    constrained[
-        ragged or rank == 4, "only support rank 4 inputs for non-ragged inputs."
-    ]()
-    constrained[
-        not ragged or rank == 3, "only support rank 3 inputs for ragged inputs."
-    ]()
-    constrained[
-        q.dtype == cache_t.dtype == output.dtype,
-        "Q, K, V, output should have same type.",
-    ]()
+    __comptime_assert (
+        ragged or rank == 4
+    ), "only support rank 4 inputs for non-ragged inputs."
+    __comptime_assert (
+        not ragged or rank == 3
+    ), "only support rank 3 inputs for ragged inputs."
+    __comptime_assert (
+        q.dtype == cache_t.dtype == output.dtype
+    ), "Q, K, V, output should have same type."
 
     @always_inline
     @parameter
@@ -252,7 +251,7 @@ fn flare_mla_decoding[
     # if not set, we select num_partitions based on heuristics
     num_partitions: OptionalReg[Int] = None,
 ) raises:
-    constrained[q.rank == 4, "only support rank 4 inputs."]()
+    __comptime_assert q.rank == 4, "only support rank 4 inputs."
 
     comptime kv_num_heads = Int(k.layout.shape[2])
 
@@ -345,34 +344,28 @@ fn flare_mla_decoding_dispatch[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
     comptime group = config.num_heads // UInt(kv_num_heads)
-    constrained[num_heads == UInt(Int(q.layout.shape[q.rank - 2]))]()
+    __comptime_assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
     comptime has_enough_smem = ctx.default_device_info is A100 or ctx.default_device_info is H100
 
-    constrained[
-        depth == UInt(Int(q.layout.shape[q.rank - 1])) == 576,
-        "flareMLA_decoding only supports head_dim == 576.",
-    ]()
-    constrained[
-        kv_num_heads == 1, "flareMLA_decoding only supports kv_num_heads == 1."
-    ]()
-    constrained[
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
-        "flareMLA_decoding currently only supports Nvidia and AMD GPUs.",
-    ]()
+    __comptime_assert (
+        depth == UInt(Int(q.layout.shape[q.rank - 1])) == 576
+    ), "flareMLA_decoding only supports head_dim == 576."
+    __comptime_assert (
+        kv_num_heads == 1
+    ), "flareMLA_decoding only supports kv_num_heads == 1."
+    __comptime_assert (
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+    ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
-    constrained[
-        q.dtype.is_half_float(),
-        "Only support half precision.",
-    ]()
+    __comptime_assert q.dtype.is_half_float(), "Only support half precision."
 
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known for opaque KVCache types, we only check Q.
-    constrained[
-        q.layout.shape.all_known[q.rank - 2, q.rank](),
-        "Need num_heads and head_dim to be static for Q.",
-    ]()
+    __comptime_assert q.layout.shape.all_known[
+        q.rank - 2, q.rank
+    ](), "Need num_heads and head_dim to be static for Q."
 
     var batch_size: Int
 
@@ -676,7 +669,7 @@ fn mla_decoding_single_batch[
 ):
     """Flash attention v2 algorithm."""
     comptime k_type = k_t.dtype
-    constrained[q_type == k_type]()
+    __comptime_assert q_type == k_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -687,15 +680,13 @@ fn mla_decoding_single_batch[
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
+    __comptime_assert num_warps_m * num_warps_n == UInt(
+        num_threads // UInt(WARP_SIZE)
+    ), "Number of warps doesn't match warp tile sizes."
 
-    constrained[
-        not decoding_warp_split_k,
-        "mla_decoding doesn't support warp split-k.",
-    ]()
+    __comptime_assert (
+        not decoding_warp_split_k
+    ), "mla_decoding doesn't support warp split-k."
 
     var tid = thread_idx.x
     var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
@@ -1306,15 +1297,13 @@ fn flare_mla_prefill[
     This kernel handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    constrained[rank == 3, "only support ragged inputs"]()
-    constrained[
-        q.dtype == cache_t.dtype == output.dtype,
-        "Q, K, V, output should have same type.",
-    ]()
-    constrained[
-        q.dtype is DType.float32 or q.dtype.is_half_float(),
-        "Only support single and half precision.",
-    ]()
+    __comptime_assert rank == 3, "only support ragged inputs"
+    __comptime_assert (
+        q.dtype == cache_t.dtype == output.dtype
+    ), "Q, K, V, output should have same type."
+    __comptime_assert (
+        q.dtype is DType.float32 or q.dtype.is_half_float()
+    ), "Only support single and half precision."
 
     @always_inline
     @parameter
@@ -1470,15 +1459,13 @@ fn flare_mla_prefill[
         ]
     ] = None,
 ) raises:
-    constrained[rank == 3, "only support ragged inputs"]()
-    constrained[
-        q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype,
-        "Q, K, V, output should have same type.",
-    ]()
-    constrained[
-        q.dtype is DType.float32 or q.dtype.is_half_float(),
-        "Only support single and half precision.",
-    ]()
+    __comptime_assert rank == 3, "only support ragged inputs"
+    __comptime_assert (
+        q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
+    ), "Q, K, V, output should have same type."
+    __comptime_assert (
+        q.dtype is DType.float32 or q.dtype.is_half_float()
+    ), "Only support single and half precision."
 
     @always_inline
     @parameter
@@ -1653,12 +1640,11 @@ fn flare_mla_prefill_dispatch[
     comptime depth = config.depth
     comptime group = config.num_heads // UInt(kv_num_heads)
 
-    constrained[q_depth == Int(q.layout.shape[rank - 1])]()
-    constrained[num_heads == UInt(Int(q.layout.shape[rank - 2]))]()
-    constrained[
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
-        "flareMLA_prefill currently only supports Nvidia and AMD GPUs.",
-    ]()
+    __comptime_assert q_depth == Int(q.layout.shape[rank - 1])
+    __comptime_assert num_heads == UInt(Int(q.layout.shape[rank - 2]))
+    __comptime_assert (
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+    ), "flareMLA_prefill currently only supports Nvidia and AMD GPUs."
 
     var batch_size: Int = valid_length.dim[0]() - 1
 
@@ -1853,10 +1839,9 @@ fn mla_prefill[
     var cache_start_pos: UInt32 = 0
     var total_seq_len: UInt32 = valid_length[batch_size][0]
 
-    constrained[
-        softmax_type == get_accum_type[q_type](),
-        "Softmax type should be the same as the accumulation type.",
-    ]()
+    __comptime_assert (
+        softmax_type == get_accum_type[q_type]()
+    ), "Softmax type should be the same as the accumulation type."
     var softmax_info_accum_ptr = softmax_info_ptr.bitcast[
         Scalar[get_accum_type[q_type]()]
     ]()
@@ -1991,9 +1976,9 @@ fn mla_prefill_single_batch[
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
     comptime k_rope_type = k_rope_t.dtype
-    constrained[
+    __comptime_assert (
         q_type == k_type and k_type == v_type and k_type == k_rope_type
-    ]()
+    )
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -2010,10 +1995,9 @@ fn mla_prefill_single_batch[
 
     comptime cache_num_heads = num_heads // UInt(group)
 
-    constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
+    __comptime_assert num_warps_m * num_warps_n == UInt(
+        num_threads // UInt(WARP_SIZE)
+    ), "Number of warps doesn't match warp tile sizes."
 
     var tid: Int = Int(thread_idx.x)
     var warp_id: UInt32 = warp.broadcast(tid // WARP_SIZE)
@@ -3074,7 +3058,7 @@ fn _k_cache_to_buffer[
     context: DeviceContext,
 ) raises:
     comptime num_heads = cache_t.kv_params.num_heads
-    constrained[num_heads == 1, "num_heads should be equal to 1"]()
+    __comptime_assert num_heads == 1, "num_heads should be equal to 1"
 
     @always_inline
     @parameter
@@ -3082,7 +3066,7 @@ fn _k_cache_to_buffer[
     fn copy_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        constrained[rank == 2, "rank should be equal to 2"]()
+        __comptime_assert rank == 2, "rank should be equal to 2"
 
         var idx = rebind[IndexList[2]](idx_arg)
         var global_token_idx = idx[0]

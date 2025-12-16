@@ -163,15 +163,15 @@ fn _irfft[
     buffer_size_mb: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        input.rank == output.rank, "Input and output must have the same rank"
-    ]()
-    constrained[
-        input_type is DType.float32, "Only Float32 is supported for IRFFT"
-    ]()
-    constrained[
-        output_type is DType.float32, "Only Float32 is supported for IRFFT"
-    ]()
+    __comptime_assert (
+        input.rank == output.rank
+    ), "Input and output must have the same rank"
+    __comptime_assert (
+        input_type is DType.float32
+    ), "Only Float32 is supported for IRFFT"
+    __comptime_assert (
+        output_type is DType.float32
+    ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might
     # not be exact.
     EST_WORKSPACE_SIZE = buffer_size_mb * 1024 * 1024

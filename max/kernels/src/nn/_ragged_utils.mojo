@@ -61,19 +61,19 @@ fn merge_ragged_tensors[
     b_row_offsets: LayoutTensor[DType.uint32, **_],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[c.rank == rank, "c.rank must equal rank"]()
-    constrained[a.rank == rank, "a.rank must equal rank"]()
-    constrained[b.rank == rank, "b.rank must equal rank"]()
-    constrained[c_row_offsets.rank == 1, "c_row_offsets.rank must be 1"]()
-    constrained[a_row_offsets.rank == 1, "a_row_offsets.rank must be 1"]()
-    constrained[b_row_offsets.rank == 1, "b_row_offsets.rank must be 1"]()
+    __comptime_assert c.rank == rank, "c.rank must equal rank"
+    __comptime_assert a.rank == rank, "a.rank must equal rank"
+    __comptime_assert b.rank == rank, "b.rank must equal rank"
+    __comptime_assert c_row_offsets.rank == 1, "c_row_offsets.rank must be 1"
+    __comptime_assert a_row_offsets.rank == 1, "a_row_offsets.rank must be 1"
+    __comptime_assert b_row_offsets.rank == 1, "b_row_offsets.rank must be 1"
 
     @always_inline
     @parameter
     fn merge_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
-        constrained[rank_ == rank, "Invalid rank passed to the kernel"]()
+        __comptime_assert rank_ == rank, "Invalid rank passed to the kernel"
 
         var a_tensor_size = a.dim[0]()
         var is_tensor_a = idx[0] < a_tensor_size

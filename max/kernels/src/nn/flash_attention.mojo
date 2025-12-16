@@ -1123,7 +1123,7 @@ fn flash_attention_split_kv[
     # v (input_v_fn): BSHD
     # k_cache (input_k_cache_fn): 1BHS'D
     # v_cache (input_v_cache_fn): 1BHS'D
-    constrained[rank == 4]()
+    __comptime_assert rank == 4
 
     @always_inline
     @parameter
@@ -1315,14 +1315,13 @@ fn _flash_attention_kv_cache[
     comptime depth_dim = cache_t.kv_params.head_size
     comptime cache_type = cache_t.dtype
 
-    constrained[
-        cache_type == dtype,
-        "Expected cache dtype (",
-        String(cache_type),
-        ") to match input dtype (",
-        String(dtype),
-        ")",
-    ]()
+    __comptime_assert cache_type == dtype, (
+        "Expected cache dtype ("
+        + String(cache_type)
+        + ") to match input dtype ("
+        + String(dtype)
+        + ")"
+    )
 
     @parameter
     fn input_k_fn[

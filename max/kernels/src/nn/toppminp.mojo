@@ -39,7 +39,9 @@ fn top_p_sampling[
     samples tokens based on the cumulative probability mass (Top-P).
     """
     # TODO: Implement rank generalization
-    constrained[input_logits.rank == 2, "Only rank 2 tensors are supported"]()
+    __comptime_assert (
+        input_logits.rank == 2
+    ), "Only rank 2 tensors are supported"
     _topp_minp_sampling[is_top_p=True, _test_sort=_test_sort](
         top_ps, input_logits, out_token_ids, temperature
     )
@@ -106,7 +108,9 @@ fn _topp_minp_sampling[
         out_token_ids: NDBuffer[out_idx_type, rank] - Output sampled token IDs.
         temperature: Scalar[dtype] - Temperature for logits scaling.
     """
-    constrained[input_logits.rank == 2, "Only rank 2 tensors are supported"]()
+    __comptime_assert (
+        input_logits.rank == 2
+    ), "Only rank 2 tensors are supported"
     var input_shape = input_logits.runtime_layout.shape.value
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
@@ -241,7 +245,7 @@ fn sort_buf_descending[
 ):
     """Sort each batch separately in descending order using parallel merge sort.
     """
-    constrained[buf_keys.rank == 2, "rank must be 2"]()
+    __comptime_assert buf_keys.rank == 2, "rank must be 2"
     var batch_size = buf_keys.size() // vocab_size
 
     for batch_id in range(batch_size):

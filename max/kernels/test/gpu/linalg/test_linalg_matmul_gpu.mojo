@@ -166,10 +166,9 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):
-        constrained[
-            not Self.dim.is_dynamic(),
-            "Can't construct a dynamic dim with no runtime value",
-        ]()
+        __comptime_assert (
+            not Self.dim.is_dynamic()
+        ), "Can't construct a dynamic dim with no runtime value"
         self.value = Self.dim.get()
 
     fn __init__(out self, v: Int):

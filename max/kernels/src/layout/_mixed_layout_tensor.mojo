@@ -595,10 +595,9 @@ struct MixedLayoutTensorIter[
             iterator.
         """
 
-        constrained[
-            Self.linear_idx_type.is_signed(),
-            "Linear index type must be signed.",
-        ]()
+        __comptime_assert (
+            Self.linear_idx_type.is_signed()
+        ), "Linear index type must be signed."
 
         self.ptr = ptr
         self.offset = offset

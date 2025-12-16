@@ -141,10 +141,9 @@ fn mha_sm90_dispatch[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
 ) raises:
-    constrained[
-        config.dtype == KVType.dtype and config.dtype == q_type,
-        "config, kv, and q types must all match for FA3.",
-    ]()
+    __comptime_assert (
+        config.dtype == KVType.dtype and config.dtype == q_type
+    ), "config, kv, and q types must all match for FA3."
     comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
     comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
@@ -157,21 +156,17 @@ fn mha_sm90_dispatch[
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
-    constrained[
-        BM % 64 == 0,
-        "SM90 requires BM%64==0, but BM==",
-        String(BM),
-    ]()
-    constrained[
-        BK % 64 == 0,
-        "H100 requires BK%64==0 as it uses 128B swizzles, but BK==",
-        String(BK),
-    ]()
+    __comptime_assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
+        BM
+    )
+    __comptime_assert (
+        BK % 64 == 0
+    ), "H100 requires BK%64==0 as it uses 128B swizzles, but BK==" + String(BK)
     comptime BN = new_config.block_n()
     # we add smem use for SharedMemBarrier synchronization
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
     comptime num_threads = new_config.num_threads[True]()
-    constrained[num_threads % 128 == 0]()
+    __comptime_assert num_threads % 128 == 0
 
     # Persistent kernels not currently supported with partitioning
     # This doesn't seem useful: we partition to make SMs more busy,
@@ -181,7 +176,7 @@ fn mha_sm90_dispatch[
     comptime persistent = 0 if PartitionType.do_partition else env_get_int[
         "USE_EXPERIMENTAL_KERNELS", 0
     ]()
-    constrained[new_config.algorithm == FlashAttentionAlgorithm(3)]()
+    __comptime_assert new_config.algorithm == FlashAttentionAlgorithm(3)
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
@@ -996,10 +991,9 @@ fn _mha_sm90[
     max_seq_len = pack.max_seq_len
     partition = pack.partition
 
-    constrained[
-        num_warps_m == UInt(num_consumer_threads // UInt(WARP_SIZE)),
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
+    __comptime_assert num_warps_m == UInt(
+        num_consumer_threads // UInt(WARP_SIZE)
+    ), "Number of warps doesn't match warp tile sizes."
 
     var warp_id: UInt32 = warp.broadcast((tid - WARPGROUP_SIZE) // WARP_SIZE)
     var lane: UInt32 = lane_id()
@@ -1056,7 +1050,7 @@ fn _mha_sm90[
     comptime MMA_K = 16
     comptime WM = config.WM
     comptime num_m_mmas = WM // MMA_M
-    constrained[num_m_mmas == 1, "FIXME: life this constraint"]()
+    __comptime_assert num_m_mmas == 1, "FIXME: life this constraint"
     # alias WN = config.WN
     # alias num_n_mmas = WN // MMA_N
     comptime num_n_mmas = 1

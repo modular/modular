@@ -165,8 +165,8 @@ fn matmul[
     b: NDBuffer[_, 2, _, _],
     ctx: Optional[DeviceContext],
 ) raises:
-    constrained[is_valid_target[target](), "unsupported target"]()
-    constrained[not transpose_a, "transpose_a not yet supported"]()
+    __comptime_assert is_valid_target[target](), "unsupported target"
+    __comptime_assert not transpose_a, "transpose_a not yet supported"
     debug_assert(
         is_cpu[target]() or Bool(ctx),
         "expected DeviceContext to be provided if target != cpu",

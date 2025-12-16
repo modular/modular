@@ -208,10 +208,9 @@ fn _index_tensor_1d[
     output: LayoutTensor[mut=True, dtype, **_],
     ctx: Optional[DeviceContext] = None,
 ):
-    constrained[
-        data.rank >= 2 and indices.rank == 2,
-        "Constraint: data_rank >= 2 and indices_rank == 2",
-    ]()
+    __comptime_assert (
+        data.rank >= 2 and indices.rank == 2
+    ), "Constraint: data_rank >= 2 and indices_rank == 2"
 
     var last_index_dim = indices.runtime_layout.shape.value[indices.rank - 1]
 
@@ -298,10 +297,9 @@ fn _index_tensor_impl[
     output: LayoutTensor[mut=True, dtype, **_],
     ctx: Optional[DeviceContext] = None,
 ) raises:
-    constrained[
-        data.rank >= 2 and indices.rank >= 2,
-        "Constraint: data_rank >= 2 and indices_rank >= 2",
-    ]()
+    __comptime_assert (
+        data.rank >= 2 and indices.rank >= 2
+    ), "Constraint: data_rank >= 2 and indices_rank >= 2"
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
@@ -504,10 +502,10 @@ fn advanced_indexing_getitem[
     TODO(GEX-1953): Support fusion (especially view-fusion)
     """
     # Do not support boolean masks at this time.
-    constrained[index_type != DType.bool]()
-    constrained[
+    __comptime_assert index_type != DType.bool
+    __comptime_assert (
         out_tensor.rank == input_rank + index_rank - num_index_tensors
-    ]()
+    )
 
     @parameter
     @always_inline
@@ -717,7 +715,7 @@ fn advanced_indexing_setitem_inplace[
 
     # First calculate
     comptime iteration_rank = input_tensor.rank + index_rank - num_index_tensors
-    constrained[iteration_rank == updates_rank]()
+    __comptime_assert iteration_rank == updates_rank
     var iteration_shape = IndexList[iteration_rank]()
 
     # Find the common iteration space

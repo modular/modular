@@ -28,7 +28,7 @@ fn compute_rms[
 ](data: LayoutTensor[dtype, **_], size: Int, eps: Scalar[dtype]) -> Scalar[
     dtype
 ]:
-    constrained[data.rank == 1, "data.rank must be 1"]()
+    __comptime_assert data.rank == 1, "data.rank must be 1"
     comptime accum_type = get_accum_type[dtype]()
     var sum_of_squares = Scalar[accum_type]()
     for i in range(size):

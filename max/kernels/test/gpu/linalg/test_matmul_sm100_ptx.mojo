@@ -52,10 +52,7 @@ fn test_ptx[
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
 ]() raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -66,16 +63,14 @@ fn test_ptx[
     comptime BK = config.block_tile_shape[2]
 
     # constraint for bfloat16 matmul
-    constrained[
-        (a_type != DType.bfloat16) or (MMA_M != 128) or (MMA_N % 32 == 0),
-        "if MMA_M is 128, then MMA_N must be a multiple of 32",
-    ]()
+    __comptime_assert (
+        (a_type != DType.bfloat16) or (MMA_M != 128) or (MMA_N % 32 == 0)
+    ), "if MMA_M is 128, then MMA_N must be a multiple of 32"
 
     # constraint for fp8 matmul
-    constrained[
-        (a_type != DType.float8_e4m3fn) or (MMA_N % 64 == 0),
-        "MMA_N must be a multiple of 64 for fp8 matmul",
-    ]()
+    __comptime_assert (a_type != DType.float8_e4m3fn) or (
+        MMA_N % 64 == 0
+    ), "MMA_N must be a multiple of 64 for fp8 matmul"
 
     comptime a_swizzle = config.a_swizzle
     comptime b_swizzle = config.b_swizzle

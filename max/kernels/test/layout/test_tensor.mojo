@@ -40,11 +40,11 @@ fn print_tile_tensor(tensor: LayoutTensor):
 fn print_mode2_shape2_tensor[
     layout: Layout, dtype: DType
 ](tensor: LayoutTensor[dtype, layout, MutAnyOrigin]):
-    constrained[
+    __comptime_assert (
         len(layout) == 2
         and len(layout.shape[0]) == 2
         and len(layout.shape[1]) == 2
-    ]()
+    )
     for i in range(product(layout.shape[0])):
         for j in range(product(layout.shape[1])):
             var idx = layout(IntTuple(i, j))

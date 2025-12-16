@@ -286,8 +286,8 @@ fn kernel_5[
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
-                constrained[((a_offset * size_of[a_type]()) % 128) == 0]()
-                constrained[((b_offset * size_of[b_type]()) % 128) == 0]()
+                __comptime_assert ((a_offset * size_of[a_type]()) % 128) == 0
+                __comptime_assert ((b_offset * size_of[b_type]()) % 128) == 0
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
 
@@ -489,10 +489,7 @@ fn blackwell_kernel_5[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]

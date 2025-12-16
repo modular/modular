@@ -190,32 +190,33 @@ fn mla_prefill_branch_fp8[
         ctx: Device context.
     """
     comptime kv_params = collection_t.kv_params
-    constrained[kv_params.is_mla, "kv_params.is_mla should be true"]()
-    constrained[kv_params.num_heads == 1, "kv_params.num_heads should be 1"]()
+    __comptime_assert kv_params.is_mla, "kv_params.is_mla should be true"
+    __comptime_assert (
+        kv_params.num_heads == 1
+    ), "kv_params.num_heads should be 1"
 
     comptime num_heads = q_nope.shape[1]()
     comptime qk_nope_head_dim = q_nope.shape[2]()
     comptime qk_rope_head_dim = q_rope.shape[2]()
     comptime v_head_dim = output.shape[2]()
 
-    constrained[
-        kv_b_proj.layout.shape.all_known(), "kv_b_proj's shape should be static"
-    ]()
-    constrained[
-        kv_b_proj.layout.shape[0].value()
-        == num_heads * (qk_nope_head_dim + v_head_dim),
-        (
-            "kv_b_proj.layout.shape[0] should be equal to num_heads *"
-            " (qk_nope_head_dim + v_head_dim)"
-        ),
-    ]()
+    __comptime_assert (
+        kv_b_proj.layout.shape.all_known()
+    ), "kv_b_proj's shape should be static"
+    __comptime_assert kv_b_proj.layout.shape[0].value() == num_heads * (
+        qk_nope_head_dim + v_head_dim
+    ), (
+        "kv_b_proj.layout.shape[0] should be equal to num_heads *"
+        " (qk_nope_head_dim + v_head_dim)"
+    )
     comptime kv_latent_dim = kv_b_proj.layout.shape[1].value()
 
-    constrained[m_scale_granularity == 1, "m_scale_granularity should be 1"]()
-    constrained[
-        n_scale_granularity == k_scale_granularity == 128,
-        "n, k scale_granularity should be 128",
-    ]()
+    __comptime_assert (
+        m_scale_granularity == 1
+    ), "m_scale_granularity should be 1"
+    __comptime_assert (
+        n_scale_granularity == k_scale_granularity == 128
+    ), "n, k scale_granularity should be 128"
 
     # Return early if we have no tokens to process.
     if buffer_length == 0:
@@ -404,16 +405,14 @@ fn mla_prefill_branch_fp8[
     fn split_kv_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        constrained[rank == 2, "rank should be equal to 2"]()
+        __comptime_assert rank == 2, "rank should be equal to 2"
 
-        constrained[
-            qk_nope_head_dim % width == 0,
-            "qk_nope_head_dim should be divisible by simd width",
-        ]()
-        constrained[
-            v_head_dim % width == 0,
-            "v_head_dim should be divisible by simd width",
-        ]()
+        __comptime_assert (
+            qk_nope_head_dim % width == 0
+        ), "qk_nope_head_dim should be divisible by simd width"
+        __comptime_assert (
+            v_head_dim % width == 0
+        ), "v_head_dim should be divisible by simd width"
         var idx = rebind[IndexList[2]](idx_arg)
         var token_idx = idx[0]
         var hid_idx = idx[1]

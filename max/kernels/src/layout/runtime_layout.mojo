@@ -101,10 +101,9 @@ struct RuntimeLayout[
             dimensions known.
         """
 
-        constrained[
-            Self.layout.all_dims_known(),
-            "Static layout with known dims is required",
-        ]()
+        __comptime_assert (
+            Self.layout.all_dims_known()
+        ), "Static layout with known dims is required"
 
         self.shape = {}
         self.stride = {}
@@ -411,7 +410,7 @@ fn coalesce[
         A new `RuntimeLayout` with coalesced dimensions.
     """
 
-    constrained[not keep_rank, "Unsupported coalesce mode"]()
+    __comptime_assert not keep_rank, "Unsupported coalesce mode"
 
     var res_shape = RuntimeTuple[
         coalesce_layout(l, keep_rank).shape, element_type = layout.element_type

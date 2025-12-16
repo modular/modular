@@ -435,13 +435,10 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     comptime cta_tile_M = cta_tile_layout.shape[0].value()
     comptime cta_tile_N = cta_tile_layout.shape[1].value()
 
-    constrained[
-        N == cta_tile_N,
-        (
-            "for this test number of columns in src layout should be equal to"
-            " number of columns in cta tile layout"
-        ),
-    ]()
+    __comptime_assert N == cta_tile_N, (
+        "for this test number of columns in src layout should be equal to"
+        " number of columns in cta tile layout"
+    )
 
     debug_assert(
         ctx.get_api_version() >= 12050,

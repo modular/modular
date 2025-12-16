@@ -117,7 +117,7 @@ fn _softmax_2_pass_step1[
     simd_width: Int,
     dtype: DType,
 ](input: LayoutTensor[dtype, **_]) -> StaticTuple[Scalar[dtype], 2]:
-    constrained[input.rank == 1]()
+    __comptime_assert input.rank == 1
     # STEP 1: find the runningMax and runningSum in each batch.
     #   runningMax = -∞
     #   runningSum = 0
@@ -173,9 +173,9 @@ fn _softmax_2_pass_step2[
     running_max: Scalar[dtype],
     running_sum: Scalar[dtype],
 ):
-    constrained[input.rank == 1]()
-    constrained[output.rank == 1]()
-    constrained[input.layout.size() == output.layout.size()]()
+    __comptime_assert input.rank == 1
+    __comptime_assert output.rank == 1
+    __comptime_assert input.layout.size() == output.layout.size()
 
     # Step 2:
     #   for i = 0 to N do
@@ -229,8 +229,8 @@ fn softmax_2_pass[
         output: The output buffer in which to store the softmax values.
         input: The input buffer used to compute the softmax.
     """
-    constrained[input.rank == output.rank]()
-    constrained[input.rank == 1]()
+    __comptime_assert input.rank == output.rank
+    __comptime_assert input.rank == 1
 
     var running_info = _softmax_2_pass_step1[simd_width, dtype](input)
 
@@ -265,7 +265,7 @@ fn _softmax_3_pass_step_2[
     output: LayoutTensor[mut=True, dtype, **_],
     max_val: Scalar[dtype],
 ) -> Scalar[dtype]:
-    constrained[output.rank == 1]()
+    __comptime_assert output.rank == 1
     # STEP 2: compute for each batch
     # for i = 0 to N do
     #   Output[i] = pre_update_func(Input[i] - max_val)
@@ -304,7 +304,7 @@ fn _softmax_3_pass_step_3[
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](output: LayoutTensor[mut=True, dtype, **_], accum: Scalar[dtype],):
-    constrained[output.rank == 1]()
+    __comptime_assert output.rank == 1
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
     # for i = 0 to N do
@@ -356,7 +356,7 @@ fn _softmax_3_pass_base[
     Args:
         output: The output buffer in which to store the softmax values.
     """
-    constrained[output.rank == 1]()
+    __comptime_assert output.rank == 1
     # STEP 1 - Calculate max
     # Allocate buffer for max_val
     var max_buff = LayoutTensor[
@@ -380,7 +380,7 @@ fn _softmax_3_pass_base[
     fn input_fn[
         _dtype: DType, _width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[_dtype, _width]:
-        constrained[_rank == 1]()
+        __comptime_assert _rank == 1
         return rebind[SIMD[_dtype, _width]](input_fn_1d[_width](coords[0]))
 
     # Output function
@@ -389,7 +389,7 @@ fn _softmax_3_pass_base[
     fn output_fn[
         _dtype: DType, _width: Int, _rank: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-        constrained[_rank == 1]()
+        __comptime_assert _rank == 1
         max_buff[0] = val.reduce_max().cast[dtype]()
 
     # Generate fused input-reduction
@@ -468,7 +468,7 @@ fn softmax_3_pass[
     Args:
         output: The output buffer in which to store the softmax values.
     """
-    constrained[output.rank == 1]()
+    __comptime_assert output.rank == 1
 
     @parameter
     if logsoftmax:
@@ -898,10 +898,9 @@ fn _online_softmax_kernel[
 ):
     """This is only for online softmax validation, NOT a general kernel."""
 
-    constrained[
-        not fragment_transpose or (fragment_transpose and is_amd_gpu()),
-        "fragment_transpose must be False on NVIDIA",
-    ]()
+    __comptime_assert not fragment_transpose or (
+        fragment_transpose and is_amd_gpu()
+    ), "fragment_transpose must be False on NVIDIA"
 
     comptime mma_shape = IndexList[3](
         16, 8, 8
@@ -909,9 +908,9 @@ fn _online_softmax_kernel[
     comptime num_seqs = input.shape[0]()
     comptime seqlen = input.shape[1]()
 
-    constrained[
-        WM == num_seqs, "Only consider WM equal to number of rows in test."
-    ]()
+    __comptime_assert (
+        WM == num_seqs
+    ), "Only consider WM equal to number of rows in test."
 
     comptime num_m_mmas = WM // mma_shape[0]
     comptime num_n_mmas = WN // mma_shape[1]
@@ -1435,11 +1434,10 @@ fn _online_softmax_iter_for_mma_output[
     ].value() // (num_colwise_tiles * num_rowwise_tiles)
     # if num_output_replications != 1, then `warp_split_k` and it must equal `num_warps_n`.
     # FIXME: require `warp_split_k` when delaying inter-warp communication.
-    constrained[
+    __comptime_assert (
         num_output_replications == 1
         or num_output_replications % num_rowwise_warps == 0
-        # or (warp_split_k and num_output_replications == num_rowwise_warps)
-    ]()
+    )
 
     # if num_output_replications
     @parameter
@@ -1550,9 +1548,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     #     num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
     # ](0, 0).vectorize[1, p_frag_size // 2]()
     comptime frag_size = output_reg_tile.element_layout.size()
-    constrained[
-        WM * WN == UInt((2 * frag_size) * WARP_SIZE * num_m_mmas * num_n_mmas)
-    ]()
+    __comptime_assert WM * WN == UInt(
+        (2 * frag_size) * WARP_SIZE * num_m_mmas * num_n_mmas
+    )
     # alias num_m_mmas = WM // MMA_M
     # alias num_n_mmas = WN // MMA_N
     # alias frag_size = MMA_M * MMA_N // WARP_SIZE
@@ -1898,10 +1896,9 @@ fn _rowmax_online_softmax[
     ],
     init_rowmax: Bool = False,
 ):
-    constrained[
-        num_rowwise_warps == 1,
-        "FIXME: add support for num_rowwise_warps>1, required by deepseek",
-    ]()
+    __comptime_assert (
+        num_rowwise_warps == 1
+    ), "FIXME: add support for num_rowwise_warps>1, required by deepseek"
 
     # Assume p_reg_tile has been properly vectorized. The element layout
     # represents number elements per thread in a row or column
@@ -1912,18 +1909,15 @@ fn _rowmax_online_softmax[
     # alias frag_num_rows = fragment_layout.shape[0].value() # sm90 1
     comptime frag_num_cols = fragment_layout.shape[1].value()  # sm90 2
     comptime frag_num_rows = accum_frag_layout.size()
-    constrained[frag_num_rows == fragment_layout.shape[0].value()]()
+    __comptime_assert frag_num_rows == fragment_layout.shape[0].value()
 
     comptime num_colwise_tiles = reg_tile_layout[0].size()
     comptime num_rowwise_tiles = reg_tile_layout[1].size()
     # The online softmax attributes for each thread's elements (fragments).
-    constrained[
-        rowmax_tensor.element_layout.size() == frag_num_rows,
-        (
-            "`rowmax_tensor` and `rowsum_tensor` should be vectorized for AMD,"
-            " where `frag_num_rows > 1`. This simplifies the implementation."
-        ),
-    ]()
+    __comptime_assert rowmax_tensor.element_layout.size() == frag_num_rows, (
+        "`rowmax_tensor` and `rowsum_tensor` should be vectorized for AMD,"
+        " where `frag_num_rows > 1`. This simplifies the implementation."
+    )
     score_frag_rowmax = type_of(rowmax_tensor).stack_allocation()
 
     comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())

@@ -242,7 +242,7 @@ fn slice_as_copy[
     end: LayoutTensor[index_type, **_],
     step: LayoutTensor[index_type, **_],
 ) raises:
-    constrained[output.rank == tensor.rank]()
+    __comptime_assert output.rank == tensor.rank
     # Apply slice to the tensor
     var sliced = slice_as_view(tensor, start, end, step)
 
@@ -286,9 +286,9 @@ fn slice_shape[
     stop_buf: LayoutTensor[stop_type, **_],
     step_buf: LayoutTensor[step_type, **_],
 ) raises -> IndexList[input_buf.rank]:
-    constrained[start_buf.rank == 1, "start_buf.rank must be 1"]()
-    constrained[stop_buf.rank == 1, "stop_buf.rank must be 1"]()
-    constrained[step_buf.rank == 1, "step_buf.rank must be 1"]()
+    __comptime_assert start_buf.rank == 1, "start_buf.rank must be 1"
+    __comptime_assert stop_buf.rank == 1, "stop_buf.rank must be 1"
+    __comptime_assert step_buf.rank == 1, "step_buf.rank must be 1"
 
     if input_buf.rank != start_buf.dim[0]():
         raise Error("[slice] start indices size must equal input rank")

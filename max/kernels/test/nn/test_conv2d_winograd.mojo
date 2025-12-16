@@ -58,7 +58,7 @@ fn winograd_2d_convolution_3x3[
     signal: NDBuffer[dtype, 2, _, _],
     kernel: NDBuffer[
         dtype, 2, _, _
-    ],  # must be 3x3, let's constrained[]() somehow. Or parameter
+    ],  # must be 3x3, let's __comptime_assert  somehow. Or parameter
     output: NDBuffer[mut=True, dtype, 2, _, _],
 ):
     # Winograd transformation matrices as stack-allocated NDBuffers

@@ -273,7 +273,7 @@ fn layer_norm_gpu_warp_tiling[
     beta: LayoutTensor[dtype, layout, origin],
     epsilon: Scalar[dtype],
 ):
-    constrained[beta.rank == 1, "beta must have rank 1"]()
+    __comptime_assert beta.rank == 1, "beta must have rank 1"
     comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
     comptime accum_type = get_accum_type[dtype]()
 
@@ -351,7 +351,7 @@ fn layer_norm_gpu_block[
     beta: LayoutTensor[dtype, layout, origin],
     epsilon: Scalar[dtype],
 ):
-    constrained[beta.rank == 1, "beta must have rank 1"]()
+    __comptime_assert beta.rank == 1, "beta must have rank 1"
     comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
     comptime accum_type = get_accum_type[dtype]()
 
@@ -455,7 +455,7 @@ fn layer_norm_gpu[
     *,
     ctx: DeviceContext,
 ) raises:
-    constrained[beta.rank == 1, "beta must have rank 1"]()
+    __comptime_assert beta.rank == 1, "beta must have rank 1"
     if rank == 0:
         return
 
@@ -600,7 +600,7 @@ fn layer_norm_cpu[
         beta: The beta value to use in the layernorm calculation.
         epsilon: The eps value to use in the layernorm calculation.
     """
-    constrained[beta.rank == 1, "beta must have rank 1"]()
+    __comptime_assert beta.rank == 1, "beta must have rank 1"
     comptime simd_width = simd_width_of[dtype]()
 
     for row in range(num_rows):
@@ -676,7 +676,7 @@ fn layer_norm_cpu[
     beta: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
 ):
-    constrained[beta.rank == 1, "beta must have rank 1"]()
+    __comptime_assert beta.rank == 1, "beta must have rank 1"
     var last_dim = shape[rank - 1]
 
     var prod_all_but_last_dim = 1
@@ -749,7 +749,7 @@ fn layer_norm[
     epsilon: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[beta.rank == 1, "beta must have rank 1"]()
+    __comptime_assert beta.rank == 1, "beta must have rank 1"
     # Note: we only support reduction along the last dimension
     if gamma_shape[0] != shape[rank - 1]:
         raise Error("Gamma size does not match dimension of reduction.")
@@ -835,7 +835,7 @@ fn _rms_norm_warp_tiling_subkernel[
     weight_offset: Scalar[accum_type],
     num_cols: Int,
 ) -> SIMD[dtype, simd_width]:
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
     comptime align = align_of[SIMD[dtype, simd_width]]()
 
     # To utilize simd vector load.
@@ -895,7 +895,7 @@ fn rms_norm_gpu_warp_tiling_128[
     num_rows: Int,
     num_cols: Int,
 ):
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
     comptime half_warp_size = WARP_SIZE // 2
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -955,7 +955,7 @@ fn rms_norm_gpu_warp_tiling[
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1007,7 +1007,7 @@ fn _rms_norm_gpu_block_subkernel[
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1086,7 +1086,7 @@ fn rms_norm_gpu_block[
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     with PDL():
         _rms_norm_gpu_block_subkernel[
@@ -1115,7 +1115,7 @@ fn rms_norm_gpu[
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
     if rank == 0:
         return
 
@@ -1262,7 +1262,7 @@ fn rms_norm_cpu[
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
 ):
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     comptime simd_width = simd_width_of[dtype]()
 
@@ -1330,7 +1330,7 @@ fn rms_norm_cpu[
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
 ):
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
@@ -1408,7 +1408,7 @@ fn _rms_norm_impl[
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     # Note: we only support reduction along the last dimension
     if gamma.runtime_layout.shape.value[0] != shape[rank - 1]:
@@ -1475,8 +1475,8 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     weight_offset2: Scalar[dtype],
     num_cols: Int,
 ):
-    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
-    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+    __comptime_assert gamma1.rank == 1, "gamma1 must have rank 1"
+    __comptime_assert gamma2.rank == 1, "gamma2 must have rank 1"
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1559,8 +1559,8 @@ fn rms_norm_fused_residual_add_gpu_block[
     weight_offset2: Scalar[dtype],
     num_cols: Int,
 ):
-    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
-    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+    __comptime_assert gamma1.rank == 1, "gamma1 must have rank 1"
+    __comptime_assert gamma2.rank == 1, "gamma2 must have rank 1"
 
     var shared_mem = external_memory[
         Scalar[dtype],
@@ -1637,8 +1637,8 @@ fn rms_norm_fused_residual_add_gpu[
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
-    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
-    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+    __comptime_assert gamma1.rank == 1, "gamma1 must have rank 1"
+    __comptime_assert gamma2.rank == 1, "gamma2 must have rank 1"
 
     if rank == 0:
         return
@@ -1831,8 +1831,8 @@ fn rms_norm_fused_residual_add_cpu[
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
 ) raises:
-    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
-    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+    __comptime_assert gamma1.rank == 1, "gamma1 must have rank 1"
+    __comptime_assert gamma2.rank == 1, "gamma2 must have rank 1"
 
     var intermediate_buffer_ptr = UnsafePointer[Scalar[dtype]].alloc(
         shape.flattened_length()
@@ -1910,7 +1910,7 @@ fn rms_norm[
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     @always_inline
     @parameter
@@ -1967,8 +1967,8 @@ fn _rms_norm_fused_residual_add_impl[
     weight_offset2: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
-    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+    __comptime_assert gamma1.rank == 1, "gamma1 must have rank 1"
+    __comptime_assert gamma2.rank == 1, "gamma2 must have rank 1"
 
     # Note: we only support reduction along the last dimension
     if gamma1.runtime_layout.shape.value[0] != shape[rank - 1]:
@@ -2059,8 +2059,8 @@ fn rms_norm_fused_residual_add[
     weight_offset2: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
-    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+    __comptime_assert gamma1.rank == 1, "gamma1 must have rank 1"
+    __comptime_assert gamma2.rank == 1, "gamma2 must have rank 1"
 
     @always_inline
     @parameter
@@ -2117,7 +2117,7 @@ fn rms_norm_shape[
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
 ) -> IndexList[input.rank]:
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     return rebind[IndexList[input.rank]](
         input.runtime_layout.shape.value.canonicalize()
@@ -2145,7 +2145,7 @@ fn group_norm_reshape[
     (num_groups * N, group_size), where group_size is the product of
     channels_per_group and spatial.
     """
-    constrained[buf.rank == rank, "buf.rank must equal rank"]()
+    __comptime_assert buf.rank == rank, "buf.rank must equal rank"
     var group_size = channels_per_group * spatial
     var prod_all_but_group_dim = shape.flattened_length() // group_size
     var new_shape = IndexList[2](prod_all_but_group_dim, group_size)
@@ -2171,7 +2171,7 @@ fn group_norm_gpu_warp_tiling[
     channels_per_group: Int,
     spatial: Int,
 ):
-    constrained[output.rank == 2, "output.rank must be 2"]()
+    __comptime_assert output.rank == 2, "output.rank must be 2"
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
@@ -2249,7 +2249,7 @@ fn group_norm_gpu_block[
     channels_per_group: Int,
     spatial: Int,
 ):
-    constrained[output.rank == 2, "output.rank must be 2"]()
+    __comptime_assert output.rank == 2, "output.rank must be 2"
     comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
     comptime accum_type = get_accum_type[dtype]()
 
@@ -2348,7 +2348,9 @@ fn group_norm_gpu[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[output.rank == rank, "output.rank must be the same as rank"]()
+    __comptime_assert (
+        output.rank == rank
+    ), "output.rank must be the same as rank"
     comptime accum_type = get_accum_type[dtype]()
 
     var N = shape[0]
@@ -2497,13 +2499,15 @@ fn group_norm[
     output: LayoutTensor[mut=True, dtype, **_],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[output.rank == rank, "output.rank must be the same as rank"]()
-    constrained[
-        rank > 2 and rank < 5, "group_norm requires input rank of 3 or 4"
-    ]()
-    constrained[
-        is_gpu[target](), "group_norm only supports GPU targets at this point"
-    ]()
+    __comptime_assert (
+        output.rank == rank
+    ), "output.rank must be the same as rank"
+    __comptime_assert (
+        rank > 2 and rank < 5
+    ), "group_norm requires input rank of 3 or 4"
+    __comptime_assert is_gpu[
+        target
+    ](), "group_norm only supports GPU targets at this point"
 
     if shape.canonicalize() != rebind[IndexList[rank]](
         output.runtime_layout.shape.value.canonicalize()
@@ -2558,8 +2562,8 @@ fn group_norm_shape[
     epsilon: Scalar[dtype],
     num_groups: Int32,
 ) -> IndexList[input.rank]:
-    constrained[beta.rank == 1, "beta must have rank 1"]()
-    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+    __comptime_assert beta.rank == 1, "beta must have rank 1"
+    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     return rebind[IndexList[input.rank]](
         input.runtime_layout.shape.value.canonicalize()

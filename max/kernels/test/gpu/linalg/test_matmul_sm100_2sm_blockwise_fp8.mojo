@@ -305,13 +305,10 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         tflops_rounded = round(tflops, 2)
 
     else:
-        constrained[
-            a_type != DType.float8_e4m3fn or transpose_b,
-            (
-                "Testing is only supported for transposed_b==True when"
-                " a_type==float8_e4m3fn. Add the non-transposed case if needed."
-            ),
-        ]()
+        __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+            "Testing is only supported for transposed_b==True when"
+            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+        )
 
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,

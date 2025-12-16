@@ -142,9 +142,9 @@ fn resize_nearest_neighbor[
     input: LayoutTensor[dtype, **_],
     output: LayoutTensor[mut=True, dtype, **_],
 ) raises:
-    constrained[
-        input.rank == output.rank, "input rank must match output rank"
-    ]()
+    __comptime_assert (
+        input.rank == output.rank
+    ), "input rank must match output rank"
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):
         scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
@@ -320,9 +320,9 @@ fn _resize[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
     ],
 ):
-    constrained[
-        input.rank == output.rank, "input rank must match output rank"
-    ]()
+    __comptime_assert (
+        input.rank == output.rank
+    ), "input rank must match output rank"
 
     if rebind[IndexList[input.rank]](
         input.runtime_layout.shape.value.canonicalize()

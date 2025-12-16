@@ -44,9 +44,9 @@ fn cumsum[
         input: The input tensor.
         axis: The axis on which to perform the cumsum operation.
     """
-    constrained[
-        input.rank == output.rank, "input and output should have the same rank."
-    ]()
+    __comptime_assert (
+        input.rank == output.rank
+    ), "input and output should have the same rank."
 
     comptime accum_type = DType.float64 if dtype is DType.float32 else get_accum_type[
         dtype

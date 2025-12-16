@@ -491,13 +491,12 @@ fn make_ldmatrix_swizzle[
     comptime type_size = size_of[dtype]()
     comptime bytes_row = row_size * type_size
 
-    constrained[
-        bytes_row % bytes_32_banks == 0 or bytes_32_banks % bytes_row == 0,
-        (
-            "Row sizes should be multiples of 32 banks, or multiple"
-            " rows should fit in 32 banks."
-        ),
-    ]()
+    __comptime_assert (
+        bytes_row % bytes_32_banks == 0 or bytes_32_banks % bytes_row == 0
+    ), (
+        "Row sizes should be multiples of 32 banks, or multiple"
+        " rows should fit in 32 banks."
+    )
 
     # `ldmatrix` loads 8x4 matrix (each row 4x4B=16B vector).
     # Stride between vectors is `row_size`.
@@ -533,7 +532,7 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
     comptime base = log2_floor(access_size)
     comptime shifts = log2_floor(row_size) - base
 
-    constrained[shifts > 0, "Negative shifts in swizzling likely a bug."]()
+    __comptime_assert shifts > 0, "Negative shifts in swizzling likely a bug."
 
     return Swizzle(bits, base, shifts)
 
@@ -602,10 +601,9 @@ struct ComposedLayout[
             layout_a: The first layout.
             layout_b: The second layout.
         """
-        constrained[
-            not Self.offset or Self.offset.value() >= 0,
-            "Requires non-negative offset if present",
-        ]()
+        __comptime_assert (
+            not Self.offset or Self.offset.value() >= 0
+        ), "Requires non-negative offset if present"
         self.layout_a = layout_a
         self.layout_b = layout_b
 
@@ -648,10 +646,9 @@ struct ComposedLayout[
         Returns:
             The transformed index.
         """
-        constrained[
-            not Self.offset,
-            "Static offset set; runtime offset not allowed.",
-        ]()
+        __comptime_assert (
+            not Self.offset
+        ), "Static offset set; runtime offset not allowed."
         return self.layout_b(offset_val + self.layout_a(idx))
 
     @always_inline
