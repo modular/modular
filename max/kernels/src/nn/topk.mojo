@@ -647,7 +647,10 @@ struct TopK_2[T: DType, largest: Bool = True](Defaultable, ImplicitlyCopyable):
 @always_inline
 @parameter
 fn _warp_reduce_topk[
-    T: DType, largest: Bool
+    T: DType,
+    largest: Bool,
+    num_lanes: Int = WARP_SIZE,
+    broadcast: Bool = False,
 ](val: TopK_2[T, largest]) -> TopK_2[T, largest]:
     """
     Performs warp-level reduction to find the maximum TopK_2 element.
@@ -657,6 +660,8 @@ fn _warp_reduce_topk[
     Parameters:
         T: DType - Data type of the values being compared.
         largest: Bool - Whether to find the maximum or minimum value.
+        num_lanes: Int - Number of lanes that participate in the reduction.
+        broadcast: Bool - Whether to broadcast the result to all lanes.
 
     Arguments:
         val: TopK_2[T, largest] - TopK_2 value from each thread to be reduced.
@@ -664,16 +669,26 @@ fn _warp_reduce_topk[
     Returns:
         TopK_2[T, largest] - Maximum TopK_2 value across the warp.
     """
+    __comptime_assert (
+        num_lanes.is_power_of_two()
+    ), "num_lanes must be a power of two"
+
     var res = val
 
-    # Shuffle down function for TopK_2 structure
+    # Shuffle function for TopK_2 structure
     @parameter
-    fn shuffle_down_topk2(
-        v: TopK_2[T, largest], offset: Int
-    ) -> TopK_2[T, largest]:
+    fn shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
+        comptime fn_type = fn[dtype: DType, simd_width: Int] (
+            val: SIMD[dtype, simd_width], offset: UInt32
+        ) -> SIMD[dtype, simd_width]
+        comptime xor_fn: fn_type = warp.shuffle_xor
+        comptime down_fn: fn_type = warp.shuffle_down
+
+        comptime shuffle_fn = xor_fn if broadcast else down_fn
+
         return TopK_2[T, largest](
-            u=warp.shuffle_down(v.u, offset),  # u is the value
-            p=Int(warp.shuffle_down(Int32(v.p), offset)),  # p is the index
+            u=shuffle_fn(v.u, offset),  # u is the value
+            p=Int(shuffle_fn(Int32(v.p), offset)),  # p is the index
         )
 
     @parameter
@@ -695,12 +710,12 @@ fn _warp_reduce_topk[
             return a if a.p < b.p else b
 
     # Reimplement `warp_reduce` for TopK_2 reduce and shuffle function
-    comptime limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(num_lanes)
 
     @parameter
     for i in reversed(range(limit)):
         comptime mask = 1 << i
-        res = reduce_fn(res, shuffle_down_topk2(res, mask))
+        res = reduce_fn(res, shuffle_topk2(res, mask))
 
     return res
 

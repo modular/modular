@@ -191,7 +191,7 @@ from nn.mha_mask import MHAMask
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod
 from nn.mla_graph import mla_prefill_branch_fp8
-from nn.moe import moe_create_indices
+from nn.moe import moe_create_indices, router_group_limited
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
     group_norm,
@@ -7319,6 +7319,44 @@ struct Struct_moe_create_indices:
             expert_ids.to_layout_tensor(),
             expert_usage_stats.to_layout_tensor(),
             topk_ids.to_layout_tensor(),
+            context,
+        )
+
+
+@compiler.register("mo.moe.router.group.limited")
+struct Struct_moe_router_group_limited:
+    @always_inline
+    @staticmethod
+    fn execute[
+        scores_type: DType,
+        bias_type: DType, //,
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        n_groups: Int,
+        topk_group: Int,
+        norm_weights: Bool,
+        target: StaticString,
+    ](
+        expert_indices: OutputTensor[dtype = DType.int32, rank=2],
+        expert_weights: OutputTensor[dtype=scores_type, rank=2],
+        expert_scores: InputTensor[dtype=scores_type, rank=2],
+        expert_bias: InputTensor[dtype=bias_type, rank=1],
+        routed_scaling_factor: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        router_group_limited[
+            n_routed_experts,
+            n_experts_per_tok,
+            n_groups,
+            topk_group,
+            norm_weights,
+            target=target,
+        ](
+            expert_indices.to_layout_tensor(),
+            expert_weights.to_layout_tensor(),
+            expert_scores.to_layout_tensor().get_immutable(),
+            expert_bias.to_layout_tensor().get_immutable(),
+            routed_scaling_factor,
             context,
         )
 

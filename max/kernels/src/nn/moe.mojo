@@ -13,7 +13,7 @@
 
 
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from os.atomic import Atomic
 from sys.info import simd_width_of
 
@@ -24,8 +24,10 @@ from gpu import (
     WARP_SIZE,
     barrier,
     block_idx,
+    grid_dim,
     thread_idx,
 )
+from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host.info import is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
@@ -33,6 +35,8 @@ from runtime.tracing import Trace, TraceLevel
 
 from utils.index import IndexList, StaticTuple
 from builtin.dtype import _uint_type_of_width
+
+from nn.topk import _warp_reduce_topk, TopK_2
 
 
 @__llvm_metadata(
@@ -727,3 +731,301 @@ fn moe_create_indices[
 
         _ = lock_buffer^
         _ = expert_usage_stats_host^
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
+fn group_limited_router_kernel[
+    scores_type: DType,
+    bias_type: DType,
+    expert_indices_layout: Layout,
+    expert_weights_layout: Layout,
+    expert_scores_layout: Layout,
+    expert_bias_layout: Layout,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    n_groups: Int,
+    topk_group: Int,
+    norm_weights: Bool,
+    num_threads: Int,
+](
+    expert_indices: LayoutTensor[
+        DType.int32, expert_indices_layout, MutAnyOrigin
+    ],
+    expert_weights: LayoutTensor[
+        scores_type, expert_weights_layout, MutAnyOrigin
+    ],
+    expert_scores: LayoutTensor[
+        scores_type, expert_scores_layout, ImmutAnyOrigin
+    ],
+    expert_bias: LayoutTensor[bias_type, expert_bias_layout, ImmutAnyOrigin],
+    routed_scaling_factor: Float32,
+):
+    """
+    A manually fused MoE router with the group-limited strategy. It divides all
+    the experts into `n_groups` groups and then finds the top `topk_group`
+    groups with the highest scores. The final experts for each token are
+    selected from the experts in the selected groups. The bias will be applied
+    to the scores during the selection process, but the final weights will not
+    include the bias.
+    """
+
+    __comptime_assert (
+        expert_scores.shape[1]() == n_routed_experts
+    ), "expert_scores.shape[1] must be equal to n_routed_experts"
+
+    __comptime_assert (
+        expert_indices.shape[1]() == n_experts_per_tok
+    ), "expert_indices.shape[1] must be equal to n_experts_per_tok"
+    __comptime_assert (
+        expert_weights.shape[1]() == n_experts_per_tok
+    ), "expert_weights.shape[1] must be equal to n_experts_per_tok"
+
+    comptime group_size = n_routed_experts // n_groups
+    __comptime_assert (
+        WARP_SIZE % group_size == 0
+    ), "WARP_SIZE must be divisible by group_size"
+    comptime n_groups_per_warp = WARP_SIZE // group_size
+    __comptime_assert (
+        topk_group * n_experts_per_tok <= WARP_SIZE
+    ), "topk_group * n_experts_per_tok must be less than or equal to WARP_SIZE"
+
+    __comptime_assert (
+        num_threads == n_routed_experts
+    ), "num_threads must be equal to n_routed_experts"
+
+    var grid_size = grid_dim.x
+    var bid = block_idx.x
+    var tid = Int(thread_idx.x)
+    var warp_id = tid // WARP_SIZE
+
+    var num_tokens = expert_scores.dim(0)
+
+    var shared_mem = stack_allocation[
+        topk_group * n_experts_per_tok,
+        TopK_2[scores_type],
+        address_space = AddressSpace.SHARED,
+    ]()
+    var selected_group = stack_allocation[
+        topk_group, DType.int32, address_space = AddressSpace.SHARED
+    ]()
+    var thread_group_id = tid // group_size
+
+    var thread_expert_bias = expert_bias.load[width=1](IndexList[1](tid)).cast[
+        scores_type
+    ]()
+
+    with PDL():
+        for token_idx in range(bid, num_tokens, grid_size):
+            var thread_expert_score = (
+                expert_scores.load[width=1](token_idx, tid) + thread_expert_bias
+            )
+            var thread_topk_candidate = TopK_2(u=thread_expert_score, p=tid)
+
+            var group_scores: Scalar[scores_type] = 0
+
+            # First, In each group, find the first two experts with the highest scores.
+            # The sum of the two experts' scores is the score for the group.
+            @parameter
+            for _ in range(2):
+                var warp_topk_result = _warp_reduce_topk[
+                    num_lanes=group_size, broadcast=True
+                ](thread_topk_candidate)
+
+                group_scores += warp_topk_result.u
+                if thread_topk_candidate.p == warp_topk_result.p:
+                    thread_topk_candidate = TopK_2[scores_type]()
+            barrier()
+
+            # Store the group score in shared memory. Only the first thread in each group
+            # does this.
+            if tid % group_size == 0:
+                shared_mem[thread_group_id] = TopK_2(
+                    u=group_scores, p=thread_group_id
+                )
+            barrier()
+
+            # The first warp finds the `topk_group` groups with the highest scores.
+            if warp_id == 0:
+                if tid < n_groups:
+                    thread_topk_candidate = shared_mem[tid]
+                else:
+                    thread_topk_candidate = TopK_2[scores_type]()
+
+                # repeat Top‑1 K times (greedy top‑K)
+                @parameter
+                for i in range(topk_group):
+                    var warp_topk_result = _warp_reduce_topk[
+                        num_lanes=n_groups, broadcast=True
+                    ](thread_topk_candidate)
+
+                    # Skip threads that hold dead values
+                    if tid < n_groups:
+                        if thread_topk_candidate.p == warp_topk_result.p:
+                            selected_group[i] = tid
+                            thread_topk_candidate = TopK_2[scores_type]()
+            barrier()
+
+            var selected_group_smem_offset: Int32 = -1
+
+            @parameter
+            for i in range(topk_group):
+                if selected_group[i] == thread_group_id:
+                    selected_group_smem_offset = i * n_experts_per_tok
+
+            # Find the top `n_experts_per_tok` experts with the highest scores in each group.
+            # However, only the selected group's threads will store the results in shared memory.
+            thread_topk_candidate = TopK_2(u=thread_expert_score, p=tid)
+
+            # repeat Top‑1 K times (greedy top‑K)
+            @parameter
+            for i in range(n_experts_per_tok):
+                var warp_topk_result = _warp_reduce_topk[
+                    num_lanes=group_size, broadcast=True
+                ](thread_topk_candidate)
+
+                if thread_topk_candidate.p == warp_topk_result.p:
+                    thread_topk_candidate = TopK_2[scores_type]()
+                    if selected_group_smem_offset >= 0:
+                        shared_mem[
+                            selected_group_smem_offset + i
+                        ] = warp_topk_result
+            barrier()
+
+            # For all the selected groups, their top `n_experts_per_tok` experts are stored in shared memory.
+            # Now, we use the first warp to find the global top `n_experts_per_tok` experts.
+            if warp_id == 0:
+                if tid < topk_group * n_experts_per_tok:
+                    thread_topk_candidate = shared_mem[tid]
+                else:
+                    thread_topk_candidate = TopK_2[scores_type]()
+
+                var weights_sum: Scalar[scores_type] = 0
+                var topk_idx: Int = -1
+                var selected_weight: Scalar[scores_type] = 0
+                var selected_index: Int32 = -1
+
+                @parameter
+                for i in range(n_experts_per_tok):
+                    var warp_topk_result = _warp_reduce_topk[
+                        num_lanes = topk_group * n_experts_per_tok,
+                        broadcast=True,
+                    ](thread_topk_candidate)
+
+                    # We need to subtract the expert bias from the weight to get the original score.
+                    # This global load shouldn't be a problem since the expert bias is likely to be cached in L1.
+                    var original_weight = (
+                        warp_topk_result.u
+                        - expert_bias.load[width=1](
+                            IndexList[1](warp_topk_result.p)
+                        ).cast[scores_type]()
+                    )
+                    weights_sum += original_weight
+                    # Skip threads that hold dead values
+                    if tid < topk_group * n_experts_per_tok:
+                        if thread_topk_candidate.p == warp_topk_result.p:
+                            selected_weight = original_weight
+                            selected_index = warp_topk_result.p
+                            thread_topk_candidate = TopK_2[scores_type]()
+                            topk_idx = i
+
+                @parameter
+                if norm_weights:
+                    selected_weight /= weights_sum
+
+                selected_weight *= Scalar[scores_type](routed_scaling_factor)
+
+                if topk_idx != -1:
+                    expert_indices.store(token_idx, topk_idx, selected_index)
+                    expert_weights.store(token_idx, topk_idx, selected_weight)
+
+
+@always_inline
+fn router_group_limited[
+    scores_type: DType,
+    bias_type: DType, //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    n_groups: Int,
+    topk_group: Int,
+    norm_weights: Bool,
+    target: StaticString,
+](
+    expert_indices: LayoutTensor[mut=True, DType.int32, **_],
+    expert_weights: LayoutTensor[mut=True, scores_type, **_],
+    expert_scores: LayoutTensor[scores_type, **_],
+    expert_bias: LayoutTensor[bias_type, **_],
+    routed_scaling_factor: Float32,
+    context: DeviceContextPtr,
+) raises:
+    """
+    A manually fused MoE router with the group-limited strategy.
+
+    Reference: https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L566.
+
+    Parameters:
+        scores_type: The data type of the scores and the output weights.
+        bias_type: The data type of the expert bias.
+        n_routed_experts: The number of experts to route to.
+        n_experts_per_tok: The number of experts to be selected per token.
+        n_groups: The number of expert groups.
+        topk_group: The number of expert groups to be selected per token.
+        norm_weights: Whether to normalize the selected weights.
+        target: The target device to run the kernel on.
+
+    Inputs:
+        expert_indices: The indices of the routed experts for each token.
+            Shape: [num_tokens, num_experts_per_tok].
+        expert_weights: The weights of the routed experts for each token.
+            Shape: [num_tokens, num_experts_per_tok].
+        expert_scores: The scores for each expert for each token. Shape:
+            [num_tokens, n_routed_experts].
+        expert_bias: The bias for each expert. Shape: [n_routed_experts].
+        routed_scaling_factor: The scaling factor for the routed expert weights.
+        context: DeviceContextPtr.
+    """
+    __comptime_assert is_gpu[
+        target
+    ](), "Group limited MoE router is only supported on GPU"
+
+    if expert_scores.dim(0) == 0:
+        return
+
+    var gpu_ctx = context.get_device_context()
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.router_group_limited", task_id=Int(gpu_ctx.id())
+    ):
+        comptime num_threads = n_routed_experts
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime blocks_per_sm = hw_info.threads_per_multiprocessor // num_threads
+
+        comptime num_sms = hw_info.sm_count
+        var num_blocks = min(num_sms * blocks_per_sm, expert_scores.dim(0))
+
+        comptime kernel = group_limited_router_kernel[
+            scores_type,
+            bias_type,
+            expert_indices.layout,
+            expert_weights.layout,
+            expert_scores.layout,
+            expert_bias.layout,
+            n_routed_experts,
+            n_experts_per_tok,
+            n_groups,
+            topk_group,
+            norm_weights,
+            num_threads,
+        ]
+
+        gpu_ctx.enqueue_function_checked[kernel, kernel](
+            expert_indices,
+            expert_weights,
+            expert_scores,
+            expert_bias,
+            routed_scaling_factor,
+            grid_dim=num_blocks,
+            block_dim=num_threads,
+            attributes=pdl_launch_attributes(),
+        )

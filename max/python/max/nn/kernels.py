@@ -2162,6 +2162,87 @@ def moe_create_indices(
     )
 
 
+def moe_router_group_limited(
+    expert_scores: TensorValue,
+    expert_bias: TensorValue,
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    n_groups: int,
+    topk_group: int,
+    norm_weights: bool,
+    routed_scaling_factor: float,
+) -> tuple[TensorValue, TensorValue]:
+    """Group limited MoE router.
+
+    Reference: https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L566.
+
+    Args:
+        expert_scores: The scores for each expert for each token. Shape:
+            [num_tokens, n_routed_experts].
+        expert_bias: The bias for each expert. Shape: [n_routed_experts].
+        n_routed_experts: The total number of experts. Must be divisible by
+            n_groups.
+        n_experts_per_tok: The number of experts to be selected per token.
+        n_groups: The total number of expert groups. Must be divisible by
+            n_routed_experts.
+        topk_group: The maximum number of expert groups that a token will be
+            routed to.
+        norm_weights: Whether to normalize the selected expert weights.
+        routed_scaling_factor: The scaling factor for the routed expert weights.
+
+    Returns:
+        A tuple of two tensors:
+        - expert_indices: The indices of the routed experts for each token.
+            Shape: [num_tokens, n_experts_per_tok].
+        - expert_weights: The weights of the routed experts for each token.
+            Shape: [num_tokens, n_experts_per_tok].
+    """
+
+    parameters: dict[str, int | str | DType | bool] = {
+        "n_routed_experts": n_routed_experts,
+        "n_experts_per_tok": n_experts_per_tok,
+        "n_groups": n_groups,
+        "topk_group": topk_group,
+        "norm_weights": norm_weights,
+    }
+
+    if expert_bias.rank != 1:
+        raise ValueError(
+            f"expected expert_bias of rank 1 but got {expert_bias.rank}"
+        )
+    if expert_bias.shape[0] != expert_scores.shape[1]:
+        raise ValueError(
+            f"expected expert_bias of shape [num_experts] but got {expert_bias.shape}"
+        )
+
+    results = ops.custom(
+        "mo.moe.router.group.limited",
+        device=expert_scores.device,
+        values=[
+            expert_scores,
+            expert_bias,
+            ops.constant(
+                routed_scaling_factor, DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=[expert_scores.shape[0], n_experts_per_tok],
+                device=expert_scores.device,
+            ),  # expert_indices
+            TensorType(
+                dtype=expert_scores.dtype,
+                shape=[expert_scores.shape[0], n_experts_per_tok],
+                device=expert_scores.device,
+            ),  # expert_weights
+        ],
+        parameters=parameters,
+    )
+
+    return (results[0].tensor, results[1].tensor)
+
+
 def grouped_matmul_ragged(
     hidden_states: TensorValue,
     weight: TensorValue,
