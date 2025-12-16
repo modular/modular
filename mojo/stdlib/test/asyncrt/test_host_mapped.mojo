@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
-from testing import TestSuite
+from asyncrt_test_utils import create_test_device_context
+from testing import TestSuite, assert_equal
 
 
 def test_host_mapped():
@@ -31,7 +31,7 @@ def test_host_mapped():
 
     with out_buf.map_to_host() as out_map:
         for i in range(length):
-            expect_eq(out_map[i], i)
+            assert_equal(out_map[i], i)
 
     print("Done")
 

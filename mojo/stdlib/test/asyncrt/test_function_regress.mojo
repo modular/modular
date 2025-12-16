@@ -13,11 +13,11 @@
 
 from sys import is_gpu
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 comptime T = DType.float64
 comptime S = Scalar[T]
@@ -208,13 +208,15 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
         for i in range(length):
             if i < 10:
                 print("at index", i, "the value is", out_host[i])
-            expect_eq(
+            assert_equal(
                 out_host[i],
                 i + 4,
-                "at index ",
-                i,
-                " the value is ",
-                out_host[i],
+                String(
+                    "at index ",
+                    i,
+                    " the value is ",
+                    out_host[i],
+                ),
             )
 
 

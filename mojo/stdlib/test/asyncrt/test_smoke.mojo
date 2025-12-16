@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 
 fn _ownership_helper(
@@ -121,7 +121,7 @@ fn _run_peer_access(ctx: DeviceContext) raises:
     print("-")
     print("_run_peer_access()")
 
-    expect_eq(ctx.can_access(ctx), False, "self access is not enabled")
+    assert_equal(ctx.can_access(ctx), False, "self access is not enabled")
 
     var num_gpus = DeviceContext.number_of_devices(api=ctx.api())
     print("Number of GPU devices: ", num_gpus)

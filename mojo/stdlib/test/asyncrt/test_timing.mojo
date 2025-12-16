@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from gpu.host import DeviceContext
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 
 @parameter
@@ -39,8 +39,10 @@ fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
     context.synchronize()
 
     for i in range(length):
-        expect_eq(
-            out_host[i], i + iter, "at index ", i, " the value is ", out_host[i]
+        assert_equal(
+            out_host[i],
+            i + iter,
+            String("at index ", i, " the value is ", out_host[i]),
         )
 
 

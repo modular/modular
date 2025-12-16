@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from gpu import *
 from gpu.host import DeviceContext
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 
 fn vec_func(
@@ -131,29 +131,35 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             print("at index", i, "the value is", out_host1[i])
             print("at index", i, "the value is", out_host2[i])
             print("at index", i, "the value is", out_host3[i])
-        expect_eq(
+        assert_equal(
             out_host1[i],
             Float32(index + 1.0),
-            "out_host1[",
-            i,
-            "] is ",
-            out_host1[i],
+            String(
+                "out_host1[",
+                i,
+                "] is ",
+                out_host1[i],
+            ),
         )
-        expect_eq(
+        assert_equal(
             out_host2[i],
             Float32(2.0 * index + 2.0),
-            "out_host2[",
-            i,
-            "] is ",
-            out_host2[i],
+            String(
+                "out_host2[",
+                i,
+                "] is ",
+                out_host2[i],
+            ),
         )
-        expect_eq(
+        assert_equal(
             out_host3[i],
             Float32(3.0 * index + 3.0),
-            "out_host3[",
-            i,
-            "] is ",
-            out_host3[i],
+            String(
+                "out_host3[",
+                i,
+                "] is ",
+                out_host3[i],
+            ),
         )
 
 
@@ -274,16 +280,18 @@ fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         var o3 = 3 * index + 2
         if i < 10:
             print("at index", i, "the value is", out_host[i])
-        expect_eq(
+        assert_equal(
             out_host[i],
             Float32(o2 + o3),
-            "out_host[",
-            i,
-            "] is ",
-            out_host[i],
-            " (expected=",
-            Float32(o2 + o3),
-            ")",
+            String(
+                "out_host[",
+                i,
+                "] is ",
+                out_host[i],
+                " (expected=",
+                Float32(o2 + o3),
+                ")",
+            ),
         )
 
 
