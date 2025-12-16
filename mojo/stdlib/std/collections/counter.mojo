@@ -280,8 +280,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             ref item = items[i]
             # Access the value and count from CountTuple
             ref value = item._value
-            var count = item._count
             ref key = trait_downcast[Representable](value)
+            var count = item._count
             writer.write(repr(key), ": ", repr(count))
             if i < len(items) - 1:
                 writer.write(", ")
