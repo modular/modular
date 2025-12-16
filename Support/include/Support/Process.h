@@ -10,6 +10,8 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 
+#include <cstddef>
+#include <string>
 #include <vector>
 
 namespace M {

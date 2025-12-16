@@ -11,7 +11,7 @@
 #ifndef SUPPORT_DEBUGINFODIALECT_TRANSFORMS_STRIPDEBUGINFO_H
 #define SUPPORT_DEBUGINFODIALECT_TRANSFORMS_STRIPDEBUGINFO_H
 
-#include "Passes.h"
+#include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M::DebugInfo {
 

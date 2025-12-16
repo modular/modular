@@ -7,8 +7,6 @@
 #ifndef SDK_ENGINEAPI_PYTHON_PYTHONOBJECT_H
 #define SDK_ENGINEAPI_PYTHON_PYTHONOBJECT_H
 
-#include <Python.h>
-
 extern "C" {
 struct _object;
 using PyObject = struct _object;

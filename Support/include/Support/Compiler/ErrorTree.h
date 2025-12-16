@@ -11,8 +11,14 @@
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
+#include <optional>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace M {
 

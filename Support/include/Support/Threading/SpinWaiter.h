@@ -8,6 +8,7 @@
 #define SUPPORT_THREADING_SPINWAITER_H
 
 #include <chrono>
+#include <cstddef>
 #include <optional>
 
 #ifdef _MSC_VER

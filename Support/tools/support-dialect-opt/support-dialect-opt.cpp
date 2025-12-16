@@ -8,6 +8,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"

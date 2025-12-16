@@ -7,14 +7,22 @@
 #ifndef SUPPORT_HTTP_HTTPCLIENT_H
 #define SUPPORT_HTTP_HTTPCLIENT_H
 
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
 #include "Support/Threading/Shared.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
+#include <chrono>
+#include <cstddef>
+#include <functional>
+#include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 
 namespace M {
 /// Convenience declarations.

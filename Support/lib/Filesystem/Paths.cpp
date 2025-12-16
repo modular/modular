@@ -6,6 +6,8 @@
 
 #include "Support/Filesystem/Paths.h"
 #include "llvm/ADT/STLExtras.h"
+#include <filesystem>
+#include <system_error>
 
 using namespace M;
 using namespace Filesystem;

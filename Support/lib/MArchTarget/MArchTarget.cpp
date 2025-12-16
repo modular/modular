@@ -5,10 +5,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MArchTarget/MArchTarget.h"
+#include "Support/DeviceSpecs.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTargetMinimal.h"
+#include "Support/MDialect/MAttrs.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
+#include <memory>
+#include <optional>
+#include <string>
 
 using namespace M;
 

@@ -73,10 +73,20 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 
+#include <cassert>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <ratio>
+#include <string>
+#include <tuple>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace llvm {
 class raw_pwrite_stream;

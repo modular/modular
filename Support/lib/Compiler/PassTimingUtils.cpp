@@ -5,13 +5,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/PassTimingUtils.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/LogicalResult.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstdint>
 #include <filesystem>
+#include <memory>
+#include <system_error>
+#include <utility>
 
 namespace {
 

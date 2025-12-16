@@ -9,8 +9,14 @@
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/ostream/metric_exporter.h"
+#include "opentelemetry/sdk/common/exporter_utils.h"
+#include "opentelemetry/sdk/metrics/export/metric_producer.h"
+#include "opentelemetry/sdk/metrics/instruments.h"
+#include "opentelemetry/sdk/metrics/push_metric_exporter.h"
+#include <chrono>
 #include <filesystem>
 #include <sstream>
+#include <utility>
 #endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry::Exporter {

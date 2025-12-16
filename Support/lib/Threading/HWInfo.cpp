@@ -5,12 +5,28 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Threading/HWInfo.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <sched.h>
+#include <string>
+#include <system_error>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 #ifdef _MSC_VER
 #include "llvm/Support/WindowsError.h"
@@ -19,11 +35,8 @@
 #include <iphlpapi.h>
 #include <windows.h>
 #else
-#include <fcntl.h>
 #include <ifaddrs.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #endif
 
 #ifdef __APPLE__

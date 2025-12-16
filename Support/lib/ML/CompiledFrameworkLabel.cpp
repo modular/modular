@@ -5,7 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/CompiledFrameworkLabel.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;

@@ -9,6 +9,8 @@
 
 #include "Support/Buffer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include <cstddef>
 
 namespace M {
 

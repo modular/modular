@@ -7,14 +7,23 @@
 #include "DriverCommand.h"
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
 
-#include <algorithm>
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/SMLoc.h"
 #include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <iterator>
+#include <optional>
+#include <vector>
 
 using namespace M;
 

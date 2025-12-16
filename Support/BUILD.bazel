@@ -110,6 +110,7 @@ modular_cc_library(
         "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
         "@xxhash",
     ],
 )
@@ -720,6 +721,7 @@ modular_cc_library(
         ":DebugInfoTypeInterfaces",
         ":MDialect",
         "@llvm-project//llvm:BinaryFormat",
+        "@llvm-project//llvm:CodeGen",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:FunctionInterfaces",
@@ -824,6 +826,7 @@ gentbl_modular_passes(
         ":DebugInfoTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
         "@llvm-project//mlir:PassBaseTdFiles",
+        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -836,7 +839,9 @@ modular_cc_library(
         ":DebugInfoDialect",
         ":DebugInfoTransformPasses",
         "@llvm-project//llvm:BinaryFormat",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FunctionInterfaces",
+        "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
@@ -852,17 +857,20 @@ modular_cc_library(
     ]),
     hdrs = glob(["include/Support/DebugInfoDialect/DebugInfoToLLVM/*.h"]),
     deps = [
+        ":Base",
         ":DebugInfoDialect",
         ":DebugInfoToLLVMIncGen",
         ":DebugInfoTransforms",
         ":MDialect",
         "@llvm-project//llvm:BinaryFormat",
+        "@llvm-project//llvm:Core",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:LLVMCommonConversion",
         "@llvm-project//mlir:LLVMDialect",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TransformUtils",
     ],
 )
 
@@ -914,6 +922,7 @@ modular_cc_library(
     hdrs = glob(["include/Support/Diagnostics/**/*.h"]),
     deps = [
         ":Base",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
     ],
 )

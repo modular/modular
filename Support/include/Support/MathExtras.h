@@ -12,8 +12,12 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Compiler.h"
 
+#include "llvm/ADT/FloatingPointMode.h"
 #include <algorithm>
+#include <cassert>
+#include <climits>
 #include <cmath>
+#include <cstddef>
 #include <numeric>
 #include <random>
 #include <type_traits>

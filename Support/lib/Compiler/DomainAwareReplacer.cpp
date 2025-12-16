@@ -5,8 +5,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/DomainAwareReplacer.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/Operation.h"
+#include "llvm/ADT/STLExtras.h"
+#include <optional>
+#include <type_traits>
+#include <utility>
 
 using namespace M;
 

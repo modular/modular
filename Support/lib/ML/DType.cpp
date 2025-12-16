@@ -5,9 +5,22 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/DType.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cassert>
+#include <climits>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <string>
+#include <sys/types.h>
+#include <utility>
 using namespace M;
 
 /// Returns true if the type is a float8 type.

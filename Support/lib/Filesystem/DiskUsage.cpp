@@ -8,6 +8,9 @@
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "llvm/ADT/Twine.h"
+#include <cstddef>
+#include <filesystem>
+#include <system_error>
 
 using namespace M;
 

@@ -8,6 +8,7 @@
 #define KGEN_SUPPORT_ERROR_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 
 namespace M {
 struct ErrorLimit {

@@ -5,6 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/IPInt.h"
+#include "llvm/ADT/APInt.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <cassert>
+#include <cstdint>
 
 using namespace M;
 

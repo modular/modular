@@ -9,9 +9,13 @@
 
 #include "Support/LogicalResult.h"
 
-#include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/raw_ostream.h"
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <utility>
 
 #include "xxh3.h"
 

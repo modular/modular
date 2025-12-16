@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Support/RWMutex.h"
+#include <type_traits>
 
 #ifndef SUPPORT_THREADING_SHARED_H
 #define SUPPORT_THREADING_SHARED_H

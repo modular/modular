@@ -5,11 +5,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MAttrInterfaces.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/MDialect/MDialect.h"
-#include "mlir/IR/AttributeSupport.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinTypes.h"
+#include "Support/MDialect/MTypes.h"
+#include "mlir/IR/AsmState.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
+#include "llvm/Support/Casting.h"
+#include <cassert>
+#include <cstdint>
 
 using namespace M;
 

@@ -18,6 +18,9 @@
 
 // Include everything in LLVMForwardDecls.
 #include "Support/LLVMForwardDecls.h"
+#include "mlir/Support/LLVM.h"
+#include <cstdint>
+#include <type_traits>
 
 // Forward declarations of classes to be imported in to the M namespace.
 namespace mlir {

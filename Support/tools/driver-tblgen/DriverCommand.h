@@ -11,11 +11,13 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/Twine.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/TableGen/Record.h"
 #include <cassert>
+#include <cstdint>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace M {
 

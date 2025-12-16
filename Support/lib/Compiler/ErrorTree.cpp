@@ -5,9 +5,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/ErrorTree.h"
-#include "Support/Compiler/Diags.h"
 #include "Support/Compiler/Error.h"
+#include "Support/Error.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Location.h"
+#include "llvm/ADT/STLExtras.h"
+#include <cassert>
+#include <optional>
+#include <utility>
+#include <vector>
 
 using namespace M;
 

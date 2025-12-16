@@ -13,8 +13,10 @@
 #define SUPPORT_IPRATIONAL_H
 
 #include "Support/IPInt.h"
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstdint>
 
 namespace M {
 

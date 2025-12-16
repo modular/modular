@@ -52,6 +52,7 @@ modular_cc_binary(
         ":Bye.inc_files",
         ":Hi.inc_files",
         ":Options.inc_files",
+        "//Support:Base",
         "//Support:Driver",
         "@llvm-project//llvm:Option",
         "@llvm-project//llvm:Support",

@@ -7,6 +7,10 @@
 #include "Support/TypeID.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cassert>
+#include <cstddef>
+#include <mutex>
+#include <string_view>
 
 #define DEBUG_TYPE "typeids"
 

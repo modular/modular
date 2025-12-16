@@ -15,6 +15,9 @@
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstdlib>
+#include <string>
+#include <vector>
 
 using namespace M;
 

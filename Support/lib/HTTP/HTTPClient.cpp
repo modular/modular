@@ -6,6 +6,10 @@
 
 #include "Support/HTTP/HTTPClient.h"
 
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "Support/Threading/Shared.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Debug.h"
@@ -13,7 +17,14 @@
 
 #include "curl/curl.h"
 
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cassert>
 #include <chrono>
+#include <cstddef>
+#include <curl/easy.h>
+#include <memory>
+#include <utility>
 
 #define CHECK_CURL_ERROR(X, MSG)                                               \
   {                                                                            \

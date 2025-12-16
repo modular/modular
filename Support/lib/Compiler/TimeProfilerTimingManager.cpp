@@ -5,11 +5,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/TimeProfilerTimingManager.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 
+#include <memory>
 #include <mutex>
+#include <optional>
+#include <string>
+#include <utility>
 
 using namespace M;
 

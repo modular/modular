@@ -5,10 +5,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Version.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstddef>
+#include <tuple>
 
 using namespace M;
 

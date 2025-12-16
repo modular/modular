@@ -5,9 +5,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/TensorSpec.h"
-#include "mlir/IR/BuiltinTypes.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "Support/ML/DType.h"
+#include "Support/ML/TensorShape.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
+#include <string>
+#include <utility>
 
 using namespace M;
 

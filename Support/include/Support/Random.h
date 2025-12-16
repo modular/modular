@@ -9,6 +9,7 @@
 
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include <cstdint>
 
 namespace M {
 /// Generate `numBytes` cryptographically-secure random numbers use them to

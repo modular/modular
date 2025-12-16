@@ -42,13 +42,20 @@
 #ifndef SUPPORT_ML_SIZEUTILS_H
 #define SUPPORT_ML_SIZEUTILS_H
 
-#include "Support/LLVMForwardDecls.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 
+#include "llvm/Support/MathExtras.h"
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
+#include <memory>
+#include <optional>
+#include <utility>
 
 namespace M {
 

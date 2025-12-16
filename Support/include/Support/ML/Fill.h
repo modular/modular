@@ -7,7 +7,9 @@
 #ifndef SUPPORT_ML_FILL_H
 #define SUPPORT_ML_FILL_H
 
+#include "Support/ErrorOr.h"
 #include "Support/ML/DType.h"
+#include <cstddef>
 
 namespace M {
 //===----------------------------------------------------------------------===//

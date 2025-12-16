@@ -16,8 +16,12 @@
 #include "Support/LogicalResult.h"
 #include "llvm/ADT/Twine.h"
 
+#include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <string.h>
+#include <utility>
 
 namespace M {
 

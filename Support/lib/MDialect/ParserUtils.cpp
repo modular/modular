@@ -5,9 +5,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/ParserUtils.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "Support/MDialect/MAttrs.h"
 
+#include "mlir/IR/OpImplementation.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/SMLoc.h"
+#include <cassert>
+#include <cctype>
+#include <cstddef>
 
 using namespace M;
 

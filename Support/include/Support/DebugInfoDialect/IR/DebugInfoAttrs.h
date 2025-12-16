@@ -8,10 +8,19 @@
 #define SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOATTRS_H
 
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "mlir/IR/AttrTypeSubElements.h"
+#include "mlir/IR/Attributes.h"
+#include "mlir/IR/Visitors.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <functional>
+#include <optional>
+#include <string>
+#include <utility>
 
 //===----------------------------------------------------------------------===//
 // DIAttr

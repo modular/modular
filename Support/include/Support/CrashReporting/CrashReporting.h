@@ -15,6 +15,7 @@
 
 #include "Support/Configuration.h"
 #include "Support/ForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include <filesystem>
 
 namespace M {

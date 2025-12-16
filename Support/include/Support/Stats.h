@@ -13,8 +13,11 @@
 #define SUPPORT_STATS_H
 
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 

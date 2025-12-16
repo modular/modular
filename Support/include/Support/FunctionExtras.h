@@ -8,6 +8,7 @@
 #define SUPPORT_FUNCTION_EXTRAS_H
 
 #include "Support/ErrorOr.h"
+#include "Support/LogicalResult.h"
 #include <functional>
 #include <type_traits>
 #include <utility>

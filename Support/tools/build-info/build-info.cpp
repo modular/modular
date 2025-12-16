@@ -8,11 +8,16 @@
 
 #include "Support/BuildInfo.h"
 #include "Support/CommandLine.h"
-#include "llvm/ADT/STLExtras.h"
+#include "Support/LLVMForwardDecls.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstdlib>
 #include <filesystem>
+#include <memory>
+#include <string>
+#include <system_error>
 
 using namespace M;
 using namespace llvm;

@@ -15,6 +15,7 @@
 #define SUPPORT_LOGICALRESULT_H
 
 #include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 namespace M {
 // Types.

@@ -5,7 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/DiagnosticHandler.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "mlir/Support/LLVM.h"
 #include "llvm/Support/Threading.h"
+#include <utility>
 
 using namespace M;
 

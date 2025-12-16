@@ -5,9 +5,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ADT/GlobalTable.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 
+#include <atomic>
+#include <cstdint>
 #include <cstring>
+#include <mutex>
+#include <string>
 
 using namespace M;
 

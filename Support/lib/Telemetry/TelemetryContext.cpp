@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Support/LLVMForwardDecls.h"
+#include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/Telemetry.h"
 
 #include "Config/Version.h"
@@ -15,9 +17,29 @@
 #include "Support/Telemetry/Exporters/FileLogExporter.h"
 #include "Support/Telemetry/Exporters/FileMetricExporter.h"
 #include "Support/Threading/HWInfo.h"
+#include "opentelemetry/metrics/noop.h"
+#include "opentelemetry/sdk/metrics/aggregation/aggregation_config.h"
+#include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader_options.h"
+#include "opentelemetry/sdk/metrics/instruments.h"
+#include "opentelemetry/sdk/metrics/view/instrument_selector.h"
+#include "opentelemetry/sdk/metrics/view/meter_selector.h"
+#include "opentelemetry/sdk/metrics/view/view.h"
+#include "opentelemetry/sdk/metrics/view/view_registry.h"
 #include "llvm/Support/BLAKE3.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
+#include <array>
+#include <cassert>
+#include <cstdint>
+#include <filesystem>
+#include <iterator>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_factory.h"

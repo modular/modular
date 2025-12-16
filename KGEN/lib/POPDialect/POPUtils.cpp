@@ -12,7 +12,7 @@
 #include "KGEN/POPDialect/POPUtils.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/POPDialect/POPAttrs.h"
-#include <mlir/IR/Builders.h>
+#include "mlir/IR/Builders.h"
 
 using namespace M;
 using namespace KGEN;

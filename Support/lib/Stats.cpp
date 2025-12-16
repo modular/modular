@@ -5,13 +5,25 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Stats.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "llvm/Support/ErrorOr.h"
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <memory>
 #include <random>
+#include <system_error>
 
 using namespace M;
 using namespace Stats;

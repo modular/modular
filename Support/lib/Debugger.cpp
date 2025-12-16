@@ -9,6 +9,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Process.h"
 
+#include "llvm/Support/raw_ostream.h"
 #include <chrono>
 #include <csignal>
 #include <thread>

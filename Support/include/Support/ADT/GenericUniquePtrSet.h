@@ -13,7 +13,12 @@
 
 #include "llvm/ADT/MapVector.h"
 
+#include "llvm/ADT/FunctionExtras.h"
+#include <cassert>
+#include <cstddef>
+#include <memory>
 #include <mutex>
+#include <utility>
 
 namespace M {
 

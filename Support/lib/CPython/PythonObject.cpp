@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 #include "Support/CPython/PythonObject.h"
 #include "Support/CPython/PythonGIL.h"
-#include <Python.h>
+#include <object.h>
 
 namespace M::CPython {
 

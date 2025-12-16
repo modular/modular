@@ -9,6 +9,7 @@
 
 #include "Support/ForwardDecls.h"
 
+#include <cstddef>
 #include <filesystem>
 
 namespace M {

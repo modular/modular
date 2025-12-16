@@ -5,8 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/SymbolTable.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/raw_ostream.h"
+#include <string>
 
 std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
                                    unsigned &counter) {

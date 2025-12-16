@@ -6,17 +6,28 @@
 
 #include "Support/MicroBenchmark.h"
 #include "Support/CPUCache.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "Support/MathExtras.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/raw_ostream.h"
 
+#include "llvm/ADT/STLExtras.h"
+#include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <iomanip>
 #include <mutex>
 #include <numeric>
+#include <ratio>
 #include <sstream>
+#include <utility>
+#include <vector>
 
 using namespace M;
 

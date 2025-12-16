@@ -9,6 +9,9 @@
 
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace M {

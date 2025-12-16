@@ -6,7 +6,9 @@
 
 #include "Support/Driver/DiagnosticFormat.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;

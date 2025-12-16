@@ -16,6 +16,11 @@
 #define SUPPORT_MARCHTARGET_MARCHTARGETMINIMAL_H
 
 #include "Support/DeviceSpecs.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace llvm {
 // Forward declare.

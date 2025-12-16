@@ -5,10 +5,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MDialect.h"
-#include "Support/MathExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/MathExtras.h"
+#include <climits>
+#include <cstdint>
+#include <optional>
 
 using namespace M;
 

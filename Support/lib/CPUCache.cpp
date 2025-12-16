@@ -5,11 +5,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/CPUCache.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Process.h"
 
+#include <cassert>
+#include <cerrno>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <sys/types.h>
 #include <system_error>
+#include <utility>
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>

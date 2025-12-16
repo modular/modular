@@ -13,7 +13,14 @@
 #define SUPPORT_ERROR_OR_H
 
 #include "Support/Error.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <cassert>
+#include <cstdlib>
+#include <functional>
+#include <string.h>
+#include <type_traits>
 
 namespace M {
 

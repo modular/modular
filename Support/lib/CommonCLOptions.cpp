@@ -5,10 +5,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/CommonCLOptions.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/Support/FileUtilities.h"
+#include "mlir/Support/LLVM.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cstdlib>
 #include <filesystem>
+#include <memory>
+#include <string>
+#include <system_error>
 
 using namespace M;
 

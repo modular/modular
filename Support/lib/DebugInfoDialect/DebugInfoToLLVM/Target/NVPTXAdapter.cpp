@@ -8,7 +8,12 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "Support/lib/DebugInfoDialect/DebugInfoToLLVM/Target/TargetAdapter.h"
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
 
 using namespace M;
