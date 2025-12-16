@@ -227,8 +227,9 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
   return success();
 }
 
-OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
-  ArrayRef<Attribute> operands = adaptor.getOperands();
+/// Helper function to fold div operations. The target is used for index types.
+static OpFoldResult foldDivOp(ArrayRef<Attribute> operands,
+                              TargetInfoAttr target) {
   if (llvm::any_of(operands, [](Attribute operand) {
         return !isa_and_nonnull<SIMDAttr>(operand);
       }))
@@ -240,7 +241,7 @@ OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
 
   if (dtype->isIndex() || dtype->isUIndex())
     return foldIndexForTarget(
-        operands, *dtype, lookupTargetInfo(*this),
+        operands, *dtype, target,
         [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
           if (rhs.isZero())
             return std::nullopt;
@@ -248,7 +249,7 @@ OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
         });
 
   return foldSIMDOp(
-      adaptor.getOperands(),
+      operands,
       [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
         if (rhs.isZero())
           return std::nullopt;
@@ -261,9 +262,56 @@ OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
       });
 }
 
-OpFoldResult RemOp::fold(FoldAdaptor adaptor) {
+OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
+  return foldDivOp(adaptor.getOperands(), lookupTargetInfo(*this));
+}
+
+ErrorTreeOrSuccess DivOp::interpret(ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  if (OpFoldResult result = foldDivOp(operands, state.getTarget())) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::DivOp");
+}
+
+ErrorTreeOrSuccess
+DivOp::parametric_interpret(ArrayRef<Attribute> operands,
+                            ParametricInterpreterState &state) {
+  if (OpFoldResult result = foldDivOp(operands, state.getTarget())) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::DivOp");
+}
+
+/// Helper function to fold rem operations. The target is used for index types.
+static OpFoldResult foldRemOp(ArrayRef<Attribute> operands,
+                              TargetInfoAttr target) {
+  if (llvm::any_of(operands, [](Attribute operand) {
+        return !isa_and_nonnull<SIMDAttr>(operand);
+      }))
+    return {};
+  std::optional<KGENDType> dtype =
+      cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
+  if (!dtype)
+    return {};
+
+  if (dtype->isIndex() || dtype->isUIndex())
+    return foldIndexForTarget(
+        operands, *dtype, target,
+        [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+          if (rhs.isZero())
+            return std::nullopt;
+          return lhs % rhs;
+        });
+
   return foldSIMDOp(
-      adaptor.getOperands(),
+      operands,
       [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
         if (rhs.isZero())
           return std::nullopt;
@@ -275,6 +323,33 @@ OpFoldResult RemOp::fold(FoldAdaptor adaptor) {
         (void)lhs.mod(rhs);
         return lhs;
       });
+}
+
+OpFoldResult RemOp::fold(FoldAdaptor adaptor) {
+  return foldRemOp(adaptor.getOperands(), lookupTargetInfo(*this));
+}
+
+ErrorTreeOrSuccess RemOp::interpret(ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  if (OpFoldResult result = foldRemOp(operands, state.getTarget())) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::RemOp");
+}
+
+ErrorTreeOrSuccess
+RemOp::parametric_interpret(ArrayRef<Attribute> operands,
+                            ParametricInterpreterState &state) {
+  if (OpFoldResult result = foldRemOp(operands, state.getTarget())) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::RemOp");
 }
 
 template <typename OpT>
