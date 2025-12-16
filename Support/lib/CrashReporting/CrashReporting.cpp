@@ -28,7 +28,6 @@
 #include "client/crashpad_client.h"
 #include "client/settings.h"
 #include "client/simulate_crash.h" // IWYU pragma: keep (CRASHPAD_SIMULATE_CRASH)
-#include "client/simulate_crash_linux.h"
 
 using namespace M;
 
