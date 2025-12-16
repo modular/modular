@@ -140,3 +140,14 @@ def main():
             num_consumer=2,
             num_pipeline_stages=4,
         ](ctx, dynamic(213), static[1111](), static[128]())
+
+        test_matmul_sm90[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),  # cluster_shape
+            Index(128, 64, 64),
+            Index(64, 64, 16),
+            num_consumer=2,
+            num_pipeline_stages=8,
+        ](ctx, dynamic(256), static[4096](), static[1536]())
