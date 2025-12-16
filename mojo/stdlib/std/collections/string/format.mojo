@@ -71,7 +71,7 @@ methods.
 
 
 from collections.string.string import _chr_ascii
-
+from builtin.variadics import Variadic
 from utils import Variant
 
 # TODO: _FormatCurlyEntry and _FormatSpec should be public in the future for
@@ -81,6 +81,15 @@ from utils import Variant
 # ===-----------------------------------------------------------------------===#
 # Formatter
 # ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _PrecompiledEntries[
+    origin: ImmutOrigin, //, *Ts: _CurlyEntryFormattable
+](Movable):
+    var entries: List[_FormatCurlyEntry]
+    var size_hint: Int
+    var format: StringSlice[Self.origin]
 
 
 # NOTE(#3765): an interesting idea would be to allow custom start and end
@@ -185,47 +194,71 @@ struct _FormatCurlyEntry(ImplicitlyCopyable):
         """
         return self.field.isa[Int]()
 
+    # TODO: Have this return a `Result[_PrecompiledEntries, Error]`
     @staticmethod
-    fn format(fmt_src: StringSlice, args: Self._args_t) raises -> String:
-        """Format the entries.
+    fn compile_entries[
+        *Ts: Stringable & Representable
+    ](format: StringSlice) -> Variant[
+        _PrecompiledEntries[origin = ImmutOrigin.cast_from[format.origin], *Ts],
+        Error,
+    ]:
+        """Precompile the entries using the given format string."""
+        try:
+            return Self._compile_entries[*Ts](format)
+        except e:
+            return e^
 
-        Args:
-            fmt_src: The format source.
-            args: The arguments.
-
-        Returns:
-            The result.
+    # TODO: Allow a way to provide a `comptime _PrecompiledEntries` to avoid
+    # allocations in the `_PrecompiledEntries` struct.
+    @staticmethod
+    fn format_precompiled[
+        *Ts: _CurlyEntryFormattable,
+    ](
+        mut writer: Some[Writer],
+        compiled: _PrecompiledEntries[*Ts],
+        args: VariadicPack[_, _, _CurlyEntryFormattable, *Ts],
+    ):
+        """Format the arguments using the given format string and precompiled entries.
         """
         comptime len_pos_args = type_of(args).__len__()
-        ref entries, size_estimation = Self._create_entries(
-            fmt_src, len_pos_args
-        )
-        var fmt_len = fmt_src.byte_length()
-
-        var res = String(capacity=fmt_len + size_estimation)
         var offset = 0
-        var ptr = fmt_src.unsafe_ptr()
+        var ptr = compiled.format.unsafe_ptr()
+        var fmt_len = compiled.format.byte_length()
 
-        @always_inline("nodebug")
+        @always_inline
         fn _build_slice(
             p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 
         var auto_arg_index = 0
-        for e in entries:
-            debug_assert(offset < fmt_len, "offset >= fmt_src.byte_length()")
-            res += _build_slice(ptr, offset, e.first_curly)
-            e._format_entry[len_pos_args](res, args, auto_arg_index)
+        for e in compiled.entries:
+            debug_assert(offset < fmt_len, "offset >= format.byte_length()")
+            writer.write(_build_slice(ptr, offset, e.first_curly))
+            e._format_entry[len_pos_args](writer, args, auto_arg_index)
             offset = e.last_curly + 1
 
-        res += _build_slice(ptr, offset, fmt_len)
+        writer.write(_build_slice(ptr, offset, fmt_len))
+
+    @staticmethod
+    fn format(format: StringSlice, args: Self._args_t) raises -> String:
+        """Format the arguments using the given format string."""
+        var compiled = Self._compile_entries[*type_of(args).element_types](
+            format
+        )
+
+        var res = String(capacity=format.byte_length() + compiled.size_hint)
+        Self.format_precompiled(writer=res, compiled=compiled, args=args)
         return res^
 
     @staticmethod
-    fn _create_entries(
-        fmt_src: StringSlice, len_pos_args: Int
-    ) raises -> Tuple[List[Self], Int]:
+    fn _compile_entries[
+        *Ts: _CurlyEntryFormattable
+    ](
+        format: StringSlice,
+    ) raises -> _PrecompiledEntries[
+        origin = ImmutOrigin.cast_from[format.origin], *Ts
+    ]:
         """Returns a list of entries and its total estimated entry byte width.
         """
         var manual_indexing_count = 0
@@ -233,6 +266,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable):
         var raised_manual_index = Optional[Int](None)
         var raised_automatic_index = Optional[Int](None)
         var raised_kwarg_field = Optional[String](None)
+        comptime n_args = Variadic.size(Ts)
         comptime `}` = UInt8(ord("}"))
         comptime `{` = UInt8(ord("{"))
         comptime l_err = "there is a single curly { left unclosed or unescaped"
@@ -241,8 +275,8 @@ struct _FormatCurlyEntry(ImplicitlyCopyable):
         var entries = List[Self]()
         var start = Optional[Int](None)
         var skip_next = False
-        var fmt_ptr = fmt_src.unsafe_ptr()
-        var fmt_len = fmt_src.byte_length()
+        var fmt_ptr = format.unsafe_ptr()
+        var fmt_len = format.byte_length()
         var total_estimated_entry_byte_width = 0
 
         for i in range(fmt_len):
@@ -275,8 +309,8 @@ struct _FormatCurlyEntry(ImplicitlyCopyable):
 
                 if i - start_value != 1:
                     if current_entry._handle_field_and_break(
-                        fmt_src,
-                        len_pos_args,
+                        format,
+                        n_args,
                         i,
                         start_value,
                         automatic_indexing_count,
@@ -288,7 +322,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable):
                     ):
                         break
                 else:  # automatic indexing
-                    if automatic_indexing_count >= len_pos_args:
+                    if automatic_indexing_count >= n_args:
                         raised_automatic_index = automatic_indexing_count
                         break
                     automatic_indexing_count += 1
@@ -308,7 +342,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable):
             raise Error("Index ", val, " not in *args")
         elif start:
             raise Error(l_err)
-        return entries^, total_estimated_entry_byte_width
+        return {entries^, total_estimated_entry_byte_width, format}
 
     fn _handle_field_and_break(
         mut self,
@@ -349,7 +383,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable):
             ):
                 var f = String(_build_slice(field_ptr, new_idx, field_len))
                 _ = field
-                raise Error('Conversion flag "' + f + '" not recognised.')
+                raise Error('Conversion flag "' + f + '" not recognized.')
             self.conversion_flag = conversion_flag
             field = _build_slice(field_ptr, 0, exclamation_index)
         else:
@@ -398,7 +432,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable):
 
     fn _format_entry[
         len_pos_args: Int
-    ](self, mut res: String, args: Self._args_t, mut auto_idx: Int) raises:
+    ](self, mut writer: Some[Writer], args: Self._args_t, mut auto_idx: Int):
         # TODO(#3403 and/or #3252): this function should be able to use
         # Writer syntax when the type implements it, since it will give great
         # performance benefits. This also needs to be able to check if the given
@@ -408,59 +442,22 @@ struct _FormatCurlyEntry(ImplicitlyCopyable):
         comptime s_value = UInt8(ord("s"))
         # alias a_value = UInt8(ord("a")) # TODO
 
-        @parameter
-        fn _format(idx: Int) raises:
+        fn _format(idx: Int) unified {read self, read args, mut writer}:
             @parameter
             for i in range(len_pos_args):
                 if i == idx:
-                    var type_impls_repr = True  # TODO
-                    var type_impls_str = True  # TODO
-                    var type_impls_write_repr = True  # TODO
-                    var type_impls_write_str = True  # TODO
                     var flag = self.conversion_flag
                     var empty = flag == 0 and not self.format_spec
 
-                    var data: String
-                    if empty and type_impls_write_str:
-                        data = String(args[i])  # TODO: use writer and return
-                    elif empty and type_impls_str:
-                        data = String(args[i])
-                    elif flag == s_value and type_impls_write_str:
-                        if empty:
-                            # TODO: use writer and return
-                            pass
-                        data = String(args[i])
-                    elif flag == s_value and type_impls_str:
-                        data = String(args[i])
-                    elif flag == r_value and type_impls_write_repr:
-                        if empty:
-                            # TODO: use writer and return
-                            pass
-                        data = repr(args[i])
-                    elif flag == r_value and type_impls_repr:
-                        data = repr(args[i])
-                    elif self.format_spec:
-                        self.format_spec.value().format(res, args[i])
-                        return
-                    else:
-                        comptime argnum = "Argument number: "
-                        comptime does_not = " does not implement the trait "
-                        comptime needed = "needed for conversion_flag: "
-                        raise Error(
-                            String(
-                                argnum, i, does_not, needed, _chr_ascii(flag)
-                            )
-                        )
+                    if empty or flag == s_value:
+                        writer.write(String(args[i]))
+                    elif flag == r_value:
+                        writer.write(repr(args[i]))
 
-                    if self.format_spec:
-                        self.format_spec.value().format(
-                            res, data.as_string_slice()
-                        )
-                    else:
-                        res += data
+                    # TODO: Support format specs
 
         if self.is_escaped_brace():
-            res += "}" if self.field[Bool] else "{"
+            writer.write("}" if self.field[Bool] else "{")
         elif self.is_manual_indexing():
             _format(self.field[Int])
         elif self.is_automatic_indexing():
@@ -727,7 +724,7 @@ struct _FormatSpec(ImplicitlyCopyable):
         return None
 
     # TODO: this should be in StringSlice.__format__(self, spec: FormatSpec, *, writer: Writer):
-    fn format(self, mut res: String, item: StringSlice) raises:
+    fn format(self, mut res: String, item: StringSlice):
         """Transform a String according to its format specification.
 
         Args:
@@ -738,7 +735,7 @@ struct _FormatSpec(ImplicitlyCopyable):
         # TODO: align, fill, etc.
         res += item
 
-    fn format[T: _CurlyEntryFormattable](self, mut res: String, item: T) raises:
+    fn format[T: _CurlyEntryFormattable](self, mut res: String, item: T):
         """Stringify a type according to its format specification.
 
         Args:

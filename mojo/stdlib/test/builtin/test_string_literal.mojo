@@ -350,5 +350,10 @@ def test_float_conversion():
         _ = ("not a float").__float__()
 
 
+# If this compiles, then the format method does not raise.
+fn _test_format_does_not_raise():
+    var _hello = "Hello, {}! I am {} years old.".format("world", 42)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

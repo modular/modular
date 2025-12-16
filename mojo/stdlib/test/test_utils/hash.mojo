@@ -58,24 +58,24 @@ def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
                     "Hash difference check failed!\n"
                     "  Expected: > {} differing bits\n"
                     "  Got: {} differing bits at indices {}:{}\n"
-                    "  Hash[{}] = {} (0x{:016x})\n"
-                    "  Hash[{}] = {} (0x{:016x})\n"
-                    "  XOR = 0x{:016x}\n"
+                    "  Hash[{}] = {} ({})\n"
+                    "  Hash[{}] = {} ({})\n"
+                    "  XOR = {}\n"
                     "  Statistics over {} comparisons:\n"
                     "    Min diff: {} bits\n"
                     "    Max diff: {} bits\n"
-                    "    Avg diff: {:.2f} bits".format(
+                    "    Avg diff: {} bits".format(
                         upper_bound,
                         diff,
                         i,
                         j,
                         i,
                         hashes[i],
-                        hashes[i],
+                        hex(hashes[i]),
                         j,
                         hashes[j],
-                        hashes[j],
-                        hashes[i] ^ hashes[j],
+                        hex(hashes[j]),
+                        hex(hashes[i] ^ hashes[j]),
                         comparisons,
                         min_diff,
                         max_diff,
@@ -134,21 +134,21 @@ def assert_fill_factor[
     if fill_factor < lower_bound:
         print(
             "Fill factor check failed for {}!\n"
-            "  Expected fill factor: >= {:.3f}\n"
-            "  Actual fill factor: {:.3f}\n"
+            "  Expected fill factor: >= {}\n"
+            "  Actual fill factor: {}\n"
             "  Total words: {}\n"
             "  Bucket stats:\n"
             "    Total buckets: {}\n"
-            "    Filled buckets: {} ({:.1f}%)\n"
-            "    Unfilled buckets: {} ({:.1f}%)\n"
+            "    Filled buckets: {} ({}%)\n"
+            "    Unfilled buckets: {} ({}%)\n"
             "    Max collisions in a bucket: {}\n"
-            "    Avg items per filled bucket: {:.2f}\n"
+            "    Avg items per filled bucket: {}\n"
             "  Sample hash values (first 5):\n"
-            "    [0]: {} (0x{:016x})\n"
-            "    [1]: {} (0x{:016x})\n"
-            "    [2]: {} (0x{:016x})\n"
-            "    [3]: {} (0x{:016x})\n"
-            "    [4]: {} (0x{:016x})".format(
+            "    [0]: {} ({})\n"
+            "    [1]: {} ({})\n"
+            "    [2]: {} ({})\n"
+            "    [3]: {} ({})\n"
+            "    [4]: {} ({})".format(
                 label,
                 lower_bound,
                 fill_factor,
@@ -161,15 +161,15 @@ def assert_fill_factor[
                 max_collisions,
                 Float64(total_items) / Float64(filled) if filled > 0 else 0.0,
                 hash_samples[0],
-                hash_samples[0],
+                hex(hash_samples[0]),
                 hash_samples[1],
-                hash_samples[1],
+                hex(hash_samples[1]),
                 hash_samples[2],
-                hash_samples[2],
+                hex(hash_samples[2]),
                 hash_samples[3],
-                hash_samples[3],
+                hex(hash_samples[3]),
                 hash_samples[4],
-                hash_samples[4],
+                hex(hash_samples[4]),
             )
         )
 

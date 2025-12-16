@@ -336,6 +336,14 @@ what we publish.
   On AMD GPUs or for allocations ≤ 48KB, explicit `func_attribute` values
   should be provided when needed.
 
+- `StringLiteral.format` will now emit a compile-time constraint error if the
+  format string is invalid (instead of a runtime error).
+
+  ```mojo
+  "Hello, {!invalid}".format("world")
+  # note: constraint failed: Conversion flag "invalid" not recognized.
+  ```
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain

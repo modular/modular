@@ -15,7 +15,11 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
+from collections.string.format import (
+    _CurlyEntryFormattable,
+    _FormatCurlyEntry,
+    _PrecompiledEntries,
+)
 from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike
 from sys.ffi import c_char, CStringSlice
@@ -693,7 +697,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return self.as_string_slice().lstrip()
 
-    fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
+    fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -714,9 +718,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             The template with the given values substituted.
 
-        Raises:
-            If the format string is invalid or argument count/types don't match.
-
         Example:
 
         ```mojo
@@ -726,7 +727,20 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print("{} {}".format(True, "hello world")) # True hello world
         ```
         """
-        return _FormatCurlyEntry.format(self, args)
+        comptime result = _FormatCurlyEntry.compile_entries[*Ts](Self())
+
+        @parameter
+        if result.isa[Error]():
+            __comptime_assert not result.isa[Error](), String(result[Error])
+            return {}
+        else:
+            var buffer = String()
+            _FormatCurlyEntry.format_precompiled[*Ts](
+                buffer,
+                result[type_of(result).Ts[0]],
+                args,
+            )
+            return buffer^
 
     fn join[T: Copyable & Writable, //](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
