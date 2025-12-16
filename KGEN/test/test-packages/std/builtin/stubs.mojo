@@ -503,7 +503,8 @@ comptime Byte = UInt8
 
 @register_passable("trivial")
 struct Span[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     T: ImplicitlyCopyable,
     origin: Origin[mut],
 ]:
@@ -812,7 +813,8 @@ struct VariadicList[type: AnyTrivialRegType]:
 # Helper to compute the union of two origins:
 # TODO: parametric aliases would be nice.
 struct _lit_origin_union[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     a: Origin[mut].type,
     b: Origin[mut].type,
 ]:
@@ -829,7 +831,8 @@ struct _lit_origin_union[
 
 @fieldwise_init
 struct _VariadicListMemIter[
-    elt_is_mutable: Bool, //,
+    elt_is_mutable: Bool,
+    //,
     elt_type: AnyType,
     elt_origin: Origin[elt_is_mutable],
     list_origin: ImmutOrigin,
@@ -860,7 +863,8 @@ struct _VariadicListMemIter[
 
 
 struct VariadicListMem[
-    elt_is_mutable: Bool, //,
+    elt_is_mutable: Bool,
+    //,
     element_type: AnyType,
     origin: Origin[elt_is_mutable],
     is_owned: Bool,
@@ -908,7 +912,8 @@ comptime _AnyTypeMetaType = type_of(AnyType)
 
 @register_passable
 struct VariadicPack[
-    elt_is_mutable: Bool, //,
+    elt_is_mutable: Bool,
+    //,
     is_owned: Bool,
     origin: Origin[elt_is_mutable],
     element_trait: _AnyTypeMetaType,
@@ -999,7 +1004,8 @@ struct AddressSpace:
 
 @register_passable("trivial")
 struct Pointer[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -1082,7 +1088,8 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
 
 @register_passable("trivial")
 struct UnsafePointer[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     type: AnyType,
     origin: Origin[mut],
     *,
@@ -1254,7 +1261,8 @@ struct Optional[T: ImplicitlyCopyable]:
 
 @always_inline("nodebug")
 fn rebind[
-    src_type: AnyTrivialRegType, //,
+    src_type: AnyTrivialRegType,
+    //,
     dest_type: AnyTrivialRegType,
 ](src: src_type) -> dest_type:
     return __mlir_op.`kgen.rebind`[_type=dest_type](src)
@@ -1262,7 +1270,8 @@ fn rebind[
 
 @always_inline("nodebug")
 fn rebind[
-    src_type: AnyType, //,
+    src_type: AnyType,
+    //,
     dest_type: AnyType,
 ](ref src: src_type) -> ref [src] dest_type:
     lit = __get_mvalue_as_litref(src)
