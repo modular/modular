@@ -462,13 +462,15 @@ kgen.func @cmp_le_self(%simd: !pop.simd<2, si8>) -> !pop.simd<2, bool> {
 }
 
 // CHECK-LABEL: @cmp_true_false
-kgen.func @cmp_true_false(%simd: !pop.simd<2, bool>) -> (!pop.simd<2, bool>, !pop.simd<2, bool>) {
+kgen.func @cmp_true_false(%simd: !pop.simd<2, bool>) -> (!pop.simd<2, bool>, !pop.simd<2, bool>, !pop.simd<2, bool>, !pop.simd<2, bool>) {
   %true = kgen.param.constant: simd<2, bool> = <<true, true>>
   %false = kgen.param.constant: simd<2, bool> = <<false, false>>
   %0 = pop.cmp eq(%true, %simd) : <2, bool>
   %1 = pop.cmp ne(%simd, %false) : <2, bool>
-  // CHECK-NEXT: return %arg0, %arg0
-  kgen.return %0, %1 : !pop.simd<2, bool>, !pop.simd<2, bool>
+  %2 = pop.cmp eq(%simd, %true) : <2, bool>
+  %3 = pop.cmp ne(%false, %simd) : <2, bool>
+  // CHECK-NEXT: return %arg0, %arg0, %arg0, %arg0
+  kgen.return %0, %1, %2, %3 : !pop.simd<2, bool>, !pop.simd<2, bool>, !pop.simd<2, bool>, !pop.simd<2, bool>
 }
 
 // CHECK-LABEL: @cmp_unsigned
