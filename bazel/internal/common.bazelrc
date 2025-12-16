@@ -181,8 +181,8 @@ build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
 # Set local builds to higher than CI priority
 build --remote_execution_priority=-1
 
-build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
+build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
 build:cache --experimental_remote_downloader=grpcs://modular.buildbuddy.io
 build:cache --experimental_remote_downloader_local_fallback
 build:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
