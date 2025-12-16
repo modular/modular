@@ -16,7 +16,7 @@ import os
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -91,5 +91,5 @@ else:
         weight_adapters={
             WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         },
-        context_type=TextAndVisionContext,
+        context_type=TextContext,
     )
