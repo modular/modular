@@ -4436,10 +4436,7 @@ struct LayoutTensor[
     fn _compute_slice_layout(
         slice_0: Slice, slice_1: Slice, slice_0_axis: Int, slice_1_axis: Int
     ) -> Layout:
-        constrained[
-            Self.layout.shape.__len__() > 2,
-            "Rank should be >= 2",
-        ]()
+        __comptime_assert Self.layout.rank() >= 2, "Rank should be >= 2"
         var sliced_layout = sublayout(Self.layout, slice_0_axis, slice_1_axis)
         return Layout(
             [
