@@ -161,6 +161,7 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect,
+                DeclareOpInterfaceMethods<InterpreterOpInterface>,
                 DeclareOpInterfaceMethods<ComputeOpInterface>]>, Division {
   let summary = "divide";
   let description = [{
@@ -185,6 +186,7 @@ def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect,
 //===----------------------------------------------------------------------===//
 
 def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect,
+                DeclareOpInterfaceMethods<InterpreterOpInterface>,
                 DeclareOpInterfaceMethods<ComputeOpInterface>]>, Division {
   let summary = "remainder";
   let description = [{
