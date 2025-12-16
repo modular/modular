@@ -22,8 +22,10 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/CommonCLOptions.h"
+#include "llvm/Analysis/RuntimeLibcallInfo.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
 #include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/CodeGen/LibcallLoweringInfo.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IRPrinter/IRPrintingPasses.h"
 #include "llvm/IRReader/IRReader.h"
@@ -206,6 +208,8 @@ int main(int argc, char **argv) {
   initializeWriteBitcodePassPass(registry);
   initializeReplaceWithVeclibLegacyPass(registry);
   initializeJMCInstrumenterPass(registry);
+  initializeRuntimeLibraryInfoWrapperPass(registry);
+  initializeLibcallLoweringInfoWrapperPass(registry);
 
   // Register the Target and CPU printer for --version.
   cl::AddExtraVersionPrinter(sys::printDefaultTargetAndDetectedCPU);

@@ -40,6 +40,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/Analysis/RuntimeLibcallInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
@@ -252,6 +253,14 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   // Add an appropriate TargetLibraryInfo pass for the module's triple.
   TargetLibraryInfoImpl targetLibInfo(Triple(module.getTargetTriple()));
   passMgr.add(new TargetLibraryInfoWrapperPass(targetLibInfo));
+
+  // Add RuntimeLibraryInfoWrapper for libcall lowering decisions.
+  // This is required by passes like ExpandFp and PreISelIntrinsicLowering.
+  const llvm::TargetOptions &tmOptions = targetMachine.Options;
+  passMgr.add(new RuntimeLibraryInfoWrapper(
+      Triple(module.getTargetTriple()), tmOptions.ExceptionModel,
+      tmOptions.FloatABIType, tmOptions.EABIVersion,
+      tmOptions.MCOptions.ABIName, tmOptions.VecLib));
 
 #ifndef MODULAR_PRODUCTION
   // Verify module immediately to catch problems before doInitialization() is

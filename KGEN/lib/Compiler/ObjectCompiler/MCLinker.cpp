@@ -7,6 +7,7 @@
 #include "MCLinker.h"
 #include "LLVMAccessorHelper.h"
 #include "LLVMPassesPipeline.h"
+#include "llvm/Analysis/RuntimeLibcallInfo.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -354,6 +355,15 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
 
   // Add AsmPrint pass and run the pass manager.
   passMgr.add(new llvm::TargetLibraryInfoWrapperPass(targetLibInfo));
+
+  // Add RuntimeLibraryInfoWrapper for libcall lowering decisions.
+  // This is required by passes like ExpandFp and PreISelIntrinsicLowering.
+  const llvm::TargetOptions &tmOptions = llvmTargetMachine.Options;
+  passMgr.add(new llvm::RuntimeLibraryInfoWrapper(
+      llvm::Triple(options.targetTriple), tmOptions.ExceptionModel,
+      tmOptions.FloatABIType, tmOptions.EABIVersion,
+      tmOptions.MCOptions.ABIName, tmOptions.VecLib));
+
   if (KGEN::addPassesToAsmPrint(options, llvmTargetMachine, passMgr, *linkedObj,
                                 emitAssembly
                                     ? llvm::CodeGenFileType::AssemblyFile
