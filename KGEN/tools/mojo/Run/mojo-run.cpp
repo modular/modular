@@ -42,6 +42,7 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
@@ -220,7 +221,19 @@ static ErrorOrSuccess executeMain(ExecutionEngine &engine,
       return Error("execution exited with a non-zero result: " + Twine(result));
     return M::success();
   };
-  return engine.runProgram("exec", "main", runFn);
+  llvm::CrashRecoveryContext crc;
+  crc.Enable();
+  ErrorOrSuccess result;
+  if (!crc.RunSafely(
+          [&]() { result = engine.runProgram("exec", "main", runFn); })) {
+    // With JIT compilation, printed stack trace is not useful. Recommend user
+    // to use build + run mode to get symbolicated stack trace.
+    return Error("execution crashed\nTo get a symbolicated stack trace, "
+                 "compile your program using `mojo build` with debug info "
+                 "enabled (e.g., `-debug-level=line-tables`) and execute it "
+                 "separately.");
+  }
+  return result;
 }
 
 /// Ensures that the context's profiler, if there is one, copies any outstanding
@@ -230,20 +243,6 @@ static void internTimeTraceProfile(M::Context &maxContext) {
       maxContext.get<AsyncRT::Runtime>()->getProfiler();
   if (profilerOr)
     profilerOr->intern();
-}
-
-/// With JIT compilation, printed stack trace is not useful. Recommend user to
-/// use build + run mode to get symbolicated stack trace.
-static void printHelpMessageToEnableStackTrace(int sig) {
-  if (sig != SIGSEGV && sig != SIGABRT)
-    return;
-
-  signal(sig, SIG_DFL);
-  const char *message =
-      "\nTo get symbolicated stack trace, compile your program using `mojo "
-      "build` with debug info enabled, e.g. `-debug-level=line-tables`.\n";
-  llvm::errs() << message;
-  exit(1);
 }
 
 /// Given a module representing a Mojo program, and a set of `arguments` to pass
@@ -303,20 +302,6 @@ static int executeModule(const State &state, AsyncRT::Runtime &runtime,
   ErrorOr<CompiledFunc> funcOr = engine.lookup("main");
   if (failed(funcOr))
     return state.reportError(funcOr.getError());
-
-  // Since program has been compiled successfully, we can register own signal
-  // handler that will print help message to get stack trace. Before that,
-  // remove as many signal handlers registered by LLVM as possible.
-  // NOTE: Even after that call, somehow there's still one signal handler
-  // registered that invokes `PrintStackTraceSignalHandler`.
-  llvm::sys::unregisterHandlers();
-  // Register our own signal handler that will print help message to user on
-  // how to get symbolicated stack trace.
-  struct sigaction psa;
-  psa.sa_handler = printHelpMessageToEnableStackTrace;
-  sigemptyset(&psa.sa_mask); // Clear the mask
-  sigaction(SIGSEGV, &psa, nullptr);
-  sigaction(SIGABRT, &psa, nullptr);
 
   // Finally, execute the 'main' function of the Mojo program.
   CompilerTimeTraceScope traceScope("execute-main");

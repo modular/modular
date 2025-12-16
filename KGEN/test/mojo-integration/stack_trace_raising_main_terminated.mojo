@@ -68,4 +68,4 @@ fn main() raises:
 # O0-FULL-NO-STACK-TRACE-ASAN-NOT: PrintStackTrace
 # O0-FULL-NO-STACK-TRACE-ASAN: AddressSanitizer: SEGV on unknown address
 
-# O3-JIT-HELP-MESSAGE: To get symbolicated stack trace, compile your program using `mojo build` with debug info enabled, e.g. `-debug-level=line-tables`.
+# O3-JIT-HELP-MESSAGE: To get a symbolicated stack trace, compile your program using `mojo build` with debug info enabled (e.g., `-debug-level=line-tables`) and execute it separately.
