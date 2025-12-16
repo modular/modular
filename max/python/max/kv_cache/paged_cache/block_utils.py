@@ -64,6 +64,10 @@ def hash_request_tokens(
                 "prefix_length must be set when images are provided"
             )
         for img in images:
+            if img.image_hash is None:
+                raise ValueError(
+                    "hash_request_tokens requires `image_hash` to be present. Found None."
+                )
             idx = img.start_idx - prefix_length
             if 0 <= idx < len(token_ids):
                 token_to_reset[idx] = token_ids[idx]

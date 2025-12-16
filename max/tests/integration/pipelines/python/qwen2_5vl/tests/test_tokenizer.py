@@ -22,7 +22,53 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from pytest_mock import MockerFixture
+from transformers import AutoConfig
+
+
+class MockVisionConfig(AutoConfig):
+    def __init__(self):
+        self.tokens_per_second = 50
+
+
+class MockKVCacheConfig(KVCacheConfig):
+    def __init__(self):
+        self.enable_prefix_caching = True
+
+
+class MockHuggingFaceConfig(AutoConfig):
+    def __init__(self):
+        self.image_token_id = 128253
+        self.video_token_id = 128254
+        self.vision_start_token_id = 128255
+        self.vision_config = MockVisionConfig()
+
+
+class MockModelConfig(MAXModelConfig):
+    def __init__(self):
+        self._kv_cache_config = MockKVCacheConfig()
+        self._huggingface_config = MockHuggingFaceConfig()
+
+
+class MockPipelineConfig(PipelineConfig):
+    def __init__(self):
+        self._model_config = MockModelConfig()
+
+
+@pytest.mark.asyncio
+async def test_qwen2_5vl_tokenizer_initialization() -> None:
+    """Test tokenizer initialization."""
+
+    pipeline_config = MockPipelineConfig()
+    tokenizer = Qwen2_5VLTokenizer(
+        "HuggingFaceM4/Idefics3-8B-Llama3", pipeline_config=pipeline_config
+    )
+    assert tokenizer.image_token_id == 128253
+    assert tokenizer.video_token_id == 128254
+    assert tokenizer.vision_start_token_id == 128255
+    assert tokenizer.enable_prefix_caching is True
+    assert tokenizer.tokens_per_second == 50
 
 
 @pytest.mark.asyncio

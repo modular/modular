@@ -30,7 +30,7 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer
-from max.support.image import find_contiguous_ranges
+from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from PIL.Image import Image as ImageType
 from transformers import AutoConfig, AutoProcessor, AutoTokenizer
@@ -83,11 +83,10 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
 
-        # Get vision config overrides from pipeline config.
-        vision_overrides = (
-            pipeline_config.model_config.vision_config_overrides
+        self.enable_prefix_caching = (
+            pipeline_config.model_config.kv_cache_config.enable_prefix_caching
             if pipeline_config
-            else {}
+            else False
         )
 
         if vision_token_id := getattr(config, "image_token_id", None):
@@ -292,6 +291,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixels,
+                    image_hash=hash_image(pixels)
+                    if self.enable_prefix_caching
+                    else None,
                 )
                 for (start_idx, end_idx), pixels in zip(
                     start_and_end_idxs, pixel_values, strict=True

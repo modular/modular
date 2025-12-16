@@ -44,7 +44,7 @@ from max.pipelines.lib import (
     max_tokens_to_generate,
 )
 from max.pipelines.lib.config import PipelineConfig
-from max.support.image import find_contiguous_ranges
+from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
 
@@ -329,7 +329,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 self.image_token_id = image_token_id
             else:
                 raise ValueError(
-                    "image_token_id not found in model_config config"
+                    "image_token_id not found in HuggingFace config"
                 )
 
             if video_token_id := getattr(
@@ -339,19 +339,27 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             ):
                 self.video_token_id = video_token_id
 
+            self.enable_prefix_caching = (
+                pipeline_config.model_config.kv_cache_config.enable_prefix_caching
+                if pipeline_config
+                else False
+            )
+
             if vision_start_token_id := getattr(
                 pipeline_config.model_config.huggingface_config,
                 "vision_start_token_id",
                 None,
             ):
                 self.vision_start_token_id = vision_start_token_id
+
+            # Extract the vision config from the HuggingFace config.
             if vision_config := getattr(
                 huggingface_config, "vision_config", None
             ):
                 self.tokens_per_second = vision_config.tokens_per_second
             else:
                 raise ValueError(
-                    "vision_config must be provided in HuggingFace Config"
+                    "vision_config must be provided in HuggingFace config"
                 )
         self.executor: ThreadPoolExecutor | None = None
 
@@ -663,6 +671,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
+                    image_hash=hash_image(pixel_values)
+                    if self.enable_prefix_caching
+                    else None,
                 )
                 for (start_idx, end_idx), pixel_values in zip(
                     start_and_end_idxs, pixel_values_list, strict=True

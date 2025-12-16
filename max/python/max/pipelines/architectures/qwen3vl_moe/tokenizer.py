@@ -42,7 +42,7 @@ from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
 )
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
-from max.support.image import find_contiguous_ranges
+from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
 
@@ -389,6 +389,12 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 elif isinstance(eos_token_id, list):
                     self._default_eos_token_ids.update(eos_token_id)
 
+            self.enable_prefix_caching = (
+                pipeline_config.model_config.kv_cache_config.enable_prefix_caching
+                if pipeline_config
+                else False
+            )
+
             if image_token_id := getattr(
                 pipeline_config.model_config.huggingface_config,
                 "image_token_id",
@@ -718,6 +724,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
+                    image_hash=hash_image(pixel_values)
+                    if self.enable_prefix_caching
+                    else None,
                 )
                 for (start_idx, end_idx), pixel_values in zip(
                     start_and_end_idxs, pixel_values_list, strict=True

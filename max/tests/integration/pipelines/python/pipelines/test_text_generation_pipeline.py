@@ -17,14 +17,17 @@ import logging
 from unittest.mock import MagicMock, patch
 
 import hf_repo_lock
+import numpy as np
 from max.driver import DeviceSpec
 from max.interfaces import (
+    ImageMetadata,
     RequestID,
     SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
 )
 from max.pipelines.lib import generate_local_model_path
+from max.support.image import hash_image
 from test_common.mocks import (
     MockTextTokenizer,
     retrieve_mock_text_generation_pipeline,
@@ -64,6 +67,24 @@ def test_mock_text_tokenizer() -> None:
 
     decoded = asyncio.run(tokenizer.decode(new_context.next_tokens))
     assert test_prompt == decoded
+
+
+def test_text_generation_image_metadata() -> None:
+    image_metadata = ImageMetadata(
+        start_idx=0,
+        end_idx=2,
+        pixel_values=np.array([99]),
+    )
+    assert image_metadata.image_hash is None
+
+    # Prefix caching enabled by default
+    image_metadata = ImageMetadata(
+        start_idx=0,
+        end_idx=2,
+        pixel_values=np.array([99]),
+        image_hash=hash_image(np.array([99])),
+    )
+    assert image_metadata.image_hash is not None
 
 
 @patch("max.graph.weights.weights_format")

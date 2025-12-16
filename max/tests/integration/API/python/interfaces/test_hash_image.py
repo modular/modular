@@ -14,7 +14,7 @@
 """Unit tests for hash_image function."""
 
 import numpy as np
-from max.interfaces.pipeline_variants.text_generation import hash_image
+from max.support.image import hash_image
 
 
 def test_hash_image_contiguous() -> None:

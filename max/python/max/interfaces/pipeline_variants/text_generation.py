@@ -28,7 +28,6 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max._core import xxhash
 from max.interfaces.context import BaseContext, SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
@@ -758,20 +757,6 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return [ctx.log_probabilities_echo for ctx in self.batch.values()]
 
 
-def hash_image(pixel_values: npt.NDArray[Any]) -> int:
-    """Compute the hash of an image.
-
-    Supports any numpy array dtype (float32, uint16 for bfloat16 bits, etc.)
-    since vision models may use different storage formats on CPU.
-
-    Uses xxhash for fast hashing. Ensures C-contiguous memory layout for
-    correct hashing (np.ascontiguousarray is a no-op if already contiguous).
-    """
-    hash_val = xxhash.xxh3_64_intdigest(np.ascontiguousarray(pixel_values).data)  # type: ignore[arg-type]
-    # xxh3_64_intdigest returns unsigned 64-bit int; convert to signed for numpy compatibility
-    return int(np.uint64(hash_val).astype(np.int64))
-
-
 @dataclass(kw_only=True)
 class ImageMetadata:
     """Metadata about an image in the prompt.
@@ -795,7 +780,7 @@ class ImageMetadata:
       native bfloat16 support). Reinterpreted as bfloat16 on GPU.
     """
 
-    image_hash: int = -1
+    image_hash: int | None = None
     """Hash of the image, for use in prefix caching"""
 
     def __post_init__(self) -> None:
@@ -805,11 +790,6 @@ class ImageMetadata:
             raise ValueError(
                 "Images must have a valid start and end index containing at least one <vision_token_id>"
             )
-
-        # Compute the hash of the image in post init, overriding the default value of -1
-        # This should serialize once, and not recompute, as the serialized hash differs from the default.
-        if self.image_hash == -1:
-            self.image_hash = hash_image(self.pixel_values)
 
     def __repr__(self):
         return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"

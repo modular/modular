@@ -6,6 +6,7 @@ modular_py_library(
     name = "support",
     srcs = glob(["**/*.py"]),
     deps = [
+        "//max/python/max:_core",
         requirement("numpy"),
     ],
 )
