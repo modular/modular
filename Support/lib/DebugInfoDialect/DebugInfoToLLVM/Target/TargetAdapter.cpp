@@ -10,8 +10,23 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "Support/MDialect/MAttrs.h"
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/BinaryFormat/Dwarf.h"
+#include <cassert>
+#include <cstdint>
+#include <optional>
+#include <utility>
 
 using namespace M;
 using namespace M::DebugInfo;

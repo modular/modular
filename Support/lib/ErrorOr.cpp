@@ -5,7 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ErrorOr.h"
+#include "Support/Error.h"
+#include "Support/LogicalResult.h"
 #include "llvm/Support/Error.h"
+#include <utility>
 
 using namespace M;
 

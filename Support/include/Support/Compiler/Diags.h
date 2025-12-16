@@ -15,12 +15,21 @@
 #define SUPPORT_COMPILER_DIAGS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"
+#include <cstddef>
 #include <functional>
+#include <memory>
+#include <optional>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace llvm {

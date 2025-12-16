@@ -5,8 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/Error.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/Support/raw_ostream.h"
+#include <string>
 
 using namespace M;
 

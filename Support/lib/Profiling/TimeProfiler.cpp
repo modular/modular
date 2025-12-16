@@ -7,22 +7,37 @@
 #include "Support/Profiling/TimeProfiler.h"
 
 #include "Config/Version.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
 #include "Support/Globals/Globals.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "Support/MArchTarget/Host.h"
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/iterator.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <ios>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 using namespace M;

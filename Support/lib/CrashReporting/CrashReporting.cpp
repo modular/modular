@@ -8,14 +8,27 @@
 
 #include "Config/Version.h"
 #include "Support/Configuration.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cassert>
+#include <filesystem>
+#include <map>
+#include <string>
+#include <string_view>
+#include <utility>
 
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "client/crash_report_database.h"
 #include "client/crashpad_client.h"
 #include "client/settings.h"
 #include "client/simulate_crash.h" // IWYU pragma: keep (CRASHPAD_SIMULATE_CRASH)
+#include "client/simulate_crash_linux.h"
 
 using namespace M;
 

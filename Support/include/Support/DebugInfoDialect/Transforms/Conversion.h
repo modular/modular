@@ -11,8 +11,13 @@
 #ifndef SUPPORT_DEBUGINFODIALECT_TRANSFORMS_CONVERSION_H
 #define SUPPORT_DEBUGINFODIALECT_TRANSFORMS_CONVERSION_H
 
-#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "mlir/IR/AttrTypeSubElements.h"
+#include "llvm/ADT/STLExtras.h"
+#include <optional>
+#include <type_traits>
 
 namespace M::DebugInfo {
 /// This class enables the conversion of DebugInfo constructs in the presence of

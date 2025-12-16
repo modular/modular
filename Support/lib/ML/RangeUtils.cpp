@@ -5,8 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/RangeUtils.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/MathExtras.h"
+#include <cstdint>
+#include <cstdlib>
 
 using namespace M;
 

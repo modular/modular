@@ -7,6 +7,7 @@
 #include "Support/Globals/Globals.h"
 #include "Support/SymbolExport.h"
 #include <atomic>
+#include <functional>
 
 static std::atomic<M::ProfilingDetail::GlobalProfilerContext *>
     globalProfilerContextInstance = nullptr;

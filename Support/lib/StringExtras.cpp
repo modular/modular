@@ -5,10 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/StringExtras.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <cmath>
+#include <cstddef>
 #include <iomanip>
+#include <ios>
 #include <sstream>
 #include <string>
 

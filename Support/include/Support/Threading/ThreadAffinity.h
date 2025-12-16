@@ -9,6 +9,7 @@
 
 #include "Support/ForwardDecls.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include <cstddef>
 
 namespace M {
 //===----------------------------------------------------------------------===//

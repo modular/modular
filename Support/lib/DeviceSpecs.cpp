@@ -5,9 +5,25 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/DeviceSpecs.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 #define DEBUG_TYPE "device-specs"
 

@@ -7,13 +7,16 @@
 #ifndef SUPPORT_TELEMETRY_LOGS_H
 #define SUPPORT_TELEMETRY_LOGS_H
 
-#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/ForwardDecls.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include <memory>
+#include <string>
+#include <utility>
 #ifdef MODULAR_ENABLE_TELEMETRY
+#include "opentelemetry/common/attribute_value.h"
 #include "opentelemetry/logs/event_logger.h"
 #include "opentelemetry/logs/severity.h"
 #endif // MODULAR_ENABLE_TELEMETRY

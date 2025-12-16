@@ -8,9 +8,18 @@
 #define SUPPORT_COMPILER_DOMAINAWAREREPLACER_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/Support/CyclicReplacerCache.h"
+#include "mlir/Support/LLVM.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/LogicalResult.h"
+#include <cstddef>
+#include <functional>
+#include <optional>
+#include <type_traits>
+#include <utility>
 
 namespace M {
 

@@ -5,6 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ADT/ConcatenationTree.h"
+#include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 using namespace M;
 

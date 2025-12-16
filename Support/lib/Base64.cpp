@@ -5,7 +5,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Base64.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/Support/Base64.h"
+#include <algorithm>
+#include <cstddef>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace M;
 

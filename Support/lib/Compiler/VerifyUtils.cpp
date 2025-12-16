@@ -5,8 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/VerifyUtils.h"
-#include "mlir/IR/BuiltinOps.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/IR/TypeUtilities.h"
+#include <cstddef>
 
 using namespace M;
 

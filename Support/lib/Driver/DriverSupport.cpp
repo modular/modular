@@ -6,9 +6,11 @@
 
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Driver/DiagnosticFormat.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
 
 #include "Support/Filesystem/Paths.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
@@ -18,7 +20,17 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/Option/Arg.h"
+#include <cassert>
+#include <cstdlib>
 #include <filesystem>
+#include <limits>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
 
 using namespace M;
 

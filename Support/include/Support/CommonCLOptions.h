@@ -11,13 +11,22 @@
 #include "Support/Config.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/Alignment.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cstdlib>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
 
 namespace llvm {
 class ToolOutputFile;

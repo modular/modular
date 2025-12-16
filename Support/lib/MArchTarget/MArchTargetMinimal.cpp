@@ -5,14 +5,27 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MArchTarget/MArchTargetMinimal.h"
+#include "Support/DeviceSpecs.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/TargetInfo.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/TargetParser/AArch64TargetParser.h"
 #include "llvm/TargetParser/ARMTargetParser.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/X86TargetParser.h"
+#include <cassert>
+#include <clang/Basic/LLVM.h>
+#include <memory>
+#include <optional>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 using namespace M;
 

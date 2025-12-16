@@ -9,11 +9,13 @@
 #include "GenManPage.h"
 #include "GenMarkdown.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TableGen/Main.h"
 #include "llvm/TableGen/Record.h"
+#include <cstddef>
 
 using namespace M;
 

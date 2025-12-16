@@ -10,6 +10,7 @@
 #include "Support/RCRef.h"
 #include "Support/TypeID.h"
 #include "llvm/ADT/FunctionExtras.h"
+#include <utility>
 
 namespace M {
 

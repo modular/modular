@@ -12,7 +12,9 @@
 #define SUPPORT_ML_PERMUTATION_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 
 namespace M {
 

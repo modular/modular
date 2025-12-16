@@ -9,6 +9,9 @@
 
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include <memory>
+#include <optional>
+#include <string>
 
 namespace M {
 

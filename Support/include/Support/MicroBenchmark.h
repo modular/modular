@@ -14,6 +14,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/Support/Compiler.h"
 

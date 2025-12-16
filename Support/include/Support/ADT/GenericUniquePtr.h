@@ -9,6 +9,10 @@
 
 #include "Support/TypeID.h"
 #include "llvm/ADT/FunctionExtras.h"
+#include "llvm/Support/Casting.h"
+#include <cassert>
+#include <memory>
+#include <utility>
 
 namespace M {
 

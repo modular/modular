@@ -5,12 +5,28 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Configuration.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <system_error>
+#include <utility>
 
 using namespace M;
 

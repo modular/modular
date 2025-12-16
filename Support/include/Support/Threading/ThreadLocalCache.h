@@ -5,8 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/RWMutex.h"
 #include "llvm/Support/Threading.h"
+#include <cstdint>
 
 #ifndef SUPPORT_THREADING_THREADLOCALCACHE_H
 #define SUPPORT_THREADING_THREADLOCALCACHE_H

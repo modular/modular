@@ -5,7 +5,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/BroadcastShape.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/ML/TensorShape.h"
+#include "llvm/ADT/Twine.h"
+
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 
 using namespace M;
 

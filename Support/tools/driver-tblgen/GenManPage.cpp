@@ -19,11 +19,18 @@
 #include "BackendRegistry.h"
 #include "DriverCommand.h"
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
+#include <cstddef>
+#include <optional>
+#include <string>
+#include <vector>
 
 using namespace M;
 

@@ -5,12 +5,30 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/DebugPrint.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "Support/ML/DType.h"
 #include "Support/ML/TensorSpec.h"
 #include "llvm/Support/FileSystem.h"
 
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/NativeFormatting.h"
+#include "llvm/Support/raw_ostream.h"
+#include <algorithm>
+#include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <numeric>
+#include <string>
 
 using namespace M;
 

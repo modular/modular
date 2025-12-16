@@ -16,8 +16,17 @@
 #define SUPPORT_DEVICE_SPECS_H
 
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/TargetParser/Triple.h"
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 namespace M {
 

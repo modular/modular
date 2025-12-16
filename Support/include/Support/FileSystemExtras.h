@@ -12,8 +12,13 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Alignment.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include <cstddef>
 #include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
 
 namespace llvm {
 class MemoryBuffer;

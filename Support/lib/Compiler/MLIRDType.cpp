@@ -5,8 +5,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/MLIRDType.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "Support/ML/DType.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/Support/Casting.h"
+#include <cassert>
+#include <cstdint>
+#include <optional>
+#include <utility>
 
 using namespace M;
 

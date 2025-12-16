@@ -6,11 +6,18 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/Location.h"
 #include "mlir/IR/OpImplementation.h"
+#include "llvm/Support/Casting.h"
+#include <cstddef>
 
 using namespace M;
 using namespace M::DebugInfo;

@@ -13,13 +13,19 @@
 #include "Hi/hi.h"
 
 #include "Support/Driver/DriverSupport.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cstdlib>
+#include <memory>
+#include <string>
 
 using namespace M;
 

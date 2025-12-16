@@ -7,6 +7,14 @@
 #include "Support/Diagnostics/FormatScopedDiagnosticHandler.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cstddef>
+#include <string>
+#include <utility>
 
 using namespace M;
 using namespace mlir;

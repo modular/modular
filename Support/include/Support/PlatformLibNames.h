@@ -9,7 +9,8 @@
 #ifndef SUPPORT_PLATFORMLIBNAMES_H
 #define SUPPORT_PLATFORMLIBNAMES_H
 
-#include "Support/LLVMForwardDecls.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <string>
 
 namespace M {
 struct PlatformLibrary {

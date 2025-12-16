@@ -6,6 +6,7 @@
 
 #include "Support/Threading/SpinWaiter.h"
 
+#include <chrono>
 #include <thread>
 
 using namespace M;

@@ -7,9 +7,14 @@
 #include "Support/CPython/PythonGIL.h"
 #include "Support/CPython/PythonObject.h"
 #include "llvm/ADT/StringRef.h"
-#include <Python.h>
+#include <boolobject.h>
+#include <bytesobject.h>
+#include <dictobject.h>
+#include <longobject.h>
 #include <optional>
+#include <pyerrors.h>
 #include <string>
+#include <unicodeobject.h>
 
 namespace M::CPython {
 

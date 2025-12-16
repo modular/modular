@@ -5,8 +5,24 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Buffer.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
 #include "Support/Filesystem/DiskUsage.h"
+#include "Support/LLVMForwardDecls.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/MemoryBufferRef.h"
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <system_error>
+#include <utility>
 
 using namespace M;
 using mapped_file_region = llvm::sys::fs::mapped_file_region;

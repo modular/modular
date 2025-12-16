@@ -6,6 +6,7 @@
 
 #include "Support/PlatformLibNames.h"
 #include "llvm/ADT/StringRef.h"
+#include <string>
 
 using namespace M;
 

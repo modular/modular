@@ -8,7 +8,10 @@
 #define SUPPORT_COMPILER_DIAGNOSTICHANDLER_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/Diagnostics.h"
+#include <cstdint>
+#include <vector>
 
 namespace M {
 /// This diagnostic handler captures MLIR diagnostics emitted into a vector.

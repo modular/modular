@@ -11,7 +11,12 @@
 #ifndef SUPPORT_ML_TENSORBASE_H
 #define SUPPORT_ML_TENSORBASE_H
 
+#include "Support/ML/DType.h"
+#include "Support/ML/TensorShape.h"
 #include "Support/ML/TensorSpec.h"
+#include <cassert>
+#include <cstddef>
+#include <utility>
 
 namespace M {
 

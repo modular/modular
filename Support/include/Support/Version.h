@@ -10,7 +10,9 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include <string>
+#include <utility>
 
 namespace M {
 /// This class provides the canonical version printer/parser at Modular. It

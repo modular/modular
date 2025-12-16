@@ -5,8 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Threading/ThreadAffinity.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
-#include "llvm/Support/Debug.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include <cstddef>
 
 #define DEBUG_TYPE "thread-affinity"
 

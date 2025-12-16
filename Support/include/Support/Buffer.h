@@ -15,8 +15,16 @@
 #include "Support/STLExtras.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
 
 namespace M {
 

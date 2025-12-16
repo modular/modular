@@ -7,6 +7,10 @@
 #include "Support/MDialect/MDialect.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Compiler/Bytecode.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Bytecode/BytecodeImplementation.h"
 #include "mlir/IR/OpImplementation.h"
@@ -15,6 +19,9 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/CodeGen.h"
+#include "llvm/TargetParser/Triple.h"
+#include <optional>
 
 using namespace M;
 

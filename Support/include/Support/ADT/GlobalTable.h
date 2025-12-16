@@ -7,12 +7,13 @@
 #ifndef SUPPORT_ADT_GLOBALTABLE_H
 #define SUPPORT_ADT_GLOBALTABLE_H
 
-#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/MapVector.h"
 
+#include "llvm/Support/ErrorHandling.h"
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <mutex>
 #include <string>
 

@@ -25,6 +25,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string_view>
 #include <utility>
 

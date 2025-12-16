@@ -13,9 +13,13 @@
 #ifndef SUPPORT_MARCHTARGET_MARCHTARGET_H
 #define SUPPORT_MARCHTARGET_MARCHTARGET_H
 
+#include "Support/ErrorOr.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTargetMinimal.h"
 #include "Support/MDialect/MAttrs.h"
 #include "llvm/Support/CodeGen.h"
+#include <memory>
 
 namespace llvm {
 // Forward declare.

@@ -6,6 +6,9 @@
 
 #include "Support/AlignedAlloc.h"
 #include "llvm/Support/MathExtras.h"
+#include <cassert>
+#include <cstddef>
+#include <cstdlib>
 using namespace M;
 
 /// This is a helper to handle host-specific system alignment functions.

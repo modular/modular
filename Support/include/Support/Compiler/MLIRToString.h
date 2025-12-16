@@ -8,8 +8,12 @@
 #define SUPPORT_COMPILER_MLIRTOSTRING_H
 
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/Types.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/raw_ostream.h"
+#include <string>
 
 namespace M {
 /// These mlirToString functions are mostly wrappers for MLIR's debugString

@@ -8,7 +8,12 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/DebugInfoDialect/Transforms/StripDebugInfo.h"
-#include "mlir/Interfaces/FunctionInterfaces.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "mlir/IR/AttrTypeSubElements.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/Visitors.h"
+#include <optional>
 
 using namespace M;
 using namespace M::DebugInfo;

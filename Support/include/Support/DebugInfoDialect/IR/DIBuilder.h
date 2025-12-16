@@ -8,6 +8,10 @@
 #define SUPPORT_DEBUGINFODIALECT_IR_DIBUILDER_H
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 
 //===----------------------------------------------------------------------===//
 // DIBuilder

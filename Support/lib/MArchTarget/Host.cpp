@@ -7,7 +7,9 @@
 #include "Support/MArchTarget/Host.h"
 #include "Support/CPUCache.h"
 #include "Support/DeviceSpecs.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTargetMinimal.h"
 #include "Support/Threading/HWInfo.h"
 #include "Support/Threading/ThreadAffinity.h"
@@ -22,7 +24,16 @@
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
 
+#include "llvm/Support/ErrorOr.h"
+#include "llvm/Support/raw_ostream.h"
+#include <algorithm>
+#include <cstddef>
+#include <memory>
+#include <optional>
 #include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
 
 #ifdef __APPLE__
 #include "clang/Basic/Diagnostic.h"
@@ -33,11 +44,6 @@
 #include <mach/task.h>
 #include <sys/sysctl.h>
 #endif // __APPLE__
-
-#ifdef __linux__
-#include <fcntl.h>
-#include <unistd.h>
-#endif // __linux__
 
 #ifdef _MSC_VER
 #include "llvm/Support/WindowsError.h"

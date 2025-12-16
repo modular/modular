@@ -13,6 +13,13 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MemoryBuffer.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include <cstddef>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <sched.h>
+#include <string>
 #include <vector>
 
 #if defined(__linux__) && (defined(__i386__) || defined(__x86_64__))

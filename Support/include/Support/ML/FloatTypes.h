@@ -46,7 +46,10 @@
 #define SUPPORT_ML_FLOAT16_H
 
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/bit.h"
+#include <cstddef>
+#include <cstdint>
 
 namespace M {
 

@@ -8,8 +8,10 @@
 #define GENERICML_SUPPORT_DEBUGPRINT_H
 
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 
 #include <string>
+#include <utility>
 
 namespace M {
 

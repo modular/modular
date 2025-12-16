@@ -12,6 +12,7 @@
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
 #include "llvm/ADT/FunctionExtras.h"
+#include <memory>
 
 namespace M {
 

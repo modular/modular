@@ -5,12 +5,23 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/Fill.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "Support/ML/DType.h"
 #include "Support/MathExtras.h"
 #include "llvm/ADT/ArrayRef.h"
 
+#include "llvm/ADT/APFloat.h"
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <random>
+#include <string>
+#include <sys/types.h>
+#include <type_traits>
 
 using namespace M;
 using llvm::MutableArrayRef;

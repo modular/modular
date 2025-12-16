@@ -10,7 +10,12 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/Diagnostics.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/ThreadPool.h"
+#include <algorithm>
+#include <atomic>
+#include <cstddef>
+#include <vector>
 
 namespace M {
 /// Invoke the given function on the elements in the provided range

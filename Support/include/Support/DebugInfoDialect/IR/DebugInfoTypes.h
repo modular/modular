@@ -9,7 +9,10 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/Types.h"
+#include "llvm/Support/Casting.h"
+#include <cstdint>
 
 //===----------------------------------------------------------------------===//
 // DebugInfoType

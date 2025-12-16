@@ -11,6 +11,11 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
+#include <cstddef>
+#include <memory>
+#include <stdlib.h>
+#include <system_error>
+#include <vector>
 
 #ifdef __APPLE__
 #include <mach/mach_init.h>

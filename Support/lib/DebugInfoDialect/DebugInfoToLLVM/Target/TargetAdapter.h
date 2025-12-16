@@ -8,8 +8,11 @@
 #define SUPPORT_DEBUGINFODIALECT_DEBUGINFOTOLLVM_TARGET_TARGETADAPTER_H
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Operation.h"
+#include <functional>
 
 namespace M::DebugInfo {
 //===----------------------------------------------------------------------===//

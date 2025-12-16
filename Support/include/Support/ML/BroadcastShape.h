@@ -38,12 +38,13 @@ limitations under the License.
 #ifndef SUPPORT_ML_BROADCASTSHAPE_H
 #define SUPPORT_ML_BROADCASTSHAPE_H
 
+#include "llvm/ADT/SmallVector.h"
 #include <algorithm>
+#include <cstdint>
 
 #include "Support/ErrorOr.h"
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/ML/TensorShape.h"
-#include "llvm/ADT/ArrayRef.h"
 
 namespace M {
 

@@ -11,6 +11,8 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringMap.h"
 #include <filesystem>
+#include <optional>
+#include <string>
 
 namespace llvm {
 class SourceMgr;

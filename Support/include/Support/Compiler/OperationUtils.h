@@ -7,9 +7,12 @@
 #ifndef SUPPORT_COMPILER_OPERATIONUTILS_H
 #define SUPPORT_COMPILER_OPERATIONUTILS_H
 
+#include <functional>
+#include <string>
 #include <utility>
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/Operation.h"
 
 namespace M {

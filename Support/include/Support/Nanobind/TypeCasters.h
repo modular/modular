@@ -11,23 +11,41 @@
 #include "Support/ErrorOr.h"
 #include "Support/ML/DType.h"
 #include "Support/Nanobind/SequenceView.h"
+#include "mlir-c/Bindings/Python/Interop.h"
+#include "mlir-c/IR.h"
 #include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/StorageUniquerSupport.h"
+#include "mlir/IR/TypeRange.h"
+#include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/TypeID.h"
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h"      // IWYU pragma: keep (type caster)
 #include "nanobind/stl/string_view.h" // IWYU pragma: keep (type caster)
 #include "nanobind/stl/unique_ptr.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <nanobind/stl/detail/nb_list.h>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <type_traits>
+#include <typeinfo>
 #include <utility>
+#include <vector>
 
 namespace nb = nanobind;
 

@@ -7,9 +7,16 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Compiler/Bytecode.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/Bytecode/BytecodeImplementation.h"
 #include "mlir/IR/OpImplementation.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <cctype>
+#include <cstdint>
+#include <optional>
 
 using namespace M;
 using namespace M::DebugInfo;

@@ -9,6 +9,8 @@
 
 #include "nanobind/nanobind.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
+#include <cstddef>
 #include <utility>
 
 namespace M::Graph::Python {

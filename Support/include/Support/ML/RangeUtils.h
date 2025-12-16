@@ -12,6 +12,7 @@
 #define SUPPORT_ML_RANGEUTILS_H
 
 #include "Support/ErrorOr.h"
+#include <cstdint>
 
 namespace M {
 

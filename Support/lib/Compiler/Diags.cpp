@@ -5,11 +5,24 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/Diags.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/Support/LLVM.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/RewriteBuffer.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cassert>
+#include <cstddef>
+#include <memory>
+#include <utility>
+#include <vector>
 
 using llvm::SMRange;
 using namespace M;

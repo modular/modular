@@ -8,10 +8,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/CommandLine.h"
 #include "Support/Stats.h"
-#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstddef>
+#include <string>
 
 using namespace M;
 using namespace M::Stats;

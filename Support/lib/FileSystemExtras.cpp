@@ -5,17 +5,31 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/FileSystemExtras.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/Support/FileUtilities.h"
-#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/AdvisoryLock.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LockFileManager.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cassert>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <system_error>
+#include <utility>
 
 using namespace M;
 

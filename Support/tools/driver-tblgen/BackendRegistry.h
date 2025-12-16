@@ -16,6 +16,7 @@
 #include "llvm/ADT/StringRef.h"
 
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace llvm {

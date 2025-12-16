@@ -5,7 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/URI.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringRef.h"
 
 // The code in this file is copied and adapted from:
 // https://github.com/llvm/llvm-project/blob/main/clang-tools-extra/clangd/URI.h

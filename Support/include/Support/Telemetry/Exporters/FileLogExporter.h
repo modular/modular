@@ -9,9 +9,15 @@
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/ostream/log_record_exporter.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/sdk/common/exporter_utils.h"
+#include "opentelemetry/sdk/logs/exporter.h"
 #include "opentelemetry/sdk/logs/recordable.h"
+#include <chrono>
 #include <filesystem>
+#include <memory>
 #include <sstream>
+#include <utility>
 #endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry::Exporter {

@@ -5,10 +5,23 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/TensorShape.h"
+#include "Support/Error.h"
 #include "Support/ErrorOr.h"
-#include "mlir/IR/BuiltinTypes.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <sys/types.h>
+#include <utility>
 
 using namespace M;
 

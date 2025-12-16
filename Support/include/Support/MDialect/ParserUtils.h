@@ -8,8 +8,12 @@
 #define SUPPORT_COMPILER_COMPILERUTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/OpImplementation.h"
+#include "llvm/Support/SMLoc.h"
+#include <optional>
 
 namespace M {
 

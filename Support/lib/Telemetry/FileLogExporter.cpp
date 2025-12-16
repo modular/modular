@@ -7,11 +7,15 @@
 #ifdef MODULAR_ENABLE_TELEMETRY
 
 #include "Support/Telemetry/Exporters/FileLogExporter.h"
-
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/sdk/common/exporter_utils.h"
+#include "opentelemetry/sdk/logs/recordable.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Debug.h"
+#include <ios>
+#include <memory>
 
 #define DEBUG_TYPE "telemetry-context"
 

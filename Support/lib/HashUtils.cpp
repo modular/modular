@@ -6,13 +6,30 @@
 
 #include "Support/HashUtils.h"
 
-#include "mlir/Bytecode/BytecodeImplementation.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Block.h"
-#include "mlir/IR/BuiltinDialect.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <iterator>
+#include <string>
+#include <utility>
 
 #include "Support/Compiler/Threading.h"
 

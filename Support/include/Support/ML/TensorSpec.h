@@ -12,8 +12,14 @@
 #ifndef SUPPORT_ML_TENSORSPEC_H
 #define SUPPORT_ML_TENSORSPEC_H
 
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LLVMYAMLForwardDecls.h"
 #include "Support/ML/DType.h"
 #include "Support/ML/TensorShape.h"
+#include <cstddef>
+#include <initializer_list>
+#include <string>
 
 namespace M {
 

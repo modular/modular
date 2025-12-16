@@ -6,8 +6,12 @@
 
 #include "Support/BinaryID.h"
 
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstddef>
+#include <cstdint>
+#include <string>
 
 #if defined(__APPLE__)
 #include <dlfcn.h>

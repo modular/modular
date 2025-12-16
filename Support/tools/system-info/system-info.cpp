@@ -6,17 +6,24 @@
 
 #include "Support/CommandLine.h"
 #include "Support/ErrorOr.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/Host.h"
-#include "Support/MArchTarget/MArchTarget.h"
+#include "Support/MArchTarget/MArchTargetMinimal.h"
 #include "Support/MDialect/MAttrs.h"
-#include "llvm/ADT/STLExtras.h"
+#include "Support/MDialect/MDialect.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
+#include <cstdlib>
 #include <filesystem>
+#include <memory>
+#include <string>
+#include <system_error>
 
 using namespace M;
 using namespace llvm;

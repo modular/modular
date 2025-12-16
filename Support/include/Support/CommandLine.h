@@ -15,6 +15,7 @@
 #ifndef SUPPORT_COMMANDLINE_H
 #define SUPPORT_COMMANDLINE_H
 
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/CommandLine.h"
 
 namespace M {

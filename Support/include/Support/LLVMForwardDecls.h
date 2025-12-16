@@ -23,6 +23,7 @@
 
 // Import Error and datatype support directly.
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/LogicalResult.h"
 
 // Forward declarations of LLVM classes to be imported in to the M (Modular)
 // namespace.

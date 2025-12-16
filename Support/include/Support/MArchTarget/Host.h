@@ -15,7 +15,11 @@
 #include "Support/ErrorOr.h"
 #include "llvm/Support/JSON.h"
 
+#include "llvm/Support/raw_ostream.h"
+#include <cstddef>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace llvm {
 // Forward declare.

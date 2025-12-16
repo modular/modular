@@ -7,14 +7,28 @@
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Buffer.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/IR/AsmState.h"
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/Operation.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/xxhash.h"
+#include <cassert>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace M;
 

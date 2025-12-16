@@ -9,8 +9,17 @@
 
 #include "Support/Telemetry/ForwardDecls.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
 #include <chrono>
+#include <cstdint>
+#include <initializer_list>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <variant>
 #ifdef MODULAR_ENABLE_TELEMETRY
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/context/context.h"
 #include "opentelemetry/metrics/sync_instruments.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 

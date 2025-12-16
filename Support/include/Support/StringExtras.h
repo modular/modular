@@ -8,6 +8,8 @@
 #define SUPPORT_STRINGEXTRAS_H
 
 #include "Support/LLVMForwardDecls.h"
+#include <cstddef>
+#include <string>
 
 namespace M {
 

@@ -5,9 +5,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/MLIRDenseAttr.h"
+#include "Support/Buffer.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
+#include <cstdint>
+#include <utility>
 
 using namespace M;
 

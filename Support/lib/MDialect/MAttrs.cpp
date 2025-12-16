@@ -5,26 +5,58 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MAttrs.h"
-#include "Config/Version.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
-#include "Support/MArchTarget/Host.h"
+#include "Support/DeviceSpecs.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"
+#include "mlir/IR/AsmState.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
-#include "llvm/ADT/APSInt.h"
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/Types.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/StorageUniquer.h"
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/JSON.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/CodeGen.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
+#include "llvm/Support/SMLoc.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
+#include <cassert>
+#include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <optional>
+#include <string>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 using namespace M;
 

@@ -5,10 +5,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Transforms/DialectConversion.h"
-#include "llvm/BinaryFormat/Dwarf.h"
+#include "llvm/Support/MathExtras.h"
+#include <algorithm>
+#include <cassert>
+#include <climits>
+#include <cstdint>
+#include <optional>
+#include <utility>
 
 using namespace M;
 using namespace M::DebugInfo;
