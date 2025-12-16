@@ -23,7 +23,12 @@ from max.nn import ReturnLogits
 from max.nn.comm.ep import EPConfig
 from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, MAXModelConfigBase
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfig,
+    MAXModelConfigBase,
+    PipelineConfig,
+)
 from transformers import AutoConfig
 
 
@@ -106,12 +111,17 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         page_size: int = 128,
-        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
+        data_parallel_degree = pipeline_config.model_config.data_parallel_degree
+        if len(devices) != data_parallel_degree:
+            raise ValueError(
+                "Number of devices must match data parallel degree"
+            )
         return KVCacheParams(
             dtype=cache_dtype,
             # n_kv_heads should always be 1 because we only cache a single latent vector

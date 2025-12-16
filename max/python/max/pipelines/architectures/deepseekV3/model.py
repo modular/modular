@@ -108,17 +108,17 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return DeepseekV3Config.get_kv_params(
             huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
             devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
-            # DP should always set to the number of devices.
-            data_parallel_degree=len(devices),
         )
 
     def _create_model_config(
@@ -136,10 +136,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         kv_params = DeepseekV3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
-            data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
         )
 
         dtype = self.encoding.dtype

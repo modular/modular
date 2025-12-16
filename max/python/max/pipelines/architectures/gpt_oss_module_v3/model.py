@@ -158,6 +158,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
@@ -169,6 +170,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         Args:
             huggingface_config: The HuggingFace model configuration object
                 (:obj:`transformers.AutoConfig`).
+            pipeline_config: The MAX Engine pipeline configuration.
             devices: The list of devices the model will run on.
             kv_cache_config: The MAX Engine KV cache configuration settings
                 (:obj:`max.pipelines.max_config.KVCacheConfig`).
@@ -179,7 +181,11 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
         return GptOssConfig.get_kv_params(
-            huggingface_config, devices, kv_cache_config, cache_dtype
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
 
     @classmethod

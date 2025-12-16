@@ -178,6 +178,7 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
@@ -188,6 +189,7 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
         )
         return Llama3Config.get_kv_params(
             huggingface_config=llm_config,
+            pipeline_config=pipeline_config,
             devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,

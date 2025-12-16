@@ -170,6 +170,7 @@ class MemoryEstimator:
 
         params = kv_cache_model.get_kv_params(
             huggingface_config=model_config.huggingface_config,
+            pipeline_config=pipeline_config,
             devices=[DeviceRef.from_device(d) for d in devices],
             kv_cache_config=model_config.kv_cache_config,
             cache_dtype=model_config.quantization_encoding.cache_dtype,
@@ -533,6 +534,7 @@ class MemoryEstimator:
         if issubclass(pipeline_model, KVCacheMixin):
             params = pipeline_model.get_kv_params(
                 huggingface_config=huggingface_config,
+                pipeline_config=pipeline_config,
                 devices=[DeviceRef.from_device(d) for d in devices],
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,

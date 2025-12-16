@@ -120,6 +120,7 @@ class MockPipelineModel(PipelineModel):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
@@ -132,6 +133,7 @@ class MockPipelineModel(PipelineModel):
             enable_prefix_caching=False,
             cache_strategy=KVCacheStrategy.PAGED,
             devices=devices,
+            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
         )
 
     @classmethod

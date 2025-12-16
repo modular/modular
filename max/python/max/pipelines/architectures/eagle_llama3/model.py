@@ -19,10 +19,7 @@ from max.driver import Device, Tensor
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import (
-    ReturnHiddenStates,
-    ReturnLogits,
-)
+from max.nn import ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import PagedCacheValues
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -115,7 +112,6 @@ class EagleLlama3Model(LlamaModelBase):
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
-            data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
         )
 
         assert len(self.devices) == 1, "EAGLE only supports single device"

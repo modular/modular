@@ -58,12 +58,14 @@ class Mistral3Model(MistralModel):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return super().get_kv_params(
             huggingface_config.text_config,
+            pipeline_config,
             devices,
             kv_cache_config,
             cache_dtype,
