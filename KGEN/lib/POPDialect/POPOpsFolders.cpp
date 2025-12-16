@@ -541,17 +541,17 @@ static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
   if (operandTy && operandTy == DType::kBool &&
       llvm::is_contained({CmpPredicate::EQ, CmpPredicate::NE}, pred)) {
     // Only one input will be constant.
-    auto lhs = dyn_cast_or_null<SIMDAttr>(operands[0]);
-    auto rhs = dyn_cast_or_null<SIMDAttr>(operands[1]);
-    assert(!(lhs && rhs) && "constant case should be handled");
-    // If `rhs` contains the constant, move it to `lhs`.
-    if (rhs)
-      lhs = rhs;
+    auto lhsAttr = dyn_cast_or_null<SIMDAttr>(operands[0]);
+    auto rhsAttr = dyn_cast_or_null<SIMDAttr>(operands[1]);
+    assert(!(lhsAttr && rhsAttr) && "constant case should be handled");
+    // If `rhsAttr` contains the constant, move it to `lhsAttr`.
+    if (rhsAttr)
+      lhsAttr = rhsAttr;
     // Check that the constant is either all true or all false elements, then
     // match `eq` with `true` or `ne` with `false`.
-    if (lhs && llvm::all_equal(lhs.getValues()) &&
-        (pred == CmpPredicate::EQ) == lhs.getValues().front().getBoolVal())
-      return rhs ? lhs : rhs;
+    if (lhsAttr && llvm::all_equal(lhsAttr.getValues()) &&
+        (pred == CmpPredicate::EQ) == lhsAttr.getValues().front().getBoolVal())
+      return rhsAttr ? lhs : rhs;
   }
 
   // Fold
@@ -601,110 +601,8 @@ static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
 }
 
 OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
-  std::optional<KGENDType> operandTy = getLhs().getType().getResolvedDType();
-  std::optional<int64_t> size = getType().getResolvedSize();
-
-  // Handle the case of inputs being the same but non-constant. Avoid floats as
-  // they could be NAN.
-  if (operandTy && size && operandTy->isIntLike() && getLhs() == getRhs()) {
-    // Create a SIMD constant of all trues or all false.
-    SmallVector<DTypeValue> allTrues(*size, {true, KGENDType::kBool});
-    SmallVector<DTypeValue> allFalse(*size, {false, KGENDType::kBool});
-
-    switch (getPred()) {
-    case CmpPredicate::EQ:
-      return SIMDAttr::get(allTrues, getType());
-    case CmpPredicate::NE:
-      return SIMDAttr::get(allFalse, getType());
-    case CmpPredicate::LT:
-      return SIMDAttr::get(allFalse, getType());
-    case CmpPredicate::GT:
-      return SIMDAttr::get(allFalse, getType());
-    case CmpPredicate::LE:
-      return SIMDAttr::get(allTrues, getType());
-    case CmpPredicate::GE:
-      return SIMDAttr::get(allTrues, getType());
-    }
-  }
-
-  // Handle the case of applying the operation at compile time on the constant
-  // values.
-  if (OpFoldResult result = foldSIMDOpResult<POP::kOtherResult>(
-          adaptor.getOperands(), KGENDType::kBool,
-          [&](APSInt lhs, APSInt rhs) {
-            return compareConstants(getPred(), lhs, rhs);
-          },
-          [&](APFloat lhs, APFloat rhs) {
-            return compareConstants(getPred(), lhs, rhs);
-          },
-          [&](bool lhs, bool rhs) {
-            return compareConstants(getPred(), lhs, rhs);
-          }))
-    return result;
-
-  // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
-  if (operandTy && operandTy == DType::kBool &&
-      llvm::is_contained({CmpPredicate::EQ, CmpPredicate::NE}, getPred())) {
-    // Only one input will be constant.
-    auto lhs = dyn_cast_or_null<SIMDAttr>(adaptor.getLhs());
-    auto rhs = dyn_cast_or_null<SIMDAttr>(adaptor.getRhs());
-    assert(!(lhs && rhs) && "constant case should be handled");
-    // If `rhs` contains the constant, move it to `lhs`.
-    if (rhs)
-      lhs = rhs;
-    // Check that the constant is either all true or all false elements, then
-    // match `eq` with `true` or `ne` with `false`.
-    if (lhs && llvm::all_equal(lhs.getValues()) &&
-        (getPred() == CmpPredicate::EQ) == lhs.getValues().front().getBoolVal())
-      return rhs ? getLhs() : getRhs();
-  }
-
-  // Fold
-  // * `gt(0, unsigned_val)` into false
-  // * `le(0, unsigned_val)` into true
-  // * `ge(unsigned_val, 0)` into true
-  // * `lt(unsigned_val, 0)` into false
-  if (operandTy && operandTy->isUInt()) {
-    auto foldUnsignedCmp = [&](CmpPredicate foldIntoTrue,
-                               CmpPredicate foldIntoFalse, CmpPredicate pred,
-                               Attribute op1, Attribute op2) -> OpFoldResult {
-      if (!llvm::is_contained({foldIntoTrue, foldIntoFalse}, pred))
-        return {};
-
-      // Only one input will be constant.
-      [[maybe_unused]] auto op1SimdAttr = dyn_cast_or_null<SIMDAttr>(op1);
-      auto op2SimdAttr = dyn_cast_or_null<SIMDAttr>(op2);
-      assert(!(op1SimdAttr && op2SimdAttr) &&
-             "constant case should be handled");
-
-      if (!op2SimdAttr) {
-        // Always expect constant value in op2
-        return {};
-      }
-
-      // If the `op2SimdAttr` is constant and zero, then we can simplify the
-      // comparison.
-      if (llvm::all_equal(op2SimdAttr.getValues()) &&
-          op2SimdAttr.getValues()[0].getData().isZero()) {
-
-        SmallVector<DTypeValue> values(
-            *size, DTypeValue(pred == foldIntoTrue, KGENDType::kBool));
-        return SIMDAttr::get(values, getType());
-      }
-      return {};
-    };
-
-    if (OpFoldResult res =
-            foldUnsignedCmp(CmpPredicate::LE, CmpPredicate::GT, getPred(),
-                            adaptor.getRhs(), adaptor.getLhs()))
-      return res;
-    if (OpFoldResult res =
-            foldUnsignedCmp(CmpPredicate::GE, CmpPredicate::LT, getPred(),
-                            adaptor.getLhs(), adaptor.getRhs()))
-      return res;
-  }
-
-  return {};
+  return cmpOpfoldHelper(getLhs().getType(), getType(), getLhs(), getRhs(),
+                         getPred(), adaptor.getOperands());
 }
 
 ErrorTreeOrSuccess CmpOp::interpret(ArrayRef<Attribute> operands,
