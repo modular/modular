@@ -9,6 +9,18 @@ from sys import argv
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
 
+fn hasOrigin[F: fn[T: MutOrigin] (TypeWithOrigin[T]) unified -> None, //](f: F):
+    f[MutAnyOrigin](TypeWithOrigin[MutAnyOrigin]())
+
+
+@fieldwise_init
+struct TypeWithOrigin[T: MutOrigin](ImplicitlyCopyable, Movable):
+    var isMutable: Bool
+
+    fn __init__(out self):
+        self.isMutable = Self.T.mut
+
+
 fn takeIt[f: ImplicitlyCopyable & fn (z: Int) unified -> Int](impl: f, y: Int):
     print(impl(y))
 
@@ -52,3 +64,10 @@ def main():
     # CHECK: 1
     # CHECK: 2
     itCaptures[3](one, four)
+
+    # Ensure origins are lowered
+    # CHECK: True
+    fn closure[T: MutOrigin](_bar: TypeWithOrigin[T]) unified {read}:
+        print(_bar.isMutable)
+
+    hasOrigin(closure)

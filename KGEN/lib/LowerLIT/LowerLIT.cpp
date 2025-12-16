@@ -394,13 +394,15 @@ void LITLowerer::lowerLITOps(FnOp func) {
                                   return attr;
                                 return UnitAttr::get(attr.getContext());
                               });
+      SmallVector<ParamDeclAttr> parameters(
+          closureInit.getInputParams().drop_back(
+              closureInit.getFuncTypeGenerator().getNumImplicitOriginDecls()));
+      removeSingletonParamDecls(singletonTypeHelper, parameters);
       KGEN::ClosureInitOp closureInitKgen = KGEN::ClosureInitOp::create(
           b, closureInit.getLoc(), closureInit->getResults().front().getType(),
           closureInit.getFuncTypeGenerator(), closureInit.getFunctionType(),
           closureInit.getCaptures(),
-          ArrayAttr::get(b.getContext(), captureConventions),
-          closureInit.getInputParams().drop_back(
-              closureInit.getFuncTypeGenerator().getNumImplicitOriginDecls()),
+          ArrayAttr::get(b.getContext(), captureConventions), parameters,
           closureInit.getInlineLevel(), closureInit.getNestedFnScopeAttr());
       closureInitKgen.getBodyRegion().takeBody(closureInit.getBodyRegion());
       b.replaceOp(closureInit, closureInitKgen);
