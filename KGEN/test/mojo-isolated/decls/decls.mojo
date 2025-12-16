@@ -719,6 +719,18 @@ fn call_parametric_raise_example[GenTy: AnyType](func_ptr: fn () raises GenTy):
     fn doesnt_raise(): pass
     parametric_raise_example(doesnt_raise)
 
+
+struct CutDownDict[V: Copyable]:
+    # Throws an error that converts to Error. We don't care what it is, so long
+    # as it isn't Error specifically.
+    fn __getitem__(ref self) raises StringLiteral["foo".value] -> ref [self] Self.V:
+        pass
+
+def test_cut_down_dict():
+    var dict: CutDownDict[Int]
+    ptr = Pointer(to=dict[])
+    ptr[] = 17 # should be mutable.
+
 ##===----------------------------------------------------------------------===##
 # Constraint Overloading
 ##===----------------------------------------------------------------------===##

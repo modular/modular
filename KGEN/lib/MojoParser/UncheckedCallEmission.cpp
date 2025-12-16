@@ -1774,25 +1774,26 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                    errSlot.getRValueType(), getDeclScope())) {
       auto loc = translateLocation(callExpr->getLoc());
 
+      ValueDest throwDest = std::move(dest);
+
       // If the ValueDest is a lazy materialized vardecl, we need to materialize
       // it outside the try block. This is safe because it will update the
       // ValueDest in place now that we know the type we're binding to.
       if (!calleeSig.isRefResult()) {
-        MLValue destBuf = dest.getMLValueForResult(
+        MLValue destBuf = throwDest.getMLValueForResult(
             callExpr->getLoc(), calleeSig.getUserResultType(), *this);
         if (!destBuf)
           return {};
-        dest = ValueDest(LValue(destBuf), dest.getContext());
+        throwDest = ValueDest(LValue(destBuf), throwDest.getContext());
       } else {
-        assert(!dest.isSpecified() &&
-               "ref result must not have a specified dest");
+        dest = std::move(throwDest);
         // A ref result will infer the origin of the ref from the arguments.
         // We will do an indirect dance here since the type will be inferred
         // from the result.
         auto varDecl =
             emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
                         loc, VarDeclKind::Synthesized);
-        dest = ValueDest(varDecl, dest.getContext());
+        throwDest = ValueDest(varDecl, dest.getContext());
       }
 
       VarDeclOp errDecl = emitVarDecl("__call_error_tmp__", thrownType, loc,
@@ -1800,7 +1801,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
 
       // We're going to move the builder around, but restore it to the same
       // insertion point when we're done.
-      llvm::SaveAndRestore savedBuilder(builder);
+      auto savedBuilder = builder;
       auto tryOp = TryOp::create(*builder, loc, errDecl,
                                  /*suppressWarnings=*/true);
       // Stub out the else and finally regions of this try.
@@ -1812,7 +1813,11 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       builder->createBlock(&tryOp.getTryRegion());
 
       CValue result =
-          emitCallUnchecked(callee, callOperands, dest, syntax, callExpr);
+          emitCallUnchecked(callee, callOperands, throwDest, syntax, callExpr);
+      if (!result) {
+        throwDest.resetForError(*this);
+        dest.resetForError(*this);
+      }
       TryYieldOp::create(*builder, tryOp.getLoc());
 
       // Move the error into the overall error slot.
@@ -1830,11 +1835,25 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       if (calleeSig.isRefResult()) {
         Value resultVal = result.getIfMBValue();
         assert(resultVal && "ref result must be a MBValue");
-        assert(resultVal.getDefiningOp<LIT::LoadConsumeOp>() &&
-               "expected ref result to be a lit.load.consume");
-        resultVal.getDefiningOp()->moveAfter(tryOp);
+
+        // We might have a rebind to adjust type sugar.
+        if (auto rebindOp = resultVal.getDefiningOp<RebindOp>()) {
+          rebindOp->moveAfter(tryOp);
+          resultVal = rebindOp.getOperand();
+        }
+
+        auto loadConsume = resultVal.getDefiningOp<LIT::LoadConsumeOp>();
+        assert(loadConsume && "expected ref result to be a lit.load.consume");
+        loadConsume->moveAfter(tryOp);
+
+        // Rebind the result of the ref call.  Assigning through the VarDecl
+        // will turn this into an MBValue, stripping (parametric) mutability.
+        // Restore this.
+        result = CValue::getMValueForRef(resultVal);
       }
-      return result;
+
+      builder = savedBuilder;
+      return emitCResult(result, callExpr, dest);
     }
   }
 
