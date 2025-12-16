@@ -20,11 +20,17 @@ from testing import assert_false, assert_raises
 
 
 def test_process_run():
+    print("== test_process_run")
+    # CHECK-LABEL: == test_process_run
+    # CHECK-NEXT: == TEST_ECHO
     var command = "echo"
     _ = Process.run(command, List[String]("== TEST_ECHO"))
 
 
 def test_process_run_missing():
+    print("== test_process_run_missing")
+    # CHECK-LABEL: == test_process_run_missing
+    # CHECK-NEXT: Failed to execute ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN, EINT error code: 2
     missing_executable_file = "ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN"
 
     # verify that the test file does not exist before starting the test
@@ -42,7 +48,6 @@ def test_process_run_missing():
         _ = Process.run(missing_executable_file, List[String]())
 
 
-# CHECK-LABEL: TEST_ECHO
 def main():
     test_process_run()
     test_process_run_missing()
