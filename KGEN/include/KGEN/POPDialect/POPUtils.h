@@ -48,6 +48,14 @@ OpFoldResult foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
 OpFoldResult foldSIMDReduceAnd(Value vectorVal, Attribute vectorAttr,
                                SIMDType vectorType);
 
+/// Fold a SIMD left-shift operation.
+OpFoldResult foldSIMDShl(Attribute val, Attribute shft,
+                         TargetInfoAttr targetInfo);
+
+/// Fold a SIMD right-shift operation.
+OpFoldResult foldSIMDShr(Attribute val, Attribute shft,
+                         TargetInfoAttr targetInfo);
+
 //===----------------------------------------------------------------------===//
 // SIMD Folder Helpers
 //===----------------------------------------------------------------------===//

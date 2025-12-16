@@ -462,3 +462,33 @@ kgen.generator @simd_cmp_folding<dt: dtype>() {
   // CHECK: e = #pop.simd<"-1", "1.5", "-0", "0", "NaN", "NaN", "-Inf", "+Inf">
   e = #pop.simd_neg< #pop.simd<"1.0", "-1.5", "0.0", "-0.0", "NaN", "-NaN", "inf", "-inf"> : !pop.simd<8, f32>> : !pop.simd<8, f32>
 } : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop<simd 4> : !pop.scalar<si32>
+  a = #pop.simd_shl< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<4, 4, -48, 99> : !pop.simd<4, si16>
+  b = #pop.simd_shl< #pop.simd<1, 2, -3, 99> : !pop.simd<4, si16>, #pop.simd<2, 1, 4, 0> : !pop.simd<4, si16>> : !pop.simd<4, si16>,
+  // CHECK: c = #pop.simd_shl<#pop<simd 1>{{.*}}, #pop<simd 17>
+  c = #pop.simd_shl< #pop<simd 1> : !pop.scalar<si16>, #pop<simd 17> : !pop.scalar<si16>> : !pop.scalar<si16>,
+  // CHECK: d = #pop<simd 32> : !pop.scalar<si8>
+  d = #pop.simd_shl< #pop<simd 1> : !pop.scalar<si8>, #pop<simd 5> : !pop.scalar<index>> : !pop.scalar<si8>,
+  // CHECK: e = #pop<simd 64> : !pop.scalar<index>
+  e = #pop.simd_shl< #pop<simd 1> : !pop.scalar<index>, #pop<simd 6> : !pop.scalar<index>> : !pop.scalar<index>,
+  // CHECK: f = #pop<simd 64> : !pop.scalar<uindex>
+  f = #pop.simd_shl< #pop<simd 1> : !pop.scalar<uindex>, #pop<simd 6> : !pop.scalar<uindex>> : !pop.scalar<uindex>
+} : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop<simd 0> : !pop.scalar<si32>
+  a = #pop.simd_shr< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<0, 1, -1, 99> : !pop.simd<4, si16>
+  b = #pop.simd_shr< #pop.simd<1, 2, -3, 99> : !pop.simd<4, si16>, #pop.simd<2, 1, 4, 0> : !pop.simd<4, si16>> : !pop.simd<4, si16>,
+  // CHECK: c = #pop.simd_shr<#pop<simd 1>{{.*}}, #pop<simd 17>
+  c = #pop.simd_shr< #pop<simd 1> : !pop.scalar<si16>, #pop<simd 17> : !pop.scalar<si16>> : !pop.scalar<si16>,
+  // CHECK: d = #pop.simd<1, 4095> : !pop.simd<2, ui16>
+  d = #pop.simd_shr< #pop.simd<65535, 65533> : !pop.simd<2, ui16>, #pop.simd<15, 4> : !pop.simd<2, ui16>> : !pop.simd<2, ui16>,
+  // CHECK: e = #pop.simd<1, 4095> : !pop.simd<2, ui16>
+  e = #pop.simd_shr< #pop.simd<65535, 65533> : !pop.simd<2, ui16>, #pop.simd<15, 4> : !pop.simd<2, index>> : !pop.simd<2, ui16>,
+  // CHECK: f = #pop.simd<1, 4095> : !pop.simd<2, uindex>
+  f = #pop.simd_shr< #pop.simd<65535, 65533> : !pop.simd<2, uindex>, #pop.simd<15, 4> : !pop.simd<2, uindex>> : !pop.simd<2, uindex>
+} : () -> ()

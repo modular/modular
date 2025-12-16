@@ -646,3 +646,46 @@ fn fold_pop_simd_neg() -> POPSInt8x4T[POP_SI8x4_Fold]:
         )
     ]()
     return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.simd_shl
+##===----------------------------------------------------------------------===##
+
+
+@always_inline("builtin")
+fn pop_simd_shl(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, ui8>`:
+    return __mlir_op.`pop.shl`(x, y)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_shl
+fn fold_pop_simd_shl() -> POPUInt8x4T[POP_UI8x4_Fold]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8x4T <:simd<4, ui8> {{.*}} <21, 255, 1, 192>, <1, 0, 0, 4>), <42, 255, 1, 0>)>>
+    var a = POPUInt8x4T[
+        pop_simd_shl(
+            __mlir_attr.`#pop.simd<21, 255, 1, 192> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<1, 0, 0, 4> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    return a
+
+
+@always_inline("builtin")
+fn pop_simd_shr(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, ui8>`:
+    return __mlir_op.`pop.shr`(x, y)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_shr
+fn fold_pop_simd_shr() -> POPUInt8x4T[POP_UI8x4_Fold]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8x4T <:simd<4, ui8> {{.*}} <168, 255, 187, 16>, <2, 0, 7, 5>), <42, 255, 1, 0>)>>
+    var a = POPUInt8x4T[
+        pop_simd_shr(
+            __mlir_attr.`#pop.simd<168, 255, 187, 16> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<2, 0, 7, 5> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    return a
