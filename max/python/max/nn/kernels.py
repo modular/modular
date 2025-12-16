@@ -4136,12 +4136,16 @@ def sgmv_qkv_lora_kernel(
         max_rank=max_rank,
     )
 
-    # slice for Q:     [0, M, N] (materialized)
-    # slice for KV:    [1:,M, N] (materialized)
+    # slice for Q:     [0, M, N] (not materialized)
+    # slice for KV:    [1:,M, N] (not materialized)
+    # reshape and slices get fused into the input of the
+    # grouped-matmuls.
+    v_qkv = ops.reshape(v_qkv, [3 * lora_end_idx.shape[0], -1])
 
     # expand GMM-Q:    [M, N]  @ [G, Qdim, N]
+    v_q = v_qkv[: lora_end_idx.shape[0], :]
     q_out = sgmv_kernel(
-        v_qkv[0, :, :],
+        v_q,
         lora_b_q,
         lora_ids,
         lora_ranks,
@@ -4150,8 +4154,7 @@ def sgmv_qkv_lora_kernel(
         bias,
     )
 
-    v_kv = ops.reshape(v_qkv[1:, :, :], [2 * lora_end_idx.shape[0], -1])
-
+    v_kv = v_qkv[lora_end_idx.shape[0] :, :]
     # expand GMM-KV:   [2M, N] @ [2G, KVdim, N] // KV stacked in dim 0
     kv_out = sgmv_kernel(
         v_kv,
