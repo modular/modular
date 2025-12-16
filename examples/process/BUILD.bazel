@@ -4,10 +4,10 @@ load("//bazel/internal:mojo_binary.bzl", "mojo_binary")
 # Define a target for your script.
 mojo_binary(
     # This is the name you will use to run the script.
-    name = "my_script",
+    name = "process_example",
 
     # This points to your source file.
-    srcs = ["my_script.mojo"],
+    srcs = ["process_example.mojo"],
 
     # This is the crucial part: it tells Bazel that your script
     # depends on the standard library target. Bazel will build

@@ -16,6 +16,8 @@ Example:
 
 ```mojo
 from os import Process
+from collections import List
+_ = Process.run("echo", List[String]("== TEST_ECHO"))
 ```
 """
 from collections import List, Optional
@@ -26,10 +28,7 @@ from memory import LegacyUnsafePointer
 from sys import CompilationTarget
 from sys._libc import (
     waitpid,
-    vfork,
-    execvp,
     posix_spawnp,
-    exit,
     kill,
     SignalCodes,
     pipe,
@@ -215,7 +214,7 @@ struct Process:
         Use the `run` static method to create new process.
 
         Args:
-          child_pid: The pid of child processed returned by `vfork` that the struct will manage.
+          child_pid: The pid of child processed returned by `posix_spawnp` that the struct will manage.
         """
 
         self.child_pid = child_pid
