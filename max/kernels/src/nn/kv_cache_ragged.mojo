@@ -30,10 +30,7 @@ from kv_cache.types import (
 from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
-from linalg.fp8_quantization import (
-    blockwise_scaled_fp8_with_epilogue,
-    quantize_dynamic_scaled_fp8,
-)
+from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
@@ -309,6 +306,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     weight_dtype: DType,
     output_dtype: DType,
     scale_dtype: DType,
+    scales_granularity_mnk: IndexList[3],
     target: StaticString = "cpu",
 ](
     hidden_state: LayoutTensor[
@@ -390,7 +388,15 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
 
     comptime name = "mo.fused_qkv_matmul.ragged.paged.scale.nhead_" + String(
         kv_collection.kv_params.num_heads
-    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
+    ) + ".hdim_" + String(
+        kv_collection.kv_params.head_size
+    ) + ".m_scale_granularity_" + String(
+        scales_granularity_mnk[0]
+    ) + ".n_scale_granularity_" + String(
+        scales_granularity_mnk[1]
+    ) + ".k_scale_granularity_" + String(
+        scales_granularity_mnk[2]
+    )
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
@@ -398,6 +404,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     ):
         return _fused_qkv_matmul_kv_cache_ragged_scale[
             kv_collection.CacheType,
+            scales_granularity_mnk=scales_granularity_mnk,
             target=target,
         ](
             hidden_state,
@@ -554,6 +561,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     scale_dtype: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
+    scales_granularity_mnk: IndexList[3],
     *,
     target: StaticString,
 ](
@@ -612,13 +620,20 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     var cuda_ctx: Optional[DeviceContext] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
-    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
+    var v_cache: OptionalReg[type_of(k_cache)] = None
+    comptime kv_params = collection_t.kv_params
+
+    @parameter
+    if not kv_params.is_mla:
+        v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
-    return _fused_qkv_matmul_kv_cache_ragged_impl_scale[target=target,](
+    return _fused_qkv_matmul_kv_cache_ragged_impl_scale[
+        scales_granularity_mnk=scales_granularity_mnk, target=target
+    ](
         hidden_state,
         input_row_offsets,
         weight,
@@ -905,6 +920,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     output_dtype: DType,
     scale_dtype: DType,
     cache_t: KVCacheT, //,
+    scales_granularity_mnk: IndexList[3],
     *,
     target: StaticString,
 ](
@@ -924,7 +940,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         scale_dtype, address_space = AddressSpace.GENERIC, **_
     ],
     k_cache: cache_t,
-    v_cache: cache_t,
+    v_cache: OptionalReg[cache_t],
     output: LayoutTensor[
         mut=True, output_dtype, address_space = AddressSpace.GENERIC, **_
     ],
@@ -973,20 +989,16 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
 
     # Here we decide the quantization scheme for the QKV Tensor.
     comptime use_per_tensor = (
-        Int(input_scale.layout.shape[0]) == 1
-        and Int(input_scale.layout.shape[1]) == 1
-        and Int(weight_scale.layout.shape[0]) == 1
-        and Int(weight_scale.layout.shape[1]) == 1
+        scales_granularity_mnk[0] == -1
+        and scales_granularity_mnk[1] == -1
+        and scales_granularity_mnk[2] == -1
     )
     comptime use_per_channel = (
-        Int(input_scale.layout.shape[0]) == 1
-        and Int(weight_scale.layout.shape[1]) == 1
-        and not use_per_tensor
+        scales_granularity_mnk[0] == 1
+        and scales_granularity_mnk[1] == 1
+        and scales_granularity_mnk[2] == -1
     )
-
-    constrained[
-        use_per_tensor or use_per_channel, "Invalid quantization scheme"
-    ]()
+    comptime use_block_wise = not (use_per_tensor or use_per_channel)
 
     @parameter
     @__copy_capture(
@@ -1003,12 +1015,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             var scale_a = input_scale[0, 0][0].cast[dtype]()
             var scale_b = weight_scale[0, 0][0].cast[dtype]()
             output_val = val * (scale_a * scale_b)
-        else:
+        elif use_per_channel:
             var scale_a = input_scale.load[width=1](0, idx[0]).cast[dtype]()
             var scale_b = weight_scale.load[width=width](idx[1], 0).cast[
                 dtype
             ]()
             output_val = val * (scale_a * scale_b)
+        else:
+            # blockwise quantization, we need to use the blockwise_scaled_fp8_with_epilogue kernel
+            output_val = val
 
         var output_val_out: SIMD[output_dtype, width] = rebind[
             SIMD[output_dtype, width]
@@ -1037,16 +1052,24 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         var h_idx: UInt
         var hd_idx: UInt
         var cache: cache_t
-        if idx[1] < qk_offset:
+
+        @parameter
+        if kv_params.is_mla:
             cache = k_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(q_dim), kv_params.head_size
-            )
+            h_idx = 0  # in MLA mode we only have one head
+            hd_idx = UInt(idx[1]) - UInt(q_dim)
+
         else:
-            cache = v_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
-            )
+            if idx[1] < qk_offset:
+                cache = k_cache
+                h_idx, hd_idx = divmod(
+                    UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+                )
+            else:
+                cache = v_cache.value()
+                h_idx, hd_idx = divmod(
+                    UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
+                )
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1063,11 +1086,24 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         "Mismatch in dtype between weight and QKV tensors",
     ]()
 
-    _matmul_common[
-        target=target,
-        elementwise_lambda_fn=write_to_cache,
-        output_dtype=output_dtype,
-    ](hidden_state, weight.bitcast[dtype](), context)
+    @parameter
+    if use_block_wise:
+        __comptime_assert is_gpu[
+            target
+        ](), "Blockwise scaled fp8 matmul only works on GPU."
+
+        _matmul_blockwise_scaled_fp8_common[
+            output_dtype = cache_t.dtype,
+            target=target,
+            scales_granularity_mnk=scales_granularity_mnk,
+            elementwise_lambda_fn=write_to_cache,
+        ](hidden_state, weight, input_scale, weight_scale, context.value())
+    else:
+        _matmul_common[
+            target=target,
+            elementwise_lambda_fn=write_to_cache,
+            output_dtype=output_dtype,
+        ](hidden_state, weight.bitcast[dtype](), context)
 
 
 @always_inline

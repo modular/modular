@@ -33,8 +33,8 @@ from ..float8_ops import matmul_float8
 from ..kernels import (
     flare_mla_prefill_plan,
     fused_qk_ragged_rope,
+    fused_qkv_ragged_matmul_scaled_float8,
     kv_cache_get_max_seq_len,
-    matmul_k_cache_ragged_scaled_float8,
     mla_prefill_branch_fp8,
     quantize_dynamic_scaled_float8,
     rms_norm_key_cache,
@@ -67,7 +67,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         devices: list[DeviceRef] | None = None,
         linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
-        q_lora_rank: int | None = None,
+        q_lora_rank: int = 1536,
         kv_lora_rank: int = 512,
         qk_nope_head_dim: int = 128,
         qk_rope_head_dim: int = 64,
@@ -156,80 +156,56 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             float8_config.weight_scale.block_size[1],
         )
 
-        if self.q_lora_rank is not None:
-            self.q_a_proj = Weight(
-                name="q_a_proj.weight",
-                dtype=DType.float8_e4m3fn,
-                shape=(self.q_lora_rank, self.hidden_size),
-                device=self.devices[0],
-            )
-            self.q_a_proj_scale = Weight(
-                name="q_a_proj.weight_scale",
-                dtype=float8_config.weight_scale.dtype,
-                shape=(
-                    ceildiv(
-                        int(self.q_a_proj.shape[0]),
-                        float8_config.weight_scale.block_size[0],
-                    ),
-                    ceildiv(
-                        int(self.q_a_proj.shape[1]),
-                        float8_config.weight_scale.block_size[1],
-                    ),
+        self.q_a_proj = Weight(
+            name="q_a_proj.weight",
+            dtype=DType.float8_e4m3fn,
+            shape=(self.q_lora_rank, self.hidden_size),
+            device=self.devices[0],
+        )
+        self.q_a_proj_scale = Weight(
+            name="q_a_proj.weight_scale",
+            dtype=float8_config.weight_scale.dtype,
+            shape=(
+                ceildiv(
+                    int(self.q_a_proj.shape[0]),
+                    float8_config.weight_scale.block_size[0],
                 ),
-                device=self.devices[0],
-            )
-
-            self.q_a_layernorm = RMSNorm(
-                dim=self.q_lora_rank,
-                dtype=DType.bfloat16,
-                eps=1e-6,
-                multiply_before_cast=False,
-            )
-
-            self.q_b_proj = Weight(
-                name="q_b_proj.weight",
-                dtype=DType.float8_e4m3fn,
-                shape=(self.n_heads * self.qk_head_dim, self.q_lora_rank),
-                device=self.devices[0],
-            )
-            self.q_b_proj_scale = Weight(
-                name="q_b_proj.weight_scale",
-                dtype=float8_config.weight_scale.dtype,
-                shape=(
-                    ceildiv(
-                        int(self.q_b_proj.shape[0]),
-                        float8_config.weight_scale.block_size[0],
-                    ),
-                    ceildiv(
-                        int(self.q_b_proj.shape[1]),
-                        float8_config.weight_scale.block_size[1],
-                    ),
+                ceildiv(
+                    int(self.q_a_proj.shape[1]),
+                    float8_config.weight_scale.block_size[1],
                 ),
-                device=self.devices[0],
-            )
+            ),
+            device=self.devices[0],
+        )
 
-        else:
-            self.q_proj = Weight(
-                name="q_proj.weight",
-                dtype=DType.float8_e4m3fn,
-                shape=(self.n_heads * self.qk_head_dim, self.hidden_size),
-                device=self.devices[0],
-            )
-            self.q_proj_scale = Weight(
-                name="q_proj.weight_scale",
-                dtype=float8_config.weight_scale.dtype,
-                shape=(
-                    ceildiv(
-                        int(self.q_proj.shape[0]),
-                        float8_config.weight_scale.block_size[0],
-                    ),
-                    ceildiv(
-                        int(self.q_proj.shape[1]),
-                        float8_config.weight_scale.block_size[1],
-                    ),
+        self.q_a_layernorm = RMSNorm(
+            dim=self.q_lora_rank,
+            dtype=DType.bfloat16,
+            eps=1e-6,
+            multiply_before_cast=False,
+        )
+
+        self.q_b_proj = Weight(
+            name="q_b_proj.weight",
+            dtype=DType.float8_e4m3fn,
+            shape=(self.n_heads * self.qk_head_dim, self.q_lora_rank),
+            device=self.devices[0],
+        )
+        self.q_b_proj_scale = Weight(
+            name="q_b_proj.weight_scale",
+            dtype=float8_config.weight_scale.dtype,
+            shape=(
+                ceildiv(
+                    int(self.q_b_proj.shape[0]),
+                    float8_config.weight_scale.block_size[0],
                 ),
-                device=self.devices[0],
-            )
+                ceildiv(
+                    int(self.q_b_proj.shape[1]),
+                    float8_config.weight_scale.block_size[1],
+                ),
+            ),
+            device=self.devices[0],
+        )
 
         self.kv_a_proj_layernorm = Weight(
             name="kv_a_layernorm.weight",
@@ -331,6 +307,11 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             self._sharding_strategy = strategy
 
             weights = [
+                self.q_a_proj,
+                self.q_a_proj_scale,
+                self.q_a_layernorm.weight,
+                self.q_b_proj,
+                self.q_b_proj_scale,
                 self.kv_a_proj_layernorm,
                 self.kv_a_proj_with_mqa,
                 self.kv_a_proj_with_mqa_scale,
@@ -338,15 +319,6 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 self.kv_b_proj_scale,
                 self.o_proj.weight,
             ]
-            if self.q_lora_rank is not None:
-                weights.append(self.q_a_proj)
-                weights.append(self.q_a_proj_scale)
-                weights.append(self.q_a_layernorm.weight)
-                weights.append(self.q_b_proj)
-                weights.append(self.q_b_proj_scale)
-            else:
-                weights.append(self.q_proj)
-                weights.append(self.q_proj_scale)
 
             if self.o_proj.input_scale is not None:
                 weights.append(self.o_proj.input_scale)
@@ -380,17 +352,13 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         if self.sharding_strategy.is_replicate:
             # Replicate full weights to each device (no head split).
-            if self.q_lora_rank is not None:
-                q_a_proj_shards = self.q_a_proj.shard(devices)
-                q_a_proj_scale_shards = self.q_a_proj_scale.shard(devices)
-                q_a_layernorm_weight_shards = self.q_a_layernorm.weight.shard(
-                    devices
-                )
-                q_b_proj_shards = self.q_b_proj.shard(devices)
-                q_b_proj_scale_shards = self.q_b_proj_scale.shard(devices)
-            else:
-                q_proj_shards = self.q_proj.shard(devices)
-                q_proj_scale_shards = self.q_proj_scale.shard(devices)
+            q_a_proj_shards = self.q_a_proj.shard(devices)
+            q_a_proj_scale_shards = self.q_a_proj_scale.shard(devices)
+            q_a_layernorm_weight_shards = self.q_a_layernorm.weight.shard(
+                devices
+            )
+            q_b_proj_shards = self.q_b_proj.shard(devices)
+            q_b_proj_scale_shards = self.q_b_proj_scale.shard(devices)
 
             kv_a_proj_layernorm_shards = self.kv_a_proj_layernorm.shard(devices)
             kv_a_proj_with_mqa_shards = self.kv_a_proj_with_mqa.shard(devices)
@@ -429,17 +397,13 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     buffer_size=self.BUFFER_TOK_SIZE,
                 )
 
-                if self.q_lora_rank is not None:
-                    replica.q_a_proj = q_a_proj_shards[shard_idx]
-                    replica.q_a_proj_scale = q_a_proj_scale_shards[shard_idx]
-                    replica.q_a_layernorm.weight = q_a_layernorm_weight_shards[
-                        shard_idx
-                    ]
-                    replica.q_b_proj = q_b_proj_shards[shard_idx]
-                    replica.q_b_proj_scale = q_b_proj_scale_shards[shard_idx]
-                else:
-                    replica.q_proj = q_proj_shards[shard_idx]
-                    replica.q_proj_scale = q_proj_scale_shards[shard_idx]
+                replica.q_a_proj = q_a_proj_shards[shard_idx]
+                replica.q_a_proj_scale = q_a_proj_scale_shards[shard_idx]
+                replica.q_a_layernorm.weight = q_a_layernorm_weight_shards[
+                    shard_idx
+                ]
+                replica.q_b_proj = q_b_proj_shards[shard_idx]
+                replica.q_b_proj_scale = q_b_proj_scale_shards[shard_idx]
 
                 replica.kv_a_proj_layernorm = kv_a_proj_layernorm_shards[
                     shard_idx
@@ -467,6 +431,17 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             raise ValueError(
                 "Only tensor parallel or replicate sharding strategies are supported for LatentAttentionWithRope"
             )
+
+    @property
+    def wqkv(self) -> tuple[TensorValue, TensorValue]:
+        """The concatenation of q_a_proj and kv_a_proj_with_mqa weight vectors."""
+
+        wqkv = ops.concat((self.q_a_proj, self.kv_a_proj_with_mqa))
+        wqkv_scale = ops.concat(
+            (self.q_a_proj_scale, self.kv_a_proj_with_mqa_scale)
+        )
+
+        return (wqkv, wqkv_scale)
 
     @property
     def w_uk_uv(self) -> list[TensorValue]:
@@ -608,38 +583,6 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        if self.q_lora_rank is not None:
-            # First FP8 matmul: x @ q_a_proj.T
-            q_a_out = matmul_float8(
-                x=x,
-                weight=self.q_a_proj,
-                weight_scale=self.q_a_proj_scale,
-                input_scale=None,  # Dynamic scaling
-                float8_config=self.float8_config,
-                group_size_or_per_token=self.scales_granularity_mnk[2],
-            )
-            # Apply layer norm
-            q_a_normed = self.q_a_layernorm(q_a_out)
-
-            # Second FP8 matmul: q_a_normed @ q_b_proj.T
-            xq = matmul_float8(
-                x=q_a_normed,
-                weight=self.q_b_proj,
-                weight_scale=self.q_b_proj_scale,
-                input_scale=None,  # Dynamic scaling
-                float8_config=self.float8_config,
-                group_size_or_per_token=self.scales_granularity_mnk[2],
-            )
-        else:
-            # Single FP8 matmul: x @ q_proj.T
-            xq = matmul_float8(
-                x=x,
-                weight=self.q_proj,
-                weight_scale=self.q_proj_scale,
-                input_scale=None,  # Dynamic scaling
-                float8_config=self.float8_config,
-                group_size_or_per_token=self.scales_granularity_mnk[2],
-            )
         x, x_scales = quantize_dynamic_scaled_float8(
             x,
             self.float8_config.input_scale,
@@ -649,16 +592,33 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             out_type=self.kv_a_proj_with_mqa.dtype,
         )
 
-        matmul_k_cache_ragged_scaled_float8(
+        # First FP8 matmul: x @ q_a_proj.T, fused with x @ kv_a_proj_with_mqa.T
+        wqkv, wqkv_scale = self.wqkv
+        q_a_out = fused_qkv_ragged_matmul_scaled_float8(
             self.kv_params,
-            hidden_states=x,
-            input_row_offsets=input_row_offsets,
-            weight=self.kv_a_proj_with_mqa,
-            input_scale=x_scales,
-            weight_scale=self.kv_a_proj_with_mqa_scale,
-            kv_collection=kv_collection,
-            scales_granularity_mnk=self.scales_granularity_mnk,
-            layer_idx=layer_idx,
+            x,
+            input_row_offsets,
+            wqkv,
+            kv_collection,
+            layer_idx,
+            self.n_heads,
+            x_scales,
+            wqkv_scale,
+            float8_config=self.float8_config,
+            _output_dim=self.q_lora_rank,
+        )
+
+        # Apply layer norm
+        q_a_normed = self.q_a_layernorm(q_a_out)
+
+        # Second FP8 matmul: q_a_normed @ q_b_proj.T
+        xq = matmul_float8(
+            x=q_a_normed,
+            weight=self.q_b_proj,
+            weight_scale=self.q_b_proj_scale,
+            input_scale=None,  # Dynamic scaling
+            float8_config=self.float8_config,
+            group_size_or_per_token=self.scales_granularity_mnk[2],
         )
 
         rms_norm_key_cache(

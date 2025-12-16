@@ -234,12 +234,33 @@ def fused_qkv_ragged_matmul_scaled_float8(
     input_scale: TensorValue,
     weight_scale: TensorValue,
     bias: TensorValue | None = None,
+    float8_config: Float8Config | None = None,
+    _output_dim: int | None = None,
 ) -> TensorValue:
-    """Computes fused query, key, and value projections with ragged input.
+    """Computes fused query, key, and value projections with scaled float8 input and weights.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
-    tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: TensorValue representing the input tensor with shape
+            [M=total_seq_len, K=hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            batch in the input tensor with shape [batch_size + 1].
+        wqkv: TensorValue representing the weight tensor with shape
+            [N=(num_heads + 2 * num_kv_heads) * head_dim, K=hidden_dim].
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+        n_heads: Number of attention heads.
+        input_scale: TensorValue representing the input scale tensor. Shape
+            varies depending on the quantization config.
+        weight_scale: TensorValue representing the weight scale tensor. Shape
+            varies depending on the quantization config.
+        bias: Optional bias vector concatenated as [q, k, v].
+        float8_config: Optional Float8Config object containing float8
+            quantization parameters. If not provided, the quantization config
+            will be inferred from the input and weight scale shapes.
+        _output_dim: Optional output dimension. If not provided, the output
+            dimension will be [n_heads * head_dim].
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
@@ -298,9 +319,32 @@ def fused_qkv_ragged_matmul_scaled_float8(
     if weight_scale.shape in [[], [1]]:
         weight_scale = weight_scale.reshape([1, 1])
 
+    # Try to infer the quantization config
+    if float8_config is not None:
+        scales_granularity_mnk = float8_config.scales_granularity_mnk
+    else:
+        # with out float8_config, we either use per-tensor or per-channel quantization
+        if (
+            input_scale.shape[0] == 1
+            and input_scale.shape[1] == 1
+            and weight_scale.shape[0] == 1
+            and weight_scale.shape[1] == 1
+        ):
+            scales_granularity_mnk = (-1, -1, -1)  # per-tensor quantization
+        elif input_scale.shape[0] == 1 and weight_scale.shape[1] == 1:
+            scales_granularity_mnk = (1, 1, -1)  # per-channel quantization
+        else:
+            raise ValueError(
+                "Can not infer the quantization config from the input tensor shapes",
+                "Please provide a float8_config",
+            )
+
     assert kv_params.page_size is not None
     parameters: dict[str, int | str | DType] = {
         "kv_type": kv_params.dtype,
+        "m_scale_granularity": scales_granularity_mnk[0],
+        "n_scale_granularity": scales_granularity_mnk[1],
+        "k_scale_granularity": scales_granularity_mnk[2],
     }
 
     op_name = "mo.fused_qkv_matmul.ragged.paged.scale"
@@ -317,6 +361,10 @@ def fused_qkv_ragged_matmul_scaled_float8(
         op_name += ".bias"
         values.append(bias)
 
+    output_dim = (
+        _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
+    )
+
     return ops.inplace_custom(
         op_name,
         device=input.device,
@@ -324,7 +372,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
         out_types=[
             TensorType(
                 dtype=DType.bfloat16,
-                shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                shape=input.shape[:-1] + [output_dim],
                 device=input.device,
             )
         ],

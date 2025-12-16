@@ -6298,6 +6298,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         scale_type: DType,
         output_type: DType,
         kv_type: DType, //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2],
@@ -6320,7 +6323,10 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
             max_lengths,
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-            target=target
+            scales_granularity_mnk = IndexList[3](
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+            target=target,
         ](
             hidden_state.to_layout_tensor(),
             input_row_offsets.to_layout_tensor(),
@@ -6352,6 +6358,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
         scale_type: DType,
         output_type: DType,
         kv_type: DType, //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2],
@@ -6384,7 +6393,10 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
         var bias_tensor = bias.to_layout_tensor()
         var rebound_bias = rebind[ExpectedBiasType](bias_tensor)
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-            target=target
+            scales_granularity_mnk = IndexList[3](
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+            target=target,
         ](
             hidden_state.to_layout_tensor(),
             input_row_offsets.to_layout_tensor(),
