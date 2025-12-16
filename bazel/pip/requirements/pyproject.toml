@@ -21,7 +21,6 @@ dependencies = [
   "einx",
   "expandvars",
   "fastapi>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
-  "faster_whisper",
   "fire ", # For mistral-evals.
   "filelock",
   "gguf",
@@ -50,7 +49,6 @@ dependencies = [
   "opentelemetry-exporter-prometheus",
   "opentelemetry-sdk",
   "packaging",
-  "pre-commit",
   "prometheus-client",
   "protobuf==6.31.1 ", # Must match bazel protobuf version since it doesn't the codegen
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
@@ -82,7 +80,6 @@ dependencies = [
   "sse-starlette==2.1.2",
   "sseclient-py",
   "starlette>=0.47.2", # transitively included by sse-starlette, >=0.47.2 is required for resolving CVE-2025-54121
-  "stack-pr",
   "taskgroup",
   "termcolor",
   "threadpoolctl",

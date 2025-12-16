@@ -48,7 +48,6 @@ PINS = {
     "einx": "einx@0.3.0",
     "expandvars": "expandvars@1.1.2",
     "fastapi": "fastapi@0.116.1",
-    "faster-whisper": "faster-whisper@1.1.1",
     "filelock": "filelock@3.16.1",
     "fire": "fire@0.7.0",
     "gguf": "gguf@0.17.1",
@@ -100,7 +99,6 @@ PINS = {
     "platformdirs": "platformdirs@4.2.2",
     "plotext": "plotext@5.3.2",
     "plotly": "plotly@6.0.1",
-    "pre-commit": "pre-commit@4.0.1",
     "prometheus-client": "prometheus-client@0.20.0",
     "protobuf": "protobuf@6.31.1",
     "psutil": "psutil@7.0.0",
@@ -140,7 +138,6 @@ PINS = {
     "sqlalchemy": "sqlalchemy@2.0.44",
     "sse-starlette": "sse-starlette@2.1.2",
     "sseclient-py": "sseclient-py@1.8.0",
-    "stack-pr": "stack-pr@0.1.3",
     "starlette": "starlette@0.47.2",
     "tabulate": "tabulate@0.9.0",
     "taskgroup": "taskgroup@0.2.2",
@@ -924,17 +921,6 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_cfgv@3.4.0",
-        actual = "@pycross_lock_file_wheel_cfgv_3.4.0_py2.py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "cfgv@3.4.0",
-        wheel = ":_wheel_cfgv@3.4.0",
-        testonly = "cfgv" in _TESTONLY_DEPS,
-    )
-
-    native.alias(
         name = "_wheel_chardet@5.2.0",
         actual = "@pycross_lock_file_wheel_chardet_5.2.0_py3_none_any//file",
     )
@@ -1132,37 +1118,6 @@ def targets():
         deps = _contourpy_1_3_0_deps,
         wheel = ":_wheel_contourpy@1.3.0",
         testonly = "contourpy" in _TESTONLY_DEPS,
-    )
-
-    _ctranslate2_4_6_0_deps = [
-        ":numpy@2.2.6",
-        ":pyyaml@6.0.3",
-        ":setuptools@80.9.0",
-    ]
-
-    native.alias(
-        name = "_wheel_ctranslate2@4.6.0",
-        actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp313_cp313_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp313_cp313_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ctranslate2_4.6.0_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-        }),
-    )
-
-    pycross_wheel_library(
-        name = "ctranslate2@4.6.0",
-        deps = _ctranslate2_4_6_0_deps,
-        wheel = ":_wheel_ctranslate2@4.6.0",
-        testonly = "ctranslate2" in _TESTONLY_DEPS,
     )
 
     _cuda_bindings_13_0_3_deps = [
@@ -1437,17 +1392,6 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_distlib@0.3.9",
-        actual = "@pycross_lock_file_wheel_distlib_0.3.9_py2.py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "distlib@0.3.9",
-        wheel = ":_wheel_distlib@0.3.9",
-        testonly = "distlib" in _TESTONLY_DEPS,
-    )
-
-    native.alias(
         name = "_wheel_distro@1.9.0",
         actual = "@pycross_lock_file_wheel_distro_1.9.0_py3_none_any//file",
     )
@@ -1606,27 +1550,6 @@ def targets():
         deps = _fastapi_0_116_1_deps,
         wheel = ":_wheel_fastapi@0.116.1",
         testonly = "fastapi" in _TESTONLY_DEPS,
-    )
-
-    _faster_whisper_1_1_1_deps = [
-        ":av@14.2.0",
-        ":ctranslate2@4.6.0",
-        ":huggingface-hub@0.34.3",
-        ":onnxruntime@1.23.1",
-        ":tokenizers@0.22.1",
-        ":tqdm@4.66.5",
-    ]
-
-    native.alias(
-        name = "_wheel_faster-whisper@1.1.1",
-        actual = "@pycross_lock_file_wheel_faster_whisper_1.1.1_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "faster-whisper@1.1.1",
-        deps = _faster_whisper_1_1_1_deps,
-        wheel = ":_wheel_faster-whisper@1.1.1",
-        testonly = "faster-whisper" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2389,17 +2312,6 @@ def targets():
         deps = _hypothesis_6_108_4_deps,
         wheel = ":_wheel_hypothesis@6.108.4",
         testonly = "hypothesis" in _TESTONLY_DEPS,
-    )
-
-    native.alias(
-        name = "_wheel_identify@2.6.3",
-        actual = "@pycross_lock_file_wheel_identify_2.6.3_py2.py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "identify@2.6.3",
-        wheel = ":_wheel_identify@2.6.3",
-        testonly = "identify" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3923,17 +3835,6 @@ def targets():
         testonly = "nltk" in _TESTONLY_DEPS,
     )
 
-    native.alias(
-        name = "_wheel_nodeenv@1.9.1",
-        actual = "@pycross_lock_file_wheel_nodeenv_1.9.1_py2.py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "nodeenv@1.9.1",
-        wheel = ":_wheel_nodeenv@1.9.1",
-        testonly = "nodeenv" in _TESTONLY_DEPS,
-    )
-
     _notebook_7_2_1_deps = [
         ":jupyter-server@2.14.1",
         ":jupyterlab-server@2.27.2",
@@ -5105,26 +5006,6 @@ def targets():
         name = "portalocker@2.10.1",
         wheel = ":_wheel_portalocker@2.10.1",
         testonly = "portalocker" in _TESTONLY_DEPS,
-    )
-
-    _pre_commit_4_0_1_deps = [
-        ":cfgv@3.4.0",
-        ":identify@2.6.3",
-        ":nodeenv@1.9.1",
-        ":pyyaml@6.0.3",
-        ":virtualenv@20.28.0",
-    ]
-
-    native.alias(
-        name = "_wheel_pre-commit@4.0.1",
-        actual = "@pycross_lock_file_wheel_pre_commit_4.0.1_py2.py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "pre-commit@4.0.1",
-        deps = _pre_commit_4_0_1_deps,
-        wheel = ":_wheel_pre-commit@4.0.1",
-        testonly = "pre-commit" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -6851,17 +6732,6 @@ def targets():
         testonly = "stack-data" in _TESTONLY_DEPS,
     )
 
-    native.alias(
-        name = "_wheel_stack-pr@0.1.3",
-        actual = "@pycross_lock_file_wheel_stack_pr_0.1.3_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "stack-pr@0.1.3",
-        wheel = ":_wheel_stack-pr@0.1.3",
-        testonly = "stack-pr" in _TESTONLY_DEPS,
-    )
-
     _starlette_0_47_2_deps = [
         ":anyio@4.4.0",
     ] + select({
@@ -8157,24 +8027,6 @@ def targets():
         name = "uvloop@0.22.1",
         wheel = ":_wheel_uvloop@0.22.1",
         testonly = "uvloop" in _TESTONLY_DEPS,
-    )
-
-    _virtualenv_20_28_0_deps = [
-        ":distlib@0.3.9",
-        ":filelock@3.16.1",
-        ":platformdirs@4.2.2",
-    ]
-
-    native.alias(
-        name = "_wheel_virtualenv@20.28.0",
-        actual = "@pycross_lock_file_wheel_virtualenv_20.28.0_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "virtualenv@20.28.0",
-        deps = _virtualenv_20_28_0_deps,
-        wheel = ":_wheel_virtualenv@20.28.0",
-        testonly = "virtualenv" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -9655,16 +9507,6 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_cfgv_3.4.0_py2.py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/c5/55/51844dd50c4fc7a33b653bfaba4c2456f06955289ca770a5dbd5fd267374/cfgv-3.4.0-py2.py3-none-any.whl",
-        ],
-        sha256 = "b7265b1f29fd3316bfcd2b330d63d024f2bfd8bcb8b0272f8e19a504856c48f9",
-        downloaded_file_path = "cfgv-3.4.0-py2.py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_chardet_5.2.0_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/38/6f/f5fbc992a329ee4e0f288c1fe0e2ad9485ed064cac731ed2fe47dcc38cbf/chardet-5.2.0-py3-none-any.whl",
@@ -9975,126 +9817,6 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp310_cp310_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/ba/9c/22417d43afc919e66f8218d6da4496bbff43636405902b4f53484ec801db/ctranslate2-4.6.0-cp310-cp310-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "b5da5eee549db5137e9082fa7b479bd8bf273d9a961afdf3f8ecff2527fdf71e",
-        downloaded_file_path = "ctranslate2-4.6.0-cp310-cp310-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/ad/38/e8121d6e29cee029ab21be01612a173dcf62a93324e43197f7b0d122645b/ctranslate2-4.6.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-        ],
-        sha256 = "6ed15383afc9d4e448d4090389f06c141a5ce1510e610c1aa7021332cfbc97f1",
-        downloaded_file_path = "ctranslate2-4.6.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/8d/bc/a342f732a48258d0c9ae6d08f007e792705bc371e0ed93cf499ffc28f80c/ctranslate2-4.6.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ],
-        sha256 = "0ac5a714890e9f5f6876005c8a8fb2bdf9bec88437c38ff3efd71bd65333519d",
-        downloaded_file_path = "ctranslate2-4.6.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp311_cp311_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/61/bf/42a5c004547b92cfacad221e126af182c7d98471a44cfdc41bc09c9a929a/ctranslate2-4.6.0-cp311-cp311-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "00097c52bf6be97f753e39bc7399f23bdf9803df942094b8cecdd8432f0335d5",
-        downloaded_file_path = "ctranslate2-4.6.0-cp311-cp311-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/33/83/1cf0b771778830fc9d00d166b90aabf27d5b5df4874d92ce5e7c4ea9e090/ctranslate2-4.6.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-        ],
-        sha256 = "9f4691a66cb7b9ffb04ebff4291055c20223449a6534c4a52b7432b0853946d0",
-        downloaded_file_path = "ctranslate2-4.6.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/3f/89/5991e0e7333b9f4d2022ea817c0017d4cbc6891be1b3b190a0112f753430/ctranslate2-4.6.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ],
-        sha256 = "79e4f2e8ea7f24797c80e0f4593d30447ef8da9036ebb4402b7f6c54687b7a46",
-        downloaded_file_path = "ctranslate2-4.6.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp312_cp312_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/2a/72/3880c3be097596a523cb24b52dc0514f685c2ec0bab9cceaeed874aeddec/ctranslate2-4.6.0-cp312-cp312-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "78a844c633b6d450b20adac296f7f60ac2a67f2c76e510a83c8916835dc13f04",
-        downloaded_file_path = "ctranslate2-4.6.0-cp312-cp312-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/3f/b3/77af5ad0e896dd27a10db768d7a67b8807e394c8e68c2fa559c662a33547/ctranslate2-4.6.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-        ],
-        sha256 = "44bf4b973ea985b80696093e11e9c72909aee55b35abb749428333822c70ce68",
-        downloaded_file_path = "ctranslate2-4.6.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/ce/e9/06c2bf49d6808359d71f1126ec5b8e5a5c3c9526899ed58f24666e0e1b86/ctranslate2-4.6.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ],
-        sha256 = "06b2ca5c2905b540dd833a0b75d912ec9acc18d33a2dc4f85f12032851659a0d",
-        downloaded_file_path = "ctranslate2-4.6.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp313_cp313_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/1b/65/d6470f6cfb10e5a065bd71c8cf99d5d107a9d33caedaa622ad7bd9dca01d/ctranslate2-4.6.0-cp313-cp313-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "2ebaae12ade184a235569235a875cf03d53b07732342f93b96ae76ef02c31961",
-        downloaded_file_path = "ctranslate2-4.6.0-cp313-cp313-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp313_cp313_manylinux_2_17_aarch64.manylinux2014_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/13/52/249565849281e7d6c997ffca88447b8806c119e1b0d1f799c27dda061440/ctranslate2-4.6.0-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-        ],
-        sha256 = "a719cd765ec10fe20f9a866093e777a000fd926a0bf235c7921f12c84befb443",
-        downloaded_file_path = "ctranslate2-4.6.0-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ctranslate2_4.6.0_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/77/6d/131193b68d3884f9ab9474d916c6244df2914fbb3234d2a4c1fada72b1d6/ctranslate2-4.6.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ],
-        sha256 = "039aa6cc3ed662931a60dec0be28abeaaceb3cc6f476060b8017a7a39a54a9f6",
-        downloaded_file_path = "ctranslate2-4.6.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_cuda_bindings_13.0.3_cp310_cp310_manylinux_2_24_aarch64.manylinux_2_28_aarch64",
         urls = [
             "https://files.pythonhosted.org/packages/3b/98/0666ee759cd2e5306f911cbc95d2c6c814326906ed6b9c09e817a4b4a7c8/cuda_bindings-13.0.3-cp310-cp310-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
@@ -10345,16 +10067,6 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_distlib_0.3.9_py2.py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/91/a1/cf2472db20f7ce4a6be1253a81cfdf85ad9c7885ffbed7047fb72c24cf87/distlib-0.3.9-py2.py3-none-any.whl",
-        ],
-        sha256 = "47f8c22fd27c27e25a65601af709b38e4f0a45ea4fc2e710f65755fa8caaaf87",
-        downloaded_file_path = "distlib-0.3.9-py2.py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_distro_1.9.0_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl",
@@ -10471,16 +10183,6 @@ def repositories():
         ],
         sha256 = "c46ac7c312df840f0c9e220f7964bada936781bc4e2e6eb71f1c4d7553786565",
         downloaded_file_path = "fastapi-0.116.1-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_faster_whisper_1.1.1_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/ad/69/28359d152f9e2ec1ff4dff3da47011b6346e9a472f89b409bb13017a7d1f/faster_whisper-1.1.1-py3-none-any.whl",
-        ],
-        sha256 = "5808dc334fb64fb4336921450abccfe5e313a859b31ba61def0ac7f639383d90",
-        downloaded_file_path = "faster_whisper-1.1.1-py3-none-any.whl",
     )
 
     maybe(
@@ -11711,16 +11413,6 @@ def repositories():
         ],
         sha256 = "901b1883b51207c4c3ecbae506bc8b65d66569f9bc34e023df7d8a821eb495c1",
         downloaded_file_path = "hypothesis-6.108.4-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_identify_2.6.3_py2.py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/c9/f5/09644a3ad803fae9eca8efa17e1f2aef380c7f0b02f7ec4e8d446e51d64a/identify-2.6.3-py2.py3-none-any.whl",
-        ],
-        sha256 = "9edba65473324c2ea9684b1f944fe3191db3345e50b6d04571d10ed164f8d7bd",
-        downloaded_file_path = "identify-2.6.3-py2.py3-none-any.whl",
     )
 
     maybe(
@@ -13925,16 +13617,6 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_nodeenv_1.9.1_py2.py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/d2/1d/1b658dbd2b9fa9c4c9f32accbfc0205d532c8c6194dc0f2a4c0428e7128a/nodeenv-1.9.1-py2.py3-none-any.whl",
-        ],
-        sha256 = "ba11c9782d29c27c70ffbdda2d7415098754709be8a7056d79a737cd901155c9",
-        downloaded_file_path = "nodeenv-1.9.1-py2.py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_notebook_7.2.1_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/32/b4/b0cdaf52c35a3a40633136bee5152d6670acb555c698d23a3458dca65781/notebook-7.2.1-py3-none-any.whl",
@@ -15511,16 +15193,6 @@ def repositories():
         ],
         sha256 = "53a5984ebc86a025552264b459b46a2086e269b21823cb572f8f28ee759e45bf",
         downloaded_file_path = "portalocker-2.10.1-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_pre_commit_4.0.1_py2.py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/16/8f/496e10d51edd6671ebe0432e33ff800aa86775d2d147ce7d43389324a525/pre_commit-4.0.1-py2.py3-none-any.whl",
-        ],
-        sha256 = "efde913840816312445dc98787724647c65473daefe420785f885e8ed9a06878",
-        downloaded_file_path = "pre_commit-4.0.1-py2.py3-none-any.whl",
     )
 
     maybe(
@@ -18465,16 +18137,6 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_stack_pr_0.1.3_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/6d/d5/aa80c48526a28c5c9dd2e325dd6541a690e897ac7c4e184b5d39973a217e/stack_pr-0.1.3-py3-none-any.whl",
-        ],
-        sha256 = "5c6228cde93a8a0df6508d3ed5cebd6927f9691a2f81373dcfc63783df88735d",
-        downloaded_file_path = "stack_pr-0.1.3-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_starlette_0.47.2_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/f7/1f/b876b1f83aef204198a42dc101613fefccb32258e5428b5f9259677864b4/starlette-0.47.2-py3-none-any.whl",
@@ -19671,16 +19333,6 @@ def repositories():
         ],
         sha256 = "c1955d5a1dd43198244d47664a5858082a3239766a839b2102a269aaff7a4e25",
         downloaded_file_path = "uvloop-0.22.1-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_virtualenv_20.28.0_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/10/f9/0919cf6f1432a8c4baa62511f8f8da8225432d22e83e3476f5be1a1edc6e/virtualenv-20.28.0-py3-none-any.whl",
-        ],
-        sha256 = "23eae1b4516ecd610481eda647f3a7c09aea295055337331bb4e6892ecce47b0",
-        downloaded_file_path = "virtualenv-20.28.0-py3-none-any.whl",
     )
 
     maybe(
