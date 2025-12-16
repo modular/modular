@@ -529,7 +529,7 @@ Another Int param.
 ---
 
 ###
-Implements the builtin package.
+Language foundation: built-in types, traits, and fundamental operations.
 
 `,
       },
