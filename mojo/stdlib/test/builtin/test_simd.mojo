@@ -15,8 +15,10 @@ from sys import size_of
 from sys.info import CompilationTarget, is_64bit
 
 from bit import count_leading_zeros
+from memory.unsafe import bitcast
 from builtin.simd import _modf
 from itertools import product
+from random import randn, seed
 from testing import (
     assert_almost_equal,
     assert_equal,
@@ -2576,6 +2578,66 @@ def test_float8_e8m0fnu_type_alias():
 
     # Test that the size is 1 byte.
     assert_equal(size_of[Float8_e8m0fnu](), 1)
+
+
+def test_float8_e8m0fnu_cast_from_float32():
+    # float8_e8m0fnu stores powers of 2 as biased exponent (bias=127).
+    # Use Lists to ensure runtime values that can't be constant-folded.
+
+    # Test float32 -> float8_e8m0fnu
+    var f32_vals = List[Float32]()
+    f32_vals.append(1.0)
+    f32_vals.append(2.0)
+    f32_vals.append(0.5)
+    var expected_exp = List[UInt8]()
+    expected_exp.append(127)  # 2^0
+    expected_exp.append(128)  # 2^1
+    expected_exp.append(126)  # 2^-1
+    for i in range(len(f32_vals)):
+        var fp8_val = f32_vals[i].cast[DType.float8_e8m0fnu]()
+        assert_equal(bitcast[DType.uint8](fp8_val), expected_exp[i])
+
+    # Test bfloat16 -> float8_e8m0fnu
+    var bf16_vals = List[BFloat16]()
+    bf16_vals.append(1.0)
+    bf16_vals.append(2.0)
+    var bf16_expected = List[UInt8]()
+    bf16_expected.append(127)
+    bf16_expected.append(128)
+    for i in range(len(bf16_vals)):
+        var fp8_val = bf16_vals[i].cast[DType.float8_e8m0fnu]()
+        assert_equal(bitcast[DType.uint8](fp8_val), bf16_expected[i])
+
+    # Test float8_e8m0fnu -> float32
+    var exp_vals = List[UInt8]()
+    exp_vals.append(0x00)  # 2**-127 (subnormal in float32)
+    exp_vals.append(0x7E)  # 2**-1
+    exp_vals.append(0x7F)  # 2**0
+    exp_vals.append(0x80)  # 2**1
+    exp_vals.append(0xFE)  # 2**127 (max finite power-of-two)
+    exp_vals.append(0xFF)  # NaN
+    var expected_f32_bits = List[UInt32]()
+    expected_f32_bits.append(0x00400000)
+    expected_f32_bits.append(0x3F000000)
+    expected_f32_bits.append(0x3F800000)
+    expected_f32_bits.append(0x40000000)
+    expected_f32_bits.append(0x7F000000)
+    expected_f32_bits.append(0)  # Placeholder for NaN value.
+    for i in range(len(exp_vals)):
+        var fp8 = bitcast[DType.float8_e8m0fnu](exp_vals[i])
+        var f32_val = fp8.cast[DType.float32]()
+        if exp_vals[i] == 0xFF:
+            assert_true(isnan(f32_val))
+            assert_false(isinf(f32_val))
+        else:
+            assert_equal(bitcast[DType.uint32](f32_val), expected_f32_bits[i])
+
+    # Also test with randn to ensure arbitrary runtime values work.
+    seed(42)
+    var h_A = List[Float32](unsafe_uninit_length=1)
+    randn(h_A.unsafe_ptr(), size=1)
+    # Simply verify that cast doesn't error.
+    _ = h_A[0].cast[DType.float8_e8m0fnu]()
 
 
 def main():
