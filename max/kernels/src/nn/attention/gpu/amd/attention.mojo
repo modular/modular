@@ -726,12 +726,14 @@ struct Attention[
         self.mask_warp_col = warp_col * Int(Self.WN)
 
         self.batch_idx = batch_idx
-        var scale_log2e: Scalar[Self.accum_type] = scale.cast[
-            Self.accum_type
-        ]() * (
+
+        comptime scaling_factor = (
             log2e if (
                 Self.use_exp2 and (not Self.mask_t.apply_log2e_after_mask)
             ) else Scalar[Self.accum_type](1)
+        )
+        var scale_log2e: Scalar[Self.accum_type] = (
+            scale.cast[Self.accum_type]() * scaling_factor
         )
 
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
