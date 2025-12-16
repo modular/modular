@@ -1925,6 +1925,24 @@ struct LayoutTensor[
         )
 
     @always_inline("nodebug")
+    fn _load_scalar_offset(
+        self, offset: Scalar[Self.linear_idx_type]
+    ) -> Scalar[Self.dtype]:
+        """Retrieves a single scalar from the tensor at the specified offset.
+
+        This method loads the element at the given offset and returns the first
+        scalar lane. For tensors with element_size == 1, this is the only value.
+        For tiled/vectorized elements, this returns the 0th lane.
+
+        Args:
+            offset: The integer offset for array indexing.
+
+        Returns:
+            The scalar value at the specified offset.
+        """
+        return self._load_offset(offset)[0]
+
+    @always_inline("nodebug")
     fn __getitem__[*Tys: Indexer](self, *args: *Tys) -> Self.element_type:
         """Retrieves a single element from the tensor at the specified indices.
 
@@ -1981,6 +1999,69 @@ struct LayoutTensor[
 
         var offset = self.runtime_layout(crd)
         return self._load_offset(offset)
+
+    @always_inline("nodebug")
+    fn load_scalar[*Tys: Indexer](self, *args: *Tys) -> Scalar[Self.dtype]:
+        """Retrieves a single scalar from the tensor at the specified indices.
+
+        This method provides scalar element access for the tensor, which is
+        useful in generic contexts where `__getitem__` returns a SIMD vector
+        of `element_size` elements. This method always returns a single scalar
+        value (the 0th lane of the element).
+
+        The number of indices provided must match the rank of the tensor,
+        otherwise an error will occur at runtime.
+
+        Parameters:
+            Tys: The type of the indices. Must implement the `Indexer` trait,
+                and match the rank of the tensor.
+
+        Args:
+            args: The indices specifying the element's position in the tensor.
+
+        Returns:
+            The scalar value at the specified position with the tensor's dtype.
+        """
+        comptime arg_count = args.__len__()
+
+        constrained[
+            Self.rank == arg_count or Self.num_strides == arg_count,
+            "Indexed with "
+            + String(arg_count)
+            + " dims, but Self.rank, Self.num_strides = "
+            + String(Self.rank)
+            + ", "
+            + String(self.num_strides),
+        ]()
+
+        var index_list = Self.idx_list_t[arg_count](fill=0)
+
+        @parameter
+        for arg_idx in range(arg_count):
+            index_list[arg_idx] = index(args[arg_idx])
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset[rank=arg_count](strides, index_list)
+        return self._load_scalar_offset(offset)
+
+    @always_inline("nodebug")
+    fn load_scalar(self, crd: RuntimeTuple) -> Scalar[Self.dtype]:
+        """Retrieves a single scalar from the tensor at the specified coordinates.
+
+        This method provides scalar element access for the tensor, which is
+        useful in generic contexts where `__getitem__` returns a SIMD vector
+        of `element_size` elements. This method always returns a single scalar
+        value (the 0th lane of the element).
+
+        Args:
+            crd: The coordinate specifying the element's position in each
+                dimension. For example, in a 3D tensor, you would use (i, j, k).
+
+        Returns:
+            The scalar value at the specified position with the tensor's dtype.
+        """
+        var offset = self.runtime_layout(crd)
+        return self._load_scalar_offset(offset)
 
     @always_inline("nodebug")
     fn __setitem__[
