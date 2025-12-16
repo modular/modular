@@ -423,3 +423,50 @@ OpFoldResult POP::foldIndexForTarget(
         return {};
       });
 }
+
+OpFoldResult POP::foldSIMDShl(Attribute val, Attribute shft,
+                              TargetInfoAttr targetInfo) {
+  auto valSIMD = dyn_cast_if_present<SIMDAttr>(val);
+  if (!valSIMD || !isa_and_present<SIMDAttr>(shft))
+    return {};
+  std::optional<KGENDType> dtype = valSIMD.getType().getResolvedDType();
+  if (!dtype)
+    return {};
+
+  if (dtype->isIndex() || dtype->isUIndex())
+    return foldIndexForTarget({val, shft}, *dtype, targetInfo,
+                              [](APSInt lhs, APSInt rhs) -> APSInt {
+                                return APSInt(lhs.shl(rhs), !lhs.isSigned());
+                              });
+  return foldSIMDOp({val, shft},
+                    [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+                      if (rhs.uge(lhs.getBitWidth()))
+                        return std::nullopt;
+                      return APSInt(lhs.shl(rhs), !lhs.isSigned());
+                    });
+}
+
+OpFoldResult POP::foldSIMDShr(Attribute val, Attribute shft,
+                              TargetInfoAttr targetInfo) {
+  auto valSIMD = dyn_cast_if_present<SIMDAttr>(val);
+  if (!valSIMD || !isa_and_present<SIMDAttr>(shft))
+    return {};
+  std::optional<KGENDType> dtype = valSIMD.getType().getResolvedDType();
+  if (!dtype)
+    return {};
+
+  if (dtype->isIndex() || dtype->isUIndex())
+    return foldIndexForTarget(
+        {val, shft}, *dtype, targetInfo, [](APSInt lhs, APSInt rhs) -> APSInt {
+          return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
+                        !lhs.isSigned());
+        });
+
+  return foldSIMDOp(
+      {val, shft}, [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        if (rhs.uge(lhs.getBitWidth()))
+          return std::nullopt;
+        return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
+                      !lhs.isSigned());
+      });
+}

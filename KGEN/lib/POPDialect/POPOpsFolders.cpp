@@ -319,55 +319,21 @@ OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
-  ArrayRef<Attribute> operands = adaptor.getOperands();
-  if (llvm::any_of(operands, [](Attribute operand) {
-        return !isa_and_nonnull<SIMDAttr>(operand);
-      }))
-    return {};
-  std::optional<KGENDType> dtype =
-      cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
-  if (!dtype)
-    return {};
-
-  if (dtype->isIndex() || dtype->isUIndex())
-    return foldIndexForTarget(operands, *dtype, lookupTargetInfo(*this),
-                              [](APSInt lhs, APSInt rhs) -> APSInt {
-                                return APSInt(lhs.shl(rhs), !lhs.isSigned());
-                              });
-  return foldSIMDOp(adaptor.getOperands(),
-                    [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-                      if (rhs.uge(lhs.getBitWidth()))
-                        return std::nullopt;
-                      return APSInt(lhs.shl(rhs), !lhs.isSigned());
-                    });
+  if (auto fold = foldSIMDShl(adaptor.getLhs(), adaptor.getRhs(),
+                              lookupTargetInfo(*this))) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return {};
 }
 
 OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
-  ArrayRef<Attribute> operands = adaptor.getOperands();
-  if (llvm::any_of(operands, [](Attribute operand) {
-        return !isa_and_nonnull<SIMDAttr>(operand);
-      }))
-    return {};
-  std::optional<KGENDType> dtype =
-      cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
-  if (!dtype)
-    return {};
-
-  if (dtype->isIndex() || dtype->isUIndex())
-    return foldIndexForTarget(operands, *dtype, lookupTargetInfo(*this),
-                              [](APSInt lhs, APSInt rhs) -> APSInt {
-                                return APSInt(lhs.isSigned() ? lhs.ashr(rhs)
-                                                             : lhs.lshr(rhs),
-                                              !lhs.isSigned());
-                              });
-
-  return foldSIMDOp(
-      operands, [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-        if (rhs.uge(lhs.getBitWidth()))
-          return std::nullopt;
-        return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
-                      !lhs.isSigned());
-      });
+  if (auto fold = foldSIMDShr(adaptor.getLhs(), adaptor.getRhs(),
+                              lookupTargetInfo(*this))) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

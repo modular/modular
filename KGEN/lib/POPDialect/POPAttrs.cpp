@@ -2305,6 +2305,72 @@ SIMDReduceAndAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDShlAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDShlAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
+  // Fold if possible
+  if (auto fold = foldSIMDShl(value, shft, /*targetInfo=*/{})) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, value, shft);
+}
+
+TypedAttr SIMDShlAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr value,
+                                  TypedAttr shft) {
+  if (failed(verify(emitError, value, shft)))
+    return {};
+  return SIMDShlAttr::get(context, value, shft);
+}
+
+bool SIMDShlAttr::isConstant() const { return false; }
+
+Type SIMDShlAttr::getType() const { return getVal().getType(); }
+
+LogicalResult SIMDShlAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr value, TypedAttr shft) {
+  if (!isa<SIMDType>(value.getType()))
+    return emitError() << "requires a SIMD-type operand";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDShrAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDShrAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
+  // Fold if possible
+  if (auto fold = foldSIMDShr(value, shft, /*targetInfo=*/{})) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, value, shft);
+}
+
+TypedAttr SIMDShrAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr value,
+                                  TypedAttr shft) {
+  if (failed(verify(emitError, value, shft)))
+    return {};
+  return SIMDShrAttr::get(context, value, shft);
+}
+
+bool SIMDShrAttr::isConstant() const { return false; }
+
+Type SIMDShrAttr::getType() const { return getVal().getType(); }
+
+LogicalResult SIMDShrAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr value, TypedAttr shft) {
+  if (!isa<SIMDType>(value.getType()))
+    return emitError() << "requires a SIMD-type operand";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 

@@ -2723,6 +2723,10 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return foldSIMDBinOp<POP::SIMDXorAttr>(op, *this);
   if (isa<POP::SIMDOrOp>(op))
     return foldSIMDBinOp<POP::SIMDOrAttr>(op, *this);
+  if (isa<POP::ShlOp>(op))
+    return foldSIMDBinOp<POP::SIMDShlAttr>(op, *this);
+  if (isa<POP::ShrOp>(op))
+    return foldSIMDBinOp<POP::SIMDShrAttr>(op, *this);
 
   if (auto reduceOrOp = dyn_cast<POP::SIMDReduceOrOp>(op)) {
     if (auto lhs = findValue(op.getOperand(0))) {

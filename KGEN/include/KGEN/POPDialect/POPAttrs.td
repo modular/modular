@@ -808,6 +808,80 @@ def POP_SIMDAddAttr : POP_SIMDBinaryAttr<"Add">;
 def POP_SIMDSubAttr : POP_SIMDBinaryAttr<"Sub">;
 def POP_SIMDMulAttr : POP_SIMDBinaryAttr<"Mul">;
 
+def POP_SIMDShlAttr : POP_ExprAttr<"SIMDShl", "simd_shl"> {
+  let summary = "SIMD Left Shift.";
+  let description = [{
+    The `pop.simd_shl` attribute returns the first operand shifted to the left
+    a specified number of bits. Both arguments to `pop.shl` must be the same
+    integer or index dtype. The shift amount is always treated as unsigned.
+
+    If the shift amount is equal to or larger than the number of bits in the
+    value, the results of this operation is a poison value.
+  }];
+
+  let parameters = (ins "TypedAttr":$val, "TypedAttr":$shft);
+
+  let assemblyFormat = " `<` $val `,` $shft `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return the same attribute type due to folding on construction.
+    AttrBuilder<(ins "TypedAttr":$val, "TypedAttr":$shft), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$val, "TypedAttr":$shft), [{
+      return get(val.getContext(), val, shft);
+    }], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
+def POP_SIMDShrAttr : POP_ExprAttr<"SIMDShr", "simd_shr"> {
+  let summary = "SIMD Right Shift.";
+  let description = [{
+    The `pop.shr` attribute returns the first operand shifted to the right a
+    specified number of bits. Whether the result is sign extended or zero
+    extended depends on the result dtype. Both arguments to the `shr` op must be
+    the same integer/index or vector of integer/index type. The shift amount is
+    always treated as unsigned.
+
+    This operation performs an arithmetic shift right operation if the dtype is
+    signed. The most significant bits of the result will be filled with the
+    sign bit of the value to shift. This operation performs a logical shift
+    right operation if the dtype is unsigned. The most significant bits of the
+    result will be filled with zero bits after the shift.
+
+    If the shift amount is equal to or larger than the number of bits in the
+    shift value, the result of this operation is a poison value. If the
+    arguments are vectors, each vector element of the shifted value is shifted
+    by the corresponding shift amount in the shift amount.
+  }];
+
+  let parameters = (ins "TypedAttr":$val, "TypedAttr":$shft);
+
+  let assemblyFormat = " `<` $val `,` $shft `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return the same attribute type due to folding on construction.
+    AttrBuilder<(ins "TypedAttr":$val, "TypedAttr":$shft), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$val, "TypedAttr":$shft), [{
+      return get(val.getContext(), val, shft);
+    }], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // SIMDCmp
 //===----------------------------------------------------------------------===//
