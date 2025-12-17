@@ -81,9 +81,7 @@ struct float_conversion_generic_t {
   operator uint8_t() const { return bits; }
 
 private:
-  // TODO: Fix asan issue SDLC-2565
-  __attribute__((no_sanitize("address"))) static inline uint8_t
-  toBits(float v) {
+  static inline uint8_t toBits(float v) {
     // We use APFloat to do the heavy lifting here. This is probably not the
     // most efficient way, but it should be battle tested.
     llvm::APFloat apFloat(v);
@@ -93,9 +91,9 @@ private:
 
     // APInt will store a uint64_t array, which in this case should be
     // singleton. We will index into this, taking endianness into account.
-    const uint64_t *rawData = apFloat.bitcastToAPInt().getRawData();
+    const llvm::APInt apInt = apFloat.bitcastToAPInt();
     constexpr size_t index = is_little_endian ? 0 : BitWidth - 1;
-    return reinterpret_cast<const uint8_t *>(rawData)[index];
+    return reinterpret_cast<const uint8_t *>(apInt.getRawData())[index];
   }
 
   uint8_t bits;
@@ -227,9 +225,7 @@ struct float16_t {
   }
 
 private:
-  // TODO: Fix asan issue SDLC-2565
-  __attribute__((no_sanitize("address"))) static inline uint16_t
-  floatToF16Bits(float v) {
+  static inline uint16_t floatToF16Bits(float v) {
     // We use APFloat to do the heavy lifting here. This is probably not the
     // most efficient way, but it should be battle tested.
     llvm::APFloat apFloat(v);
@@ -239,9 +235,9 @@ private:
 
     // APInt will store a uint64_t array, which in this case should be
     // singleton. We will index into this, taking endianness into account.
-    const uint64_t *rawData = apFloat.bitcastToAPInt().getRawData();
+    const llvm::APInt apInt = apFloat.bitcastToAPInt();
     constexpr size_t index = Detail::is_little_endian ? 0 : 3;
-    return reinterpret_cast<const uint16_t *>(rawData)[index];
+    return reinterpret_cast<const uint16_t *>(apInt.getRawData())[index];
   }
 
   uint16_t bits;
