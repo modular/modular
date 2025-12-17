@@ -339,7 +339,7 @@ def execute_ragged_flash_attention():
                                 mixed_ce_ragged_offset + s, h, Int(hd)
                             ][0],
                         )
-                        raise e
+                        raise e^
 
     true_ce_q_ragged.ptr.free()
     mixed_ce_q_ragged.ptr.free()

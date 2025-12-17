@@ -226,7 +226,7 @@ fn _verify_results[
                         "expected:",
                         expected,
                     )
-                    raise e
+                    raise e^
 
             host_output.free()
 

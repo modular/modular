@@ -423,7 +423,7 @@ def execute_ragged_flash_attention(
                             h,
                             hd,
                         )
-                        raise e
+                        raise e^
 
     # Cleanup host memory
     true_ce_row_offsets_host_ptr.free()

@@ -414,7 +414,7 @@ fn test_case_sampling[
                 "probs_cpu_test: ",
                 probs_cpu_test.data[i],
             )
-            raise e
+            raise e^
 
     @parameter
     if PRINT_OUTPUT:

@@ -455,7 +455,7 @@ struct TestSuite(Movable):
             suite._register_tests[test_funcs]()
         except e:
             suite^.abandon()
-            raise e
+            raise e^
         return suite^
 
     fn test[f: _Test.fn_type](mut self):

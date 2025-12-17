@@ -21,9 +21,10 @@ from io.write import _WriteBufferStack
 from sys import _libc, external_call, is_gpu
 from sys.ffi import c_char, CStringSlice
 
+from collections.string.string_slice import _unsafe_strlen
 from memory import (
-    ArcPointer,
     OwnedPointer,
+    alloc,
     memcpy,
 )
 from io.write import _WriteBufferStack, _TotalWritableBytes
@@ -34,7 +35,7 @@ from io.write import _WriteBufferStack, _TotalWritableBytes
 # ===-----------------------------------------------------------------------===#
 
 
-struct StackTrace(Movable, Stringable):
+struct StackTrace(Copyable, Movable, Stringable):
     """Holds a stack trace captured at a specific location.
 
     A `StackTrace` instance always contains a valid stack trace. Use the
@@ -65,6 +66,19 @@ struct StackTrace(Movable, Stringable):
             unsafe_from_raw_pointer=unsafe_from_raw_pointer
         )
 
+    fn __copyinit__(out self, existing: Self):
+        """Copy constructor - copies the stack trace string.
+
+        Args:
+            existing: The existing StackTrace to copy from.
+        """
+        # Copy the null-terminated string
+        var src_ptr = existing._data.unsafe_ptr()
+        var str_len = Int(_unsafe_strlen(src_ptr))
+        var new_ptr = alloc[UInt8](str_len + 1)
+        memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
+        self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
+
     fn __moveinit__(out self, deinit existing: Self):
         """Move constructor.
 
@@ -75,7 +89,7 @@ struct StackTrace(Movable, Stringable):
 
     @staticmethod
     @no_inline
-    fn collect_if_enabled(depth: Int = 0) -> Optional[ArcPointer[StackTrace]]:
+    fn collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:
         """Collect a stack trace if enabled by environment variable.
 
         This method checks the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment
@@ -88,8 +102,8 @@ struct StackTrace(Movable, Stringable):
                    When `depth` is negative, no stack trace is collected.
 
         Returns:
-            An `Optional[ArcPointer[StackTrace]]` containing the stack trace
-            if collection succeeded, or `None` if disabled or unavailable.
+            An `Optional[StackTrace]` containing the stack trace if collection
+            succeeded, or `None` if disabled or unavailable.
         """
 
         @parameter
@@ -107,7 +121,7 @@ struct StackTrace(Movable, Stringable):
         if num_bytes == 0:
             return None
 
-        return ArcPointer(StackTrace(unsafe_from_raw_pointer=buffer))
+        return StackTrace(unsafe_from_raw_pointer=buffer)
 
     fn __str__(self) -> String:
         """Converts the StackTrace to string representation.
@@ -133,8 +147,8 @@ struct _ErrorWriter(Writer):
 
 struct Error(
     Boolable,
+    Copyable,
     Defaultable,
-    ImplicitlyCopyable,
     Representable,
     Stringable,
     Writable,
@@ -149,7 +163,7 @@ struct Error(
     var data: String
     """The message of the error."""
 
-    var _stack_trace: Optional[ArcPointer[StackTrace]]
+    var _stack_trace: Optional[StackTrace]
     """The stack trace of the error, if collected.
 
     By default, stack trace is collected for errors created from string
@@ -267,7 +281,7 @@ struct Error(
             or unavailable.
         """
         if self._stack_trace:
-            return String(self._stack_trace.value()[])
+            return String(self._stack_trace.value())
         return None
 
 

@@ -381,7 +381,7 @@ fn bench_reduce[
                 print("Verification failed at GPU", i, "index", j)
                 print("Value:", host_buffers[i][j])
                 print("Expected:", expected_sum)
-                raise e
+                raise e^
 
     # Cleanup
     for i in range(ngpus):
