@@ -435,7 +435,7 @@ ErrorOrSuccess M::parseTargetOptions(
   if (!targetCpu.empty())
     compilationOptions.targetCpu = targetCpu.str();
   else
-    compilationOptions.getDefaultCPU();
+    compilationOptions.setDefaultCPU();
 
   if (!targetFeatures.empty())
     compilationOptions.targetFeatures = targetFeatures.str();

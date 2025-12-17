@@ -154,7 +154,7 @@ public:
   // text.
   bool runMOGGPreElab = true;
 
-  void getDefaultCPU();
+  void setDefaultCPU();
 };
 
 // Return true if target triple is `air64-`
@@ -166,6 +166,9 @@ bool isGPUBackend(const CompilationOptions &options);
 
 // Return true if target triple is `amdgcn`
 bool isAMDGPUBackend(const CompilationOptions &options);
+
+// Return true if target triple is `arm` or `armeb`
+bool isARMBackend(const CompilationOptions &options);
 
 // Return true if target triple is `hexagon`
 bool isHexagonBackend(const CompilationOptions &options);

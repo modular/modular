@@ -169,9 +169,6 @@ public:
         elaborationErrorIncludePrelude, elaborationErrorVerbose,
         elaborationMaxDepth);
 
-    if (targetCpu.empty())
-      options.getDefaultCPU();
-
     return options;
   }
 
