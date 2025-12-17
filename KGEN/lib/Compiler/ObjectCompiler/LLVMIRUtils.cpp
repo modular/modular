@@ -576,7 +576,7 @@ static uint64_t getNumFunctionsInSet(
     if (auto f = dyn_cast<llvm::Function>(global)) {
       if (f->isDeclaration())
         continue;
-      result++;
+      ++result;
     }
   }
   return result;

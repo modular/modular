@@ -239,7 +239,7 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
     SmallVector<TypedAttr> elements;
 
     for (size_t actualArgIndex = numNormalArgs;
-         actualArgIndex < actualArgTypes.size(); actualArgIndex++) {
+         actualArgIndex < actualArgTypes.size(); ++actualArgIndex) {
       auto actualConv = actual.getArgConvention(actualArgIndex);
       ASTType actualAstType = actualArgTypes[actualArgIndex];
 

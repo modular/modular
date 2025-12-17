@@ -543,7 +543,7 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
   }
 
   // Drop all uses for old block arguments and erase all of them.
-  for (unsigned i = 0; i < numArgs; i++)
+  for (unsigned i = 0; i < numArgs; ++i)
     block->getArgument(i).dropAllUses();
   block->eraseArguments(0, numArgs);
 

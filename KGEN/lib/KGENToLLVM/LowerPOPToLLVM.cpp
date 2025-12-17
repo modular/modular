@@ -969,7 +969,7 @@ private:
     Value result = LLVM::UndefOp::create(rewriter, op.getLoc(), outType);
     for (uint64_t i = 0; i < size; i += 4) {
       Value src = input;
-      for (uint64_t j = 0; j < 4; j++) {
+      for (uint64_t j = 0; j < 4; ++j) {
         src = LLVM::InsertElementOp::create(
             rewriter, loc, src,
             extractElement(rewriter, loc, ui8Type, value, i + j),
@@ -992,7 +992,7 @@ private:
                        rewriter.getStringAttr(intrinsicStr), operands)
                        .getResult(0);
 
-      for (uint64_t j = 0; j < 4; j++) {
+      for (uint64_t j = 0; j < 4; ++j) {
         Value res = j < 2 ? res0 : res1;
         result = LLVM::InsertElementOp::create(
             rewriter, loc, result,
@@ -1301,7 +1301,7 @@ struct ConvertPOPSIMDShuffle : public ConvertPOPToLLVMPattern<SIMDShuffleOp> {
                                            rewriter.getI32IntegerAttr(idx));
       result = LLVM ::InsertElementOp::create(
           rewriter, op.getLoc(), result, maskElement == 0 ? lhs : rhs, pos);
-      idx++;
+      ++idx;
     }
     rewriter.replaceOp(op, result);
     return success();

@@ -207,7 +207,7 @@ static bool canConvertFunctionTypes(FnType actual, FnType expected,
     auto expectedTraitType = sugarCast<TraitType>(variadicElType.mlirType);
 
     for (size_t actualArgIndex = numNormalArgs;
-         actualArgIndex < actualArgTypes.size(); actualArgIndex++) {
+         actualArgIndex < actualArgTypes.size(); ++actualArgIndex) {
       auto actualConv = actual.getArgConvention(actualArgIndex);
       if (!checkConventionsConvertible(expectedConv, actualConv))
         return false;

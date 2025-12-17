@@ -89,7 +89,7 @@ CommonOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
   while (std::filesystem::exists(uniquePath) && suffix <= 999) {
     uniquePath = uniquePath.parent_path() /
                  (stem + "_" + std::to_string(suffix) + extension);
-    suffix++;
+    ++suffix;
   }
 
   llvm::outs() << "Emitting intermediate file to '" << uniquePath.string()

@@ -61,7 +61,7 @@ ErrorOrSuccess MCLinker::linkLLVMModules(StringRef moduleName) {
 
     for (auto [j, mcInfo] : llvm::enumerate(smcInfos->mcInfos)) {
       mcInfos.push_back(mcInfo.get());
-      curCompileUnitIdx++;
+      ++curCompileUnitIdx;
 
       // Modules have to be in the same LLVMContext to be linked.
       llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =

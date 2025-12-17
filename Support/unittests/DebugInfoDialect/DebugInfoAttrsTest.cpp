@@ -101,7 +101,7 @@ protected:
 TEST_F(DIScopeAttrUtilTest, TestScopeWalk) {
   std::vector<DISubprogramAttr> sp;
   std::vector<Location> fused;
-  for (int64_t i = 0; i < 3; i++) {
+  for (int64_t i = 0; i < 3; ++i) {
     std::string suffix = std::to_string(i);
     sp.push_back(getSimpleSubprogram("func" + suffix));
     Location loc =
@@ -134,7 +134,7 @@ TEST_F(DIScopeAttrUtilTest, TestExtractScopeFrom) {
   std::vector<DISubprogramAttr> sp;
   std::vector<DILexicalBlockAttr> block;
   std::vector<Location> fused;
-  for (int64_t i = 0; i < 3; i++) {
+  for (int64_t i = 0; i < 3; ++i) {
     std::string suffix = std::to_string(i);
     sp.push_back(getSimpleSubprogram("func" + suffix));
     block.push_back(DILexicalBlockAttr::get(&ctx, sp.back(), {}, {}, {}));
@@ -170,7 +170,7 @@ TEST_F(DIScopeAttrUtilTest, TestExtractSourceLoc) {
   std::vector<DISubprogramAttr> sp;
   std::vector<FileLineColLoc> loc;
   std::vector<Location> fused;
-  for (int64_t i = 0; i < 3; i++) {
+  for (int64_t i = 0; i < 3; ++i) {
     std::string suffix = std::to_string(i);
     sp.push_back(getSimpleSubprogram("func" + suffix));
     loc.push_back(

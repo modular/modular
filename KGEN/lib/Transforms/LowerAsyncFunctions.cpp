@@ -502,12 +502,12 @@ void LowerAsyncBuildContext::takeSlicedFirstStateFrom(FuncOp hotRamp,
         regions.push_back(&r);
     }
   }
-  for (auto i = removalRegions.rbegin(); i != removalRegions.rend(); i++) {
+  for (auto i = removalRegions.rbegin(); i != removalRegions.rend(); ++i) {
     Region *region = *i;
     for (auto opIter = region->front().getOperations().rbegin();
          opIter != region->front().rend();) {
       Operation &op = *opIter;
-      opIter++;
+      ++opIter;
       if (!reachable.contains(&op))
         op.erase();
     }
@@ -1298,7 +1298,7 @@ void LowerAsyncBuildContext::storeOpInFrameIfNeeded(
       if (entry != frameData->operationToIndexInFrame.end())
         op->eraseOperand(index);
       else
-        index++;
+        ++index;
     }
     if (op->getNumOperands() == 0)
       opsToDelete.push_back(op);
@@ -1613,7 +1613,7 @@ FrameData::FrameData(
       if (j > 20000)
         llvm_unreachable("infinite loop");
 
-      j++;
+      ++j;
       VirtualBlock virtualBlock = paths.back().virtualBlock;
       int indexOfMe = paths.back().existsAt(virtualBlock);
       PathContainer path = std::move(paths.back().path);

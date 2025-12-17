@@ -326,13 +326,13 @@ PogListAttr::prependPosParams(ArrayRef<ParamDeclAttr> newParams,
     // Put inferred parameters first.
     if (iOld < eOld && getPassingKind(iOld) == PassingKind::Inferred) {
       mergedPogs.push_back(getPogs()[iOld]);
-      iOld++;
+      ++iOld;
     } else if (iNew < eNew) {
       mergedPogs.push_back(newPogs[iNew]);
-      iNew++;
+      ++iNew;
     } else {
       mergedPogs.push_back(getPogs()[iOld]);
-      iOld++;
+      ++iOld;
     }
   }
 

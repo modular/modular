@@ -640,7 +640,7 @@ parseElif(OpAsmParser &parser,
             *elifRegionsRegions.emplace_back(std::make_unique<Region>()),
             thenArgs)))
       return failure();
-    i++;
+    ++i;
   } while (failed(parser.parseOptionalKeyword("else")));
   SmallVector<OpAsmParser::Argument> elseArgs;
   if (failed(parser.parseArgumentList(
@@ -668,7 +668,7 @@ static void printElif(OpAsmPrinter &printer, Operation *elifOp,
   unsigned i = 0;
   assert(conditionalRegions.size() % 2 == 0);
   unsigned conditionCount = conditionalRegions.size() / 2;
-  for (unsigned r = 0; r < conditionCount; r++) {
+  for (unsigned r = 0; r < conditionCount; ++r) {
     if (i > 0)
       printArgumentList(conditionalRegions[i].getArguments());
     printer.printRegion(conditionalRegions[i++], /*printEntryBlockArgs=*/false);

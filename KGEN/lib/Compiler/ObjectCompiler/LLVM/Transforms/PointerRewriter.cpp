@@ -367,7 +367,7 @@ static bool bitcastFunctionOperands(Module &module) {
     // convert calls to this function
     for (User *u : func.users()) {
       if (auto *ci = dyn_cast<CallInst>(u)) {
-        for (unsigned idx = 0, e = ci->arg_size(); idx < e; idx++) {
+        for (unsigned idx = 0, e = ci->arg_size(); idx < e; ++idx) {
           auto oldTy = fTy->getParamType(idx);
           auto newTy = newFTy->getParamType(idx);
           if (oldTy == newTy)
@@ -472,7 +472,7 @@ PointerRewriter::buildPointerMap(const Module &module) {
     SmallVector<Type *, 8> paramTypes;
     bool needsNewFunctionType = false;
 
-    for (unsigned i = 0; i < fTy->getNumParams(); i++) {
+    for (unsigned i = 0; i < fTy->getNumParams(); ++i) {
       Type *paramType = fTy->getParamType(i);
 
       if (paramType->isPointerTy()) {
@@ -556,7 +556,7 @@ PointerRewriter::buildPointerMap(const Module &module) {
     if (fTy == newFTy)
       continue;
 
-    for (unsigned int i = 0; i < fTy->getNumParams(); i++) {
+    for (unsigned int i = 0; i < fTy->getNumParams(); ++i) {
       auto oldTy = fTy->getParamType(i);
       auto newTy = newFTy->getParamType(i);
       if (oldTy == newTy)

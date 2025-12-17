@@ -2364,7 +2364,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     if (arg.variadicKind == VariadicKind::PosVarArg) {
       argVariadicOrigConvention = arg.variadicElementArgConvention;
-      i++;
+      ++i;
     }
 
     argPogs.emplace_back(PogMetadataAttr::get(
