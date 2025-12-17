@@ -21,7 +21,8 @@ from utils import IndexList
 
 fn random_uniform[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     output_fn: fn[width: Int, _rank: Int] (
         idx: IndexList[_rank], val: SIMD[dtype, width]
     ) capturing [_],
@@ -63,7 +64,7 @@ fn random_uniform[
     fn generate[
         width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
-        constrained[width <= 4]()
+        __comptime_assert width <= 4
 
         var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
 

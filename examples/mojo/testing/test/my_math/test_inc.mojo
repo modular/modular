@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from my_math import inc
-from testing import assert_equal, assert_raises
+from testing import assert_equal, assert_raises, TestSuite
 
 
 def test_inc_valid():
@@ -28,5 +28,4 @@ def test_inc_max():
 
 
 def main():
-    test_inc_valid()
-    test_inc_max()
+    TestSuite.discover_tests[__functions_in_module()]().run()

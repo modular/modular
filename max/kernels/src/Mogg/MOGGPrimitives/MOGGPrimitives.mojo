@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from sys import external_call, size_of
+from sys import external_call, size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -69,13 +69,10 @@ struct StateContext:
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr
 
-        constrained[
-            size_of[StateContext]() == 16,
-            (
-                "Expecting StateContext to be 16 bytes wide, to match the C++"
-                " equivalent"
-            ),
-        ]()
+        __comptime_assert size_of[StateContext]() == 16, (
+            "Expecting StateContext to be 16 bytes wide, to match the C++"
+            " equivalent"
+        )
 
     @always_inline
     fn __getitem__(self, index: Int) -> OpaquePointer:
@@ -111,8 +108,8 @@ fn create_error_async_values_and_destruct_error(
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
         async_len,
-        err.unsafe_cstr_ptr(),
-        err.byte_length(),
+        err.data.as_string_slice().unsafe_ptr(),
+        err.data.byte_length(),
     )
 
 
@@ -178,9 +175,9 @@ fn create_non_tracked_tensor_async[
     buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
     async_ptr: OpaquePointer,
 ):
-    constrained[
-        tensor_rank == buffer_rank or (tensor_rank == 0 and buffer_rank == 1)
-    ]()
+    __comptime_assert tensor_rank == buffer_rank or (
+        tensor_rank == 0 and buffer_rank == 1
+    )
     external_call["MGP_RT_CreateAsyncNonTrackedTensor", NoneType](
         buffer.data,
         bytecount_with_dtype[dtype](buffer.dynamic_shape),
@@ -243,9 +240,9 @@ fn create_tensor_async[
 ):
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
-    constrained[
-        tensor_rank == buffer_rank or (tensor_rank == 0 and buffer_rank == 1)
-    ]()
+    __comptime_assert tensor_rank == buffer_rank or (
+        tensor_rank == 0 and buffer_rank == 1
+    )
     external_call["MGP_RT_CreateAsyncTensorWithBorrow", NoneType](
         buffer.data,
         bytecount_with_dtype[dtype](buffer.dynamic_shape),
@@ -377,9 +374,9 @@ fn unpack_tensor[
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
-    constrained[
-        tensor_rank == buffer_rank or (tensor_rank == 0 and buffer_rank == 1)
-    ]()
+    __comptime_assert tensor_rank == buffer_rank or (
+        tensor_rank == 0 and buffer_rank == 1
+    )
     var shapes = IndexList[buffer_rank]()
     var buffer_ptr = external_call[
         "MGP_RT_GetShapeAndDataFromTensor",
@@ -458,13 +455,13 @@ fn mgp_tensor_create[
     @parameter
     if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
-        constrained[buffer_rank == 1]()
+        __comptime_assert buffer_rank == 1
         return NDBuffer[dtype, buffer_rank](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
-        constrained[spec_rank == buffer_rank]()
+        __comptime_assert spec_rank == buffer_rank
         return NDBuffer[dtype, buffer_rank](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
@@ -480,10 +477,10 @@ fn mgp_tensor_extract_tensor_spec[
 ](buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin]) -> IndexList[tensor_rank]:
     @parameter
     if tensor_rank == 0:
-        constrained[buffer_rank == 1]()
+        __comptime_assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
-        constrained[buffer_rank == tensor_rank]()
+        __comptime_assert buffer_rank == tensor_rank
         return rebind[IndexList[tensor_rank]](
             buffer.dynamic_shape.canonicalize()
         )
@@ -831,10 +828,9 @@ fn mgp_tensor_spec_create[
 fn mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
 ](spec: IndexList[spec_rank]) -> Int:
-    constrained[
-        axis < spec_rank,
-        "axis for get_dim must be less than rank of TensorSpec",
-    ]()
+    __comptime_assert (
+        axis < spec_rank
+    ), "axis for get_dim must be less than rank of TensorSpec"
     return spec[Int(axis)]
 
 
@@ -1026,7 +1022,8 @@ fn ManagedTensorSliceDef[
     mut: Bool,
     input: IO,
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     io_spec: IOSpec[mut, input],
     static_spec: StaticTensorSpec[dtype, rank],
 ](
@@ -1088,7 +1085,7 @@ fn reshape_contiguous_buffer[
 fn get_simd_width_for_dtypes[
     dtypes: StaticTuple[DType], target: StaticString
 ]() -> Int:
-    constrained[dtypes.size > 0]()
+    __comptime_assert dtypes.size > 0
 
     var width = get_kernel_simd_width[dtypes[0], target]()
 
@@ -1203,7 +1200,8 @@ fn get_int_from_shape[
 @register_internal("rebuild_static_tensor_specs_with_output_compute_lambda")
 @no_inline
 fn rebuild_static_tensor_specs_with_output_compute_lambda[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     dtype: DType,
     rank: Int,
 ](
@@ -1340,7 +1338,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
 
 
 @register_passable("trivial")
-struct MyIntReg(ImplicitlyCopyable, Movable):
+struct MyIntReg(ImplicitlyCopyable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1354,7 +1352,7 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
 
 
 @register_passable
-struct MyIntReg2(ImplicitlyCopyable, Movable):
+struct MyIntReg2(ImplicitlyCopyable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1422,13 +1420,12 @@ fn mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
 
 @register_internal("mogg.async.__del__")
 @no_inline
-fn mogg_async_del(async_ptr: AnyAsyncValueRefPtr):
+fn mogg_async_del(async_ptr: UnsafePointer[AnyAsyncValueRefPtr], size: Int):
     """
     Decrement the AnyAsyncValueRef. Typically called at the end of a kernel for
     all input and output operands.
     """
-    var ptr = UnsafePointer(to=async_ptr)
-    external_call["MGP_RT_DestructAsyncRefs", NoneType](1, ptr, False)
+    external_call["MGP_RT_DestructAsyncRefs", NoneType](size, async_ptr, False)
 
 
 @register_internal("mogg.async.unpack")
@@ -1437,9 +1434,11 @@ fn mogg_async_unpack[T: AnyTrivialRegType](async_ptr: AnyAsyncValueRefPtr) -> T:
     """
     Returns the value stored in the AnyAsyncValueRef.
     """
-    return external_call["MGP_RT_GetValueFromAsync", OpaquePointer](
+    var ptr = external_call["MGP_RT_GetValueFromAsync", OpaquePointer](
         async_ptr
-    ).bitcast[T]()[0]
+    ).bitcast[T]()
+
+    return UnsafePointer[T].__getitem__(ptr, 0)
 
 
 struct MoggAsyncPackHelper:
@@ -1490,6 +1489,32 @@ struct MoggAsyncPackHelper:
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
+    fn __init__(
+        out self, var data: Some[Movable], async_ptr: AnyAsyncValueRefPtr
+    ):
+        """
+        Packs a generic Movable value into the asynchronous context.
+        Used for opaque types like SIMDPair.
+        """
+        comptime Type = type_of(data)
+
+        # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
+        @always_inline("nodebug")
+        fn erased_destructor(ptr: UnsafePointer[UInt8]):
+            ptr.bitcast[Type]().destroy_pointee()
+
+        var dst_ptr = external_call[
+            "MGP_RT_MojoValueAllocateBuffer", UnsafePointer[UInt8]
+        ](size_of[Type](), align_of[Type]())
+
+        dst_ptr.bitcast[Type]().init_pointee_move(data^)
+
+        external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
+            dst_ptr,
+            erased_destructor,
+            async_ptr,
+        )
+
 
 @register_internal("mogg.async.pack")
 @no_inline
@@ -1520,7 +1545,8 @@ fn mogg_async_pack_borrow(
 @no_inline
 fn mogg_async_pack_borrow_v2[
     buffer_rank: Int,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     spec_rank: Int,
     is_tensor: Bool,
 ](
@@ -1626,8 +1652,8 @@ fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
     """Indicates to the C++ runtime that the kernel has failed."""
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
-        err.unsafe_cstr_ptr(),
-        err.byte_length(),
+        err.data.as_string_slice().unsafe_ptr(),
+        err.data.byte_length(),
     )
 
 
@@ -1674,27 +1700,35 @@ fn tmp_reshape_contiguous_buffer[
 # ===-----------------------------------------------------------------------===#
 
 
-fn mgp_get_buffer_handle_from_tensor_buffer_ref(
-    buffer: TensorBufferRefPtr, memStorageHandle: OpaquePointer
-):
-    external_call["MGP_RT_GetMemBufferHandleFromTensorBufferRef", NoneType](
-        buffer, memStorageHandle
-    )
-
-
 @register_internal("tmp.mgp.buffer.get_cached")
 @no_inline
 fn tmp_mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
-) -> TensorBufferRefPtr:
+) -> Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr]:
     """
-    Get a reference to the cached TensorBufferRef.
+    Get a reference to the cached tensor.
     """
-    return external_call["TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr](
+    var buffer_size: UInt64 = 0
+    var buffer_data = OpaquePointer()
+
+    var buffer_ref = external_call[
+        "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
+    ](
         buffer_slot,
         ctx,
+        UnsafePointer(to=buffer_size),
+        UnsafePointer(to=buffer_data),
     )
+
+    var buffer = NDBuffer[DType.int8, 1](
+        buffer_data.bitcast[Int8](), Index(buffer_size)
+    )
+    var res = Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr](
+        buffer, buffer_ref
+    )
+
+    return res
 
 
 @register_internal("tmp.mgp.buffer.remove_cached")
@@ -1811,3 +1845,20 @@ fn get_buffer_mem_storage_handle(
     external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
         buffer, type, memStorageHandle
     )
+
+
+@register_internal("pop.select")
+@always_inline
+fn select[T: AnyTrivialRegType](cond: Bool, true_case: T, false_case: T) -> T:
+    if cond:
+        return true_case
+
+    return false_case
+
+
+@register_internal("pop.simd.select")
+@always_inline
+fn simd_select[
+    T: AnyTrivialRegType
+](cond: Bool, true_case: T, false_case: T) -> T:
+    return select(cond, true_case, false_case)

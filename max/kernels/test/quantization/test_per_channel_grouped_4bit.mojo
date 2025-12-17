@@ -113,21 +113,21 @@ fn test_alignment_and_size():
     # - 8 // 2 = 4 bytes for the low bits
     # 2 + 4 = 6
     # Bits per weight: (8 * 6) / 8 = 6bpw
-    constrained[size_of[Q4sym[8]]() == 6]()
+    __comptime_assert size_of[Q4sym[8]]() == 6
 
     # Calculation for group size 16:
     # - 2 bytes for fp16 scale
     # - 16 // 2 = 8 bytes for the low bits
     # 2 + 8 = 10
     # Bits per weight: (8 * 10) / 16 = 5bpw
-    constrained[size_of[Q4sym[16]]() == 10]()
+    __comptime_assert size_of[Q4sym[16]]() == 10
 
     # Calculation for group size 32:
     # - 2 bytes for fp16 scale
     # - 32 // 2 = 16 bytes for the low bits
     # 2 + 16 = 18
     # Bits per weight: (8 * 18) / 32 = 4.5bpw
-    constrained[size_of[Q4sym[32]]() == 18]()
+    __comptime_assert size_of[Q4sym[32]]() == 18
     print("-------end test_alignment_and_size-------")
     print()
 
@@ -154,7 +154,7 @@ fn _read_write_to_tensors[
         data_matrix[i] = i
 
     # Tensor to store the packed data
-    constrained[num_elements % group_size == 0]()
+    __comptime_assert num_elements % group_size == 0
     comptime num_blocks = ceildiv(num_elements, group_size)
     comptime block_size = size_of[Q4sym[group_size]]()
     var packed_blob_backing = InlineArray[UInt8, num_blocks * block_size](

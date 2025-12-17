@@ -165,28 +165,28 @@ fn example(a: Int):
     print(x)
 
 $ mojo test.mojo
-stdlib/builtin/string_literal.mojo:156:45: error: cannot use StringLiteral append methods at runtime, only in an alias
+std/builtin/string_literal.mojo:156:45: error: cannot use StringLiteral append methods at runtime, only in an alias
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
 x.mojo:6:11: note: called from
         x += "bar"
           ^
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:1:
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:102:
-mojo/stdlib/stdlib/builtin/string_literal.mojo:156:45: note: see https://github.com/modular/mojo/issues/3820 for more information
+Included from mojo/stdlib/std/prelude/__init__.mojo:1:
+Included from mojo/stdlib/std/prelude/__init__.mojo:102:
+mojo/stdlib/std/builtin/string_literal.mojo:156:45: note: see https://github.com/modular/mojo/issues/3820 for more information
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:1:
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:102:
-/Users/clattner/Projects/modular/open-source/max/mojo/stdlib/stdlib/builtin/string_literal.mojo:156:45: error: failed to legalize operation 'pop.string.concat' that was explicitly marked illegal
+Included from mojo/stdlib/std/prelude/__init__.mojo:1:
+Included from mojo/stdlib/std/prelude/__init__.mojo:102:
+/Users/clattner/Projects/modular/open-source/max/mojo/stdlib/std/builtin/string_literal.mojo:156:45: error: failed to legalize operation 'pop.string.concat' that was explicitly marked illegal
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
 x.mojo:6:11: note: called from
         x += "bar"
           ^
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:1:
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:102:
-mojo/stdlib/stdlib/builtin/string_literal.mojo:156:45: note: see current operation: %58 = "pop.string.concat"(%57, %28) : (!kgen.string, !kgen.string) -> !kgen.string
+Included from mojo/stdlib/std/prelude/__init__.mojo:1:
+Included from mojo/stdlib/std/prelude/__init__.mojo:102:
+mojo/stdlib/std/builtin/string_literal.mojo:156:45: note: see current operation: %58 = "pop.string.concat"(%57, %28) : (!kgen.string, !kgen.string) -> !kgen.string
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
 mojo: could not lower funcs to LLVM, run LowerToLLVMPipeline failed

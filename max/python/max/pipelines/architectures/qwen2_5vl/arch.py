@@ -18,6 +18,7 @@ from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
+from .context import Qwen2_5VLTextAndVisionContext
 from .model import Qwen2_5VLModel
 from .tokenizer import Qwen2_5VLTokenizer
 from .weight_adapters import convert_qwen2_5vl_model_state_dict
@@ -85,6 +86,7 @@ qwen2_5_vl_arch = SupportedArchitecture(
     },
     pipeline_model=Qwen2_5VLModel,
     tokenizer=Qwen2_5VLTokenizer,
+    context_type=Qwen2_5VLTextAndVisionContext,
     required_arguments={
         "enable_chunked_prefill": False,
     },

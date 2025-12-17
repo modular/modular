@@ -45,7 +45,8 @@ from .utils import (
 
 @fieldwise_init
 struct PackMatrixRows[
-    original_mut: Bool, //,
+    original_mut: Bool,
+    //,
     # original matrix shape list
     original_shape: DimList,
     # packed matrix shape list
@@ -55,7 +56,7 @@ struct PackMatrixRows[
     row_inner_size: Int,
     packed_origin: MutOrigin,
     original_origin: Origin[original_mut],
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
     e.g. extract tile [X, Y] and pack into [Xo][Y][Xi].
@@ -107,7 +108,7 @@ struct PackMatrixRows[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        constrained[Self.row_inner_size % Self.simd_size == 0]()
+        __comptime_assert Self.row_inner_size % Self.simd_size == 0
 
         var instance = Self(
             packed_matrix,
@@ -298,7 +299,8 @@ struct PackMatrixRows[
 
 @fieldwise_init
 struct PackMatrixCols[
-    original_mut: Bool, //,
+    original_mut: Bool,
+    //,
     # original matrix shape list
     original_shape: DimList,
     # packed matrix shape list
@@ -310,7 +312,7 @@ struct PackMatrixCols[
     use_i8mm: Bool,
     packed_origin: MutOrigin,
     original_origin: Origin[original_mut],
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
     e.g. extracts [X, Y] and packs as [Yo][X][Yi].
@@ -357,7 +359,7 @@ struct PackMatrixCols[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        constrained[Self.column_inner_size % Self.simd_size == 0]()
+        __comptime_assert Self.column_inner_size % Self.simd_size == 0
         debug_assert(
             pack_tile_dim[1] % Self.column_inner_size == 0,
             "Unimplemented tile pattern.",
@@ -452,7 +454,7 @@ struct PackMatrixCols[
     fn _pack_vnni(self):
         """Copy the B tile from the original matrix to the packed buffer for VNNI.
         """
-        constrained[Self.use_vnni]()
+        __comptime_assert Self.use_vnni
 
         comptime vnni_cols = 4
 
@@ -482,7 +484,7 @@ struct PackMatrixCols[
         comptime i8mm_rows = 2
         comptime i8mm_cols = 8
 
-        constrained[Self.use_i8mm]()
+        __comptime_assert Self.use_i8mm
         var kc = self.valid_data_dim[0]
         var nc = self.valid_data_dim[1]
         comptime nr = Self.column_inner_size // 2
@@ -511,7 +513,7 @@ struct PackMatrixCols[
     fn _pack_default(self):
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
-        constrained[not Self.use_vnni and not Self.use_i8mm]()
+        __comptime_assert not Self.use_vnni and not Self.use_i8mm
         var valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
         comptime unroll_factor = get_packB_unroll_factor()
 
@@ -763,7 +765,8 @@ fn pack_b[
 
 @always_inline
 fn _pack_b_ndbuffer_impl[
-    b_mut: Bool, //,
+    b_mut: Bool,
+    //,
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -846,7 +849,8 @@ fn _pack_b_ndbuffer_impl[
 
 @register_internal("layout_transform_KN_to_KNkni")
 fn pack_b_ndbuffer[
-    b_mut: Bool, //,
+    b_mut: Bool,
+    //,
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -907,7 +911,8 @@ fn pack_transposed_b_ndbuffer[
 
 @fieldwise_init
 struct BTileGenerator[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     config: KernelConfig,
     a_type: DType,
     b_type: DType,
@@ -916,7 +921,7 @@ struct BTileGenerator[
     transpose_b: Bool,
     b_packed: Bool,
     origin: Origin[mut],
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
     If b_packed is true, calls to get_tile will return a buffer view from B.

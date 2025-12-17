@@ -17,7 +17,8 @@
 fn my_sort[
     # infer-only parameters
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     # positional-only parameter
     values: SIMD[dtype, width],
     /,
@@ -42,8 +43,8 @@ fn my_sort[
 
 
 def main():
-    alias dtype = DType.int32
-    alias input2 = SIMD[dtype, 8](9, 3, 3, 1, 11, 10, 5, 2)
+    comptime dtype = DType.int32
+    comptime input2 = SIMD[dtype, 8](9, 3, 3, 1, 11, 10, 5, 2)
 
     fn compare(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Int:
         if lhs == rhs:
@@ -51,5 +52,5 @@ def main():
         else:
             return -1 if lhs < rhs else 1
 
-    alias sorted = my_sort[input2, compare, reverse=False]()
+    comptime sorted = my_sort[input2, compare, reverse=False]()
     print(sorted)

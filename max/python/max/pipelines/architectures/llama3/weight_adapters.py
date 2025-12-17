@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
-from max.pipelines.lib import PipelineConfig, SupportedEncoding
+from max.pipelines.lib import MAXModelConfig, PipelineConfig, SupportedEncoding
 from transformers import LlamaConfig
 
 # Maps from Safetensor to MAX weight names.
@@ -26,12 +26,15 @@ LLAMA_SAFETENSOR_MAPPING = {
 }
 
 
-def convert_safetensor_state_dict(
+def _convert_safetensor_with_model_config(
     state_dict: dict[str, Weights],
     huggingface_config: LlamaConfig,
-    pipeline_config: PipelineConfig,
-    **unused_kwargs,
+    model_config: MAXModelConfig,
 ) -> dict[str, WeightData]:
+    """Helper function to convert safetensor state dict using a specific model config.
+
+    This allows the same conversion logic to be used for both target and draft models.
+    """
     new_state_dict: dict[str, WeightData] = {}
     # Map the weight names.
     for safetensor_name, value in state_dict.items():
@@ -39,7 +42,7 @@ def convert_safetensor_state_dict(
         for before, after in LLAMA_SAFETENSOR_MAPPING.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
-    if pipeline_config.model_config._quant_config:
+    if model_config._quant_config:
         # hack: argsort the perm_idx array
         for key, weight_data in new_state_dict.items():
             np_array = np.from_dlpack(weight_data.data)  # type: ignore
@@ -47,10 +50,7 @@ def convert_safetensor_state_dict(
                 new_state_dict[key] = WeightData.from_numpy(
                     np.argsort(np_array).astype(np.int32), key
                 )
-    if (
-        pipeline_config.model_config.quantization_encoding
-        == SupportedEncoding.gptq
-    ):
+    if model_config.quantization_encoding == SupportedEncoding.gptq:
         for key, weight_data in new_state_dict.items():
             # TODO(E2EOPT-243): gptq models actually have a dtype of float16
             # not bfloat16. Sadly, MMA does not support float16 currently, so
@@ -62,19 +62,16 @@ def convert_safetensor_state_dict(
             ):
                 new_state_dict[key] = weight_data.astype(DType.bfloat16)
 
-    if pipeline_config.model_config._applied_dtype_cast_from:
-        assert pipeline_config.model_config._applied_dtype_cast_to, (
+    if model_config._applied_dtype_cast_from:
+        cast_from = model_config._applied_dtype_cast_from
+        cast_to = model_config._applied_dtype_cast_to
+        assert cast_to, (
             "Invalid configuration: _applied_dtype_cast_to is not set but _applied_dtype_cast_from is set. "
             "This should not happen."
         )
         for key, weight_data in new_state_dict.items():
-            if (
-                weight_data.dtype
-                == pipeline_config.model_config._applied_dtype_cast_from.dtype
-            ):
-                new_state_dict[key] = weight_data.astype(
-                    pipeline_config.model_config._applied_dtype_cast_to.dtype
-                )
+            if weight_data.dtype == cast_from.dtype:
+                new_state_dict[key] = weight_data.astype(cast_to.dtype)
 
     # The GPTQ algorithm only use a subset of its keys based on the specific
     # configuration, while the unused keys remain present in the state dict
@@ -97,6 +94,17 @@ def convert_safetensor_state_dict(
             new_state_dict.pop(key, None)
 
     return new_state_dict
+
+
+def convert_safetensor_state_dict(
+    state_dict: dict[str, Weights],
+    huggingface_config: LlamaConfig,
+    pipeline_config: PipelineConfig,
+    **unused_kwargs,
+) -> dict[str, WeightData]:
+    return _convert_safetensor_with_model_config(
+        state_dict, huggingface_config, pipeline_config.model_config
+    )
 
 
 # Maps from GGUF to MAX weight names.

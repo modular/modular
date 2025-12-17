@@ -38,7 +38,6 @@ from max.interfaces import (
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
-from max.serve.process_control import ProcessMonitor
 from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.scheduler.queues import EngineQueue, SchedulerZmqConfigs
 from max.serve.telemetry.metrics import METRICS
@@ -73,7 +72,6 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
         self,
         model_name: str,
         tokenizer: PipelineTokenizer[ContextType, Any, RequestType],
-        worker_monitor: ProcessMonitor,
         scheduler_zmq_configs: SchedulerZmqConfigs,
         lora_queue: LoRAQueue | None = None,
     ) -> None:
@@ -90,7 +88,6 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
         self.lora_queue = lora_queue
 
         self.engine_queue = EngineQueue[ContextType, OutputType](
-            worker_monitor=worker_monitor,
             scheduler_zmq_configs=scheduler_zmq_configs,
         )
 
@@ -101,21 +98,10 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
 
         self.logger.debug("%s: Starting workers:", self.model_name)
 
-        if not self.engine_queue.is_worker_healthy():
-            raise RuntimeError("Worker process not healthy not starting worker")
-
         # Add global fanout worker.
         self.create_background_task(self.engine_queue.response_worker())
 
-        if not self.engine_queue.is_worker_healthy():
-            raise RuntimeError(
-                "Worker process not healthy after running background task"
-            )
-
-        self.logger.debug(
-            "%s: Started workers",
-            self.model_name,
-        )
+        self.logger.debug("%s: Started workers", self.model_name)
         return self
 
     async def __aexit__(
@@ -127,6 +113,7 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
             if not t.done():
                 t.cancel()
         self.tasks.clear()
+        self.logger.info("Pipeline completed: %s", self.model_name)
         return await super().__aexit__(et, exc, tb)
 
     def create_background_task(
@@ -136,17 +123,13 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
         task.add_done_callback(self.log_task_done)
         self.tasks.add(task)
         self.logger.debug(
-            "%s: Task Added: %s",
-            self.model_name,
-            task.get_name(),
+            "%s: Task Added: %s", self.model_name, task.get_name()
         )
         return task
 
     def log_task_done(self, task: asyncio.Task[Any]) -> None:
-        self.logger.info(
-            "%s: Task completed: %s",
-            self.model_name,
-            task.get_name(),
+        self.logger.debug(
+            "%s: Task completed: %s", self.model_name, task.get_name()
         )
 
 
@@ -193,6 +176,9 @@ class TokenGeneratorPipeline(
         # Skip special tokens if tool use is enabled
         tool_use = request.tools is not None
         skip_special_tokens = tool_use
+
+        # Track whether we've yielded the first token (for TTFT metric)
+        first_token_yielded = False
 
         try:
             with record_ms(METRICS.input_time):
@@ -273,8 +259,9 @@ class TokenGeneratorPipeline(
                             status=status,
                         )
 
-                        if i == 0:
+                        if not first_token_yielded:
                             METRICS.ttft(itl.elapsed_ms)
+                            first_token_yielded = True
                         else:
                             METRICS.itl(itl.elapsed_ms)
                         itl.reset()

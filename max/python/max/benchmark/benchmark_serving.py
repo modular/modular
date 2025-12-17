@@ -27,6 +27,7 @@ import random
 import re
 import resource
 import statistics
+import subprocess
 import sys
 import time
 import warnings
@@ -92,6 +93,7 @@ from max.benchmark.benchmark_shared.server_metrics import (
     collect_server_metrics,
     print_server_metrics,
 )
+from max.diagnostics.gpu import GPUDiagContext
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     "This command runs comprehensive benchmark tests on a model server to"
@@ -136,6 +138,47 @@ def set_ulimit(target_soft_limit: int = 65535) -> None:
             resource.setrlimit(resource_type, (target_soft_limit, current_hard))
         except ValueError as e:
             print(f"Fail to set RLIMIT_NOFILE: {e}")
+
+
+def get_default_trace_path() -> str:
+    """Get the default trace output path."""
+    workspace_path = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+    if workspace_path:
+        return os.path.join(workspace_path, "profile.nsys-rep")
+    return "./profile.nsys-rep"
+
+
+def assert_nvidia_gpu() -> None:
+    """Raise an exception if no NVIDIA GPUs are available."""
+    with GPUDiagContext() as ctx:
+        stats = ctx.get_stats()
+        if not stats:
+            raise RuntimeError(
+                "No GPUs detected. The --trace flag currently only works with NVIDIA GPUs."
+            )
+        if not any(gpu_name.startswith("nv") for gpu_name in stats):
+            raise RuntimeError(
+                "The --trace flag currently only works with NVIDIA GPUs. "
+                f"Found GPUs: {list(stats.keys())}"
+            )
+
+
+def start_trace(output_path: str, session_name: str | None = None) -> None:
+    """Start nsys profiling session."""
+    cmd = ["nsys", "start", "-o", output_path, "--force-overwrite", "true"]
+    if session_name:
+        cmd.extend(["--session", session_name])
+    logger.info(f"Starting nsys trace: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+
+
+def stop_trace(session_name: str | None = None) -> None:
+    """Stop nsys profiling session."""
+    cmd = ["nsys", "stop"]
+    if session_name:
+        cmd.extend(["--session", session_name])
+    logger.info(f"Stopping nsys trace: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
 
 
 async def get_request(
@@ -860,6 +903,8 @@ async def benchmark(
     ignore_first_turn_stats: bool,
     timing_data: dict[str, list[float]] | None,
     lora_manager: LoRABenchmarkManager | None,
+    trace_path: str | None = None,
+    trace_session: str | None = None,
 ) -> dict[str, Any]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
@@ -939,6 +984,10 @@ async def benchmark(
                     " collection"
                 )
 
+        # Start nsys trace if enabled (before timing to exclude trace overhead)
+        if trace_path:
+            start_trace(trace_path, trace_session)
+
         benchmark_start_time = time.perf_counter_ns()
         if max_benchmark_duration_s is None:
             benchmark_should_end_time = None
@@ -981,50 +1030,55 @@ async def benchmark(
             else base_driver
         )
 
-        if not num_chat_sessions:
-            # single-turn chat scenario
-            outputs = await run_single_turn_benchmark(
-                input_requests=input_requests,
-                request_rate=request_rate,
-                burstiness=burstiness,
-                timing_data=timing_data,
-                semaphore=semaphore,
-                benchmark_should_end_time=benchmark_should_end_time,
-                request_driver=request_driver,
-                model_id=model_id,
-                api_url=api_url,
-                max_output_len=max_output_len,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                lora_manager=lora_manager,
-            )
-        else:
-            # multi-turn chat scenario
-            outputs = await run_multiturn_benchmark(
-                chat_sessions=chat_sessions,
-                max_requests=max_requests,
-                semaphore=semaphore,
-                benchmark_should_end_time=benchmark_should_end_time,
-                request_driver=request_driver,
-                model_id=model_id,
-                api_url=api_url,
-                tokenizer=tokenizer,
-                delay_between_chat_turns=delay_between_chat_turns,
-                skip_first_n_requests=skip_first_n_requests,
-                ignore_first_turn_stats=ignore_first_turn_stats,
-                lora_manager=lora_manager,
-                warmup_delay_ms=warmup_delay_ms,
-                max_concurrency=max_concurrency,
-            )
+        try:
+            if not num_chat_sessions:
+                # single-turn chat scenario
+                outputs = await run_single_turn_benchmark(
+                    input_requests=input_requests,
+                    request_rate=request_rate,
+                    burstiness=burstiness,
+                    timing_data=timing_data,
+                    semaphore=semaphore,
+                    benchmark_should_end_time=benchmark_should_end_time,
+                    request_driver=request_driver,
+                    model_id=model_id,
+                    api_url=api_url,
+                    max_output_len=max_output_len,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    lora_manager=lora_manager,
+                )
+            else:
+                # multi-turn chat scenario
+                outputs = await run_multiturn_benchmark(
+                    chat_sessions=chat_sessions,
+                    max_requests=max_requests,
+                    semaphore=semaphore,
+                    benchmark_should_end_time=benchmark_should_end_time,
+                    request_driver=request_driver,
+                    model_id=model_id,
+                    api_url=api_url,
+                    tokenizer=tokenizer,
+                    delay_between_chat_turns=delay_between_chat_turns,
+                    skip_first_n_requests=skip_first_n_requests,
+                    ignore_first_turn_stats=ignore_first_turn_stats,
+                    lora_manager=lora_manager,
+                    warmup_delay_ms=warmup_delay_ms,
+                    max_concurrency=max_concurrency,
+                )
 
-        # Close pbar if it was created
-        if pbar is not None:
-            pbar.close()
+            # Close pbar if it was created
+            if pbar is not None:
+                pbar.close()
 
-        benchmark_duration = (
-            time.perf_counter_ns() - benchmark_start_time
-        ) / 1e9
+            benchmark_duration = (
+                time.perf_counter_ns() - benchmark_start_time
+            ) / 1e9
+        finally:
+            # Stop nsys trace if enabled (after timing to exclude trace overhead)
+            if trace_path:
+                stop_trace(trace_session)
 
     if print_inputs_and_outputs:
         print("Generated output text:")
@@ -1630,6 +1684,15 @@ def main(args: argparse.Namespace) -> None:
     # Resolve the appropriate backend for this request type
     resolved_backend = resolve_backend_for_chat(backend=backend, chat=chat)
 
+    # Handle trace flag
+    trace_path = None
+    if args.trace:
+        assert_nvidia_gpu()
+        trace_path = (
+            args.trace_file if args.trace_file else get_default_trace_path()
+        )
+        logger.info(f"Tracing enabled, output: {trace_path}")
+
     logger.info("Starting benchmark run")
     benchmark_result: dict[str, Any] = asyncio.run(
         benchmark(
@@ -1662,6 +1725,8 @@ def main(args: argparse.Namespace) -> None:
             ignore_first_turn_stats=args.ignore_first_turn_stats,
             timing_data=None,
             lora_manager=lora_manager,
+            trace_path=trace_path,
+            trace_session=args.trace_session,
         )
     )
 

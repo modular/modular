@@ -1,0 +1,116 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "attention_tests",
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "*_gpu.py",
+            "test_attention_no_opaque.py",
+        ],
+    ),
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "attention_gpu_tests",
+    timeout = "long",
+    srcs = glob(
+        ["*_gpu.py"],
+        exclude = ["test_attention_fp8_amd_gpu.py"],
+    ) + ["conftest.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "18",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:a10_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2564
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "attention_no_opaque_tests",
+    timeout = "long",
+    srcs = ["test_attention_no_opaque.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "attention_amd_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_attention_fp8_amd_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("numpy"),
+    ],
+)

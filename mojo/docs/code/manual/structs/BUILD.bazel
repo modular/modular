@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
+package(default_visibility = ["//docs:__subpackages__"])
+
 MOJO_SRCS = glob(["*.mojo"])
 
 [
@@ -7,7 +9,7 @@ MOJO_SRCS = glob(["*.mojo"])
         name = src.split(".")[0],
         srcs = [src],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in MOJO_SRCS

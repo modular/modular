@@ -17,7 +17,6 @@ from sys import simd_width_of
 
 from algorithm import elementwise, mean, sum, vectorize
 from algorithm.functional import unswitch
-from buffer import NDBuffer
 
 from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
@@ -231,7 +230,8 @@ fn uncentered_unweighted_correlation[
 
 
 fn cosine[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](u: UnsafePointer[Scalar[dtype]], v: type_of(u), len: Int,) -> Float64:
     """Compute the Cosine distance between 1-D arrays.
 
@@ -252,7 +252,8 @@ fn cosine[
 
 
 fn relative_difference[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     output: UnsafePointer[Scalar[dtype], mut=False],
     ref_out: type_of(output),
@@ -346,13 +347,13 @@ fn _div[
 fn _sum[
     dtype: DType, //
 ](src: UnsafePointer[Scalar[dtype]], len: Int) raises -> Scalar[dtype]:
-    return sum(NDBuffer[dtype, 1, address_space = src.address_space](src, len))
+    return sum(Span[Scalar[dtype]](ptr=src, length=len))
 
 
 fn _mean[
     dtype: DType, //
 ](src: UnsafePointer[Scalar[dtype]], len: Int) raises -> Scalar[dtype]:
-    return mean(NDBuffer[dtype, 1, address_space = src.address_space](src, len))
+    return mean(Span[Scalar[dtype]](ptr=src, length=len))
 
 
 fn _dot[

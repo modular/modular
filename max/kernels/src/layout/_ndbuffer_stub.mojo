@@ -35,7 +35,7 @@ struct TileMask[
     rank: Int,
     element_size: IndexList[rank] = IndexList[rank](1),
     element_stride: IndexList[rank] = IndexList[rank](1),
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     var max_dim: IndexList[Self.rank]
     var offset: IndexList[Self.rank]
 
@@ -195,10 +195,9 @@ fn _distribute_mask[
 #
 @always_inline("nodebug")
 fn _distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
-    constrained[
-        thread_layout.rank() <= 3,
-        "_distribute_shape requires thread_layout <= 3",
-    ]()
+    __comptime_assert (
+        thread_layout.rank() <= 3
+    ), "_distribute_shape requires thread_layout <= 3"
 
     var res = StaticTuple[Dim][thread_layout.rank()]()
 
@@ -232,10 +231,9 @@ fn distribute[
 ](buff: NDBuffer[dtype, rank, _, shape], thread_id: Int) -> NDBuffer[
     dtype, rank, buff.origin, _result_shape
 ]:
-    constrained[
-        depth(thread_layout.shape) == 1,
-        "distribute threads to NDBuffer only supports depth-1 thread layouts",
-    ]()
+    __comptime_assert (
+        depth(thread_layout.shape) == 1
+    ), "distribute threads to NDBuffer only supports depth-1 thread layouts"
 
     var res_strides = IndexList[rank]()
     var res_shape = IndexList[rank]()
@@ -273,12 +271,9 @@ fn distribute[
 
 @always_inline("nodebug")
 fn _vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
-    comptime rank = stdlib.builtin.variadic_size(sizes)
+    comptime rank = std.builtin.Variadic.size(sizes)
 
-    constrained[
-        rank <= 3,
-        "_vectorize_shape vector sizes <= 3",
-    ]()
+    __comptime_assert rank <= 3, "_vectorize_shape vector sizes <= 3"
 
     var res = StaticTuple[Dim, rank]()
 
@@ -315,7 +310,7 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 # Stores the layout of the vectorized buffer element.
 #
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
-    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
+    Defaultable, ImplicitlyCopyable, Stringable, Writable
 ):
     var stride: IndexList[Self.rank]
 
@@ -474,7 +469,7 @@ fn _copy_nd_buffer_to_layout_tensor[
     comptime num_elements = dst.layout.size()
     comptime dst_rank = layout.rank()
     comptime tensor_element_layout = dst.element_layout
-    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+    __comptime_assert src_rank == dst_rank, "src and dst should have same rank"
 
     # 1d-vector load/store
     @parameter
@@ -483,11 +478,12 @@ fn _copy_nd_buffer_to_layout_tensor[
         and tensor_element_layout.stride[0] == 1
         and dst.element_size != 1
     ):
-        constrained[
-            tensor_element_layout.shape[0] == buff_element_layout_shape[1],
-            "LayoutTensor element shape != buffer element shape",
-        ]()
-        constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
+        __comptime_assert (
+            tensor_element_layout.shape[0] == buff_element_layout_shape[1]
+        ), "LayoutTensor element shape != buffer element shape"
+        __comptime_assert (
+            buff_element_layout_shape[0] == 1
+        ), "Expecting row vector"
 
         comptime vec_size = Int(tensor_element_layout.shape[0])
         comptime alignment = align_of[dst.element_type]()
@@ -608,17 +604,18 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     comptime num_elements = dst.layout.size()
     comptime dst_rank = layout.rank()
     comptime tensor_element_layout = dst.element_layout
-    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
-    constrained[
-        mask_rank == dst_rank, "mask_rank and dst should have same rank"
-    ]()
+    __comptime_assert src_rank == dst_rank, "src and dst should have same rank"
+    __comptime_assert (
+        mask_rank == dst_rank
+    ), "mask_rank and dst should have same rank"
 
-    constrained[mask_rank == 2, "Masking is only supported for rank-2 inputs"]()
+    __comptime_assert (
+        mask_rank == 2
+    ), "Masking is only supported for rank-2 inputs"
 
-    constrained[
-        mask_element_size[0] * mask_element_size[1] == 1,
-        "Only scalar element masksing is supported",
-    ]()
+    __comptime_assert (
+        mask_element_size[0] * mask_element_size[1] == 1
+    ), "Only scalar element masksing is supported"
 
     # 1d-vector load/store
     @parameter
@@ -627,11 +624,12 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         and tensor_element_layout.stride[0] == 1
         and dst.element_size != 1
     ):
-        constrained[
-            tensor_element_layout.shape[0] == buff_element_layout_shape[1],
-            "LayoutTensor element shape != buffer element shape",
-        ]()
-        constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
+        __comptime_assert (
+            tensor_element_layout.shape[0] == buff_element_layout_shape[1]
+        ), "LayoutTensor element shape != buffer element shape"
+        __comptime_assert (
+            buff_element_layout_shape[0] == 1
+        ), "Expecting row vector"
 
         comptime vec_size = Int(tensor_element_layout.shape[0])
         comptime alignment = align_of[dst.element_type]()
@@ -752,7 +750,7 @@ fn _copy_layout_tensor_to_nd_buffer[
     comptime src_rank = layout.rank()
     comptime tensor_element_layout = src.element_layout
     comptime num_elements = src.layout.size()
-    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+    __comptime_assert src_rank == dst_rank, "src and dst should have same rank"
 
     # 1d-vector load/store
     @parameter
@@ -761,11 +759,12 @@ fn _copy_layout_tensor_to_nd_buffer[
         and tensor_element_layout.stride[0] == 1
         and src.element_size != 1
     ):
-        constrained[
-            tensor_element_layout.shape[0] == buff_element_layout_shape[1],
-            "LayoutTensor element shape != buffer element shape",
-        ]()
-        constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
+        __comptime_assert (
+            tensor_element_layout.shape[0] == buff_element_layout_shape[1]
+        ), "LayoutTensor element shape != buffer element shape"
+        __comptime_assert (
+            buff_element_layout_shape[0] == 1
+        ), "Expecting row vector"
 
         comptime vec_size = Int(tensor_element_layout.shape[0])
         comptime alignment = align_of[src.element_type]()
@@ -848,18 +847,19 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
     comptime num_elements = src.layout.size()
     comptime src_rank = layout.rank()
     comptime tensor_element_layout = src.element_layout
-    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+    __comptime_assert src_rank == dst_rank, "src and dst should have same rank"
 
-    constrained[
-        mask_rank == dst_rank, "mask_rank and dst should have same rank"
-    ]()
+    __comptime_assert (
+        mask_rank == dst_rank
+    ), "mask_rank and dst should have same rank"
 
-    constrained[mask_rank == 2, "Masking is only supported for rank-2 inputs"]()
+    __comptime_assert (
+        mask_rank == 2
+    ), "Masking is only supported for rank-2 inputs"
 
-    constrained[
-        mask_element_size[0] * mask_element_size[1] == 1,
-        "Only scalar element masksing is supported",
-    ]()
+    __comptime_assert (
+        mask_element_size[0] * mask_element_size[1] == 1
+    ), "Only scalar element masksing is supported"
 
     # 1d-vector load/store
     @parameter
@@ -868,11 +868,12 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         and tensor_element_layout.stride[0] == 1
         and src.element_size != 1
     ):
-        constrained[
-            tensor_element_layout.shape[0] == buff_element_layout_shape[1],
-            "LayoutTensor element shape != buffer element shape",
-        ]()
-        constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
+        __comptime_assert (
+            tensor_element_layout.shape[0] == buff_element_layout_shape[1]
+        ), "LayoutTensor element shape != buffer element shape"
+        __comptime_assert (
+            buff_element_layout_shape[0] == 1
+        ), "Expecting row vector"
 
         comptime vec_size = Int(tensor_element_layout.shape[0])
         comptime alignment = align_of[src.element_type]()
@@ -947,7 +948,8 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 @always_inline("nodebug")
 fn copy_from_nd_buffer[
     dtype: DType,
-    dst_data_layout: Layout, //,
+    dst_data_layout: Layout,
+    //,
     thread_layout: Layout,
     is_async: Bool = False,
     swizzle: OptionalReg[_swizzle_signature] = None,
@@ -964,20 +966,18 @@ fn copy_from_nd_buffer[
     comptime dst_rank = dst_data_layout.rank()
     comptime dst_element_layout = dst_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
-    constrained[src.rank == dst_rank, "src and dst should have same rank"]()
-    constrained[dst_rank == 2, "Only rank-2 layouts is supported for now."]()
+    __comptime_assert src.rank == dst_rank, "src and dst should have same rank"
+    __comptime_assert dst_rank == 2, "Only rank-2 layouts is supported for now."
 
-    constrained[
+    __comptime_assert (
         dst_thread_local.element_layout.rank() == 1
-        or dst_thread_local.element_layout.rank() == 2,
-        "Only rank-1, rank-2 vectoriztion is supported",
-    ]()
+        or dst_thread_local.element_layout.rank() == 2
+    ), "Only rank-1, rank-2 vectoriztion is supported"
 
     comptime threads_layout_rank = thread_layout.rank()
-    constrained[
-        threads_layout_rank == dst_rank,
-        "thread and data layout should have the same rank",
-    ]()
+    __comptime_assert (
+        threads_layout_rank == dst_rank
+    ), "thread and data layout should have the same rank"
 
     @parameter
     if dst_element_layout.rank() == 1:
@@ -1037,21 +1037,19 @@ fn copy_from_nd_buffer_masked[
     comptime dst_rank = dst_data_layout.rank()
     comptime dst_element_layout = dst_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
-    constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
+    __comptime_assert src_rank == 2, "Only rank-2 layouts is supported for now."
 
-    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+    __comptime_assert src_rank == dst_rank, "src and dst should have same rank"
 
-    constrained[
+    __comptime_assert (
         dst_thread_local.element_layout.rank() == 1
-        or dst_thread_local.element_layout.rank() == 2,
-        "Only rank-1, rank-2 vectoriztion is supported",
-    ]()
+        or dst_thread_local.element_layout.rank() == 2
+    ), "Only rank-1, rank-2 vectoriztion is supported"
 
     comptime threads_layout_rank = thread_layout.rank()
-    constrained[
-        threads_layout_rank == dst_rank,
-        "thread and data layout should have the same rank",
-    ]()
+    __comptime_assert (
+        threads_layout_rank == dst_rank
+    ), "thread and data layout should have the same rank"
 
     @parameter
     if dst_element_layout.rank() == 1:
@@ -1129,21 +1127,19 @@ fn copy_to_nd_buffer[
     comptime src_rank = src_data_layout.rank()
     comptime src_element_layout = src_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
-    constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
+    __comptime_assert src_rank == 2, "Only rank-2 layouts is supported for now."
 
-    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+    __comptime_assert src_rank == dst_rank, "src and dst should have same rank"
 
-    constrained[
+    __comptime_assert (
         src_thread_local.element_layout.rank() == 1
-        or src_thread_local.element_layout.rank() == 2,
-        "Only rank-1, rank-2 vectoriztion is supported",
-    ]()
+        or src_thread_local.element_layout.rank() == 2
+    ), "Only rank-1, rank-2 vectoriztion is supported"
 
     comptime threads_layout_rank = thread_layout.rank()
-    constrained[
-        threads_layout_rank == dst_rank,
-        "thread and data layout should have the same rank",
-    ]()
+    __comptime_assert (
+        threads_layout_rank == dst_rank
+    ), "thread and data layout should have the same rank"
 
     @parameter
     if src_element_layout.rank() == 1:
@@ -1191,21 +1187,19 @@ fn copy_to_nd_buffer_masked[
     comptime src_rank = src_data_layout.rank()
     comptime src_element_layout = src_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
-    constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
+    __comptime_assert src_rank == 2, "Only rank-2 layouts is supported for now."
 
-    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+    __comptime_assert src_rank == dst_rank, "src and dst should have same rank"
 
-    constrained[
+    __comptime_assert (
         src_thread_local.element_layout.rank() == 1
-        or src_thread_local.element_layout.rank() == 2,
-        "Only rank-1, rank-2 vectoriztion is supported",
-    ]()
+        or src_thread_local.element_layout.rank() == 2
+    ), "Only rank-1, rank-2 vectoriztion is supported"
 
     comptime threads_layout_rank = thread_layout.rank()
-    constrained[
-        threads_layout_rank == dst_rank,
-        "thread and data layout should have the same rank",
-    ]()
+    __comptime_assert (
+        threads_layout_rank == dst_rank
+    ), "thread and data layout should have the same rank"
 
     @parameter
     if src_element_layout.rank() == 1:

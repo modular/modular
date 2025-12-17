@@ -12,11 +12,19 @@ build --enable_platform_specific_config=true
 # Show more output files when you build multiple targets
 common --show_result=10
 
+# Only env vars passed with --repo_env are propagated to repository rules
+common --experimental_strict_repo_env
+
+# More resilient to network issues with the BCR URL
+common --module_mirrors=https://bcr.cloudflaremirrors.com
+
 # https://github.com/bazelbuild/bazel/pull/27030
 common --experimental_objc_fastbuild_options=
 
 # Don't inherit magic copts for objc_library rules
 common --incompatible_avoid_hardcoded_objc_compilation_flags
+
+common --experimental_collect_system_network_usage=false
 
 # https://github.com/aspect-build/tools_telemetry
 common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
@@ -75,6 +83,9 @@ build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
 build --dynamic_mode=off
 build --features=-supports_dynamic_linker
 
+# Make sure user installed python modules don't make it in to the build
+common --repo_env=PYTHONNOUSERSITE=affirmative
+
 # Make sure repository rules don't use host tools
 common --repo_env=CC=false
 common --repo_env=CXX=false
@@ -87,6 +98,9 @@ common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos
 # Always use llvm-ar which works fine for macOS
 common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
+
+# Enable parse_headers when the feature is added (only applies to first party code)
+common --process_headers_in_dependencies
 
 build --remote_retries=2
 build --remote_timeout=10m
@@ -137,8 +151,8 @@ build --experimental_output_paths=strip
 # Set base macOS deployment target otherwise the target depends on the host OS
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
-build --@llvm_zstd//:llvm_enable_zstd=false
-build --experimental_propagate_custom_flag=@llvm_zstd//:llvm_enable_zstd
+build --@llvm-project//third-party:llvm_enable_zstd=false
+build --experimental_propagate_custom_flag=@llvm-project//third-party:llvm_enable_zstd
 build --@llvm-project//lldb:enable_libedit=true
 build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_libedit
 build --@llvm-project//lldb:enable_curses=true
@@ -147,6 +161,14 @@ build --@llvm-project//llvm:pfm=disable
 build --experimental_propagate_custom_flag=@llvm-project//llvm:pfm
 build --@llvm-project//mlir:enable_cuda=true
 build --experimental_propagate_custom_flag=@llvm-project//mlir:enable_cuda
+
+# Enable mypy running on python builds
+build --aspects=//bazel/pip:mypy.bzl%mypy_aspect
+build --output_groups=+mypy
+
+build:disable-mypy --output_groups=-mypy
+
+build:disable-lint --config=disable-mypy
 
 build --remote_download_outputs=toplevel
 build --remote_download_regex='.*\.(inc|h)$'
@@ -159,8 +181,8 @@ build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
 # Set local builds to higher than CI priority
 build --remote_execution_priority=-1
 
-build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
+build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
 build:cache --experimental_remote_downloader=grpcs://modular.buildbuddy.io
 build:cache --experimental_remote_downloader_local_fallback
 build:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
@@ -187,6 +209,7 @@ build:macos --build_metadata=TAG_HOST_OS=macos
 build:macos --build_metadata=TAG_TARGET_OS=macos
 
 # Separate CI config that doesn't affect build output for verifying we share caches
+build:ci-no-config --curses=no
 build:ci-no-config --build_metadata=ROLE=CI
 build:ci-no-config --config=cache
 build:ci-no-config --disk_cache=

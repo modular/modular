@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _GPU_MEMORY = {
     "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": "8",
 }
@@ -33,10 +35,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "test_kv_cache_ragged_matmul_scale.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2596
 }
 
 [
@@ -59,7 +57,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(["**/*.mojo"])

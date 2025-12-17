@@ -51,7 +51,7 @@ description: {% if decl.summary
 
 {% if decl.aliases %}
 
-## Aliases
+## `comptime` values
 
 {% for alias in decl.aliases | sort(attribute='name') -%}
 

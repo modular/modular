@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 
 fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
@@ -46,7 +45,11 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     for i in range(len(out_span)):
         if i < 10:
             print("at index", i, "the value is", out_span[i])
-        expect_eq(out_span[i], i, "at index ", i, " the value is ", out_span[i])
+        assert_equal(
+            out_span[i],
+            i,
+            String("at index ", i, " the value is ", out_span[i]),
+        )
 
 
 fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
@@ -92,8 +95,10 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
             expected = i - half_length
         if i < 10:
             print("at index", i, "the value is", out_host[i])
-        expect_eq(
-            out_host[i], expected, "at index ", i, " the value is ", out_host[i]
+        assert_equal(
+            out_host[i],
+            expected,
+            String("at index ", i, " the value is ", out_host[i]),
         )
 
 
@@ -117,7 +122,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
     in_host.enqueue_copy_to(in_dev)
     in_dev.enqueue_copy_to(out_dev)
 
-    var out_ptr: UnsafePointer[Int64]
+    var out_ptr: UnsafePointer[Int64, MutAnyOrigin]
     if use_take_ptr:
         out_ptr = out_dev.take_ptr()
     else:
@@ -126,7 +131,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
     var first_out_dev = DeviceBuffer[DType.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
     )
-    var interior_out_ptr: UnsafePointer[Int64] = out_ptr.offset(half_length)
+    var interior_out_ptr = out_ptr.offset(half_length)
     var second_out_dev = DeviceBuffer[DType.int64](
         ctx, interior_out_ptr, half_length, owning=False
     )
@@ -150,8 +155,10 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
             expected = i - half_length
         if i < 10:
             print("at index", i, "the value is", out_host[i])
-        expect_eq(
-            out_host[i], expected, "at index ", i, " the value is ", out_host[i]
+        assert_equal(
+            out_host[i],
+            expected,
+            String("at index ", i, " the value is ", out_host[i]),
         )
 
 
@@ -172,13 +179,13 @@ fn _run_cpu_ctx_memcpy_async(
 
     with dev_buf.map_to_host() as dev_buf:
         for i in range(length):
-            expect_eq(dev_buf[i], 2 * i)
+            assert_equal(dev_buf[i], 2 * i)
 
     host_buf.enqueue_fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
 
     for i in range(length):
-        expect_eq(host_buf[i], 2 * i)
+        assert_equal(host_buf[i], 2 * i)
 
 
 def test_copies():

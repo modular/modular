@@ -22,18 +22,18 @@ from layout import Layout, LayoutTensor
 from python import PythonObject
 from python.bindings import PythonModuleBuilder
 
-alias GRID_WIDTH = 60
-alias GRID_HEIGHT = 25
+comptime GRID_WIDTH = 60
+comptime GRID_HEIGHT = 25
 
-alias float_dtype = DType.float32
-alias int_dtype = DType.int32
+comptime float_dtype = DType.float32
+comptime int_dtype = DType.int32
 
-alias MIN_X: Scalar[float_dtype] = -2.0
-alias MAX_X: Scalar[float_dtype] = 0.7
-alias MIN_Y: Scalar[float_dtype] = -1.12
-alias MAX_Y: Scalar[float_dtype] = 1.12
+comptime MIN_X: Scalar[float_dtype] = -2.0
+comptime MAX_X: Scalar[float_dtype] = 0.7
+comptime MIN_Y: Scalar[float_dtype] = -1.12
+comptime MAX_Y: Scalar[float_dtype] = 1.12
 
-alias layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
+comptime layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
 
 
 # An interface for this Mojo module must be exported to Python.
@@ -46,9 +46,7 @@ fn PyInit_mandelbrot_mojo() -> PythonObject:
         module.def_function[run_mandelbrot]("run_mandelbrot")
         return module.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
@@ -65,9 +63,9 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
 
     # Compute how many blocks are needed in each dimension to fully cover the grid,
     # rounding up to ensure even partially filled blocks are launched.
-    alias BLOCK_SIZE = 16
-    alias COL_BLOCKS = ceildiv(GRID_WIDTH, BLOCK_SIZE)
-    alias ROW_BLOCKS = ceildiv(GRID_HEIGHT, BLOCK_SIZE)
+    comptime BLOCK_SIZE = 16
+    comptime COL_BLOCKS = ceildiv(GRID_WIDTH, BLOCK_SIZE)
+    comptime ROW_BLOCKS = ceildiv(GRID_HEIGHT, BLOCK_SIZE)
 
     # Launch the Mandelbrot kernel on the GPU with a 2D grid of thread blocks.
     ctx.enqueue_function_checked[mandelbrot, mandelbrot](
@@ -82,7 +80,7 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     with dev_buf.map_to_host() as host_buf:
         var host_tensor = LayoutTensor[int_dtype, layout](host_buf)
         # Return the ASCII art string representation to Python.
-        return draw_mandelbrot(host_tensor, Int(iterations))
+        return PythonObject(draw_mandelbrot(host_tensor, Int(iterations)))
 
 
 fn mandelbrot(
@@ -94,8 +92,8 @@ fn mandelbrot(
     var row = global_idx.y
     var col = global_idx.x
 
-    alias SCALE_X = (MAX_X - MIN_X) / GRID_WIDTH
-    alias SCALE_Y = (MAX_Y - MIN_Y) / GRID_HEIGHT
+    comptime SCALE_X = (MAX_X - MIN_X) / GRID_WIDTH
+    comptime SCALE_Y = (MAX_Y - MIN_Y) / GRID_HEIGHT
 
     # Calculate the complex C corresponding to that grid location.
     var cx = MIN_X + col * SCALE_X
@@ -122,7 +120,7 @@ def draw_mandelbrot(
     tensor: LayoutTensor[int_dtype, layout], iterations: Int32
 ) -> String:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
-    alias sr = StringSlice("....,c8M@jawrpogOQEPGJ")
+    comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
     var buffer = String()
     for row in range(GRID_HEIGHT):
         for col in range(GRID_WIDTH):

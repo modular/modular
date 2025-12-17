@@ -8,14 +8,17 @@ load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load("//bazel/internal/cc-toolchain/features:features.bzl", "MARKER_FEATURES")  # buildifier: disable=bzl-visibility
 load("//bazel/internal/cc-toolchain/tools:tools.bzl", "PLATFORMS")  # buildifier: disable=bzl-visibility
 
+package(default_visibility = ["//visibility:public"])
+
 cc_sysroot(
     name = "linux_sysroot_aarch64",
     actions = [
         "@rules_cc//cc/toolchains/actions:compile_actions",
         "@rules_cc//cc/toolchains/actions:link_actions",
     ],
-    data = ["@sysroot-jammy-aarch64"],
-    sysroot = "@sysroot-jammy-aarch64//:root",
+    allowlist_include_directories = ["@sysroot-jammy-aarch64//sysroot:root"],
+    data = ["@sysroot-jammy-aarch64//sysroot:directory"],
+    sysroot = "@sysroot-jammy-aarch64//sysroot:root",
 )
 
 cc_sysroot(
@@ -24,8 +27,9 @@ cc_sysroot(
         "@rules_cc//cc/toolchains/actions:compile_actions",
         "@rules_cc//cc/toolchains/actions:link_actions",
     ],
-    data = ["@sysroot-jammy-x86_64"],
-    sysroot = "@sysroot-jammy-x86_64//:root",
+    allowlist_include_directories = ["@sysroot-jammy-x86_64//sysroot:root"],
+    data = ["@sysroot-jammy-x86_64//sysroot:directory"],
+    sysroot = "@sysroot-jammy-x86_64//sysroot:root",
 )
 
 cc_sysroot(
@@ -34,8 +38,9 @@ cc_sysroot(
         "@rules_cc//cc/toolchains/actions:compile_actions",
         "@rules_cc//cc/toolchains/actions:link_actions",
     ],
-    data = ["@sysroot-macos"],
-    sysroot = "@sysroot-macos//:root",
+    allowlist_include_directories = ["@sysroot-macos//sysroot:root"],
+    data = ["@sysroot-macos//sysroot:directory"],
+    sysroot = "@sysroot-macos//sysroot:root",
 )
 
 [

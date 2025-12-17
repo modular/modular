@@ -23,7 +23,7 @@ fetch_logs() {
     echo "=== Azure VM Logs ==="
     echo "📋 Attempting to fetch logs from VM at ${PUBLIC_IP}..."
 
-    LOGS=$(sshpass -p "$VM_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=50 -v azureuser@$PUBLIC_IP "
+    LOGS=$(sshpass -p "$VM_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=50 -v "azureuser@$PUBLIC_IP" "
         # First check if container is running
         CONTAINER_ID=\$(sudo docker ps -q -f ancestor=modular/max-nvidia-full:latest)
         if [ -n \"\$CONTAINER_ID\" ]; then
@@ -38,6 +38,7 @@ fetch_logs() {
         fi
     " 2>&1)
 
+    # shellcheck disable=SC2181  # Checking $? is clearer here after multi-line ssh command
     if [ $? -ne 0 ]; then
         echo "❌ Failed to connect to VM or fetch logs"
         echo "Debug info: $LOGS"

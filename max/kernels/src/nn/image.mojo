@@ -20,7 +20,7 @@ from utils.index import IndexList
 # Padding handling method.
 @fieldwise_init
 @register_passable("trivial")
-struct PadHandling(ImplicitlyCopyable, Movable):
+struct PadHandling(ImplicitlyCopyable):
     var value: Int
     comptime EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
     comptime INCLUDE_PAD = PadHandling(2)  # Count padding.
@@ -37,7 +37,7 @@ struct PadHandling(ImplicitlyCopyable, Movable):
 # Data layout encoding.
 @fieldwise_init
 @register_passable("trivial")
-struct Image2DLayout(ImplicitlyCopyable, Movable):
+struct Image2DLayout(ImplicitlyCopyable):
     var value: Int
     comptime UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
     comptime NHWC = Image2DLayout(0)  # channels last layout.
@@ -80,14 +80,14 @@ struct ImageData[
             data: A 4d buffer containing the actual data.
             _layout: Data layout tag.
         """
-        constrained[Self.static_image_layout == Image2DLayout.UNKNOWN]()
+        __comptime_assert Self.static_image_layout == Image2DLayout.UNKNOWN
         self.data = data
         self.dynamic_image_layout = _layout
 
     fn __init__(
         out self, data: LayoutTensor[Self.dtype, Self.layout, Self.origin]
     ):
-        constrained[Self.static_image_layout != Image2DLayout.UNKNOWN]()
+        __comptime_assert Self.static_image_layout != Image2DLayout.UNKNOWN
         self.data = data
         self.dynamic_image_layout = Self.static_image_layout
 
@@ -102,7 +102,7 @@ struct ImageData[
         Returns:
             The image data with static data layout.
         """
-        constrained[Self.static_image_layout == Image2DLayout.UNKNOWN]()
+        __comptime_assert Self.static_image_layout == Image2DLayout.UNKNOWN
         return ImageData[Self.layout, Self.dtype, new_static_image_layout](
             self.data
         )
@@ -291,7 +291,7 @@ struct ImageData[
 
 
 @register_passable("trivial")
-struct ImageShape(ImplicitlyCopyable, Movable):
+struct ImageShape(ImplicitlyCopyable):
     """A data-layout agnostic representation of tensor shapes used in conv2d."""
 
     var N: Int

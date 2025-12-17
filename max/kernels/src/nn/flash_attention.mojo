@@ -141,6 +141,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](Self.simd_width, 1)](0, K)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = ak_ptr
+        _ = bk_ptr
 
     @staticmethod
     @always_inline
@@ -185,6 +188,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](2, 1)](0, K)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = ak_ptr
+        _ = bk_ptr
 
     @no_inline
     @staticmethod
@@ -241,6 +247,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             cm_ptr += tile_m * c_stride
 
         tile[process_rows, Self._matmul_config.row_sizes](0, M)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = am_ptr
+        _ = cm_ptr
 
     @no_inline
     @staticmethod
@@ -343,7 +352,6 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         c_ptr: UnsafePointer[Scalar[Self.dtype]],
     ):
         var K = static_k if static_k != UNKNOWN_VALUE else dynamic_k
-
         var cn_ptr = c_ptr
 
         @parameter
@@ -405,6 +413,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             cn_ptr += tile_n
 
         tile[process_cols, VariadicList[Int](4, 1)](0, N)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = K
+        _ = cn_ptr
 
     @no_inline
     @staticmethod
@@ -435,6 +446,8 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             cn_ptr += _simd_width
 
         tile[process_cols, Self._matmul_config.gemv_sizes](0, N)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = cn_ptr
 
     @no_inline
     @staticmethod
@@ -544,7 +557,8 @@ struct _FlashAttentionConfig[
 
 struct _FlashAttention[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     input_q_ptr_fn: fn (IndexList[rank]) capturing -> UnsafePointer[
         Scalar[dtype]
     ],
@@ -934,7 +948,8 @@ struct _FlashAttention[
 fn _flash_attention[
     dtype: DType,
     rank: Int,
-    mask_rank: Int, //,
+    mask_rank: Int,
+    //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
@@ -1029,7 +1044,8 @@ fn _flash_attention[
 fn flash_attention[
     dtype: DType,
     rank: Int,
-    mask_rank: Int, //,
+    mask_rank: Int,
+    //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
@@ -1066,7 +1082,8 @@ fn flash_attention[
 fn flash_attention_split_kv[
     dtype: DType,
     rank: Int,
-    mask_rank: Int, //,
+    mask_rank: Int,
+    //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
@@ -1110,18 +1127,22 @@ fn flash_attention_split_kv[
     # v (input_v_fn): BSHD
     # k_cache (input_k_cache_fn): 1BHS'D
     # v_cache (input_v_cache_fn): 1BHS'D
-    constrained[rank == 4]()
+    __comptime_assert rank == 4
 
     @always_inline
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k_shape),
-            trace_arg("v", v_shape),
-            trace_arg("k_cache", k_cache_shape),
-            trace_arg("v_cache", v_cache_shape),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k_shape),
+                    trace_arg("v", v_shape),
+                    trace_arg("k_cache", k_cache_shape),
+                    trace_arg("v_cache", v_cache_shape),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
@@ -1209,7 +1230,8 @@ fn flash_attention_split_kv[
 @always_inline
 fn _flash_attention_kv_cache[
     dtype: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     mask_fn: fn[simd_width: Int, mask_rank: Int] (
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
@@ -1271,7 +1293,8 @@ fn _flash_attention_kv_cache[
 @always_inline
 fn _flash_attention_kv_cache[
     dtype: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     input_q_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[dtype]],
     output_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[dtype]],
     q_length_fn: fn (batch: Int) capturing -> Int,
@@ -1298,14 +1321,13 @@ fn _flash_attention_kv_cache[
     comptime depth_dim = cache_t.kv_params.head_size
     comptime cache_type = cache_t.dtype
 
-    constrained[
-        cache_type == dtype,
-        "Expected cache dtype (",
-        String(cache_type),
-        ") to match input dtype (",
-        String(dtype),
-        ")",
-    ]()
+    __comptime_assert cache_type == dtype, (
+        "Expected cache dtype ("
+        + String(cache_type)
+        + ") to match input dtype ("
+        + String(dtype)
+        + ")"
+    )
 
     @parameter
     fn input_k_fn[
@@ -1386,7 +1408,8 @@ fn flash_attention_kv_cache[
 fn flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     k: cache_t,
@@ -1421,7 +1444,8 @@ fn flash_attention_kv_cache[
 fn flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     q_input_row_offsets: LayoutTensor[

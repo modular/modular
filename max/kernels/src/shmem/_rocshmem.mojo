@@ -77,7 +77,6 @@ fn _init_rocshmem_dylib() -> OwnedDLHandle:
         )
     except e:
         abort(String("failed to load ROCSHMEM library: ", e))
-        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline
@@ -91,7 +90,7 @@ fn _get_rocshmem_function[
             result_type,
         ]()
     except e:
-        return abort[result_type](String(e))
+        abort(String(e))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -173,9 +172,9 @@ struct ROCSHMEMInitAttr:
     var args: ROCSHMEMInitArgs
 
     fn __init__(out self, mpi_comm: UnsafePointer[MPIComm]):
-        constrained[
-            size_of[Self]() == 144, "ROCSHMEMInitAttr must be 144 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 144
+        ), "ROCSHMEMInitAttr must be 144 bytes"
         self.version = (1 << 16) + size_of[ROCSHMEMInitAttr]()
         self.mpi_comm = mpi_comm
         self.args = ROCSHMEMInitArgs()
@@ -187,9 +186,9 @@ struct ROCSHMEMInitArgs:
     var content: InlineArray[Byte, 96]
 
     fn __init__(out self):
-        constrained[
-            size_of[Self]() == 128, "ROCSHMEMInitArgs must be 128 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 128
+        ), "ROCSHMEMInitArgs must be 128 bytes"
         self.version = (1 << 16) + size_of[ROCSHMEMInitArgs]()
         self.uid_args = ROCSHMEMUniqueIDArgs()
         self.content = InlineArray[Byte, 96](fill=0)
@@ -202,9 +201,9 @@ struct ROCSHMEMUniqueIDArgs:
     var nranks: c_int
 
     fn __init__(out self):
-        constrained[
-            size_of[Self]() == 24, "ROCSHMEMUniqueIDArgs must be 24 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 24
+        ), "ROCSHMEMUniqueIDArgs must be 24 bytes"
         self.version = (1 << 16) + size_of[ROCSHMEMUniqueIDArgs]()
         self.id = UnsafePointer[ROCSHMEMUniqueID]()
         self.myrank = 0
@@ -216,9 +215,9 @@ struct ROCSHMEMUniqueID:
     var internal: InlineArray[Byte, 124]
 
     fn __init__(out self):
-        constrained[
-            size_of[Self]() == 128, "rocshmem_uniqueid_t must be 128 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 128
+        ), "rocshmem_uniqueid_t must be 128 bytes"
         self.version = (1 << 16) + size_of[ROCSHMEMUniqueID]()
         self.internal = InlineArray[Byte, 124](fill=0)
 
@@ -290,7 +289,7 @@ fn _dtype_to_rocshmem_type[
         return get_static_string[prefix, "longlong", suffix]()
     else:
         return CompilationTarget.unsupported_target_error[
-            StaticString, operation="_dtype_to_rocshmem_type"
+            StaticString, operation = __get_current_function_name()
         ]()
 
 
@@ -415,7 +414,8 @@ fn rocshmem_team_my_pe(team: c_int) -> c_int:
 
 
 fn rocshmem_put[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
@@ -440,7 +440,8 @@ fn rocshmem_put[
 
 
 fn rocshmem_put_nbi[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
@@ -471,7 +472,8 @@ fn rocshmem_p[
 
 
 fn rocshmem_get[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
@@ -483,7 +485,8 @@ fn rocshmem_get[
 
 
 fn rocshmem_get_nbi[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],

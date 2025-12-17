@@ -26,17 +26,12 @@ from max.engine.api import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -94,7 +89,7 @@ class DeepseekV2Inputs(ModelInputs):
             self.return_n_logits = return_n_logits
 
 
-class DeepseekV2Model(PipelineModel[TextContext]):
+class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -158,10 +153,14 @@ class DeepseekV2Model(PipelineModel[TextContext]):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],
+        replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV2Inputs:
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
@@ -207,13 +206,15 @@ class DeepseekV2Model(PipelineModel[TextContext]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return DeepseekV2Config.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            pipeline_config=pipeline_config,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -235,52 +236,6 @@ class DeepseekV2Model(PipelineModel[TextContext]):
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
 
-    def load_kv_manager(
-        self,
-        session: InferenceSession,
-        available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        return load_kv_manager(
-            params=DeepseekV2Config.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
-        )
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the kv cache in bytes."""
-        return estimate_kv_cache_size(
-            params=cls.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=len(devices),
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-        )
-
     def graph_inputs(self) -> tuple[TensorType]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
@@ -290,7 +245,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             DType.int64, shape=["return_n_logits"], device=device_ref
         )
 
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -327,12 +282,13 @@ class DeepseekV2Model(PipelineModel[TextContext]):
     ) -> list[PagedCacheValues]:
         kv_params = self.get_kv_params(
             huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
+            pipeline_config=self.pipeline_config,
+            devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
+        fetch_types = kv_params.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):
@@ -384,12 +340,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
                 key: value.data() for key, value in self.weights.items()
             }
 
-        kv_params = DeepseekV2Config.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
+        kv_params = self.kv_params
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model_config.device_specs

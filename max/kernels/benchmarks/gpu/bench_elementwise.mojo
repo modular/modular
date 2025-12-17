@@ -83,7 +83,7 @@ fn simd_load[
 fn simd_store[
     simd_width: Int
 ](
-    buffer: NDBuffer,
+    buffer: NDBuffer[mut=True, *_, **_],
     index: IndexList[buffer.rank],
     val: SIMD[buffer.type, simd_width],
 ):
@@ -99,7 +99,8 @@ fn simd_store[
 
 @no_inline
 fn run_elementwise[
-    rank: Int, //,
+    rank: Int,
+    //,
     dtype: DType,
     kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
         dtype, width

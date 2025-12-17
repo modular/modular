@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from buffer import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._fillers import random
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from testing import assert_almost_equal
 
@@ -56,33 +56,54 @@ fn test_conv_transposed_cudnn[
     )
 
     comptime layout_unknown_5d = Layout.row_major[5]()
+    comptime layout_unknown_4d = Layout.row_major[4]()
 
-    # Shapes.
-    comptime input_shape4d = DimList(1, 1, input_len, in_channels)
-    comptime filter_shape4d = DimList(1, kernel_len, out_channels, in_channels)
+    # Shapes and sizes
     comptime output_len = (
         stride_val * (input_len - 1)
         + dilation_val * (kernel_len - 1)
         - 2 * pad_val
         + 1
     )
-    comptime output_shape4d = DimList(1, 1, output_len, out_channels)
-    comptime input_layout5d = Layout.row_major(1, 1, 1, input_len, in_channels)
-    comptime filter_layout5d = Layout.row_major(
-        1, 1, kernel_len, out_channels, in_channels
+    comptime input_size = 1 * 1 * input_len * in_channels
+    comptime filter_size = 1 * kernel_len * out_channels * in_channels
+    comptime output_size = 1 * 1 * output_len * out_channels
+
+    # Layouts for NHWC tensors
+    comptime input_layout = Layout.row_major(1, 1, input_len, in_channels)
+    comptime filter_layout = Layout.row_major(
+        1, kernel_len, out_channels, in_channels
     )
-    comptime output_layout5d = Layout.row_major(
-        1, 1, 1, output_len, out_channels
+    comptime output_layout = Layout.row_major(1, 1, output_len, out_channels)
+
+    # Layouts for NCHW tensors (for cuDNN)
+    comptime input_nchw_size = 1 * in_channels * 1 * input_len
+    comptime output_nchw_size = 1 * out_channels * 1 * output_len
+    comptime filter_nchw_size = in_channels * out_channels * 1 * kernel_len
+    comptime input_nchw_layout = Layout.row_major(1, in_channels, 1, input_len)
+    comptime output_nchw_layout = Layout.row_major(
+        1, out_channels, 1, output_len
+    )
+    comptime filter_nchw_layout = Layout.row_major(
+        in_channels, out_channels, 1, kernel_len
     )
 
-    # Create host buffers using HostNDBuffer
-    var input_host = HostNDBuffer[dtype, 4, input_shape4d](input_shape4d)
-    var filter_host = HostNDBuffer[dtype, 4, filter_shape4d](filter_shape4d)
-    var output_host = HostNDBuffer[dtype, 4, output_shape4d](output_shape4d)
-    var output_ref_host = HostNDBuffer[dtype, 4, output_shape4d](output_shape4d)
+    # Allocate host memory for NHWC tensors
+    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_ref_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
 
-    random(input_host.tensor)
-    random(filter_host.tensor)
+    # Create host LayoutTensors for NHWC
+    var input_host = LayoutTensor[dtype, input_layout](input_host_ptr)
+    var filter_host = LayoutTensor[dtype, filter_layout](filter_host_ptr)
+    var output_host = LayoutTensor[dtype, output_layout](output_host_ptr)
+    var output_ref_host = LayoutTensor[dtype, output_layout](
+        output_ref_host_ptr
+    )
+
+    random(input_host)
+    random(filter_host)
 
     # Parameters (1-D ⇒ only W dimension varies).
     var stride = Index(1, 1, stride_val)
@@ -94,19 +115,19 @@ fn test_conv_transposed_cudnn[
     # Execute naive reference implementation.
     conv_transpose_naive[dtype](
         LayoutTensor[dtype, layout_unknown_5d](
-            output_ref_host.tensor.data,
+            output_ref_host_ptr,
             RuntimeLayout[layout_unknown_5d].row_major(
                 IndexList[5](1, 1, 1, output_len, out_channels)
             ),
         ),
         LayoutTensor[dtype, layout_unknown_5d](
-            input_host.tensor.data,
+            input_host_ptr,
             RuntimeLayout[layout_unknown_5d].row_major(
                 IndexList[5](1, 1, 1, input_len, in_channels)
             ),
         ),
         LayoutTensor[dtype, layout_unknown_5d](
-            filter_host.tensor.data,
+            filter_host_ptr,
             RuntimeLayout[layout_unknown_5d].row_major(
                 IndexList[5](1, 1, kernel_len, out_channels, in_channels)
             ),
@@ -122,71 +143,68 @@ fn test_conv_transposed_cudnn[
     # 2. Run the same transposed-convolution via cuDNN backward-data
     # -------------------------------------------------------------
 
-    # Convert input/output data from NHWC to NCHW layout for cuDNN
-    # Convert filter data from QRSFC to CFHW layout for cuDNN
-    comptime input_shape4d_nchw = DimList(1, in_channels, 1, input_len)
-    comptime output_shape4d_nchw = DimList(1, out_channels, 1, output_len)
-    comptime filter_shape4d_nchw = DimList(
-        in_channels, out_channels, 1, kernel_len
+    # Allocate host memory for NCHW tensors (for cuDNN)
+    var input_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        input_nchw_size
+    )
+    var filter_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        filter_nchw_size
+    )
+    var output_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        output_nchw_size
     )
 
-    var input_nchw_host = HostNDBuffer[dtype, 4, input_shape4d_nchw](
-        input_shape4d_nchw
+    # Create host LayoutTensors for NCHW
+    var input_nchw_host = LayoutTensor[dtype, input_nchw_layout](
+        input_nchw_host_ptr
     )
+    var filter_nchw_host = LayoutTensor[dtype, filter_nchw_layout](
+        filter_nchw_host_ptr
+    )
+    var output_nchw_host = LayoutTensor[dtype, output_nchw_layout](
+        output_nchw_host_ptr
+    )
+
+    # Convert input/output data from NHWC to NCHW layout for cuDNN
     for w in range(input_len):
         for c in range(in_channels):
-            input_nchw_host.tensor[0, c, 0, w] = input_host.tensor[0, 0, w, c]
+            input_nchw_host[0, c, 0, w] = input_host[0, 0, w, c]
 
-    var filter_nchw_host = HostNDBuffer[dtype, 4, filter_shape4d_nchw](
-        filter_shape4d_nchw
-    )
+    # Convert filter data from QRSFC to CFHW layout for cuDNN
     for r in range(1):
         for s in range(kernel_len):
             for f in range(out_channels):
                 for c in range(in_channels):
-                    filter_nchw_host.tensor[c, f, r, s] = filter_host.tensor[
-                        r, s, f, c
-                    ]
+                    filter_nchw_host[c, f, r, s] = filter_host[r, s, f, c]
 
-    var output_nchw_host = HostNDBuffer[dtype, 4, output_shape4d_nchw](
-        output_shape4d_nchw
-    )
+    # Create device buffers
+    var d_input = ctx.enqueue_create_buffer[dtype](input_nchw_size)
+    var d_filter = ctx.enqueue_create_buffer[dtype](filter_nchw_size)
+    var d_output = ctx.enqueue_create_buffer[dtype](output_nchw_size)
 
-    # Create device buffers using enqueue operations
-    var d_input = DeviceNDBuffer[dtype, 4, input_shape4d_nchw](
-        input_shape4d_nchw, ctx=ctx
-    )
-    var d_filter = DeviceNDBuffer[dtype, 4, filter_shape4d_nchw](
-        filter_shape4d_nchw, ctx=ctx
-    )
-    var d_output = DeviceNDBuffer[dtype, 4, output_shape4d_nchw](
-        output_shape4d_nchw, ctx=ctx
-    )
-    ctx.enqueue_copy(d_input.buffer, input_nchw_host.tensor.data)
-    ctx.enqueue_copy(d_filter.buffer, filter_nchw_host.tensor.data)
+    ctx.enqueue_copy(d_input, input_nchw_host_ptr)
+    ctx.enqueue_copy(d_filter, filter_nchw_host_ptr)
 
     var stride_hw = Index(1, stride_val)
     var dilation_hw = Index(1, dilation_val)
     var padding_hw = Index(0, pad_val)
 
-    comptime layout_unknown_4d = Layout.row_major[4]()
-
     # Invoke cuDNN helper.
     conv_transposed_cudnn[dtype, dtype, dtype](
         LayoutTensor[dtype, layout_unknown_4d](
-            d_input.buffer,
+            d_input.unsafe_ptr(),
             RuntimeLayout[layout_unknown_4d].row_major(
                 IndexList[4](1, in_channels, 1, input_len)
             ),
         ),  # dy (input grad)
         LayoutTensor[dtype, layout_unknown_4d](
-            d_filter.buffer,
+            d_filter.unsafe_ptr(),
             RuntimeLayout[layout_unknown_4d].row_major(
                 IndexList[4](in_channels, out_channels, 1, kernel_len)
             ),
         ),  # w (filter)
         LayoutTensor[dtype, layout_unknown_4d](
-            d_output.buffer,
+            d_output.unsafe_ptr(),
             RuntimeLayout[layout_unknown_4d].row_major(
                 IndexList[4](1, out_channels, 1, output_len)
             ),
@@ -197,30 +215,34 @@ fn test_conv_transposed_cudnn[
         ctx,
     )
 
-    # Copy result back to host using enqueue_copy
-    ctx.enqueue_copy(output_nchw_host.tensor.data, d_output.buffer)
+    # Copy result back to host
+    ctx.enqueue_copy(output_nchw_host_ptr, d_output)
+    ctx.synchronize()
 
     # -------------------------------------------------------------
     # 3. Compare naive vs cuDNN results
     # -------------------------------------------------------------
 
     # verifying results
-    output_ref_host_buf = output_ref_host.tensor
-    output_nchw_host_buf = output_nchw_host.tensor
     for w in range(output_len):
         for f in range(out_channels):
             assert_almost_equal(
-                output_ref_host_buf[0, 0, w, f],
-                output_nchw_host_buf[0, f, 0, w],
+                output_ref_host[0, 0, w, f],
+                output_nchw_host[0, f, 0, w],
                 rtol=0.0001,
             )
     print("Succeed")
 
-    # Clean up - device buffers will be cleaned up automatically
-    _ = input_host
-    _ = filter_host
-    _ = output_host
-    _ = output_ref_host
+    # Cleanup host memory
+    input_host_ptr.free()
+    filter_host_ptr.free()
+    output_host_ptr.free()
+    output_ref_host_ptr.free()
+    input_nchw_host_ptr.free()
+    filter_nchw_host_ptr.free()
+    output_nchw_host_ptr.free()
+
+    # Cleanup device buffers
     _ = d_input^
     _ = d_filter^
     _ = d_output^

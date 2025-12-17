@@ -53,7 +53,7 @@ fn calculate_coordinate[
     comptime coalesced_tile = tile_shape.product_flatten()
     comptime smem_tiler = Layout(coalesced_tile)
 
-    constrained[global_layout.rank() == smem_tiler.rank(),]()
+    __comptime_assert global_layout.rank() == smem_tiler.rank()
 
     comptime rank = global_layout.rank()
 
@@ -350,19 +350,17 @@ def test_tma_load[
     swizzle_mode: SwizzleMode = SwizzleMode.NONE,
     OOB_access: Bool = False,
 ](ctx: DeviceContext):
-    constrained[
-        depth(global_shape) == depth(load_shape) and depth(load_shape) == 1,
-        "Global shape and SMEM shape must have the same depth",
-    ]()
+    __comptime_assert (
+        depth(global_shape) == depth(load_shape) and depth(load_shape) == 1
+    ), "Global shape and SMEM shape must have the same depth"
 
     comptime total_global_elements = product(global_shape)
     comptime total_smem_elements = smem_layout.size()
     comptime total_load_elements = product(load_shape)
 
-    constrained[
-        total_smem_elements % total_load_elements == 0,
-        "shared memory shape must be divisble by load shape",
-    ]()
+    __comptime_assert (
+        total_smem_elements % total_load_elements == 0
+    ), "shared memory shape must be divisble by load shape"
 
     comptime total_tiles = ceildiv(total_global_elements, total_smem_elements)
 

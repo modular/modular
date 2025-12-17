@@ -18,10 +18,10 @@ from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 
-alias float_dtype = DType.float32
-alias VECTOR_WIDTH = 10
-alias BLOCK_SIZE = 5
-alias layout = Layout.row_major(VECTOR_WIDTH)
+comptime float_dtype = DType.float32
+comptime VECTOR_WIDTH = 10
+comptime BLOCK_SIZE = 5
+comptime layout = Layout.row_major(VECTOR_WIDTH)
 
 
 def main():

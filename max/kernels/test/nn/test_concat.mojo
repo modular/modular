@@ -19,7 +19,8 @@ from utils import Index, IndexList, StaticTuple
 
 
 fn _tuple_to_list[
-    elems_layout: Layout, //,
+    elems_layout: Layout,
+    //,
     dtype: DType,
 ](
     elems: StaticTuple[LayoutTensor[dtype, elems_layout, MutAnyOrigin], *_]

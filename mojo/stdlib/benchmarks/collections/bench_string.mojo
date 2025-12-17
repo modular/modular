@@ -54,7 +54,7 @@ fn make_string[
             return String(bytes=f.read_bytes())
     except e:
         print(e, file=stderr)
-    return abort[String]()
+    abort(String())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -223,6 +223,25 @@ fn bench_string_replace[
     fn call_fn() raises:
         var res = items.replace(old, new)
         keep(res.unsafe_ptr())
+
+    b.iter[call_fn]()
+    keep(Bool(items))
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string char_length
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_string_char_length[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        var res = items.as_string_slice().char_length()
+        keep(res)
 
     b.iter[call_fn]()
     keep(Bool(items))
@@ -436,6 +455,9 @@ def main():
             )
             m.bench_function[bench_string_replace[length, fname, old, new]](
                 BenchId(String("bench_string_replace", suffix))
+            )
+            m.bench_function[bench_string_char_length[length, fname]](
+                BenchId(String("bench_string_char_length", suffix))
             )
             m.bench_function[bench_string_find_single[length, fname]](
                 BenchId(String("bench_string_find_single", suffix))

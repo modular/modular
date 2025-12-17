@@ -493,7 +493,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
 
         # Ensure the mask has the correct dimension
         inv_freq_mask = 1.0 - self._yarn_linear_ramp_mask(
-            low, high, Dim(self.dim // 2)
+            low, high, self.dim // 2
         ).cast(DType.float32)
 
         inv_freq = freq_inter * (1 - inv_freq_mask) + freq_extra * inv_freq_mask
@@ -586,7 +586,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         ) / (2 * ops.log(base_tensor))
 
     def _yarn_linear_ramp_mask(
-        self, min: TensorValue, max: TensorValue, dim: Dim
+        self, min: TensorValue, max: TensorValue, dim: int
     ) -> TensorValue:
         """
         Create a linear ramp mask for interpolation.

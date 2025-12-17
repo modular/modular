@@ -277,7 +277,8 @@ struct TileLoaderCPAsync[
 fn async_copy_with_bound_check[
     dtype: DType,
     src_layout: Layout,
-    dst_layout: Layout, //,
+    dst_layout: Layout,
+    //,
     thread_layout: Layout,
     swizzle_mode: TensorMapSwizzle,
 ](

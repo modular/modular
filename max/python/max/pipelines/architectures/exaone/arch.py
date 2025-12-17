@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -42,6 +43,7 @@ exaone_arch = SupportedArchitecture(
     ],
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
+    context_type=TextContext,
     rope_type=RopeType.neox,
     default_weights_format=WeightsFormat.gguf,
     weight_adapters={

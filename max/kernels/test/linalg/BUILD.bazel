@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _LIT_TESTS = [
     "test_neon_dotprod_intrinsics.mojo",
     "test_neon_matmul_intrinsics.mojo",
@@ -42,7 +44,7 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -57,7 +59,7 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -74,7 +76,7 @@ lit_tests(
     mojo_deps = [
         "//max:internal_utils",
         "//max:linalg",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
 )

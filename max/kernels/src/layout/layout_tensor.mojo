@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the `LayoutTensor` type for representing multidimensional data.
 """
+from builtin.variadics import Variadic
 from collections import OptionalReg
 from math import align_up, ceildiv, exp
 from math.math import _Expable
@@ -260,7 +261,8 @@ fn _distribute_is_masked[
 
 @register_passable("trivial")
 struct LayoutTensor[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dtype: DType,
     layout: Layout,
     origin: Origin[mut],
@@ -315,8 +317,35 @@ struct LayoutTensor[
 
     # `trait DevicePassable` implementation, to allow LayoutTensor to be passed directly to kernels
     comptime device_type: AnyType = Self
+    """The device-side type representation."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    @staticmethod
+    fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
+        @parameter
+        if Self.mut:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self.OriginCastType[True, MutAnyOrigin],
+                    Self.OriginCastType[True, MutOrigin.external],
+                    Self.OriginCastType[False, ImmutAnyOrigin],
+                    Self.OriginCastType[False, ImmutOrigin.external],
+                ],
+            ]
+        else:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self.OriginCastType[False, ImmutAnyOrigin],
+                    Self.OriginCastType[False, ImmutOrigin.external],
+                ],
+            ]
+
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -374,12 +403,14 @@ struct LayoutTensor[
     and origin tracking for memory safety and performance optimization."""
 
     comptime storage_size = size_of[Self.dtype]() * Self.layout.size()
+    """Total storage size in bytes for the tensor data."""
 
     comptime RuntimeLayoutType = RuntimeLayout[
         Self.layout,
         element_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for the runtime layout."""
 
     var runtime_layout: Self.RuntimeLayoutType
     """Runtime representation of the tensor's memory layout.
@@ -393,6 +424,7 @@ struct LayoutTensor[
         element_type = DType.int32,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for the runtime element layout."""
 
     var runtime_element_layout: Self.RuntimeElementLayoutType
     """Runtime representation of each element's internal layout.
@@ -407,9 +439,15 @@ struct LayoutTensor[
     """The SIMD vector type used for vectorized operations on tensor elements."""
 
     comptime num_strides: Int = Self.RuntimeLayoutType.StrideType.scalar_length
+    """Number of stride values in the layout."""
     comptime idx_list_t[rank: Int = Self.rank] = IndexList[
         rank, element_type = Self.linear_idx_type
     ]
+    """Type alias for index lists of the tensor's rank.
+
+    Parameters:
+        rank: The number of dimensions in the index list.
+    """
 
     comptime GenericAddressSpaceLayoutTensor = LayoutTensor[
         mut = Self.mut,
@@ -423,6 +461,7 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """LayoutTensor variant using generic address space."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -515,15 +554,14 @@ struct LayoutTensor[
             unsafe_ptr: The `UnsafePointer` pointing to the underlying data.
         """
 
-        constrained[
-            Self.layout.all_dims_known(), "Layout must be fully static"
-        ]()
+        __comptime_assert (
+            Self.layout.all_dims_known()
+        ), "Layout must be fully static"
 
-        constrained[
+        __comptime_assert (
             Self.layout_int_type.is_signed()
-            and Self.linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
+            and Self.linear_idx_type.is_signed()
+        ), "Layout integer type and linear index type must be signed."
 
         self.ptr = unsafe_ptr
         self.runtime_layout = {}
@@ -552,9 +590,9 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the LayoutTensor.
         """
 
-        constrained[
-            Self.element_layout.all_dims_known(), "Layout must be fully static"
-        ]()
+        __comptime_assert (
+            Self.element_layout.all_dims_known()
+        ), "Layout must be fully static"
 
         self.ptr = unsafe_ptr
         self.runtime_layout = runtime_layout.cast[
@@ -603,6 +641,7 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """LayoutTensor type with generic address space."""
 
     @always_inline
     fn __init__(
@@ -614,7 +653,7 @@ struct LayoutTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.
@@ -856,6 +895,13 @@ struct LayoutTensor[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for bitcast result tensors.
+
+    Parameters:
+        new_dtype: The target data type to cast to.
+        address_space: The address space for the result tensor.
+        element_layout: The element layout for the result tensor.
+    """
 
     @always_inline
     fn bitcast[
@@ -900,8 +946,15 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """Type alias for origin-cast result tensors.
+
+    Parameters:
+        mut: Whether the result tensor is mutable.
+        origin: The origin for the result tensor.
+    """
 
     comptime MutableAnyType = Self.OriginCastType[True, MutAnyOrigin]
+    """Mutable LayoutTensor type with MutAnyOrigin."""
     comptime _AsMut = Self.OriginCastType[True, _]
 
     @always_inline("nodebug")
@@ -949,9 +1002,8 @@ struct LayoutTensor[
 
     @doc_private
     fn as_any_origin(
-        self: LayoutTensor[*_, **_],
-        out result: type_of(self).OriginCastType[False, ImmutAnyOrigin],
-    ):
+        self: LayoutTensor[*_, **_]
+    ) -> type_of(self).OriginCastType[False, ImmutAnyOrigin]:
         constrained[
             False,
             (
@@ -960,7 +1012,7 @@ struct LayoutTensor[
                 " mutability explicitly before calling this function."
             ),
         ]()
-        result = abort[type_of(result)]()
+        abort()
 
     comptime AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -975,6 +1027,11 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """Type alias for address-space-cast result tensors.
+
+    Parameters:
+        address_space: The target address space for the result tensor.
+    """
 
     @always_inline("nodebug")
     fn address_space_cast[
@@ -1048,6 +1105,21 @@ struct LayoutTensor[
             )
         )
 
+    @always_inline("nodebug")
+    fn ptr_at_offset(
+        self, coords: IndexList
+    ) -> UnsafePointer[Scalar[Self.dtype], address_space = Self.address_space]:
+        """Get a pointer offset at the given flattened coordinates.
+
+        Args:
+            coords: A flattened list of the offset coordinates.
+
+        Returns:
+           A pointer offset at the given flattened coordinates.
+        """
+
+        return self.ptr + self._offset(coords)
+
     @always_inline
     fn _elementwise_unary[
         func: fn (Self.element_type) capturing -> (Self.element_type),
@@ -1071,13 +1143,10 @@ struct LayoutTensor[
         This method requires the tensor to have a statically known layout
         for compile-time optimization.
         """
-        constrained[
-            Self.layout.all_dims_known(),
-            (
-                "__elmentwise_unary must operates on tensors of statically know"
-                " layouts"
-            ),
-        ]()
+        __comptime_assert Self.layout.all_dims_known(), (
+            "__elmentwise_unary must operates on tensors of statically know"
+            " layouts"
+        )
 
         @parameter
         for i in range(self.layout.size()):
@@ -1151,45 +1220,33 @@ struct LayoutTensor[
 
             @parameter
             for axis in range(Self.rank):
-                constrained[
-                    other.shape[axis]() == self.shape[axis](),
-                    (
-                        "_elementwise_binary_with_broadcast requires shape to"
-                        " be the same for tensors of the same rank"
-                    ),
-                ]()
+                __comptime_assert axis != UNKNOWN_VALUE
+                __comptime_assert other.shape[axis]() == self.shape[axis](), (
+                    "_elementwise_binary_with_broadcast requires shape to"
+                    " be the same for tensors of the same rank"
+                )
 
-        constrained[
-            Self.layout.all_dims_known(),
-            (
-                "_elementwise_binary_with_broadcast must operates on tensors"
-                " of statically know layouts"
-            ),
-        ]()
-        constrained[
-            other.rank <= Self.rank,
-            (
-                "_elementwise_binary_with_broadcast must operates on tensor of"
-                " equal of lower rank"
-            ),
-        ]()
+        __comptime_assert Self.layout.all_dims_known(), (
+            "_elementwise_binary_with_broadcast must operates on tensors"
+            " of statically know layouts"
+        )
+        __comptime_assert other.rank <= Self.rank, (
+            "_elementwise_binary_with_broadcast must operates on tensor of"
+            " equal of lower rank"
+        )
 
         # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
         # constrain.
-        constrained[
-            Self.rank == 2 or Self.rank == other.rank,
-            "Only supports rank-2 tensor, or same rank",
-        ]()
+        __comptime_assert (
+            Self.rank == 2 or Self.rank == other.rank
+        ), "Only supports rank-2 tensor, or same rank"
 
         @parameter
         if other.rank == 1:
-            constrained[
-                other.shape[0]() == self.shape[0](),
-                (
-                    "_elementwise_binary_with_broadcast 1d tensor operand must"
-                    " have a dim that matches the tensors"
-                ),
-            ]()
+            __comptime_assert other.shape[0]() == self.shape[0](), (
+                "_elementwise_binary_with_broadcast 1d tensor operand must"
+                " have a dim that matches the tensors"
+            )
 
             @parameter
             for i in range(self.layout.size()):
@@ -1811,7 +1868,7 @@ struct LayoutTensor[
         """Computes element-wise exponential function.
 
         Returns a new tensor containing the
-        [element-wise exponential](/mojo/stdlib/math/math/exp/) of the input tensor.
+        [element-wise exponential](/mojo/std/math/math/exp/) of the input tensor.
 
         Returns:
             A new tensor containing the element-wise exponential.
@@ -1852,6 +1909,24 @@ struct LayoutTensor[
         )
 
     @always_inline("nodebug")
+    fn _load_scalar_offset(
+        self, offset: Scalar[Self.linear_idx_type]
+    ) -> Scalar[Self.dtype]:
+        """Retrieves a single scalar from the tensor at the specified offset.
+
+        This method loads the element at the given offset and returns the first
+        scalar lane. For tensors with element_size == 1, this is the only value.
+        For tiled/vectorized elements, this returns the 0th lane.
+
+        Args:
+            offset: The integer offset for array indexing.
+
+        Returns:
+            The scalar value at the specified offset.
+        """
+        return self._load_offset(offset)[0]
+
+    @always_inline("nodebug")
     fn __getitem__[*Tys: Indexer](self, *args: *Tys) -> Self.element_type:
         """Retrieves a single element from the tensor at the specified indices.
 
@@ -1871,15 +1946,16 @@ struct LayoutTensor[
         """
         comptime arg_count = args.__len__()
 
-        constrained[
-            Self.rank == arg_count or Self.num_strides == arg_count,
+        __comptime_assert (
+            Self.rank == arg_count or Self.num_strides == arg_count
+        ), (
             "Indexed with "
             + String(arg_count)
             + " dims, but Self.rank, Self.num_strides = "
             + String(Self.rank)
             + ", "
-            + String(self.num_strides),
-        ]()
+            + String(self.num_strides)
+        )
 
         var index_list = Self.idx_list_t[arg_count](fill=0)
 
@@ -1910,6 +1986,69 @@ struct LayoutTensor[
         return self._load_offset(offset)
 
     @always_inline("nodebug")
+    fn load_scalar[*Tys: Indexer](self, *args: *Tys) -> Scalar[Self.dtype]:
+        """Retrieves a single scalar from the tensor at the specified indices.
+
+        This method provides scalar element access for the tensor, which is
+        useful in generic contexts where `__getitem__` returns a SIMD vector
+        of `element_size` elements. This method always returns a single scalar
+        value (the 0th lane of the element).
+
+        The number of indices provided must match the rank of the tensor,
+        otherwise an error will occur at runtime.
+
+        Parameters:
+            Tys: The type of the indices. Must implement the `Indexer` trait,
+                and match the rank of the tensor.
+
+        Args:
+            args: The indices specifying the element's position in the tensor.
+
+        Returns:
+            The scalar value at the specified position with the tensor's dtype.
+        """
+        comptime arg_count = args.__len__()
+
+        constrained[
+            Self.rank == arg_count or Self.num_strides == arg_count,
+            "Indexed with "
+            + String(arg_count)
+            + " dims, but Self.rank, Self.num_strides = "
+            + String(Self.rank)
+            + ", "
+            + String(self.num_strides),
+        ]()
+
+        var index_list = Self.idx_list_t[arg_count](fill=0)
+
+        @parameter
+        for arg_idx in range(arg_count):
+            index_list[arg_idx] = index(args[arg_idx])
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset[rank=arg_count](strides, index_list)
+        return self._load_scalar_offset(offset)
+
+    @always_inline("nodebug")
+    fn load_scalar(self, crd: RuntimeTuple) -> Scalar[Self.dtype]:
+        """Retrieves a single scalar from the tensor at the specified coordinates.
+
+        This method provides scalar element access for the tensor, which is
+        useful in generic contexts where `__getitem__` returns a SIMD vector
+        of `element_size` elements. This method always returns a single scalar
+        value (the 0th lane of the element).
+
+        Args:
+            crd: The coordinate specifying the element's position in each
+                dimension. For example, in a 3D tensor, you would use (i, j, k).
+
+        Returns:
+            The scalar value at the specified position with the tensor's dtype.
+        """
+        var offset = self.runtime_layout(crd)
+        return self._load_scalar_offset(offset)
+
+    @always_inline("nodebug")
     fn __setitem__[
         *Tys: Indexer
     ](self, *args: *Tys, val: Self.element_type) where Self.mut:
@@ -1933,15 +2072,16 @@ struct LayoutTensor[
 
         comptime arg_count = args.__len__()
 
-        constrained[
-            Self.rank == arg_count or Self.num_strides == arg_count,
+        __comptime_assert (
+            Self.rank == arg_count or Self.num_strides == arg_count
+        ), (
             "Indexed with "
             + String(arg_count)
             + " dims, but Self.rank, Self.num_strides = "
             + String(Self.rank)
             + ", "
-            + String(self.num_strides),
-        ]()
+            + String(self.num_strides)
+        )
 
         var index_list = Self.idx_list_t[arg_count](fill=0)
 
@@ -2028,7 +2168,7 @@ struct LayoutTensor[
             result in undefined behavior.
         - The elements are loaded according to the tensor's stride configuration.
         """
-        constrained[self.rank == coords.size]()
+        __comptime_assert self.rank == coords.size
         debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
 
         var idx = self.runtime_layout(
@@ -2220,7 +2360,7 @@ struct LayoutTensor[
         - The elements are stored according to the tensor's stride configuration.
         - This operation modifies the tensor's data in-place.
         """
-        constrained[self.rank == coords.size]()
+        __comptime_assert self.rank == coords.size
         debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
 
         var idx = self.runtime_layout(
@@ -2332,16 +2472,15 @@ struct LayoutTensor[
         - The allocated memory is automatically freed when the function returns.
         """
 
-        constrained[
-            Self.layout.all_dims_known(), "Requires fully static layout"
-        ]()
-        constrained[
-            stack_alignment % Self.alignment == 0,
-            "Stack allocation alignment ",
-            String(stack_alignment),
-            " must be multiple of tensor alignment ",
-            String(Self.alignment),
-        ]()
+        __comptime_assert (
+            Self.layout.all_dims_known()
+        ), "Requires fully static layout"
+        __comptime_assert stack_alignment % Self.alignment == 0, (
+            "Stack allocation alignment "
+            + String(stack_alignment)
+            + " must be multiple of tensor alignment "
+            + String(Self.alignment)
+        )
 
         return Self.StackTensorType(
             stack_allocation[
@@ -2380,6 +2519,7 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """LayoutTensor type for stack-allocated tensors."""
 
     @always_inline
     fn to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
@@ -2391,10 +2531,9 @@ struct LayoutTensor[
         Returns:
             A `DeviceBuffer` containing the tensor's data.
         """
-        constrained[
-            Self.address_space == Self.address_space.GENERIC,
-            "DeviceBuffer is only used on GENERIC address space",
-        ]()
+        __comptime_assert (
+            Self.address_space == Self.address_space.GENERIC
+        ), "DeviceBuffer is only used on GENERIC address space"
         return DeviceBuffer[Self.dtype](
             ctx,
             rebind[UnsafePointer[Scalar[Self.dtype]]](self.ptr),
@@ -2469,7 +2608,7 @@ struct LayoutTensor[
         for rank_idx in range(Self.rank):
             comptime sub_layout = flatten(Self.layout.shape[rank_idx])
             comptime sub_layout_size = len(sub_layout)
-            constrained[sub_layout_size > 0]()
+            __comptime_assert sub_layout_size > 0
 
             @parameter
             if sub_layout_size == 1:
@@ -2483,13 +2622,10 @@ struct LayoutTensor[
                 @parameter
                 for i in range(sub_layout_size - 1):
                     comptime sz: Int = sub_layout[i].value()
-                    constrained[
-                        sz != UNKNOWN_VALUE,
-                        (
-                            "unknown shapes not supported in non-trailing"
-                            " positions of nested dimensions"
-                        ),
-                    ]()
+                    __comptime_assert sz != UNKNOWN_VALUE, (
+                        "unknown shapes not supported in non-trailing"
+                        " positions of nested dimensions"
+                    )
                     idx, r = divmod(idx, sz)
                     eidx[eidx_offset] = r
                     eidx_offset += 1
@@ -2506,15 +2642,14 @@ struct LayoutTensor[
         stride: Self.idx_list_t[Self.num_strides],
         vals: Self.idx_list_t[rank],
     ) -> Int:
-        constrained[
-            rank == Self.rank or rank == Self.num_strides,
+        __comptime_assert rank == Self.rank or rank == Self.num_strides, (
             "idx rank = "
             + String(rank)
             + "\nTensor rank = "
             + String(Self.rank)
             + "\nnum_strides = "
-            + String(Self.num_strides),
-        ]()
+            + String(Self.num_strides)
+        )
 
         var offset: Scalar[Self.linear_idx_type] = 0
 
@@ -2535,7 +2670,38 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
-    fn shape[idx: Int]() -> Int:
+    fn is_static_shape[idx: Int]() -> Bool where idx != UNKNOWN_VALUE:
+        """Returns the whether the specified dimension is statically known.
+
+        Parameters:
+            idx: The dimension index to query (0-based).
+                    For example, in a 3D tensor with shape [10, UNKNOWN_VALUE, 30]:
+                    - `shape[0]()` returns True (first dimension).
+                    - `shape[1]()` returns False (second dimension).
+                    - `shape[2]()` returns True (third dimension).
+
+        Returns:
+            The True if the dimension is statically known, False otherwise.
+
+        Performance:
+
+        - This is a compile-time operation with no runtime cost when used
+            with static dimensions.
+
+        Notes:
+
+        - This is a static method that operates on the tensor's type information,
+            not on a specific tensor instance.
+        """
+
+        comptime shape = Self._to_static[
+            Self.layout.shape, Self.layout_int_type
+        ]()
+        return shape[idx] != UNKNOWN_VALUE
+
+    @always_inline
+    @staticmethod
+    fn shape[idx: Int]() -> Int where idx != UNKNOWN_VALUE:
         """Returns the size of the tensor along the specified dimension.
 
         Provides static access to the tensor's shape information. This method
@@ -2564,11 +2730,32 @@ struct LayoutTensor[
             not on a specific tensor instance.
         """
 
-        # FIXME: having to specify the origin is kind of weird
         comptime shape = Self._to_static[
             Self.layout.shape, Self.layout_int_type
         ]()
         return shape[idx]
+
+    @always_inline("nodebug")
+    fn get_shape(self) -> IndexList[Self.rank]:
+        """Get the flattened shape of a LayoutTensor.
+
+        Returns:
+           The flattened shape of a LayoutTensor.
+        """
+        return rebind[IndexList[Self.rank]](
+            self.runtime_layout.shape.value.canonicalize()
+        )
+
+    @always_inline("nodebug")
+    fn get_stride(self) -> IndexList[Self.rank]:
+        """Get the flattened stride of a LayoutTensor.
+
+        Returns:
+           The flattened shape of a LayoutTensor.
+        """
+        return rebind[IndexList[Self.rank]](
+            self.runtime_layout.stride.value.canonicalize()
+        )
 
     @always_inline
     @staticmethod
@@ -2609,8 +2796,8 @@ struct LayoutTensor[
         - For non-contiguous tensors (e.g., tensor slices), strides may not
             follow a simple pattern.
         """
+        __comptime_assert idx != UNKNOWN_VALUE
 
-        # FIXME: having to specify the origin is kind of weird
         comptime stride = Self._to_static[
             Self.layout.stride, Self.linear_idx_type
         ]()
@@ -2635,16 +2822,13 @@ struct LayoutTensor[
             The dimension of the tensor along the specified axis as an integer.
         """
 
-        constrained[
-            0 <= depth(Self.layout.shape) <= 1,
-            String(
-                (
-                    "This method only works with tensors that have depth-1"
-                    " layouts (no nested shapes). Received: "
-                ),
-                Self.layout,
+        __comptime_assert 0 <= depth(Self.layout.shape) <= 1, String(
+            (
+                "This method only works with tensors that have depth-1"
+                " layouts (no nested shapes). Received: "
             ),
-        ]()
+            Self.layout,
+        )
 
         return self.runtime_layout.shape.value[idx]
 
@@ -2667,16 +2851,13 @@ struct LayoutTensor[
             The dimension of the tensor along the specified axis as an integer.
         """
 
-        constrained[
-            0 <= depth(Self.layout.stride) <= 1,
-            String(
-                (
-                    "This method only works with tensors that have depth-1"
-                    " layouts (no nested shapes). Received: "
-                ),
-                Self.layout,
+        __comptime_assert 0 <= depth(Self.layout.stride) <= 1, String(
+            (
+                "This method only works with tensors that have depth-1"
+                " layouts (no nested shapes). Received: "
             ),
-        ]()
+            Self.layout,
+        )
 
         return self.runtime_layout.stride.value[idx]
 
@@ -2714,16 +2895,13 @@ struct LayoutTensor[
         - For tensors with masked or partial views, this returns the actual
             size of the view, not the original tensor.
         """
-        constrained[
-            0 <= depth(Self.layout.shape) <= 1,
-            String(
-                (
-                    "This method only works with tensors that have depth-1"
-                    " layouts (no nested shapes). Received: "
-                ),
-                Self.layout,
+        __comptime_assert 0 <= depth(Self.layout.shape) <= 1, String(
+            (
+                "This method only works with tensors that have depth-1"
+                " layouts (no nested shapes). Received: "
             ),
-        ]()
+            Self.layout,
+        )
 
         comptime shape = Self._to_static[
             Self.layout.shape, Self.layout_int_type
@@ -2742,6 +2920,11 @@ struct LayoutTensor[
         address_space = Self.address_space,
         element_layout=element_layout,
     ]
+    """Type alias for coalesced result tensors.
+
+    Parameters:
+        element_layout: The element layout for the coalesced tensor.
+    """
 
     @always_inline
     fn coalesce(self) -> Self.CoalesceType[Self.element_layout]:
@@ -2946,15 +3129,14 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        comptime num_tiles = stdlib.builtin.variadic_size(tile_sizes)
+        comptime num_tiles = std.builtin.Variadic.size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
 
-        constrained[
-            _tiled_layout[1].rank() == num_tiles,
-            "Number of tiles should match the rank",
-        ]()
+        __comptime_assert (
+            _tiled_layout[1].rank() == num_tiles
+        ), "Number of tiles should match the rank"
 
         comptime tile_type = self.TileType[*tile_sizes]
 
@@ -3013,6 +3195,11 @@ struct LayoutTensor[
     comptime SIMDTileType[tile_size: Int] = Self.TileType[
         tile_size, simd_width_of[Self.dtype]()
     ]
+    """Type alias for SIMD-sized tile tensors.
+
+    Parameters:
+        tile_size: The size of the tile along the tiled axis.
+    """
 
     @always_inline
     fn simd_tile[
@@ -3036,6 +3223,7 @@ struct LayoutTensor[
         len(flatten(Self.layout.shape)),
         element_type = Self.layout_int_type,
     ]
+    """Index list type for corner coordinates."""
 
     @always_inline
     fn tile_with_offset[
@@ -3064,15 +3252,14 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        comptime num_tiles = stdlib.builtin.variadic_size(tile_sizes)
+        comptime num_tiles = std.builtin.Variadic.size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
 
-        constrained[
-            _tiled_layout[1].rank() == num_tiles,
-            "Number of tiles should match the rank",
-        ]()
+        __comptime_assert (
+            _tiled_layout[1].rank() == num_tiles
+        ), "Number of tiles should match the rank"
 
         comptime tile_type = self.TileType[*tile_sizes]
 
@@ -3154,6 +3341,12 @@ struct LayoutTensor[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked or _tile_is_masked[Self.layout, *tile_sizes](),
     ]
+    """Type alias for tiled iterator types.
+
+    Parameters:
+        tile_sizes: The dimensions of each tile along each axis.
+        axis: The axis along which to iterate.
+    """
 
     @always_inline
     fn tiled_iterator[
@@ -3218,12 +3411,11 @@ struct LayoutTensor[
         ```
         """
 
-        comptime tiles_rank = stdlib.builtin.variadic_size(tile_sizes)
+        comptime tiles_rank = std.builtin.Variadic.size(tile_sizes)
         comptime __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
-        constrained[
-            __tiled_layout[1].rank() == tiles_rank,
-            "Number of tiles should match the rank",
-        ]()
+        __comptime_assert (
+            __tiled_layout[1].rank() == tiles_rank
+        ), "Number of tiles should match the rank"
 
         comptime tiled_iterator_type = Self.TiledIteratorType[
             *tile_sizes, axis=axis
@@ -3254,6 +3446,7 @@ struct LayoutTensor[
             comptime bound = Self.layout.shape[axis].value() * Self.layout.stride[axis].value() \
                 if is_axis_val \
                 else Self.layout.shape[axis][-1].value() * Self.layout.stride[axis][-1].value()
+            __comptime_assert axis != UNKNOWN_VALUE
             comptime dim_bound = Self.shape[axis]() \
                 if is_axis_val \
                 else product(Self.layout.shape[axis])
@@ -3338,6 +3531,12 @@ struct LayoutTensor[
         element_layout = Self.element_layout,
         alignment = Self.alignment,
     ]
+    """Type alias for split element tensors.
+
+    Parameters:
+        count: Number of portions to split into.
+        axis: The axis along which to split.
+    """
 
     comptime StaticSplitType[
         count: Int,
@@ -3346,6 +3545,12 @@ struct LayoutTensor[
         Self.SplitElementType[count, axis],
         count,
     ]
+    """Type alias for static split result tuples.
+
+    Parameters:
+        count: Number of portions to split into.
+        axis: The axis along which to split.
+    """
 
     @always_inline
     fn split[
@@ -3367,15 +3572,13 @@ struct LayoutTensor[
             along the split axis.
         """
 
-        constrained[
-            Self.layout.shape[axis].is_value(),
-            "Only support partition modes that are plain values.",
-        ]()
+        __comptime_assert Self.layout.shape[
+            axis
+        ].is_value(), "Only support partition modes that are plain values."
 
-        constrained[
-            Self.layout.shape[axis].value() % count == 0,
-            "The input dimension must be divisible over the input count.",
-        ]()
+        __comptime_assert (
+            Self.layout.shape[axis].value() % count == 0
+        ), "The input dimension must be divisible over the input count."
 
         comptime stride = Self.layout.stride[axis].value()
         var tiles = Self.StaticSplitType[count, axis]()
@@ -3411,6 +3614,11 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for dynamic split result tensors.
+
+    Parameters:
+        axis: The axis along which to split.
+    """
 
     @always_inline
     fn split[
@@ -3462,19 +3670,17 @@ struct LayoutTensor[
         - Maintains the original tensor's stride information for efficient
             element access within the partition.
         """
-        constrained[
-            Self.layout.shape[axis].is_value(),
-            "Can't split non-scalar dimension.",
-        ]()
+        __comptime_assert Self.layout.shape[
+            axis
+        ].is_value(), "Can't split non-scalar dimension."
 
         # We can split dynamic dimension but that should be audited carefully with
         # other parts when we really want to support arbitrary K, N in matmul.
         # Restrict to static case for now.
-        constrained[
+        __comptime_assert (
             Self.layout.shape[axis].value() != UNKNOWN_VALUE
-            and Self.layout.stride[axis].value() != UNKNOWN_VALUE,
-            "Shouldn't split dynamic dimension.",
-        ]()
+            and Self.layout.stride[axis].value() != UNKNOWN_VALUE
+        ), "Shouldn't split dynamic dimension."
 
         comptime axis_dim = Self.layout.shape[axis].value()
         comptime axis_stride = Self.layout.stride[axis].value()
@@ -3515,11 +3721,10 @@ struct LayoutTensor[
     ](self, thread_id: UInt) -> IndexList[
         Self.rank, element_type = Self.layout_int_type
     ]:
-        constrained[
+        __comptime_assert (
             len(flatten(thread_layout.shape)) <= 2
-            and len(flatten(thread_layout.stride)) <= 2,
-            "Only supporting rank-2 or less thread layout for dynamic tile.",
-        ]()
+            and len(flatten(thread_layout.stride)) <= 2
+        ), "Only supporting rank-2 or less thread layout for dynamic tile."
 
         # clamp IndexList using thread_id and thread_layout
         var tile_shape = IndexList[
@@ -3569,6 +3774,12 @@ struct LayoutTensor[
             or _distribute_is_masked[Self.layout, threads_layout, axis]()
         ) if is_nvidia_gpu() else False,
     ]
+    """Type alias for distributed tensor types.
+
+    Parameters:
+        threads_layout: The layout describing thread distribution.
+        axis: Optional axis to distribute along.
+    """
 
     @always_inline
     fn distribute[
@@ -3728,13 +3939,12 @@ struct LayoutTensor[
                 )
 
         else:
-            constrained[
-                Self.layout.known_shape() and threads_layout.all_dims_known(),
-                (
-                    "Distribute expecting layout with static shapes and"
-                    " fully static threads_layout"
-                ),
-            ]()
+            __comptime_assert (
+                Self.layout.known_shape() and threads_layout.all_dims_known()
+            ), (
+                "Distribute expecting layout with static shapes and"
+                " fully static threads_layout"
+            )
 
             # Only extract coordinates in the given axis.
             # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
@@ -3914,13 +4124,12 @@ struct LayoutTensor[
                 )
 
         else:
-            constrained[
-                Self.layout.known_shape() and threads_layout.all_dims_known(),
-                (
-                    "Distribute expecting layout with static shapes and"
-                    " fully static threads_layout"
-                ),
-            ]()
+            __comptime_assert (
+                Self.layout.known_shape() and threads_layout.all_dims_known()
+            ), (
+                "Distribute expecting layout with static shapes and"
+                " fully static threads_layout"
+            )
 
             # Only extract coordinates in the given axis.
             # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
@@ -4009,6 +4218,13 @@ struct LayoutTensor[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for shape-vectorized tensor types.
+
+    Parameters:
+        origin: The origin of the result tensor.
+        vector_shape: The shape of each vector unit.
+        linear_vectorize: Whether to vectorize in a linear manner.
+    """
 
     @always_inline
     fn _vectorize_2[
@@ -4062,14 +4278,12 @@ struct LayoutTensor[
             A view of the tensor with a vectorized layout based on the specified
             vector shape.
         """
-        constrained[
-            (vector_shape.is_value() and linear_vectorize)
-            or (not linear_vectorize),
-            (
-                "Only contiguous vectorization or vectorization of a"
-                " congruent shape is supported!"
-            ),
-        ]()
+        __comptime_assert (vector_shape.is_value() and linear_vectorize) or (
+            not linear_vectorize
+        ), (
+            "Only contiguous vectorization or vectorization of a"
+            " congruent shape is supported!"
+        )
 
         comptime vectorized_type = Self.ShapeVectorizedType[
             _origin, vector_shape, linear_vectorize
@@ -4079,12 +4293,11 @@ struct LayoutTensor[
 
         @parameter
         if check_rank:
-            constrained[
-                is_int(vector_shape)
-                or congruent(vector_shape, Self.layout.shape),
-                "vector_shape has to be congruent to layout.shape = ",
-                String(Self.layout.shape),
-            ]()
+            __comptime_assert is_int(vector_shape) or congruent(
+                vector_shape, Self.layout.shape
+            ), "vector_shape has to be congruent to layout.shape = " + String(
+                Self.layout.shape
+            )
 
         comptime tiler = Self._tuple_divide_tiler(
             vector_shape, linear_vectorize
@@ -4120,10 +4333,9 @@ struct LayoutTensor[
             else:
                 return vectorized_type(ptr)
         else:
-            constrained[
-                coalesce(vectorized_type.element_layout).known_shape(),
-                "Result element layout should have known shape",
-            ]()
+            __comptime_assert coalesce(
+                vectorized_type.element_layout
+            ).known_shape(), "Result element layout should have known shape"
 
             runtime_element_layout_shape = (
                 vectorized_type.RuntimeElementLayoutType.ShapeType()
@@ -4157,6 +4369,11 @@ struct LayoutTensor[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for vectorized tensor types.
+
+    Parameters:
+        vector_shape: The shape of each vector unit along each axis.
+    """
 
     @always_inline
     fn vectorize[
@@ -4227,6 +4444,7 @@ struct LayoutTensor[
     comptime SIMDVectorizedType = Self.VectorizedType[
         1, simd_width_of[Self.dtype]()
     ]
+    """Result type for SIMD-width vectorization."""
 
     @always_inline
     fn vectorize(self) -> Self.SIMDVectorizedType:
@@ -4240,10 +4458,9 @@ struct LayoutTensor[
 
     @staticmethod
     fn _compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:
-        constrained[
-            Self.layout.shape.__len__() == 2,
-            "Only rank-2 tensors slices are supported for now!",
-        ]()
+        __comptime_assert (
+            Self.layout.shape.__len__() == 2
+        ), "Only rank-2 tensors slices are supported for now!"
         return Layout(
             [
                 _get_slice_size(Self.layout, d0_slice, 0),
@@ -4256,10 +4473,8 @@ struct LayoutTensor[
     fn _compute_slice_layout(
         slice_0: Slice, slice_1: Slice, slice_0_axis: Int, slice_1_axis: Int
     ) -> Layout:
-        constrained[
-            Self.layout.shape.__len__() > 2,
-            "Rank should be >= 2",
-        ]()
+        __comptime_assert Self.layout.rank() >= 2, "Rank should be >= 2"
+
         var sliced_layout = sublayout(Self.layout, slice_0_axis, slice_1_axis)
         return Layout(
             [
@@ -4271,10 +4486,7 @@ struct LayoutTensor[
 
     @staticmethod
     fn _compute_slice_layout(slice_0: Slice, slice_0_axis: Int) -> Layout:
-        constrained[
-            Self.layout.shape.__len__() > 1,
-            "Rank should be >= 1",
-        ]()
+        __comptime_assert Self.layout.shape.__len__() > 1, "Rank should be >= 1"
         var sliced_layout = sublayout(Self.layout, slice_0_axis)
         return Layout(
             [_get_slice_size(sliced_layout, slice_0, 0)],
@@ -4296,6 +4508,12 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for 2D slice result tensors.
+
+    Parameters:
+        d0_slice: Slice specification for the first dimension.
+        d1_slice: Slice specification for the second dimension.
+    """
 
     @always_inline
     fn slice[
@@ -4361,10 +4579,9 @@ struct LayoutTensor[
         - Slice bounds are not checked at runtime; accessing out-of-bounds
             indices will result in undefined behavior.
         """
-        constrained[
-            d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
-            "Slice should have no gaps",
-        ]()
+        __comptime_assert (
+            d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1
+        ), "Slice should have no gaps"
 
         comptime return_type = Self.SliceType[d0_slice, d1_slice]
         comptime stride_m = Int(return_type.layout.stride[0])
@@ -4393,6 +4610,14 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for 2D slice result tensors from higher-rank tensors.
+
+    Parameters:
+        d0_slice: Slice specification for the first selected dimension.
+        d1_slice: Slice specification for the second selected dimension.
+        slice_indices: Indices of the two dimensions to slice.
+        __offset_dims: Number of fixed dimensions.
+    """
 
     @always_inline
     fn slice[
@@ -4460,14 +4685,12 @@ struct LayoutTensor[
         - Slice bounds are not checked at runtime; accessing out-of-bounds
             indices will result in undefined behavior.
         """
-        constrained[
-            d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
-            "Slice should have no gaps",
-        ]()
-        constrained[
-            slice_indices[0] < slice_indices[1],
-            "Slice indices should be ordered",
-        ]()
+        __comptime_assert (
+            d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1
+        ), "Slice should have no gaps"
+        __comptime_assert (
+            slice_indices[0] < slice_indices[1]
+        ), "Slice indices should be ordered"
         comptime slice_type = Self.SliceType2D[
             d0_slice, d1_slice, slice_indices, __offset_dims
         ]
@@ -4510,6 +4733,13 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for 1D slice result tensors from higher-rank tensors.
+
+    Parameters:
+        d0_slice: Slice specification for the selected dimension.
+        slice_indices: Index of the dimension to slice.
+        __offset_dims: Number of fixed dimensions.
+    """
 
     # FIXME: Can't overload slice, hitting compiler issue.
     # https://linear.app/modularml/issue/MOCO-174
@@ -4553,7 +4783,7 @@ struct LayoutTensor[
         dimension 0, with dimensions 1 and 2 fixed at indices 1 and 2:
 
         ```mojo
-        t.slice_1d[Slice(1, 3), IndexList[1](0)](1, 2)`
+        t.slice_1d[Slice(1, 3), IndexList[1](0)](1, 2)
         ```
 
         Performance:
@@ -4574,10 +4804,9 @@ struct LayoutTensor[
         - This function exists as a workaround for compiler limitations with
             overloading.
         """
-        constrained[
-            d0_slice.step.or_else(1) == 1,
-            "Slice should have no gaps",
-        ]()
+        __comptime_assert (
+            d0_slice.step.or_else(1) == 1
+        ), "Slice should have no gaps"
 
         comptime slice_type = Self.SliceType1D[
             d0_slice, slice_indices, __offset_dims
@@ -4615,6 +4844,7 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Result type for transpose operations."""
 
     @always_inline
     fn transpose(self) -> Self.TransposeType:
@@ -4661,10 +4891,9 @@ struct LayoutTensor[
             consider creating a physical copy with the transposed layout.
         - Transpose only works with statically known shapes.
         """
-        constrained[
-            Self.layout.all_dims_known(),
-            "Transpose only works with statically known shapes.",
-        ]()
+        __comptime_assert (
+            Self.layout.all_dims_known()
+        ), "Transpose only works with statically known shapes."
         return Self.TransposeType(self.ptr)
 
     comptime ReshapeType[
@@ -4680,6 +4909,11 @@ struct LayoutTensor[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
+    """Type alias for reshaped tensor types.
+
+    Parameters:
+        dst_layout: The target layout for the reshaped tensor.
+    """
 
     @always_inline
     fn reshape[
@@ -4724,10 +4958,91 @@ struct LayoutTensor[
             may not produce the expected results.
         - Masked tensors cannot be reshaped.
         """
-        constrained[
-            not Self.masked, "Masked tensor does not support reshape."
-        ]()
+        __comptime_assert (
+            not Self.masked
+        ), "Masked tensor does not support reshape."
         return Self.ReshapeType[dst_layout](self.ptr)
+
+    @always_inline
+    fn reshape[
+        dst_layout: Layout,
+    ](self, runtime_layout: RuntimeLayout[dst_layout]) -> Self.ReshapeType[
+        dst_layout
+    ]:
+        """Create a view of the tensor with a different shape.
+
+        This method creates a view of the tensor with a new shape, without changing
+        the underlying data. The total number of elements must remain the same.
+
+        Constraints:
+            - Cannot reshape masked tensors.
+            - The total number of elements must be the same in both layouts.
+
+        Parameters:
+            dst_layout: The target layout for the reshaped tensor. Must have the same
+                       total number of elements as the original tensor.
+
+        Args:
+            runtime_layout: The target RuntimeLayout for the reshaped tensor.
+
+        Returns:
+            A view of the tensor with the new shape specified by dst_layout.
+
+        Example:
+
+        Given a 2x6 row-major tensor, `reshape[Layout.col_major(3, 4)]()`
+        produces a 3x4 tensor with the same elements in column-major order.
+
+        Performance:
+
+        - Creates a view without copying data, making it very efficient.
+        - The operation is zero-cost at runtime as it only changes the layout
+            information.
+        - Memory access patterns may change, potentially affecting performance
+            depending on the original and target layouts.
+
+        Notes:
+
+        - The reshaped tensor shares the same memory as the original tensor,
+            so modifications to one will affect the other.
+        - The total number of elements must remain the same after reshaping.
+        - The reshape operation assumes a row-major (C-style) memory layout.
+        - For tensors with complex strides or non-contiguous memory, reshaping
+            may not produce the expected results.
+        - Masked tensors cannot be reshaped.
+        """
+        __comptime_assert (
+            not Self.masked
+        ), "Masked tensor does not support reshape."
+        return Self.ReshapeType[dst_layout](self.ptr, runtime_layout)
+
+    comptime FlattenedType = LayoutTensor[
+        Self.dtype,
+        Layout(UNKNOWN_VALUE),
+        Self.origin,
+        address_space = Self.address_space,
+        element_layout = Self.element_layout,
+        layout_int_type = Self.layout_int_type,
+        linear_idx_type = Self.linear_idx_type,
+        masked = Self.masked,
+        alignment = Self.alignment,
+    ]
+    """Type alias for flattened tensor types.
+    """
+
+    @always_inline("nodebug")
+    fn flatten(self) -> Self.FlattenedType:
+        """Convert a LayoutTensor to a flattened dynamic layout.
+
+        Returns:
+            A LayoutTensor to a flattened dynamic layout.
+        """
+        return Self.FlattenedType(
+            self.ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                IndexList[1](self.size())
+            ),
+        )
 
     comptime CompositionType[
         rhs_layout: Layout,
@@ -4741,6 +5056,12 @@ struct LayoutTensor[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for composed layout tensor types.
+
+    Parameters:
+        rhs_layout: The layout to compose with.
+        dst_layout: The resulting composed layout.
+    """
 
     @always_inline
     fn composition[
@@ -4984,22 +5305,20 @@ struct LayoutTensor[
         comptime dst_size = Self.layout.size()
         comptime src_size = other_layout.size()
 
-        constrained[
-            Self.layout.known_shape() and other_layout.known_shape(),
-            "copy_from must move data of statically known shape",
-        ]()
+        __comptime_assert (
+            Self.layout.known_shape() and other_layout.known_shape()
+        ), "copy_from must move data of statically known shape"
 
-        constrained[
-            dst_size == src_size,
-            "copy_from should move data of the same size, getting dst size ",
-            String(dst_size),
-            " and src size ",
-            String(src_size),
-        ]()
+        __comptime_assert dst_size == src_size, (
+            "copy_from should move data of the same size, getting dst size "
+            + String(dst_size)
+            + " and src size "
+            + String(src_size)
+        )
 
-        constrained[
-            dst_element_size == src_element_size, "copy_from should move"
-        ]()
+        __comptime_assert (
+            dst_element_size == src_element_size
+        ), "copy_from should move"
 
         @parameter
         for i in range(dst_size):
@@ -5043,7 +5362,7 @@ struct LayoutTensor[
         destination tensors, assigning each thread one or more elements to copy.
 
         Optionally, use the
-        [`vectorize()`]((/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
+        [`vectorize()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
         method to get vectorized views of both tensors before calling
         `distribute()`. This allows each thread to copy multiple elements of the
         tensor. For example:
@@ -5055,9 +5374,9 @@ struct LayoutTensor[
         ```
 
         The copy operation is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](/mojo/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](/mojo/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
 
         Constraints:
@@ -5136,40 +5455,37 @@ struct LayoutTensor[
             transfers.
         - A synchronization barrier is required before using the copied data.
         """
-        constrained[
-            self.address_space == AddressSpace.SHARED,
-            "Async is only supported for destinations in shared memory",
-        ]()
+        __comptime_assert (
+            self.address_space == AddressSpace.SHARED
+        ), "Async is only supported for destinations in shared memory"
 
-        constrained[
-            src.dtype == Self.dtype, "src dtype must be the same as dst dtype."
-        ]()
+        __comptime_assert (
+            src.dtype == Self.dtype
+        ), "src dtype must be the same as dst dtype."
 
         comptime dst_size = Self.layout.size()
         comptime src_size = src.layout.size()
 
         comptime dst_element_size = Int(self.element_size)
         comptime src_element_size = Int(src.element_size)
-        constrained[
-            dst_element_size == src_element_size,
-            "copy_from_async should move data of the same element size",
-        ]()
+        __comptime_assert (
+            dst_element_size == src_element_size
+        ), "copy_from_async should move data of the same element size"
 
         # Eligibility for 4, 8, 16 bytes async load.
         comptime element_size_bytes = size_of[Self.dtype]() * src_element_size
-        constrained[
+        __comptime_assert (
             element_size_bytes == 4
             or element_size_bytes == 8
-            or element_size_bytes == 16,
-            "copy_from_async only allows 4, 8, 16 bytes element",
-        ]()
+            or element_size_bytes == 16
+        ), "copy_from_async only allows 4, 8, 16 bytes element"
 
         # Share memory must always have static layout.
         comptime dst_dims_known = (
             self.layout.all_dims_known()
             and self.element_layout.all_dims_known()
         )
-        constrained[dst_dims_known, "dst tensor must have static layout"]()
+        __comptime_assert dst_dims_known, "dst tensor must have static layout"
 
         comptime src_dims_known = (
             src.layout.all_dims_known() and src.element_layout.all_dims_known()
@@ -5247,7 +5563,7 @@ struct LayoutTensor[
         # Async copy should only be used for 16B vector for bypassing L1.
         # Scalar path is only for kernel tests.
         else:
-            constrained[not swizzle, "Should not swizzle scalar copy."]()
+            __comptime_assert not swizzle, "Should not swizzle scalar copy."
 
             @parameter
             for i in range(dst_size * dst_element_size):
@@ -5453,6 +5769,7 @@ struct LayoutTensor[
             _pretty_print_2d_tensor(self.coalesce(), writer)
             return
 
+        comptime layout_size = Self.layout.size()
         for i in range(self.runtime_layout.size()):
             var vec_offset = self.runtime_layout(i)
             var vec = SIMD[Self.dtype, Self.element_size]()
@@ -5463,13 +5780,13 @@ struct LayoutTensor[
                 vec[idx] = self.ptr.load(vec_offset + element_offset)
 
             writer.write(vec)
-            if i != Self.layout.size() - 1:
+            if i != layout_size - 1:
                 writer.write(" ")
 
 
 @always_inline
 fn _pretty_print_2d_tensor[W: Writer](tensor: LayoutTensor, mut writer: W):
-    constrained[tensor.layout.rank() == 2]()
+    __comptime_assert tensor.layout.rank() == 2
 
     var m_dim = tensor.runtime_layout.shape[0].value[0]
     var n_dim = tensor.runtime_layout.shape[1].value[0]
@@ -5562,7 +5879,7 @@ fn stack_allocation_like[
 
 
 @register_passable("trivial")
-struct ThreadScope(ImplicitlyCopyable, Movable):
+struct ThreadScope(ImplicitlyCopyable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -5656,7 +5973,7 @@ struct ThreadScope(ImplicitlyCopyable, Movable):
             return "BLOCK"
         if self == Self.WARP:
             return "WARP"
-        return abort[String]("invalid ThreadScope entry")
+        abort("invalid ThreadScope entry")
 
     fn __int__(self) -> Int:
         """Convert the `ThreadScope` to an integer value.
@@ -5688,12 +6005,11 @@ fn _get_worker_idx[
 
     """
 
-    constrained[
-        block_dim_count >= 1 and block_dim_count <= 3,
-        "block_dim_count = ",
-        String(block_dim_count),
-        ". Thread blocks contain between 1 (x) and 3 (x,y,z) dimensions",
-    ]()
+    __comptime_assert block_dim_count >= 1 and block_dim_count <= 3, (
+        "block_dim_count = "
+        + String(block_dim_count)
+        + ". Thread blocks contain between 1 (x) and 3 (x,y,z) dimensions"
+    )
 
     @parameter
     if thread_scope == ThreadScope.BLOCK:
@@ -5744,19 +6060,18 @@ fn _copy_dram_to_sram_validate_args(
     - These constraints ensure that the copy operation follows the expected
         memory hierarchy flow from slower global memory to faster shared memory.
     """
-    constrained[
-        dst.dtype == src.dtype, "src dtype and dst dtype must be the same."
-    ]()
+    __comptime_assert (
+        dst.dtype == src.dtype
+    ), "src dtype and dst dtype must be the same."
 
-    constrained[
-        src.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
-        "src address space must be GENERIC or GLOBAL.",
-    ]()
+    __comptime_assert src.address_space in (
+        AddressSpace.GENERIC,
+        AddressSpace.GLOBAL,
+    ), "src address space must be GENERIC or GLOBAL."
 
-    constrained[
-        dst.address_space == AddressSpace.SHARED,
-        "dst address space must be SHARED.",
-    ]()
+    __comptime_assert (
+        dst.address_space == AddressSpace.SHARED
+    ), "dst address space must be SHARED."
 
 
 @always_inline("nodebug")
@@ -5860,14 +6175,15 @@ fn copy_dram_to_sram[
 
     @parameter
     if not src_fragments.masked or is_scalar:
-        constrained[
-            dst_fragments.layout.size() == src_fragments.layout.size(),
-            "Fragment size mismatch: dst fragments size (",
-            String(dst_fragments.layout.size()),
-            ") does not match src fragments size (",
-            String(src_fragments.layout.size()),
-            ")",
-        ]()
+        __comptime_assert (
+            dst_fragments.layout.size() == src_fragments.layout.size()
+        ), (
+            "Fragment size mismatch: dst fragments size ("
+            + String(dst_fragments.layout.size())
+            + ") does not match src fragments size ("
+            + String(src_fragments.layout.size())
+            + ")"
+        )
 
         dst_fragments.copy_from(src_fragments)
     else:
@@ -5951,7 +6267,9 @@ fn copy_dram_to_sram[
             copied.
         bound: The bound of the source tensor iterator.
     """
-    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This function is only supported on AMD GPUs."
 
     var src_tensor = src_iter[].vectorize[
         dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
@@ -6065,9 +6383,9 @@ fn cp_async_k_major[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](/mojo/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](/mojo/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - K-major layout is particularly beneficial for matrix multiplication
         operations where the inner dimension (K) is accessed contiguously.
@@ -6082,16 +6400,15 @@ fn cp_async_k_major[
         dtype,
         2,
         Index(src_shape0, src_shape1),
-        is_k_major=True,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
     ]()
     comptime desc_shape0 = desc_layout.shape[0].value()
     comptime desc_shape1 = desc_layout.shape[1].value()
     comptime desc_size = desc_layout.size()
 
-    constrained[
-        desc_shape0 == src_shape0, "k-major desc layout shouldn't alter 1st dim"
-    ]()
+    __comptime_assert (
+        desc_shape0 == src_shape0
+    ), "k-major desc layout shouldn't alter 1st dim"
 
     comptime num_tiles = src_shape1 // desc_shape1
     comptime simd_size = simd_width_of[dtype]()
@@ -6109,129 +6426,6 @@ fn cp_async_k_major[
 
         copy_dram_to_sram_async[
             thread_layout, swizzle=True, eviction_policy=eviction_policy
-        ](
-            dst_tile.vectorize[1, simd_size](),
-            src_tile.vectorize[1, simd_size](),
-        )
-
-
-@always_inline("nodebug")
-fn cp_async_mn_major[
-    dtype: DType,
-    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](
-    dst: LayoutTensor[
-        mut=True,
-        dtype,
-        _,
-        address_space = gpu_memory.AddressSpace.SHARED,
-        *_, **_,
-    ],
-    src: LayoutTensor[
-        dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
-    ],
-):
-    """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory
-    Accelerator) with MN-major layout.
-
-    This function performs an asynchronous copy operation from global memory
-    (DRAM) to shared memory (SRAM) using NVIDIA's Tensor Memory Accelerator
-    (TMA) hardware. It optimizes for MN-major memory access patterns, which is
-    particularly beneficial for tensor operations where the outer dimensions (M,
-    N) are accessed contiguously.
-
-    The function automatically determines the optimal tile size and thread
-    distribution based on the tensor shapes and hardware capabilities,
-    leveraging TMA's efficient memory transfer mechanisms.
-
-    Constraints:
-        - Requires NVIDIA GPUs with TMA support (compute capability 9.0+).
-        - Source tensor must be in `GENERIC` or `GLOBAL` address space.
-        - Destination tensor must be in `SHARED` address space.
-        - Both tensors must have the same data type.
-        - Source and destination tensors must be 2D.
-
-    Parameters:
-        dtype: The data type of the tensor elements.
-        eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
-
-    Args:
-        dst: The destination tensor, which must be in shared memory (SRAM).
-        src: The source tensor, which must be in global or generic memory
-            (DRAM).
-
-    Performance:
-
-    - Uses TMA hardware acceleration for optimal memory transfer performance.
-    - Optimizes for MN-major access patterns, which can significantly improve
-        performance for certain tensor operations where outer dimensions are accessed
-        contiguously.
-    - Performs asynchronous transfers, allowing computation to overlap with memory operations.
-    - Automatically determines optimal tile sizes based on tensor dimensions.
-    - Uses hardware-accelerated swizzling to reduce shared memory bank conflicts.
-
-    Notes:
-
-    - This function requires NVIDIA GPUs with TMA support (compute capability 9.0+).
-    - The source tensor must be in `GENERIC` or `GLOBAL` address space (DRAM).
-    - The destination tensor must be in `SHARED` address space (SRAM).
-    - Both tensors must have the same data type.
-    - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
-        or
-        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
-        to ensure the copy has completed before using the data.
-    - MN-major layout is particularly beneficial for operations where the outer
-        dimensions are accessed contiguously, such as certain convolution operations.
-    """
-    comptime dst_layout = dst.layout
-
-    comptime src_layout = src.layout
-    comptime src_shape0 = src_layout.shape[0].value()
-    comptime src_shape1 = src_layout.shape[1].value()
-
-    # we can't use the tma desc layout, as if swizzle_granularity ==
-    # `src_shape1`, the tma will want to fuse the rows into a large
-    # description. We need to partition the copy among the 4 warps
-    # of the warp group. Thus, we use the minimal desc layout.
-    comptime core_matrix_num_rows = 8
-    comptime swizzle_bytes = 128  # assume 128B swizzle
-    comptime swizzle_granularity = swizzle_bytes // size_of[dtype]()
-    comptime desc_layout = Layout.row_major(
-        core_matrix_num_rows, swizzle_granularity
-    )
-    comptime desc_shape0 = desc_layout.shape[0].value()
-    comptime desc_shape1 = desc_layout.shape[1].value()
-    comptime desc_size = desc_layout.size()
-
-    comptime num_tiles0 = src_shape0 // desc_shape0
-    comptime num_tiles1 = src_shape1 // desc_shape1
-    comptime num_warps = 4  # single warp group
-    comptime num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
-
-    comptime simd_size = simd_width_of[dtype]()
-    comptime thread_layout_per_warp = Layout.row_major(
-        gpu_memory.WARP_SIZE * simd_size // desc_shape1,
-        desc_shape1 // simd_size,
-    )
-
-    warp_id = thread_idx.x // UInt(gpu_memory.WARP_SIZE)
-
-    @parameter
-    for tile_id_per_warp in range(num_tiles_per_warp):
-        tile_id = warp_id + UInt(tile_id_per_warp) * num_warps
-        tile_coord0, tile_coord1 = divmod(tile_id, UInt(num_tiles1))
-        src_tile = src.tile[desc_shape0, desc_shape1](
-            Int(tile_coord0), Int(tile_coord1)
-        )
-        dst_tile = LayoutTensor[
-            dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
-        ](dst.ptr + tile_id * UInt(desc_size))
-
-        copy_dram_to_sram_async[
-            thread_layout_per_warp,
-            swizzle=True,
-            eviction_policy=eviction_policy,
         ](
             dst_tile.vectorize[1, simd_size](),
             src_tile.vectorize[1, simd_size](),
@@ -6434,29 +6628,27 @@ fn copy_dram_to_sram_async[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](/mojo/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](/mojo/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - The maximum size of each element that can be copied is 16 bytes.
     """
-    constrained[
-        src.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
-        "src address space must be GENERIC or GLOBAL.",
-    ]()
+    __comptime_assert src.address_space in (
+        AddressSpace.GENERIC,
+        AddressSpace.GLOBAL,
+    ), "src address space must be GENERIC or GLOBAL."
 
-    constrained[
-        dst.address_space == AddressSpace.SHARED,
-        "dst address space must be SHARED.",
-    ]()
+    __comptime_assert (
+        dst.address_space == AddressSpace.SHARED
+    ), "dst address space must be SHARED."
 
-    constrained[
-        src_thread_layout.size() == dst_thread_layout.size(),
-        "src thread layout size ",
-        String(src_thread_layout.size()),
-        " does not match dst thread layout size ",
-        String(dst_thread_layout.size()),
-    ]()
+    __comptime_assert src_thread_layout.size() == dst_thread_layout.size(), (
+        "src thread layout size "
+        + String(src_thread_layout.size())
+        + " does not match dst thread layout size "
+        + String(dst_thread_layout.size())
+    )
 
     comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[ThreadScope.BLOCK, block_dim_count]()
@@ -6475,18 +6667,16 @@ fn copy_dram_to_sram_async[
     comptime conflict_ways = min(
         8 * row_size * size_of[dst.dtype]() // bytes_32_banks, 8
     )
-    constrained[
-        (swizzle and (conflict_ways in (4, 8))) or not swizzle,
-        "Only support swizzle for 4 or 8 ways conflict.",
-    ]()
+    __comptime_assert (
+        swizzle and (conflict_ways in (4, 8))
+    ) or not swizzle, "Only support swizzle for 4 or 8 ways conflict."
 
-    constrained[
-        (swizzle and row_size in (16, 32, 64, 128, 256, 512)) or not swizzle,
-        (
-            "Only support 2^4-2^9 elements per row in shared memory tile for"
-            " async copy with swizzling."
-        ),
-    ]()
+    __comptime_assert (
+        swizzle and row_size in (16, 32, 64, 128, 256, 512)
+    ) or not swizzle, (
+        "Only support 2^4-2^9 elements per row in shared memory tile for"
+        " async copy with swizzling."
+    )
 
     comptime swizzle_option = None if not swizzle else (
         OptionalReg[Swizzle](
@@ -6664,19 +6854,18 @@ fn copy_sram_to_dram[
     - This function is synchronous, meaning all threads must complete their
         copy operations before proceeding.
     """
-    constrained[
-        dst.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
-        "dst address space must be GENERIC or GLOBAL.",
-    ]()
+    __comptime_assert dst.address_space in (
+        AddressSpace.GENERIC,
+        AddressSpace.GLOBAL,
+    ), "dst address space must be GENERIC or GLOBAL."
 
-    constrained[
-        src.address_space == AddressSpace.SHARED,
-        "src address space must be SHARED.",
-    ]()
+    __comptime_assert (
+        src.address_space == AddressSpace.SHARED
+    ), "src address space must be SHARED."
 
-    constrained[
-        src.layout.all_dims_known(), "Shared memory must have static layout"
-    ]()
+    __comptime_assert (
+        src.layout.all_dims_known()
+    ), "Shared memory must have static layout"
 
     comptime num_busy_threads = thread_layout.size()
     var worker_idx = _get_worker_idx[ThreadScope.BLOCK, block_dim_count]()
@@ -6694,19 +6883,16 @@ fn copy_sram_to_dram[
     if src.dtype == dst.dtype and not swizzle and not dst.masked:
         dst_fragments.copy_from(src_fragments)
     else:
-        constrained[
-            src.dtype == dst.dtype
-            or (src.dtype is DType.float32 and dst.dtype.is_half_float()),
-            "Only support FP32 -> half precision downcast during copy.",
-        ]()
+        __comptime_assert src.dtype == dst.dtype or (
+            src.dtype is DType.float32 and dst.dtype.is_half_float()
+        ), "Only support FP32 -> half precision downcast during copy."
 
         comptime simd_size = simd_width_of[dst.dtype]()
         # TODO: generalize the copy to non-scalar case if possible.
-        constrained[
+        __comptime_assert (
             src.element_layout.size() == simd_size
-            and dst.element_layout.size() == simd_size,
-            "Only FP32 -> half precision downcast for vectorized copy.",
-        ]()
+            and dst.element_layout.size() == simd_size
+        ), "Only FP32 -> half precision downcast for vectorized copy."
 
         comptime src_align = align_of[
             SIMD[src.dtype, simd_width_of[src.dtype]()]
@@ -6855,19 +7041,17 @@ fn copy_sram_to_local[
     - Supports optional axis-specific distribution for specialized access
         patterns.
     """
-    constrained[
-        dst.dtype == src.dtype, "dst dtype must be the same as src dtype."
-    ]()
+    __comptime_assert (
+        dst.dtype == src.dtype
+    ), "dst dtype must be the same as src dtype."
 
-    constrained[
-        src.address_space == AddressSpace.SHARED,
-        "src address space must be SHARED.",
-    ]()
+    __comptime_assert (
+        src.address_space == AddressSpace.SHARED
+    ), "src address space must be SHARED."
 
-    constrained[
-        dst.address_space == AddressSpace.LOCAL,
-        "dst address space must be LOCAL.",
-    ]()
+    __comptime_assert (
+        dst.address_space == AddressSpace.LOCAL
+    ), "dst address space must be LOCAL."
 
     @parameter
     if axis:
@@ -6882,15 +7066,14 @@ fn copy_sram_to_local[
 
 @always_inline("nodebug")
 fn _copy_local_to_dram_validate_args(dst: LayoutTensor, src: LayoutTensor):
-    constrained[
-        src.address_space == AddressSpace.LOCAL,
-        "src address space must be LOCAL.",
-    ]()
+    __comptime_assert (
+        src.address_space == AddressSpace.LOCAL
+    ), "src address space must be LOCAL."
 
-    constrained[
-        dst.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
-        "dst address space must be GENERIC or GLOBAL.",
-    ]()
+    __comptime_assert dst.address_space in (
+        AddressSpace.GENERIC,
+        AddressSpace.GLOBAL,
+    ), "dst address space must be GENERIC or GLOBAL."
 
 
 @always_inline("nodebug")
@@ -7034,7 +7217,9 @@ fn _copy_local_to_dram[
     src: LayoutTensor,
     buffer: AMDBufferResource,
 ):
-    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This function is only supported on AMD GPUs."
 
     _copy_local_to_dram_validate_args(dst, src)
 
@@ -7153,7 +7338,9 @@ fn copy_local_to_dram[
     - The offset calculation is optimized for performance rather than
         flexibility.
     """
-    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This function is only supported on AMD GPUs."
     var buffer = make_amd_buffer_resource(dst_base)
 
     _copy_local_to_dram[
@@ -7174,7 +7361,9 @@ fn _copy_dram_to_local[
     buffer: AMDBufferResource,
     offset: OptionalReg[UInt] = None,
 ):
-    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This function is only supported on AMD GPUs."
     comptime simd_width = src.element_layout.size()
     _copy_local_to_dram_validate_args(src, dst)
 
@@ -7191,15 +7380,13 @@ fn _copy_dram_to_local[
     comptime M = src_fragments.shape[0]()
     comptime N = src_fragments.shape[1]()
 
-    constrained[
-        src_fragments.layout.rank() == 2,
-        "src_fragments must be rank 2.",
-    ]()
+    __comptime_assert (
+        src_fragments.layout.rank() == 2
+    ), "src_fragments must be rank 2."
 
-    constrained[
-        src_fragments.layout.all_dims_known(),
-        "src_fragments must have known layout.",
-    ]()
+    __comptime_assert (
+        src_fragments.layout.all_dims_known()
+    ), "src_fragments must have known layout."
 
     @always_inline
     @parameter
@@ -7289,7 +7476,9 @@ fn copy_dram_to_local[
     - This function is particularly useful for prefetching data into registers
         before performing computations, reducing memory access latency.
     """
-    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This function is only supported on AMD GPUs."
     var buffer = make_amd_buffer_resource(src_base)
 
     _copy_dram_to_local[
@@ -7313,7 +7502,9 @@ fn _copy_dram_to_local[
     src_iter: LayoutTensorIter,
     buffer: AMDBufferResource,
 ):
-    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This function is only supported on AMD GPUs."
     var src_tensor = src_iter[].vectorize[
         dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
     ]()
@@ -7554,15 +7745,13 @@ fn copy_local_to_shared[
     - The `row_major` parameter is specifically designed for AMD GPUs when using
         a prefetching pattern from DRAM to SRAM via registers.
     """
-    constrained[
-        dst.address_space == AddressSpace.SHARED,
-        "dst address space must be SHARED.",
-    ]()
+    __comptime_assert (
+        dst.address_space == AddressSpace.SHARED
+    ), "dst address space must be SHARED."
 
-    constrained[
-        src.address_space == AddressSpace.LOCAL,
-        "src address space must be LOCAL.",
-    ]()
+    __comptime_assert (
+        src.address_space == AddressSpace.LOCAL
+    ), "src address space must be LOCAL."
 
     comptime num_busy_threads = thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
@@ -7572,15 +7761,12 @@ fn copy_local_to_shared[
         if worker_idx >= UInt(num_busy_threads):
             return
 
-    constrained[
-        src.dtype == dst.dtype
-        or (src.dtype is DType.float32 and dst.dtype.is_half_float()),
-        "Only support FP32 -> half precision downcast during copy.",
-    ]()
-    constrained[
-        src.element_size == dst.element_size,
-        "src and dst element size mismatch.",
-    ]()
+    __comptime_assert src.dtype == dst.dtype or (
+        src.dtype is DType.float32 and dst.dtype.is_half_float()
+    ), "Only support FP32 -> half precision downcast during copy."
+    __comptime_assert (
+        src.element_size == dst.element_size
+    ), "src and dst element size mismatch."
 
     @parameter
     if not row_major:
@@ -7613,19 +7799,18 @@ fn copy_local_to_shared[
         else:
             dst_frag.copy_from(src)
     else:
-        constrained[
-            is_amd_gpu(), "This function is only supported on AMD GPUs."
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "This function is only supported on AMD GPUs."
         var dst_frag = dst.distribute[thread_layout, swizzle=swizzle](
             worker_idx
         )
         comptime M = product(dst_frag.layout.shape[0])
         comptime N = product(dst_frag.layout.shape[1])
 
-        constrained[
-            dst_frag.layout.rank() == 2,
-            "dst_frag must be rank 2.",
-        ]()
+        __comptime_assert (
+            dst_frag.layout.rank() == 2
+        ), "dst_frag must be rank 2."
 
         @parameter
         for i in range(M):
@@ -7719,25 +7904,21 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     - This function is particularly useful in GPU kernels for converting between different
         precision formats while keeping data in registers.
     """
-    constrained[
-        dst.address_space == AddressSpace.LOCAL,
-        "dst address space must be LOCAL.",
-    ]()
+    __comptime_assert (
+        dst.address_space == AddressSpace.LOCAL
+    ), "dst address space must be LOCAL."
 
-    constrained[
-        src.address_space == AddressSpace.LOCAL,
-        "src address space must be LOCAL.",
-    ]()
+    __comptime_assert (
+        src.address_space == AddressSpace.LOCAL
+    ), "src address space must be LOCAL."
 
-    constrained[
-        dst.dtype.is_half_float() and src.dtype is DType.float32,
-        "Only support copy float32 to bfloat16 for now",
-    ]()
+    __comptime_assert (
+        dst.dtype.is_half_float() and src.dtype is DType.float32
+    ), "Only support copy float32 to bfloat16 for now"
 
-    constrained[
-        dst.layout.size() == src.layout.size(),
-        "dst and src should have the same size.",
-    ]()
+    __comptime_assert (
+        dst.layout.size() == src.layout.size()
+    ), "dst and src should have the same size."
 
     # Fast for 2D fragments
     @parameter
@@ -7792,7 +7973,8 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
 
 @register_passable("trivial")
 struct LayoutTensorIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dtype: DType,
     layout: Layout,
     origin: Origin[mut],
@@ -7864,6 +8046,7 @@ struct LayoutTensorIter[
         element_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """Type alias for the runtime layout."""
 
     var runtime_layout: Self.RuntimeLayoutType
     """Runtime representation of the layout pattern used for mapping logical indices to memory locations."""
@@ -7884,10 +8067,9 @@ struct LayoutTensorIter[
 
         @parameter
         if Self.axis:
-            constrained[
-                not Self.circular,
-                "Circular use case is not supported if an axis is defined.",
-            ]()
+            __comptime_assert (
+                not Self.circular
+            ), "Circular use case is not supported if an axis is defined."
 
         self.ptr = {}
         self.offset = 0
@@ -7925,16 +8107,14 @@ struct LayoutTensorIter[
         Constraints:
             The layout must have all dimensions known at compile time.
         """
-        constrained[
-            Self.layout.all_dims_known(),
-            "Cannot construct LayoutTensorIter with unknown layout.",
-        ]()
+        __comptime_assert (
+            Self.layout.all_dims_known()
+        ), "Cannot construct LayoutTensorIter with unknown layout."
 
-        constrained[
+        __comptime_assert (
             Self.layout_int_type.is_signed()
-            and Self.linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
+            and Self.linear_idx_type.is_signed()
+        ), "Layout integer type and linear index type must be signed."
 
         self.ptr = ptr
         self.bound = bound
@@ -7983,31 +8163,24 @@ struct LayoutTensorIter[
             defined.
         """
 
-        constrained[
-            runtime_layout.linear_idx_type == Self.linear_idx_type,
-            "Mismatch of index type for RuntimeLayout and LayoutTensorIter.",
-        ]()
+        __comptime_assert (
+            runtime_layout.linear_idx_type == Self.linear_idx_type
+        ), "Mismatch of index type for RuntimeLayout and LayoutTensorIter."
 
-        constrained[
-            runtime_layout.element_type == Self.layout_int_type,
-            (
-                "Mismatch of dimension type for RuntimeLayout and"
-                " LayoutTensorIter."
-            ),
-        ]()
+        __comptime_assert (
+            runtime_layout.element_type == Self.layout_int_type
+        ), "Mismatch of dimension type for RuntimeLayout and LayoutTensorIter."
 
-        constrained[
+        __comptime_assert (
             Self.layout_int_type.is_signed()
-            and Self.linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
+            and Self.linear_idx_type.is_signed()
+        ), "Layout integer type and linear index type must be signed."
 
         @parameter
         if Self.axis:
-            constrained[
-                not Self.circular,
-                "Circular use case is not supported if an axis is defined.",
-            ]()
+            __comptime_assert (
+                not Self.circular
+            ), "Circular use case is not supported if an axis is defined."
 
         self.ptr = ptr
         self.offset = offset
@@ -8029,6 +8202,7 @@ struct LayoutTensorIter[
         layout_int_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
     ]
+    """The LayoutTensor type returned by this iterator."""
 
     @always_inline
     fn get(self) -> Self.LayoutTensorType:
@@ -8221,9 +8395,9 @@ struct LayoutTensorIter[
             Cannot be used with masked iterators.
             User must ensure rhs < bound / stride.
         """
-        constrained[
-            not Self.masked, "Cannot use unsafe increment for masked iterator."
-        ]()
+        __comptime_assert (
+            not Self.masked
+        ), "Cannot use unsafe increment for masked iterator."
 
         var next_offset = self.offset + rhs * self.stride
 
@@ -8252,6 +8426,11 @@ struct LayoutTensorIter[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for reshaped iterator types.
+
+    Parameters:
+        dst_layout: The target layout for the reshaped iterator.
+    """
 
     @always_inline
     fn reshape[dst_layout: Layout](self) -> Self.ReshapeType[dst_layout]:
@@ -8272,21 +8451,18 @@ struct LayoutTensorIter[
             - Both layouts must be contiguous.
             - Both layouts must have compile-time known dimensions.
         """
-        constrained[
-            dst_layout.size() == Self.layout.size(),
-            "Destination layout doesn't match the original.",
-        ]()
+        __comptime_assert (
+            dst_layout.size() == Self.layout.size()
+        ), "Destination layout doesn't match the original."
 
-        constrained[
+        __comptime_assert (
             dst_layout.size() == dst_layout.cosize()
-            and Self.layout.size() == Self.layout.cosize(),
-            "Iterator reshape only supports contiguous layout.",
-        ]()
+            and Self.layout.size() == Self.layout.cosize()
+        ), "Iterator reshape only supports contiguous layout."
 
-        constrained[
-            Self.layout.all_dims_known() and dst_layout.all_dims_known(),
-            "Iterator reshape only supports compile time layout.",
-        ]()
+        __comptime_assert (
+            Self.layout.all_dims_known() and dst_layout.all_dims_known()
+        ), "Iterator reshape only supports compile time layout."
 
         return Self.ReshapeType[dst_layout](
             self.ptr,
@@ -8314,6 +8490,13 @@ struct LayoutTensorIter[
         linear_idx_type = Self.linear_idx_type,
         masked = Self.masked,
     ]
+    """Type alias for bitcast iterator types.
+
+    Parameters:
+        new_type: The target data type.
+        address_space: The target address space.
+        alignment: The target memory alignment.
+    """
 
     @always_inline
     fn bitcast[

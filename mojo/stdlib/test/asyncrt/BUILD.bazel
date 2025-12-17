@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _TEST_DATA = [
     "asyncrt_test_utils.mojo",
 ]
@@ -23,10 +25,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: GEX-2554
-    "test_elementwise.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "test_function.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -52,9 +50,7 @@ _EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "//max:layout",
-            "//max:tensor",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -73,9 +69,7 @@ _EXTRA_CONSTRAINTS = {
         ],
         main = src,
         deps = [
-            "//max:layout",
-            "//max:tensor",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _CPU_TESTS

@@ -11,74 +11,73 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import DimList
-from internal_utils import TestTensor, assert_equal
+from memory import LegacyUnsafePointer as UnsafePointer
+
 from nn.gather_scatter import scatter_elements
+from tensor import DynamicTensor
+from testing import assert_equal
 
-
-fn test_case[
-    dtype: DType,
-](
-    axis: Int,
-    data: TestTensor[dtype, 2],
-    indices: TestTensor[DType.int32, 2],
-    updates: TestTensor[dtype, 2],
-    output: TestTensor[dtype, 2],
-) raises:
-    @always_inline
-    @parameter
-    fn use_update[
-        _dtype: DType, width: Int
-    ](input_val: SIMD[_dtype, width], update_val: SIMD[_dtype, width]) -> SIMD[
-        _dtype, width
-    ]:
-        return update_val
-
-    test_case[dtype, use_update](axis, data, indices, updates, output)
-
-
-fn test_case[
-    dtype: DType,
-    reduce_fn: fn[dtype: DType, width: Int] (
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
-](
-    axis: Int,
-    data: TestTensor[dtype, 2],
-    indices: TestTensor[DType.int32, 2],
-    updates: TestTensor[dtype, 2],
-    output: TestTensor[dtype, 2],
-) raises:
-    var output_ref = output
-
-    scatter_elements[reduce_fn](
-        data.to_managed_tensor_slice(),
-        indices.to_managed_tensor_slice(),
-        updates.to_managed_tensor_slice(),
-        axis,
-        output.to_managed_tensor_slice(),
-    )
-
-    assert_equal(output, output_ref)
+from utils import IndexList
 
 
 def main():
     fn test_scatter_ax0() raises:
         print("== test_scatter_ax0")
-        var data = TestTensor[DType.float32, 2](
-            DimList(3, 3), [Float32(0), 0, 0, 0, 0, 0, 0, 0, 0]
+
+        var data_ptr = UnsafePointer[Float32].alloc(9)
+        for i in range(9):
+            data_ptr[i] = 0
+        var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](3, 3))
+
+        var indices_ptr = UnsafePointer[Int32].alloc(6)
+        indices_ptr[0] = 1
+        indices_ptr[1] = 0
+        indices_ptr[2] = 2
+        indices_ptr[3] = 0
+        indices_ptr[4] = 2
+        indices_ptr[5] = 1
+        var indices = DynamicTensor[DType.int32, 2](
+            indices_ptr, IndexList[2](2, 3)
         )
-        var indices = TestTensor[DType.int32, 2](
-            DimList(2, 3), [Int32(1), 0, 2, 0, 2, 1]
+
+        var updates_ptr = UnsafePointer[Float32].alloc(6)
+        updates_ptr[0] = 1.0
+        updates_ptr[1] = 1.1
+        updates_ptr[2] = 1.2
+        updates_ptr[3] = 2.0
+        updates_ptr[4] = 2.1
+        updates_ptr[5] = 2.2
+        var updates = DynamicTensor[DType.float32, 2](
+            updates_ptr, IndexList[2](2, 3)
         )
-        var updates = TestTensor[DType.float32, 2](
-            DimList(2, 3), [Float32(1.0), 1.1, 1.2, 2.0, 2.1, 2.2]
+
+        var output_ptr = UnsafePointer[Float32].alloc(9)
+        var output = DynamicTensor[DType.float32, 2](
+            output_ptr, IndexList[2](3, 3)
         )
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(3, 3),
-            [Float32(2.0), 1.1, 0.0, 1.0, 0.0, 2.2, 0.0, 2.1, 1.2],
+
+        var expected = InlineArray[Float32, 9](
+            Float32(2.0), 1.1, 0.0, 1.0, 0.0, 2.2, 0.0, 2.1, 1.2
         )
-        test_case[DType.float32](0, data, indices, updates, output_ref)
+
+        @always_inline
+        @parameter
+        fn use_update[
+            dtype: DType, width: Int
+        ](
+            input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
+        ) -> SIMD[dtype, width]:
+            return update_val
+
+        scatter_elements[use_update](data, indices, updates, 0, output)
+
+        for i in range(9):
+            assert_equal(output_ptr[i], expected[i])
+
+        data_ptr.free()
+        indices_ptr.free()
+        updates_ptr.free()
+        output_ptr.free()
 
     # CHECK-LABEL: test_scatter_ax0
     # CHECK-NOT: FAIL
@@ -86,17 +85,51 @@ def main():
 
     fn test_scatter_ax1() raises:
         print("== test_scatter_ax1")
-        var data = TestTensor[DType.float32, 2](
-            DimList(1, 5), [Float32(1), 2, 3, 4, 5]
+
+        var data_ptr = UnsafePointer[Float32].alloc(5)
+        for i in range(5):
+            data_ptr[i] = i + 1
+        var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
+
+        var indices_ptr = UnsafePointer[Int32].alloc(2)
+        indices_ptr[0] = 1
+        indices_ptr[1] = 3
+        var indices = DynamicTensor[DType.int32, 2](
+            indices_ptr, IndexList[2](1, 2)
         )
-        var indices = TestTensor[DType.int32, 2](DimList(1, 2), [Int32(1), 3])
-        var updates = TestTensor[DType.float32, 2](
-            DimList(1, 2), [Float32(1.1), 2.1]
+
+        var updates_ptr = UnsafePointer[Float32].alloc(2)
+        updates_ptr[0] = 1.1
+        updates_ptr[1] = 2.1
+        var updates = DynamicTensor[DType.float32, 2](
+            updates_ptr, IndexList[2](1, 2)
         )
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(1, 5), [Float32(1.0), 1.1, 3.0, 2.1, 5.0]
+
+        var output_ptr = UnsafePointer[Float32].alloc(5)
+        var output = DynamicTensor[DType.float32, 2](
+            output_ptr, IndexList[2](1, 5)
         )
-        test_case[DType.float32](1, data, indices, updates, output_ref)
+
+        var expected = InlineArray[Float32, 5](Float32(1.0), 1.1, 3.0, 2.1, 5.0)
+
+        @always_inline
+        @parameter
+        fn use_update[
+            dtype: DType, width: Int
+        ](
+            input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
+        ) -> SIMD[dtype, width]:
+            return update_val
+
+        scatter_elements[use_update](data, indices, updates, 1, output)
+
+        for i in range(5):
+            assert_equal(output_ptr[i], expected[i])
+
+        data_ptr.free()
+        indices_ptr.free()
+        updates_ptr.free()
+        output_ptr.free()
 
     # CHECK-LABEL: test_scatter_ax1
     # CHECK-NOT: FAIL
@@ -104,17 +137,51 @@ def main():
 
     fn test_scatter_neg_indices() raises:
         print("== test_scatter_neg_indices")
-        var data = TestTensor[DType.float32, 2](
-            DimList(1, 5), [Float32(1), 2, 3, 4, 5]
+
+        var data_ptr = UnsafePointer[Float32].alloc(5)
+        for i in range(5):
+            data_ptr[i] = i + 1
+        var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
+
+        var indices_ptr = UnsafePointer[Int32].alloc(2)
+        indices_ptr[0] = 1
+        indices_ptr[1] = -3
+        var indices = DynamicTensor[DType.int32, 2](
+            indices_ptr, IndexList[2](1, 2)
         )
-        var indices = TestTensor[DType.int32, 2](DimList(1, 2), [Int32(1), -3])
-        var updates = TestTensor[DType.float32, 2](
-            DimList(1, 2), [Float32(1.1), 2.1]
+
+        var updates_ptr = UnsafePointer[Float32].alloc(2)
+        updates_ptr[0] = 1.1
+        updates_ptr[1] = 2.1
+        var updates = DynamicTensor[DType.float32, 2](
+            updates_ptr, IndexList[2](1, 2)
         )
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(1, 5), [Float32(1.0), 1.1, 2.1, 4.0, 5.0]
+
+        var output_ptr = UnsafePointer[Float32].alloc(5)
+        var output = DynamicTensor[DType.float32, 2](
+            output_ptr, IndexList[2](1, 5)
         )
-        test_case[DType.float32](1, data, indices, updates, output_ref)
+
+        var expected = InlineArray[Float32, 5](Float32(1.0), 1.1, 2.1, 4.0, 5.0)
+
+        @always_inline
+        @parameter
+        fn use_update[
+            dtype: DType, width: Int
+        ](
+            input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
+        ) -> SIMD[dtype, width]:
+            return update_val
+
+        scatter_elements[use_update](data, indices, updates, 1, output)
+
+        for i in range(5):
+            assert_equal(output_ptr[i], expected[i])
+
+        data_ptr.free()
+        indices_ptr.free()
+        updates_ptr.free()
+        output_ptr.free()
 
     # CHECK-LABEL: test_scatter_neg_indices
     # CHECK-NOT: FAIL
@@ -122,16 +189,32 @@ def main():
 
     fn test_scatter_reduce_max() raises:
         print("== test_scatter_reduce_max")
-        var data = TestTensor[DType.float32, 2](
-            DimList(1, 5), [Float32(1), 2, 3, 4, 5]
+
+        var data_ptr = UnsafePointer[Float32].alloc(5)
+        for i in range(5):
+            data_ptr[i] = i + 1
+        var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
+
+        var indices_ptr = UnsafePointer[Int32].alloc(2)
+        indices_ptr[0] = 1
+        indices_ptr[1] = 1
+        var indices = DynamicTensor[DType.int32, 2](
+            indices_ptr, IndexList[2](1, 2)
         )
-        var indices = TestTensor[DType.int32, 2](DimList(1, 2), [Int32(1), 1])
-        var updates = TestTensor[DType.float32, 2](
-            DimList(1, 2), [Float32(1.1), 2.1]
+
+        var updates_ptr = UnsafePointer[Float32].alloc(2)
+        updates_ptr[0] = 1.1
+        updates_ptr[1] = 2.1
+        var updates = DynamicTensor[DType.float32, 2](
+            updates_ptr, IndexList[2](1, 2)
         )
-        var output_ref = TestTensor[DType.float32, 2](
-            DimList(1, 5), [Float32(1.0), 2.1, 3.0, 4.0, 5.0]
+
+        var output_ptr = UnsafePointer[Float32].alloc(5)
+        var output = DynamicTensor[DType.float32, 2](
+            output_ptr, IndexList[2](1, 5)
         )
+
+        var expected = InlineArray[Float32, 5](Float32(1.0), 2.1, 3.0, 4.0, 5.0)
 
         @always_inline
         @parameter
@@ -140,7 +223,15 @@ def main():
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        test_case[DType.float32, _max](1, data, indices, updates, output_ref)
+        scatter_elements[_max](data, indices, updates, 1, output)
+
+        for i in range(5):
+            assert_equal(output_ptr[i], expected[i])
+
+        data_ptr.free()
+        indices_ptr.free()
+        updates_ptr.free()
+        output_ptr.free()
 
     # CHECK-LABEL: test_scatter_reduce_max
     # CHECK-NOT: FAIL

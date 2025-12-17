@@ -28,6 +28,7 @@ from max.nn import (
     Llama3RotaryEmbedding,
     LongRoPERotaryEmbedding,
     LongRoPEScalingParams,
+    ReturnHiddenStates,
     ReturnLogits,
     RotaryEmbedding,
 )
@@ -124,10 +125,10 @@ class Llama3ConfigBase(MAXModelConfigBase):
     clip_qkv: float | None
     float8_config: Float8Config | None
     lora_config: LoRAConfig | None = None
-    data_parallel_degree: int = 1
     dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -141,9 +142,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
     @staticmethod
     def calculate_attention_multiplier(
         huggingface_config: AutoConfig,
-        n_devices: int,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
     ) -> float:
         """The attention multiplier is a scalar that scales the attention scores.
         It is used to control the variance of the attention scores.
@@ -157,15 +155,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             huggingface_config,
             "attention_multiplier",
             math.sqrt(
-                1.0
-                / float(
-                    Llama3Config.get_kv_params(
-                        huggingface_config=huggingface_config,
-                        n_devices=n_devices,
-                        kv_cache_config=kv_cache_config,
-                        cache_dtype=cache_dtype,
-                    ).head_dim
-                )
+                1.0 / float(Llama3Config.get_head_dim(huggingface_config))
             ),
         )
         # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
@@ -176,27 +166,34 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=(
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            ),
+            head_dim=Llama3Config.get_head_dim(huggingface_config),
             num_layers=Llama3Config.get_num_layers(huggingface_config),
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            n_devices=n_devices,
-            data_parallel_degree=data_parallel_degree,
+            devices=devices,
+            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
         )
+
+    @staticmethod
+    def get_head_dim(huggingface_config: AutoConfig) -> int:
+        if hasattr(huggingface_config, "head_dim"):
+            return huggingface_config.head_dim
+        else:
+            return (
+                huggingface_config.hidden_size
+                // huggingface_config.num_attention_heads
+            )
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
@@ -234,9 +231,9 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
         attention_bias: bool = False,
-        data_parallel_degree: int = 1,
     ) -> Llama3Config:
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
@@ -348,7 +345,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
 
         # Calculate base attention multiplier
         base_attention_multiplier = Llama3Config.calculate_attention_multiplier(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
+            huggingface_config
         )
 
         # Apply LongRoPE attention scaling if needed
@@ -389,15 +386,16 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             model_quantization_encoding=pipeline_config.model_config.graph_quantization_encoding,
             quantization_config=pipeline_config.model_config._quant_config,
             return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
             kv_params=Llama3Config.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=n_devices,
+                pipeline_config=pipeline_config,
+                devices=device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
-                data_parallel_degree=data_parallel_degree,
             ),
             norm_method=norm_method,
             norm_dtype=norm_dtype,
@@ -416,7 +414,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             use_subgraphs=pipeline_config.model_config.use_subgraphs,
             # Force-disable matmul-allreduce overlap for llama FP8.
             # TODO: GEX-2388: Figure out the issue and re-enable this.
-            data_parallel_degree=data_parallel_degree,
             dist_gemm_config=DistributedGemmConfig(
                 enable_matmul_allreduce=False
             )
@@ -424,4 +421,5 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             else DistributedGemmConfig.generate(),
             lora_config=pipeline_config.lora_config,
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
+            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
         )

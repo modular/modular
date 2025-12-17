@@ -1005,6 +1005,9 @@ class BlockArgument(Value[_T]):
     def set_type(self, type: Type) -> None:
         """Sets the type of this block argument."""
 
+    def set_location(self, loc: Location) -> None:
+        """Sets the location of this block argument."""
+
 class OpResult(Value[_T]):
     def __init__(self, value: Value) -> None: ...
     @staticmethod

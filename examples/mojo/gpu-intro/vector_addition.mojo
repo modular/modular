@@ -21,14 +21,14 @@ from gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
 
 # Vector data type and size
-alias float_dtype = DType.float32
-alias vector_size = 1000
-alias layout = Layout.row_major(vector_size)
+comptime float_dtype = DType.float32
+comptime vector_size = 1000
+comptime layout = Layout.row_major(vector_size)
 
 # Calculate the number of thread blocks needed by dividing the vector size
 # by the block size and rounding up.
-alias block_size = 256
-alias num_blocks = ceildiv(vector_size, block_size)
+comptime block_size = 256
+comptime num_blocks = ceildiv(vector_size, block_size)
 
 
 fn vector_addition(

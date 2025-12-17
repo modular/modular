@@ -95,6 +95,7 @@ from .conv_utils import (
     reorder_padding,
 )
 from .shapes import get_sliding_window_out_dim
+from nn.pad_gpu import pad_constant as pad_constant_gpu
 
 
 @fieldwise_init
@@ -102,7 +103,7 @@ struct Naive2dConvolution[
     output_type: DType,
     input_type: DType,
     filter_type: DType,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
@@ -303,7 +304,8 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
 fn _reduce_output[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     simd_size: Int,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
@@ -362,7 +364,8 @@ fn _reduce_output[
 struct ConvDirectNHWC[
     input_mut: Bool,
     filter_mut: Bool,
-    conv_attr_rank: Int, //,
+    conv_attr_rank: Int,
+    //,
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -375,7 +378,7 @@ struct ConvDirectNHWC[
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[conv_attr_rank],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
     The tile factor for C and F are chosen by a heuristic prioritizing C.
@@ -426,7 +429,7 @@ struct ConvDirectNHWC[
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
     ) raises:
-        constrained[Self.conv_attr_rank == Self.input_layout.rank() - 2]()
+        __comptime_assert Self.conv_attr_rank == Self.input_layout.rank() - 2
         comptime simd_size = simd_width_of[Self.output_type]()
         # TODO: extend to 1d/3d.
         comptime WO = Int(
@@ -452,13 +455,12 @@ struct ConvDirectNHWC[
 
         @parameter
         if Self.conv_attr.num_groups != UNKNOWN_VALUE:
-            constrained[
-                Self.filter_packed or Self.conv_attr.num_groups == 1,
-                (
-                    "if number of conv groups is statically known, conv filter"
-                    " must be prepacked when num_groups > 1"
-                ),
-            ]()
+            __comptime_assert (
+                Self.filter_packed or Self.conv_attr.num_groups == 1
+            ), (
+                "if number of conv groups is statically known, conv filter"
+                " must be prepacked when num_groups > 1"
+            )
 
         if conv_shape.num_groups > 1 and not Self.filter_packed:
             raise Error("grouped conv requires packed filter")
@@ -756,10 +758,9 @@ struct ConvDirectNHWC[
         c_tile_size: Int,
         output_flat_coord: Int,
     ):
-        constrained[
-            not has_residual or (has_residual and micro_kernel_width == 1),
-            "Use Height x 1 kernel for residual in F.",
-        ]()
+        __comptime_assert not has_residual or (
+            has_residual and micro_kernel_width == 1
+        ), "Use Height x 1 kernel for residual in F."
 
         comptime simd_size = simd_width_of[Self.output_type]()
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
@@ -1398,6 +1399,9 @@ struct ConvDirectNHWC[
             right_pad_impact_start,
             self.conv_shape.wo(),
         )
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = input_base
+        _ = output_base
 
     fn output_space_loop_2d[
         micro_kernel_height: Int,
@@ -1479,6 +1483,9 @@ struct ConvDirectNHWC[
                 right_pad_impact_start,
                 self.conv_shape.wo(),
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = input_base
+            _ = output_base
 
     fn output_space_loop_3d[
         micro_kernel_height: Int,
@@ -1571,11 +1578,14 @@ struct ConvDirectNHWC[
                     right_pad_impact_start,
                     self.conv_shape.wo(),
                 )
+                # TODO(MOCO-2074): Suppress false positive unused var warning.
+                _ = input_base
+                _ = output_base
 
     fn _f_tile_loop_static[
         last_c_tile: Bool
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
-        constrained[Self.conv_attr_rank == Self.input_layout.rank() - 2]()
+        __comptime_assert Self.conv_attr_rank == Self.input_layout.rank() - 2
         comptime WO = Int(Self.output_layout.shape[2])  # NHWC
         comptime F = Int(Self.output_layout.shape[3])  # NHWC
         comptime simd_size = simd_width_of[Self.output_type]()
@@ -2038,10 +2048,9 @@ fn accumulate_wo_tile_1d[
         # Skip this point's neighbor if it's in padding.
         @parameter
         if effected_by_padding:
-            constrained[
-                micro_kernel_height == 1,
-                "The tile must only have 1 point when effected bypadding.",
-            ]()
+            __comptime_assert (
+                micro_kernel_height == 1
+            ), "The tile must only have 1 point when effected bypadding."
             var w_nbr = w + s * dilation
             if w_nbr < 0 or w_nbr >= W:
                 continue
@@ -2734,10 +2743,9 @@ fn pack_filter(
     """This packs the filter form RSCF to FRSCf.
     Use the default micro kernel size for dynamic shapes."""
 
-    constrained[
-        filter.dtype == packed_filter.dtype,
-        "Type mismatch between the filter and the packed filter.",
-    ]()
+    __comptime_assert (
+        filter.dtype == packed_filter.dtype
+    ), "Type mismatch between the filter and the packed filter."
 
     comptime simd_size = simd_width_of[filter.dtype]()
     comptime f_size_default = get_direct_conv_micro_kernel_width() * simd_size
@@ -2784,11 +2792,11 @@ fn pack_filter[
     """
 
     # The micro kernel should be multiple of simd_size in F dimension.
-    constrained[micro_kernel_f_size % simd_size == 0]()
+    __comptime_assert micro_kernel_f_size % simd_size == 0
 
     # The input simd size should not exceed filter type's simd size.
     # E.x. we can pack int8 filter based on int32 simd size.
-    constrained[simd_size <= simd_width_of[filter.dtype]()]()
+    __comptime_assert simd_size <= simd_width_of[filter.dtype]()
 
     # Product of filter dims upto (rank - 1).
     var outer_dims_prod = 1
@@ -2924,9 +2932,9 @@ fn conv_shape[
     Returns:
         The output shape.
     """
-    constrained[strides_buf.rank == 1]()
-    constrained[dilations_buf.rank == 1]()
-    constrained[paddings_buf.rank == 1]()
+    __comptime_assert strides_buf.rank == 1
+    __comptime_assert dilations_buf.rank == 1
+    __comptime_assert paddings_buf.rank == 1
 
     if input_buf.rank < 3:
         raise Error("[convolution] requires (input_rank >= 3)")
@@ -2990,7 +2998,8 @@ fn conv_shape[
 
 
 fn conv_nhwc_direct[
-    conv_info_rank: Int, //,
+    conv_info_rank: Int,
+    //,
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -3012,28 +3021,29 @@ fn conv_nhwc_direct[
     pad_w: IndexList[2],
     num_groups: Int,
 ) raises:
-    constrained[conv_info_rank == input_layout.rank() - 2]()
-    constrained[
-        input_type == filter_type and input_type == output_type,
-        "conv input/output/filter types must be the same.",
-    ]()
-    constrained[
-        (filter_packed and filter.rank == input.rank + 1)
-        or (not filter_packed and filter.rank == input.rank),
-        "Filter and input ranks mismatch.",
-    ]()
+    __comptime_assert conv_info_rank == input_layout.rank() - 2
+    __comptime_assert (
+        input_type == filter_type and input_type == output_type
+    ), "conv input/output/filter types must be the same."
+    __comptime_assert (filter_packed and filter.rank == input.rank + 1) or (
+        not filter_packed and filter.rank == input.rank
+    ), "Filter and input ranks mismatch."
 
     @always_inline
     @parameter
     fn description_fn() -> String:
         return ";".join(
-            trace_arg("input", input.runtime_layout.shape.value),
-            trace_arg("filter", filter.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
-            "group=" + String(num_groups),
-            "stride=" + "x".join(stride),
-            "padding_h=" + "x".join(pad_h),
-            "padding_w=" + "x".join(pad_w),
+            Span(
+                [
+                    trace_arg("input", input.runtime_layout.shape.value),
+                    trace_arg("filter", filter.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    "group=" + String(num_groups),
+                    "stride=" + "x".join(Span([stride])),
+                    "padding_h=" + "x".join(Span([pad_h])),
+                    "padding_w=" + "x".join(Span([pad_w])),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
@@ -3183,7 +3193,7 @@ fn check_cudnn_error(stat: cudnnStatus_t):
 
 
 @register_passable
-struct CuDNNConvMeta(ImplicitlyCopyable, Movable):
+struct CuDNNConvMeta(ImplicitlyCopyable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
@@ -3439,7 +3449,8 @@ fn conv_cudnn[
 
 
 fn conv_gpu[
-    conv_rank: Int, //,
+    conv_rank: Int,
+    //,
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -3454,11 +3465,109 @@ fn conv_gpu[
     output: LayoutTensor[mut=True, output_type, output_layout, MutAnyOrigin],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
-    padding: IndexList[conv_rank],
+    padding: IndexList[2 * conv_rank],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[conv_rank == input.rank - 2]()
+    __comptime_assert conv_rank == input.rank - 2
+
+    var has_asymmetric_padding = False
+    var pad_before = IndexList[conv_rank](0)
+
+    @parameter
+    for i in range(conv_rank):
+        pad_before[i] = padding[2 * i]
+        var after = padding[2 * i + 1]
+        if pad_before[i] != after:
+            has_asymmetric_padding = True
+
+    if has_asymmetric_padding:
+        # Pre-pad on GPU so downstream kernels (including cuDNN) can assume symmetric padding.
+        comptime full_rank = input_layout.rank()
+        var paddings_tensor = LayoutTensor[
+            DType.int, Layout(2 * full_rank), MutAnyOrigin
+        ].stack_allocation()
+
+        @parameter
+        for axis in range(full_rank):
+            paddings_tensor[2 * axis] = 0
+            paddings_tensor[2 * axis + 1] = 0
+
+        @parameter
+        for i in range(conv_rank):
+            var axis = i + 1  # skip batch axis
+            paddings_tensor[2 * axis] = padding[2 * i]  # before
+            paddings_tensor[2 * axis + 1] = padding[2 * i + 1]  # after
+
+        var input_shape = rebind[IndexList[full_rank]](
+            input.runtime_layout.shape.value.canonicalize()
+        )
+        var padded_shape = IndexList[full_rank]()
+
+        @parameter
+        for axis in range(full_rank):
+            var before = 0
+            var after = 0
+            if axis > 0 and axis < full_rank - 1:
+                var spatial_idx = axis - 1
+                before = padding[2 * spatial_idx]
+                after = padding[2 * spatial_idx + 1]
+            padded_shape[axis] = Int(input_shape[axis]) + before + after
+
+        var padded_elements = padded_shape.flattened_length()
+        var tmp_buffer = ctx.enqueue_create_buffer[input_type](padded_elements)
+        var padded_device_buffer = tmp_buffer.unsafe_ptr()
+        var zero_scalar = Scalar[input_type](0)
+
+        pad_constant_gpu[full_rank, input_type, DType.int](
+            padded_device_buffer,
+            padded_shape,
+            input.ptr,
+            input_shape,
+            paddings_tensor.ptr,
+            zero_scalar,
+            ctx,
+        )
+
+        var padded_input = LayoutTensor[
+            input_type,
+            Layout.row_major[full_rank](),
+            MutAnyOrigin,
+        ](
+            padded_device_buffer,
+            RuntimeLayout[Layout.row_major[full_rank]()].row_major(
+                padded_shape
+            ),
+        )
+
+        var zero_padding = IndexList[2 * conv_rank](0)
+
+        conv_gpu[
+            Layout.row_major[full_rank](),
+            filter_layout,
+            output_layout,
+            input_type,
+            filter_type,
+            output_type,
+            maybe_epilogue_func,
+            filter_is_fcrs,
+        ](
+            padded_input,
+            filter,
+            output,
+            stride,
+            dilation,
+            zero_padding,
+            num_groups,
+            ctx,
+        )
+
+        return
+
+    # We can now use pad_before (which is now confirmed equal to pad_after) as
+    # the symmetric padding.
+    var symmetric_padding = pad_before
+
     comptime block_size = 16
 
     comptime conv_gpu_n = conv2d_gpu_naive_nhwc_rscf[
@@ -3530,7 +3639,7 @@ fn conv_gpu[
                     ),
                     rebind[IndexList[2]](stride),
                     rebind[IndexList[2]](dilation),
-                    rebind[IndexList[2]](padding),
+                    rebind[IndexList[2]](symmetric_padding),
                     num_groups,
                     ctx,
                 )
@@ -3581,7 +3690,7 @@ fn conv_gpu[
                     ),
                     rebind[IndexList[2]](stride),
                     rebind[IndexList[2]](dilation),
-                    rebind[IndexList[2]](padding),
+                    rebind[IndexList[2]](symmetric_padding),
                     num_groups,
                     ctx,
                 )
@@ -3596,7 +3705,7 @@ fn conv_gpu[
                 output,
                 stride,
                 dilation,
-                padding,
+                symmetric_padding,
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -3611,7 +3720,7 @@ fn conv_gpu[
             output,
             stride,
             dilation,
-            padding,
+            symmetric_padding,
             grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
             block_dim=(block_size, block_size),
         )

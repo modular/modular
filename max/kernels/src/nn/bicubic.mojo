@@ -114,11 +114,10 @@ fn cpu_bicubic_kernel(
         output_host: Output tensor with desired dimensions.
         input_host: Input tensor of shape [B, C, H, W].
     """
-    constrained[
-        output_host.rank == 4 and input_host.rank == 4,
-        "bicubic resize only supports rank 4 tensors",
-    ]()
-    constrained[output_host.dtype == input_host.dtype]()
+    __comptime_assert (
+        output_host.rank == 4 and input_host.rank == 4
+    ), "bicubic resize only supports rank 4 tensors"
+    __comptime_assert output_host.dtype == input_host.dtype
 
     # get dimensions
     var input_shape = input_host.runtime_layout.shape.value.canonicalize()
@@ -268,7 +267,8 @@ fn gpu_bicubic_kernel[
 
 
 fn resize_bicubic[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: StaticString,
 ](
     output: LayoutTensor[mut=True, dtype, **_],
@@ -282,10 +282,9 @@ fn resize_bicubic[
         input: Input tensor of shape [B, C, H, W] on host or device.
         ctx: Device context to enqueue GPU kernels on.
     """
-    constrained[
-        output.rank == 4 and input.rank == 4,
-        "bicubic resize only supports rank 4 tensors",
-    ]()
+    __comptime_assert (
+        output.rank == 4 and input.rank == 4
+    ), "bicubic resize only supports rank 4 tensors"
 
     @parameter
     if is_gpu[target]():

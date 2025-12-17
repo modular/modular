@@ -45,6 +45,7 @@ from max.interfaces import (
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.profiler import Tracer, traced
+from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast
 
 if TYPE_CHECKING:
@@ -422,11 +423,11 @@ class TextGenerationPipeline(
             for replica_idx, batch in enumerate(batches)
             for _ in batch.values()
         ]
-        flat_batch: list[TextGenerationContextType] = [
-            context
+        replica_batches: list[list[TextGenerationContextType]] = [
+            [ctx for ctx in self._maybe_sort_loras(batch).values()]
             for batch in batches
-            for context in self._maybe_sort_loras(batch).values()
         ]
+        flat_batch = flatten2d(replica_batches)
 
         # Initialize a bitmask for structured output.
         bitmask = self.initialize_bitmask(flat_batch)
@@ -467,7 +468,7 @@ class TextGenerationPipeline(
 
         return (
             self._pipeline_model.prepare_initial_token_inputs(
-                context_batch=flat_batch,
+                replica_batches=replica_batches,
                 kv_cache_inputs=KVCacheInputsSequence(
                     kv_cache_inputs=kv_cache_inputs
                 ),
@@ -695,10 +696,12 @@ class TextGenerationPipeline(
                     curr_step_inputs,
                 )
             )
-
-            curr_step_inputs = self._pipeline_model.prepare_next_token_inputs(
-                new_tokens, curr_step_inputs
-            )
+            with Tracer(f"prepare_next_token_inputs_{i}"):
+                curr_step_inputs = (
+                    self._pipeline_model.prepare_next_token_inputs(
+                        new_tokens, curr_step_inputs
+                    )
+                )
 
         # Return early if the batch is empty.
         if len(flat_batch) == 0:

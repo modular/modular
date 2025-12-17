@@ -94,8 +94,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _pack_int4(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
-        constrained[Self.bit_width == 4]()
-        constrained[(Self.block_m % (2 * Self._tuple_width)) == 0]()
+        __comptime_assert Self.bit_width == 4
+        __comptime_assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -121,8 +121,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _unpack_int4(mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
-        constrained[Self.bit_width == 4]()
-        constrained[(Self.block_m % (2 * Self._tuple_width)) == 0]()
+        __comptime_assert Self.bit_width == 4
+        __comptime_assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -150,8 +150,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _pack_int6(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
-        constrained[Self.bit_width == 6]()
-        constrained[(Self.block_m % (4 * Self._tuple_width)) == 0]()
+        __comptime_assert Self.bit_width == 6
+        __comptime_assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -182,8 +182,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     fn _unpack_int6[
         zero_point: UInt8
     ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
-        constrained[Self.bit_width == 6]()
-        constrained[(Self.block_m % (4 * Self._tuple_width)) == 0]()
+        __comptime_assert Self.bit_width == 6
+        __comptime_assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -216,7 +216,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn pack(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
         """Packs the supplied external buffer to local storage."""
-        constrained[(Self._packed_stride % Self._simd_width) == 0]()
+        __comptime_assert (Self._packed_stride % Self._simd_width) == 0
 
         @parameter
         if Self.bit_width == 4:
@@ -231,11 +231,11 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         *, zero_point: UInt8 = 0
     ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
         """Unpacks the local storage to the supplied external buffer."""
-        constrained[(Self._packed_stride % Self._simd_width) == 0]()
+        __comptime_assert (Self._packed_stride % Self._simd_width) == 0
 
         @parameter
         if Self.bit_width == 4:
-            constrained[zero_point == 0, "zero point not implemented"]()
+            __comptime_assert zero_point == 0, "zero point not implemented"
             return self._unpack_int4(dst_ptr)
         elif Self.bit_width == 6:
             return self._unpack_int6[zero_point](dst_ptr)
@@ -271,7 +271,7 @@ fn _quantize_a_Q8_K[
 ](a: LayoutTensor[dtype, **_]) -> UnsafePointer[
     _block_Q8_K_packed[group_size], mut = a.mut, origin = a.origin
 ]:
-    constrained[a.rank == 2]()
+    __comptime_assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k
     comptime group_count = quantized_k // group_size
 
@@ -289,11 +289,10 @@ fn _quantize_a_Q8_K[
         @parameter
         @always_inline
         fn process_rows[tile_m: Int](m: Int):
-            constrained[
+            __comptime_assert (
                 size_of[_block_Q8_K_packed[group_size]]() * tile_m
-                == size_of[_block_Q8_K_packed[group_size, tile_m]](),
-                "tiled block size should be multiple of the single block size",
-            ]()
+                == size_of[_block_Q8_K_packed[group_size, tile_m]]()
+            ), "tiled block size should be multiple of the single block size"
 
             var block_ptr = packed_ptr.bitcast[
                 _block_Q8_K_packed[group_size, tile_m]
@@ -339,7 +338,11 @@ fn _quantize_a_Q8_K[
             packed_ptr += tile_m
 
         tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = am_ptr
 
+    # TODO(MOCO-2074): Suppress false positive unused var warning.
+    _ = packed_ptr
     return packed_base_ptr
 
 
@@ -408,11 +411,10 @@ fn _pack_block_Q4_K[
     comptime group_size = _block_Q4_K.group_size
     comptime group_count = _block_Q4_K.group_count
 
-    constrained[
+    __comptime_assert (
         size_of[_block_Q4_K]() * block_n
-        == size_of[_block_Q4_K_packed[block_n]](),
-        "packed block size should be multiple of the unpacked block size",
-    ]()
+        == size_of[_block_Q4_K_packed[block_n]]()
+    ), "packed block size should be multiple of the unpacked block size"
 
     var q_scales_buf = InlineArray[UInt8, group_count * block_n](
         uninitialized=True
@@ -528,11 +530,10 @@ fn _pack_block_Q6_K[
 ):
     comptime group_count = _block_Q6_K.group_count
 
-    constrained[
+    __comptime_assert (
         size_of[_block_Q6_K]() * block_n
-        == size_of[_block_Q6_K_packed[block_n]](),
-        "packed block size should be multiple of the unpacked block size",
-    ]()
+        == size_of[_block_Q6_K_packed[block_n]]()
+    ), "packed block size should be multiple of the unpacked block size"
 
     var q_bits_block_buf = stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8
@@ -571,8 +572,8 @@ fn matmul_Q4_K_pack_b(
         mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
     ],
 ):
-    constrained[b.rank == 2]()
-    constrained[b_packed.rank == 2]()
+    __comptime_assert b.rank == 2
+    __comptime_assert b_packed.rank == 2
     var N = b.dim[0]()
     var K = b.dim[1]()
     var k_blocks = K // size_of[_block_Q4_K]()
@@ -603,8 +604,8 @@ fn matmul_Q6_K_pack_b(
         mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
     ],
 ):
-    constrained[b.rank == 2]()
-    constrained[b_packed.rank == 2]()
+    __comptime_assert b.rank == 2
+    __comptime_assert b_packed.rank == 2
     var N = b.dim[0]()
     var K = b.dim[1]()
     var k_blocks = K // size_of[_block_Q6_K]()
@@ -632,7 +633,8 @@ fn _matmul_group_stream_x86[
     tile_k: Int,
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     group_size: Int,
     stream_b_vals_fn: fn (
         mut b_vals: InlineArray[
@@ -680,7 +682,8 @@ fn _matmul_group_stream_neon_dotprod[
     tile_k: Int,
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     group_size: Int,
     stream_b_vals_fn: fn (
         mut b_vals: InlineArray[
@@ -730,7 +733,8 @@ fn _matmul_group_stream[
     tile_m: Int,
     tile_n: Int,
     simd_width: Int,
-    origins: OriginSet, //,
+    origins: OriginSet,
+    //,
     group_size: Int,
     stream_b_vals_fn: fn (
         mut b_vals: InlineArray[
@@ -741,7 +745,7 @@ fn _matmul_group_stream[
     a_q_bits_ptr: UnsafePointer[Int8],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    constrained[tile_k.is_power_of_two() and tile_k <= 4]()
+    __comptime_assert tile_k.is_power_of_two() and tile_k <= 4
 
     @parameter
     if CompilationTarget.is_x86():
@@ -760,7 +764,8 @@ fn _matmul_group_stream[
 fn _matmul_group_unpacked[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     group_size: Int,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
@@ -1006,7 +1011,8 @@ fn _accumulate_and_store[
 fn _matmul_group_packed_Q4_K[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
     mut b_q_bits_ptr: UnsafePointer[UInt8],
@@ -1045,7 +1051,8 @@ fn _matmul_group_packed_Q4_K[
 fn _matmul_Q4_K_tile[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     matmul_group_fn: fn (
         a_ptr: UnsafePointer[Int8],
         mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -1234,7 +1241,8 @@ fn _matmul_Q4_K_columns[
 fn _matmul_group_packed_Q6_K[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     *,
     zero_point: UInt8,
 ](
@@ -1281,7 +1289,8 @@ fn _matmul_group_packed_Q6_K[
 fn _matmul_Q6_K_tile[
     tile_m: Int,
     tile_n: Int,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     matmul_group_fn: fn (
         a_ptr: UnsafePointer[Int8],
         mut c_int32_group: _Accumulator[
@@ -1462,7 +1471,8 @@ fn _matmul_Q6_K_columns[
 @always_inline
 fn _matmul_Qb_K[
     group_size: Int,
-    b_type: AnyType, //,
+    b_type: AnyType,
+    //,
     columns_fn: fn[
         tile_n: Int,
         simd_width: Int,
@@ -1485,9 +1495,9 @@ fn _matmul_Qb_K[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
-    constrained[a.rank == 2]()
-    constrained[b.rank == 2]()
-    constrained[c.rank == 2]()
+    __comptime_assert a.rank == 2
+    __comptime_assert b.rank == 2
+    __comptime_assert c.rank == 2
 
     comptime simd_width = simd_width_of[DType.float32]()
 
@@ -1549,6 +1559,11 @@ fn _matmul_Qb_K[
             tile[process_cols, VariadicList[Int](2, 1)](
                 0, ceildiv(task_n_count, simd_width)
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = bn_packed_ptr
+            _ = cn_ptr
+            _ = accumulate
+            _ = is_last_k_iter
 
             a_packed_ptr += M
             b_packed_ptr += N
@@ -1565,9 +1580,9 @@ fn matmul_Q4_K[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
-    constrained[a.rank == 2]()
-    constrained[b.rank == 2]()
-    constrained[c.rank == 2]()
+    __comptime_assert a.rank == 2
+    __comptime_assert b.rank == 2
+    __comptime_assert c.rank == 2
     _matmul_Qb_K[
         group_size = _block_Q4_K.group_size,
         b_type=_block_Q4_K_packed,
@@ -1584,9 +1599,9 @@ fn matmul_Q6_K[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
-    constrained[a.rank == 2]()
-    constrained[b.rank == 2]()
-    constrained[c.rank == 2]()
+    __comptime_assert a.rank == 2
+    __comptime_assert b.rank == 2
+    __comptime_assert c.rank == 2
     _matmul_Qb_K[
         group_size = _block_Q6_K.group_size,
         b_type=_block_Q6_K_packed,

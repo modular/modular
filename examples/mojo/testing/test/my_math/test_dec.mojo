@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from my_math import dec
-from testing import assert_equal, assert_raises
+from testing import assert_equal, assert_raises, TestSuite
 
 
 def test_dec_valid():
@@ -28,5 +28,4 @@ def test_dec_min():
 
 
 def main():
-    test_dec_valid()
-    test_dec_min()
+    TestSuite.discover_tests[__functions_in_module()]().run()

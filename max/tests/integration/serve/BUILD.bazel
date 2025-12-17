@@ -1,0 +1,179 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "tests_cpu_pure",
+    size = "large",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_sagemaker_cpu.py",
+        "test_stop_cpu.py",
+    ],
+    data = [
+        "//max/tests/integration/pipelines/python/llama3/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
+    },
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/serve",
+        "//max/python/max/serve/schemas",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("async-asgi-testclient"),
+        requirement("pytest-asyncio"),
+        requirement("sse-starlette"),
+    ],
+)
+
+modular_py_test(
+    name = "tests_cpu_hf",
+    size = "large",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_embeddings_cpu.py",
+        "test_metrics_e2e_cpu.py",
+        "test_models_api_cpu.py",
+        "test_tinyllama_serving_cpu.py",
+    ],
+    data = [
+        "//max/tests/integration/pipelines/python/llama3/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
+    },
+    tags = [
+        "manual",  # TODO(AITLIB-293)
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/serve",
+        "//max/python/max/serve/schemas",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("async-asgi-testclient"),
+        requirement("pytest-asyncio"),
+        requirement("sse-starlette"),
+    ],
+)
+
+modular_py_test(
+    name = "tests_gpu_hf",
+    size = "enormous",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_file_uri.py",
+    ],
+    exec_properties = {
+        # Ensure the test has at least 16GB of GPU memory available.
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = [
+        "gpu",
+        "manual",  # TODO(AITLIB-293)
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    deps = [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        requirement("async-asgi-testclient"),
+        requirement("pillow"),
+        requirement("sse-starlette"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "tests_gpu",
+    size = "enormous",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_smollm_serving_gpu.py",
+    ],
+    data = [
+        "//max/tests/integration/pipelines/python/llama3/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
+    },
+    exec_properties = {
+        # Ensure the test has at least 23GB of GPU memory available.
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+        # TODO(E2EOPT-239): Re-enable once less flaky
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/serve",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("async-asgi-testclient"),
+        requirement("pytest-asyncio"),
+        requirement("sse-starlette"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_warm_cache_target",
+    size = "large",
+    srcs = [
+        "test_warm_cache_target.py",
+    ],
+    data = [
+        "//max/python/max/entrypoints:pipelines",
+    ],
+    tags = [
+        "AITLIB-293",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max/python/max/entrypoints",
+    ],
+)

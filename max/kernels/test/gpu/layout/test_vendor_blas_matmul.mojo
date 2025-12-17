@@ -15,18 +15,13 @@ from math import ceildiv
 from os import abort
 from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from buffer import DimList
+from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal, random, zero
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 fn test_matmul[
@@ -39,39 +34,58 @@ fn test_matmul[
     comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
     comptime static_c_shape = DimList(M, N)
 
-    var a_host = HostNDBuffer[input_type, 2, static_a_shape]()
-    var b_host = HostNDBuffer[input_type, 2, static_b_shape]()
-    var c_host = HostNDBuffer[DType.float32, 2, static_c_shape]()
-    var c_host_ref = HostNDBuffer[DType.float32, 2, static_c_shape]()
+    var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(M * K)
+    var a_host = NDBuffer[input_type, 2, _, static_a_shape](a_host_ptr)
+    var b_size = N * K if transpose_b else K * N
+    var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
+    var b_host = NDBuffer[input_type, 2, _, static_b_shape](b_host_ptr)
+    var c_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(M * N)
+    var c_host = NDBuffer[DType.float32, 2, _, static_c_shape](c_host_ptr)
+    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(M * N)
+    var c_host_ref = NDBuffer[DType.float32, 2, _, static_c_shape](
+        c_host_ref_ptr
+    )
 
-    random(a_host.tensor)
-    random(b_host.tensor)
+    random(a_host)
+    random(b_host)
 
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    zero(c_host)
+    zero(c_host_ref)
 
-    var a_device = DeviceNDBuffer[input_type, 2, static_a_shape](ctx=ctx)
-    var b_device = DeviceNDBuffer[input_type, 2, static_b_shape](ctx=ctx)
-    var c_device = DeviceNDBuffer[DType.float32, 2, static_c_shape](ctx=ctx)
-    var c_device_ref = DeviceNDBuffer[DType.float32, 2, static_c_shape](ctx=ctx)
+    var a_device = ctx.enqueue_create_buffer[input_type](M * K)
+    var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](
+        a_device.unsafe_ptr()
+    )
+    var b_device = ctx.enqueue_create_buffer[input_type](b_size)
+    var b_device_nd = NDBuffer[input_type, 2, _, static_b_shape](
+        b_device.unsafe_ptr()
+    )
+    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var c_device_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
+        c_device.unsafe_ptr()
+    )
+    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var c_device_ref_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
+        c_device_ref.unsafe_ptr()
+    )
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
 
     matmul(
         ctx,
-        c_device.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device_nd,
+        a_device_nd,
+        b_device_nd,
         transpose_b=True,
         c_row_major=True,
     )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device)
 
-    var c_tensor_ref = from_ndbuffer_row_major(c_device_ref.tensor)
-    var a_tensor = from_ndbuffer_row_major(a_device.tensor)
-    var b_tensor = from_ndbuffer_row_major(b_device.tensor)
+    var c_tensor_ref = from_ndbuffer_row_major(c_device_ref_nd)
+    var a_tensor = from_ndbuffer_row_major(a_device_nd)
+    var b_tensor = from_ndbuffer_row_major(b_device_nd)
 
     # Run naive matmul.
     comptime BLOCK_DIM = 16
@@ -96,26 +110,26 @@ fn test_matmul[
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
 
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
+        c_host,
+        c_host_ref,
         atol=0.01,
         rtol=0.01,
     )
 
-    _ = a_device
-    _ = b_device
-    _ = c_device
-    _ = c_device_ref
-
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_ref
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
 
 
 fn test_matmul[input_types: List[DType]]() raises:

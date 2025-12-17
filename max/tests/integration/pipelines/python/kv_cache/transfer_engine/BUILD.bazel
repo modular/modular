@@ -1,0 +1,75 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+[
+    modular_py_test(
+        name = src.split("/")[-1].split(".")[0],
+        srcs = [src],
+        # FIXME: SDLC-2743
+        external_noop = src in [
+            "test_notification_latency.py",
+            "test_send_recv.py",
+        ],
+        imports = ["."],
+        # UCX currently only supports x86_64 linux machines
+        target_compatible_with = [
+            "@platforms//cpu:x86_64",
+            "@platforms//os:linux",
+        ],
+        deps = [
+            "//max/python/max:_core",
+            "//max/python/max/engine",
+            "//max/python/max/kv_cache",
+            "//max/python/max/nn",
+            requirement("numpy"),
+        ],
+    )
+    for src in glob(
+        ["*.py"],
+        exclude = ["*_gpu.py"],
+    )
+]
+
+[
+    modular_py_test(
+        name = src.split("/")[-1].split(".")[0],
+        srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": "30",
+        },
+        gpu_constraints = [
+            "//:has_gpu",
+            "//:has_multi_gpu",
+            "//:nvidia_gpu",
+        ] + select({
+            "//:a10_gpu": ["@platforms//:incompatible"] if src in [
+                "test_send_recv_multi_process_gpu.py",
+                "test_send_recv_multi_tensor_multi_process_gpu.py",
+                "test_send_recv_dp2_tp2_gpu.py",
+            ] else [],
+            "//conditions:default": [],
+        }) + (
+            ["//:has_4_gpus"] if src in [
+                "test_send_recv_multi_tensor_threaded_gpu.py",
+                "test_send_recv_multi_tensor_multi_process_gpu.py",
+                "test_send_recv_dp2_tp2_gpu.py",
+            ] else []
+        ),
+        imports = ["."],
+        tags = ["gpu"],
+        deps = [
+            "//max/python/max:_core",
+            "//max/python/max/engine",
+            "//max/python/max/kv_cache",
+            "//max/python/max/nn",
+            requirement("numpy"),
+            requirement("torch"),
+        ],
+    )
+    for src in glob(["*_gpu.py"])
+]

@@ -40,15 +40,13 @@ fn test_tma_3d_load_kernel[
     dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, cta_tile_layout, desc_layout],
 ):
-    constrained[
-        cta_tile_layout.size() == smem_layout.size(),
-        "CTA Tile and SMEM tile should be the same size",
-    ]()
+    __comptime_assert (
+        cta_tile_layout.size() == smem_layout.size()
+    ), "CTA Tile and SMEM tile should be the same size"
 
-    constrained[
-        cta_tile_layout == smem_layout,
-        "for these test cases cta and smem should have the same size",
-    ]()
+    __comptime_assert (
+        cta_tile_layout == smem_layout
+    ), "for these test cases cta and smem should have the same size"
 
     comptime dst_dim0 = dst_layout.shape[0].value()
     comptime dst_dim1 = dst_layout.shape[1].value()
@@ -57,10 +55,9 @@ fn test_tma_3d_load_kernel[
     comptime cta_tile_dim1 = cta_tile_layout.shape[1].value()
     comptime cta_tile_dim2 = cta_tile_layout.shape[2].value()
 
-    constrained[
-        dst_dim1 == cta_tile_dim2,
-        "dst and cta should have the same last dimension for these test cases",
-    ]()
+    __comptime_assert (
+        dst_dim1 == cta_tile_dim2
+    ), "dst and cta should have the same last dimension for these test cases"
 
     smem_tile = LayoutTensor[
         dtype,

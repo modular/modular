@@ -82,7 +82,7 @@ struct Status(Equatable, Writable):
         if self == Self.INVALID_ENUM:
             return writer.write("INVALID_ENUM")
 
-        return abort("unreachable: invalid Status entry")
+        abort("unreachable: invalid Status entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -509,11 +509,8 @@ fn _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
     elif dtype is DType.float8_e5m2fnuz:
         return hipDataType_t.R_8F_E5M2_FNUZ
     else:
-        constrained[
-            dtype is DType.bfloat16,
-            (
-                "Only support FP32, FP16, BF16, E4M3(FNUZ), and E5M2(FNUZ)."
-                " Please extend it if more dtypes are needed."
-            ),
-        ]()
+        __comptime_assert dtype is DType.bfloat16, (
+            "Only support FP32, FP16, BF16, E4M3(FNUZ), and E5M2(FNUZ)."
+            " Please extend it if more dtypes are needed."
+        )
         return hipDataType_t.R_16BF

@@ -185,6 +185,47 @@ class Float8Config:
     """The quantization method used (e.g., "fbgemm_fp8")."""
 
     @property
+    def scales_granularity_mnk(self) -> tuple[int, int, int]:
+        """Returns the weight and input scale granularities on M, N and K axis."""
+        m_input_granularity: int
+        k_input_granularity: int
+        if self.input_scale.is_block:
+            input_block_size = self.input_scale.block_size
+            assert input_block_size is not None
+            m_input_granularity = input_block_size[0]
+            k_input_granularity = input_block_size[1]
+        elif self.input_scale.is_colwise:
+            m_input_granularity = 1
+            k_input_granularity = -1  # one scale shared by one token
+        elif self.input_scale.is_tensor:
+            m_input_granularity = -1
+            k_input_granularity = -1
+        else:
+            raise ValueError("unsupported input scale granularity")
+
+        n_weight_granularity: int
+        k_weight_granularity: int
+        if self.weight_scale.is_block:
+            weight_block_size = self.weight_scale.block_size
+            assert weight_block_size is not None
+            n_weight_granularity = weight_block_size[0]
+            k_weight_granularity = weight_block_size[1]
+        elif self.weight_scale.is_rowwise:
+            n_weight_granularity = 1
+            k_weight_granularity = -1  # one scale shared by one row
+        elif self.weight_scale.is_tensor:
+            n_weight_granularity = -1
+            k_weight_granularity = -1
+        else:
+            raise ValueError("unsupported weight scale granularity")
+
+        assert k_input_granularity == k_weight_granularity, (
+            "k_input_granularity and k_weight_granularity must be the same"
+        )
+
+        return (m_input_granularity, n_weight_granularity, k_input_granularity)
+
+    @property
     def is_static(self) -> bool:
         """Returns ``True`` if this input scale is static."""
         return self.input_scale.origin == Float8ScaleOrigin.STATIC
@@ -207,7 +248,11 @@ def _quantized_layers_and_embedding_dtype(
     # TODO: For llama3, the layer name re-mapping is not applied to the `ignore`
     # list in quantization config, hence the two prefixes are needed here.
     """
-    num_hidden_layers = huggingface_config.num_hidden_layers
+    # Handle multimodal configs where num_hidden_layers is in text_config
+    if hasattr(huggingface_config, "text_config"):
+        num_hidden_layers = huggingface_config.text_config.num_hidden_layers
+    else:
+        num_hidden_layers = huggingface_config.num_hidden_layers
     mlp_in_float8: set[int] = set()
     attn_qkv_in_float8: set[int] = set()
 

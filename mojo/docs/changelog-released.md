@@ -21,9 +21,9 @@ This version is still a work in progress.
 ### ✨ Highlights
 
 - A new, improved
-  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type has
+  [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) type has
   been added, and the old version renamed to
-  [`LegacyUnsafePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/LegacyUnsafePointer).
+  [`LegacyUnsafePointer`](/mojo/std/memory/legacy_unsafe_pointer/LegacyUnsafePointer).
   The new version fixes several issues with the old `LegacyUnsafePointer`.
 
   - `LegacyUnsafePointer` had constructors that allowed unsafe implicit
@@ -188,14 +188,14 @@ This version is still a work in progress.
 #### Pointer and memory changes {#25-7-pointer-and-memory-changes}
 
 - `UnsafePointer` has been renamed to
-  [`LegacyUnsafePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
+  [`LegacyUnsafePointer`](/mojo/std/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
   and a new
-  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/) has
+  [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer/) has
   [taken its place](https://forum.modular.com/t/proposal-unsafepointer-v2/2411?u=nate).
   Similarly, `OpaquePointer` has been renamed to
-  [`LegacyOpaquePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/#legacyopaquepointer)
+  [`LegacyOpaquePointer`](/mojo/std/memory/legacy_unsafe_pointer/#legacyopaquepointer)
   and a new
-  [`OpaquePointer`](/mojo/stdlib/memory/unsafe_pointer/#opaquepointer) has taken
+  [`OpaquePointer`](/mojo/std/memory/unsafe_pointer/#opaquepointer) has taken
   its place. The primary difference is the ordering of parameters, which now
   looks like this:
 
@@ -242,7 +242,7 @@ This version is still a work in progress.
   - `MutOpaquePointer`
   - `ImmutOpaquePointer`
 
-  Lastly, [`alloc()`](/mojo/stdlib/memory/unsafe_pointer/alloc) has been moved
+  Lastly, [`alloc()`](/mojo/std/memory/unsafe_pointer/alloc) has been moved
   from a static method on `UnsafePointer` to a free standing `alloc()` function.
   Therefore, code that was written as:
 
@@ -265,7 +265,7 @@ This version is still a work in progress.
 
 - `origin_cast()` for
   [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/),
-  [`NDBuffer`](/mojo/stdlib/buffer/buffer/NDBuffer/) and `UnsafePointer` has
+  [`NDBuffer`](/mojo/std/buffer/buffer/NDBuffer/) and `UnsafePointer` has
   been deprecated and removed. `LayoutTensor` and `NDBuffer` now support a safer
   `as_any_origin()` origin casting method. `UnsafePointer` has the same safe
   alternative and in addition, it has a safe `as_immutable()`
@@ -281,14 +281,14 @@ This version is still a work in progress.
 - Renamed `MutableAnyOrigin` to `MutAnyOrigin` and `ImmutableAnyOrigin` to
   `ImmutAnyOrigin`.
 
-- [`memcpy()`](/mojo/stdlib/memory/memory/memcpy/) and
-  [`parallel_memcpy()`](/mojo/stdlib/algorithm/memory/parallel_memcpy/) without
+- [`memcpy()`](/mojo/std/memory/memory/memcpy/) and
+  [`parallel_memcpy()`](/mojo/std/algorithm/memory/parallel_memcpy/) without
   keyword arguments are deprecated.
 
 #### Collections and iterators
 
-- [`Span`](/mojo/stdlib/memory/span/Span/) and
-  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/)
+- [`Span`](/mojo/std/memory/span/Span/) and
+  [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice/)
   constructors now accept `Int` for length parameters instead of `UInt`. This
   change makes these types more ergonomic to use with integer literals and other
   `Int`-based APIs.
@@ -299,16 +299,16 @@ This version is still a work in progress.
 - Added `unsafe_get()`, `unsafe_swap_elements()` and `unsafe_subspan()` to
   the `Span` struct.
 
-- [`Optional`](/mojo/stdlib/collections/optional/Optional/) now conforms to
+- [`Optional`](/mojo/std/collections/optional/Optional/) now conforms to
   `Iterable` and `Iterator` acting as a collection of size 1 or 0.
 
-- New [`ContiguousSlice`](/mojo/stdlib/builtin/builtin_slice/ContiguousSlice)
+- New [`ContiguousSlice`](/mojo/std/builtin/builtin_slice/ContiguousSlice)
   and
-  [`StridedSlice`](/mojo/stdlib/builtin/builtin_slice/StridedSlice)
+  [`StridedSlice`](/mojo/std/builtin/builtin_slice/StridedSlice)
   types were added to the `builtin_slice` module to support specialization for
   slicing without strides.
 
-- [`List`](/mojo/stdlib/collections/list/List/) slicing without a stride now
+- [`List`](/mojo/std/collections/list/List/) slicing without a stride now
   returns a `Span`, instead of a `List` and no longer allocates memory.
 
 - Several standard library APIs have been updated to use `Int` instead of `UInt`
@@ -326,7 +326,7 @@ This version is still a work in progress.
   - `Codepoint.utf8_byte_length() -> Int` - Changed return type from `UInt` to
     `Int`
 
-- Added [`repeat()`](/mojo/stdlib/itertools/itertools/repeat/) function to the
+- Added [`repeat()`](/mojo/std/itertools/itertools/repeat/) function to the
   `itertools` module that creates an iterator which repeats an element a
   specified number of times. Unlike Python's `itertools.repeat()`, infinite
   iteration is not currently supported - the `times` parameter is required.
@@ -345,30 +345,30 @@ This version is still a work in progress.
 
 #### String and text
 
-- [`Codepoint`](/mojo/stdlib/collections/string/codepoint/Codepoint/) now
-  conforms to [`Writable`](/mojo/stdlib/io/write/Writable/).
+- [`Codepoint`](/mojo/std/collections/string/codepoint/Codepoint/) now
+  conforms to [`Writable`](/mojo/std/io/write/Writable/).
 
 - `Codepoint` now conforms to
-  [`Comparable`](/mojo/stdlib/builtin/comparable/Comparable/) adding `__le__()`,
+  [`Comparable`](/mojo/std/builtin/comparable/Comparable/) adding `__le__()`,
   `__lt__()`, `__ge__()`, and `__gt__()` implementations.
 
 #### Math and numeric types
 
 - The deprecated `DType.index` is now removed in favor of the
-  [`DType.int`](/mojo/stdlib/builtin/dtype/DType/#int).
+  [`DType.int`](/mojo/std/builtin/dtype/DType/#int).
 
 - Added `DType.float4_e2m1fn` as the 4bit float `e2m1` format. This
   `Float4_e2m1` type is defined by the
   [Open Compute MX Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
 
-- `math.isqrt()` has been renamed to [`rsqrt()`](/mojo/stdlib/math/math/rsqrt/)
+- `math.isqrt()` has been renamed to [`rsqrt()`](/mojo/std/math/math/rsqrt/)
   since it performs reciprocal square root functionality.
 
-- The [`math`](/mojo/stdlib/math/math/) package now has a Mojo native
+- The [`math`](/mojo/std/math/math/) package now has a Mojo native
   implementation of `acos()`, `asin()`, `cbrt()`, and `erfc()`.
 
-- [`SIMD`](/mojo/stdlib/builtin/simd/SIMD/) now implements the
-  [`DivModable`](/mojo/stdlib/builtin/math/DivModable/) trait.
+- [`SIMD`](/mojo/std/builtin/simd/SIMD/) now implements the
+  [`DivModable`](/mojo/std/builtin/math/DivModable/) trait.
 
 - Implicit conversions between `Int` and `UInt` are now deprecated.
 
@@ -390,14 +390,14 @@ This version is still a work in progress.
 
 - Added support for NVIDIA GeForce GTX 970.
 
-- [`gpu.sync.syncwarp()`](/mojo/stdlib/gpu/sync/sync/syncwarp/) now supports
+- [`gpu.sync.syncwarp()`](/mojo/std/gpu/sync/sync/syncwarp/) now supports
   Apple GPUs via `SIMDGROUP` barrier implementation. On Apple GPUs, this
   provides execution synchronization for all active lanes using a `SIMDGROUP`
   barrier with no memory fence. For threadgroup memory ordering, use
-  [`barrier()`](/mojo/stdlib/gpu/sync/sync/barrier/) instead. Note that lane
+  [`barrier()`](/mojo/std/gpu/sync/sync/barrier/) instead. Note that lane
   masks are not supported on Apple GPUs, so the mask argument is ignored.
 
-- [`gpu.primitives.warp`](/mojo/stdlib/gpu/primitives/warp/) now supports Apple
+- [`gpu.primitives.warp`](/mojo/std/gpu/primitives/warp/) now supports Apple
   GPUs with native SIMD-group shuffle operations. This enables `shuffle_idx()`,
   `shuffle_up()`, `shuffle_down()`, and `shuffle_xor()` on Apple hardware by
   mapping Metal `simd_shuffle*` intrinsics to AIR
@@ -405,13 +405,13 @@ This version is still a work in progress.
   parity with NVIDIA and AMD backends.
 
 -
-  [`gpu.intrinsics.store_release()`](/mojo/stdlib/gpu/intrinsics/store_release/)
+  [`gpu.intrinsics.store_release()`](/mojo/std/gpu/intrinsics/store_release/)
   and
-  [`gpu.intrinsics.load_acquire()`](/mojo/stdlib/gpu/intrinsics/load_acquire/)
+  [`gpu.intrinsics.load_acquire()`](/mojo/std/gpu/intrinsics/load_acquire/)
   now support Apple silicon GPUs, expanding support for proper memory
   synchronization on these devices.
 
-- The [`gpu`](/mojo/stdlib/gpu/) package has been reorganized into logical
+- The [`gpu`](/mojo/std/gpu/) package has been reorganized into logical
   subdirectories for better code organization:
   - `gpu/primitives/` - Low-level GPU execution primitives (warp, block,
     cluster, id, grid_controls)
@@ -445,7 +445,7 @@ This version is still a work in progress.
   ```
 
 - The `_GPUAddressSpace` type has been removed and consolidated into
-  [`AddressSpace`](/mojo/stdlib/memory/pointer/AddressSpace/). GPU-specific
+  [`AddressSpace`](/mojo/std/memory/pointer/AddressSpace/). GPU-specific
   address space constants (`GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
   `SHARED_CLUSTER`) are now available as aliases on the unified `AddressSpace`
   type. The `GPUAddressSpace` alias has also been removed in favor of using
@@ -456,12 +456,12 @@ This version is still a work in progress.
   The types `TMADescriptor`, `TensorMapSwizzle`, `TensorMapDataType`,
   `TensorMapInterleave`, `TensorMapL2Promotion`, `TensorMapFloatOOBFill`, and
   the functions `create_tma_descriptor()` and `prefetch_tma_descriptor()` are
-  now available from [`gpu.host.nvidia.tma`](/mojo/stdlib/gpu/host/nvidia/tma/)
+  now available from [`gpu.host.nvidia.tma`](/mojo/std/gpu/host/nvidia/tma/)
   instead of `gpu.host._nvidia_cuda`.
 
 #### Testing {#25-7-testing}
 
-- [`assert_equal()`](/mojo/stdlib/testing/testing/assert_equal) now displays
+- [`assert_equal()`](/mojo/std/testing/testing/assert_equal) now displays
   colored character-by-character diffs when string comparisons fail, making it
   easier to spot differences. Differing characters are highlighted in red for
   the left string and green for the right string.
@@ -470,7 +470,7 @@ This version is still a work in progress.
   to define test functions, call them explicitly from `main()` (or use the new
   `TestSuite` framework), and run with `mojo run`.
 
-- [`TestSuite`](/mojo/stdlib/testing/suite/TestSuite/) now can generate test
+- [`TestSuite`](/mojo/std/testing/suite/TestSuite/) now can generate test
   reports with `.generate_report()`. Also, `TestReport` and `TestSuiteReport`
   structs were added.
 
@@ -497,18 +497,18 @@ This version is still a work in progress.
 
 #### System and OS
 
-- Added [`os.isatty()`](/mojo/stdlib/os/os/isatty/) function to check whether a
+- Added [`os.isatty()`](/mojo/std/os/os/isatty/) function to check whether a
   file descriptor refers to a terminal. This function accepts an `Int` file
   descriptor. If you have a
-  [`FileDescriptor`](/mojo/stdlib/io/file_descriptor/FileDescriptor/) object,
+  [`FileDescriptor`](/mojo/std/io/file_descriptor/FileDescriptor/) object,
   use its `isatty()` method instead.
 
 - Added
-  [`sys.compile.SanitizeAddress`](/mojo/stdlib/sys/compile/#sanitizeaddress)
+  [`sys.compile.SanitizeAddress`](/mojo/std/sys/compile/#sanitizeaddress)
   providing a way for Mojo code to detect `--sanitize address` at compile time.
 
 - `DLHandle` is no longer part of the public API. To access a dynamically-linked
-  library from Mojo, use [`OwnedDLHandle`](/mojo/stdlib/sys/ffi/OwnedDLHandle/)
+  library from Mojo, use [`OwnedDLHandle`](/mojo/std/sys/ffi/OwnedDLHandle/)
   instead. The new type provides RAII-based automatic resource management for
   dynamically-linked libraries. `DLHandle` has been renamed to `_DLHandle` and
   remains available internally for use by the standard library.
@@ -526,7 +526,7 @@ This version is still a work in progress.
 - Optimized number parsing performance by eliminating stack allocations for
   large lookup tables. Internal lookup tables used for number parsing
   (`powers_of_5_table` and `POWERS_OF_10`) are now stored as global constants
-  using the [`global_constant`](/mojo/stdlib/builtin/globals/global_constant/)
+  using the [`global_constant`](/mojo/std/builtin/globals/global_constant/)
   function instead of being materialized on the stack for each parsing
   operation. This reduces stack overhead by ~10.6KB for number parsing
   operations, improving performance for string-to-number conversions including
@@ -534,13 +534,13 @@ This version is still a work in progress.
 
 #### Other library changes
 
-- The [`Hasher`](/mojo/stdlib/hashlib/hasher/Hasher/) trait's
+- The [`Hasher`](/mojo/std/hashlib/hasher/Hasher/) trait's
   `_update_with_bytes()` method now takes `Span[Byte]` instead of
   `UnsafePointer[UInt8]` and a separate length parameter. This change applies to
   all hasher implementations including `AHasher` and `Fnv1a`.
 
 - The Philox random number generator (`Random` and `NormalRandom`) has been
-  moved from `gpu.random` to [`random.philox`](/mojo/stdlib/random/philox/).
+  moved from `gpu.random` to [`random.philox`](/mojo/std/random/philox/).
   These types now work on both CPU and GPU. Import them using
   `from random import Random, NormalRandom` or
   `from random.philox import Random, NormalRandom`.
@@ -581,7 +581,7 @@ This version is still a work in progress.
   match any viable function overload.
 
   The elaborator also checks constraints (defined using the
-  [`constrained()`](/mojo/stdlib/builtin/constrained/constrained/) function), so
+  [`constrained()`](/mojo/std/builtin/constrained/constrained/) function), so
   constraint failures are generated during this pass.
 
   - Elaboration errors now report the full call instantiation failure path.
@@ -625,7 +625,7 @@ This version is still a work in progress.
     parameter values.
 
   - Elaboration error messages related to the prelude are omitted by default. The
-    prelude is the set of APIs exported from `stdlib/builtin/_startup.mojo`. These
+    prelude is the set of APIs exported from `std/builtin/_startup.mojo`. These
     APIs persist in all call expansion paths but are rarely the source of reported
     errors. These APIs are now omitted by default to de-clutter elaboration
     errors.
@@ -646,14 +646,14 @@ This version is still a work in progress.
     - With prelude:
 
       ```mojo
-      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: error: function instantiation failed
+      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:119:4: error: function instantiation failed
       fn __mojo_main_prototype(
         ^
-      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
-      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:42:4: note: function instantiation failed
+      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
+      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:42:4: note: function instantiation failed
       fn __wrap_and_execute_main[
         ^
-      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:68:14: note: call expansion failed
+      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:68:14: note: call expansion failed
           main_func()
                   ^
       test.mojo:43:4: note: function instantiation failed
@@ -932,7 +932,7 @@ However, if you're installing `mojo` as a Python package with `pip` or
   these two methods, this convention can be used to declare "named" destructors,
   which are methods that consume and destroy the value without themselves
   running the values destructor. For example, the standard
-  [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack/) type has these
+  [`VariadicPack`](/mojo/std/builtin/variadics/VariadicPack/) type has these
   methods:
 
   ```mojo
@@ -1081,40 +1081,40 @@ However, if you're installing `mojo` as a Python package with `pip` or
 - The following standard library types and functions now require only explicit
   `Copyable` for their element and argument types, enabling their use with
   types that are not implicitly copyable:
-  [`List`](/mojo/stdlib/collections/list/List),
-  [`Span`](/mojo/stdlib/memory/span/Span/),
-  [`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray)
-  [`Optional`](/mojo/stdlib/collections/optional/Optional),
-  [`Variant`](/mojo/stdlib/utils/variant/Variant),
-  [`Tuple`](/mojo/stdlib/builtin/tuple/Tuple),
-  [`Dict`](/mojo/stdlib/collections/dict/Dict),
-  [`Set`](/mojo/stdlib/collections/set/Set),
-  [`Counter`](/mojo/stdlib/collections/counter/Counter),
-  [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList),
-  [`Deque`](/mojo/stdlib/collections/deque/Deque), and
-  [`reversed()`](/mojo/stdlib/builtin/reversed/reversed).
+  [`List`](/mojo/std/collections/list/List),
+  [`Span`](/mojo/std/memory/span/Span/),
+  [`InlineArray`](/mojo/std/collections/inline_array/InlineArray)
+  [`Optional`](/mojo/std/collections/optional/Optional),
+  [`Variant`](/mojo/std/utils/variant/Variant),
+  [`Tuple`](/mojo/std/builtin/tuple/Tuple),
+  [`Dict`](/mojo/std/collections/dict/Dict),
+  [`Set`](/mojo/std/collections/set/Set),
+  [`Counter`](/mojo/std/collections/counter/Counter),
+  [`LinkedList`](/mojo/std/collections/linked_list/LinkedList),
+  [`Deque`](/mojo/std/collections/deque/Deque), and
+  [`reversed()`](/mojo/std/builtin/reversed/reversed).
 
   Additionally, the following traits now require explicit `Copyable` instead
   of `ImplicitlyCopyable`:
   `KeyElement`, `IntervalElement`, `ConvertibleFromPython`
 
 - The following Mojo standard library types are no longer implicitly copyable:
-  [`List`](/mojo/stdlib/collections/list/List),
-  [`Dict`](/mojo/stdlib/collections/dict/Dict),
-  [`DictEntry`](/mojo/stdlib/collections/dict/DictEntry),
-  [`OwnedKwargsDict`](/mojo/stdlib/collections/dict/OwnedKwargsDict),
-  [`Set`](/mojo/stdlib/collections/set/Set),
-  [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList),
-  [`Node`](/mojo/stdlib/collections/linked_list/Node)
-  [`Counter`](/mojo/stdlib/collections/counter/Counter/),
-  [`CountTuple`](/mojo/stdlib/collections/counter/CountTuple/),
-  [`BitSet`](/mojo/stdlib/collections/bitset/BitSet/),
-  [`UnsafeMaybeUninitialized`](/mojo/stdlib/memory/maybe_uninitialized/UnsafeMaybeUninitialized/),
-  [`DLHandle`](/mojo/stdlib/sys/ffi/DLHandle/),
-  [`BenchConfig`](/mojo/stdlib/benchmark/bencher/BenchConfig),
-  [`BenchmarkInfo`](/mojo/stdlib/benchmark/bencher/BenchmarkInfo),
-  [`Report`](/mojo/stdlib/benchmark/benchmark/Report),
-  [`PythonTypeBuilder`](/mojo/stdlib/python/bindings/PythonTypeBuilder/).
+  [`List`](/mojo/std/collections/list/List),
+  [`Dict`](/mojo/std/collections/dict/Dict),
+  [`DictEntry`](/mojo/std/collections/dict/DictEntry),
+  [`OwnedKwargsDict`](/mojo/std/collections/dict/OwnedKwargsDict),
+  [`Set`](/mojo/std/collections/set/Set),
+  [`LinkedList`](/mojo/std/collections/linked_list/LinkedList),
+  [`Node`](/mojo/std/collections/linked_list/Node)
+  [`Counter`](/mojo/std/collections/counter/Counter/),
+  [`CountTuple`](/mojo/std/collections/counter/CountTuple/),
+  [`BitSet`](/mojo/std/collections/bitset/BitSet/),
+  [`UnsafeMaybeUninitialized`](/mojo/std/memory/maybe_uninitialized/UnsafeMaybeUninitialized/),
+  [`DLHandle`](/mojo/std/sys/ffi/DLHandle/),
+  [`BenchConfig`](/mojo/std/benchmark/bencher/BenchConfig),
+  [`BenchmarkInfo`](/mojo/std/benchmark/bencher/BenchmarkInfo),
+  [`Report`](/mojo/std/benchmark/benchmark/Report),
+  [`PythonTypeBuilder`](/mojo/std/python/bindings/PythonTypeBuilder/).
 
   To create a copy of one of these types, call the `.copy()` method
   explicitly:
@@ -1213,7 +1213,7 @@ However, if you're installing `mojo` as a Python package with `pip` or
 
 #### Path and file system changes
 
-- Added the [`parts()`](/mojo/stdlib/pathlib/path/Path/#parts) method to the
+- Added the [`parts()`](/mojo/std/pathlib/path/Path/#parts) method to the
   `Path` type, for example instead of writing:
 
   ```mojo
@@ -1228,7 +1228,7 @@ However, if you're installing `mojo` as a Python package with `pip` or
   var parts = path.parts()
   ```
 
-- Added the [`name()`](/mojo/stdlib/pathlib/path/Path/#name) method to the
+- Added the [`name()`](/mojo/std/pathlib/path/Path/#name) method to the
   `Path` type, which returns the name of the file or directory.
 
 - Added `os.path.realpath()` to resolve symbolic links to an absolute path and
@@ -1237,36 +1237,36 @@ However, if you're installing `mojo` as a Python package with `pip` or
 
 #### Collections and iterators changes {#25-6-collections-and-iterators-changes}
 
-- Added an [`iter`](/mojo/stdlib/iter) module which includes the new `Iterable`
+- Added an [`iter`](/mojo/std/iter) module which includes the new `Iterable`
   trait (and the existing `Iterator` trait). The module also provides the
-  [`enumerate()`](/mojo/stdlib/iter/enumerate),
-  [`iter()`](/mojo/stdlib/iter/iter), [`map()`](/mojo/stdlib/iter/map),
-  [`next()`](/mojo/stdlib/iter/next), and [`zip()`](/mojo/stdlib/iter/zip)
+  [`enumerate()`](/mojo/std/iter/enumerate),
+  [`iter()`](/mojo/std/iter/iter), [`map()`](/mojo/std/iter/map),
+  [`next()`](/mojo/std/iter/next), and [`zip()`](/mojo/std/iter/zip)
   functions. The new generic `zip()` function replaces the `IntTuple`-specific
   `zip()` function provided in previous releases.
 
   - `Iterable`'s `origin` parameter is now named `iterable_origin`
     and its `mut` param is now named `iterator_mut` to avoid naming collisions.
 
-- [`Iterator`](/mojo/stdlib/iter/Iterator) now has a defaulted `bounds()` trait
+- [`Iterator`](/mojo/std/iter/Iterator) now has a defaulted `bounds()` trait
   method. This returns the lower and upper bounds of the remaining length of the
   iterator. This can be used for preallocation when building or extending
   collections from iterators.
 
-- Added [`take_items()`](/mojo/stdlib/collections/dict/Dict/#take_items)
+- Added [`take_items()`](/mojo/std/collections/dict/Dict/#take_items)
   draining iterator to `Dict`.
 
-- [`Span`](/mojo/stdlib/memory/span/Span/) is now `Representable` if its
+- [`Span`](/mojo/std/memory/span/Span/) is now `Representable` if its
   elements implement the `Representable` trait.
 
-- Add `repr()` support for [`List`](/mojo/stdlib/collections/list/List),
-  [`Deque`](/mojo/stdlib/collections/deque/Deque),
-  [`Dict`](/mojo/stdlib/collections/dict/Dict),
-  [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList),
-  [`Optional`](/mojo/stdlib/collections/optional/Optional), and
-  [`Set`](/mojo/stdlib/collections/set/Set).
+- Add `repr()` support for [`List`](/mojo/std/collections/list/List),
+  [`Deque`](/mojo/std/collections/deque/Deque),
+  [`Dict`](/mojo/std/collections/dict/Dict),
+  [`LinkedList`](/mojo/std/collections/linked_list/LinkedList),
+  [`Optional`](/mojo/std/collections/optional/Optional), and
+  [`Set`](/mojo/std/collections/set/Set).
 
-- [`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray) now
+- [`InlineArray`](/mojo/std/collections/inline_array/InlineArray) now
   automatically detects whether its element types are trivially destructible to
   not invoke the destructors in its `__del__()` function. This improves
   performance for trivially destructible types (such as `Int` and friends).
@@ -1287,8 +1287,8 @@ However, if you're installing `mojo` as a Python package with `pip` or
   times it returns `True` evaluating it in a vectorized manner. This works for
   any `Span[Scalar[D]]` e.g. `Span[Byte]`.
 
-- [`Optional`](/mojo/stdlib/collections/optional/Optional) and
-  [`OptionalReg`](/mojo/stdlib/collections/optional/OptionalReg) can now be
+- [`Optional`](/mojo/std/collections/optional/Optional) and
+  [`OptionalReg`](/mojo/std/collections/optional/OptionalReg) can now be
   composed with `Bool` in expressions, both at comptime and runtime:
 
   ```mojo
@@ -1299,10 +1299,10 @@ However, if you're installing `mojo` as a Python package with `pip` or
       print("is macos and value is:", value.value())
   ```
 
-- [`sort()`](/mojo/stdlib/builtin/sort/sort),
-  [`LinkedList.pop()`](/mojo/stdlib/collections/linked_list/LinkedList/#pop),
-  [`LinkedList.maybe_pop()`](/mojo/stdlib/collections/linked_list/LinkedList/#maybe_pop)
-  and [`Dict.popitem()`](/mojo/stdlib/collections/dict/Dict#popitem) no longer
+- [`sort()`](/mojo/std/builtin/sort/sort),
+  [`LinkedList.pop()`](/mojo/std/collections/linked_list/LinkedList/#pop),
+  [`LinkedList.maybe_pop()`](/mojo/std/collections/linked_list/LinkedList/#maybe_pop)
+  and [`Dict.popitem()`](/mojo/std/collections/dict/Dict#popitem) no longer
   copy elements, improving performance.
 
 - The `IndexList` and `DimList` types may no longer be implicitly constructed
@@ -1313,7 +1313,7 @@ However, if you're installing `mojo` as a Python package with `pip` or
 #### Pointer changes
 
 - Removed the `alignment` parameter and `static_alignment_cast()` method from
-  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer). This
+  [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer). This
   `alignment` parameter that was only used by the `alloc()` static method.
 
 - Added an `alignment` keyword argument to `UnsafePointer.alloc()`. Use this
@@ -1324,11 +1324,11 @@ However, if you're installing `mojo` as a Python package with `pip` or
 
 - The `UnsafePointer.init_pointee_explicit_copy()` method has been removed.
   Please use
-  [`UnsafePointer.init_pointee_copy()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
+  [`UnsafePointer.init_pointee_copy()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
   instead.
 
 - `UnsafePointer.move_pointee_into()` has been deprecated. Please use
-  [`UnsafePointer.init_pointee_move_from()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_move_from).
+  [`UnsafePointer.init_pointee_move_from()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_move_from).
 
   `src.move_pointee_into(dst)` used a reversed argument order from intuitive
   `LHS = RHS` semantics for assignment, effectively `RHS -> LHS`. The new
@@ -1338,7 +1338,7 @@ However, if you're installing `mojo` as a Python package with `pip` or
 
 #### Atomic operations
 
-- Added [`os.atomic.fence()`](/mojo/stdlib/os/atomic/fence) for creating atomic
+- Added [`os.atomic.fence()`](/mojo/std/os/atomic/fence) for creating atomic
   memory fences.
 
   ```mojo
@@ -1351,7 +1351,7 @@ However, if you're installing `mojo` as a Python package with `pip` or
   ```
 
 - Add a memory ordering parameter to
-  [`Atomic.load()`](/mojo/stdlib/os/atomic/Atomic).
+  [`Atomic.load()`](/mojo/std/os/atomic/Atomic).
 
 #### System changes
 
@@ -1416,7 +1416,7 @@ However, if you're installing `mojo` as a Python package with `pip` or
   ```
 
 - The
-  [`compile.reflection.get_type_name()`](/mojo/stdlib/compile/reflection/get_type_name)
+  [`compile.reflection.get_type_name()`](/mojo/std/compile/reflection/get_type_name)
   utility now has limited capability to print parametric types, e.g.
   `SIMD[DType.float32, 4]` instead of just `SIMD`. If the parameter is not
   printable, an `<unprintable>` placeholder is printed instead. A new
@@ -1440,7 +1440,7 @@ However, if you're installing `mojo` as a Python package with `pip` or
 
 - `mojo doc --validate-doc-strings` now emits a warning when an `fn` function is
   declared to raise an error (`raises`) and it has no [`Raises`
-  docstring](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/docstring-style-guide.md#errors).
+  docstring](https://github.com/modular/modular/blob/main/mojo/std/docs/docstring-style-guide.md#errors).
   However, because Mojo automatically treats all `def` functions as [raising
   functions](/mojo/manual/functions#raising-and-non-raising-functions), we do
   not enforce `Raises` docs for `def` functions (to avoid noisy false
@@ -1630,9 +1630,9 @@ Special thanks to our community contributors:
 
 ### Standard library changes {#25-5-standard-library-changes}
 
-- Indexing into a [`String`](/mojo/stdlib/collections/string/string/String/) now
+- Indexing into a [`String`](/mojo/std/collections/string/string/String/) now
   returns a
-  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice),
+  [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice),
   avoiding an allocation. `String.split()` now returns a `List[StringSlice]`.
 
 - Added support for a wider range of consumer-grade AMD hardware, including:
@@ -1652,9 +1652,9 @@ Special thanks to our community contributors:
 
 - Added support for NVIDIA GeForce RTX 3090.
 
-- [`memory.UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/) is
+- [`memory.UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer/) is
   now implicitly included in all mojo files. Moreover,
-  [`OpaquePointer`](/mojo/stdlib/memory/unsafe_pointer/#opaquepointer) (the
+  [`OpaquePointer`](/mojo/std/memory/unsafe_pointer/#opaquepointer) (the
   equivalent of a `void*` in C) is moved into the `memory` module, and is also
   implicitly included.
 
@@ -1677,7 +1677,7 @@ Special thanks to our community contributors:
         y = kwargs["y"]
     ```
 
-  - The [`PythonTypeBuilder`](/mojo/stdlib/python/bindings/PythonTypeBuilder/)
+  - The [`PythonTypeBuilder`](/mojo/std/python/bindings/PythonTypeBuilder/)
     utility now allows:
     - Registering bindings for Python static methods, i.e. methods that don't
       require an instance of the class.
@@ -1685,9 +1685,9 @@ Special thanks to our community contributors:
       `Defaultable` to be exposed and created from Python.
 
   - The `PythonConvertible` trait has been renamed to
-    [`ConvertibleToPython`](/mojo/stdlib/python/python_object/ConvertibleToPython/).
+    [`ConvertibleToPython`](/mojo/std/python/python_object/ConvertibleToPython/).
     This is now consistent with the
-    [`ConvertibleFromPython`](/mojo/stdlib/python/python_object/ConvertibleFromPython)
+    [`ConvertibleFromPython`](/mojo/std/python/python_object/ConvertibleFromPython)
     trait, modeling Mojo types that can be converted either to or from a
     `PythonObject`.
 
@@ -1695,7 +1695,7 @@ Special thanks to our community contributors:
   [Calling Mojo from Python](/mojo/manual/python/mojo-from-python) in the Mojo
   Manual.
 
-- Added [`Iterator`](/mojo/stdlib/builtin/value/Iterator/) trait for modeling
+- Added [`Iterator`](/mojo/std/builtin/value/Iterator/) trait for modeling
   types that produce a sequence of values.
 
   A type can implement `Iterator` by providing `__next__()` and `__has_next__()`
@@ -1710,14 +1710,14 @@ Special thanks to our community contributors:
   `Iterator` does not currently have a variant for supporting iteration over
   borrowed `ref` values.
 
-- The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type now has an `H`
+- The [`Dict`](/mojo/std/collections/dict/Dict/) type now has an `H`
   parameter which allows users to provider a custom `Hasher` type.
 
   - `default_hasher` (AHasher) and `default_comp_time_hasher` (Fnv1a)
     are now provided
   - The `H` parameter of `Dict` defaults to `default_hasher`
 
-- The [`Hashable`](/mojo/stdlib/hashlib/hash/Hashable) trait has been updated to
+- The [`Hashable`](/mojo/std/hashlib/hash/Hashable) trait has been updated to
   use a new data flow strategy.
 
   - Users are now required to implement the method
@@ -1734,7 +1734,7 @@ Special thanks to our community contributors:
   this operation that takes an arbitrary-length number of additional elements
   (possibly 0) to add to the list.
 
-- A new [`io`](/mojo/stdlib/io/) module is available in the library. Some core
+- A new [`io`](/mojo/std/io/) module is available in the library. Some core
   input/output APIs previously in the `builtin` module have been moved to `io`.
   Currently all of the APIs in the `io` module are imported automatically. The
   following APIs were moved to `io`:
@@ -1761,7 +1761,7 @@ Special thanks to our community contributors:
 ### ❌ Removed {#25-5-removed}
 
 - Various functions from the `sys.info` package have been moved to the
-  [`sys.info.CompilationTarget`](/mojo/stdlib/sys/info/CompilationTarget)
+  [`sys.info.CompilationTarget`](/mojo/std/sys/info/CompilationTarget)
   struct:
 
   - `is_x86()`
@@ -1876,9 +1876,9 @@ Special thanks to our community contributors:
 
 - Mojo collection types received many enhancements.
 
-  - [`List`](/mojo/stdlib/collections/list/List/),
-    [`Set`](/mojo/stdlib/collections/set/Set/), and
-    [`Dict`](/mojo/stdlib/collections/dict/Dict/) literals have been
+  - [`List`](/mojo/std/collections/list/List/),
+    [`Set`](/mojo/std/collections/set/Set/), and
+    [`Dict`](/mojo/std/collections/dict/Dict/) literals have been
     reimplemented to provide Python-equivalent features and syntax, including
     simple literals like `[1, 2, 3]` and `{k1: v1, k2: v2}`.
 
@@ -1920,7 +1920,7 @@ Special thanks to our community contributors:
 
   This can be useful when you want to do something with a reference, but don't
   want the conceptual overhead of a
-  [`Pointer`](/mojo/stdlib/memory/pointer/Pointer/). These are equivalent:
+  [`Pointer`](/mojo/std/memory/pointer/Pointer/). These are equivalent:
 
   ```mojo
   fn use_pointer(your_list: List[Int]):
@@ -1940,9 +1940,9 @@ Special thanks to our community contributors:
 
 - The Mojo compiler will now synthesize `__moveinit__()`, `__copyinit__()`, and
   `copy()` methods for structs that conform to
-  [`Movable`](/mojo/stdlib/builtin/value/Movable/),
-  [`Copyable`](/mojo/stdlib/builtin/value/Copyable/), and
-  [`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/)
+  [`Movable`](/mojo/std/builtin/value/Movable/),
+  [`Copyable`](/mojo/std/builtin/value/Copyable/), and
+  [`ExplicitlyCopyable`](/mojo/std/builtin/value/ExplicitlyCopyable/)
   (respectively) but that do not implement the methods explicitly.
 
 - A new [`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator
@@ -1970,12 +1970,12 @@ Special thanks to our community contributors:
 - List literals have been redesigned to work better. They produce homogenous
   sequences by invoking the `T(<elements>, __list_literal__: ())` constructor of
   a type `T` that is inferred by context, or otherwise defaulting to the
-  standard library [`List`](/mojo/stdlib/collections/list/List/) type. The
+  standard library [`List`](/mojo/std/collections/list/List/) type. The
   `ListLiteral` type has been removed from the standard library.
 
 - Dictionary and set literals now work and default to creating instances of the
-  [`Dict`](/mojo/stdlib/collections/dict/Dict/) and
-  [`Set`](/mojo/stdlib/collections/set/Set/) types in the collections library.
+  [`Dict`](/mojo/std/collections/dict/Dict/) and
+  [`Set`](/mojo/std/collections/set/Set/) types in the collections library.
 
 ### Language changes {#25-4-language-changes}
 
@@ -2011,7 +2011,7 @@ Special thanks to our community contributors:
     primitives enable developers to take advantage of Blackwell's enhanced
     compute capabilities, improved memory bandwidth, and advanced AI acceleration
     features, including support for newer tensor operations and optimized memory
-    management patterns. See the [`gpu.tcgen05`](/mojo/stdlib/gpu/tcgen05/)
+    management patterns. See the [`gpu.tcgen05`](/mojo/std/gpu/tcgen05/)
     module API reference documentation for more information.
 
   - Added support for a wider range of consumer-grade hardware, including:
@@ -2019,8 +2019,8 @@ Special thanks to our community contributors:
     - NVIDIA RTX 4090 GPUs
 
   - Fixed the `sum()` and `prefix_sum()` implementations in the
-    [`gpu.block`](/mojo/stdlib/gpu/block/) and
-    [`gpu.warp`](/mojo/stdlib/gpu/warp/) modules. Previously, the
+    [`gpu.block`](/mojo/std/gpu/block/) and
+    [`gpu.warp`](/mojo/std/gpu/warp/) modules. Previously, the
     implementations have been incorrect and would either return wrong results or
     hang the kernel (due to the deadlock). [PR
     4508](https://github.com/modular/modular/pull/4508) and [PR
@@ -2030,17 +2030,17 @@ Special thanks to our community contributors:
 
 - Collection type enhancements and changes:
 
-  - The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type is now part of the
+  - The [`Dict`](/mojo/std/collections/dict/Dict/) type is now part of the
     prelude, so there is no need to import it anymore.
 
-  - The [`List`](/mojo/stdlib/collections/list/List/),
-    [`Span`](/mojo/stdlib/memory/span/Span/),
-    [`Dict`](/mojo/stdlib/collections/dict/Dict/),
-    [`Set`](/mojo/stdlib/collections/set/Set/),
-    [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack/), and
-    [`Deque`](/mojo/stdlib/collections/deque/Deque/) iterators now return
+  - The [`List`](/mojo/std/collections/list/List/),
+    [`Span`](/mojo/std/memory/span/Span/),
+    [`Dict`](/mojo/std/collections/dict/Dict/),
+    [`Set`](/mojo/std/collections/set/Set/),
+    [`VariadicPack`](/mojo/std/builtin/variadics/VariadicPack/), and
+    [`Deque`](/mojo/std/collections/deque/Deque/) iterators now return
     references to elements directly, instead of returning
-    [`Pointer`](/mojo/stdlib/memory/pointer/Pointer/). This means that you
+    [`Pointer`](/mojo/std/memory/pointer/Pointer/). This means that you
     should no longer use the `[]` deference operator with the loop index
     variable:
 
@@ -2066,11 +2066,11 @@ Special thanks to our community contributors:
       state += "!"  # Update the existing list element
     ```
 
-  - [`List`](/mojo/stdlib/collections/list/List/),
-    [`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray/),
-    [`Deque`](/mojo/stdlib/collections/deque/Deque/),
-    [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList/), and
-    [`SIMD`](/mojo/stdlib/builtin/simd/SIMD/) types all support construction via
+  - [`List`](/mojo/std/collections/list/List/),
+    [`InlineArray`](/mojo/std/collections/inline_array/InlineArray/),
+    [`Deque`](/mojo/std/collections/deque/Deque/),
+    [`LinkedList`](/mojo/std/collections/linked_list/LinkedList/), and
+    [`SIMD`](/mojo/std/builtin/simd/SIMD/) types all support construction via
     list literal syntax:
 
     ```mojo
@@ -2081,8 +2081,8 @@ Special thanks to our community contributors:
     var arr: InlineArray[String, 3] = ["hi", "hello", "hey"]
     ```
 
-  - [`Dict`](/mojo/stdlib/collections/dict/Dict/) and
-    [`Set`](/mojo/stdlib/collections/set/Set/) support construction via dict
+  - [`Dict`](/mojo/std/collections/dict/Dict/) and
+    [`Set`](/mojo/std/collections/set/Set/) support construction via dict
     literal and set literal syntax, respectively:
 
     ```mojo
@@ -2108,19 +2108,19 @@ Special thanks to our community contributors:
     var unique_remainders = {num % 4 for num in range(10)}  # Set[Int]
     ```
 
-  - The [`BitSet`](/mojo/stdlib/collections/bitset/BitSet) data structure was
-    added to the [`collections`](/mojo/stdlib/collections/) package. This is a
+  - The [`BitSet`](/mojo/std/collections/bitset/BitSet) data structure was
+    added to the [`collections`](/mojo/std/collections/) package. This is a
     fixed `BitSet` that simplifies working with a set of bits and performing bit
     operations.
 
-  - [`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList),
-    [`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem), and
-    [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack) moved to the
-    new [`variadics`](/mojo/stdlib/builtin/variadics/) module.
+  - [`VariadicList`](/mojo/std/builtin/variadics/VariadicList),
+    [`VariadicListMem`](/mojo/std/builtin/variadics/VariadicListMem), and
+    [`VariadicPack`](/mojo/std/builtin/variadics/VariadicPack) moved to the
+    new [`variadics`](/mojo/std/builtin/variadics/) module.
 
   - The `CollectionElement` trait has been removed. You can replace any use of
-    it with the [`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
-    [`Movable`](/mojo/stdlib/builtin/value/Movable) traits, or the
+    it with the [`Copyable`](/mojo/std/builtin/value/Copyable) and
+    [`Movable`](/mojo/std/builtin/value/Movable) traits, or the
     `Copyable & Movable`
     [trait composition](/mojo/manual/traits#trait-compositions).
 
@@ -2136,91 +2136,91 @@ Python-Mojo interoperability enhancements and changes:
   `Python().cpython().unsafe_get_error()` and `Python().cpython().get_error()`.
 
 - Since virtually any operation on a
-  [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) can raise,
+  [`PythonObject`](/mojo/std/python/python_object/PythonObject) can raise,
   the `PythonObject` struct no longer implements the
-  [`Indexer`](/mojo/stdlib/builtin/int/Indexer/) and
-  [`Intable`](/mojo/stdlib/builtin/int/Intable/) traits. Instead, it now
-  conforms to [`IntableRaising`](/mojo/stdlib/builtin/int/IntableRaising), and
+  [`Indexer`](/mojo/std/builtin/int/Indexer/) and
+  [`Intable`](/mojo/std/builtin/int/Intable/) traits. Instead, it now
+  conforms to [`IntableRaising`](/mojo/std/builtin/int/IntableRaising), and
   users should convert explicitly to built-in types and handle exceptions as
   needed. In particular, the
-  [`PythonObject.__int__()`](/mojo/stdlib/python/python_object/PythonObject#__int__)
+  [`PythonObject.__int__()`](/mojo/std/python/python_object/PythonObject#__int__)
   method now returns a Python `int` instead of a mojo `Int`, so users must
   explicitly convert to a mojo `Int` if they need one (and must handle the
   exception if the conversion fails, for example due to overflow).
 
-- [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) no longer
+- [`PythonObject`](/mojo/std/python/python_object/PythonObject) no longer
   implements the following traits:
 
-  - [`Stringable`](/mojo/stdlib/builtin/str/Stringable/). Instead, the
-    [`PythonObject.__str__()`](/mojo/stdlib/python/python_object/PythonObject#__str__)
+  - [`Stringable`](/mojo/std/builtin/str/Stringable/). Instead, the
+    [`PythonObject.__str__()`](/mojo/std/python/python_object/PythonObject#__str__)
     method now returns a Python `str` object and can raise. The new
-    [`Python.str()`](/mojo/stdlib/python/python/Python#str) static method can
+    [`Python.str()`](/mojo/std/python/python/Python#str) static method can
     also be used to convert an arbitrary `PythonObject` to a Python `str`
     object.
 
-  - [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement). Since Python
+  - [`KeyElement`](/mojo/std/collections/dict/#keyelement). Since Python
     objects may not be hashable—and even if they are, they could theoretically
     raise in the
-    [`__hash__()`](/mojo/stdlib/python/python_object/PythonObject#__hash__)
+    [`__hash__()`](/mojo/std/python/python_object/PythonObject#__hash__)
     method—`PythonObject` cannot conform to
-    [`Hashable`](/mojo/stdlib/hashlib/hash/Hashable/). This has no effect on
+    [`Hashable`](/mojo/std/hashlib/hash/Hashable/). This has no effect on
     accessing Python `dict` objects with `PythonObject` keys, since
-    [`__getitem__()`](/mojo/stdlib/python/python_object/PythonObject#__getitem__)
+    [`__getitem__()`](/mojo/std/python/python_object/PythonObject#__getitem__)
     and
-    [`__setitem__()`](/mojo/stdlib/python/python_object/PythonObject#__setitem__)
+    [`__setitem__()`](/mojo/std/python/python_object/PythonObject#__setitem__)
     should behave correctly and raise as needed. Two overloads of the
-    [`Python.dict()`](/mojo/stdlib/python/python/Python#dict) factory function
+    [`Python.dict()`](/mojo/std/python/python/Python#dict) factory function
     have been added to allow constructing dictionaries from a list of key-value
     tuples and from keyword arguments.
 
-  - [`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable/).
+  - [`EqualityComparable`](/mojo/std/builtin/equality_comparable/EqualityComparable/).
     The
-    [`PythonObject.__eq__()`](/mojo/stdlib/python/python_object/PythonObject#__eq__)
+    [`PythonObject.__eq__()`](/mojo/std/python/python_object/PythonObject#__eq__)
     and
-    [`PythonObject.__ne__()`](/mojo/stdlib/python/python_object/PythonObject#__ne__)
+    [`PythonObject.__ne__()`](/mojo/std/python/python_object/PythonObject#__ne__)
     methods need to return other `PythonObject` values to support rich
     comparisons. Code that previously compared `PythonObject` values should be
-    wrapped in [`Bool()`](/mojo/stdlib/builtin/bool/Bool/#__init__) to perform
+    wrapped in [`Bool()`](/mojo/std/builtin/bool/Bool/#__init__) to perform
     the fallible conversion explicitly: `if Bool(obj1 == obj2): ...`.
 
-  - [`Floatable`](/mojo/stdlib/builtin/floatable/Floatable/). An explicit,
+  - [`Floatable`](/mojo/std/builtin/floatable/Floatable/). An explicit,
     raising constructor is added to
-    [`SIMD`](/mojo/stdlib/builtin/simd/SIMD/#__init__) to allow constructing
+    [`SIMD`](/mojo/std/builtin/simd/SIMD/#__init__) to allow constructing
     `Float64` values from `PythonObject` values that implement `__float__()`.
 
 - A new
-  [`def_function()`](/mojo/stdlib/python/bindings/PythonModuleBuilder#def_function)
+  [`def_function()`](/mojo/std/python/bindings/PythonModuleBuilder#def_function)
   API was added to
-  [`PythonModuleBuilder`](/mojo/stdlib/python/bindings/PythonModuleBuilder) to
+  [`PythonModuleBuilder`](/mojo/std/python/bindings/PythonModuleBuilder) to
   allow declaring Python bindings for arbitrary functions that take and return
   `PythonObject`s. Similarly, a new
-  [`def_method()`](/mojo/stdlib/python/bindings/PythonTypeBuilder#def_method)
+  [`def_method()`](/mojo/std/python/bindings/PythonTypeBuilder#def_method)
   API is added to
-  [`PythonTypeBuilder`](/mojo/stdlib/python/bindings/PythonTypeBuilder) to allow
+  [`PythonTypeBuilder`](/mojo/std/python/bindings/PythonTypeBuilder) to allow
   declaring Python bindings for methods that take and return `PythonObject`s.
 
 - The
-  [`ConvertibleFromPython`](/mojo/stdlib/python/python_object/ConvertibleFromPython)
+  [`ConvertibleFromPython`](/mojo/std/python/python_object/ConvertibleFromPython)
   trait is now public. This trait is implemented by Mojo types that can be
   constructed by converting from a `PythonObject`. This is the reverse operation
   of the
-  [`PythonConvertible`](/mojo/stdlib/python/python_object/PythonConvertible)
+  [`PythonConvertible`](/mojo/std/python/python_object/PythonConvertible)
   trait.
 
-- [`Bool`](/mojo/stdlib/builtin/bool/Bool/),
-  [`Int`](/mojo/stdlib/builtin/int/Int/), and
-  [`String`](/mojo/stdlib/collections/string/string/String/) now implement
+- [`Bool`](/mojo/std/builtin/bool/Bool/),
+  [`Int`](/mojo/std/builtin/int/Int/), and
+  [`String`](/mojo/std/collections/string/string/String/) now implement
   `ConvertibleFromPython`.
 
-- [`PythonObject(alloc=<value>)`](/mojo/stdlib/python/python_object/PythonObject#__init__)
+- [`PythonObject(alloc=<value>)`](/mojo/std/python/python_object/PythonObject#__init__)
   is a new constructor that can be used to directly store Mojo values in Python
   objects.
 
   This initializer will fail if the type of the provided Mojo value has not
   previously had a corresponding Python `type` object globally registered using
-  [`PythonModuleBuilder.add_type()`](/mojo/stdlib/python/bindings/PythonModuleBuilder#add_type).
+  [`PythonModuleBuilder.add_type()`](/mojo/std/python/bindings/PythonModuleBuilder#add_type).
 
-- [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) has new
+- [`PythonObject`](/mojo/std/python/python_object/PythonObject) has new
   methods for downcasting to a pointer to a contained Mojo value, for use in
   Python/Mojo interop.
 
@@ -2234,17 +2234,17 @@ Python-Mojo interoperability enhancements and changes:
     print("Hello ", person[].name, "from Mojo🔥!")
   ```
 
-  - [`PythonObject.downcast_value_ptr[T]()`](/mojo/stdlib/python/python_object/PythonObject#downcast_value_ptr)
+  - [`PythonObject.downcast_value_ptr[T]()`](/mojo/std/python/python_object/PythonObject#downcast_value_ptr)
     checks if the object is a wrapped instance of the Mojo type `T`, and if so,
     returns an `UnsafePointer[T]`. Otherwise, an exception is raised.
 
-  - [`PythonObject.unchecked_downcast_value_ptr[T]()`](/mojo/stdlib/python/python_object/PythonObject#unchecked_downcast_value_ptr)
+  - [`PythonObject.unchecked_downcast_value_ptr[T]()`](/mojo/std/python/python_object/PythonObject#unchecked_downcast_value_ptr)
     unconditionally returns an `UnsafePointer[T]` without any runtime type
     checking. This is useful when using Python/Mojo interop to optimize an inner
     loop and minimizing overhead is desirable.
 
     Also added an equivalent
-    [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#__init__)
+    [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer#__init__)
     initializer for downcasting from a `PythonObject`.
 
   - The `TypedPythonObject` type has been removed. Use `PythonObject` instead.
@@ -2252,15 +2252,15 @@ Python-Mojo interoperability enhancements and changes:
   - The `Python.is_type(x, y)` static method has been removed. Use the
     expression `x is y` instead.
 
-- [`os.abort(messages)`](/mojo/stdlib/os/os/abort) no longer supports a
-  variadic number of [`Writable`](/mojo/stdlib/utils/write/Writable/) messages.
+- [`os.abort(messages)`](/mojo/std/os/os/abort) no longer supports a
+  variadic number of [`Writable`](/mojo/std/utils/write/Writable/) messages.
   While this API was high-level and convenient, it generated a lot of IR for
   simple and common cases, such as when we have a single `StringLiteral`
   message. We now no longer need to generate a bunch of bloated IR and instead,
   callers must create the `String` on their side before calling
   `os.abort(message)`.
 
-- The [`atof()`](/mojo/stdlib/collections/string/string/atof/) function has been
+- The [`atof()`](/mojo/std/collections/string/string/atof/) function has been
   entirely rewritten as it produced incorrect results for very low and very high
   exponents. It now works correctly for strings with fewer than 19 digits left
   of the `e`. For example `1.1385616158185648648648648648616186186e-3` won't
@@ -2271,7 +2271,7 @@ Python-Mojo interoperability enhancements and changes:
   effort to pinpoint the slow parts, we can easily have state of the art
   performance in the future.
 
-- The [`math.isclose()`](/mojo/stdlib/math/math/isclose/) function now supports
+- The [`math.isclose()`](/mojo/std/math/math/isclose/) function now supports
   both symmetric (Python-style) and asymmetric (NumPy-style) comparison modes
   via a new `symmetrical` parameter. The parameter defaults to the newly added
   symmetric support. The function now only supports floating-point types,
@@ -2279,10 +2279,10 @@ Python-Mojo interoperability enhancements and changes:
   in [PR 4608](https://github.com/modular/modular/pull/4608) by
   [@soraros](https://github.com/soraros).
 
-- The [`compile`](/mojo/stdlib/compile/) module now provides the
-  [`get_type_name()`](/mojo/stdlib/compile/reflection/get_type_name/) function
+- The [`compile`](/mojo/std/compile/) module now provides the
+  [`get_type_name()`](/mojo/std/compile/reflection/get_type_name/) function
   to get the fully qualified name of a type. For example,
-  `compile.get_type_name[Int]()` returns `"stdlib.builtin.int.Int"`.
+  `compile.get_type_name[Int]()` returns `"std.builtin.int.Int"`.
 
 ### Tooling changes {#25-4-tooling-changes}
 
@@ -2389,15 +2389,15 @@ Special thanks to our community contributors:
 - Parts of the Mojo standard library continue to be progressively open sourced!
   Packages that are open sourced now include:
 
-  - [`algorithm`](/mojo/stdlib/algorithm/)
-  - [`benchmark`](/mojo/stdlib/benchmark/)
-  - [`buffer`](/mojo/stdlib/buffer/)
-  - [`compile`](/mojo/stdlib/compile/)
-  - [`complex`](/mojo/stdlib/complex/)
-  - [`gpu`](/mojo/stdlib/gpu/)
-  - [`logger`](/mojo/stdlib/logger/)
-  - [`runtime`](/mojo/stdlib/runtime/)
-  - [`subprocess`](/mojo/stdlib/subprocess/)
+  - [`algorithm`](/mojo/std/algorithm/)
+  - [`benchmark`](/mojo/std/benchmark/)
+  - [`buffer`](/mojo/std/buffer/)
+  - [`compile`](/mojo/std/compile/)
+  - [`complex`](/mojo/std/complex/)
+  - [`gpu`](/mojo/std/gpu/)
+  - [`logger`](/mojo/std/logger/)
+  - [`runtime`](/mojo/std/runtime/)
+  - [`subprocess`](/mojo/std/subprocess/)
 
   For more information, see the
   [Standard library reference](/mojo/lib#standard-library) and the
@@ -2455,10 +2455,10 @@ Special thanks to our community contributors:
 
 String types in Mojo got several significant improvements:
 
-- The [`String`](/mojo/stdlib/collections/string/string/String/) type no longer
+- The [`String`](/mojo/std/collections/string/string/String/) type no longer
   copies data from
-  [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/) and
-  [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases) since
+  [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/) and
+  [`StaticString`](/mojo/std/collections/string/string_slice/#aliases) since
   they are known-static-constant values. This allows us to make construction
   from these values be implicit, which improves ergonomics and performance
   together. It also implements the "small string optimization", which avoids
@@ -2467,18 +2467,18 @@ String types in Mojo got several significant improvements:
   string data copy lazily on mutation.
 
 - The types
-  [`StringSlice`(/mojo/stdlib/collections/string/string_slice/StringSlice/) and [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases)
+  [`StringSlice`(/mojo/std/collections/string/string_slice/StringSlice/) and [`StaticString`](/mojo/std/collections/string/string_slice/#aliases)
   are now part of the prelude, there is no need to import them anymore. These
   are useful for code that just needs a "view" of string data, not to own and
   mutate it.
 
-- The [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/) type
+- The [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/) type
   has been moved to a more reliable "dependent type" design where the value of
   the string is carried in a parameter instead of a stored member. This defines
   away a category of compiler crashes when working with `StringLiteral` that
   involved attempting to manipulate a `StringLiteral` at run time. As a
   consequence of this change, many APIs should switch to using
-  [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases)
+  [`StaticString`](/mojo/std/collections/string/string_slice/#aliases)
   instead of `StringLiteral`. For more information on this "dependent type"
   design for literals, see the proposal,
   [Fixing Simple Literals in Mojo](https://github.com/modular/modular/blob/main/mojo/proposals/fixing-simple-literals.md).
@@ -2496,14 +2496,14 @@ String types in Mojo got several significant improvements:
   order to make null-termination lazy on demand. This improves performance for
   strings that are not passed to legacy APIs.
 
-- The [`List`](/mojo/stdlib/collections/list/List) type has been improved
+- The [`List`](/mojo/std/collections/list/List) type has been improved
   similarly to `String` to reduce inconsistency and enable power-user features,
   including removing adding `List(unsafe_uninit_length=x)` and
   `list.resize(unsafe_uninit_size=n)` methods avoid initialized memory that the
   caller plans to overwrite.
 
-- [`Set`](/mojo/stdlib/collections/set/Set/) now conforms to the
-  [`Copyable`](/mojo/stdlib/builtin/value/Copyable/) trait so you can store sets
+- [`Set`](/mojo/std/collections/set/Set/) now conforms to the
+  [`Copyable`](/mojo/std/builtin/value/Copyable/) trait so you can store sets
   in other types of collections (for example, as values in a `Dict`).
 
 - The following traits have been removed in favor of trait composition:
@@ -2520,7 +2520,7 @@ String types in Mojo got several significant improvements:
   already deprecated and scheduled to be removed; it can be replaced with
   `Writable & CollectionElement`.
 
-- The [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) type is
+- The [`PythonObject`](/mojo/std/python/python_object/PythonObject) type is
   being reworked in preparation for some improvements to Mojo-Python
   interoperability:
 
@@ -2549,17 +2549,17 @@ String types in Mojo got several significant improvements:
   - The deprecated `PythonObject.to_float64()` method has been removed. Use the
     `Float64()` constructor, instead.
 
-- [`Span`](/mojo/stdlib/memory/span/Span) now has a `swap_elements()` method
+- [`Span`](/mojo/std/memory/span/Span) now has a `swap_elements()` method
   which takes two indices and swaps them within the span.
 
-- [`Pointer`](/mojo/stdlib/memory/pointer/Pointer/) now has a `get_immutable()`
+- [`Pointer`](/mojo/std/memory/pointer/Pointer/) now has a `get_immutable()`
   method to return a new `Pointer` with the same underlying data but with an
   `ImmutableOrigin`.
 
 - You can now forward a
-  [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack/) where all
+  [`VariadicPack`](/mojo/std/builtin/variadics/VariadicPack/) where all
   values are `Writable` to a writer using
-  [`WritableVariadicPack`](/mojo/stdlib/utils/write/WritableVariadicPack/):
+  [`WritableVariadicPack`](/mojo/std/utils/write/WritableVariadicPack/):
 
   ```mojo
   from utils.write import WritableVariadicPack
@@ -2579,7 +2579,7 @@ String types in Mojo got several significant improvements:
   along with the extra arguments, before doing a single syscall to write to
   stdout.
 
-- [`debug_assert()`](/mojo/stdlib/builtin/debug_assert/debug_assert/) in AMD GPU
+- [`debug_assert()`](/mojo/std/builtin/debug_assert/debug_assert/) in AMD GPU
   kernels now behaves the same as on NVIDIA, printing the thread information and
   variadic args passed after the condition:
 
@@ -2605,7 +2605,7 @@ String types in Mojo got several significant improvements:
   ```
 
 - The
-  [`constrained[cond, string]()`](/mojo/stdlib/builtin/constrained/constrained/)
+  [`constrained[cond, string]()`](/mojo/std/builtin/constrained/constrained/)
   function now accepts multiple strings that are printed concatenated on
   failure, so you can use:
 
@@ -2616,27 +2616,27 @@ String types in Mojo got several significant improvements:
   This is more compile-time efficient and somewhat more ergonomic than using
   string concatenation.
 
-- [`pathlib.Path.write_text()`](/mojo/stdlib/pathlib/path/Path/#write_text) now
+- [`pathlib.Path.write_text()`](/mojo/std/pathlib/path/Path/#write_text) now
   accepts a `Writable` argument instead of a `Stringable` argument. This makes
   the function more efficient by removing a String allocation.
 
 - Added
-  [`pathlib.Path.write_bytes()`](/mojo/stdlib/pathlib/path/Path/#write_bytes)
+  [`pathlib.Path.write_bytes()`](/mojo/std/pathlib/path/Path/#write_bytes)
   which enables writing raw bytes to a file.
 
 - Added
-  [`os.path.split_extension()`](/mojo/stdlib/os/path/path/split_extension) to
+  [`os.path.split_extension()`](/mojo/std/os/path/path/split_extension) to
   split a path into its root and extension.
 
-- Added [`os.path.is_absolute()`](/mojo/stdlib/os/path/path/is_absolute) to
+- Added [`os.path.is_absolute()`](/mojo/std/os/path/path/is_absolute) to
   check if a given path is absolute or not.
 
 - One can now specify the consistency model used in atomic operations with the
   default being sequential consistency. The consistency models are defined in
-  the [`Consistency`](/mojo/stdlib/os/atomic/Consistency/) struct.
+  the [`Consistency`](/mojo/std/os/atomic/Consistency/) struct.
 
 - Added
-  [`Variant.is_type_supported()`](/mojo/stdlib/utils/variant/Variant/#is_type_supported)
+  [`Variant.is_type_supported()`](/mojo/std/utils/variant/Variant/#is_type_supported)
   method. ([PR #4057](https://github.com/modular/modular/pull/4057)) Example:
 
   ```mojo
@@ -2657,8 +2657,8 @@ String types in Mojo got several significant improvements:
 
 - The `Pointer.address_of(...)` and `UnsafePointer.address_of(...)` functions
   have been deprecated. Please use the
-  [`Pointer(to=...)`](/mojo/stdlib/memory/pointer/Pointer#__init__) and
-  [`UnsafePointer(to=...)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#__init__)
+  [`Pointer(to=...)`](/mojo/std/memory/pointer/Pointer#__init__) and
+  [`UnsafePointer(to=...)`](/mojo/std/memory/unsafe_pointer/UnsafePointer#__init__)
   constructors instead. Conceptually, this is saying "please initialize a
   `Pointer` (a reference, if you will) to *some other address in memory*. In the
   future, these `address_of()` functions will be removed.
@@ -2698,7 +2698,7 @@ String types in Mojo got several significant improvements:
 
 - The `SIMD.roundeven()` method has been removed from the standard library.
   This functionality is now handled by the
-  [`round()`](/mojo/stdlib/builtin/math/round) function.
+  [`round()`](/mojo/std/builtin/math/round) function.
 
 - Error messages about the obsolete `borrowed` and `inout` keywords, as well as
   the obsolete `-> Int as name` syntax have been removed.
@@ -2706,7 +2706,7 @@ String types in Mojo got several significant improvements:
 - The `object` type has been removed.
 
 - `utils.numerics.ulp` has been removed. Use the
-  [`ulp()`](/mojo/stdlib/math/math/ulp) function from the `math` package
+  [`ulp()`](/mojo/std/math/math/ulp) function from the `math` package
   instead.
 
 - Several free functions that were deprecated in the 25.2 release have now been
@@ -2718,7 +2718,7 @@ String types in Mojo got several significant improvements:
   - The `float` free function. Use the `Float64` constructor instead.
 
 - Removed deprecated
-  [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext/) methods
+  [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext/) methods
   `copy_sync()` and `memset_sync()`.
 
 - The `unroll()` utility has been removed. Use the
@@ -2809,25 +2809,25 @@ Special thanks to our community contributors:
   the MAX Driver](/mojo/manual/gpu/intro-tutorial) tutorial for a guide to
   getting started with GPU programming in Mojo!
 
-- Some APIs in the [`gpu`](/mojo/stdlib/gpu/) package were enhanced to simplify
+- Some APIs in the [`gpu`](/mojo/std/gpu/) package were enhanced to simplify
   working with GPUs.
 
   - If you're executing a GPU kernel only once, you can now skip compiling it
     first before enqueueing it, and pass it directly to
-    [`DeviceContext.enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_function).
+    [`DeviceContext.enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_function).
 
   - The three separate methods on `DeviceContext` for asynchronously copying
     buffers between host and GPU memory have been combined to single overloaded
-    [`enqueue_copy()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_copy)
+    [`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
     method, and the three separate methods for synchronous copies have been
     combined into an overloaded
-    [`copy_sync()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#copy_sync)
+    [`copy_sync()`](/mojo/std/gpu/host/device_context/DeviceContext/#copy_sync)
     method.
 
   - The `gpu.shuffle` module has been renamed to
-    [`gpu.warp`](/mojo/stdlib/gpu/warp/) to better reflect its purpose.
+    [`gpu.warp`](/mojo/std/gpu/warp/) to better reflect its purpose.
 
-  - The [`gpu`](/mojo/stdlib/gpu) package API documentation has been expanded,
+  - The [`gpu`](/mojo/std/gpu) package API documentation has been expanded,
     and API documentation for the [`layout`](/mojo/kernels/layout) package is
     underway, beginning with core types, functions, and traits.
 
@@ -2842,15 +2842,15 @@ Special thanks to our community contributors:
 
 - The standard library has many changes related to strings. Notably, the `Char`
   type has been renamed to
-  [`Codepoint`](/mojo/stdlib/collections/string/codepoint/Codepoint), to better
+  [`Codepoint`](/mojo/std/collections/string/codepoint/Codepoint), to better
   capture its intended purpose of storing a single Unicode codepoint.
   Additionally, related method and type names have been updated as well. See
   [Standard library changes](#25-2-standard-library-changes) for more details.
 
 - Support has been added for 128- and 256-bit signed and unsigned integers. This
-  includes the [`DType`](/mojo/stdlib/builtin/dtype/DType) aliases
+  includes the [`DType`](/mojo/std/builtin/dtype/DType) aliases
   `DType.int128`, `DType.uint128`, `DType.int256`, and `DType.uint256`, as well
-  as [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) support for 128- and 256-bit
+  as [`SIMD`](/mojo/std/builtin/simd/SIMD) support for 128- and 256-bit
   signed and unsigned element types. Note that this exposes capabilities (and
   limitations) of LLVM, which may not always provide high performance for these
   types and may have missing operations like divide, remainder, etc. See
@@ -2880,7 +2880,7 @@ Special thanks to our community contributors:
 
 - The Mojo compile-time interpreter can now handle many more LLVM intrinsics,
   including ones that return floating point values. This allows functions like
-  [`round()`](/mojo/stdlib/builtin/math/round) to be constant folded when used
+  [`round()`](/mojo/std/builtin/math/round) to be constant folded when used
   in a compile-time context.
 
 - The Mojo compiler now has only one compile-time interpreter. It had two
@@ -2895,9 +2895,9 @@ Special thanks to our community contributors:
 
 ### Standard library changes {#25-2-standard-library-changes}
 
-- [`Optional`](/mojo/stdlib/collections/optional/Optional),
-  [`Span`](/mojo/stdlib/memory/span/Span), and
-  [`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray) have been
+- [`Optional`](/mojo/std/collections/optional/Optional),
+  [`Span`](/mojo/std/memory/span/Span), and
+  [`InlineArray`](/mojo/std/collections/inline_array/InlineArray) have been
   added to the prelude. You now no longer need to explicitly import these types
   to use them in your program.
 
@@ -2905,7 +2905,7 @@ Special thanks to our community contributors:
 
   - You can now skip compiling a GPU kernel first before enqueueing it, and pass
     it directly to
-    [`DeviceContext.enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_function):
+    [`DeviceContext.enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_function):
 
     ```mojo
     from gpu.host import DeviceContext
@@ -2920,7 +2920,7 @@ Special thanks to our community contributors:
     However, if you're reusing the same function and parameters multiple times,
     this incurs some overhead of around 50-500 nanoseconds per enqueue. So you
     can still compile the function first with
-    [`DeviceContext.compile_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#compile_function)
+    [`DeviceContext.compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext#compile_function)
     and pass it to `DeviceContext.enqueue_function()` like this:
 
     ```mojo
@@ -2932,14 +2932,14 @@ Special thanks to our community contributors:
     ```
 
   - The following methods on
-    [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext):
+    [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext):
 
     - `enqueue_copy_to_device()`
     - `enqueue_copy_from_device()`
     - `enqueue_copy_device_to_device()`
 
     have been combined to a single overloaded
-    [`enqueue_copy()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_copy)
+    [`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
     method. Additionally, the methods:
 
     - `copy_to_device_sync()`
@@ -2947,11 +2947,11 @@ Special thanks to our community contributors:
     - `copy_device_to_device_sync()`
 
     have been combined into an overloaded
-    [`copy_sync()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#copy_sync)
+    [`copy_sync()`](/mojo/std/gpu/host/device_context/DeviceContext/#copy_sync)
     method.
 
   - The `gpu.shuffle` module has been renamed to
-    [`gpu.warp`](/mojo/stdlib/gpu/warp/) to better reflect its purpose. For
+    [`gpu.warp`](/mojo/std/gpu/warp/) to better reflect its purpose. For
     example:
 
     ```mojo
@@ -2964,72 +2964,72 @@ Special thanks to our community contributors:
 - Support has been added for 128- and 256-bit signed and unsigned integers.
 
   - The following aliases have been added to the
-    [`DType`](/mojo/stdlib/builtin/dtype/DType) struct: `DType.int128`,
+    [`DType`](/mojo/std/builtin/dtype/DType) struct: `DType.int128`,
     `DType.uint128`, `DType.int256`, and `DType.uint256`.
 
-  - The [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) type now supports 128- and
+  - The [`SIMD`](/mojo/std/builtin/simd/SIMD) type now supports 128- and
     256-bit signed and unsigned element types. Note that this exposes
     capabilities (and limitations) of LLVM, which may not always provide high
     performance for these types and may have missing operations like divide,
     remainder, etc.
 
-  - The following [`Scalar`](/mojo/stdlib/builtin/simd/#aliases) aliases for
+  - The following [`Scalar`](/mojo/std/builtin/simd/#aliases) aliases for
     1-element `SIMD` values have been added: `Int128`, `UInt128`, `Int256`, and
     `UInt256`.
 
-- [`String`](/mojo/stdlib/collections/string) and friends:
+- [`String`](/mojo/std/collections/string) and friends:
 
   - The `Char` type has been renamed to
-    [`Codepoint`](/mojo/stdlib/collections/string/codepoint/Codepoint), to
+    [`Codepoint`](/mojo/std/collections/string/codepoint/Codepoint), to
     better capture its intended purpose of storing a single Unicode codepoint.
     Additionally, related method and type names have been updated as well,
     including:
 
     - `StringSlice.chars()` and `String.chars()` to
-      [`StringSlice.codepoints()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#codepoints)
+      [`StringSlice.codepoints()`](/mojo/std/collections/string/string_slice/StringSlice/#codepoints)
       and
-      [`String.codepoints()`](/mojo/stdlib/collections/string/string/String/#codepoints),
+      [`String.codepoints()`](/mojo/std/collections/string/string/String/#codepoints),
       respectively
 
     - `StringSlice.char_slices()` and `String.char_slices()` to
-      [`StringSlice.codepoint_slices()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#codepoint_slices)
+      [`StringSlice.codepoint_slices()`](/mojo/std/collections/string/string_slice/StringSlice/#codepoint_slices)
       and
-      [`String.codepoint_slices()`](/mojo/stdlib/collections/string/string/String/#codepoint_slices),
+      [`String.codepoint_slices()`](/mojo/std/collections/string/string/String/#codepoint_slices),
       respectively
 
     - `CharsIter` to
-      [`CodepointsIter`](/mojo/stdlib/collections/string/string_slice/CodepointsIter)
+      [`CodepointsIter`](/mojo/std/collections/string/string_slice/CodepointsIter)
 
     - `Char.unsafe_decode_utf8_char()` to
-      [`Codepoint.unsafe_decode_utf8_codepoint()`](/mojo/stdlib/collections/string/codepoint/Codepoint/#unsafe_decode_utf8_codepoint)
+      [`Codepoint.unsafe_decode_utf8_codepoint()`](/mojo/std/collections/string/codepoint/Codepoint/#unsafe_decode_utf8_codepoint)
 
     - Made the iterator type returned by the string `codepoint_slices()` methods
       public as
-      [`CodepointSliceIter`](/mojo/stdlib/collections/string/string_slice/CodepointSliceIter/).
+      [`CodepointSliceIter`](/mojo/std/collections/string/string_slice/CodepointSliceIter/).
 
-  - [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice)
+  - [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice)
     now supports several additional methods moved from
-    [`String`](/mojo/stdlib/collections/string/string/String). The existing
+    [`String`](/mojo/std/collections/string/string/String). The existing
     `String` methods have been updated to instead call the corresponding new
     `StringSlice` methods:
 
-    - [`center()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#center)
-    - [`is_ascii_digit()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#is_ascii_digit)
-    - [`is_ascii_printable()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#is_ascii_printable)
-    - [`islower()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#islower)
-    - [`isupper()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#isupper)
-    - [`ljust()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#ljust)
-    - [`lower()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#lower)
-    - [`rjust()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#rjust)
-    - [`split()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#split)
-    - [`upper()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#upper)
+    - [`center()`](/mojo/std/collections/string/string_slice/StringSlice/#center)
+    - [`is_ascii_digit()`](/mojo/std/collections/string/string_slice/StringSlice/#is_ascii_digit)
+    - [`is_ascii_printable()`](/mojo/std/collections/string/string_slice/StringSlice/#is_ascii_printable)
+    - [`islower()`](/mojo/std/collections/string/string_slice/StringSlice/#islower)
+    - [`isupper()`](/mojo/std/collections/string/string_slice/StringSlice/#isupper)
+    - [`ljust()`](/mojo/std/collections/string/string_slice/StringSlice/#ljust)
+    - [`lower()`](/mojo/std/collections/string/string_slice/StringSlice/#lower)
+    - [`rjust()`](/mojo/std/collections/string/string_slice/StringSlice/#rjust)
+    - [`split()`](/mojo/std/collections/string/string_slice/StringSlice/#split)
+    - [`upper()`](/mojo/std/collections/string/string_slice/StringSlice/#upper)
 
   - Added a
-    [`StringSlice.is_codepoint_boundary()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#is_codepoint_boundary)
+    [`StringSlice.is_codepoint_boundary()`](/mojo/std/collections/string/string_slice/StringSlice/#is_codepoint_boundary)
     method for querying if a given byte index is a boundary between encoded
     UTF-8 codepoints.
 
-  - [`StringSlice.__getitem__(Slice)`](/mojo/stdlib/collections/string/string_slice/StringSlice/#__getitem__)
+  - [`StringSlice.__getitem__(Slice)`](/mojo/std/collections/string/string_slice/StringSlice/#__getitem__)
     now raises an error if the provided slice start and end positions do not
     fall on a valid codepoint boundary. This prevents construction of malformed
     `StringSlice` values, which could lead to memory unsafety or undefined
@@ -3128,24 +3128,24 @@ Special thanks to our community contributors:
     indices are invalid.
 
   - The `StringLiteral.get[value]()` method, which converts a compile-time value
-    of [`Stringable`](/mojo/stdlib/builtin/str/Stringable) type has been changed
+    of [`Stringable`](/mojo/std/builtin/str/Stringable) type has been changed
     to a function named
-    [`get_string_literal[value]()`](/mojo/stdlib/builtin/string_literal/get_string_literal).
+    [`get_string_literal[value]()`](/mojo/std/builtin/string_literal/get_string_literal).
 
 - Collections:
 
-  - A new [`IntervalTree`](/mojo/stdlib/collections/interval/IntervalTree) data
+  - A new [`IntervalTree`](/mojo/std/collections/interval/IntervalTree) data
     structure has been added to the standard library. This is a tree data
     structure that allows for efficient range queries.
 
   - Added an iterator to
-    [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList) ([PR
+    [`LinkedList`](/mojo/std/collections/linked_list/LinkedList) ([PR
     #4005](https://github.com/modular/modular/pull/4005))
 
-    - [`LinkedList.__iter__()`](/mojo/stdlib/collections/linked_list/LinkedList/#__iter__)
+    - [`LinkedList.__iter__()`](/mojo/std/collections/linked_list/LinkedList/#__iter__)
       to create a forward iterator.
 
-    - [`LinkedList.__reversed__()`](/mojo/stdlib/collections/linked_list/LinkedList/#__reversed__)
+    - [`LinkedList.__reversed__()`](/mojo/std/collections/linked_list/LinkedList/#__reversed__)
       for a backward iterator.
 
     ```mojo
@@ -3155,15 +3155,15 @@ Special thanks to our community contributors:
     ```
 
   - `List.bytecount()` has been renamed to
-    [`List.byte_length()`](/mojo/stdlib/collections/list/List/#byte_length) for
+    [`List.byte_length()`](/mojo/std/collections/list/List/#byte_length) for
     consistency with the string-like APIs.
 
   - The
-    [`InlineArray(unsafe_uninitialized=True)`](/mojo/stdlib/collections/inline_array/InlineArray/#__init__)
+    [`InlineArray(unsafe_uninitialized=True)`](/mojo/std/collections/inline_array/InlineArray/#__init__)
     constructor is now spelled `InlineArray(uninitialized=True)`.
 
-- The design of the [`IntLiteral`](/mojo/stdlib/builtin/int_literal/IntLiteral)
-  and [`FloatLiteral`](/mojo/stdlib/builtin/float_literal/FloatLiteral) types
+- The design of the [`IntLiteral`](/mojo/std/builtin/int_literal/IntLiteral)
+  and [`FloatLiteral`](/mojo/std/builtin/float_literal/FloatLiteral) types
   has been changed to maintain their compile-time-only value as a parameter
   instead of a stored field. This correctly models that infinite precision
   literals are not representable at runtime, and eliminates a number of bugs hit
@@ -3171,15 +3171,15 @@ Special thanks to our community contributors:
   the compiler.
 
 - The `Buffer` struct has been removed in favor of
-  [`Span`](/mojo/stdlib/memory/span/Span) and
-  [`NDBuffer`](/mojo/stdlib/buffer/buffer/NDBuffer).
+  [`Span`](/mojo/std/memory/span/Span) and
+  [`NDBuffer`](/mojo/std/buffer/buffer/NDBuffer).
 
-- The [`round()`](/mojo/stdlib/builtin/math/round) function is now fixed to
+- The [`round()`](/mojo/std/builtin/math/round) function is now fixed to
   perform "round half to even" (also known as "bankers' rounding") instead of
   "round half away from zero".
 
 - The
-  [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/#alloc)
+  [`UnsafePointer.alloc()`](/mojo/std/memory/unsafe_pointer/UnsafePointer/#alloc)
   method has changed to produce pointers with an empty `Origin` parameter,
   instead of with `MutableAnyOrigin`. This mitigates an issue with the any
   origin parameter extending the lifetime of unrelated local variables for this
@@ -3187,13 +3187,13 @@ Special thanks to our community contributors:
 
 - Several more packages are now documented:
 
-  - [`compile`](/mojo/stdlib/compile) package
-  - [`gpu`](/mojo/stdlib/gpu) package
+  - [`compile`](/mojo/std/compile) package
+  - [`gpu`](/mojo/std/gpu) package
   - [`layout`](/mojo/kernels/layout) package is underway, beginning with core
     types, functions, and traits
 
 - Added a new
-  [`sys.is_compile_time()`](/mojo/stdlib/sys/compile/is_compile_time) function.
+  [`sys.is_compile_time()`](/mojo/std/sys/compile/is_compile_time) function.
   This enables you to query whether code is being executed at compile time or
   not. For example:
 
@@ -3277,16 +3277,16 @@ Special thanks to our community contributors:
   ```
 
 - `InlinedFixedVector` and `InlineList` have been removed. Instead, use
-  [`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray) when the
+  [`InlineArray`](/mojo/std/collections/inline_array/InlineArray) when the
   upper bound is known at compile time. If the upper bound is not known until
-  runtime, use [`List`](/mojo/stdlib/collections/list/List) with the `capacity`
+  runtime, use [`List`](/mojo/std/collections/list/List) with the `capacity`
   constructor to minimize allocations.
 
 ### 🛠️ Fixed
 
 - [#3976](https://github.com/modular/modular/issues/3976) The `variance`
-  argument in [`random.randn_float64()`](/mojo/stdlib/random/random/randn_float64)
-  and [`random.randn()`](/mojo/stdlib/random/random/randn) has been renamed to
+  argument in [`random.randn_float64()`](/mojo/std/random/random/randn_float64)
+  and [`random.randn()`](/mojo/std/random/random/randn) has been renamed to
   `standard_deviation` so that values are drawn from the correct distribution.
 
 ### Special thanks
@@ -3319,24 +3319,24 @@ Special thanks to our community contributors:
   changes](#25-1-standard-library-changes) for more details.
 
 - The standard library has many changes related to strings. The new
-  [`Char`](/mojo/stdlib/collections/string/codepoint/Codepoint) struct
+  [`Char`](/mojo/std/collections/string/codepoint/Codepoint) struct
   represents a single Unicode character, and includes several methods for
   categorizing character types. When iterating over the characters of a `String`
   with a `for` loop, you now should use the
-  [`String.chars()`](/mojo/stdlib/collections/string/string/String#chars) method
+  [`String.chars()`](/mojo/std/collections/string/string/String#chars) method
   to provide an iterator of `Char` values or the
-  [`String.char_slices()`](/mojo/stdlib/collections/string/string/String#char_slices)
+  [`String.char_slices()`](/mojo/std/collections/string/string/String#char_slices)
   method to provide an iterator of
-  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/)
+  [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice/)
   instances for each character. `StringRef` has been removed in favor of
-  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/).
+  [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice/).
   And various functionality has moved from `String` and `StringLiteral` to the
   more general `StringSlice` type. See [Standard library
   changes](#25-1-standard-library-changes) for more details.
 
-- You can now use [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) constructors to cast
+- You can now use [`SIMD`](/mojo/std/builtin/simd/SIMD) constructors to cast
   existing `SIMD` values (including `Scalar` values) to a different type, though
-  you can still use the [`SIMD.cast()`](/mojo/stdlib/builtin/simd/SIMD#cast)
+  you can still use the [`SIMD.cast()`](/mojo/std/builtin/simd/SIMD#cast)
   method to infer the size of the new vector. See [Standard library
   changes](#25-1-standard-library-changes) for more details.
 
@@ -3356,7 +3356,7 @@ Special thanks to our community contributors:
 
 - The [`@value`](/mojo/manual/decorators/value) decorator now additionally
   derives an implementation of the
-  [`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/) trait.
+  [`ExplicitlyCopyable`](/mojo/std/builtin/value/ExplicitlyCopyable/) trait.
   This will ease the transition to explicit copyability requirements by default
   in the Mojo collection types.
 
@@ -3431,7 +3431,7 @@ Special thanks to our community contributors:
 
 ### GPU programming {#25-1-gpu-programming}
 
-- The new [`gpu` package](/mojo/stdlib/gpu/) provides low-level programming
+- The new [`gpu` package](/mojo/std/gpu/) provides low-level programming
   constructs for working with GPUs. The Mojo `gpu` APIs allow you to manually
   manage interaction between the CPU host and GPU device, manage memory between
   devices, synchronize threads, and more. Currently the best way to use these
@@ -3485,36 +3485,36 @@ Special thanks to our community contributors:
   quickly update your code by doing a `Match Case` and `Match Whole Word`
   search and replace for `int(` to `Int(` etc.
 
-- [`String`](/mojo/stdlib/collections/string/string) and friends:
+- [`String`](/mojo/std/collections/string/string) and friends:
 
-  - Added [`Char`](/mojo/stdlib/collections/string/codepoint/Codepoint) for
+  - Added [`Char`](/mojo/std/collections/string/codepoint/Codepoint) for
     representing and storing single Unicode characters.
 
     - `Char` implements
-      [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement/),
-      [`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable/),
-      [`Intable`](/mojo/stdlib/builtin/int/Intable/), and
-      [`Stringable`](/mojo/stdlib/builtin/str/Stringable/).
+      [`CollectionElement`](/mojo/std/builtin/value/CollectionElement/),
+      [`EqualityComparable`](/mojo/std/builtin/equality_comparable/EqualityComparable/),
+      [`Intable`](/mojo/std/builtin/int/Intable/), and
+      [`Stringable`](/mojo/std/builtin/str/Stringable/).
 
     - `Char` provides methods for categorizing character types, including:
-      [`Char.is_ascii()`](/mojo/stdlib/collections/string/codepoint/Codepoint/#is_ascii),
-      [`Char.is_ascii_digit()`](/mojo/stdlib/collections/string/codepoint/Codepoint/#is_ascii_digit),
-      [`Char.is_ascii_upper()`](/mojo/stdlib/collections/string/codepoint/Codepoint/#is_ascii_upper),
-      [`Char.is_ascii_lower()`](/mojo/stdlib/collections/string/codepoint/Codepoint/#is_ascii_lower),
-      [`Char.is_ascii_printable()`](/mojo/stdlib/collections/string/codepoint/Codepoint/#is_ascii_printable),
-      [`Char.is_posix_space()`](/mojo/stdlib/collections/string/codepoint/Codepoint/#is_posix_space),
-      [`Char.is_python_space()`](/mojo/stdlib/collections/string/codepoint/Codepoint/#is_python_space).
+      [`Char.is_ascii()`](/mojo/std/collections/string/codepoint/Codepoint/#is_ascii),
+      [`Char.is_ascii_digit()`](/mojo/std/collections/string/codepoint/Codepoint/#is_ascii_digit),
+      [`Char.is_ascii_upper()`](/mojo/std/collections/string/codepoint/Codepoint/#is_ascii_upper),
+      [`Char.is_ascii_lower()`](/mojo/std/collections/string/codepoint/Codepoint/#is_ascii_lower),
+      [`Char.is_ascii_printable()`](/mojo/std/collections/string/codepoint/Codepoint/#is_ascii_printable),
+      [`Char.is_posix_space()`](/mojo/std/collections/string/codepoint/Codepoint/#is_posix_space),
+      [`Char.is_python_space()`](/mojo/std/collections/string/codepoint/Codepoint/#is_python_space).
 
     - Added a `String()` constructor from `Char`.
 
     - `Char` can be converted to `UInt32` via
-      [`Char.to_u32()`](/mojo/stdlib/collections/string/codepoint/Codepoint/#to_u32).
+      [`Char.to_u32()`](/mojo/std/collections/string/codepoint/Codepoint/#to_u32).
 
-    - [`chr()`](/mojo/stdlib/collections/string/string/chr/) will now abort if
+    - [`chr()`](/mojo/std/collections/string/string/chr/) will now abort if
       given a codepoint value that is not a valid `Char`.
 
   - `StringRef` has been removed in favor of
-    [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/).
+    [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice/).
     The two types are ABI compatible, and for the exact same behavior one can
     use `StaticString`, which is an alias to
     `StringSlice[StaticConstantOrigin]`.
@@ -3523,36 +3523,36 @@ Special thanks to our community contributors:
     more general `StringSlice` type.
 
   - Added
-    [`StringSlice.from_utf8()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#from_utf8)
+    [`StringSlice.from_utf8()`](/mojo/std/collections/string/string_slice/StringSlice/#from_utf8)
     factory method, for validated construction of a `StringSlice` from a buffer
     containing UTF-8 encoded data. This method will raise if the buffer contents
     are not valid UTF-8.
 
   - Added
-    [`StringSlice.chars()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#chars)
+    [`StringSlice.chars()`](/mojo/std/collections/string/string_slice/StringSlice/#chars)
     which returns an iterator over `Char`s. This is a compliant UTF-8 decoder
     that returns each Unicode codepoint encoded in the string.
 
   - Added
-    [`StringSlice.__getitem__(Slice)`](/mojo/stdlib/collections/string/string_slice/StringSlice/#__getitem__)
+    [`StringSlice.__getitem__(Slice)`](/mojo/std/collections/string/string_slice/StringSlice/#__getitem__)
     which returns a substring. Only step sizes of 1 are supported.
 
   - Several standard library functions have been changed to take `StringSlice`
     instead of `String`. This generalizes them to be used for any appropriately
     encoded string in memory, without requiring that the string be heap
     allocated. This includes:
-    [`ascii()`](/mojo/stdlib/collections/string/string/ascii),
-    [`atol()`](/mojo/stdlib/collections/string/string/atol),
-    [`atof()`](/mojo/stdlib/collections/string/string/atof),
-    [`b16decode()`](/mojo/stdlib/base64/base64/b16decode),
-    [`b16encode()`](/mojo/stdlib/base64/base64/b16encode),
-    [`b64decode()`](/mojo/stdlib/base64/base64/b64decode),
-    [`b64encode()`](/mojo/stdlib/base64/base64/b64encode), and
-    [`ord()`](/mojo/stdlib/collections/string/string/ord).
+    [`ascii()`](/mojo/std/collections/string/string/ascii),
+    [`atol()`](/mojo/std/collections/string/string/atol),
+    [`atof()`](/mojo/std/collections/string/string/atof),
+    [`b16decode()`](/mojo/std/base64/base64/b16decode),
+    [`b16encode()`](/mojo/std/base64/base64/b16encode),
+    [`b64decode()`](/mojo/std/base64/base64/b64decode),
+    [`b64encode()`](/mojo/std/base64/base64/b64encode), and
+    [`ord()`](/mojo/std/collections/string/string/ord).
 
   - Added new
-    [`String.chars()`](/mojo/stdlib/collections/string/string/String/#chars) and
-    [`String.char_slices()`](/mojo/stdlib/collections/string/string/String/#char_slices)
+    [`String.chars()`](/mojo/std/collections/string/string/String/#chars) and
+    [`String.char_slices()`](/mojo/std/collections/string/string/String/#char_slices)
     iterator methods, and deprecated the existing `String.__iter__()` method.
 
     Different use-cases may prefer iterating over the `Char`s encoded in a
@@ -3578,15 +3578,15 @@ Special thanks to our community contributors:
     ```
 
   - Added
-    [`StringSlice.char_length()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#char_length)
+    [`StringSlice.char_length()`](/mojo/std/collections/string/string_slice/StringSlice/#char_length)
     method, to pair with the existing
-    [`StringSlice.byte_length()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#byte_length)
+    [`StringSlice.byte_length()`](/mojo/std/collections/string/string_slice/StringSlice/#byte_length)
     method.
 
   - The
-    [`String.__len__()`](/mojo/stdlib/collections/string/string/String/#__len__)
+    [`String.__len__()`](/mojo/std/collections/string/string/String/#__len__)
     and
-    [`StringSlice.__len__()`](/mojo/stdlib/collections/string/string_slice/StringSlice/#__len__)
+    [`StringSlice.__len__()`](/mojo/std/collections/string/string_slice/StringSlice/#__len__)
     methods now return the length of the string in bytes.
 
     Previously, these methods were documented to note that they would eventually
@@ -3600,12 +3600,12 @@ Special thanks to our community contributors:
     `str.char_length()` method, or `len(str.chars())`.
 
   - `StringSlice` now implements
-    [`Representable`](/mojo/stdlib/builtin/repr/Representable/), and that
+    [`Representable`](/mojo/std/builtin/repr/Representable/), and that
     implementation is now used by `String.__repr__()` and
     `StringLiteral.__repr__()`.
 
   - `StringSlice` now implements
-    [`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable/).
+    [`EqualityComparable`](/mojo/std/builtin/equality_comparable/EqualityComparable/).
 
     Up until now, `StringSlice` has implemented a more general `__eq__()` and
     `__ne__()` comparison with `StringSlice` types that had arbitrary other
@@ -3629,8 +3629,8 @@ Special thanks to our community contributors:
     Which is cleaner, and buffers to the stack so the `String` is allocated only
     once.
 
-  - You can now pass any [`Writer`](/mojo/stdlib/utils/write/Writer/) to
-    [`write_buffered()`](/mojo/stdlib/utils/write/write_buffered/):
+  - You can now pass any [`Writer`](/mojo/std/utils/write/Writer/) to
+    [`write_buffered()`](/mojo/std/utils/write/write_buffered/):
 
     ```mojo
     from utils.write import write_buffered
@@ -3643,36 +3643,36 @@ Special thanks to our community contributors:
 
 - Collections:
 
-  - A new [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList/) type
+  - A new [`LinkedList`](/mojo/std/collections/linked_list/LinkedList/) type
     has been added to the standard library.
 
   - Added
-    [`Optional.copied()`](/mojo/stdlib/collections/optional/Optional#copied) for
+    [`Optional.copied()`](/mojo/std/collections/optional/Optional#copied) for
     constructing an owned `Optional[T]` from an `Optional[Pointer[T]]` by
     copying the pointee value.
 
-  - Added [`Dict.get_ptr()`](/mojo/stdlib/collections/dict/Dict#get_ptr) which
+  - Added [`Dict.get_ptr()`](/mojo/std/collections/dict/Dict#get_ptr) which
     returns an `Optional[Pointer[V]]`. If the given key is present in the
     dictionary, the optional will hold a pointer to the value. Otherwise, an
     empty optional is returned.
 
-  - Added new [`List.extend()`](/mojo/stdlib/collections/list/List#extend)
-    overloads taking [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) and
-    [`Span`](/mojo/stdlib/memory/span/Span/). These enable growing a
+  - Added new [`List.extend()`](/mojo/std/collections/list/List#extend)
+    overloads taking [`SIMD`](/mojo/std/builtin/simd/SIMD) and
+    [`Span`](/mojo/std/memory/span/Span/). These enable growing a
     `List[Scalar[..]]` by copying the elements of a `SIMD` vector or
     `Span[Scalar[..]]`, simplifying the writing of some optimized SIMD-aware
     functionality.
 
-- [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/) changes:
+- [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer/) changes:
 
   - `UnsafePointer`'s `bitcast()` method has now been split into
-    [`bitcast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#bitcast) for
+    [`bitcast()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#bitcast) for
     changing the type,
-    [`origin_cast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#origin_cast)
+    [`origin_cast()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#origin_cast)
     for changing mutability,
-    [`static_alignment_cast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#static_alignment_cast)
+    [`static_alignment_cast()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#static_alignment_cast)
     for changing alignment, and
-    [`address_space_cast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#address_space_cast)
+    [`address_space_cast()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#address_space_cast)
     for changing the address space.
 
   - `UnsafePointer` is now parameterized on mutability. Previously,
@@ -3682,7 +3682,7 @@ Special thanks to our community contributors:
     specific mutability: `UnsafePointer[T, mut=False]` represents a pointer to
     an immutable `T` value. This is analogous to a `const *` pointer in C++.
 
-  - [`UnsafePointer.address_of()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#address_of)
+  - [`UnsafePointer.address_of()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#address_of)
     will now infer the origin and mutability of the resulting pointer from the
     argument. For example:
 
@@ -3718,7 +3718,7 @@ Special thanks to our community contributors:
 
 - New and updated traits:
 
-  - The [`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/)
+  - The [`ExplicitlyCopyable`](/mojo/std/builtin/value/ExplicitlyCopyable/)
     trait has changed to require a `fn copy(self) -> Self` method. Previously,
     an initializer with the signature `fn __init__(out self, *, other: Self)`
     had been required by `ExplicitlyCopyable`.
@@ -3728,12 +3728,12 @@ Special thanks to our community contributors:
     copies.
 
   - The `IntLike` trait has been removed and its functionality incorporated into
-    the [`Indexer`](/mojo/stdlib/builtin/int/Indexer/) trait. This enables
+    the [`Indexer`](/mojo/std/builtin/int/Indexer/) trait. This enables
     `SIMD` scalar integer types and `UInt` to be used for indexing into all of
     the collection types, as well as optimizing away normalization checks for
     `UInt` indexing.
 
-  - The [`ImplicitlyIntable`](/mojo/stdlib/builtin/int/ImplicitlyIntable/) trait
+  - The [`ImplicitlyIntable`](/mojo/std/builtin/int/ImplicitlyIntable/) trait
     has been added, allowing types to be implicitly converted to an `Int` by
     implementing the `__as_int__()` method:
 
@@ -3765,34 +3765,34 @@ Special thanks to our community contributors:
   var float_vector = SIMD[DType.float64, 4](vector)
   ```
 
-  [`SIMD.cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) still exists to infer the
+  [`SIMD.cast()`](/mojo/std/builtin/simd/SIMD#cast) still exists to infer the
   size of new vector:
 
   ```mojo
   var inferred_size = float_vector.cast[DType.uint64]() # [42, 42, 42, 42]
   ```
 
-- Added [`SIMD.from_bytes()`](/mojo/stdlib/builtin/simd/SIMD/#from_bytes) and
-  [`SIMD.as_bytes()`](/mojo/stdlib/builtin/simd/SIMD/#as_bytes) to convert a
+- Added [`SIMD.from_bytes()`](/mojo/std/builtin/simd/SIMD/#from_bytes) and
+  [`SIMD.as_bytes()`](/mojo/std/builtin/simd/SIMD/#as_bytes) to convert a
   list of bytes to a list of scalars and vice versa, accepting the endianness as
   an argument. Similar to Python `int.from_bytes()` and `int.to_bytes()`
   functions.
 
-- You can now use [`max()`](/mojo/stdlib/builtin/math/max) and
-  [`min()`](/mojo/stdlib/builtin/math/min) with variadic number of arguments.
+- You can now use [`max()`](/mojo/std/builtin/math/max) and
+  [`min()`](/mojo/std/builtin/math/min) with variadic number of arguments.
 
 - `bit_ceil()` has been renamed to
-  [`next_power_of_two()`](/mojo/stdlib/bit/bit/next_power_of_two), and
+  [`next_power_of_two()`](/mojo/std/bit/bit/next_power_of_two), and
   `bit_floor()` to
-  [`prev_power_of_two()`](/mojo/stdlib/bit/bit/prev_power_of_two). This is to
+  [`prev_power_of_two()`](/mojo/std/bit/bit/prev_power_of_two). This is to
   improve readability and clarity in their use.
 
 - Added a new boolean `validate` parameter to
-  [`b64decode()`](/mojo/stdlib/base64/base64/b64decode).
+  [`b64decode()`](/mojo/std/base64/base64/b64decode).
 
-- The [`b64encode()`](/mojo/stdlib/base64/base64/b64encode) overload that
+- The [`b64encode()`](/mojo/std/base64/base64/b64encode) overload that
   previously took a `List` has been changed to take a
-  [`Span`](/mojo/stdlib/memory/span/Span/).
+  [`Span`](/mojo/std/memory/span/Span/).
 
 - Removed the `@implicit` decorator from some standard library initializer
   methods that perform allocation. This reduces places where Mojo code could
@@ -3804,7 +3804,7 @@ Special thanks to our community contributors:
   - `List.__init__(out self, owned *values: T)`
   - `List.__init__(out self, span: Span[T])`
 
-- Added more aliases in [`sys.ffi`](/mojo/stdlib/sys/ffi/) to round out the
+- Added more aliases in [`sys.ffi`](/mojo/std/sys/ffi/) to round out the
   usual needs for FFI bindings.
 
 ### Tooling changes {#25-1-tooling-changes}
@@ -3816,32 +3816,32 @@ Special thanks to our community contributors:
   generator, and in the symbol outline and hover markdown via the Mojo Language
   Server.
 
-- The [`env_get_dtype()`](/mojo/stdlib/sys/param_env/env_get_dtype) function has
-  been added to the [`sys.param_env`](/mojo/stdlib/sys/param_env/) module. This
+- The [`env_get_dtype()`](/mojo/std/sys/param_env/env_get_dtype) function has
+  been added to the [`sys.param_env`](/mojo/std/sys/param_env/) module. This
   allows you to get the value of a `DType` from the param environment.
 
 ### ❌ Removed
 
 - `StringRef` has been removed. Use
-  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/)
+  [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice/)
   instead.
 
-  - Changed [`sys.argv()`](/mojo/stdlib/sys/arg/argv) to return list of
+  - Changed [`sys.argv()`](/mojo/std/sys/arg/argv) to return list of
     `StringSlice`.
 
-  - Added explicit [`Path()`](/mojo/stdlib/pathlib/path/Path/#__init__)
+  - Added explicit [`Path()`](/mojo/std/pathlib/path/Path/#__init__)
     constructor from `StringSlice`.
 
 - The `Tuple.get[i, T]()` method has been removed. Please use `tup[i]` or
   `rebind[T](tup[i])` as needed instead.
 
 - `StringableCollectionElement` is deprecated. Use
-  [`WritableCollectionElement`](/mojo/stdlib/builtin/value/WritableCollectionElement/)
+  [`WritableCollectionElement`](/mojo/std/builtin/value/WritableCollectionElement/)
   instead, which still allows you to construct a `String`, but can avoid
   intermediate allocations.
 
 - The `IntLike` trait has been removed and its functionality incorporated into
-  the [`Indexer`](/mojo/stdlib/builtin/int/Indexer/) trait.
+  the [`Indexer`](/mojo/std/builtin/int/Indexer/) trait.
 
 - The `Type{field1: 42, field2: 17}` syntax for direct initializing register
   passable types has been removed. This was legacy syntax - to upgrade your
@@ -3890,7 +3890,7 @@ detailed information in the following sections:
   [Language changes](#24-6-language-changes) for details.
 
 - `Lifetime` and related types in the standard library have been renamed to
-  [`Origin`](/mojo/stdlib/builtin/type_aliases/Origin) to better clarify that
+  [`Origin`](/mojo/std/builtin/type_aliases/Origin) to better clarify that
   parameters of this type indicate where a reference is derived from, not the
   more complicated notion of where a variable is initialized and destroyed. As a
   consequence the `__lifetime_of()` operator is now named `__origin_of()`.
@@ -3911,8 +3911,8 @@ detailed information in the following sections:
   [Language changes](#24-6-language-changes) for details.
 
 - The standard library has added several new types, including
-  [`Deque`](/mojo/stdlib/collections/deque/Deque) (a double-ended queue) and
-  [`OwnedPointer`](/mojo/stdlib/memory/owned_pointer/OwnedPointer) (safe,
+  [`Deque`](/mojo/std/collections/deque/Deque) (a double-ended queue) and
+  [`OwnedPointer`](/mojo/std/memory/owned_pointer/OwnedPointer) (safe,
   single-owner, non-nullable smart pointer). See
   [Standard library changes](#24-6-standard-library-changes)
   for details.
@@ -4039,7 +4039,7 @@ detailed information in the following sections:
 - Origin-related changes:
 
   - The `AnyLifetime` type (useful for declaring origin types as parameters) has
-    has been renamed to [`Origin`](/mojo/stdlib/builtin/type_aliases/Origin) and
+    has been renamed to [`Origin`](/mojo/std/builtin/type_aliases/Origin) and
     the `__lifetime_of()` operator renamed to `__origin_of()`.
 
   - `Origin` is now a complete wrapper around the MLIR origin type.
@@ -4100,7 +4100,7 @@ detailed information in the following sections:
     `MutableAnyOrigin` or `ImmutableAnyOrigin` as part of their signature could
     potentially access any live value that destructor insertion is tracking,
     eliminating a significant usability issue with unsafe APIs like
-    [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer).
+    [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer).
     Consider a typical example working with strings before this change:
 
     ```mojo
@@ -4117,7 +4117,7 @@ detailed information in the following sections:
     extension was required.
 
     Mojo now knows that
-    [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) may
+    [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) may
     access the `MutableAnyOrigin` origin, and now assumes that any API that uses
     that origin could use live values. In this case, it assumes that
     `some_low_level_api()` might access `str` and because it might be using it,
@@ -4219,7 +4219,7 @@ detailed information in the following sections:
 
 ### Standard library changes {#24-6-standard-library-changes}
 
-- Introduced a new [`Deque`](/mojo/stdlib/collections/deque/Deque) (double-ended
+- Introduced a new [`Deque`](/mojo/std/collections/deque/Deque) (double-ended
   queue) collection type, based on a dynamically resizing circular buffer for
   efficient O(1) additions and removals at both ends as well as O(1) direct
   access to all elements.
@@ -4235,14 +4235,14 @@ detailed information in the following sections:
   based on application requirements.
 
 - The `Formatter` struct has been replaced with a
-  [`Writer`](/mojo/stdlib/utils/write/Writer) trait to enable buffered IO,
+  [`Writer`](/mojo/std/utils/write/Writer) trait to enable buffered IO,
   increasing print and file writing perf to the same speed as C. It's now more
   general purpose and can write any `Span[Byte]`. To align with this the
   `Formattable` trait is now named
-  [`Writable`](/mojo/stdlib/utils/write/Writable), and the
+  [`Writable`](/mojo/std/utils/write/Writable), and the
   `String.format_sequence()` static method to initialize a new `String` has been
   renamed to
-  [`String.write()`](/mojo/stdlib/collections/string/string/String/#write).
+  [`String.write()`](/mojo/std/collections/string/string/String/#write).
   Here's an example of using all of the changes:
 
   ```mojo
@@ -4304,7 +4304,7 @@ detailed information in the following sections:
   - Introduced
     `TypedPythonObject`
     as a light-weight way to annotate
-    [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) values with
+    [`PythonObject`](/mojo/std/python/python_object/PythonObject) values with
     static type information. This design will likely evolve and change
     significantly.
 
@@ -4312,16 +4312,16 @@ detailed information in the following sections:
       of a Python tuple.
 
   - Added
-    [`Python.add_object()`](/mojo/stdlib/python/python/Python#add_object), to
+    [`Python.add_object()`](/mojo/std/python/python/Python#add_object), to
     add a named `PythonObject` value to a Python 'module' object instance.
 
   - Added
-    [`Python.unsafe_get_python_exception()`](/mojo/stdlib/python/python/Python#unsafe_get_python_exception),
+    [`Python.unsafe_get_python_exception()`](/mojo/std/python/python/Python#unsafe_get_python_exception),
     as an efficient low-level utility to get the Mojo `Error` equivalent of the
     current CPython error state.
 
   - Add
-    [`PythonObject.from_borrowed_ptr()`](/mojo/stdlib/python/python_object/PythonObject#from_borrowed_ptr),
+    [`PythonObject.from_borrowed_ptr()`](/mojo/std/python/python_object/PythonObject#from_borrowed_ptr),
     to simplify the construction of `PythonObject` values from CPython 'borrowed
     reference' pointers.
 
@@ -4343,7 +4343,7 @@ detailed information in the following sections:
     Note that the syntax, `a[1, ::-1]`, is currently not supported.
 
   - Added
-    [`PythonObject.__contains__()`](/mojo/stdlib/python/python_object/PythonObject#__contains__).
+    [`PythonObject.__contains__()`](/mojo/std/python/python_object/PythonObject#__contains__).
     ([PR #3101](https://github.com/modular/modular/pull/3101))
 
     Example usage:
@@ -4356,7 +4356,7 @@ detailed information in the following sections:
 
 - Pointer related changes:
 
-  - The [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type
+  - The [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) type
     now has an `origin` parameter that can be used when the `UnsafePointer`
     points to a value with a known origin. This origin is propagated through the
     `ptr[]` indirection operation. This parameter and other `UnsafePointer`
@@ -4371,7 +4371,7 @@ detailed information in the following sections:
     print(p[i])
     ```
 
-  - Added a new [`OwnedPointer`](/mojo/stdlib/memory/owned_pointer/OwnedPointer)
+  - Added a new [`OwnedPointer`](/mojo/std/memory/owned_pointer/OwnedPointer)
     type as a safe, single-owner, non-nullable smart pointer with similar
     semantics to Rust's
     [`Box<>`](https://doc.rust-lang.org/std/boxed/struct.Box.html) and C++'s
@@ -4379,15 +4379,15 @@ detailed information in the following sections:
     ([PR #3524](https://github.com/modular/modular/pull/3524))
 
   - `Arc` has been renamed to
-    [`ArcPointer`](/mojo/stdlib/memory/arc/ArcPointer), for consistency with
+    [`ArcPointer`](/mojo/std/memory/arc/ArcPointer), for consistency with
     `OwnedPointer`.
 
-  - [`ArcPointer`](/mojo/stdlib/memory/arc/ArcPointer) now implements
-    [`Identifiable`](/mojo/stdlib/builtin/identifiable/Identifiable), and can be
+  - [`ArcPointer`](/mojo/std/memory/arc/ArcPointer) now implements
+    [`Identifiable`](/mojo/std/builtin/identifiable/Identifiable), and can be
     compared for pointer equivalence using `a is b`.
 
   - The `Reference` type has been renamed to
-    [`Pointer`](/mojo/stdlib/memory/pointer/Pointer): a memory safe complement
+    [`Pointer`](/mojo/std/memory/pointer/Pointer): a memory safe complement
     to `UnsafePointer`. This change is motivated by the fact that `Pointer` is
     assignable and requires an explicit dereference with `ptr[]`. Renaming to
     `Pointer` clarifies that "references" means `ref` arguments and results, and
@@ -4398,13 +4398,13 @@ detailed information in the following sections:
     [Intro to pointers](/mojo/manual/pointers/) page in the Mojo Manual.
 
   - A new
-    [`as_noalias_ptr()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#as_noalias_ptr)
+    [`as_noalias_ptr()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#as_noalias_ptr)
     method as been added to `UnsafePointer`. This method specifies to the
     compiler that the resultant pointer is a distinct identifiable object that
     does not alias any other memory in the local scope.
 
-- Added the [`Floatable`](/mojo/stdlib/builtin/floatable/Floatable) and
-  [`FloatableRaising`](/mojo/stdlib/builtin/floatable/FloatableRaising) traits
+- Added the [`Floatable`](/mojo/std/builtin/floatable/Floatable) and
+  [`FloatableRaising`](/mojo/std/builtin/floatable/FloatableRaising) traits
   to denote types that can be converted to a `Float64` value using the builtin
   `float` function. Made `SIMD` and `FloatLiteral` conform to the `Floatable`
   trait. ([PR #3163](https://github.com/modular/modular/pull/3163))
@@ -4416,14 +4416,14 @@ detailed information in the following sections:
   var f = float(Int32(45))
   ```
 
-- The [`rebind()`](/mojo/stdlib/builtin/rebind/rebind) standard library function
+- The [`rebind()`](/mojo/std/builtin/rebind/rebind) standard library function
   now works with memory-only types in addition to
   `@register_passable("trivial")` ones, without requiring a copy. For more
   information, see
   [The `rebind()` builtin](/mojo/manual/parameters/#the-rebind-builtin) in the
   Mojo Manual.
 
-- Introduced the [`random.shuffle()`](/mojo/stdlib/random/random/shuffle)
+- Introduced the [`random.shuffle()`](/mojo/std/random/random/shuffle)
   function for randomizing the elements of a `List`.
   ([PR #3327](https://github.com/modular/modular/pull/3327))
 
@@ -4436,37 +4436,37 @@ detailed information in the following sections:
   shuffle(l)
   ```
 
-- The [`Dict.__getitem__()`](/mojo/stdlib/collections/dict/Dict#__getitem__)
+- The [`Dict.__getitem__()`](/mojo/std/collections/dict/Dict#__getitem__)
   method now returns a reference instead of a copy of the value (or raises).
   This improves the performance of common code that uses `Dict` by allowing
   borrows from the `Dict` elements.
 
-- [`Slice.step`](/mojo/stdlib/builtin/builtin_slice/Slice#fields) is now an
+- [`Slice.step`](/mojo/std/builtin/builtin_slice/Slice#fields) is now an
   `Optional[Int]`, matching the optionality of `slice.step` in Python.
   ([PR #3160](https://github.com/modular/modular/pull/3160))
 
-- There is now a [`Byte`](/mojo/stdlib/builtin/simd/#aliases) alias to better
+- There is now a [`Byte`](/mojo/std/builtin/simd/#aliases) alias to better
   express intent when working with a pack of bits.
   ([PR #3670](https://github.com/modular/modular/pull/3670)).
 
-- Expanded [`os.path`](/mojo/stdlib/os/path/path/) with new functions:
+- Expanded [`os.path`](/mojo/std/os/path/path/) with new functions:
   - `os.path.expandvars()`: Expands environment variables in a path ([PR #3735](https://github.com/modular/modular/pull/3735)).
   - `os.path.splitroot()`: Split a path into drive, root and tail.
   ([PR #3780](https://github.com/modular/modular/pull/3780)).
 
-- Added a [`reserve()`](/mojo/stdlib/collections/string/string/String#reserve)
+- Added a [`reserve()`](/mojo/std/collections/string/string/String#reserve)
   method and new constructor to the `String` struct to allocate additional
   capacity. ([PR #3755](https://github.com/modular/modular/pull/3755)).
 
 - A new
-  [`StringLiteral.get[some_stringable]()`](/mojo/stdlib/builtin/string_literal/StringLiteral#get)
+  [`StringLiteral.get[some_stringable]()`](/mojo/std/builtin/string_literal/StringLiteral#get)
   method is available. It allows forming a runtime-constant `StringLiteral` from
   a compile-time-dynamic `Stringable` value.
 
-- [`Span`](/mojo/stdlib/memory/span/Span) has moved from the `utils` module to
+- [`Span`](/mojo/std/memory/span/Span) has moved from the `utils` module to
   the `memory` module.
 
-- [`Span`](/mojo/stdlib/memory/span/Span) now implements `__reversed__()`. This
+- [`Span`](/mojo/std/memory/span/Span) now implements `__reversed__()`. This
   means that one can get a reverse iterator over a `Span` using
   `reversed(my_span)`. Users should currently prefer this method over
   `my_span[::-1]`.
@@ -4477,15 +4477,15 @@ detailed information in the following sections:
   `String.as_bytes()` to return a `Span[Byte]`. If you require a copy, you can
   convert the `Span` to a `List` with `List(my_string.as_bytes())`.
 
-- [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice) now
+- [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice) now
   implements `strip()`, `rstrip()`, and `lstrip()`.
 
-- [`StringRef`](/mojo/stdlib/collections/string/string_slice/StringSlice) now
+- [`StringRef`](/mojo/std/collections/string/string_slice/StringSlice) now
   implements `split()` which can be used to split a `StringRef` into a
   `List[StringRef]` by a delimiter. ([PR
   #2705](https://github.com/modular/modular/pull/2705))
 
-- [`StringRef`](/mojo/stdlib/collections/string/string_slice/StringSlice) is now
+- [`StringRef`](/mojo/std/collections/string/string_slice/StringSlice) is now
   representable so `repr(StringRef("hello"))` will return `StringRef('hello')`.
 
 - More things have been removed from the auto-exported set of entities in the
@@ -4495,11 +4495,11 @@ detailed information in the following sections:
   - `StringRef` has been removed. Please explicitly import it via
     `from utils import StringRef`.
 
-- Restored implicit copyability of [`Tuple`](/mojo/stdlib/builtin/tuple/Tuple)
+- Restored implicit copyability of [`Tuple`](/mojo/std/builtin/tuple/Tuple)
   and `ListLiteral`.
 
 - The
-  [aliases for C foreign function interface (FFI)](/mojo/stdlib/sys/ffi/#aliases)
+  [aliases for C foreign function interface (FFI)](/mojo/std/sys/ffi/#aliases)
   have been renamed: `C_int` -> `c_int`, `C_long` -> `c_long` and so on.
 
 - `Float32` and `Float64` are now printed and converted to strings with
@@ -4520,11 +4520,11 @@ detailed information in the following sections:
   ```
 
 - The `StaticIntTuple` data structure in the `utils` package has been renamed to
-  [`IndexList`](/mojo/stdlib/utils/index_/IndexList). The data structure now
+  [`IndexList`](/mojo/std/utils/index_/IndexList). The data structure now
   allows one to specify the index bitwidth of the elements along with whether
   the underlying indices are signed or unsigned.
 
-- Added [`DLHandle.get_symbol()`](/mojo/stdlib/sys/ffi/DLHandle#get_symbol), for
+- Added [`DLHandle.get_symbol()`](/mojo/std/sys/ffi/DLHandle#get_symbol), for
   getting a pointer to a symbol in a dynamic library. This is more general
   purpose than the existing methods for getting function pointers.
 
@@ -4680,12 +4680,12 @@ detailed information in the following sections:
   user code as users will need to explicitly import what they're using for cases
   previously automatically included before.
 
-- [`print()`](/mojo/stdlib/builtin/io/print) now requires that its arguments
-  conform to the [`Formattable`](/mojo/stdlib/utils/write/Writable) trait.
+- [`print()`](/mojo/std/builtin/io/print) now requires that its arguments
+  conform to the [`Formattable`](/mojo/std/utils/write/Writable) trait.
   This enables efficient stream-based writing by default, avoiding unnecessary
   intermediate String heap allocations.
 
-- The new builtin [`input()`](/mojo/stdlib/builtin/io/input) function prints an
+- The new builtin [`input()`](/mojo/std/builtin/io/input) function prints an
   optional prompt and reads a line from standard input, in the same way as
   Python.
 
@@ -4703,7 +4703,7 @@ detailed information in the following sections:
   have additional trait requirements that the struct itself doesn't.
 
 - `DTypePointer`, `LegacyPointer`, and `Pointer` have been removed. Use
-  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) instead.
+  [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) instead.
   Functions that previously took a `DTypePointer` now take an equivalent
   `UnsafePointer`. For more information on using pointers, see [Unsafe
   pointers](/mojo/manual/pointers/unsafe-pointers) in the Mojo Manual.
@@ -4877,8 +4877,8 @@ detailed information in the following sections:
 
 - `async` functions now support memory-only results (like `String`, `List`,
   etc.) and `raises`. Accordingly, both
-  [`Coroutine`](/mojo/stdlib/builtin/coroutine/Coroutine) and
-  [`RaisingCoroutine`](/mojo/stdlib/builtin/coroutine/RaisingCoroutine) have
+  [`Coroutine`](/mojo/std/builtin/coroutine/Coroutine) and
+  [`RaisingCoroutine`](/mojo/std/builtin/coroutine/RaisingCoroutine) have
   been changed to accept `AnyType` instead of `AnyTrivialRegType`. This means
   the result types of `async` functions do not need to be `Movable`.
 
@@ -4892,7 +4892,7 @@ detailed information in the following sections:
   Note that `async` functions do not yet support indirect calls, `ref` results,
   and constructors.
 
-- The [`Reference`](/mojo/stdlib/memory/pointer/Pointer) type (and many
+- The [`Reference`](/mojo/std/memory/pointer/Pointer) type (and many
   iterators) now use [infer-only
   parameters](/mojo/manual/parameters/#infer-only-parameters) to represent the
   mutability of their lifetime, simplifying the interface.
@@ -4924,7 +4924,7 @@ detailed information in the following sections:
   Mojo-allocated pointer, such as an integer address, to a pointer-typed value.
   "Derived" means there is overlap in the bits of the non-pointer-typed value
   with the original pointer value. Accordingly, the
-  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer)
+  [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)
   constructor that took an `address` keyword argument has been removed.
 
   It is still possible to make this conversion in certain cases where it is
@@ -4938,7 +4938,7 @@ detailed information in the following sections:
 
 ### Standard library changes
 
-- [`builtin`](/mojo/stdlib/builtin/) package:
+- [`builtin`](/mojo/std/builtin/) package:
 
   - The set of automatically imported entities (types, aliases, functions) into
     users' Mojo programs has been dramatically reduced. Before, with the way the
@@ -4952,26 +4952,26 @@ detailed information in the following sections:
     the ones automatically imported into users' Mojo programs. This will break a
     lot of user code as users will need to explicitly import what they're using
     for cases previously commonly included before (such as
-    [`Optional`](/mojo/stdlib/collections/optional/Optional),
-    [`Variant`](/mojo/stdlib/utils/variant/Variant), and functions such as
-    [`abort()`](/mojo/stdlib/os/os/abort),
-    [`alignof()`](/mojo/stdlib/sys/info/alignof),
-    [`bitcast()`](/mojo/stdlib/memory/unsafe/bitcast),
-    [`bitwidthof()`](/mojo/stdlib/sys/info/bitwidthof),
-    [`external_call()`](/mojo/stdlib/sys/ffi/external_call),
-    [`simdwidthof()`](/mojo/stdlib/sys/info/simdwidthof), and
-    [`sizeof()`](/mojo/stdlib/sys/info/sizeof)).
+    [`Optional`](/mojo/std/collections/optional/Optional),
+    [`Variant`](/mojo/std/utils/variant/Variant), and functions such as
+    [`abort()`](/mojo/std/os/os/abort),
+    [`alignof()`](/mojo/std/sys/info/alignof),
+    [`bitcast()`](/mojo/std/memory/unsafe/bitcast),
+    [`bitwidthof()`](/mojo/std/sys/info/bitwidthof),
+    [`external_call()`](/mojo/std/sys/ffi/external_call),
+    [`simdwidthof()`](/mojo/std/sys/info/simdwidthof), and
+    [`sizeof()`](/mojo/std/sys/info/sizeof)).
 
   - Some types from the `builtin` module have been moved to different modules
     for clarity which is made possible now that we have a `prelude` module that
     can re-export symbols from modules other than `builtin`.
 
     In particular, the `builtin.string` module has been moved to
-    [`collections.string`](/mojo/stdlib/collections/string/).
+    [`collections.string`](/mojo/std/collections/string/).
 
 - Input and output:
 
-  - Added the builtin [`input()`](/mojo/stdlib/builtin/io/input) function, which
+  - Added the builtin [`input()`](/mojo/std/builtin/io/input) function, which
     behaves the same as Python.
     ([PR #3392](https://github.com/modular/modular/pull/3392))
 
@@ -4986,13 +4986,13 @@ detailed information in the following sections:
     compilation (see issue
     [#3479](https://github.com/modular/modular/issues/3479)).
 
-  - [`print()`](/mojo/stdlib/builtin/io/print) now requires that its arguments
-    conform to the [`Formattable`](/mojo/stdlib/utils/write/Writable) trait.
+  - [`print()`](/mojo/std/builtin/io/print) now requires that its arguments
+    conform to the [`Formattable`](/mojo/std/utils/write/Writable) trait.
     This enables efficient stream-based writing by default, avoiding unnecessary
     intermediate String heap allocations.
 
     Previously, `print()` required types conform to
-    [`Stringable`](/mojo/stdlib/builtin/str/Stringable). This meant that to
+    [`Stringable`](/mojo/std/builtin/str/Stringable). This meant that to
     execute a call like `print(a, b, c)`, at least three separate String heap
     allocations were down, to hold the formatted values of `a`, `b`, and `c`
     respectively. The total number of allocations could be much higher if, for
@@ -5026,7 +5026,7 @@ detailed information in the following sections:
     ```
 
     In the example above,
-    [`String.format_sequence()`](/mojo/stdlib/collections/string/string/String#format_sequence)
+    [`String.format_sequence()`](/mojo/std/collections/string/string/String#format_sequence)
     is used to construct a `String` from a type that implements `Formattable`.
     This pattern of implementing a type's `Stringable` implementation in terms
     of its `Formattable` implementation minimizes boilerplate and duplicated
@@ -5051,26 +5051,26 @@ detailed information in the following sections:
 
     :::
 
-  - [`debug_assert()`](/mojo/stdlib/builtin/debug_assert/debug_assert) now also
+  - [`debug_assert()`](/mojo/std/builtin/debug_assert/debug_assert) now also
     requires that its `message` argument conform to `Formattable`.
 
   - Added
-    [`TemporaryDirectory`](/mojo/stdlib/tempfile/tempfile/TemporaryDirectory) in
+    [`TemporaryDirectory`](/mojo/std/tempfile/tempfile/TemporaryDirectory) in
     module `tempfile`.
     ([PR 2743](https://github.com/modular/modular/pull/2743))
 
   - Added
-    [`NamedTemporaryFile`](/mojo/stdlib/tempfile/tempfile/NamedTemporaryFile) in
+    [`NamedTemporaryFile`](/mojo/std/tempfile/tempfile/NamedTemporaryFile) in
     module `tempfile`.
     ([PR 2762](https://github.com/modular/modular/pull/2762))
 
-- [`String`](/mojo/stdlib/collections/string/string) and friends:
+- [`String`](/mojo/std/collections/string/string) and friends:
 
   - The `builtin.string` module has been moved to
-    [`collections.string`](/mojo/stdlib/collections/string/).
+    [`collections.string`](/mojo/std/collections/string/).
 
   - Added the
-    [`String.format()`](/mojo/stdlib/collections/string/string/String#format)
+    [`String.format()`](/mojo/std/collections/string/string/String#format)
     method. ([PR #2771](https://github.com/modular/modular/pull/2771))
 
     Supports automatic and manual indexing of `*args`.
@@ -5089,7 +5089,7 @@ detailed information in the following sections:
     #True 1.125 2
     ```
 
-  - [`String.format()`](/mojo/stdlib/collections/string/string/String#format)
+  - [`String.format()`](/mojo/std/collections/string/string/String#format)
     now supports conversion flags `!s` and `!r`, allowing for `str()` and
     `repr()` conversions within format strings. ([PR
     #3279](https://github.com/modular/modular/pull/3279))
@@ -5105,13 +5105,13 @@ detailed information in the following sections:
     ```
 
   - The `String` class now has
-    [`rjust()`](/mojo/stdlib/collections/string/string/String#rjust),
-    [`ljust()`](/mojo/stdlib/collections/string/string/String#ljust), and
-    [`center()`](/mojo/stdlib/collections/string/string/String#center) methods
+    [`rjust()`](/mojo/std/collections/string/string/String#rjust),
+    [`ljust()`](/mojo/std/collections/string/string/String#ljust), and
+    [`center()`](/mojo/std/collections/string/string/String#center) methods
     to return a justified string based on width and fillchar. ([PR
     #3278](https://github.com/modular/modular/pull/3278))
 
-  - The [`atol()`](/mojo/stdlib/collections/string/string/atol) function now
+  - The [`atol()`](/mojo/std/collections/string/string/atol) function now
     correctly supports leading underscores, (e.g.`atol("0x_ff", 0)`), when the
     appropriate base is specified or inferred (base 0). non-base-10 integer
     literals as per Python's [Integer
@@ -5119,32 +5119,32 @@ detailed information in the following sections:
     ([PR #3180](https://github.com/modular/modular/pull/3180))
 
   - Added the
-    [`unsafe_cstr_ptr()`](/mojo/stdlib/collections/string/string/String#unsafe_cstr_ptr)
+    [`unsafe_cstr_ptr()`](/mojo/std/collections/string/string/String#unsafe_cstr_ptr)
     method to `String` and `StringLiteral`, which returns an
     `UnsafePointer[c_char]` for convenient interoperability with C APIs.
 
   - Added the `byte_length()` method to
-    [`String`](/mojo/stdlib/collections/string/string/String#byte_length),
-    [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice#byte_length),
+    [`String`](/mojo/std/collections/string/string/String#byte_length),
+    [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice#byte_length),
     and
-    [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral#byte_length)
+    [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral#byte_length)
     and deprecated their private `_byte_length()` methods. Added a warning to
     the
-    [`String.__len__()`](/mojo/stdlib/collections/string/string/String#__len__)
+    [`String.__len__()`](/mojo/std/collections/string/string/String#__len__)
     method that it will return the length in Unicode codepoints in the future
     and
-    [`StringSlice.__len__()`](/mojo/stdlib/collections/string/string_slice/StringSlice#__len__)
+    [`StringSlice.__len__()`](/mojo/std/collections/string/string_slice/StringSlice#__len__)
     now does return the Unicode codepoints length. ([PR
     #2960](https://github.com/modular/modular/pull/2960))
 
   - Added a new
-    [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases) type
+    [`StaticString`](/mojo/std/collections/string/string_slice/#aliases) type
     alias. This can be used in place of
-    [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral) for
+    [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral) for
     runtime string arguments.
 
   - Added a
-    [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice#__init__)
+    [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice#__init__)
     initializer that accepts a `StringLiteral`.
 
   - The `StringRef` constructors from `DTypePointer.int8` have been changed to
@@ -5154,17 +5154,17 @@ detailed information in the following sections:
   - Continued the transition to `UnsafePointer` and unsigned byte type for
     strings:
 
-    - [`String.unsafe_ptr()`](/mojo/stdlib/collections/string/string/String#unsafe_ptr)
+    - [`String.unsafe_ptr()`](/mojo/std/collections/string/string/String#unsafe_ptr)
       now returns an `UnsafePointer[UInt8]` (was `UnsafePointer[Int8]`)
 
-    - [`StringLiteral.unsafe_ptr()`](/mojo/stdlib/builtin/string_literal/StringLiteral#unsafe_ptr)
+    - [`StringLiteral.unsafe_ptr()`](/mojo/std/builtin/string_literal/StringLiteral#unsafe_ptr)
       now returns an `UnsafePointer[UInt8]` (was `UnsafePointer[Int8]`)
 
-- [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) and other
+- [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) and other
   reference type changes:
 
   - `DTypePointer`, `LegacyPointer`, and `Pointer` have been removed. Use
-    [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) instead.
+    [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) instead.
     For more information on using pointers, see [Unsafe
     pointers](/mojo/manual/pointers/unsafe-pointers) in the Mojo Manual.
 
@@ -5198,25 +5198,25 @@ detailed information in the following sections:
     to appropriate types.
 
   - The `DTypePointer`
-    [`load()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#load) and
-    [`store()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#store) methods
+    [`load()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#load) and
+    [`store()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#store) methods
     have been moved to `UnsafePointer`.
 
   - `UnsafePointer` now supports
-    [`strided_load()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#strided_load),
-    [`strided_store()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#strided_store),
-    [`gather()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#gather), and
-    [`scatter()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#scatter) when
+    [`strided_load()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#strided_load),
+    [`strided_store()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#strided_store),
+    [`gather()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#gather), and
+    [`scatter()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#scatter) when
     the underlying type is `Scalar[DType]`.
 
   - The global functions for working with `UnsafePointer` have transitioned to
     being methods through the use of conditional conformances:
 
-    - `destroy_pointee(p)` => [`p.destroy_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
-    - `move_from_pointee(p)` => [`p.take_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#take_pointee)
-    - `initialize_pointee_move(p, value)` => [`p.init_pointee_move(value)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
-    - `initialize_pointee_copy(p, value)` => [`p.init_pointee_copy(value)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
-    - `move_pointee(src=p1, dst=p2)` => [`p.move_pointee_into(p2)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#move_pointee_into)
+    - `destroy_pointee(p)` => [`p.destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
+    - `move_from_pointee(p)` => [`p.take_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#take_pointee)
+    - `initialize_pointee_move(p, value)` => [`p.init_pointee_move(value)`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
+    - `initialize_pointee_copy(p, value)` => [`p.init_pointee_copy(value)`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
+    - `move_pointee(src=p1, dst=p2)` => [`p.move_pointee_into(p2)`](/mojo/std/memory/unsafe_pointer/UnsafePointer#move_pointee_into)
 
   - The `UnsafePointer.offset()` method is deprecated and will be removed in a
     future release. Use [pointer
@@ -5233,9 +5233,9 @@ detailed information in the following sections:
     ```
 
   - `UnsafePointer` now has an
-    [`alignment`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#parameters)
+    [`alignment`](/mojo/std/memory/unsafe_pointer/UnsafePointer#parameters)
     parameter to specify the static alignment of the pointer. Consequently,
-    [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#alloc)
+    [`UnsafePointer.alloc()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#alloc)
     no longer takes in an alignment parameter, and the alignment should be
     specified in the type.
 
@@ -5245,7 +5245,7 @@ detailed information in the following sections:
     ```
 
   - `UnsafePointer` has a new [`exclusive: Bool =
-    False`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#parameters)
+    False`](/mojo/std/memory/unsafe_pointer/UnsafePointer#parameters)
     parameter. Setting this parameter to true tells the compiler that the user
     knows this pointer and all those derived from it have exclusive access to
     the underlying memory allocation. The compiler is not guaranteed to do
@@ -5253,7 +5253,7 @@ detailed information in the following sections:
 
   - It is no longer possible to cast (implicitly or explicitly) from `Reference`
     to `UnsafePointer`. Instead of `UnsafePointer(someRef)` please use the
-    [`UnsafePointer.address_of(someRef[])`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#address_of)
+    [`UnsafePointer.address_of(someRef[])`](/mojo/std/memory/unsafe_pointer/UnsafePointer#address_of)
     which makes the code explicit that the `UnsafePointer` gets the address of
     what the reference points to.
 
@@ -5262,7 +5262,7 @@ detailed information in the following sections:
   - Mojo now supports Python 3.12 interoperability.
 
   - Creating a nested
-    [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) from a list
+    [`PythonObject`](/mojo/std/python/python_object/PythonObject) from a list
     or tuple of Python objects is possible now:
 
     ```mojo
@@ -5283,7 +5283,7 @@ detailed information in the following sections:
     ([PR #3264](https://github.com/modular/modular/pull/3264))
 
   - Accessing local Python modules with
-    [`Python.add_to_path(".")`](/mojo/stdlib/python/python/Python#add_to_path)
+    [`Python.add_to_path(".")`](/mojo/std/python/python/Python#add_to_path)
     is no longer required. It now behaves the same as Python. You can access
     modules in the same folder as the target file:
 
@@ -5293,30 +5293,30 @@ detailed information in the following sections:
 
 - Collections:
 
-  - [`List`](/mojo/stdlib/collections/list/List) values are now equality
+  - [`List`](/mojo/std/collections/list/List) values are now equality
     comparable with `==` and `!=` when their element type is equality
     comparable. ([PR #3195](https://github.com/modular/modular/pull/3195))
 
-  - [`Optional`](/mojo/stdlib/collections/optional/Optional) values are now
+  - [`Optional`](/mojo/std/collections/optional/Optional) values are now
     equality comparable with `==` and `!=` when their element type is equality
     comparable.
 
-  - Added a new [`Counter`](/mojo/stdlib/collections/counter/Counter)
+  - Added a new [`Counter`](/mojo/std/collections/counter/Counter)
     dictionary-like type, matching most of the features of the Python one.
     ([PR #2910](https://github.com/modular/modular/pull/2910))
 
-  - [`Dict`](/mojo/stdlib/collections/dict/Dict) now implements
-    [`setdefault()`](/mojo/stdlib/collections/dict/Dict#setdefault), which gets
+  - [`Dict`](/mojo/std/collections/dict/Dict) now implements
+    [`setdefault()`](/mojo/std/collections/dict/Dict#setdefault), which gets
     a value from the dictionary by key, or sets it to a default if it doesn't
     exist.
     ([PR #2803](https://github.com/modular/modular/pull/2803))
 
   - `Dict` now supports
-    [`popitem()`](/mojo/stdlib/collections/dict/Dict#popitem), which removes and
+    [`popitem()`](/mojo/std/collections/dict/Dict#popitem), which removes and
     returns the last item in the `Dict`.
     ([PR #2701](https://github.com/modular/modular/pull/2701))
 
-  - Added a [`Dict.__init__()`](/mojo/stdlib/collections/dict/Dict#__init__)
+  - Added a [`Dict.__init__()`](/mojo/std/collections/dict/Dict#__init__)
     overload to specify initial capacity.
     ([PR #3171](https://github.com/modular/modular/pull/3171))
 
@@ -5336,11 +5336,11 @@ detailed information in the following sections:
 
 - Filesystem and environment utilities:
 
-  - [`Path.home()`](/mojo/stdlib/pathlib/path/Path#home) has been added to
+  - [`Path.home()`](/mojo/std/pathlib/path/Path#home) has been added to
     return a path of the user's home directory.
 
-  - [`os.path.expanduser()`](/mojo/stdlib/os/path/path/expanduser) and
-    [`pathlib.Path.exapanduser()`](/mojo/stdlib/pathlib/path/Path#expanduser)
+  - [`os.path.expanduser()`](/mojo/std/os/path/path/expanduser) and
+    [`pathlib.Path.exapanduser()`](/mojo/std/pathlib/path/Path#expanduser)
     have been added to allow expanding a prefixed `~` in a `String` or `Path`
     with the user's home path:
 
@@ -5353,7 +5353,7 @@ detailed information in the following sections:
     # /root/folder     (on linux)
     ```
 
-  - [`os.path.split()`](/mojo/stdlib/os/path/path/split) has been added for
+  - [`os.path.split()`](/mojo/std/os/path/path/split) has been added for
     splitting a path into `head, tail`:
 
     ```mojo
@@ -5365,8 +5365,8 @@ detailed information in the following sections:
     # tail: tail
     ```
 
-  - [`os.makedirs()`](/mojo/stdlib/os/os/makedirs) and
-    [`os.removedirs()`](/mojo/stdlib/os/os/removedirs) have been added for
+  - [`os.makedirs()`](/mojo/std/os/os/makedirs) and
+    [`os.removedirs()`](/mojo/std/os/os/removedirs) have been added for
     creating and removing nested directories:
 
     ```mojo
@@ -5376,7 +5376,7 @@ detailed information in the following sections:
     os.path.removedirs(path)
     ```
 
-  - The [`pwd`](/mojo/stdlib/pwd/pwd/) module has been added for accessing user
+  - The [`pwd`](/mojo/std/pwd/pwd/) module has been added for accessing user
     information in `/etc/passwd` on POSIX systems. This follows the same logic
     as Python:
 
@@ -5404,32 +5404,32 @@ detailed information in the following sections:
 - Other new traits and related features:
 
   - Added the
-    [`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable) trait
+    [`ExplicitlyCopyable`](/mojo/std/builtin/value/ExplicitlyCopyable) trait
     to mark types that can be copied explicitly, but which might not be
     implicitly copyable.
 
     This supports work to transition the standard library collection types away
     from implicit copyability, which can lead to unintended expensive copies.
 
-  - Added the [`Identifiable`](/mojo/stdlib/builtin/identifiable/Identifiable)
+  - Added the [`Identifiable`](/mojo/std/builtin/identifiable/Identifiable)
     trait, used to describe types that implement the `__is__()` and
     `__isnot__()` trait methods.
     ([PR #2807](https://github.com/modular/modular/pull/2807))
 
-  - Types conforming to [`Boolable`](/mojo/stdlib/builtin/bool/Boolable) (that
+  - Types conforming to [`Boolable`](/mojo/std/builtin/bool/Boolable) (that
     is, those implementing `__bool__()`) no longer implicitly convert to `Bool`.
-    A new [`ImplicitlyBoolable`](/mojo/stdlib/builtin/bool/ImplicitlyBoolable)
+    A new [`ImplicitlyBoolable`](/mojo/std/builtin/bool/ImplicitlyBoolable)
     trait is introduced for types where this behavior is desired.
 
 - Miscellaneous:
 
-  - [`NoneType`](/mojo/stdlib/builtin/none/NoneType) is now a normal standard
+  - [`NoneType`](/mojo/std/builtin/none/NoneType) is now a normal standard
     library type, and not an alias for a raw MLIR type.
 
     Function signatures written as `fn() -> NoneType` should transition to
     being written as `fn() -> None`.
 
-  - Mojo now has a [`UInt`](/mojo/stdlib/builtin/uint/UInt) type for modeling
+  - Mojo now has a [`UInt`](/mojo/std/builtin/uint/UInt) type for modeling
     unsigned (scalar) integers with a platform-dependent width. `UInt`
     implements most arithmetic operations that make sense for integers, with the
     notable exception of `__neg__()`. Builtin functions such as `min()`/`max()`,
@@ -5440,9 +5440,9 @@ detailed information in the following sections:
     hash. In general, hashes should be an unsigned integer, and can also lead to
     improved performance in certain cases.
 
-  - Added the [`c_char`](/mojo/stdlib/sys/ffi/#aliases) type alias in `sys.ffi`.
+  - Added the [`c_char`](/mojo/std/sys/ffi/#aliases) type alias in `sys.ffi`.
 
-  - [`sort()`](/mojo/stdlib/builtin/sort/sort) now supports a `stable`
+  - [`sort()`](/mojo/std/builtin/sort/sort) now supports a `stable`
     parameter. It can be called by
 
     ```mojo
@@ -5454,36 +5454,36 @@ detailed information in the following sections:
 
   - `sort()` no longer takes `LegacyPointer` since that type is now removed.
 
-  - Added the [`oct()`](/mojo/stdlib/builtin/format_int/oct) builtin function
+  - Added the [`oct()`](/mojo/std/builtin/format_int/oct) builtin function
     for formatting an integer in octal.
     ([PR #2914](https://github.com/modular/modular/pull/2914))
 
-  - Added the [`assert_is()`](/mojo/stdlib/testing/testing/assert_is) and
-    [`assert_is_not()`](/mojo/stdlib/testing/testing/assert_is_not) test
+  - Added the [`assert_is()`](/mojo/std/testing/testing/assert_is) and
+    [`assert_is_not()`](/mojo/std/testing/testing/assert_is_not) test
     functions to the `testing` module.
 
-  - The [`math`](/mojo/stdlib/math/constants/) package now includes the `pi`,
+  - The [`math`](/mojo/std/math/constants/) package now includes the `pi`,
     `e`, and `tau` constants (Closes Issue
     [#2135](https://github.com/modular/modular/issues/2135)).
 
-  - The [`ulp`](/mojo/stdlib/math/math/ulp) function from `numerics` has been
+  - The [`ulp`](/mojo/std/math/math/ulp) function from `numerics` has been
     moved to the `math` module.
 
   - `bit` module now supports
-    [`bit_reverse()`](/mojo/stdlib/bit/bit/bit_reverse),
-    [`byte_swap()`](/mojo/stdlib/bit/bit/byte_swap), and
-    [`pop_count()`](/mojo/stdlib/bit/bit/pop_count) for the `Int` type.
+    [`bit_reverse()`](/mojo/std/bit/bit/bit_reverse),
+    [`byte_swap()`](/mojo/std/bit/bit/byte_swap), and
+    [`pop_count()`](/mojo/std/bit/bit/pop_count) for the `Int` type.
     ([PR #3150](https://github.com/modular/modular/pull/3150))
 
   - A few `bit` functions have been renamed for clarity:
 
     - `countl_zero()` ->
-      [`count_leading_zeros()`](/mojo/stdlib/bit/bit/count_leading_zeros)
+      [`count_leading_zeros()`](/mojo/std/bit/bit/count_leading_zeros)
 
     - `countr_zero()` ->
-      [`count_trailing_zeros()`](/mojo/stdlib/bit/bit/count_trailing_zeros)
+      [`count_trailing_zeros()`](/mojo/std/bit/bit/count_trailing_zeros)
 
-  - [`Slice`](/mojo/stdlib/builtin/builtin_slice/Slice) now uses
+  - [`Slice`](/mojo/std/builtin/builtin_slice/Slice) now uses
     `OptionalReg[Int]` for `start` and `end` and implements a constructor which
     accepts optional values. `Slice._has_end()` has also been removed since a
     Slice with no end is now represented by an empty `Slice.end` option.
@@ -5495,14 +5495,14 @@ detailed information in the following sections:
     ```
 
   - The `rank` argument for
-    [`algorithm.elementwise()`](/mojo/stdlib/algorithm/functional/elementwise)
+    [`algorithm.elementwise()`](/mojo/std/algorithm/functional/elementwise)
     is no longer required and is only inferred.
 
   - The `time.now()` function has been deprecated. Please use
-    [`time.perf_counter()`](/mojo/stdlib/time/time/perf_counter) or
-    [`time.perf_counter_ns`](/mojo/stdlib/time/time/perf_counter_ns) instead.
+    [`time.perf_counter()`](/mojo/std/time/time/perf_counter) or
+    [`time.perf_counter_ns`](/mojo/std/time/time/perf_counter_ns) instead.
 
-  - [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) construction from `Bool` has been
+  - [`SIMD`](/mojo/std/builtin/simd/SIMD) construction from `Bool` has been
     restricted to `DType.bool` data type.
 
 ### Tooling changes
@@ -5562,7 +5562,7 @@ detailed information in the following sections:
 
 - The builtin `tensor` module has been removed. Identical functionality is
   available in `max.tensor`, but it is generally
-  recommended to use structs from the [`buffer`](/mojo/stdlib/buffer/buffer)
+  recommended to use structs from the [`buffer`](/mojo/std/buffer/buffer)
   module when possible instead.
 
 - Removed `String.unsafe_uint8_ptr()`. `String.unsafe_ptr()` now returns the
@@ -5576,8 +5576,8 @@ detailed information in the following sections:
 - Removed the `SIMD.{add,mul,sub}_with_overflow()` methods.
 
 - Removed the `SIMD.min()` and `SIMD.max()` methods. Identical functionality is
-  available using the builtin [`min()`](/mojo/stdlib/builtin/math/min) and
-  [`max()`](/mojo/stdlib/builtin/math/max) functions.
+  available using the builtin [`min()`](/mojo/std/builtin/math/min) and
+  [`max()`](/mojo/std/builtin/math/max) functions.
 
 - Removed the Mojo Language Server warnings for unused function arguments.
 
@@ -5837,15 +5837,15 @@ Big themes for this release:
 
 - New traits and related features:
 
-  - Added built-in [`repr()`](/mojo/stdlib/builtin/repr/repr) function and
-   [`Representable`](/mojo/stdlib/builtin/repr/Representable) trait.
+  - Added built-in [`repr()`](/mojo/std/builtin/repr/repr) function and
+   [`Representable`](/mojo/std/builtin/repr/Representable) trait.
     ([PR #2361](https://github.com/modular/modular/pull/2361))
 
-  - Added the [`Indexer`](/mojo/stdlib/builtin/int/Indexer) trait to denote
+  - Added the [`Indexer`](/mojo/std/builtin/int/Indexer) trait to denote
     types that implement the `__index__()` method which allows these types to be
     accepted in common `__getitem__()` and `__setitem__()` implementations, as
     well as allow a new built-in
-    [`index()`](/mojo/stdlib/builtin/int/index-function)
+    [`index()`](/mojo/std/builtin/int/index-function)
     function to be called on them. Most standard library containers can now be
     indexed by any type that implements `Indexer`. For example:
 
@@ -5893,13 +5893,13 @@ Big themes for this release:
 
     | Function         | Trait            | Required method |
     |------------------|------------------|-----------------|
-    | [`abs()`](/mojo/stdlib/builtin/math/abs) | [`Absable`](/mojo/stdlib/builtin/math/Absable) | `__abs__()` |
-    | [`pow()`](/mojo/stdlib/builtin/math/pow) | [`Powable`](/mojo/stdlib/builtin/math/Powable) | `__pow__()` |
-    | [`round()`](/mojo/stdlib/builtin/math/round) | [`Roundable`](/mojo/stdlib/builtin/math/Roundable) | `__round__()` |
-    | [`math.ceil`](/mojo/stdlib/math/math/ceil)    | `math.Ceilable`  | `__ceil__()`    |
-    | [`math.ceildiv`](/mojo/stdlib/math/math/ceildiv) | `math.CeilDivable` <br/> `math.CeilDivableRaising` | `__ceildiv__()` |
-    | [`math.floor`](/mojo/stdlib/math/math/floor)   | `math.Floorable` | `__floor__()`   |
-    | [`math.trunc`](/mojo/stdlib/math/math/trunc)   | `Truncable` | `__trunc__()`   |
+    | [`abs()`](/mojo/std/builtin/math/abs) | [`Absable`](/mojo/std/builtin/math/Absable) | `__abs__()` |
+    | [`pow()`](/mojo/std/builtin/math/pow) | [`Powable`](/mojo/std/builtin/math/Powable) | `__pow__()` |
+    | [`round()`](/mojo/std/builtin/math/round) | [`Roundable`](/mojo/std/builtin/math/Roundable) | `__round__()` |
+    | [`math.ceil`](/mojo/std/math/math/ceil)    | `math.Ceilable`  | `__ceil__()`    |
+    | [`math.ceildiv`](/mojo/std/math/math/ceildiv) | `math.CeilDivable` <br/> `math.CeilDivableRaising` | `__ceildiv__()` |
+    | [`math.floor`](/mojo/std/math/math/floor)   | `math.Floorable` | `__floor__()`   |
+    | [`math.trunc`](/mojo/std/math/math/trunc)   | `Truncable` | `__trunc__()`   |
 
     Notes:
 
@@ -5938,36 +5938,36 @@ Big themes for this release:
 
 - Benchmarking:
 
-  - The [`bencher`](/mojo/stdlib/benchmark/bencher/) module as part of the
+  - The [`bencher`](/mojo/std/benchmark/bencher/) module as part of the
     `benchmark` package is now public and documented. This module provides
     types such as `Bencher` which provides the ability to execute a `Benchmark`
     and allows for benchmarking configuration via the `BenchmarkConfig` struct.
 
-- [`String`](/mojo/stdlib/collections/string/string) and friends:
+- [`String`](/mojo/std/collections/string/string) and friends:
 
   - **Breaking.** Implicit conversion to `String` is now removed for builtin
     classes/types. Use `str()` explicitly to convert to `String`.
 
   - Added
-    [`String.isspace()`](/mojo/stdlib/collections/string/string/String#isspace)
+    [`String.isspace()`](/mojo/std/collections/string/string/String#isspace)
     method conformant with Python's universal separators. This replaces the
     `isspace()` free function from the `string` module. (If you need the old
     function, it is temporarily available as `_isspace()`. It now takes a
     `UInt8` but is otherwise unchanged.)
 
-  - [`String.split()`](/mojo/stdlib/collections/string/string/String#split) now
+  - [`String.split()`](/mojo/std/collections/string/string/String#split) now
     defaults to whitespace and has Pythonic behavior in that it removes all
     adjacent whitespace by default.
 
-  - [`String.strip()`](/mojo/stdlib/collections/string/string/String#strip),
-    [`lstrip()`](/mojo/stdlib/collections/string/string/String#lstrip) and
-    [`rstrip()`](/mojo/stdlib/collections/string/string/String#rstrip) can now
+  - [`String.strip()`](/mojo/std/collections/string/string/String#strip),
+    [`lstrip()`](/mojo/std/collections/string/string/String#lstrip) and
+    [`rstrip()`](/mojo/std/collections/string/string/String#rstrip) can now
     remove custom characters other than whitespace. In addition, there are now
     several useful aliases for whitespace, ASCII lower/uppercase, and so on.
     ([PR #2555](https://github.com/modular/modular/pull/2555))
 
   - `String` now has a
-    [`splitlines()`](/mojo/stdlib/collections/string/string/String#splitlines)
+    [`splitlines()`](/mojo/std/collections/string/string/String#splitlines)
     method, which allows splitting strings at line boundaries. This method
     supports [universal
     newlines](https://docs.python.org/3/glossary.html#term-universal-newlines)
@@ -5975,23 +5975,23 @@ Big themes for this release:
     #2810](https://github.com/modular/modular/pull/2810))
 
   - `InlinedString` has been renamed to
-    [`InlineString`](/mojo/stdlib/collections/string/inline_string/InlineString)
+    [`InlineString`](/mojo/std/collections/string/inline_string/InlineString)
     to be consistent with other types.
 
-  - [`StringRef`](/mojo/stdlib/collections/string/string_slice/StringSlice) now
+  - [`StringRef`](/mojo/std/collections/string/string_slice/StringSlice) now
     implements
-    [`strip()`](/mojo/stdlib/collections/string/string_slice/StringSlice#strip),
+    [`strip()`](/mojo/std/collections/string/string_slice/StringSlice#strip),
     which can be used to remove leading and trailing whitespace. ([PR
     #2683](https://github.com/modular/modular/pull/2683))
 
   - `StringRef` now implements
-    [`startswith()`](/mojo/stdlib/collections/string/string_slice/StringSlice#startswith)
+    [`startswith()`](/mojo/std/collections/string/string_slice/StringSlice#startswith)
     and
-    [`endswith()`](/mojo/stdlib/collections/string/string_slice/StringSlice#endswith).
+    [`endswith()`](/mojo/std/collections/string/string_slice/StringSlice#endswith).
       ([PR #2710](https://github.com/modular/modular/pull/2710))
 
   - Added a new
-    [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice)
+    [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice)
     type, to replace uses of the unsafe `StringRef` type in standard library
     code.
 
@@ -6000,47 +6000,47 @@ Big themes for this release:
     points to.
 
     - Added new
-      [`as_string_slice()`](/mojo/stdlib/collections/string/string/String#as_string_slice)
+      [`as_string_slice()`](/mojo/std/collections/string/string/String#as_string_slice)
       methods to `String` and `StringLiteral`.
     - Added `StringSlice` initializer from an `UnsafePointer` and a length in
       bytes.
 
   - Added a new
-    [`as_bytes_slice()`](/mojo/stdlib/collections/string/string/String#as_bytes_slice)
+    [`as_bytes_slice()`](/mojo/std/collections/string/string/String#as_bytes_slice)
     method to `String` and `StringLiteral`, which returns a `Span` of the bytes
     owned by the string.
 
   - Continued transition to
-    [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) and
+    [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) and
     unsigned byte type for strings:
     - Renamed `String._as_ptr()` to
-      [`String.unsafe_ptr()`](/mojo/stdlib/collections/string/string/String#unsafe_ptr),
+      [`String.unsafe_ptr()`](/mojo/std/collections/string/string/String#unsafe_ptr),
       and changed return type to `UnsafePointer` (was `DTypePointer`).
     - Renamed `StringLiteral.data()` to
-      [`StringLiteral.unsafe_ptr()`](/mojo/stdlib/builtin/string_literal/StringLiteral#unsafe_ptr),
+      [`StringLiteral.unsafe_ptr()`](/mojo/std/builtin/string_literal/StringLiteral#unsafe_ptr),
       and changed return type to `UnsafePointer` (was `DTypePointer`).
     - `InlineString.as_ptr()` has been renamed to
-      [`unsafe_ptr()`](/mojo/stdlib/collections/string/inline_string/InlineString#unsafe_ptr)
+      [`unsafe_ptr()`](/mojo/std/collections/string/inline_string/InlineString#unsafe_ptr)
       and now returns an `UnsafePointer[UInt8]` (was
       `DTypePointer[DType.int8]`).
     - `StringRef.data` is now an `UnsafePointer` (was `DTypePointer`) and
-      [`StringRef.unsafe_ptr()`](/mojo/stdlib/collections/string/string_slice/StringSlice#unsafe_ptr)
+      [`StringRef.unsafe_ptr()`](/mojo/std/collections/string/string_slice/StringSlice#unsafe_ptr)
       now returns an `UnsafePointer[UInt8]` (was `DTypePointer[DType.int8]`).
 
 - Other built-ins:
 
   - The `Slice.__len__()` function has been removed and
-    [`Slice`](/mojo/stdlib/builtin/builtin_slice/Slice) no longer conforms
+    [`Slice`](/mojo/std/builtin/builtin_slice/Slice) no longer conforms
     to the `Sized` trait. This clarifies the ambiguity of the semantics: the
     length of a slice always depends on the length of the object being sliced.
     Users that need the existing functionality can use the
-    [`Slice.unsafe_indices()`](/mojo/stdlib/builtin/builtin_slice/Slice#indices)
+    [`Slice.unsafe_indices()`](/mojo/std/builtin/builtin_slice/Slice#indices)
     method. This makes it explicit that this implementation does not check if
     the slice bounds are concrete or within any given object's length.
 
-  - Added a built-in [`sort()`](/mojo/stdlib/builtin/sort/sort) function for
+  - Added a built-in [`sort()`](/mojo/std/builtin/sort/sort) function for
     lists of elements that conform to the
-    [`ComparableCollectionElement`](/mojo/stdlib/builtin/value/ComparableCollectionElement)
+    [`ComparableCollectionElement`](/mojo/std/builtin/value/ComparableCollectionElement)
     trait.([PR #2609](https://github.com/modular/modular/pull/2609))
 
   - `int()` can now take a string and a
@@ -6052,17 +6052,17 @@ Big themes for this release:
     ([PR #2273](https://github.com/modular/modular/pull/2273),
     fixes [#2274](https://github.com/modular/modular/issues/2274))
 
-  - Added the [`bin()`](/mojo/stdlib/builtin/format_int/bin) built-in function
+  - Added the [`bin()`](/mojo/std/builtin/format_int/bin) built-in function
     to convert integral types into their binary
     string representation.
     ([PR #2603](https://github.com/modular/modular/pull/2603))
 
-  - Added the [`atof()`](/mojo/stdlib/collections/string/string/atof) built-in
+  - Added the [`atof()`](/mojo/std/collections/string/string/atof) built-in
     function, which can convert a `String` to a `float64`. ([PR
     #2649](https://github.com/modular/modular/pull/2649))
 
-  - You can now use the built-in [`any()`](/mojo/stdlib/builtin/bool/any) and
-    [`all()`](/mojo/stdlib/builtin/bool/all) functions to check for truthy
+  - You can now use the built-in [`any()`](/mojo/std/builtin/bool/any) and
+    [`all()`](/mojo/std/builtin/bool/all) functions to check for truthy
     elements in a collection. Because `SIMD.__bool__()` is now constrained to
     `size=1`, You must explicitly use these to get the truthy value of a SIMD
     vector with more than one element. This avoids common bugs around implicit
@@ -6084,7 +6084,7 @@ Big themes for this release:
     operators.
     ([PR #2324](https://github.com/modular/modular/pull/2324))
 
-  - [`Tuple`](/mojo/stdlib/builtin/tuple/Tuple) now supports `__contains__()`.
+  - [`Tuple`](/mojo/std/builtin/tuple/Tuple) now supports `__contains__()`.
     ([PR #2709](https://github.com/modular/modular/pull/2709)) For example:
 
     ```mojo
@@ -6099,10 +6099,10 @@ Big themes for this release:
 
   - Added new `ImmutableStaticLifetime` and `MutableStaticLifetime` helpers.
 
-- [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) and
+- [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) and
   others:
 
-  - Added new [`memcpy()`](/mojo/stdlib/memory/memory/memcpy) overload for
+  - Added new [`memcpy()`](/mojo/std/memory/memory/memcpy) overload for
     `UnsafePointer[Scalar[_]]` pointers.
 
   - Removed the `get_null()` method from `UnsafePointer` and other pointer
@@ -6116,8 +6116,8 @@ Big themes for this release:
 
 - Collections:
 
-  - [`List`](/mojo/stdlib/collections/list/List) now has an
-    [`index()`](/mojo/stdlib/collections/list/List#index) method that allows you
+  - [`List`](/mojo/std/collections/list/List) now has an
+    [`index()`](/mojo/std/collections/list/List#index) method that allows you
     to find the (first) location of an element in a `List` of
     `EqualityComparable` types. For example:
 
@@ -6138,7 +6138,7 @@ Big themes for this release:
       ([PR #2673](https://github.com/modular/modular/pull/2673))
 
   - `List` has a simplified syntax to call the
-    [`count()`](/mojo/stdlib/collections/list/List#count) method:
+    [`count()`](/mojo/std/collections/list/List#count) method:
     `my_list.count(x)`.
     ([PR #2675](https://github.com/modular/modular/pull/2675))
 
@@ -6152,19 +6152,19 @@ Big themes for this release:
     ([PR #2667](https://github.com/modular/modular/pull/2667))
 
   - `List` now has an
-    [`unsafe_get()`](/mojo/stdlib/collections/list/List#unsafe_get) to get the
+    [`unsafe_get()`](/mojo/std/collections/list/List#unsafe_get) to get the
     reference to an element without bounds check or wraparound for negative
     indices. Note that this method is unsafe. Use with caution.
     [PR #2800](https://github.com/modular/modular/pull/2800)
 
-  - Added a [`fromkeys()`](/mojo/stdlib/collections/dict/Dict#fromkeys) method
+  - Added a [`fromkeys()`](/mojo/std/collections/dict/Dict#fromkeys) method
     to `Dict` to return a `Dict` with the specified keys and values.
     ([PR 2622](https://github.com/modular/modular/pull/2622))
 
-  - Added a [`clear()`](/mojo/stdlib/collections/dict/Dict#clear) method  to
+  - Added a [`clear()`](/mojo/std/collections/dict/Dict#clear) method  to
     `Dict`. ([PR 2627](https://github.com/modular/modular/pull/2627))
 
-  - `Dict` now supports [`reversed()`](/mojo/stdlib/builtin/reversed/reversed)
+  - `Dict` now supports [`reversed()`](/mojo/std/builtin/reversed/reversed)
     for its `items()` and `values()` iterators.
     ([PR #2340](https://github.com/modular/modular/pull/2340))
 
@@ -6173,7 +6173,7 @@ Big themes for this release:
     `str(my_dict)` is not possible yet.
     ([PR #2674](https://github.com/modular/modular/pull/2674))
 
-  - `Dict` now implements [`get(key)`](/mojo/stdlib/collections/dict/Dict#get)
+  - `Dict` now implements [`get(key)`](/mojo/std/collections/dict/Dict#get)
     and `get(key, default)` functions.
     ([PR #2519](https://github.com/modular/modular/pull/2519))
 
@@ -6181,58 +6181,58 @@ Big themes for this release:
     `Reference` to a dictionary value.
 
   - Added a new
-    [`InlineList`](/mojo/stdlib/collections/inline_array/InlineArray) type, a
+    [`InlineList`](/mojo/std/collections/inline_array/InlineArray) type, a
     stack-allocated list with a static maximum size. ([PR
     2587#](https://github.com/modular/modular/pull/2587))
       ([PR #2703](https://github.com/modular/modular/pull/2703))
 
-  - Added a new [`Span`](/mojo/stdlib/memory/span/Span) type for taking slices
+  - Added a new [`Span`](/mojo/std/memory/span/Span) type for taking slices
     of contiguous collections. ([PR
     #2595](https://github.com/modular/modular/pull/2595))
 
-- [`os`](/mojo/stdlib/os/os/) module:
+- [`os`](/mojo/std/os/os/) module:
 
   - The `os` module now provides functionality for adding and removing
-    directories using [`mkdir()`](/mojo/stdlib/os/os/mkdir) and
-    [`rmdir()`](/mojo/stdlib/os/os/rmdir).
+    directories using [`mkdir()`](/mojo/std/os/os/mkdir) and
+    [`rmdir()`](/mojo/std/os/os/rmdir).
     ([PR #2430](https://github.com/modular/modular/pull/2430))
 
-  - Added the [`os.path.getsize()`](/mojo/stdlib/os/path/path/getsize) function,
+  - Added the [`os.path.getsize()`](/mojo/std/os/path/path/getsize) function,
     which gives the size in bytes of the file identified by the path.
     ([PR 2626](https://github.com/modular/modular/pull/2626))
 
-  - Added [`os.path.join()`](/mojo/stdlib/os/path/path/join) function.
+  - Added [`os.path.join()`](/mojo/std/os/path/path/join) function.
     ([PR 2792](https://github.com/modular/modular/pull/2792))
 
-  - Added a new [`tempfile`](/mojo/stdlib/tempfile/tempfile/) module, with
+  - Added a new [`tempfile`](/mojo/std/tempfile/tempfile/) module, with
     `gettempdir()` and `mkdtemp()` functions.
     ([PR 2742](https://github.com/modular/modular/pull/2742))
 
-- [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) type:
+- [`SIMD`](/mojo/std/builtin/simd/SIMD) type:
 
-  - Added [`SIMD.shuffle()`](/mojo/stdlib/builtin/simd/SIMD#shuffle) with
+  - Added [`SIMD.shuffle()`](/mojo/std/builtin/simd/SIMD#shuffle) with
     `IndexList` mask.
     ([PR #2315](https://github.com/modular/modular/pull/2315))
 
-  - [`SIMD.__bool__()`](/mojo/stdlib/builtin/simd/SIMD#__bool__) is constrained
+  - [`SIMD.__bool__()`](/mojo/std/builtin/simd/SIMD#__bool__) is constrained
     such that it only works when `size` is `1`. For SIMD vectors with more than
-    one element, use [`any()`](/mojo/stdlib/builtin/bool/any) or
-    [`all()`](/mojo/stdlib/builtin/bool/all).
+    one element, use [`any()`](/mojo/std/builtin/bool/any) or
+    [`all()`](/mojo/std/builtin/bool/all).
     ([PR #2502](https://github.com/modular/modular/pull/2502))
 
-  - The [`SIMD.reduce_or()`](/mojo/stdlib/builtin/simd/SIMD#reduce_or) and
-    [`SIMD.reduce_and()`](/mojo/stdlib/builtin/simd/SIMD#reduce_and) methods are
+  - The [`SIMD.reduce_or()`](/mojo/std/builtin/simd/SIMD#reduce_or) and
+    [`SIMD.reduce_and()`](/mojo/std/builtin/simd/SIMD#reduce_and) methods are
     now bitwise operations, and support integer types.
     ([PR #2671](https://github.com/modular/modular/pull/2671))
 
-  - Added [`SIMD.__repr__()`](/mojo/stdlib/builtin/simd/SIMD#__repr__) to get
+  - Added [`SIMD.__repr__()`](/mojo/std/builtin/simd/SIMD#__repr__) to get
     the verbose string representation of `SIMD` types.
     ([PR #2728](https://github.com/modular/modular/pull/2728))
 
-- [`math`](/mojo/stdlib/math/math/) package:
+- [`math`](/mojo/std/math/math/) package:
 
   - The `math.bit` module has been moved to a new top-level
-    [`bit`](/mojo/stdlib/bit/bit/) module. The following functions in this
+    [`bit`](/mojo/std/bit/bit/) module. The following functions in this
     module have been renamed:
     - `ctlz` -> `countl_zero`
     - `cttz` -> `countr_zero`
@@ -6252,22 +6252,22 @@ Big themes for this release:
     functions.
 
   - The `math.tgamma()` function has been renamed to
-    [`math.gamma()`](/mojo/stdlib/math/math/gamma) to conform with Python's
+    [`math.gamma()`](/mojo/std/math/math/gamma) to conform with Python's
     naming.
 
   - The implementation of the following functions have been moved from the
-    `math` module to the new [`utils.numerics`](/mojo/stdlib/utils/numerics/)
+    `math` module to the new [`utils.numerics`](/mojo/std/utils/numerics/)
     module: `isfinite()`, `isinf()`, `isnan()`, `nan()`, `nextafter()`, and
     `ulp()`. The functions continue to be exposed in the `math` module.
 
-  - [`math.gcd()`](/mojo/stdlib/math/math/gcd) now works on negative inputs, and
+  - [`math.gcd()`](/mojo/std/math/math/gcd) now works on negative inputs, and
     like Python's implementation, accepts a variadic list of integers. New
     overloads for a `List` or `Span`of integers are also added.
     ([PR #2777](https://github.com/modular/modular/pull/2777))
 
 - Async and coroutines:
 
-  - [`Coroutine`](/mojo/stdlib/builtin/coroutine/Coroutine) now requires a
+  - [`Coroutine`](/mojo/std/builtin/coroutine/Coroutine) now requires a
     lifetime parameter. This parameter is set automatically by the parser when
     calling an async function. It contains the lifetimes of all the arguments
     and any lifetime accesses by the arguments. This ensures that argument
@@ -6283,19 +6283,19 @@ Big themes for this release:
 
 - Miscellaneous:
 
-  - Added an [`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray)
+  - Added an [`InlineArray`](/mojo/std/collections/inline_array/InlineArray)
     type that works on memory-only types. Compare with the existing
-    [`StaticTuple`](/mojo/stdlib/utils/static_tuple/StaticTuple) type, which is
+    [`StaticTuple`](/mojo/std/utils/static_tuple/StaticTuple) type, which is
     conceptually an array type, but only works on `AnyTrivialRegType`. ([PR
     #2294](https://github.com/modular/modular/pull/2294))
 
-  - The [`base64`](/mojo/stdlib/base64/) package now includes encoding and
+  - The [`base64`](/mojo/std/base64/) package now includes encoding and
     decoding support for both the Base64 and Base16 encoding schemes.
     ([PR #2364](https://github.com/modular/modular/pull/2364))
     ([PR #2584](https://github.com/modular/modular/pull/2584))
 
-  - The `take()` function in [`Variant`](/mojo/stdlib/utils/variant/Variant) and
-    [`Optional`](/mojo/stdlib/collections/optional/Optional) has been renamed to
+  - The `take()` function in [`Variant`](/mojo/std/utils/variant/Variant) and
+    [`Optional`](/mojo/std/collections/optional/Optional) has been renamed to
     `unsafe_take()`.
 
   - The `get()` function in `Variant` has been replaced by `__getitem__()`. That
@@ -6307,7 +6307,7 @@ Big themes for this release:
     and optimizing it.
 
 - `infinity` and `NaN` are now correctly handled in
-  [`testing.assert_almost_equal()`](/mojo/stdlib/testing/testing/assert_almost_equal)
+  [`testing.assert_almost_equal()`](/mojo/std/testing/testing/assert_almost_equal)
   and  an `inf` function  has been added to `utils/numerics.mojo`.
   ([PR #2375](https://github.com/modular/modular/pull/2375))
 
@@ -6462,7 +6462,7 @@ Special thanks to our community contributors:
 ### ✨ Highlights
 
 - `AnyPointer` was renamed to
-  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) and is now
+  [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) and is now
   Mojo's preferred unsafe pointer type.  It has several enhancements, including:
 
   - The element type can now be any type: it doesn't require `Movable`.
@@ -6471,13 +6471,13 @@ Special thanks to our community contributors:
     methods have been changed to top-level functions and renamed. The new
     functions are:
 
-    - [`initialize_pointee_copy`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
-    - [`initialize_pointee_move`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
-    - [`move_from_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#take_pointee)
-    - [`move_pointee`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#move_pointee_into)
+    - [`initialize_pointee_copy`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
+    - [`initialize_pointee_move`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
+    - [`move_from_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#take_pointee)
+    - [`move_pointee`](/mojo/std/memory/unsafe_pointer/UnsafePointer#move_pointee_into)
 
   - A new
-    [`destroy_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
+    [`destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
     function runs the destructor on the pointee.
 
   - `UnsafePointer` can be initialized directly from a `Reference` with
@@ -6489,14 +6489,14 @@ Special thanks to our community contributors:
 
 - All of the pointer types received some cleanup to make them more consistent,
   for example the `unsafe.bitcast()` global function is now a consistent
-  [`bitcast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#bitcast) method
+  [`bitcast()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#bitcast) method
   on the pointers, which can convert element type and address space.
 
 - Improvements to variadic arguments support.
 
   - Heterogeneous variadic pack arguments now work reliably even with memory
     types, and have a more convenient API to use, as defined by the
-    [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack) type. For
+    [`VariadicPack`](/mojo/std/builtin/variadics/VariadicPack) type. For
     example, a simplified version of `print` can be implemented like this:
 
     ```mojo
@@ -6616,7 +6616,7 @@ Special thanks to our community contributors:
 
 #### ⭐️ New
 
-- [`List`](/mojo/stdlib/collections/list/List) has several new methods:
+- [`List`](/mojo/std/collections/list/List) has several new methods:
 
   - `pop(index)` for removing an element at a particular index.
     By default, `List.pop()` removes the last element in the list.
@@ -6637,11 +6637,11 @@ Special thanks to our community contributors:
     a new `List`. ([@StandinKP](https://github.com/StandinKP), fixes
     [#2170](https://github.com/modular/modular/issues/2170))
 
-- [`Dict`](/mojo/stdlib/collections/dict/Dict) now has a `update()` method to
+- [`Dict`](/mojo/std/collections/dict/Dict) now has a `update()` method to
   update keys/values from another `Dict`.
   ([@gabrieldemarmiesse](https://github.com/gabrieldemarmiesse))
 
-- [`Set`](/mojo/stdlib/collections/set/Set) now has named methods for set
+- [`Set`](/mojo/std/collections/set/Set) now has named methods for set
   operations:
   - `difference()` mapping to `-`
   - `difference_update()` mapping to `-=`
@@ -6664,7 +6664,7 @@ Special thanks to our community contributors:
 
   ([@gabrieldemarmiesse](https://github.com/gabrieldemarmiesse))
 
-- Added [`reversed()`](/mojo/stdlib/builtin/reversed/reversed) function for
+- Added [`reversed()`](/mojo/std/builtin/reversed/reversed) function for
   creating reversed iterators. Several range types, `List`, and `Dict` now
   support iterating in reverse.
 
@@ -6678,7 +6678,7 @@ Special thanks to our community contributors:
   [@jayzhan211](https://github.com/jayzhan211), contributes towards
   [#2325](https://github.com/modular/modular/issues/2325))
 
-- [`Optional`](/mojo/stdlib/collections/optional/Optional) now implements
+- [`Optional`](/mojo/std/collections/optional/Optional) now implements
   `__is__` and `__isnot__` methods so that you can compare an `Optional` with
   `None`. For example:
 
@@ -6690,7 +6690,7 @@ Special thanks to our community contributors:
 
   ([@gabrieldemarmiesse](https://github.com/gabrieldemarmiesse))
 
-- [`Tuple`](/mojo/stdlib/builtin/tuple/Tuple) now works with memory-only element
+- [`Tuple`](/mojo/std/builtin/tuple/Tuple) now works with memory-only element
   types like `String` and allows you to directly index into it with a parameter
   expression.  This means you can now simply use `x = tup[1]` like Python
   instead of `x = tup.get[1, Int]()`. You can also assign into tuple elements
@@ -6710,15 +6710,15 @@ Special thanks to our community contributors:
 
   - It has moved to the `memory.reference` module instead of `memory.unsafe`.
   - `Reference` now has an
-    [`unsafe_bitcast()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#bitcast)
+    [`unsafe_bitcast()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#bitcast)
     method, similar to the pointer types.
 
   - Several unsafe methods were removed, including `offset()`,
     `destroy_element_unsafe()` and `emplace_ref_unsafe()`. This is because
     `Reference` is a safe type—use `UnsafePointer` to do unsafe operations.
 
-- [`Bool`](/mojo/stdlib/builtin/bool/Bool) can now be implicitly converted from
-  any type conforming to the [`Boolable`](/mojo/stdlib/builtin/bool/Boolable)
+- [`Bool`](/mojo/std/builtin/bool/Bool) can now be implicitly converted from
+  any type conforming to the [`Boolable`](/mojo/std/builtin/bool/Boolable)
   trait. This means that you no longer need to write code like this:
 
   ```mojo
@@ -6749,10 +6749,10 @@ Special thanks to our community contributors:
       ...
   ```
 
-- [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) now conforms
-  to the [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait, meaning
+- [`PythonObject`](/mojo/std/python/python_object/PythonObject) now conforms
+  to the [`KeyElement`](/mojo/std/collections/dict/#keyelement) trait, meaning
   that it can be used as key type for
-  [`Dict`](/mojo/stdlib/collections/dict/Dict). This allows you to easily build
+  [`Dict`](/mojo/std/collections/dict/Dict). This allows you to easily build
   and interact with Python dictionaries in Mojo:
 
   ```mojo
@@ -6764,7 +6764,7 @@ Special thanks to our community contributors:
       print(d)  # prints `{'foo': [1, 2, 'something else'], 7: 'bar'}`
   ```
 
-- [`FileHandle.seek()`](/mojo/stdlib/builtin/file/FileHandle#seek) now has a
+- [`FileHandle.seek()`](/mojo/std/builtin/file/FileHandle#seek) now has a
   `whence` argument that defaults to `os.SEEK_SET` to seek from the beginning of
   the file. You can now set to `os.SEEK_CUR` to offset by the current
   `FileHandle` seek position:
@@ -6782,9 +6782,9 @@ Special thanks to our community contributors:
   f.seek(os.SEEK_END, -32)
   ```
 
-- [`FileHandle.read()`](/mojo/stdlib/builtin/file/FileHandle#read) can now
+- [`FileHandle.read()`](/mojo/std/builtin/file/FileHandle#read) can now
   read straight into a
-  [`DTypePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer):
+  [`DTypePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer):
 
   ```mojo
   var file = open("/tmp/example.txt", "r")
@@ -6816,53 +6816,53 @@ argument (instead of the second) when constructing a tensor with pointer data.
   initialized with all zeros. This provides an easy way to fill in the data of a
   tensor.
 
-- [`String`](/mojo/stdlib/collections/string/string/String) now has
+- [`String`](/mojo/std/collections/string/string/String) now has
   `removeprefix()` and `removesuffix()` methods.
   ([@gabrieldemarmiesse](https://github.com/gabrieldemarmiesse))
 
-- The [`ord`](/mojo/stdlib/collections/string/string/ord) and
-  [`chr`](/mojo/stdlib/collections/string/string/chr) functions have been
+- The [`ord`](/mojo/std/collections/string/string/ord) and
+  [`chr`](/mojo/std/collections/string/string/chr) functions have been
   improved to accept any Unicode character. ([@mzaks](https://github.com/mzaks),
   contributes towards [#1616](https://github.com/modular/modular/issues/1616))
 
-- [`atol()`](/mojo/stdlib/collections/string/string/atol) now handles
+- [`atol()`](/mojo/std/collections/string/string/atol) now handles
   whitespace. The `atol()`function is used internally by `String.__int__()`, so
   `int(String( " 10 "))` now returns `10` instead of raising an error.
   ([@artemiogr97](https://github.com/artemiogr97))
 
-- [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) now implements the `__rmod__()`
+- [`SIMD`](/mojo/std/builtin/simd/SIMD) now implements the `__rmod__()`
   method. ([@bgreni](https://github.com/bgreni), fixes
   [#1482](https://github.com/modular/modular/issues/1482))
 
-- [`bool(None)`](/mojo/stdlib/builtin/bool/bool-function) is now implemented.
+- [`bool(None)`](/mojo/std/builtin/bool/bool-function) is now implemented.
   ([@zhoujingya](https://github.com/zhoujingya))
 
-- The [`DTypePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type
+- The [`DTypePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) type
   now implements `gather()` for gathering a `SIMD` vector from offsets of a
   current pointer. Similarly, support for `scatter()` was added to scatter a
   `SIMD` vector into offsets of the current pointer.
   ([@leandrolcampos](https://github.com/leandrolcampos))
 
-- The [`len()`](/mojo/stdlib/builtin/len/len) function now handles a
-  [`range()`](/mojo/stdlib/builtin/range/range) specified with a negative end
+- The [`len()`](/mojo/std/builtin/len/len) function now handles a
+  [`range()`](/mojo/std/builtin/range/range) specified with a negative end
   value, so that things like `len(range(-1))` work correctly.
   ([@soraros](https://github.com/soraros))
 
-- [`debug_assert()`](/mojo/stdlib/builtin/debug_assert/debug_assert) now prints
+- [`debug_assert()`](/mojo/std/builtin/debug_assert/debug_assert) now prints
   its location (filename, line, and column where it was called) in its error
   message. Similarly, the `assert` helpers in the
-  [`testing`](/mojo/stdlib/testing/testing/) module now include location
+  [`testing`](/mojo/std/testing/testing/) module now include location
   information in their messages.
 
 - The
-  [`testing.assert_equal[SIMD]()`](/mojo/stdlib/testing/testing/assert_equal)
+  [`testing.assert_equal[SIMD]()`](/mojo/std/testing/testing/assert_equal)
   function now raises if any of the elements mismatch in the two `SIMD`
   arguments being compared.
   ([@gabrieldemarmiesse](https://github.com/gabrieldemarmiesse))
 
 - The
-  [`testing.assert_almost_equal()`](/mojo/stdlib/testing/testing/assert_almost_equal)
-  and [`math.isclose()`](/mojo/stdlib/math/math/isclose) functions now have an
+  [`testing.assert_almost_equal()`](/mojo/std/testing/testing/assert_almost_equal)
+  and [`math.isclose()`](/mojo/std/math/math/isclose) functions now have an
   `equal_nan` flag. When set to `True`, then NaNs are considered equal.
 
 - The `object` type now supports the
@@ -6898,18 +6898,18 @@ argument (instead of the second) when constructing a tensor with pointer data.
 
   ([@lsh](https://github.com/lsh))
 
-- Added [`os.remove()`](/mojo/stdlib/os/os/remove) and
-  [`os.unlink()`](/mojo/stdlib/os/os/unlink) for deleting files.
+- Added [`os.remove()`](/mojo/std/os/os/remove) and
+  [`os.unlink()`](/mojo/std/os/os/unlink) for deleting files.
   ([@artemiogr97](https://github.com/artemiogr97), fixes
   [#2306](https://github.com/modular/modular/issues/2306))
 
 #### 🦋 Changed
 
-- The [`parallel_memcpy()`](/mojo/stdlib/algorithm/memory/parallel_memcpy)
+- The [`parallel_memcpy()`](/mojo/std/algorithm/memory/parallel_memcpy)
   function has moved from the `buffer` package to the `algorithm` package.
   Please update your imports accordingly.
 
-- [`Optional.value()`](/mojo/stdlib/collections/optional/Optional#value) now
+- [`Optional.value()`](/mojo/std/collections/optional/Optional#value) now
   returns a reference instead of a copy of the contained value.
 
   To perform a copy manually, dereference the result:
@@ -7063,7 +7063,7 @@ This release doesn't include any changes to Mojo.
 ### 🔥 Legendary
 
 - The Mojo standard library is now open source! Check out the
-  [README](https://github.com/modular/modular/blob/main/mojo/stdlib/README.md)
+  [README](https://github.com/modular/modular/blob/main/mojo/std/README.md)
   for everything you need to get started.
 
 - Structs and other nominal types are now allowed to implicitly conform to
@@ -7187,7 +7187,7 @@ This release doesn't include any changes to Mojo.
 #### ⭐️ New
 
 - `DynamicVector` has been renamed to
-  [`List`](/mojo/stdlib/collections/list/List), and has moved from the
+  [`List`](/mojo/std/collections/list/List), and has moved from the
   `collections.vector` module to the `collections.list` module. In addition:
 
   - You can now construct a `List` from a variadic number of values. For
@@ -7198,14 +7198,14 @@ This release doesn't include any changes to Mojo.
     ```
 
   - `List` and
-    [`InlinedFixedVector`](/mojo/stdlib/collections/inline_array/InlineArray)
+    [`InlinedFixedVector`](/mojo/std/collections/inline_array/InlineArray)
     types now support negative indexing. This means that you can write `vec[-1]`
     which is equivalent to `vec[len(vec)-1]`.
 
   - `List.push_back()` has been removed.  Please use the `append()` function
     instead.
 
-- The [`print()`](/mojo/stdlib/builtin/io/print) function now takes `sep` and
+- The [`print()`](/mojo/std/builtin/io/print) function now takes `sep` and
   `end` keyword arguments. This means that you can write:
 
   ```mojo
@@ -7217,11 +7217,11 @@ This release doesn't include any changes to Mojo.
   Also, the `print_no_newline()` function has been removed.  Please use
   `print(end="")` instead.
 
-- The [`FloatLiteral`](/mojo/stdlib/builtin/float_literal/FloatLiteral) type is
+- The [`FloatLiteral`](/mojo/std/builtin/float_literal/FloatLiteral) type is
   now an infinite-precision nonmaterializable type. This means you can do
   compile-time calculations using `FloatLiteral` without rounding errors. When
   materialized at runtime, a `FloatLiteral` value is converted to a
-  [`Float64`](/mojo/stdlib/builtin/simd).
+  [`Float64`](/mojo/std/builtin/simd).
 
   ```mojo
   # third is an infinite-precision FloatLiteral value
@@ -7231,7 +7231,7 @@ This release doesn't include any changes to Mojo.
   ```
 
 - String types all conform to the
-  [`IntableRaising`](/mojo/stdlib/builtin/int/IntableRaising) trait. This means
+  [`IntableRaising`](/mojo/std/builtin/int/IntableRaising) trait. This means
   that you can now call `int("123")` to get the integer `123`. If the integer
   cannot be parsed from the string, then an error is raised.
 
@@ -7241,11 +7241,11 @@ This release doesn't include any changes to Mojo.
   fixed in a future release.
 
 - Added a new
-  [`collections.OptionalReg`](/mojo/stdlib/collections/optional/OptionalReg)
+  [`collections.OptionalReg`](/mojo/std/collections/optional/OptionalReg)
   type, a register-passable alternative to
-  [`Optional`](/mojo/stdlib/collections/optional/Optional).
+  [`Optional`](/mojo/std/collections/optional/Optional).
 
-- The [`ulp()`](/mojo/stdlib/utils/numerics/ulp) function has been added to the
+- The [`ulp()`](/mojo/std/utils/numerics/ulp) function has been added to the
   `math` module. This allows you to get the units of least precision (or units
   of last place) of a floating point value.
 
@@ -7253,9 +7253,9 @@ This release doesn't include any changes to Mojo.
 
 - The `simd_load()`, `simd_store()`, `aligned_simd_load()`, and
   `aligned_simd_store()` methods on
-  [`DTypePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer),
-  [`Buffer`](/mojo/stdlib/buffer/buffer/NDBuffer), and
-  [`NDBuffer`](/mojo/stdlib/buffer/buffer/NDBuffer) have been merged into
+  [`DTypePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer),
+  [`Buffer`](/mojo/std/buffer/buffer/NDBuffer), and
+  [`NDBuffer`](/mojo/std/buffer/buffer/NDBuffer) have been merged into
   a more expressive set of `load()` and `store()` methods with keyword-only
   `width` and `alignment` parameters:
 
@@ -7271,18 +7271,18 @@ This release doesn't include any changes to Mojo.
   ```
 
 - The
-  [`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable)
+  [`EqualityComparable`](/mojo/std/builtin/equality_comparable/EqualityComparable)
   trait now requires the `__ne__()` method for conformance in addition to the
   previously required `__eq__()` method.
 
 - Many types now declare conformance to `EqualityComparable` trait.
 
-- [`StaticTuple`](/mojo/stdlib/utils/static_tuple/StaticTuple) parameter order
+- [`StaticTuple`](/mojo/std/utils/static_tuple/StaticTuple) parameter order
   has changed to `StaticTuple[type, size]` for consistency with `SIMD` and
   similar collection types.
 
 - The signature of the
-  [`elementwise()`](/mojo/stdlib/algorithm/functional/elementwise) function has
+  [`elementwise()`](/mojo/std/algorithm/functional/elementwise) function has
   been changed. The new order is is `function`, `simd_width`, and then `rank`.
   As a result, the rank parameter can now be inferred and one can call
   `elementwise()` without it:
@@ -7311,23 +7311,23 @@ This release doesn't include any changes to Mojo.
   library.  Specifically, the following are some breaking changes worth
   calling out.  Please update your import statements accordingly.
 
-  - [`Buffer`](/mojo/stdlib/buffer/buffer/NDBuffer),
-    [`NDBuffer`](/mojo/stdlib/buffer/buffer/NDBuffer), and friends have moved
+  - [`Buffer`](/mojo/std/buffer/buffer/NDBuffer),
+    [`NDBuffer`](/mojo/std/buffer/buffer/NDBuffer), and friends have moved
     from the `memory` package into a new `buffer` package.
 
     ```mojo
     from buffer import Buffer, NDBuffer
     ```
 
-  - `utils.list`, including the [`Dim`](/mojo/stdlib/buffer/dimlist/Dim) and
-    [`DimList`](/mojo/stdlib/buffer/dimlist/DimList) types, has moved to
+  - `utils.list`, including the [`Dim`](/mojo/std/buffer/dimlist/Dim) and
+    [`DimList`](/mojo/std/buffer/dimlist/DimList) types, has moved to
     the `buffer` package.
 
     ```mojo
     from buffer import Dim, DimList
     ```
 
-  - The [`parallel_memcpy()`](/mojo/stdlib/algorithm/memory/parallel_memcpy)
+  - The [`parallel_memcpy()`](/mojo/std/algorithm/memory/parallel_memcpy)
     function has moved from the `memory` package into the `buffer` package.
 
     ```mojo
@@ -7350,15 +7350,15 @@ This release doesn't include any changes to Mojo.
     ```
 
   - The `trap()` function has been renamed to
-    [`abort()`](/mojo/stdlib/os/os/abort).  It also has moved from the `debug`
+    [`abort()`](/mojo/std/os/os/abort).  It also has moved from the `debug`
     module to the `os` module.
 
     ```mojo
     from os import abort
     ```
 
-  - The [`isinf()`](/mojo/stdlib/utils/numerics/isfinite) and
-    [`isfinite()`](/mojo/stdlib/utils/numerics/isfinite) methods have been moved
+  - The [`isinf()`](/mojo/std/utils/numerics/isfinite) and
+    [`isfinite()`](/mojo/std/utils/numerics/isfinite) methods have been moved
     from `math.limits` to the `math` module.
 
     ```mojo
@@ -7415,11 +7415,11 @@ This release doesn't include any changes to Mojo.
   This means that calls to `memcpy` of the form `memcpy[Dtype.xyz](...)` will
   no longer work and the user would have to change the code to `memcpy(...)`.
 
-- The [`memcpy()`](/mojo/stdlib/memory/memory/memcpy) overload that worked on
-  [`Buffer`](/mojo/stdlib/buffer/buffer/NDBuffer) types has been removed in
+- The [`memcpy()`](/mojo/std/memory/memory/memcpy) overload that worked on
+  [`Buffer`](/mojo/std/buffer/buffer/NDBuffer) types has been removed in
   favor of just overloads for
-  [`Pointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) and
-  [`DTypePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer):
+  [`Pointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) and
+  [`DTypePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer):
 
   ```mojo
   # Doesn't work
@@ -7480,7 +7480,7 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
 
 ### ⭐️ New
 
-- We now have a [`Set`](/mojo/stdlib/collections/set/Set) type in our
+- We now have a [`Set`](/mojo/std/collections/set/Set) type in our
   collections! `Set` is backed by a `Dict`, so it has fast add, remove, and `in`
   checks, and requires member elements to conform to the `KeyElement` trait.
 
@@ -7610,7 +7610,7 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
   and
   [automatic parameterization of functions](/mojo/manual/parameters/#automatic-parameterization).
 
-- [`DynamicVector`](/mojo/stdlib/collections/list/List) now supports iteration.
+- [`DynamicVector`](/mojo/std/collections/list/List) now supports iteration.
   Iteration values are instances of `Reference` and require dereferencing:
 
   ```mojo
@@ -7625,8 +7625,8 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
   ```
 
 - `DynamicVector` now has
-  [`reverse()`](/mojo/stdlib/collections/list/List#reverse) and
-  [`extend()`](/mojo/stdlib/collections/list/List#extend) methods.
+  [`reverse()`](/mojo/std/collections/list/List#reverse) and
+  [`extend()`](/mojo/std/collections/list/List#extend) methods.
 
 - The `mojo package` command now produces compilation agnostic packages.
   Compilation options such as O0, or --debug-level, are no longer needed or
@@ -7672,7 +7672,7 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
   build. The implementation of Mojo async is undergoing a rework 🚧.
 
 - The standard library `slice` type has been renamed to
-  [`Slice`](/mojo/stdlib/builtin/builtin_slice/Slice), and a `slice`
+  [`Slice`](/mojo/std/builtin/builtin_slice/Slice), and a `slice`
   function has been introduced.  This makes Mojo closer to Python and makes the
   `Slice` type follow the naming conventions of other types like `Int`.
 
@@ -7698,36 +7698,36 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
 - The `__refitem__()` accessor method may now return a `Reference` instead of
   having to return an MLIR internal reference type.
 
-- Added [`AnyPointer.move_into()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#move_pointee_into)
+- Added [`AnyPointer.move_into()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#move_pointee_into)
   method, for moving a value from one pointer memory location to another.
 
-- Added built-in [`hex()`](/mojo/stdlib/builtin/format_int/hex) function, which
+- Added built-in [`hex()`](/mojo/std/builtin/format_int/hex) function, which
   can be used to format any value whose type implements the
-  [`Intable`](/mojo/stdlib/builtin/int/Intable) trait as a hexadecimal string.
+  [`Intable`](/mojo/std/builtin/int/Intable) trait as a hexadecimal string.
 
-- [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) now
+- [`PythonObject`](/mojo/std/python/python_object/PythonObject) now
   implements `__is__` and `__isnot__` so that you can use expressions of the
   form `x is y` and `x is not y` with `PythonObject`.
 
-- [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) now conforms
+- [`PythonObject`](/mojo/std/python/python_object/PythonObject) now conforms
   to the `SizedRaising` trait. This means the built-in
-  [`len()`](/mojo/stdlib/builtin/len/len) function now works on `PythonObject`.
+  [`len()`](/mojo/std/builtin/len/len) function now works on `PythonObject`.
 
-- The `os` package now contains the [`stat()`](/mojo/stdlib/os/fstat/stat)
-  and [`lstat()`](/mojo/stdlib/os/fstat/lstat) functions.
+- The `os` package now contains the [`stat()`](/mojo/std/os/fstat/stat)
+  and [`lstat()`](/mojo/std/os/fstat/lstat) functions.
 
-- A new [`os.path`](/mojo/stdlib/os/path/path) package now allows you to query
+- A new [`os.path`](/mojo/std/os/path/path) package now allows you to query
   properties on paths.
 
 - The `os` package now has a
-  [`PathLike`](/mojo/stdlib/os/pathlike/PathLike) trait. A struct conforms
+  [`PathLike`](/mojo/std/os/pathlike/PathLike) trait. A struct conforms
   to the `PathLike` trait by implementing the `__fspath__()` function.
 
-- The [`pathlib.Path`](/mojo/stdlib/pathlib/path/Path) now has functions to
+- The [`pathlib.Path`](/mojo/std/pathlib/path/Path) now has functions to
   query properties of the path.
 
-- The [`listdir()`](/mojo/stdlib/pathlib/path/Path#listdir) method now exists on
-  [`pathlib.Path`](/mojo/stdlib/pathlib/path) and also exists in the `os`
+- The [`listdir()`](/mojo/std/pathlib/path/Path#listdir) method now exists on
+  [`pathlib.Path`](/mojo/std/pathlib/path) and also exists in the `os`
   module to work on `PathLike` structs. For example, the following sample
   lists all the directories in the `/tmp` directory:
 
@@ -7757,10 +7757,10 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
           print(files[i])
   ```
 
-- The [`find()`](/mojo/stdlib/builtin/string_literal/StringLiteral#find),
-  [`rfind()`](/mojo/stdlib/builtin/string_literal/StringLiteral#rfind),
-  [`count()`](/mojo/stdlib/collections/string/string_slice/StringSlice#count), and
-  [`__contains__()`](/mojo/stdlib/builtin/string_literal/StringLiteral#__contains__)
+- The [`find()`](/mojo/std/builtin/string_literal/StringLiteral#find),
+  [`rfind()`](/mojo/std/builtin/string_literal/StringLiteral#rfind),
+  [`count()`](/mojo/std/collections/string/string_slice/StringSlice#count), and
+  [`__contains__()`](/mojo/std/builtin/string_literal/StringLiteral#__contains__)
   methods now work on string literals. This means that you can write:
 
   ```mojo
@@ -7769,12 +7769,12 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
   ```
 
 - Breakpoints can now be inserted programmatically within the code using the
-  builtin [`breakpoint()`](/mojo/stdlib/builtin/breakpoint/breakpoint) function.
+  builtin [`breakpoint()`](/mojo/std/builtin/breakpoint/breakpoint) function.
 
   Note: on Graviton instances, the debugger might not be able to resume after
   hitting this kind of breakpoint.
 
-- Added a builtin [`Boolable`](/mojo/stdlib/builtin/bool/Boolable) trait that
+- Added a builtin [`Boolable`](/mojo/std/builtin/bool/Boolable) trait that
   describes a type that can be represented as a boolean value. To conform to the
   trait, a type must implement the `__bool__()` method.
 
@@ -7786,9 +7786,9 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
 
 - Trivial types, like MLIR types and function types, can now be bound implicitly
   to traits that require copy constructors or move constructors, such as
-  [`Movable`](/mojo/stdlib/builtin/value/Movable),
-  [`Copyable`](/mojo/stdlib/builtin/value/Copyable), and
-  [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement).
+  [`Movable`](/mojo/std/builtin/value/Movable),
+  [`Copyable`](/mojo/std/builtin/value/Copyable), and
+  [`CollectionElement`](/mojo/std/builtin/value/CollectionElement).
 
 - A new magic `__origin_of(expr)` call will yield the lifetime of a memory
   value.  We hope and expect that this will eventually be replaced by
@@ -7834,7 +7834,7 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
   ```
 
 - `vectorize_unroll` has been removed, and
-  [`vectorize`](/mojo/stdlib/algorithm/functional/vectorize) now has a parameter
+  [`vectorize`](/mojo/std/algorithm/functional/vectorize) now has a parameter
   named `unroll_factor` with a default value of 1. Increasing `unroll_factor`
   may improve performance at the cost of binary size. See the
   [loop unrolling blog here](https://www.modular.com/blog/what-is-loop-unrolling-how-you-can-speed-up-mojo)
@@ -7858,8 +7858,8 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
   unroll[func, unroll_count]()
   ```
 
-- The signature of the [`NDBuffer`](/mojo/stdlib/buffer/buffer/NDBuffer) and
-  [`Buffer`](/mojo/stdlib/buffer/buffer/NDBuffer) types have changed. Now, both
+- The signature of the [`NDBuffer`](/mojo/std/buffer/buffer/NDBuffer) and
+  [`Buffer`](/mojo/std/buffer/buffer/NDBuffer) types have changed. Now, both
   take the type as the first parameter and no longer require the shape
   parameter. This allows you to use these types and have sensible defaults.
   For example:
@@ -7885,23 +7885,23 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
   but 1 was specified`) the missing arguments are now described by
   name (e.g. `missing 2 required positional arguments: 'b', 'c'`).
 
-- The [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement) trait
+- The [`CollectionElement`](/mojo/std/builtin/value/CollectionElement) trait
   is now a built-in trait and has been removed from `collections.vector`.
 
 - The `DynamicVector(capacity: Int)` constructor has been changed to take
   `capacity` as a keyword-only argument to prevent implicit conversion from
   `Int`.
 
-- [`Variant.get[T]()`](/mojo/stdlib/utils/variant/Variant#__getitem__) now
+- [`Variant.get[T]()`](/mojo/std/utils/variant/Variant#__getitem__) now
   returns a `Reference` to the value rather than a copy.
 
-- The [`String`](/mojo/stdlib/collections/string/string/String) methods `tolower()`
+- The [`String`](/mojo/std/collections/string/string/String) methods `tolower()`
   and `toupper()` have been renamed to `str.lower()` and `str.upper()`.
 
 - The `ref` and `mutref` identifiers are no longer reserved as Mojo keywords.
 We originally thought about using those as language sugar for references, but
 we believe that generic language features combined with the
-[`Reference`](/mojo/stdlib/memory/pointer/Pointer) type will provide a good
+[`Reference`](/mojo/std/memory/pointer/Pointer) type will provide a good
 experience without dedicated sugar.
 
 ### 🛠️ Fixed
@@ -7979,11 +7979,11 @@ experience without dedicated sugar.
 ### ⭐️ New
 
 - A new Mojo-native dictionary type,
-  [`Dict`](/mojo/stdlib/collections/dict) for storing key-value pairs.
+  [`Dict`](/mojo/std/collections/dict) for storing key-value pairs.
   `Dict` stores values that conform to the
-  [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement)
+  [`CollectionElement`](/mojo/std/builtin/value/CollectionElement)
   trait. Keys need to conform to the new
-  [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait, which is
+  [`KeyElement`](/mojo/std/collections/dict/#keyelement) trait, which is
   not yet implemented by other standard library types. In the short term, you
   can create your own wrapper types to use as keys. For example, the following
   sample defines a `StringKey` type and uses it to create a dictionary that maps
@@ -8033,14 +8033,14 @@ experience without dedicated sugar.
   A current limitation is that references outside of the current document are
   not supported, which will be addressed in the future.
 
-- The [`sys.info`](/mojo/stdlib/sys/info) module now includes
+- The [`sys.info`](/mojo/std/sys/info) module now includes
   `num_physical_cores()`, `num_logical_cores()`, and `num_performance_cores()`
   functions.
 
 - Homogeneous variadic arguments consisting of memory-only types, such as
   `String` are more powerful and easier to use. These arguments are projected
   into a
-  [`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem).
+  [`VariadicListMem`](/mojo/std/builtin/variadics/VariadicListMem).
 
   (Previous releases made it easier to use variadic lists of register-passable
   types, like `Int`.)
@@ -8095,7 +8095,7 @@ experience without dedicated sugar.
   ```
 
 - Mojo now has a prototype version of a safe
-  [`Reference`](/mojo/stdlib/memory/pointer/Pointer) type. The compiler's
+  [`Reference`](/mojo/std/memory/pointer/Pointer) type. The compiler's
   lifetime tracking pass can reason about references to safely extend local
   variable lifetime, and check indirect access safety.  The `Reference` type
   is brand new (and currently has no syntactic sugar) so it must be explicitly
@@ -8214,12 +8214,12 @@ experience without dedicated sugar.
 
 - The `_OldDynamicVector` type that worked only on register passable element
   types has been removed.  Please migrate uses to
-  [`DynamicVector`](/mojo/stdlib/collections/list/List) which
+  [`DynamicVector`](/mojo/std/collections/list/List) which
   works on both register passable and memory types.
 
 - The `UnsafeFixedVector` in `utils.vector` has been removed. We recommend using
-  either [`DynamicVector`](/mojo/stdlib/collections/list/List)
-  or [`InlinedFixedVector`](/mojo/stdlib/collections/inline_array/InlineArray)
+  either [`DynamicVector`](/mojo/std/collections/list/List)
+  or [`InlinedFixedVector`](/mojo/std/collections/inline_array/InlineArray)
   instead.
 
 - The `@adaptive` decorator has been removed from the language. Any uses of the
@@ -8319,8 +8319,8 @@ experience without dedicated sugar.
   [#1587](https://github.com/modular/modular/issues/1587), the
   `polynomial_evaluate` function has also been extended so that the
   `coefficients` parameter can take either a either a
-  [`StaticTuple`](/mojo/stdlib/utils/static_tuple/StaticTuple) or a
-  [`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList).
+  [`StaticTuple`](/mojo/std/utils/static_tuple/StaticTuple) or a
+  [`VariadicList`](/mojo/std/builtin/variadics/VariadicList).
 
 - As a tiny step towards removing `let` declarations, this release removes the
   warning: `'var' was never mutated, consider switching to a 'let'`.
@@ -8386,20 +8386,20 @@ experience without dedicated sugar.
   - `%cd -`: pop the directory stack and change to the last visited directory.
 
 - Structs decorated with `@value` now automatically conform to the
-  [`Movable`](/mojo/stdlib/builtin/value/Movable)
-  and [`Copyable`](/mojo/stdlib/builtin/value/Copyable) built-in traits.
+  [`Movable`](/mojo/std/builtin/value/Movable)
+  and [`Copyable`](/mojo/std/builtin/value/Copyable) built-in traits.
 
-- [`String`](/mojo/stdlib/collections/string/string/String) now has new
-  [`toupper()`](/mojo/stdlib/collections/string/string/String#upper) and
-  [`tolower()`](/mojo/stdlib/collections/string/string/String#lower) methods analogous,
+- [`String`](/mojo/std/collections/string/string/String) now has new
+  [`toupper()`](/mojo/std/collections/string/string/String#upper) and
+  [`tolower()`](/mojo/std/collections/string/string/String#lower) methods analogous,
   respectively, to Python's `str.toupper()` and `str.tolower()`.
 
-- Added a [`hash()`](/mojo/stdlib/hashlib/hash/hash) built-in function and
-  [`Hashable`](/mojo/stdlib/hashlib/hash/Hashable) trait for types
+- Added a [`hash()`](/mojo/std/hashlib/hash/hash) built-in function and
+  [`Hashable`](/mojo/std/hashlib/hash/Hashable) trait for types
   implementing the `__hash__()` method. Future releases will add `Hashable`
   support to Standard Library types. In the meantime, the `hash` module includes
   a version of the `hash()` function that works on arbitrary byte strings. To
-  generate hashes for [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) types, you
+  generate hashes for [`SIMD`](/mojo/std/builtin/simd/SIMD) types, you
   use the internal `_hash_simd()` function:
 
   ```mojo
@@ -8411,10 +8411,10 @@ experience without dedicated sugar.
   ```
 
 - Several standard library types now conform to the
-  [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement)
-  trait.  These types include [`Bool`](/mojo/stdlib/builtin/bool/Bool),
-  [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral),
-  [`DynamicVector`](/mojo/stdlib/collections/list/List),
+  [`CollectionElement`](/mojo/std/builtin/value/CollectionElement)
+  trait.  These types include [`Bool`](/mojo/std/builtin/bool/Bool),
+  [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral),
+  [`DynamicVector`](/mojo/std/collections/list/List),
   [`Tensor`](/mojo/kernels/extensibility/tensor/tensor/Tensor),
   [`TensorShape`](/mojo/kernels/extensibility/tensor/tensor_shape/TensorShape),
   and [`TensorSpec`](/mojo/kernels/extensibility/tensor/tensor_spec/TensorSpec).
@@ -8541,19 +8541,19 @@ experience without dedicated sugar.
 - We've added some traits to the standard library, you can implement these on
   your own types:
 
-  - [`Destructable`](/mojo/stdlib/builtin/anytype/AnyType)
-  - [`Copyable`](/mojo/stdlib/builtin/value/Copyable)
-  - [`Movable`](/mojo/stdlib/builtin/value/Movable)
-  - [`Stringable`](/mojo/stdlib/builtin/str/Stringable)
-  - [`Intable`](/mojo/stdlib/builtin/int/Intable)
-  - [`Sized`](/mojo/stdlib/builtin/len/Sized)
-  - [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement)
+  - [`Destructable`](/mojo/std/builtin/anytype/AnyType)
+  - [`Copyable`](/mojo/std/builtin/value/Copyable)
+  - [`Movable`](/mojo/std/builtin/value/Movable)
+  - [`Stringable`](/mojo/std/builtin/str/Stringable)
+  - [`Intable`](/mojo/std/builtin/int/Intable)
+  - [`Sized`](/mojo/std/builtin/len/Sized)
+  - [`CollectionElement`](/mojo/std/builtin/value/CollectionElement)
 
-- We added built-in [`len()`](/mojo/stdlib/builtin/len/len), `str()`, and
+- We added built-in [`len()`](/mojo/std/builtin/len/len), `str()`, and
   `int()` functions, which work with types that implement the `Sized`,
   `Stringable`, and `Intable` traits, respectively.
 
-- [`DynamicVector`](/mojo/stdlib/collections/list/List) is now a
+- [`DynamicVector`](/mojo/std/collections/list/List) is now a
   proper generic collection that can use any type that implements the `Movable`
   and `Copyable` traits. This means you can now write, for example,
   `DynamicVector[String]`. Also, `DynamicVector` now invokes its element
@@ -8678,7 +8678,7 @@ experience without dedicated sugar.
   ```
 
 - Mojo now has the ability to read raw bytes from a file using the
-  [`read_bytes()`](/mojo/stdlib/builtin/file/FileHandle#read_bytes) method.
+  [`read_bytes()`](/mojo/std/builtin/file/FileHandle#read_bytes) method.
   For example:
 
   ```mojo
@@ -8687,8 +8687,8 @@ experience without dedicated sugar.
   ```
 
 - A size argument was added to the
-[`read()`](/mojo/stdlib/builtin/file/FileHandle#read) and
-[`read_bytes()`](/mojo/stdlib/builtin/file/FileHandle#read_bytes) methods on
+[`read()`](/mojo/std/builtin/file/FileHandle#read) and
+[`read_bytes()`](/mojo/std/builtin/file/FileHandle#read_bytes) methods on
 the builtin `file.FileHandle`. The size argument defaults to -1 and maintains
 the previous "read to EOF" behavior when size is negative.
 
@@ -8698,7 +8698,7 @@ the previous "read to EOF" behavior when size is negative.
       data2 = f.read_bytes(256)
   ```
 
-- [`Path`](/mojo/stdlib/pathlib/path/Path) now has `read_bytes()` and
+- [`Path`](/mojo/std/pathlib/path/Path) now has `read_bytes()` and
   `read_text()` methods to read file contents from a path:
 
   ```mojo
@@ -8720,8 +8720,8 @@ the previous "read to EOF" behavior when size is negative.
   ```
 
 - Subscripting added to
-  [`DTypePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) and
-  [`Pointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer):
+  [`DTypePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) and
+  [`Pointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer):
 
   ```mojo
   let p = DTypePointer[DType.float16].alloc(4)
@@ -8732,16 +8732,16 @@ the previous "read to EOF" behavior when size is negative.
 
 - `file.FileHandle` now has a `seek()` method.
 
-- [`String`](/mojo/stdlib/collections/string/string/String) now has an
-  [`rfind()`](/mojo/stdlib/collections/string/string/String#rfind) method
+- [`String`](/mojo/std/collections/string/string/String) now has an
+  [`rfind()`](/mojo/std/collections/string/string/String#rfind) method
   analogous to Python's `str.rfind()`.
 
 - `String` now has an
-  [`split()`](/mojo/stdlib/collections/string/string/String#split) method
+  [`split()`](/mojo/std/collections/string/string/String#split) method
   analogous to Python's `str.split()`.
 
-- [`Path`](/mojo/stdlib/pathlib/path/Path) now has a
-  [`suffix()`](/mojo/stdlib/pathlib/path/Path#suffix) method analogous to
+- [`Path`](/mojo/std/pathlib/path/Path) now has a
+  [`suffix()`](/mojo/std/pathlib/path/Path#suffix) method analogous to
   Python's `pathlib.Path.suffix`.
 
 - The Mojo REPL now supports indented expressions, making it a bit easier to
@@ -8771,8 +8771,8 @@ the previous "read to EOF" behavior when size is negative.
 ### 🦋 Changed
 
 - Variadic list types
-  [`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList) and
-  [`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem)
+  [`VariadicList`](/mojo/std/builtin/variadics/VariadicList) and
+  [`VariadicListMem`](/mojo/std/builtin/variadics/VariadicListMem)
   are now iterable. Variadic arguments are automatically projected into one of
   these types inside the function body, so var args can be iterated:
 
@@ -8783,15 +8783,15 @@ the previous "read to EOF" behavior when size is negative.
       print(len(nums))
   ```
 
-- The assert functions in the [`testing`](/mojo/stdlib/testing/testing)
+- The assert functions in the [`testing`](/mojo/std/testing/testing)
   package now raise an `Error` when the assertion fails instead of returning a
   `Bool` for whether the assertion succeeded or not.
 
-- Parameters of [`AnyType`](/mojo/stdlib/builtin/type_aliases) type are no
+- Parameters of [`AnyType`](/mojo/std/builtin/type_aliases) type are no
   longer (implicitly) assumed to be register-passable. A new `AnyRegType` type
   is used to represent generic types that are register passable.
 
-- Changing the units in a [`benchmark`](/mojo/stdlib/benchmark/benchmark)
+- Changing the units in a [`benchmark`](/mojo/std/benchmark/benchmark)
   report is now an argument instead of a parameter:
 
   ```mojo
@@ -8807,7 +8807,7 @@ the previous "read to EOF" behavior when size is negative.
   ```
 
 - The `to_string()` function has been removed from
-  [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) in favor of
+  [`PythonObject`](/mojo/std/python/python_object/PythonObject) in favor of
   the new `__str__()` function.  This composes better with traits so it can be
   used with the generic `str()` function.
 
@@ -8851,12 +8851,12 @@ the previous "read to EOF" behavior when size is negative.
 
 ### ⭐️ New
 
-- The [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) type now defaults to the
+- The [`SIMD`](/mojo/std/builtin/simd/SIMD) type now defaults to the
   architectural SIMD width of the type. This means you can write
   `SIMD[DType.float32]` which is equivalent to
   `SIMD[DType.float32, simdwidthof[DType.float32]()]`.
 
-- The [`SIMD`](/mojo/stdlib/builtin/simd/SIMD) type now contains a `join()`
+- The [`SIMD`](/mojo/std/builtin/simd/SIMD) type now contains a `join()`
   function that allows you to concatenate two `SIMD` values together and produce
   a new `SIMD` value.
 
@@ -8966,7 +8966,7 @@ the previous "read to EOF" behavior when size is negative.
       pass
   ```
 
-- The [`benchmark`](/mojo/stdlib/benchmark/benchmark) module has been
+- The [`benchmark`](/mojo/std/benchmark/benchmark) module has been
   simplified and improved so you can now run:
 
   ```mojo
@@ -9042,10 +9042,10 @@ the previous "read to EOF" behavior when size is negative.
 - [`TensorShape`](/mojo/kernels/extensibility/tensor/tensor_shape/TensorShape)
 and [`TensorSpec`](/mojo/kernels/extensibility/tensor/tensor_spec/TensorSpec)
 now have constructors that take
-[`DynamicVector[Int]`](/mojo/stdlib/collections/list/List) and
-[`IndexList`](/mojo/stdlib/utils/index_/IndexList) to initialize shapes.
+[`DynamicVector[Int]`](/mojo/std/collections/list/List) and
+[`IndexList`](/mojo/std/utils/index_/IndexList) to initialize shapes.
 
-- The [`String`](/mojo/stdlib/collections/string/string/String) type now has the
+- The [`String`](/mojo/std/collections/string/string/String) type now has the
  `count()` and `find()` methods to enable counting the number of occurrences or
   finding the offset index of a substring in a string.
 
@@ -9054,8 +9054,8 @@ now have constructors that take
 
 ### 🦋 Changed
 
-- [`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList) and
-  [`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem)
+- [`VariadicList`](/mojo/std/builtin/variadics/VariadicList) and
+  [`VariadicListMem`](/mojo/std/builtin/variadics/VariadicListMem)
   moved under builtins, and no longer need to be imported.
 
 - Variadic arguments are now automatically projected into a `VariadicList` or
@@ -9071,14 +9071,14 @@ now have constructors that take
   ```
 
 - The parameters for
-  [`InlinedFixedVector`](/mojo/stdlib/collections/inline_array/InlineArray)
+  [`InlinedFixedVector`](/mojo/std/collections/inline_array/InlineArray)
   have been switched. The parameters are now `[type, size]` instead of
   `[size, type]`. The `InlinedFixedVector` now has a default size which means
   that one can just use `InlinedFixedVector` as `InlinedFixedVector[Float32]`
   and the default size is used.
 
-- `write_file()` method in [`Buffer`](/mojo/stdlib/buffer/buffer/NDBuffer)
-  and [`NDBuffer`](/mojo/stdlib/buffer/buffer/NDBuffer) is renamed to
+- `write_file()` method in [`Buffer`](/mojo/std/buffer/buffer/NDBuffer)
+  and [`NDBuffer`](/mojo/std/buffer/buffer/NDBuffer) is renamed to
   `tofile()` to match the Python naming.
 
 - Mojo will now utilize all available cores across all NUMA sockets on the host
@@ -9174,7 +9174,7 @@ now have constructors that take
       print(DefaultParams["meow"]().message)  # prints 'meow'
   ```
 
-- The new [`file`](/mojo/stdlib/builtin/file) module adds basic file I/O
+- The new [`file`](/mojo/std/builtin/file) module adds basic file I/O
   support. You can now write:
 
   ```mojo
@@ -9529,23 +9529,23 @@ All earlier releases were considered version 0.1.
 ### ⭐️ New
 
 - A new `clobber_memory` function has been added to the
-  [`benchmark`](/mojo/stdlib/benchmark/benchmark) module.
+  [`benchmark`](/mojo/std/benchmark/benchmark) module.
   The clobber memory function tells the system to flush all memory operations
   at the specified program point. This allows you to benchmark operations
   without the compiler reordering memory operations.
 
 - A new `keep` function has been added to the
-  [`benchmark`](/mojo/stdlib/benchmark/benchmark) module. The `keep`
+  [`benchmark`](/mojo/std/benchmark/benchmark) module. The `keep`
   function tries to tell the compiler not to optimize the variable away
   if not used. This allows you to avoid compiler's dead code elimination
   mechanism, with a low footprint side effect.
 
 - New `shift_right` and `shift_left` functions have been added to the
-  [`simd`](/mojo/stdlib/builtin/simd) module. They shift the elements in
+  [`simd`](/mojo/std/builtin/simd) module. They shift the elements in
   a SIMD vector right/left, filling elements with zeros as needed.
 
 - A new `cumsum` function has been added to the
-  [`reduction`](/mojo/stdlib/algorithm/reduction) module that computes
+  [`reduction`](/mojo/std/algorithm/reduction) module that computes
   the cumulative sum (also known as scan) of input elements.
 
 - Mojo Jupyter kernel now supports code completion.
@@ -9861,7 +9861,7 @@ represent an RGB image and convert it to grayscale:
 - As a result, we've also re-written `HelloMojo.ipynb` to be much shorter and
   provide a more gentle first-user experience.
 
-- [`Coroutine` module documentation](/mojo/stdlib/builtin/coroutine) is now
+- [`Coroutine` module documentation](/mojo/std/builtin/coroutine) is now
   available. Coroutines form the basis of Mojo's support for asynchronous
   execution. Calls to `async fn`s can be stored into a `Coroutine`, from which
   they can be resumed, awaited upon, and have their results retrieved upon
@@ -9894,7 +9894,7 @@ represent an RGB image and convert it to grayscale:
 #### 🦋 Changed
 
 - The `simd_width` and `dtype_simd_width` functions in the
-  [`TargetInfo`](/mojo/stdlib/sys/info) module
+  [`TargetInfo`](/mojo/std/sys/info) module
   have been renamed to `simdwidthof`.
 
 - The `dtype_` prefix has been dropped from `alignof`, `sizeof`, and
@@ -9902,7 +9902,7 @@ represent an RGB image and convert it to grayscale:
   argument type, including `DType`.
 
 - The `inf`, `neginf`, `nan`, `isinf`, `isfinite`, and `isnan` functions were
-  moved from the `Numerics` module to the [`Math`](/mojo/stdlib/math/math/)
+  moved from the `Numerics` module to the [`Math`](/mojo/std/math/math/)
   module, to better align with Python's library structure.
 
 #### 🛠️ Fixed
@@ -9941,7 +9941,7 @@ represent an RGB image and convert it to grayscale:
 #### 🦋 Changed
 
 - The `unroll2()` and `unroll3()` functions in the
-  [`Functional`](/mojo/stdlib/algorithm/functional) module have been renamed to
+  [`Functional`](/mojo/std/algorithm/functional) module have been renamed to
   overload the `unroll()` function. These functions unroll 2D and 3D loops and
   `unroll()` can determine the intent based on the number of input parameters.
 
@@ -9954,7 +9954,7 @@ represent an RGB image and convert it to grayscale:
   definition with recursive reference crashes.
 
 - [Issue #285](https://github.com/modular/modular/issues/285) - The
-  [`TargetInfo`](/mojo/stdlib/sys/info) module now includes
+  [`TargetInfo`](/mojo/std/sys/info) module now includes
   `is_little_endian()` and `is_big_endian()` to check if the target host uses
   either little or big endian.
 

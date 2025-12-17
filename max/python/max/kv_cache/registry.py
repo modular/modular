@@ -18,7 +18,7 @@ from typing import Any
 
 from max.driver import Device, is_virtual_device_mode
 from max.engine import InferenceSession
-from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 
 from .null_cache_manager import NullKVCacheManager
 from .paged_cache import PagedKVCacheManager
@@ -34,7 +34,6 @@ def load_kv_manager(
     params: KVCacheParams,
     max_batch_size: int | None,
     max_seq_len: int,
-    devices: Sequence[Device],
     session: InferenceSession,
     available_cache_memory: int | None = None,
 ) -> PagedKVCacheManager | NullKVCacheManager:
@@ -47,51 +46,40 @@ def load_kv_manager(
         logger.info(
             "Detected compile-only mode, using NullKVCacheManager to avoid GPU allocation"
         )
-        return NullKVCacheManager(
-            params=params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            devices=devices,
-            session=session,
+        return NullKVCacheManager(params=params)
+
+    if params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"Found unsupported KVCache strategy: {params.cache_strategy}"
         )
 
-    if params.cache_strategy == KVCacheStrategy.PAGED:
-        page_size = params.page_size
-        # TODO(KERN-1308) remove this validation as we generalize page_size
-        if page_size % 128 != 0 or page_size < 128:
-            raise ValueError(
-                "Page size must be a multiple of 128 and at least 128."
-            )
+    # TODO(KERN-1308) remove this validation as we generalize page_size
+    if params.page_size % 128 != 0 or params.page_size < 128:
+        raise ValueError(
+            "Page size must be a multiple of 128 and at least 128."
+        )
 
-        if available_cache_memory is None:
-            raise ValueError(
-                "Missing required argument available_cache_memory for KVCacheStrategy.PAGED"
-            )
+    if available_cache_memory is None:
+        raise ValueError("Missing required argument available_cache_memory")
 
-        return PagedKVCacheManager(
-            params=params,
-            total_num_pages=params.compute_num_device_blocks(
-                available_cache_memory=available_cache_memory,
-                max_batch_size=max_batch_size,
-                max_seq_len=max_seq_len,
-            ),
-            total_num_host_pages=params.compute_num_host_blocks(),
+    return PagedKVCacheManager(
+        params=params,
+        total_num_pages=params.compute_num_device_blocks(
+            available_cache_memory=available_cache_memory,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,
-            devices=devices,
-            session=session,
-        )
-    else:
-        raise ValueError(f"cache type: {params.cache_strategy} not supported.")
+        ),
+        total_num_host_pages=params.compute_num_host_blocks(),
+        session=session,
+    )
 
 
 def estimate_kv_cache_size(
     params: KVCacheParams,
-    max_batch_size: int | None,
+    max_batch_size: int,
     max_seq_len: int,
     available_cache_memory: int,
 ) -> int:
-    assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
 
     return params.estimated_memory_size(

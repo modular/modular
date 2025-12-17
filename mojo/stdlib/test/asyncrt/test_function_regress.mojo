@@ -13,15 +13,11 @@
 
 from sys import is_gpu
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
-from testing import TestSuite
+from testing import TestSuite, assert_equal
 
 comptime T = DType.float64
 comptime S = Scalar[T]
@@ -38,7 +34,9 @@ trait MaybeZeroSized:
 struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type[
+        origin: MutOrigin
+    ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -54,10 +52,7 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
         return 2
 
     fn write_to(self, mut writer: Some[Writer]):
-        constrained[
-            not is_gpu(),
-            "ZeroSized is not supported on GPUs",
-        ]()
+        __comptime_assert not is_gpu(), "ZeroSized is not supported on GPUs"
         writer.write("ZeroSized(")
         writer.write(self.value())
         writer.write(")")
@@ -68,7 +63,9 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
 struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type[
+        origin: MutOrigin
+    ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -89,10 +86,7 @@ struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
         return self.val
 
     fn write_to(self, mut writer: Some[Writer]):
-        constrained[
-            not is_gpu(),
-            "ZeroSized is not supported on GPUs",
-        ]()
+        __comptime_assert not is_gpu(), "ZeroSized is not supported on GPUs"
         writer.write("NotZeroSized(")
         writer.write(self.value())
         writer.write(")")
@@ -100,9 +94,9 @@ struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
 
 fn _vec_func_zero(
     zs: ZeroSized,
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
@@ -113,9 +107,9 @@ fn _vec_func_zero(
 
 fn _vec_func_not_zero(
     zs: NotZeroSized,
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
@@ -128,9 +122,9 @@ fn _vec_func[
     zero_sized_t: MaybeZeroSized
 ](
     zs: zero_sized_t,
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
@@ -164,63 +158,6 @@ fn _run_test_function_compilation(ctx: DeviceContext) raises:
     _ = compiled_vec_func_1
     _ = compiled_vec_func_2
     _ = compiled_vec_func_3
-
-
-def test_function_unchecked():
-    var ctx = create_test_device_context()
-    _run_test_function_unchecked(ctx)
-
-
-fn _run_test_function_unchecked(ctx: DeviceContext) raises:
-    comptime length = 1024
-    comptime block_dim = 32
-
-    comptime zero_sized_t = NotZeroSized
-    comptime vec_func = _vec_func[zero_sized_t]
-    # alias vec_func = _vec_func_not_zero
-    # alias vec_func = _vec_func_zero
-
-    var zs = zero_sized_t()
-    print(zs)
-
-    var scalar: S = 2
-
-    # Initialize the input and outputs with known values.
-    var in0 = ctx.enqueue_create_buffer[T](length)
-    var out = ctx.enqueue_create_buffer[T](length)
-    with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
-        for i in range(length):
-            in0_host[i] = i
-            out_host[i] = length + i
-    var in1 = ctx.enqueue_create_buffer[T](length)
-    in1.enqueue_fill(scalar)
-
-    print("compiling vec_func")
-    var compiled_vec_func = ctx.compile_function_unchecked[vec_func]()
-    print("calling vec_func")
-    ctx.enqueue_function_unchecked(
-        compiled_vec_func,
-        zs,
-        in0,
-        in1,
-        out,
-        length,
-        grid_dim=(length // block_dim),
-        block_dim=(block_dim),
-    )
-
-    with out.map_to_host() as out_host:
-        for i in range(length):
-            if i < 10:
-                print("at index", i, "the value is", out_host[i])
-            expect_eq(
-                out_host[i],
-                i + 4,
-                "at index ",
-                i,
-                " the value is ",
-                out_host[i],
-            )
 
 
 def test_function_checked():
@@ -271,13 +208,15 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
         for i in range(length):
             if i < 10:
                 print("at index", i, "the value is", out_host[i])
-            expect_eq(
+            assert_equal(
                 out_host[i],
                 i + 4,
-                "at index ",
-                i,
-                " the value is ",
-                out_host[i],
+                String(
+                    "at index ",
+                    i,
+                    " the value is ",
+                    out_host[i],
+                ),
             )
 
 
@@ -287,7 +226,6 @@ def main():
     var suite = TestSuite()
 
     suite.test[test_function_compilation]()
-    suite.test[test_function_unchecked]()
     suite.test[test_function_checked]()
 
     suite^.run()

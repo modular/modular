@@ -1,0 +1,42 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "ep_tests",
+    size = "enormous",
+    srcs = glob(
+        ["test_*.py"],
+    ) + ["conftest.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.2",  # reserve memory for NVSHMEM
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
+    gpu_constraints = [
+        "//:has_4_gpus",
+        "//:nvidia_gpu",
+    ],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("pytest-asyncio"),
+    ],
+)

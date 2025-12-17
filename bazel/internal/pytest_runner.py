@@ -12,15 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 import argparse
+import faulthandler
 import importlib
 import os
 import platform
 import shlex
+import signal
 import sys
 import sysconfig
 from pathlib import Path
 
 import pytest
+
+# dumps stack traces when bazel kills a hung / slow test
+faulthandler.register(signal.SIGTERM)
 
 
 def __build_parser() -> argparse.ArgumentParser:
@@ -161,17 +166,25 @@ fi
         f"junit_suite_name={os.environ['TEST_TARGET']}",
     ]
 
-    try:
-        _ = importlib.import_module("pytest_asyncio")
+    if importlib.util.find_spec("pytest_asyncio"):
         pytest_args.append("--asyncio-mode=auto")
-    except ModuleNotFoundError:
-        pass
 
     if namespace.k:
         pytest_args.extend(["-k", namespace.k])
     elif namespace.n:  # Skip xdist when filtering
         pytest_args.extend(["-n", namespace.n])
-    return pytest.main(pytest_args + unknown_args)
+
+    exit_code = pytest.main(pytest_args + unknown_args)
+    # https://docs.pytest.org/en/6.2.x/usage.html#possible-exit-codes
+    if exit_code == 5:  # no tests were collected
+        # Print an error:
+        if namespace.k:
+            print(
+                f"\033[31mERROR\033[0m: No tests were run matching the filter: '{namespace.k}'"
+            )
+        else:
+            print("\033[31mERROR\033[0m: No tests were run.")
+    return exit_code
 
 
 if __name__ == "__main__":

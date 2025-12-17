@@ -13,7 +13,7 @@
 import time
 
 from context_mgr import Timer
-from testing import assert_raises
+from testing import assert_raises, TestSuite
 
 
 def test_timer_no_error():
@@ -33,5 +33,4 @@ def test_timer_error():
 
 
 def main():
-    test_timer_no_error()
-    test_timer_error()
+    TestSuite.discover_tests[__functions_in_module()]().run()

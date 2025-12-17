@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, exp2, recip
+from math import ceildiv, exp2, recip, align_up
 from math.constants import log2e
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of
@@ -72,21 +72,22 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
-    TMANestedTensorTile,
 )
 from logger import Logger
 from memory import bitcast, stack_allocation
 from nn.mha_fa3_utils import (
+    _apply_mask,
+    _get_position,
+    get_q_head_idx,
+    KVTMATile,
     MHAPosition,
     NonNullPointer,
     NullPointer,
     OptionalPointer,
     Pack,
-    QTMATile,
-    _apply_mask,
-    _get_position,
     produce,
-    q_out_tma,
+    q_tma,
+    QTMATile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -171,10 +172,9 @@ struct RegisterAccumulatorLayout[
     @staticmethod
     @always_inline
     fn description() -> RegisterAccumulatorDescription:
-        constrained[
-            Self.vec_output_layout.size() > 0,
-            "layout: " + String(Self.vec_output_layout),
-        ]()
+        __comptime_assert (
+            Self.vec_output_layout.size() > 0
+        ), "layout: " + String(Self.vec_output_layout)
 
         return RegisterAccumulatorDescription(
             Self.num_m_mmas * Self.num_n_mmas, Self.frag_size
@@ -277,7 +277,7 @@ fn local_tensor_type[
 
 
 @register_passable("trivial")
-trait AccumulatorTile(ImplicitlyCopyable, Movable):
+trait AccumulatorTile(ImplicitlyCopyable):
     comptime dtype: DType
     comptime element_layout: Layout
     comptime vec_output_layout: Layout
@@ -417,19 +417,16 @@ struct TMemAccumulator[
     @always_inline
     @staticmethod
     fn check_constraints():
-        constrained[
-            Self.vec_output_layout[0].size() > 0,
+        __comptime_assert Self.vec_output_layout[0].size() > 0, (
             "layout: "
             + String(Self.vec_output_layout)
             + "\nnum_m_mmas = "
-            + String(Self.num_m_mmas),
-        ]()
-        constrained[
-            Self.vec_output_layout[1].size() > 0,
-            "layout: " + String(Self.vec_output_layout),
-        ]()
-        constrained[
-            Self.MMA_M > 0,
+            + String(Self.num_m_mmas)
+        )
+        __comptime_assert (
+            Self.vec_output_layout[1].size() > 0
+        ), "layout: " + String(Self.vec_output_layout)
+        __comptime_assert Self.MMA_M > 0, (
             "MMA_M = "
             + String(Self.MMA_M)
             + "\nMMA_N = "
@@ -438,10 +435,9 @@ struct TMemAccumulator[
             + String(Self.num_m_mmas)
             + "\nnum_n_mmas = "
             + String(Self.num_n_mmas)
-            + "\n",
-        ]()
-        constrained[
-            Self.MMA_N > 0,
+            + "\n"
+        )
+        __comptime_assert Self.MMA_N > 0, (
             "MMA_M = "
             + String(Self.MMA_M)
             + "\nMMA_N = "
@@ -450,10 +446,9 @@ struct TMemAccumulator[
             + String(Self.num_m_mmas)
             + "\nnum_n_mmas = "
             + String(Self.num_n_mmas)
-            + "\n",
-        ]()
-        constrained[
-            Self.num_m_mmas > 0,
+            + "\n"
+        )
+        __comptime_assert Self.num_m_mmas > 0, (
             "MMA_M = "
             + String(Self.MMA_M)
             + "\nMMA_N = "
@@ -462,10 +457,9 @@ struct TMemAccumulator[
             + String(Self.num_m_mmas)
             + "\nnum_n_mmas = "
             + String(Self.num_n_mmas)
-            + "\n",
-        ]()
-        constrained[
-            Self.num_n_mmas > 0,
+            + "\n"
+        )
+        __comptime_assert Self.num_n_mmas > 0, (
             "MMA_M = "
             + String(Self.MMA_M)
             + "\nMMA_N = "
@@ -474,8 +468,8 @@ struct TMemAccumulator[
             + String(Self.num_m_mmas)
             + "\nnum_n_mmas = "
             + String(Self.num_n_mmas)
-            + "\n",
-        ]()
+            + "\n"
+        )
 
     @always_inline
     fn offset[m_mma: Int, n_mma: Int](self) -> UInt32:
@@ -519,7 +513,7 @@ struct TMemAccumulator[
     ):
         frags = Self.rows_of_frags(src).vectorize[1, Self.frag_size]()
         comptime dtype_size = size_of[Self.dtype]()
-        constrained[dtype_size == 4]()
+        __comptime_assert dtype_size == 4
         comptime frag_size_b32 = Self.frag_size * dtype_size // 4
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus fills 8 columns
@@ -557,19 +551,19 @@ struct TMemAccumulator[
     ):
         frags = Self.rows_of_frags(dst).vectorize[1, Self.frag_size]()
         comptime dtype_size = size_of[Self.dtype]()
-        constrained[dtype_size == 4]()
+        __comptime_assert dtype_size == 4
         comptime frag_size_b32 = (Self.frag_size * dtype_size) // 4
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
         comptime repeat = frag_size_b32 // 4
-        constrained[
+        __comptime_assert (
             Self.vec_output_layout.size() * Self.element_layout.size()
             == type_of(dst).layout.size() * type_of(dst).element_layout.size()
-        ]()
-        constrained[
+        )
+        __comptime_assert (
             Self.num_m_mmas * Self.num_n_mmas == type_of(frags).layout.size()
-        ]()
+        )
 
         @parameter
         for m_mma in range(Self.num_m_mmas):
@@ -633,8 +627,8 @@ struct TMemOperand[
 
     @always_inline
     fn offset[m_mma: Int, k_mma: Int](self) -> UInt32:
-        constrained[Self.MMA_M > 0, "MMA_M = " + String(Self.MMA_M) + "\n"]()
-        constrained[Self.MMA_K > 0, "MMA_K = " + String(Self.MMA_K) + "\n"]()
+        __comptime_assert Self.MMA_M > 0, "MMA_M = " + String(Self.MMA_M) + "\n"
+        __comptime_assert Self.MMA_K > 0, "MMA_K = " + String(Self.MMA_K) + "\n"
 
         @parameter
         if m_mma == 0 and k_mma == 0:
@@ -649,7 +643,8 @@ struct TMemOperand[
     fn copy_from[
         src_type: DType,
         src_layout: Layout,
-        src_element_layout: Layout, //,
+        src_element_layout: Layout,
+        //,
     ](
         self,
         src: LayoutTensor[
@@ -662,16 +657,15 @@ struct TMemOperand[
     ):
         # src has row of frags layout
         comptime num_frags = src_layout[0].size()
-        constrained[num_frags == Self.num_m_mmas * Self.num_n_mmas]()
-        constrained[Self.num_n_mmas == 1]()
-        constrained[
-            Self.frag_size == src_layout[1].size(),
+        __comptime_assert num_frags == Self.num_m_mmas * Self.num_n_mmas
+        __comptime_assert Self.num_n_mmas == 1
+        __comptime_assert Self.frag_size == src_layout[1].size(), (
             "Self.frag_size = "
             + String(Self.frag_size)
             + "\nsrc_layout = "
-            + String(src_layout),
-        ]()
-        constrained[src_element_layout.size() == 1]()
+            + String(src_layout)
+        )
+        __comptime_assert src_element_layout.size() == 1
         comptime src_size = size_of[src_type]()
         comptime dst_size = size_of[Self.dtype]()
         comptime frag_size_b32 = (Self.frag_size * dst_size) // 4
@@ -686,10 +680,10 @@ struct TMemOperand[
         # width == (repeat * bits * datapaths) // (32 * 32)
         comptime repeat = 64 * frag_size_b32 // bits
         # We need to reshape into a row of frags
-        constrained[
+        __comptime_assert (
             Self.num_m_mmas * Self.num_n_mmas * Self.frag_size
             == src_layout.size() * src_element_layout.size()
-        ]()
+        )
         frags = LayoutTensor[
             src_type,
             Layout(
@@ -702,9 +696,9 @@ struct TMemOperand[
         ](src.ptr)
         # frags = src.vectorize[1, Self.frag_size]()
         # assume src loaded with 256 bits
-        constrained[src_size >= dst_size]()
-        constrained[Self.num_m_mmas == 1]()
-        constrained[Self.num_n_mmas == 1]()
+        __comptime_assert src_size >= dst_size
+        __comptime_assert Self.num_m_mmas == 1
+        __comptime_assert Self.num_n_mmas == 1
 
         @parameter
         for m_mma in range(Self.num_m_mmas):
@@ -727,7 +721,8 @@ struct TMemOperand[
     fn copy_to[
         dst_type: DType,
         dst_layout: Layout,
-        dst_element_layout: Layout, //,
+        dst_element_layout: Layout,
+        //,
     ](
         self,
         dst: LayoutTensor[
@@ -740,10 +735,10 @@ struct TMemOperand[
     ):
         # src has row of frags layout
         comptime num_frags = dst_layout[0].size()
-        constrained[num_frags == Self.num_m_mmas * Self.num_n_mmas]()
-        constrained[Self.frag_size == dst_layout[1].size()]()
-        constrained[dst_element_layout.size() == 1]()
-        constrained[size_of[dst_type]() == 4]()
+        __comptime_assert num_frags == Self.num_m_mmas * Self.num_n_mmas
+        __comptime_assert Self.frag_size == dst_layout[1].size()
+        __comptime_assert dst_element_layout.size() == 1
+        __comptime_assert size_of[dst_type]() == 4
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
@@ -763,8 +758,8 @@ struct TMemOperand[
         #
         frags = dst.vectorize[1, Self.frag_size]()
         # assume src loaded with 256 bits
-        constrained[src_size <= dst_size]()
-        constrained[Self.num_n_mmas == 1]()
+        __comptime_assert src_size <= dst_size
+        __comptime_assert Self.num_n_mmas == 1
 
         @parameter
         for m_mma in range(Self.num_m_mmas):
@@ -907,21 +902,20 @@ struct SM100TensorAccumulatorSS[
     @always_inline
     @staticmethod
     fn check_constraints():
-        constrained[
-            (Self.BM % Self.MMA_M) == 0,
-            "BM, MMA_M = " + String(Self.BM) + ", " + String(Self.MMA_M),
-        ]()
-        constrained[
-            ((Self.BN % Self.MMA_N) == 0) and (Self.num_n_mmas > 0),
-            "BN, MMA_N = " + String(Self.BN) + ", " + String(Self.MMA_N),
-        ]()
-        constrained[
-            ((Self.compute_BK % Self.MMA_K) == 0) and (Self.num_k_mmas > 0),
+        __comptime_assert (Self.BM % Self.MMA_M) == 0, (
+            "BM, MMA_M = " + String(Self.BM) + ", " + String(Self.MMA_M)
+        )
+        __comptime_assert ((Self.BN % Self.MMA_N) == 0) and (
+            Self.num_n_mmas > 0
+        ), ("BN, MMA_N = " + String(Self.BN) + ", " + String(Self.MMA_N))
+        __comptime_assert ((Self.compute_BK % Self.MMA_K) == 0) and (
+            Self.num_k_mmas > 0
+        ), (
             "compute_BK, MMA_K = "
             + String(Self.compute_BK)
             + ", "
-            + String(Self.MMA_K),
-        ]()
+            + String(Self.MMA_K)
+        )
 
     @always_inline
     fn __init__(
@@ -1145,18 +1139,15 @@ struct SM100TensorAccumulatorTS[
     @staticmethod
     @always_inline
     fn check_constraints():
-        constrained[
-            (Self.BM % Self.MMA_M) == 0,
-            "BM, MMA_M = " + String(Self.BM) + ", " + String(Self.MMA_M),
-        ]()
-        constrained[
-            ((Self.BN % Self.MMA_N) == 0) and (Self.num_n_mmas > 0),
-            "BN, MMA_N = " + String(Self.BN) + ", " + String(Self.MMA_N),
-        ]()
-        constrained[
-            ((Self.BK % Self.MMA_K) == 0) and (Self.num_k_mmas > 0),
-            "BK, MMA_K = " + String(Self.BK) + ", " + String(Self.MMA_K),
-        ]()
+        __comptime_assert (Self.BM % Self.MMA_M) == 0, (
+            "BM, MMA_M = " + String(Self.BM) + ", " + String(Self.MMA_M)
+        )
+        __comptime_assert ((Self.BN % Self.MMA_N) == 0) and (
+            Self.num_n_mmas > 0
+        ), ("BN, MMA_N = " + String(Self.BN) + ", " + String(Self.MMA_N))
+        __comptime_assert ((Self.BK % Self.MMA_K) == 0) and (
+            Self.num_k_mmas > 0
+        ), ("BK, MMA_K = " + String(Self.BK) + ", " + String(Self.MMA_K))
 
     @always_inline
     fn __init__(
@@ -1291,7 +1282,8 @@ fn mha_sm100_dispatch[
     ScoreModType: ScoreModTrait,
     output_type: DType,
     MaxPromptLenType: OptionallyStaticInt,
-    PartitionType: MHAPartitionScheme, //,
+    PartitionType: MHAPartitionScheme,
+    //,
     config: MHAConfig,
     group: Int,
     use_score_mod: Bool,
@@ -1332,26 +1324,21 @@ fn mha_sm100_dispatch[
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
-    constrained[
-        BM % 64 == 0,
-        "SM90 requires BM%64==0, but BM==",
-        String(BM),
-    ]()
-    constrained[
-        BK % 64 == 0,
-        "B200 requires BK%64 as it uses 128B swizzles, but BK==",
-        String(BK),
-    ]()
+    __comptime_assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
+        BM
+    )
+    __comptime_assert (
+        BK % 64 == 0
+    ), "B200 requires BK%64 as it uses 128B swizzles, but BK==" + String(BK)
     comptime BN = new_config.block_n()
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
     comptime num_threads = new_config.num_threads[True]()
-    constrained[
-        num_threads % 128 == 0, "num_threads = " + String(num_threads)
-    ]()
-    constrained[
-        config.dtype == KVType.dtype and config.dtype == q_type,
-        "config, kv, and q types must all match for FA3.",
-    ]()
+    __comptime_assert num_threads % 128 == 0, "num_threads = " + String(
+        num_threads
+    )
+    __comptime_assert (
+        config.dtype == KVType.dtype and config.dtype == q_type
+    ), "config, kv, and q types must all match for FA3."
     q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
 
     # Persistent kernels not currently supported with partitioning
@@ -1359,7 +1346,7 @@ fn mha_sm100_dispatch[
     # implying we don't have enough to make them persistent.
     # This also requires some tricky control flow handling to support,
     # which we haven't added yet.
-    constrained[new_config.algorithm == FlashAttentionAlgorithm(3)]()
+    __comptime_assert new_config.algorithm == FlashAttentionAlgorithm(3)
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
@@ -1378,27 +1365,26 @@ fn mha_sm100_dispatch[
             KVType.dtype,
             swizzle_mode,
             BM = Int(new_config.block_m()),
-            depth = Int(new_config.padded_depth),
+            depth = Int(new_config.depth),
             group=group,
             decoding = _is_decoding[MaxPromptLenType](),
         ]
     ](
-        q_out_tma[
+        q_tma[
             swizzle_mode,
             BM = Int(BM),
             depth = Int(new_config.depth),
-            padded_depth = Int(new_config.padded_depth),
             q_num_heads = Int(new_config.num_heads),
             group=group,
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
-    k_tma_op = k.create_tma_tile[
-        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=True
-    ](ctx)
-    v_tma_op = v.create_tma_tile[
-        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=False
-    ](ctx)
+    k_tma_op = k.create_tma_tile[Int(BN), Int(new_config.depth), swizzle_mode](
+        ctx
+    )
+    v_tma_op = v.create_tma_tile[Int(BN), Int(new_config.depth), swizzle_mode](
+        ctx
+    )
 
     comptime SchedulerType = TransientScheduler[
         scheduler_tile_shape, num_scheduler_heads
@@ -1508,23 +1494,21 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BM = Int(config.block_m()),
-        depth = Int(config.padded_depth),
+        depth = Int(config.depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=True,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=False,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1647,23 +1631,21 @@ fn _mha_sm100_valid_length_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BM = Int(config.block_m()),
-        depth = Int(config.padded_depth),
+        depth = Int(config.depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=True,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=False,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1781,23 +1763,21 @@ fn _mha_sm100_enqueue[
         KVLUTType.dtype,
         swizzle_mode,
         BM = Int(config.block_m()),
-        depth = Int(config.padded_depth),
+        depth = Int(config.depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=True,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=False,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1931,23 +1911,21 @@ fn _mha_sm100[
         KVLUTType.dtype,
         swizzle_mode,
         BM = Int(config.block_m()),
-        depth = Int(config.padded_depth),
+        depth = Int(config.depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
-    k_tma_op: TMANestedTensorTile[
+    k_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=True,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
-    v_tma_op: TMANestedTensorTile[
+    v_tma_op: KVTMATile[
         KVLUTType.dtype,
-        Int(config.block_n()),
-        Int(config.padded_depth),
         swizzle_mode,
-        is_k_major=False,
+        BN = Int(config.block_n()),
+        depth = Int(config.depth),
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type]],
     kv_lut: KVLUTType,
@@ -1977,7 +1955,7 @@ fn _mha_sm100[
 
     """
     comptime kv_type = KVLUTType.dtype
-    constrained[kv_type == config.dtype]()
+    __comptime_assert kv_type == config.dtype
     comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
 
     comptime simd_size: Int = simd_width_of[kv_type]()
@@ -2005,9 +1983,9 @@ fn _mha_sm100[
     # mmas are now handled separately from in-register processing
     # in-register processing is divided up by warps, mmas are not
     comptime num_row_fragments = num_softmax_threads // 128
-    constrained[(32 % num_row_fragments) == 0]()
+    __comptime_assert (32 % num_row_fragments) == 0
     comptime row_fragment_size = min(32 // num_row_fragments, BM // 4)
-    constrained[num_row_fragments * row_fragment_size <= 32]()
+    __comptime_assert num_row_fragments * row_fragment_size <= 32
     comptime WM = row_fragment_size
     # if we have BM = 128, then we have
     # a 16x(BN//8) grid of 8x4<1x2>
@@ -2019,7 +1997,7 @@ fn _mha_sm100[
     # before we had num_m_mmas * MMA_M = BM
     # now, we have num_m_blocks_per_warp * 16*num_softmax_warps == BM
     # num_m_blocks_per_warp is like `num_m_mmas`, but for non-mma consumers.
-    constrained[num_m_blocks_per_warp * 16 == WM]()
+    __comptime_assert num_m_blocks_per_warp * 16 == WM
     #
     # The following constraint is effectively equivalent to
     # BM == 128 or BM == 64
@@ -2032,7 +2010,7 @@ fn _mha_sm100[
     # num_softmax_threads*BM // (4 * 32) == BM
     # num_softmax_threads == 128
     # 32*128 // BM == num_softmax_threads
-    constrained[WM * num_softmax_warps == BM]()
+    __comptime_assert WM * num_softmax_warps == BM
     # The above should also be true because:
     # num_softmax_warps = BM // (16 * num_m_blocks_per_warp)
     # -> BM // WM = BM // (16 * num_m_blocks_per_warp)
@@ -2063,7 +2041,7 @@ fn _mha_sm100[
         BM=BM,  # 128
         BN=BN,  # BN
         BK=BK,  # depth
-        compute_BK=depth,
+        compute_BK = align_up(depth, 16),
         num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,
@@ -2124,17 +2102,17 @@ fn _mha_sm100[
     comptime o_frag_size = BM * MMA_N1 // (
         num_softmax_threads * num_m_blocks_per_warp
     )
-    constrained[p_frag_size == 2 * (WM // 8) * (MMA_N0 // 8)]()
-    constrained[o_frag_size == 2 * (WM // 8) * (MMA_N1 // 8)]()
+    __comptime_assert p_frag_size == 2 * (WM // 8) * (MMA_N0 // 8)
+    __comptime_assert o_frag_size == 2 * (WM // 8) * (MMA_N1 // 8)
     comptime frag_simdwidth = 2
-    constrained[
+    __comptime_assert (
         BN * num_k_mmas * BM * MMA_K
         == BK
         * num_n_mmas
         * p_frag_size
         * num_softmax_threads
         * num_m_blocks_per_warp
-    ]()
+    )
 
     comptime num_row_blocks_per_mma = 2
     # a umma.m64n32k16 `D` fragment looks like
@@ -2260,7 +2238,7 @@ fn _mha_sm100[
     # initial_seq_info = scheduler.unsafe_get_current_work_info(tile_summary, state)
 
     initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
-    constrained[not SchedulerType.may_advance]()
+    __comptime_assert not SchedulerType.may_advance
 
     @parameter
     if not decoding:
@@ -2312,7 +2290,7 @@ fn _mha_sm100[
     var kv_tile_start_row: UInt32 = startend[0]
     var end: UInt32 = startend[1]
 
-    constrained[num_s > 0]()
+    __comptime_assert num_s > 0
 
     barrier()
     # For intra-warp overlap, we initiate ummas as
@@ -2325,6 +2303,7 @@ fn _mha_sm100[
         warpgroup_reg_dealloc[num_producer_regs]()
         if tid == 96:  # thread 0 of warp id 3
             produce[
+                swizzle_mode,
                 pipeline_stages=pipeline_stages,
                 ragged=ragged,
                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -2361,7 +2340,7 @@ fn _mha_sm100[
                     return
 
             comptime tmem_cols = num_s * MMA_N0 + (MMA_N0 // 2) + MMA_N1
-            constrained[tmem_cols <= max_tmem_cols]()
+            __comptime_assert tmem_cols <= max_tmem_cols
             tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
             qk_desc = UMMA0Type.mma_descriptors(q_smem, kv_smem)
@@ -2540,7 +2519,7 @@ fn _mha_sm100[
         if num_softmax_threads > 128:
             warp_y = 2 * (warp_y % 4) + (warp_y // 4)
         comptime warp_x: UInt32 = 0
-        constrained[num_softmax_warps == 4 or num_softmax_warps == 8]()
+        __comptime_assert num_softmax_warps == 4 or num_softmax_warps == 8
 
         # Mask global memory iterator.
 
@@ -2677,10 +2656,10 @@ fn _mha_sm100[
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
             # Write to global memory.
-            constrained[
-                output_type.is_half_float(), "we don't support Float32 output"
-            ]()
-            constrained[size_of[kv_type]() == size_of[output_type]()]()
+            __comptime_assert (
+                output_type.is_half_float()
+            ), "we don't support Float32 output"
+            __comptime_assert size_of[kv_type]() == size_of[output_type]()
             comptime swizzle = make_swizzle[
                 num_rows = WM // 2, row_size=BN, access_size=8
             ]()
@@ -2727,18 +2706,22 @@ fn _mha_sm100[
         ):  # we may have an empty partition
             if kv_tile_start_row >= end:
                 if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
-                    4 * group + 128
+                    4 * min(group, 8) + 128
                 ):
                     exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                         partition, batch_size
                     )
-                    var q_head_idx = position.head_idx * group + lane // 4
-                    exp_sum_ptr[q_head_idx] = Scalar[PartitionType.accum_dtype](
-                        0
-                    )
-                    qk_max_ptr[q_head_idx] = min_or_neg_inf[
-                        PartitionType.accum_dtype
-                    ]()
+                    var q_heads = get_q_head_idx(position, lane)
+
+                    @parameter
+                    for i in range(q_heads.size):
+                        var q_head_idx = q_heads[i]
+                        exp_sum_ptr[q_head_idx] = Scalar[
+                            PartitionType.accum_dtype
+                        ](0)
+                        qk_max_ptr[q_head_idx] = min_or_neg_inf[
+                            PartitionType.accum_dtype
+                        ]()
 
                 write_output(position, rowsum, vectorize_o_reg_tile().fill(0))
                 return
@@ -2793,15 +2776,25 @@ fn _mha_sm100[
         wait_for_q_mul_k(read_idx_q)
         apply_mask(position, mask_status, kv_tile_start_row)
 
-        # Include sink_weights in rowmax computation if present
         @parameter
         if not SinkType.is_null:
-            var head_idx = position.head_idx
-            var sink_weight = sink_weights_ptr[head_idx] * log2e
+            # Include sink_weights in rowmax computation if present
+            var q_head_indices = get_q_head_idx(position, lane)
 
             @parameter
-            for i in range(num_rows_per_warp):
-                rowmax[i] = sink_weight.cast[accum_type]()
+            if decoding:
+
+                @parameter
+                for i in range(q_head_indices.size):
+                    var head_idx = q_head_indices[i]
+                    var sink_weight = sink_weights_ptr[head_idx] * log2e
+                    rowmax[i] = sink_weight.cast[accum_type]()
+            else:
+                var sink_weight = sink_weights_ptr[q_head_indices[0]] * log2e
+
+                @parameter
+                for i in range(num_rows_per_warp):
+                    rowmax[i] = sink_weight.cast[accum_type]()
 
         # Compute initial rowmax
         var attention_rowmax = _rowmax_online_softmax[
@@ -2810,10 +2803,9 @@ fn _mha_sm100[
 
         rowmax.copy_from(attention_rowmax)
 
-        constrained[
-            p_vec_output_layout.size() > 0,
-            "layout: " + String(p_vec_output_layout),
-        ]()
+        __comptime_assert p_vec_output_layout.size() > 0, "layout: " + String(
+            p_vec_output_layout
+        )
 
         # Compute rowsum
         var attention_rowsum = _rowsum[mma_thread_layout](
@@ -2823,16 +2815,30 @@ fn _mha_sm100[
         # Add sink weight contribution to rowsum
         @parameter
         if not SinkType.is_null:
-            var head_idx = position.head_idx
-            var sink_weight = (
-                sink_weights_ptr[head_idx].cast[accum_type]() * log2e
-            )
+            var q_head_indices = get_q_head_idx(position, lane)
 
             @parameter
-            for i in range(num_rows_per_warp):
-                # Compute exp2((sink_weight - rowmax[i]) * log2e)
-                var sink_contribution = exp2(sink_weight - rowmax[i])
-                attention_rowsum[i] = attention_rowsum[i] + sink_contribution[0]
+            if decoding:
+
+                @parameter
+                for i in range(q_head_indices.size):
+                    var head_idx = q_head_indices[i]
+                    var sink_weight = (
+                        sink_weights_ptr[head_idx].cast[accum_type]() * log2e
+                    )
+                    var sink_contribution = exp2(sink_weight - rowmax[i])
+                    attention_rowsum[i] += sink_contribution[0]
+            else:
+                var sink_weight = (
+                    sink_weights_ptr[q_head_indices[0]].cast[accum_type]()
+                    * log2e
+                )
+
+                @parameter
+                for i in range(num_rows_per_warp):
+                    # Compute exp2((sink_weight - rowmax[j]) * log2e)
+                    var sink_contribution = exp2(sink_weight - rowmax[i])
+                    attention_rowsum[i] += sink_contribution[0]
 
         rowsum.copy_from(attention_rowsum)
 
@@ -2905,17 +2911,24 @@ fn _mha_sm100[
 
         @parameter
         if decoding and PartitionType.do_partition:
-            if thread_idx.x % 4 == 0 and thread_idx.x < UInt(4 * group + 128):
+            # Only the first thread of each row
+            if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+                4 * min(group, 8) + 128
+            ):
                 exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                     partition, batch_size
                 )
-                var q_head_idx = position.head_idx * group + lane // 4
-                exp_sum_ptr[q_head_idx] = rebind[
-                    Scalar[PartitionType.accum_dtype]
-                ](rowsum[0])
-                qk_max_ptr[q_head_idx] = rebind[
-                    Scalar[PartitionType.accum_dtype]
-                ](rowmax[0])
+                var q_heads = get_q_head_idx(position, lane)
+
+                @parameter
+                for i in range(q_heads.size):
+                    var q_head_idx = q_heads[i]
+                    exp_sum_ptr[q_head_idx] = rebind[
+                        Scalar[PartitionType.accum_dtype]
+                    ](rowsum[i])
+                    qk_max_ptr[q_head_idx] = rebind[
+                        Scalar[PartitionType.accum_dtype]
+                    ](rowmax[i])
 
         @parameter
         for row in range(num_rows_per_warp):
@@ -2923,11 +2936,10 @@ fn _mha_sm100[
         umma_1.wait_for_mma()
 
         output_accumulator.copy_to(output_reg_tile)
-        constrained[
-            type_of(output_reg_tile).layout[1].size() > 1,
+        __comptime_assert type_of(output_reg_tile).layout[1].size() > 1, (
             "output_reg_tile.layout = "
             + String(type_of(output_reg_tile).layout)
-            + "\n",
-        ]()
+            + "\n"
+        )
         write_output(position, rowsum, vectorize_o_reg_tile())
         # don't arrive

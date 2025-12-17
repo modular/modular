@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
+package(default_visibility = ["//visibility:private"])
+
 mojo_binary(
     name = "vector_addition",
     srcs = [
@@ -8,7 +10,7 @@ mojo_binary(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 

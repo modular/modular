@@ -44,12 +44,12 @@ from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import SchedulerProgress
+from .config import TokenGenerationSchedulerConfig
 from .lora_scheduler_utils import (
     can_allocate_lora_request,
     is_active_lora,
     is_lora,
 )
-from .text_batch_constructor import TokenGenerationSchedulerConfig
 from .utils import get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -177,7 +177,7 @@ class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
         self.max_queue_size_tg = (
             max_queue_size_tg
             if max_queue_size_tg is not None
-            else self.max_batch_size_tg
+            else self.max_batch_size
         )
         self.min_batch_size_tg = (
             min_batch_size_tg
@@ -288,7 +288,7 @@ class AudioGenerationScheduler(Scheduler):
         if offload_queue_draining:
             self._queue_drainer = BackgroundQueueDrainer[TTSContext](
                 self.request_queue,
-                max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,
+                max_items_per_drain=self.scheduler_config.max_batch_size * 2,
             )
 
     def _retrieve_pending_requests(self) -> None:
@@ -298,7 +298,7 @@ class AudioGenerationScheduler(Scheduler):
         else:
             items = drain_queue(
                 self.request_queue,
-                max_items=self.scheduler_config.max_batch_size_tg * 2,
+                max_items=self.scheduler_config.max_batch_size * 2,
             )
 
         for context in items:
@@ -317,7 +317,7 @@ class AudioGenerationScheduler(Scheduler):
         for req_id, req_data in candidate_reqs.items():
             if req_id not in self.decode_reqs:
                 continue
-            if len(scheduled_reqs) == self.scheduler_config.max_batch_size_tg:
+            if len(scheduled_reqs) == self.scheduler_config.max_batch_size:
                 break
 
             # Verify LoRA is active for TG requests
@@ -341,7 +341,7 @@ class AudioGenerationScheduler(Scheduler):
         self._retrieve_pending_requests()
 
         ce_batch: dict[RequestID, TTSContext] = {}
-        max_batch_size_ce = self.scheduler_config.max_batch_size_ce
+        max_batch_size = self.scheduler_config.max_batch_size
         max_queue_size_tg = self.scheduler_config.max_queue_size_tg
         max_input_len = self.scheduler_config.target_tokens_per_batch_ce
 
@@ -365,7 +365,7 @@ class AudioGenerationScheduler(Scheduler):
 
         while (
             self.pending_reqs
-            and (len(ce_batch) < max_batch_size_ce)
+            and (len(ce_batch) < max_batch_size)
             and (len(ce_batch) + len(self.decode_reqs) < max_queue_size_tg)
             and (input_len < max_input_len)
         ):

@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import functools
+import logging
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -22,6 +24,8 @@ import msgspec
 import numpy as np
 
 from .shared_memory import ndarray_to_shared_memory, open_shm_array
+
+logger = logging.getLogger("max.interfaces")
 
 
 def numpy_encoder_hook(
@@ -95,7 +99,18 @@ class MsgpackNumpyEncoder:
             shared_memory_threshold: Minimum size in bytes for shared memory conversion.
                                     If 0, all arrays are candidates for conversion.
         """
-        self._use_shared_memory = use_shared_memory
+
+        if (
+            use_shared_memory
+            and float(os.environ.get("MODULAR_MAX_SHM_WATERMARK", 0.9)) == 0.0
+        ):
+            logger.warning(
+                "MODULAR_MAX_SHM_WATERMARK is set to 0.0, shared memory will be disabled."
+            )
+            self._use_shared_memory = False
+        else:
+            self._use_shared_memory = use_shared_memory
+
         self._shared_memory_threshold = shared_memory_threshold
         self._encoder: msgspec.msgpack.Encoder | None = None
         self._create_encoder()
@@ -255,49 +270,3 @@ def decode_numpy_array(type_: type, obj: Any, copy: bool) -> Any:
             raise
 
     return obj
-
-
-def msgpack_eq(a: Any, b: Any) -> bool:
-    """
-    Compare two msgpack-serializable objects for equality. This should really
-    only be used in tests.
-
-    Args:
-        a: The first object to compare
-        b: The second object to compare
-    """
-    if not isinstance(b, type(a)):
-        return False
-
-    # Get all fields from msgspec
-    fields = msgspec.structs.fields(type(a))
-
-    # Compare all attributes
-    for field in fields:
-        field_name = field.name
-        self_val = getattr(a, field_name)
-        other_val = getattr(b, field_name)
-
-        # Handle numpy arrays
-        if isinstance(self_val, np.ndarray):
-            if not np.array_equal(self_val, other_val):
-                return False
-        # Handle lists
-        elif isinstance(self_val, (list, tuple)):
-            if len(self_val) != len(other_val):
-                return False
-            for s, o in zip(self_val, other_val, strict=True):
-                if isinstance(s, np.ndarray):
-                    if not np.array_equal(s, o):
-                        return False
-                elif s != o:
-                    return False
-        # Handle sets
-        elif isinstance(self_val, set):
-            if self_val != other_val:
-                return False
-        # Handle all other types
-        elif self_val != other_val:
-            return False
-
-    return True

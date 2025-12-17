@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _EXTRA_MOJO_TEST_CONSTRAINTS = {
     "test_dump_sass.mojo": ["//:nvidia_gpu"],
     "test_function_attributes.mojo": select({
@@ -37,7 +39,7 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -54,14 +56,17 @@ mojo_filecheck_test(
     srcs = ["test_function_error.mojo"],
     expect_crash = True,
     tags = ["gpu"],
-    target_compatible_with = ["//:nvidia_gpu"],
+    target_compatible_with = ["//:nvidia_gpu"] + select({
+        "//:b200_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max:internal_utils",
         "//max:kv_cache",
         "//max:linalg",
         "//max:nn",
         "//max:quantization",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -73,13 +78,16 @@ mojo_filecheck_test(
     },
     expect_crash = True,
     tags = ["gpu"],
-    target_compatible_with = ["//:nvidia_gpu"],
+    target_compatible_with = ["//:nvidia_gpu"] + select({
+        "//:b200_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max:internal_utils",
         "//max:kv_cache",
         "//max:linalg",
         "//max:nn",
         "//max:quantization",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

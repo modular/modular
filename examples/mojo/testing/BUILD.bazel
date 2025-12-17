@@ -1,10 +1,12 @@
 load("//bazel:api.bzl", "mojo_binary", "mojo_library", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 mojo_library(
     name = "my_math",
     srcs = glob(["src/my_math/*.mojo"]),
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -13,28 +15,30 @@ mojo_binary(
     srcs = ["src/example.mojo"],
     deps = [
         ":my_math",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
 mojo_test(
     name = "test_inc",
+    size = "small",
     srcs = [
         "test/my_math/test_inc.mojo",
     ],
     deps = [
         ":my_math",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
 mojo_test(
     name = "test_dec",
+    size = "small",
     srcs = [
         "test/my_math/test_dec.mojo",
     ],
     deps = [
         ":my_math",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

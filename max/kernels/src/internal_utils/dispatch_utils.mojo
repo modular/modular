@@ -18,7 +18,7 @@ from builtin.sort import _quicksort
 
 # DO NOT CHANGE
 @register_passable("trivial")
-trait TuningConfig(ImplicitlyCopyable, Movable, Stringable):
+trait TuningConfig(ImplicitlyCopyable, Stringable):
     ...
 
 
@@ -96,7 +96,7 @@ struct Table[type: TuningConfig](Stringable):
 
     # Apply rule on all configs in the table and return list of all the unique results.
     fn query_values[
-        ret_type: Comparable & ImplicitlyCopyable & Movable,
+        ret_type: Comparable & ImplicitlyCopyable,
         rule: fn (Self.type) capturing -> ret_type,
         domain: List[Int] = List[Int](),
     ](self) -> List[ret_type]:

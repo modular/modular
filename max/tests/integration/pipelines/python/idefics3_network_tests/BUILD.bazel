@@ -1,0 +1,35 @@
+# Idefics3 integration tests that require network access.
+# These tests are tagged with AITLIB-293 and manual because they make HuggingFace API calls.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_tokenizer",
+    size = "large",
+    srcs = ["test_tokenizer.py"],
+    env_inherit = ["HF_TOKEN"],
+    tags = [
+        "gpu",
+        "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        requirement("pytest-asyncio"),
+        requirement("transformers"),
+    ],
+)

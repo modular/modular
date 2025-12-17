@@ -68,13 +68,10 @@ fn tma_umma_kernel_pair_cta[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    constrained[
-        a_type == b_type and a_type in (DType.float8_e4m3fn, DType.bfloat16),
-        (
-            "a_type and b_type must be the same and either float8_e4m3fn or"
-            " bfloat16"
-        ),
-    ]()
+    __comptime_assert a_type == b_type and a_type in (
+        DType.float8_e4m3fn,
+        DType.bfloat16,
+    ), "a_type and b_type must be the same and either float8_e4m3fn or bfloat16"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -438,7 +435,6 @@ def test_tma_umma_pair_cta[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 

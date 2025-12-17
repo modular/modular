@@ -1,12 +1,15 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _FILECHECK_TESTS = [
     "test_exit_1.mojo",
 ]
 
 _LIT_TESTS = [
-    "test_invalid_paramenv.mojo",
+    "test_c_types_32bit.mojo",
     "test_compile_sanitize_address.mojo",
+    "test_invalid_paramenv.mojo",
 ]
 
 _PLATFORM_CONSTRAINTS = {
@@ -67,7 +70,7 @@ _EXPECT_FAIL = [
         expect_fail = src in _EXPECT_FAIL,
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -84,7 +87,7 @@ _EXPECT_FAIL = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -99,7 +102,7 @@ lit_tests(
     size = "large",
     srcs = _LIT_TESTS,
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _LIT_TESTS = [
     "test_accelerator_arch_cli.mojo",
     "test_accelerator_arch_cli_kernels.mojo",
@@ -61,10 +63,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2405
-    "test_random.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
 }
 
 [
@@ -80,7 +78,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(
@@ -103,7 +101,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -120,7 +118,7 @@ lit_tests(
         "//max:linalg",
         "//max:nn",
         "//max:quantization",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     tags = ["gpu"],
 )

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import erf
-from memory import LegacyUnsafePointer as UnsafePointer
 from random import randn, seed
 
 from test_utils import compare, libm_call
@@ -43,14 +42,14 @@ def test_erf_libm():
     comptime test_dtype = DType.float32
 
     # generate input values and write them to file
-    var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    var x32 = alloc[Scalar[test_dtype]](N)
     randn[test_dtype](x32, N, 0, 9.0)
     print("For N=", N, " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # math.erf result
     ####################
-    var y32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    var y32 = alloc[Scalar[test_dtype]](N)
     for i in range(N):
         y32[i] = erf(x32[i])  # math.erf
 
@@ -63,7 +62,7 @@ def test_erf_libm():
     ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return libm_call["erff", "err"](arg)
 
-    var libm_out = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    var libm_out = alloc[Scalar[test_dtype]](N)
     for i in range(N):
         libm_out[i] = erf_libm(x32[i])
 

@@ -77,11 +77,10 @@ fn test[
         mask_rank,
     )
 
-    constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()
-    constrained[
-        against_gpu_naive or mask_rank == 3,
-        "Testing against cpu requires mask of rank 3.",
-    ]()
+    __comptime_assert mask_rank in (3, 4), "mha only support rank 3 or 4."
+    __comptime_assert (
+        against_gpu_naive or mask_rank == 3
+    ), "Testing against cpu requires mask of rank 3."
 
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -172,9 +171,9 @@ fn test[
 
     @parameter
     if not against_gpu_naive:
-        constrained[
-            qkv_type == mask_type, "expect qkv and mask have same type for CPU."
-        ]()
+        __comptime_assert (
+            qkv_type == mask_type
+        ), "expect qkv and mask have same type for CPU."
         _naive_attention_with_transpose[qkv_type](
             output, q, k, k, mask.bitcast[qkv_type](), scale
         )
@@ -307,8 +306,13 @@ fn test[
         @parameter
         if use_causal_mask:
             var k_operand = LayoutTensorMHAOperand(k_device)
-            var null_valid_length = NDBuffer[DType.uint32, 1](
-                UnsafePointer[UInt32](), Index(0)
+            var null_valid_length = LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+            ](
+                UnsafePointer[UInt32](),
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    Index(0)
+                ),
             )
             mha_gpu_naive[_is_cache_length_accurate=True,](
                 q_device,
@@ -316,12 +320,7 @@ fn test[
                 k_operand,
                 CausalMask(),
                 output_ref_device,
-                ManagedTensorSlice[
-                    io_spec=IOUnknown,
-                    static_spec = StaticTensorSpec[
-                        DType.uint32, 1
-                    ].create_unknown(),
-                ](null_valid_length.data, null_valid_length.get_shape()),
+                null_valid_length,
                 scale,
                 batch_size,
                 seq_len,
@@ -581,7 +580,9 @@ fn test_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank, softmax_type = DType.float32](
+        flare_mla_prefill[
+            rank = q.rank, softmax_type = DType.float32, use_fa4=True
+        ](
             output_device,
             q_device,
             k_device,
@@ -728,8 +729,11 @@ fn test_prefill[
     ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
-    var null_valid_length = NDBuffer[DType.uint32, 1](
-        UnsafePointer[UInt32](), Index(0)
+    var null_valid_length = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        UnsafePointer[UInt32](),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(k_ref_device)
@@ -742,10 +746,7 @@ fn test_prefill[
         v_ref_operand,
         CausalMask(),
         output_ref_device,
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](null_valid_length.data, null_valid_length.get_shape()),
+        null_valid_length,
         scale,
         batch_size,
         seq_len,
@@ -1130,7 +1131,9 @@ fn test_cascade_prefill[
     )
 
     # create reference output
-    flare_mla_prefill[rank = q_device.rank, softmax_type = DType.float32](
+    flare_mla_prefill[
+        rank = q_device.rank, softmax_type = DType.float32, use_fa4=False
+    ](
         output_ref_device,
         q_device,
         k_device,
@@ -1264,7 +1267,7 @@ fn test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
-    ](140, 140, ctx)
+    ](120, 120, ctx)
     test_prefill[
         DType.bfloat16,
         depth=192,

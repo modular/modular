@@ -67,6 +67,22 @@ If there is a problem with the Dev Container, please open an issue
 
 ## Building the standard library
 
+The Modular repository uses [Bazel](https://bazel.build/), a fast, scalable
+build and test tool to ensure reproducible builds through dependency tracking
+and caching.
+
+To build and test your changes to the Mojo standard library, run the following
+`./bazelw` commands from the top-level directory of the repository (where the
+`bazel` folder is located).
+
+Be sure that you meet the
+[system requirements](https://docs.modular.com/mojo/manual/install#system-requirements).
+
+If you're developing on macOS, you need Xcode 16.0 or later and macOS 15.0 or
+later. You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
+downloads the Metal utilities required for GPU programming in later versions of
+Xcode.
+
 To build the standard library, you can run:
 
 ```bash

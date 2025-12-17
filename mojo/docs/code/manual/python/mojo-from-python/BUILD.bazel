@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
 
+package(default_visibility = ["//docs:__subpackages__"])
+
 modular_py_binary(
     name = "factorial",
     srcs = ["main.py"],

@@ -29,6 +29,7 @@ from ....utils_gpu import MatmulConfig
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
 from .tuning_configs import _get_tuning_list_bf16, TuningConfigSM90
+from .config import build_configs, MatmulConfig as MatmulConfigSM90
 
 comptime MAX_M = Int.MAX
 
@@ -83,39 +84,52 @@ fn matmul_dispatch_sm90[
         K_multiple_of_4B and (is_AB_bf16 or is_AB_fp32)
     )
 
-    # General constraints for H100 matmul
-    # fmt: off
+    @always_inline
     @parameter
-    if not (
-        input_type_supported and \
-        transpose_b and \
-        has_static_NK and \
-        K_align_supported
-    ):
+    @__copy_capture(c, a, b)
+    fn _dispatch() raises -> Int:
+        # General constraints for H100 matmul
+        # fmt: off
+        @parameter
+        if not (
+            input_type_supported and \
+            transpose_b and \
+            has_static_NK and \
+            K_align_supported
+        ):
+            return DISPATCH_MISS
+        # fmt: on
+
+        @parameter
+        if is_AB_fp8:
+            logger.info("------ Dispatching to sm90 FP8 ------")
+            return matmul_dispatch_sm90_fp8[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+
+        elif is_AB_bf16 or is_AB_fp32:
+            logger.info("------ Dispatching to sm90 BF16/FP32 ------")
+            return matmul_dispatch_sm90_bf16_fp32[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+
+        logger.info("SM90 dispatch miss - no matching path")
         return DISPATCH_MISS
-    # fmt: on
 
     @parameter
-    if is_AB_fp8:
-        logger.info("------ Dispatching to sm90 FP8 ------")
-        return matmul_dispatch_sm90_fp8[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
+    if env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]():
+        if _dispatch():
+            return DISPATCH_HIT
+        else:
+            raise Error("Mojo SM90 matmul dispatch failed.")
 
-    elif is_AB_bf16 or is_AB_fp32:
-        logger.info("------ Dispatching to sm90 BF16/FP32 ------")
-        return matmul_dispatch_sm90_bf16_fp32[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-    logger.info("SM90 dispatch miss - no matching path")
-    return DISPATCH_MISS
+    return _dispatch()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -477,7 +491,8 @@ comptime llama_8b_fp8_table = Table(llama_8b_fp8_list, "llama_8b_fp8")
 fn matmul_dispatch_sm90_fp8[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: OptionalReg[
@@ -2128,7 +2143,8 @@ fn _get_gemma_3_27b_list[
 fn matmul_dispatch_sm90_bf16_fp32[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: OptionalReg[
@@ -2852,30 +2868,49 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         else:
-            comptime default_bf16_config = MatmulConfig[
+            var runtime_config = MatmulConfigSM90[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, BN, BK),
-                mma_shape=Index(64, BN, mma_k),
-                cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=4,
-                num_consumer=2,
+                m,
+                static_N,
+                static_K,
+                num_k_partitions=1,
                 partitioned_multicast=False,
                 pdl_level=pdl_level,
             )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=default_bf16_config,
-                schedule = MatmulSchedule.NONE,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
-            return DISPATCH_HIT
+
+            # Build compile-time configs (using same parameters)
+            comptime configs = build_configs[
+                a_type,
+                b_type,
+                c_type,
+                static_N,
+                static_K,
+                transpose_b,
+                1,
+                False,
+                pdl_level,
+            ]()
+
+            @parameter
+            for config in configs:
+                # Compare SM90 configs directly
+                if runtime_config == config:
+                    # Only convert to base config after match is found
+                    comptime base_config = config.to_base_config()
+                    warp_specialize_gemm_with_multicasting[
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                        config=base_config,
+                        schedule = MatmulSchedule.NONE,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                        rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                        rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                        ctx,
+                    )
+                    return DISPATCH_HIT
 
     # Fallback path, will use scalar 2B output and lots of OOB check.
     @parameter

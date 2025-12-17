@@ -1,0 +1,167 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+import numpy as np
+from max.driver import CPU, Accelerator, Tensor
+from max.dtype import DType
+
+
+def test_accelerator_peer_access() -> None:
+    """Test peer access between multiple accelerators."""
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+
+    can_access_0_to_1 = gpu0.can_access(gpu1)
+    can_access_1_to_0 = gpu1.can_access(gpu0)
+
+    # Typically, peer access is symmetric, but hardware-dependent.
+    assert can_access_0_to_1 == can_access_1_to_0, (
+        "Peer access should be symmetric."
+    )
+
+
+def test_to_multiple_devices() -> None:
+    cpu = CPU()
+    acc0 = Accelerator(id=0)
+    acc1 = Accelerator(id=1)
+
+    tensor = Tensor(dtype=DType.int32, shape=(3, 3), device=cpu)
+    # GEX-2624: CPU to CPU copies not supported via Tensor.to()
+    tensors = tensor.to([acc0, acc1])
+    assert len(tensors) == 2
+    assert tensors[0].device == acc0
+    assert tensors[1].device == acc1
+
+
+def test_from_device() -> None:
+    cpu = CPU()
+    acc0 = Accelerator(id=0)
+    acc1 = Accelerator(id=1)
+
+    tensor = Tensor(dtype=DType.int32, shape=(3, 3), device=acc0)
+    tensors = tensor.to([cpu, acc0, acc1])
+    assert len(tensors) == 3
+    assert tensors[0].device == cpu
+    assert tensors[1].device == acc0
+    assert tensors[2].device == acc1
+
+
+def _test_pinned_device_copy(
+    pinned_gpu_id: int,
+    target_gpu_id: int,
+    pattern_before: int,
+    pattern_after: int,
+    tensor_size: int = 1024,
+) -> bool:
+    """
+    Helper to test if copying from pinned host memory to device memory works.
+
+    Creates pinned host memory on pinned_gpu_id, fills it with pattern_before,
+    copies to target_gpu_id, then modifies the pinned memory to pattern_after.
+    Returns True if the GPU tensor still contains pattern_before (correct copy).
+    """
+    gpus = [Accelerator(id=i) for i in range(2)]
+    cpu_device = CPU()
+
+    # Create pinned memory on specified GPU
+    pinned_cpu_tensor = Tensor(
+        dtype=DType.int8,
+        shape=(tensor_size,),
+        device=gpus[pinned_gpu_id],
+        pinned=True,
+    )
+
+    # Fill with pattern_before
+    pattern_before_data = np.full(tensor_size, pattern_before, dtype=np.int8)
+    pattern_before_tensor = Tensor.from_numpy(pattern_before_data)
+    pinned_cpu_tensor.inplace_copy_from(pattern_before_tensor)
+
+    # Copy to target GPU
+    gpu_tensor = pinned_cpu_tensor.to(gpus[target_gpu_id])
+    assert not gpu_tensor.pinned
+
+    # Synchronize to ensure the copy from pinned memory has completed
+    # before we modify the source buffer
+    gpus[target_gpu_id].synchronize()
+
+    # Modify pinned memory to pattern_after
+    pattern_after_data = np.full(tensor_size, pattern_after, dtype=np.int8)
+    pattern_after_tensor = Tensor.from_numpy(pattern_after_data)
+    pinned_cpu_tensor.inplace_copy_from(pattern_after_tensor)
+
+    # Copy GPU tensor back to CPU and check contents
+    gpu_on_cpu = gpu_tensor.copy(device=cpu_device)
+    gpu_values = gpu_on_cpu.to_numpy()
+
+    # Should contain pattern_before (the value before modification)
+    return bool(np.all(gpu_values == pattern_before))
+
+
+def test_pinned_to_same_device_copy() -> None:
+    """Test copying from pinned host memory to same device memory.
+
+    Regression test for GEX-2864: Copying from GPU 0 pinned host memory to
+    GPU 0 device memory should allocate device memory and perform a copy,
+    not return a reference to the pinned memory.
+    """
+    result = _test_pinned_device_copy(
+        pinned_gpu_id=0,
+        target_gpu_id=0,
+        pattern_before=42,
+        pattern_after=99,
+    )
+    assert result, (
+        "Copy from pinned host memory to same GPU device memory failed. "
+        "Expected GPU tensor to contain original data (42), not modified data (99). "
+    )
+
+
+def test_pinned_to_different_device_copy() -> None:
+    """Test copying from pinned host memory to different device memory.
+
+    This should work correctly - validates the test infrastructure.
+    """
+    result = _test_pinned_device_copy(
+        pinned_gpu_id=0,
+        target_gpu_id=1,
+        pattern_before=77,
+        pattern_after=55,
+    )
+    assert result, (
+        "Copy from pinned host memory to different GPU device memory failed."
+        "Expected GPU tensor to contain original data (77), not modified data (55). "
+    )
+
+
+def test_non_pinned_cross_device_copy() -> None:
+    """Test copying non-pinned memory from one GPU to another."""
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+    cpu = CPU()
+    tensor_size = 1024
+
+    # Create tensor on GPU 0
+    data = np.full(tensor_size, 42, dtype=np.int8)
+    gpu0_tensor = Tensor.from_numpy(data).to(gpu0)
+
+    # Copy to GPU 1
+    gpu1_tensor = gpu0_tensor.to(gpu1)
+    assert gpu1_tensor.device == gpu1
+
+    # Verify the data was copied correctly
+    gpu1.synchronize()
+    result = gpu1_tensor.copy(device=cpu).to_numpy()
+    assert np.all(result == 42), (
+        "Cross-device copy of non-pinned memory failed. "
+        "Expected tensor to contain 42."
+    )

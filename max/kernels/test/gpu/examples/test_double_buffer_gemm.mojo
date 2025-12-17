@@ -83,10 +83,9 @@ fn sgemm_double_buffer[
     # Warp shape in 2D.
     comptime warp_dim_x = WN // TN
     comptime warp_dim_y = WM // TM
-    constrained[
-        warp_dim_x * warp_dim_y == WARP_SIZE,
-        "Warp 2d shape doesn't match 32 threads",
-    ]()
+    __comptime_assert (
+        warp_dim_x * warp_dim_y == WARP_SIZE
+    ), "Warp 2d shape doesn't match 32 threads"
 
     # Pad BM to avoid back conflict
     comptime pad_avoid_bank_conflict = 4

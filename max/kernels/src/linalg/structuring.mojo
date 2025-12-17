@@ -209,6 +209,17 @@ comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArrayType[
 ]
 """Type alias for shared memory pipeline barrier array."""
 
+comptime SMemTileIter[
+    dtype: DType,
+    layout: Layout,
+] = LayoutTensorIter[
+    dtype,
+    layout,
+    MutAnyOrigin,
+    address_space = AddressSpace.SHARED,
+    alignment=128,
+]
+
 
 @register_passable("trivial")
 struct SMemTileArrayType[
@@ -256,10 +267,9 @@ struct SMemTileArrayType[
         Args:
             unsafe_ptr: Shared memory pointer.
         """
-        constrained[
-            Self.layout.all_dims_known(),
-            "Layout must be known at compile time.",
-        ]()
+        __comptime_assert (
+            Self.layout.all_dims_known()
+        ), "Layout must be known at compile time."
 
         self.ptr = unsafe_ptr
 
@@ -352,6 +362,10 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
 comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
+comptime SMemPtr[type: AnyTrivialRegType] = UnsafePointer[
+    type, address_space = AddressSpace.SHARED
+]
+
 
 trait SharedMemoryBasePtr:
     comptime alignment: Int
@@ -404,7 +418,8 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     @always_inline
     fn build[
         dtype: DType,
-        layout: Layout, //,
+        layout: Layout,
+        //,
         T: type_of(Self.Tile[dtype, layout]),
     ](mut self) -> T:
         """Allocate a single tile.
@@ -422,7 +437,8 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     fn build[
         dtype: DType,
         layout: Layout,
-        num_tiles: Int, //,
+        num_tiles: Int,
+        //,
         T: type_of(Self.TileArray[dtype, layout, num_tiles]),
     ](mut self) -> T:
         """Allocate a tile array.
@@ -439,7 +455,8 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     @always_inline
     fn build[
         type: AnyTrivialRegType,
-        size: Int, //,
+        size: Int,
+        //,
         T: type_of(Self.Array[type, size]),
     ](mut self) -> T:
         """Allocate a regular array.

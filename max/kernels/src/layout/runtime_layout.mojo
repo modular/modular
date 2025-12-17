@@ -68,6 +68,7 @@ struct RuntimeLayout[
     comptime ShapeType = RuntimeTuple[
         Self.layout.shape, element_type = Self.element_type
     ]
+    """Type alias for the runtime shape tuple."""
     var shape: Self.ShapeType
     """The shape of the layout as a runtime tuple.
 
@@ -78,6 +79,7 @@ struct RuntimeLayout[
     comptime StrideType = RuntimeTuple[
         Self.layout.stride, element_type = Self.linear_idx_type
     ]
+    """Type alias for the runtime stride tuple."""
     var stride: Self.StrideType
     """The stride of the layout as a runtime tuple.
 
@@ -99,10 +101,9 @@ struct RuntimeLayout[
             dimensions known.
         """
 
-        constrained[
-            Self.layout.all_dims_known(),
-            "Static layout with known dims is required",
-        ]()
+        __comptime_assert (
+            Self.layout.all_dims_known()
+        ), "Static layout with known dims is required"
 
         self.shape = {}
         self.stride = {}
@@ -409,7 +410,7 @@ fn coalesce[
         A new `RuntimeLayout` with coalesced dimensions.
     """
 
-    constrained[not keep_rank, "Unsupported coalesce mode"]()
+    __comptime_assert not keep_rank, "Unsupported coalesce mode"
 
     var res_shape = RuntimeTuple[
         coalesce_layout(l, keep_rank).shape, element_type = layout.element_type

@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -39,6 +40,7 @@ granite_arch = SupportedArchitecture(
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
+    context_type=TextContext,
     rope_type=RopeType.normal,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

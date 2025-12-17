@@ -18,8 +18,8 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.14")
 bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "rules_java", version = "9.0.3")
-bazel_dep(name = "rules_mojo", version = "0.5.0")
+bazel_dep(name = "rules_java", version = "9.1.0")
+bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
@@ -29,12 +29,8 @@ bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 # TODO: Remove when transitives bump to this version or above
-bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
-bazel_dep(name = "rules_apple", version = "3.22.0")
 bazel_dep(name = "rules_foreign_cc", version = "0.13.0")  # NOTE: Avoid direct usage
 bazel_dep(name = "rules_nodejs", version = "6.5.0")
-bazel_dep(name = "rules_swift", version = "2.8.2")
-bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 
 single_version_override(
     module_name = "abseil-cpp",
@@ -45,10 +41,23 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-w7hPwnIRS1yyx0j6nZCD/yGqM0AZiFfJiF9U9DxIr5k=",
-    strip_prefix = "rules_mojo-87f860f96f73ce624d51fe8e836978888e14344c",
+    integrity = "sha256-PyyBQ1W6kpYFfIsQLLAbP3LmcvVIBA3LYBfwMCKy/ww=",
+    strip_prefix = "rules_mojo-a6252c86d0f413e353157c71bf0f8aa234157e50",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/87f860f96f73ce624d51fe8e836978888e14344c.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/a6252c86d0f413e353157c71bf0f8aa234157e50.tar.gz",
+    ],
+)
+
+single_version_override(
+    module_name = "gazelle",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazel-contrib/bazel-gazelle/pull/2249
+        "//bazel/public-patches:gazelle-package-top.patch",
+        # https://github.com/bazel-contrib/bazel-gazelle/pull/2248
+        "//bazel/public-patches:gazelle-exports-files.patch",
+        # https://github.com/bazel-contrib/bazel-gazelle/pull/2247
+        "//bazel/public-patches:gazelle-default-features.patch",
     ],
 )
 
@@ -58,8 +67,12 @@ single_version_override(
     patches = [
         # https://github.com/bazelbuild/bazel/pull/26925
         "//bazel/public-patches:rules_cc_dsym_feature.patch",
+        # https://github.com/bazelbuild/rules_cc/pull/535
+        # https://github.com/bazelbuild/rules_cc/pull/536
+        "//bazel/public-patches:rules_cc_allowlists.patch",
+        # https://github.com/bazelbuild/rules_cc/pull/527
+        "//bazel/public-patches:rules_cc_textual_hdrs.patch",
     ],
-    version = "0.2.8",
 )
 
 single_version_override(
@@ -121,15 +134,6 @@ single_version_override(
     patches = [
         # https://github.com/aspect-build/rules_js/pull/2330
         "//bazel/public-patches:aspect_rules_js_toolchains.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_swift",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazelbuild/rules_swift/pull/1535
-        "//bazel/public-patches:rules_swift.patch",
     ],
 )
 
@@ -242,6 +246,8 @@ module_versions(
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
 RUFF_VERSION = "0.14.0"
 
 [
@@ -335,9 +341,9 @@ genrule(
     ''',
 )
 """,
-    # commit: https://github.com/modularml/NVSHMEM/commit/de1259385e38e373b7d71fd390f9f5468140d061
-    sha256 = "b0808fbba808fc0742f60c16a7062c1ff35655cfe796574bf287009313d7f0c1",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/b0808fbba808fc0742f60c16a7062c1ff35655cfe796574bf287009313d7f0c1/nvshmem.tar.gz",
+    # commit: https://github.com/modularml/NVSHMEM/commit/e88ac46a9d0b5964cbfe5866dbaf61534348978c
+    sha256 = "ff68bc9870dadb363b826687c0aae51750ef9c5a167c98a26de0ff2be1d28493",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/ff68bc9870dadb363b826687c0aae51750ef9c5a167c98a26de0ff2be1d28493/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
@@ -430,18 +436,18 @@ http_archive(
 bazel_dep(name = "sysroot-jammy-aarch64")
 archive_override(
     module_name = "sysroot-jammy-aarch64",
-    integrity = "sha256-62kBJgGFqcDoEES1rkFYTaZJ0Zgjz0P8HIls6t5zUKI=",
+    integrity = "sha256-9PwIQtthQx6W6KWtPEQcBWncY+76dr/XCll0+Q9FAwA=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/7/eb6901260185a9c0e81044b5ae41584da649d19823cf43fc1c896ceade7350a2/sysroot-jammy-aarch64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/8/f4fc0842db61431e96e8a5ad3c441c0569dc63eefa76bfd70a5974f90f450300/sysroot-jammy-aarch64.tar.xz",
     ],
 )
 
 bazel_dep(name = "sysroot-jammy-x86_64")
 archive_override(
     module_name = "sysroot-jammy-x86_64",
-    integrity = "sha256-fVF6U6G1kb7+PM2HS6KM5mKYRF93S6gEg8l7tYIV+nc=",
+    integrity = "sha256-X+K89JQvjlbk4f40R9nUUsqMfY7r7cSwFMPdOIUlzlc=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/7/7d517a53a1b591befe3ccd874ba28ce66298445f774ba80483c97bb58215fa77/sysroot-jammy-x86_64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/8/5fe2bcf4942f8e56e4e1fe3447d9d452ca8c7d8eebedc4b014c3dd388525ce57/sysroot-jammy-x86_64.tar.xz",
     ],
 )
 
@@ -464,4 +470,70 @@ http_archive(
     build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
     sha256 = "a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
+)
+
+SHELLCHECK_VERSION = "v0.10.0"
+
+[
+    http_archive(
+        name = "shellcheck-{}".format(arch),
+        build_file_content = """exports_files(glob(["shellcheck"]))""",
+        integrity = sha,
+        strip_prefix = "shellcheck-{}".format(SHELLCHECK_VERSION),
+        urls = [
+            # https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.darwin.aarch64.tar.xz
+            "https://github.com/koalaman/shellcheck/releases/download/{version}/shellcheck-{version}.{arch}.tar.xz".format(
+                arch = arch,
+                version = SHELLCHECK_VERSION,
+            ),
+        ],
+    )
+    for arch, sha in [
+        ("linux.x86_64", "sha256-bIgasGmOTm6iNSRfIoMoYFRPF7o4ZEL+fp1in4y+34c="),
+        ("linux.aarch64", "sha256-Mkp+id6Poq7Q0MKPPatZz4TG10JkAiwAwir2Ze0aCbs="),
+        ("darwin.aarch64", "sha256-u9LxSCYyju52edpyIfK8OvsBH2qSi4SMgMMh9gRt34E="),
+    ]
+]
+
+http_archive(
+    name = "mistral-evals",
+    build_file = "//bazel/public-patches:mistral-evals.BUILD",
+    patch_args = ["-p1"],
+    patches = [
+        "//bazel/public-patches:mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch",
+        "//bazel/public-patches:mistral-evals-0002-Increase-request-parallelism.patch",
+    ],
+    sha256 = "d34c715e7a625a7acb392ffebca23da30693a992979d7c58f3c13e6000e9adc5",
+    strip_prefix = "mistral-evals-02bbf53fea669323010bba74f1b9874472d0d47c",
+    # Mirrored from https://github.com/mistralai/mistral-evals/archive/02bbf53fea669323010bba74f1b9874472d0d47c.tar.gz
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/mistral-evals/02bbf53fea669323010bba74f1b9874472d0d47c/d34c715e7a625a7acb392ffebca23da30693a992979d7c58f3c13e6000e9adc5/mistral-evals-02bbf53fea669323010bba74f1b9874472d0d47c.tar.gz",
+)
+
+# Blackwell (SM100) benchmark wheel dependencies for external baselines (DeepGEMM, FlashInfer, flash-attention).
+# These wheels are pre-built on a B200 machine and uploaded via:
+#   ./utils/upload-public-bazel-artifact.sh <name> sm100 <wheel_path>
+# To rebuild wheels, use: python Kernels/utils/setup_bench_env.py --build-wheels
+# NOTE: Filename has '+' replaced with '_' to avoid S3 URL encoding issues.
+# The '+' in PEP 440 local versions (e.g., 2.2.0+38f8ef7) requires URL encoding
+# as %2B, but Bazel's http_file doesn't encode, causing 403 errors.
+# setup_bench_env.py --build-wheels automatically sanitizes filenames.
+http_file(
+    name = "deepgemm_sm100_wheel",
+    downloaded_file_path = "deep_gemm-2.2.0_38f8ef7-cp312-cp312-linux_x86_64.whl",
+    sha256 = "91a898b8704b91726646e98403f6028b1e601603b2d34f8e4530370072e474cf",
+    urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/deep_gemm/sm100/91a898b8704b91726646e98403f6028b1e601603b2d34f8e4530370072e474cf/deep_gemm-2.2.0_38f8ef7-cp312-cp312-linux_x86_64.whl"],
+)
+
+http_file(
+    name = "flashinfer_sm100_wheel",
+    downloaded_file_path = "flashinfer_python-0.5.2-py3-none-any.whl",
+    sha256 = "0afdb8f536a3a101ac7f653d66a5f4f63991f820352daf64950dab89f9806c1c",
+    urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/flashinfer/sm100/0afdb8f536a3a101ac7f653d66a5f4f63991f820352daf64950dab89f9806c1c/flashinfer_python-0.5.2-py3-none-any.whl"],
+)
+
+http_file(
+    name = "flash_attn_sm100_wheel",
+    downloaded_file_path = "flash_attn-2.8.3-py3-none-any.whl",
+    sha256 = "3f4db99ab00437fb50c61da11d0647e5ab7aeab1b0b7337ae048dd8ee1b308b2",
+    urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/flash_attn/sm100/3f4db99ab00437fb50c61da11d0647e5ab7aeab1b0b7337ae048dd8ee1b308b2/flash_attn-2.8.3-py3-none-any.whl"],
 )

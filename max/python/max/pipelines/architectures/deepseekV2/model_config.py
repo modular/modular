@@ -20,7 +20,12 @@ from typing import Any
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, MAXModelConfigBase
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfig,
+    MAXModelConfigBase,
+    PipelineConfig,
+)
 from transformers import AutoConfig
 
 
@@ -114,7 +119,8 @@ class DeepseekV2Config(MAXModelConfig, DeepseekV2ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         page_size: int = 128,
@@ -128,12 +134,13 @@ class DeepseekV2Config(MAXModelConfig, DeepseekV2ConfigBase):
             + huggingface_config.qk_rope_head_dim,
             num_layers=DeepseekV2Config.get_num_layers(huggingface_config),
             cache_strategy=KVCacheStrategy.PAGED,
-            n_devices=n_devices,
+            devices=devices,
             page_size=page_size,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             is_mla=True,
+            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
         )
 
     @staticmethod

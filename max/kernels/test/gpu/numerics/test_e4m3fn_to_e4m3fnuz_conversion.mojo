@@ -13,69 +13,80 @@
 
 """Test FP8 E4M3FN to E4M3FNUZ conversion kernel."""
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
-from memory import bitcast
 from testing import assert_equal
+from utils import IndexList
 
 
 # CHECK-LABEL: test_convert_e4m3fn_to_e4m3fnuz_basic
 fn test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
-    print("test_convert_e4m3fn_to_e4m3fnuz_basic")
+    print("== test_convert_e4m3fn_to_e4m3fnuz_basic")
     var ctx = DeviceContext()
 
     # Test with 5 values: 4 regular values + 1 special -128 bit pattern
-    var host_in = HostNDBuffer[DType.float8_e4m3fn, 2](DimList(1, 5))
-    var host_out = HostNDBuffer[DType.float8_e4m3fnuz, 2](DimList(1, 5))
+    comptime layout = Layout.row_major(1, 5)
+    var runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](1, 5))
 
-    # Regular values - these should pass through unchanged (same bits, different interpretation)
-    host_in.tensor.data[0] = Float8_e4m3fn(1.0)
-    host_in.tensor.data[1] = Float8_e4m3fn(2.0)
-    host_in.tensor.data[2] = Float8_e4m3fn(-1.0)
-    host_in.tensor.data[3] = Float8_e4m3fn(0.0)
-    host_in.tensor.data[4] = Float8_e4m3fn(
-        -0.0
-    )  # Special 0x80 bit pattern - this should be converted to 0.0
-
-    var device_in = DeviceNDBuffer[DType.float8_e4m3fn, 2](
-        DimList(1, 5), ctx=ctx
+    # Create device buffers
+    var device_in = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+        layout.size()
     )
-    var device_out = DeviceNDBuffer[DType.float8_e4m3fnuz, 2](
-        DimList(1, 5), ctx=ctx
+    var device_out = ctx.enqueue_create_buffer[DType.float8_e4m3fnuz](
+        layout.size()
     )
 
-    ctx.enqueue_copy(device_in.buffer, host_in.tensor.data)
+    # Initialize input data on host
+    with device_in.map_to_host() as host_in:
+        # Regular values - these should pass through unchanged (same bits, different interpretation)
+        host_in[0] = Float8_e4m3fn(1.0)
+        host_in[1] = Float8_e4m3fn(2.0)
+        host_in[2] = Float8_e4m3fn(-1.0)
+        host_in[3] = Float8_e4m3fn(0.0)
+        host_in[4] = Float8_e4m3fn(
+            -0.0
+        )  # Special 0x80 bit pattern - this should be converted to 0.0
 
-    convert_e4m3fn_to_e4m3fnuz(device_in.tensor, device_out.tensor, ctx)
-    ctx.enqueue_copy(host_out.tensor.data, device_out.buffer)
+    # Create layout tensors for GPU operations
+    var in_tensor = LayoutTensor[DType.float8_e4m3fn, layout](
+        device_in, runtime_layout
+    )
+    var out_tensor = LayoutTensor[DType.float8_e4m3fnuz, layout](
+        device_out, runtime_layout
+    )
+
+    convert_e4m3fn_to_e4m3fnuz(in_tensor, out_tensor, ctx)
     ctx.synchronize()
 
     # Verify results: regular values should be unchanged in bits, -128 should become 0
-    print("Input values:")
-    for i in range(5):
-        print("  [", i, "]:", host_in.tensor.data[i])
-    # CHECK: Input values:
-    # CHECK:   [ 0 ]: 1.0
-    # CHECK:   [ 1 ]: 2.0
-    # CHECK:   [ 2 ]: -1.0
-    # CHECK:   [ 3 ]: 0.0
-    # CHECK:   [ 4 ]: -0.0
-
-    print("Output values:")
-    for i in range(5):
-        print("  [", i, "]:", host_out.tensor.data[i])
-    # CHECK: Output values:
-    # CHECK:   [ 0 ]: 0.5
-    # CHECK:   [ 1 ]: 1.0
-    # CHECK:   [ 2 ]: -0.5
-    # CHECK:   [ 3 ]: 0.0
-    # CHECK:   [ 4 ]: 0.0
-
-    print("Conversion verification: same bits, different FP8 interpretation")
-    # CHECK: Conversion verification: same bits, different FP8 interpretation
+    # E4M3FN -> E4M3FNUZ conversion halves values (different exponent bias)
+    with device_out.map_to_host() as host_out:
+        assert_equal(
+            host_out[0].cast[DType.float32](),
+            Float32(0.5),
+            msg="1.0 -> 0.5",
+        )
+        assert_equal(
+            host_out[1].cast[DType.float32](),
+            Float32(1.0),
+            msg="2.0 -> 1.0",
+        )
+        assert_equal(
+            host_out[2].cast[DType.float32](),
+            Float32(-0.5),
+            msg="-1.0 -> -0.5",
+        )
+        assert_equal(
+            host_out[3].cast[DType.float32](),
+            Float32(0.0),
+            msg="0.0 -> 0.0",
+        )
+        assert_equal(
+            host_out[4].cast[DType.float32](),
+            Float32(0.0),
+            msg="-0.0 -> 0.0 (special case)",
+        )
 
 
 def main():

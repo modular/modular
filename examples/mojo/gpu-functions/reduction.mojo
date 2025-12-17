@@ -33,13 +33,13 @@ from testing import assert_equal
 
 # Initialize parameters
 # To achieve high bandwidth increase SIZE to large value
-alias TPB: UInt = 512
-alias LOG_TPB = log2_floor(TPB)
-alias BATCH_SIZE = 8  # needs to be power of 2
-alias SIZE = 1 << 12
-alias NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
-alias WARP_SIZE = 32
-alias dtype = DType.int32
+comptime TPB: UInt = 512
+comptime LOG_TPB = log2_floor(TPB)
+comptime BATCH_SIZE = 8  # needs to be power of 2
+comptime SIZE = 1 << 12
+comptime NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
+comptime WARP_SIZE = 32
+comptime dtype = DType.int32
 
 
 fn sum_kernel[
@@ -49,14 +49,16 @@ fn sum_kernel[
     a: UnsafePointer[Int32, MutAnyOrigin],
 ):
     """Efficient reduction of the vector a."""
+    comptime KERNEL_TPB: UInt = 512
     sums = stack_allocation[
-        Int(TPB),
+        Int(KERNEL_TPB),
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
     ]()
+
     global_tid = block_idx.x * block_dim.x + thread_idx.x
     tid = thread_idx.x
-    threads_in_grid = TPB * NUM_BLOCKS
+    threads_in_grid = KERNEL_TPB * NUM_BLOCKS
     var sum: Int32 = 0
 
     for i in range(global_tid, size, threads_in_grid):
@@ -68,10 +70,12 @@ fn sum_kernel[
     barrier()
 
     # Reduce until the first warp
-    active_threads = TPB
+
+    active_threads = KERNEL_TPB
+    comptime KERNEL_LOG_TPB = log2_floor(KERNEL_TPB)
 
     @parameter
-    for power in range(1, LOG_TPB - 4):
+    for power in range(1, KERNEL_LOG_TPB - 4):
         active_threads >>= 1
         if tid < active_threads:
             sums[tid] += sums[tid + active_threads]
@@ -108,7 +112,7 @@ fn sum_kernel_benchmark(
     @parameter
     @always_inline
     fn kernel_launch_sum(ctx: DeviceContext) raises:
-        alias kernel = sum_kernel[SIZE, BATCH_SIZE]
+        comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
         var out_ptr = input_data.out_ptr
         var a_ptr = input_data.a_ptr
         var out_buffer = DeviceBuffer[dtype](ctx, out_ptr, 1, owning=False)
@@ -132,7 +136,7 @@ def main():
 
     with DeviceContext() as ctx:
         # Allocate memory on the device
-        alias kernel = sum_kernel[SIZE, BATCH_SIZE]
+        comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
         out = ctx.enqueue_create_buffer[dtype](1)
         out.enqueue_fill(0)
         a = ctx.enqueue_create_buffer[dtype](SIZE)

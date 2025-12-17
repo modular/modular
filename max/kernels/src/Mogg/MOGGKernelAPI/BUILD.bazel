@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_kgen_lib", "mojo_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 mogg_lib_deps = [
     "//max:kv_cache",
@@ -11,7 +11,7 @@ mogg_lib_deps = [
     "//max:tensor",
     "//max:compiler_internal",
     "//max:shmem",
-    "@mojo//:stdlib",
+    "@mojo//:std",
 ]
 
 mojo_kgen_lib(
@@ -22,7 +22,6 @@ mojo_kgen_lib(
 
 mojo_library(
     name = "MOGGKernelAPI",
-    testonly = True,
     srcs = glob(["**/*.mojo"]),
     validate_missing_docs = False,
     deps = mogg_lib_deps + ["//max:MOGGPrimitives"],

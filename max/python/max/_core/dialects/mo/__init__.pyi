@@ -26,18 +26,8 @@ from max.mlir import Context, Location
 
 from . import passes as passes
 
-# Many of the generated overloads for constructors are more specialized in
-# C++ than they are in Python. For example, `int32_t` and `int64_t` and `size_t`
-# all map to `int` in Python typing. It may not always be clear which of these
-# overloads will be run for a given set of inputs (though in most cases it's the first one)
-# but we disable mypy errors for shadowed overloads.
-#
+# C++ overloads on different int types look the same in Python, ignore these
 # mypy: disable-error-code="overload-cannot-match"
-
-# DiagnosticHandlers aren't a thing that Python can reasonably provided. In most cases
-# these are automatically provided, but there are a few custom verifiers not covered yet.
-# This binding prevents errors in those cases.
-DiagnosticHandler = Callable
 
 class BufferType(max._core.Type):
     """
@@ -1005,9 +995,18 @@ class IfOp(max._core.Operation):
         location: Location,
         results: Sequence[max._core.Type],
         cond: max._core.Value,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
     def cond(self) -> max._core.Value: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
 
 class ShapeFromTensorOp(max._core.Operation):
     """
@@ -6322,41 +6321,6 @@ class SliceDimOp(max._core.Operation):
     @property
     def step(self) -> max._core.Value[TensorType]: ...
 
-class SliceDimOuterOp(max._core.Operation):
-    """
-    A subset of the SliceDim operation, limited to cases where the operation can
-    be represented by a simple memory offset, where the sliced dimension is the outermost dimension and the step is 1.
-
-    Example:
-    ```mlir
-      %input: !mo.tensor<[?, ?, ?], f32>
-      %start: !mo.tensor<[1], si64> // [1]
-      %stop: !mo.tensor<[1], si32>  // [-3]
-      // equivalent to this in numpy: `input[1:-3, :, :]`
-      %res = mo.slice_dim_outer(%input, %start, %stop) : (
-        !mo.tensor<[10, 10, 10], f32>,
-        !mo.tensor<[1], si64>,
-        !mo.tensor<[1], si64>,
-      ) -> !mo.tensor<[?, ?, ?], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-        start: max._core.Value[TensorType],
-        stop: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def start(self) -> max._core.Value[TensorType]: ...
-    @property
-    def stop(self) -> max._core.Value[TensorType]: ...
-
 class SliceOp(max._core.Operation):
     """
     Returns a new tensor with a subset of the elements from an N-dimensional
@@ -6985,6 +6949,7 @@ class YieldOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         operands: Sequence[max._core.Value[max._core.Type]],
+        parameters: max._core.dialects.kgen.ParameterExprArrayAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -6992,6 +6957,12 @@ class YieldOp(max._core.Operation):
     ) -> None: ...
     @property
     def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def parameters(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+    @parameters.setter
+    def parameters(
+        self, arg: max._core.dialects.kgen.ParameterExprArrayAttr, /
+    ) -> None: ...
 
 class WhileOp(max._core.Operation):
     """

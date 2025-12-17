@@ -14,7 +14,7 @@
 from random import *
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
-from stdlib.builtin.sort import _heap_sort, _insertion_sort, _small_sort, sort
+from std.builtin.sort import _heap_sort, _insertion_sort, _small_sort, sort
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Utils

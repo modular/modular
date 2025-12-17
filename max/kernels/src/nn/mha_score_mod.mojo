@@ -57,7 +57,7 @@ struct AlibiScoreMod[
     comptime name_str: String = "alibi"
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -138,14 +138,14 @@ struct AlibiScoreMod[
 
 @fieldwise_init
 @register_passable("trivial")
-struct IdentityScoreMod(ImplicitlyCopyable, Movable, ScoreModTrait):
+struct IdentityScoreMod(ImplicitlyCopyable, ScoreModTrait):
     """IdentityScoreMod simply returns attention score."""
 
     comptime name_str: String = "no_pos"
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod

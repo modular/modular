@@ -195,15 +195,12 @@ fn run_gemm_kernel_1[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    var func = ctx.compile_function_unchecked[
-        gemm_kernel_1[dtype, a.layout, b.layout, c.layout, BM, BN]
-    ]()
+    comptime func = gemm_kernel_1[dtype, a.layout, b.layout, c.layout, BM, BN]
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_unchecked(
-            func,
+        ctx.enqueue_function_checked[func, func](
             a,
             b,
             c,
@@ -223,16 +220,13 @@ fn run_gemm_kernel_1[
         ),
         0,
     )
-    ctx.enqueue_function_unchecked(
-        func,
+    ctx.enqueue_function_checked[func, func](
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BN, BM),
     )
-
-    _ = func^
 
 
 fn gemm_kernel_2[
@@ -317,13 +311,11 @@ fn run_gemm_kernel_2[
     var K = a.shape[1]()
 
     comptime kernel = gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
-    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked(
-            func,
+        ctx.enqueue_function_checked[kernel, kernel](
             a,
             b,
             c,
@@ -343,16 +335,13 @@ fn run_gemm_kernel_2[
         ),
         0,
     )
-    ctx.enqueue_function_checked(
-        func,
+    ctx.enqueue_function_checked[kernel, kernel](
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BN, BM),
     )
-
-    _ = func^
 
 
 fn gemm_kernel_3[
@@ -475,13 +464,11 @@ fn run_gemm_kernel_3[
     comptime kernel = gemm_kernel_3[
         dtype, a.layout, b.layout, c.layout, BM, BN, BK, BM * BN
     ]
-    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked(
-            func,
+        ctx.enqueue_function_checked[kernel, kernel](
             a,
             b,
             c,
@@ -501,16 +488,13 @@ fn run_gemm_kernel_3[
         ),
         0,
     )
-    ctx.enqueue_function_checked(
-        func,
+    ctx.enqueue_function_checked[kernel, kernel](
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BM * BN),
     )
-
-    _ = func^
 
 
 fn gemm_kernel_4[
@@ -653,13 +637,11 @@ fn run_gemm_kernel_4[
     comptime kernel = gemm_kernel_4[
         dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, NUM_THREADS
     ]
-    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked(
-            func,
+        ctx.enqueue_function_checked[kernel, kernel](
             a,
             b,
             c,
@@ -679,15 +661,13 @@ fn run_gemm_kernel_4[
         ),
         0,
     )
-    ctx.enqueue_function_checked(
-        func,
+    ctx.enqueue_function_checked[kernel, kernel](
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
-    _ = func^
 
 
 fn gemm_kernel_5[
@@ -826,13 +806,11 @@ fn run_gemm_kernel_5[
     comptime kernel = gemm_kernel_5[
         dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
     ]
-    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked(
-            func,
+        ctx.enqueue_function_checked[kernel, kernel](
             a,
             b,
             c,
@@ -851,15 +829,13 @@ fn run_gemm_kernel_5[
         ),
         0,
     )
-    ctx.enqueue_function_checked(
-        func,
+    ctx.enqueue_function_checked[kernel, kernel](
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
-    _ = func^
 
 
 fn gemm_kernel_6[
@@ -1023,13 +999,11 @@ fn run_gemm_kernel_6[
     comptime kernel = gemm_kernel_6[
         dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
     ]
-    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked(
-            func,
+        ctx.enqueue_function_checked[kernel, kernel](
             a,
             b,
             c,
@@ -1048,15 +1022,13 @@ fn run_gemm_kernel_6[
         ),
         0,
     )
-    ctx.enqueue_function_checked(
-        func,
+    ctx.enqueue_function_checked[kernel, kernel](
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
-    _ = func^
 
 
 fn matmul_kernel_tc[
@@ -1126,10 +1098,9 @@ fn matmul_kernel_tc[
     ](Int(warp_y), Int(warp_x))
 
     # Ensure warp tile dimensions are multiples of instruction shape
-    constrained[
-        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0,
-        "Warp tile should be an integer multiple of instruction shape",
-    ]()
+    __comptime_assert (
+        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
+    ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object
     mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
@@ -1263,13 +1234,11 @@ fn run_gemm_kernel_tc[
         MMA_N,
         MMA_K,
     ]
-    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked(
-            func,
+        ctx.enqueue_function_checked[kernel, kernel](
             a,
             b,
             c,
@@ -1288,12 +1257,10 @@ fn run_gemm_kernel_tc[
         ),
         0,
     )
-    ctx.enqueue_function_checked(
-        func,
+    ctx.enqueue_function_checked[kernel, kernel](
         a,
         b,
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_WARPS * WARP_SIZE),
     )
-    _ = func^

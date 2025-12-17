@@ -1,10 +1,12 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "support",
     srcs = glob(["**/*.py"]),
-    imports = ["../.."],
     deps = [
+        "//max/python/max:_core",
         requirement("numpy"),
     ],
 )

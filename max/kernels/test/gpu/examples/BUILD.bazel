@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _FILECHECK_TESTS = [
     "test_stencil1d.mojo",
     "test_stencil2d.mojo",
@@ -37,7 +39,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -60,7 +62,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(

@@ -1,0 +1,79 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "llama4",
+    size = "large",
+    srcs = glob(
+        [
+            "**/test_*.py",
+        ],
+        exclude = [
+            "**/*_distributed_gpu.py",
+        ],
+    ) + ["conftest.py"],
+    data = [
+        "//max/tests/integration/pipelines/python/llama4/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama4/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:a10_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2564
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/entrypoints",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/serve",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "distributed_llama4",
+    size = "large",
+    srcs = glob(["**/test_*_distributed_gpu.py"]) + ["conftest.py"],
+    data = [
+        "//max/tests/integration/pipelines/python/llama4/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama4/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = ["//:has_multi_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/entrypoints",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/serve",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)

@@ -37,10 +37,10 @@ fn argmaxmin_gpu[
         input: LayoutTensor[dtype] - The input tensor allocated on the device.
         output: LayoutTensor[dtype] - The output tensor allocated on the device.
     """
-    constrained[input.rank > 0, "Input rank must be positive"]()
-    constrained[
-        input.rank == output.rank, "Input and output rank must be the same"
-    ]()
+    __comptime_assert input.rank > 0, "Input rank must be positive"
+    __comptime_assert (
+        input.rank == output.rank
+    ), "Input and output rank must be the same"
     comptime K = 1
 
     var out_vals_shape = input.runtime_layout.shape.value.canonicalize()

@@ -32,16 +32,10 @@ from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 
 # Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
-from layout._fillers import arange
+from layout._fillers import arange, random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
@@ -148,7 +142,6 @@ struct TMALoadOp[
             Self.block_tile_shape[0] // Self.cluster_shape[0],
             Self.block_tile_shape[2],
         ),
-        True,
         Self.a_swizzle,
     ]()
     comptime b_tma_desc_layout = _tma_desc_tile_layout[
@@ -158,7 +151,6 @@ struct TMALoadOp[
             Self.block_tile_shape[1] // Self.cluster_shape[1],
             Self.block_tile_shape[2],
         ),
-        True,
         Self.b_swizzle,
     ]()
 
@@ -180,7 +172,7 @@ struct TMALoadOp[
 
     comptime device_type = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -339,7 +331,7 @@ struct R2GOutputOp[
 
     comptime device_type = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -474,7 +466,7 @@ struct PipelineArgs[
 ](DevicePassable, OpArgs):
     comptime device_type = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 

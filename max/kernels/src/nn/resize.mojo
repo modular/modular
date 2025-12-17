@@ -29,7 +29,7 @@ from memory import memcpy
 from utils import IndexList, StaticTuple
 
 
-struct CoordinateTransformationMode(ImplicitlyCopyable, Movable):
+struct CoordinateTransformationMode(ImplicitlyCopyable):
     var value: Int
     comptime HalfPixel = CoordinateTransformationMode(0)
     comptime AlignCorners = CoordinateTransformationMode(1)
@@ -76,7 +76,7 @@ fn coord_transform[
         return 0
 
 
-struct RoundMode(ImplicitlyCopyable, Movable):
+struct RoundMode(ImplicitlyCopyable):
     var value: Int
     comptime HalfDown = RoundMode(0)
     comptime HalfUp = RoundMode(1)
@@ -93,7 +93,7 @@ struct RoundMode(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct InterpolationMode(ImplicitlyCopyable, Movable):
+struct InterpolationMode(ImplicitlyCopyable):
     var value: Int
     comptime Linear = InterpolationMode(0)
 
@@ -103,9 +103,7 @@ struct InterpolationMode(ImplicitlyCopyable, Movable):
 
 
 @register_passable("trivial")
-struct Interpolator[mode: InterpolationMode](
-    Defaultable, ImplicitlyCopyable, Movable
-):
+struct Interpolator[mode: InterpolationMode](Defaultable, ImplicitlyCopyable):
     var cubic_coeff: Float32
 
     @always_inline
@@ -144,9 +142,9 @@ fn resize_nearest_neighbor[
     input: LayoutTensor[dtype, **_],
     output: LayoutTensor[mut=True, dtype, **_],
 ) raises:
-    constrained[
-        input.rank == output.rank, "input rank must match output rank"
-    ]()
+    __comptime_assert (
+        input.rank == output.rank
+    ), "input rank must match output rank"
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):
         scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
@@ -229,7 +227,8 @@ fn linear_filter(x: Float32) -> Float32:
 @parameter
 @always_inline
 fn interpolate_point_1d[
-    in_layout: Layout, //,
+    in_layout: Layout,
+    //,
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
     dtype: DType,
@@ -322,9 +321,9 @@ fn _resize[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
     ],
 ):
-    constrained[
-        input.rank == output.rank, "input rank must match output rank"
-    ]()
+    __comptime_assert (
+        input.rank == output.rank
+    ), "input rank must match output rank"
 
     if rebind[IndexList[input.rank]](
         input.runtime_layout.shape.value.canonicalize()

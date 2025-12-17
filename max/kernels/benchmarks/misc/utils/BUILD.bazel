@@ -1,0 +1,19 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+"""Kernel benchmark utilities."""
+
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+# Shared benchmarking utilities (kineto profiling, timing helpers)
+modular_py_library(
+    name = "bench_utils",
+    srcs = ["bench.py"],
+    imports = ["."],
+    deps = [requirement("torch")],
+)

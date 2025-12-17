@@ -13,7 +13,7 @@
 
 from sys import align_of
 
-from builtin.variadics import VariadicOf, variadic_size
+from builtin.variadics import Variadic
 from builtin.dtype import _unsigned_integral_type_of
 from gpu.host import DeviceBuffer, HostBuffer
 from utils.numerics import max_finite
@@ -33,14 +33,15 @@ from ._mixed_tuple import (
 struct MixedLayoutTensor[
     mut: Bool,
     dtype: DType,
-    shape_types: VariadicOf[MixedTupleLike],
-    stride_types: VariadicOf[MixedTupleLike], //,
+    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     linear_idx_type: DType = _get_index_type(address_space),
-](Copyable, Movable, Writable):
-    comptime rank = variadic_size(Self.shape_types)
+](Copyable, Writable):
+    comptime rank = Variadic.size(Self.shape_types)
     comptime ALL_DIMS_KNOWN = MixedTuple[
         *Self.shape_types
     ].ALL_DIMS_KNOWN and MixedTuple[*Self.stride_types].ALL_DIMS_KNOWN
@@ -82,7 +83,7 @@ struct MixedLayoutTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.
@@ -170,9 +171,9 @@ struct MixedLayoutTensor[
     @always_inline("nodebug")
     fn __getitem__(
         self, tuple: MixedTuple
-    ) -> Scalar[Self.dtype] where variadic_size(
+    ) -> Scalar[Self.dtype] where Variadic.size(
         tuple.element_types
-    ) == variadic_size(Self.shape_types):
+    ) == Variadic.size(Self.shape_types):
         return self.ptr[
             self.layout[linear_idx_type = Self.linear_idx_type](tuple)
         ]
@@ -180,9 +181,9 @@ struct MixedLayoutTensor[
     @always_inline("nodebug")
     fn __getitem__(
         self, tuple: Tuple
-    ) -> Scalar[Self.dtype] where variadic_size(
+    ) -> Scalar[Self.dtype] where Variadic.size(
         tuple.element_types
-    ) == variadic_size(Self.shape_types) where _AllEqual[
+    ) == Variadic.size(Self.shape_types) where _AllEqual[
         Int, *tuple.element_types
     ]:
         var linear_tuple: MixedTuple[
@@ -193,7 +194,7 @@ struct MixedLayoutTensor[
         )
 
         @parameter
-        for i in range(variadic_size(tuple.element_types)):
+        for i in range(Variadic.size(tuple.element_types)):
             UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
                 rebind[type_of(linear_tuple).element_types[i]](
                     RuntimeInt[Self.linear_idx_type](rebind[Int](tuple[i]))
@@ -215,7 +216,7 @@ struct MixedLayoutTensor[
         ],
         tuple: MixedTuple,
         value: Scalar[Self.dtype],
-    ) where variadic_size(tuple.element_types) == variadic_size(
+    ) where Variadic.size(tuple.element_types) == Variadic.size(
         Self.shape_types
     ):
         self.ptr[
@@ -250,7 +251,7 @@ struct MixedLayoutTensor[
 
         def main():
             var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
-            var tensor = MixedLayoutTensor(storage, (Idx[2], Idx[3])).fill(1.0)
+            var tensor = MixedLayoutTensor(storage, (Idx[2](), Idx[3]())).fill(1.0)
             print(tensor)  # Internally calls `write_to` with a StringWriter
         ```
 
@@ -316,7 +317,8 @@ fn distribute[
     data_shape_0: Int,
     data_shape_1: Int,
     data_stride_0: Int,
-    data_stride_1: Int, //,
+    data_stride_1: Int,
+    //,
     dtype: DType,
     thread_layout: MixedLayout[
         Tuple[
@@ -393,10 +395,11 @@ fn distribute[
 
 fn tile[
     dtype: DType,
-    shape_types: VariadicOf[MixedTupleLike],
-    stride_types: VariadicOf[MixedTupleLike],
-    coord_types: VariadicOf[MixedTupleLike],
-    tile_shape_types: VariadicOf[MixedTupleLike], //,
+    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    coord_types: Variadic.TypesOfTrait[MixedTupleLike],
+    tile_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
 ](
     data_layout_tensor: MixedLayoutTensor[
         dtype=dtype, shape_types=shape_types, stride_types=stride_types
@@ -471,15 +474,16 @@ fn tile[
 struct MixedLayoutTensorIter[
     mut: Bool,
     dtype: DType,
-    shape_types: VariadicOf[MixedTupleLike],
-    stride_types: VariadicOf[MixedTupleLike], //,
+    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
     origin: Origin[mut],
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     axis: Optional[Int] = None,
     linear_idx_type: DType = _get_index_type(address_space),
-](Copyable, ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for traversing a memory buffer with a specific layout.
 
     `MixedLayoutTensorIter` provides a way to iterate through memory according to a
@@ -503,10 +507,10 @@ struct MixedLayoutTensorIter[
     if needed for performance-critical operations.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Self.MixedLayoutTensorType
+    comptime Element = Self.MixedLayoutTensorType
 
     comptime linear_uint_type = Scalar[
         _unsigned_integral_type_of[Self.linear_idx_type]()
@@ -595,10 +599,9 @@ struct MixedLayoutTensorIter[
             iterator.
         """
 
-        constrained[
-            Self.linear_idx_type.is_signed(),
-            "Linear index type must be signed.",
-        ]()
+        __comptime_assert (
+            Self.linear_idx_type.is_signed()
+        ), "Linear index type must be signed."
 
         self.ptr = ptr
         self.offset = offset
@@ -735,5 +738,5 @@ comptime _Splatted[T: MixedTupleLike, count: Int] = __mlir_attr[
     `,`,
     count._mlir_value,
     `> : `,
-    VariadicOf[type_of(T)],
+    Variadic.TypesOfTrait[type_of(T)],
 ]
