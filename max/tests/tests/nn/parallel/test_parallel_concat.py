@@ -20,7 +20,7 @@ from numpy.testing import assert_equal
 @pytest.mark.parametrize(
     "shape", [(1000, 1000, 3), (1000, 1000), (1000, 1000, 3, 3)]
 )
-@pytest.mark.parametrize("num_arrays", [2, 3, 4])
+@pytest.mark.parametrize("num_arrays", [1, 2, 3, 4])
 def test_parallel_concat(
     axis: int, shape: tuple[int, ...], num_arrays: int
 ) -> None:

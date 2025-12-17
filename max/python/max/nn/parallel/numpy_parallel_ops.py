@@ -144,13 +144,6 @@ class ParallelArrayOps:
         if n == 0:
             raise ValueError("Cannot concatenate empty list of arrays.")
 
-        if n == 1:
-            # This copy is likely not needed, but it mocks the exact behaviour of numpy.concatenate.
-            if default_copy:
-                return arrays[0].copy()
-            else:
-                return arrays[0]
-
         # Validate shapes and compute output shape
         first_shape = arrays[0].shape
         first_dtype = arrays[0].dtype
@@ -163,6 +156,13 @@ class ParallelArrayOps:
             raise IndexError(
                 f"axis {axis} is out of bounds for array of dimension {len(first_shape)}"
             )
+
+        if n == 1:
+            # This copy is likely not needed, but it mocks the exact behaviour of numpy.concatenate.
+            if default_copy:
+                return arrays[0].copy()
+            else:
+                return arrays[0]
 
         # Pre-compute expected shape slices for efficient validation
         # All arrays must match: shape[:axis] and shape[axis+1:]

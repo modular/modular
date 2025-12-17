@@ -16,10 +16,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from max.driver import DeviceSpec
 from max.dtype import DType
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
-from max.python.max.driver import DeviceSpec
 from transformers import AutoConfig
 
 
