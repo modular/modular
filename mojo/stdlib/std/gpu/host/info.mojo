@@ -2241,6 +2241,59 @@ struct GPUInfo(Equatable, Identifiable, Stringable, Writable):
 
 
 # ===-----------------------------------------------------------------------===#
+# _build_unsupported_arch_error
+# ===-----------------------------------------------------------------------===#
+
+
+fn _build_unsupported_arch_error[target_arch: StaticString]() -> String:
+    """Builds a helpful error message for unsupported GPU architectures.
+
+    Provides a comprehensive list of all supported GPU architectures across
+    all vendors with documentation links.
+
+    Parameters:
+        target_arch: The unsupported target architecture string.
+
+    Returns:
+        A detailed error message with supported architectures and doc links.
+    """
+    comptime nvidia_archs = "sm_52 (Maxwell), sm_60/sm_61 (Pascal), sm_75 (Turing), sm_80 (Ampere A100), sm_86 (Ampere A10), sm_87 (Orin), sm_89 (Ada L4/RTX4090), sm_90/sm_90a (Hopper H100), sm_100/sm_100a (Blackwell B100/B200), sm_110 (Jetson Thor), sm_120/sm_120a (Blackwell RTX5090), sm_121 (DGX Spark)"
+    comptime amd_archs = "gfx942 (MI300X), gfx950 (MI355X), gfx1030 (Radeon 6900), gfx1100 (Radeon 7900), gfx1101 (Radeon 7800), gfx1102 (Radeon 7600), gfx1103 (Radeon 780M), gfx1150/gfx1151/gfx1152 (Radeon 8xx), gfx1200 (Radeon 9060), gfx1201 (Radeon 9070)"
+    comptime apple_archs = "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"
+
+    var prefix: String
+
+    @parameter
+    if target_arch == "":
+        prefix = "Unknown GPU architecture detected."
+    else:
+        prefix = String(
+            "GPU architecture '", target_arch, "' is not supported."
+        )
+
+    return String(
+        prefix,
+        "\n\nSupported GPU architectures:\n\n",
+        "  NVIDIA: ",
+        nvidia_archs,
+        "\n  See: https://developer.nvidia.com/cuda-gpus\n\n",
+        "  AMD: ",
+        amd_archs,
+        (
+            "\n  See:"
+            " https://rocm.docs.amd.com/en/latest/release/gpu_os_support.html"
+            "\n\n"
+        ),
+        "  Apple: ",
+        apple_archs,
+        (
+            "\n  See:"
+            " https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf"
+        ),
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # _get_info_from_target
 # ===-----------------------------------------------------------------------===#
 
@@ -2302,12 +2355,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         StaticString("apple-m2"),
         StaticString("apple-m3"),
         StaticString("apple-m4"),
-    ), String(
-        "the target architecture '",
-        # Note: Print the full architecture name, not the trimmed string name.
-        target_arch0,
-        "' is invalid or not currently supported",
-    )
+    ), _build_unsupported_arch_error[target_arch0]()
 
     @parameter
     if target_arch == "52":
