@@ -179,7 +179,7 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
             R"((AStruct) a_struct = {
   int = ([0] = 12)
   tuple = {
-    storage = {
+    _mlir_value = {
       [0] = 1
       [1] = ([0] = 87)
       [2] = ([0] = 123.125)
