@@ -262,6 +262,16 @@ def test_is_host() -> None:
     assert Tensor(DType.int32, (1, 1), device=CPU()).is_host
 
 
+def test_host_to_self() -> None:
+    cpu = CPU()
+    t = Tensor(DType.int32, (1, 1), device=cpu)
+    t2 = t.to(cpu)
+    assert t2 is t
+    t3s = t.to([cpu])
+    assert len(t3s) == 1
+    assert t3s[0] is t
+
+
 def test_host_host_copy() -> None:
     # We should be able to freely copy tensors between host and host.
     host_tensor = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
