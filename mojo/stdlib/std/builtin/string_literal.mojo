@@ -15,11 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.format import (
-    _CurlyEntryFormattable,
-    _FormatCurlyEntry,
-    _PrecompiledEntries,
-)
+from collections.string.format import _CurlyEntryFormattable, _FormatUtils
 from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike
 from sys.ffi import c_char, CStringSlice
@@ -727,7 +723,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print("{} {}".format(True, "hello world")) # True hello world
         ```
         """
-        comptime result = _FormatCurlyEntry.compile_entries[*Ts](Self())
+        comptime result = _FormatUtils.compile_entries[*Ts](Self())
 
         @parameter
         if result.isa[Error]():
@@ -735,7 +731,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             return {}
         else:
             var buffer = String()
-            _FormatCurlyEntry.format_precompiled[*Ts](
+            _FormatUtils.format_precompiled[*Ts](
                 buffer,
                 result[type_of(result).Ts[0]],
                 args,

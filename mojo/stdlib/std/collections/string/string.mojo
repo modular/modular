@@ -77,7 +77,7 @@ from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
+from collections.string.format import _CurlyEntryFormattable, _FormatUtils
 from collections.string.string_slice import (
     CodepointSliceIter,
     _to_string_list,
@@ -1730,7 +1730,7 @@ struct String(
         Raises:
             If the operation fails.
         """
-        return _FormatCurlyEntry.format(self, args)
+        return _FormatUtils.format(self, args)
 
     fn isdigit(self) -> Bool:
         """A string is a digit string if all characters in the string are digits
