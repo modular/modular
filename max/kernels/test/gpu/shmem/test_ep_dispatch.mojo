@@ -231,6 +231,7 @@ fn test_dispatch[
         n_experts,
         n_ranks,
         n_tokens_per_rank,
+        1,  # p2p world size
         token_fmt_type,
     ]
 
@@ -264,13 +265,19 @@ fn test_dispatch[
     @always_inline
     @parameter
     fn run_dispatch(ctx: DeviceContext) raises:
+        # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
+        var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8], 1](fill={})
+        var recv_count_ptrs = InlineArray[UnsafePointer[UInt64], 1](fill={})
+        recv_buf_ptrs[0] = recv_buf
+        recv_count_ptrs[0] = recv_count
+
         ctx.enqueue_function(
             func,
             input_tokens_tensor,
             topk_ids_tensor,
             send_buf,
-            recv_buf,
-            recv_count,
+            recv_buf_ptrs,
+            recv_count_ptrs,
             atomic_counter.unsafe_ptr(),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
