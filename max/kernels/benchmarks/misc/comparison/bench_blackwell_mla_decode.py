@@ -17,12 +17,12 @@
 
 from __future__ import annotations
 
+import argparse
 import math
 import os
 import sys
 import types
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import torch
@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # MAX imports
 from bench import bench_kineto_with_cupti_warmup, setup_ninja_path
-from bencher_utils import Bench, ThroughputMeasure, arg_parse
+from bencher_utils import Bench, ThroughputMeasure
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -540,39 +540,98 @@ if __name__ == "__main__":
 
     cfg = Config(NUM_Q_HEADS, QK_NOPE_HEAD_DIM, QK_ROPE_HEAD_DIM, KV_LORA_RANK)
 
-    batch_size = int(arg_parse("batch_size", 128))
-    cache_len = int(arg_parse("cache_len", 1024))
-
-    dtype = torch.bfloat16
-    q_len_per_request = int(arg_parse("q_len_per_request", 1))
-
-    num_q_heads = int(arg_parse("num_q_heads", cfg.num_q_heads))
-    qk_nope_head_dim = int(arg_parse("qk_nope_head_dim", cfg.qk_nope_head_dim))
-    qk_rope_head_dim = int(arg_parse("qk_rope_head_dim", cfg.qk_rope_head_dim))
-    kv_lora_rank = int(arg_parse("num_q_heads", cfg.kv_lora_rank))
-
-    output_path = Path(arg_parse("output", "output.csv", short_handle="o"))
-
-    print("MLA Decode Benchmark (DeepSeek V2/V3)")
-    print(
-        f"  num_q_heads={cfg.num_q_heads}, qk_nope_dim={cfg.qk_nope_head_dim}, "
-        f"qk_rope_dim={cfg.qk_rope_head_dim}, kv_lora_rank={cfg.kv_lora_rank}"
+    parser = argparse.ArgumentParser(description="MHA Decode Benchmark")
+    parser.add_argument(
+        "--batch_size", "--batch-size", type=int, default=128, help="Batch size"
     )
-    print("  dtype=torch.bfloat16, q_len=1 (decode)")
-    print(LINE)
 
-    # TODO: overlap this with "backend"
-    engine = arg_parse("engine", "modular_max")
-    if engine not in ["flashinfer", "modular_max"]:
-        raise ValueError(f"engine {engine} is not supported!")
+    parser.add_argument(
+        "--cache_len",
+        "--cache-len",
+        type=int,
+        default=1024,
+        help="KV cache length",
+    )
+    parser.add_argument(
+        "--q_len_per_request",
+        "--q-len-per-request",
+        type=int,
+        default=1,
+        help="Q Length per Request",
+    )
+    parser.add_argument(
+        "--num_q_heads",
+        "--num-q-heads",
+        type=int,
+        default=cfg.num_q_heads,
+        help="Number of query heads",
+    )
+
+    parser.add_argument(
+        "--qk_nope_head_dim",
+        "--qk-nope-head-dim",
+        type=int,
+        default=cfg.qk_nope_head_dim,
+        help="qk nope head dim",
+    )
+
+    parser.add_argument(
+        "--qk_rope_head_dim",
+        "--qk-rope-head-dim",
+        type=int,
+        default=cfg.qk_rope_head_dim,
+        help="qk rope head dim",
+    )
+
+    parser.add_argument(
+        "--kv_lora_rank",
+        "--kv-lora-rank",
+        type=int,
+        default=cfg.qk_rope_head_dim,
+        help="kv lora rank",
+    )
+
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="bfloat16",
+        choices=["float16", "bfloat16", "float32"],
+        help="Data type",
+    )
+
+    parser.add_argument(
+        "--engine",
+        type=str,
+        default="modular_max",
+        choices=["modular_max", "flashinfer"],
+        help="Engine",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default="output.csv",
+        help="Output path",
+    )
+    args, _ = parser.parse_known_args()
+
+    # TODO: overlap "engine" with "backend"
+    if args.engine not in ["flashinfer", "modular_max"]:
+        raise ValueError(f"engine {args.engine} is not supported!")
+
+    dtype_map = {
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "float32": torch.float32,
+    }
 
     result = bench_mla_decode(
-        batch_size=batch_size,
-        cache_len=cache_len,
-        dtype=dtype,
-        engine=engine,
+        batch_size=args.batch_size,
+        cache_len=args.cache_len,
+        dtype=dtype_map[args.dtype],
+        engine=args.engine,
         model_config=cfg,
-        q_len_per_request=q_len_per_request,
+        q_len_per_request=args.q_len_per_request,
         backend="trtllm-gen",
         enable_pdl=True,
     )
@@ -581,10 +640,10 @@ if __name__ == "__main__":
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 
     name = (
-        f"MLA_Decode/batch_size={batch_size}/cache_len={cache_len}/"
-        f"q_len_per_request={q_len_per_request}/num_q_heads={num_q_heads}/"
-        f"qk_nope_head_dim={qk_nope_head_dim}/qk_rope_head_dim={qk_rope_head_dim}/"
-        f"kv_lora_rank={kv_lora_rank}/engine={engine}/"
+        f"MLA_Decode/batch_size={args.batch_size}/cache_len={args.cache_len}/"
+        f"q_len_per_request={args.q_len_per_request}/num_q_heads={args.num_q_heads}/"
+        f"qk_nope_head_dim={args.qk_nope_head_dim}/qk_rope_head_dim={args.qk_rope_head_dim}/"
+        f"kv_lora_rank={args.kv_lora_rank}/engine={args.engine}/"
     )
 
     b = Bench(
@@ -594,4 +653,4 @@ if __name__ == "__main__":
         metric_list=[bytes_per_sec],
     )
 
-    b.dump_report(output_path=output_path)
+    b.dump_report(output_path=args.output)

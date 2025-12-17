@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Blackwell prefill benchmark comparing MAX against FlashInfer and flash-attention baselines.
-# Run via Bazel: br //max/kernels/benchmarks/misc/comparison:bench_prefill
+# Run via kbench: kbench bench_prefill.yaml
 
 from __future__ import annotations
 
@@ -391,15 +391,6 @@ def bench_prefill(
 
 
 if __name__ == "__main__":
-    # batch_size = int(arg_parse("batch_size", 1))
-    # qkv_len = int(arg_parse("qkv_len", 4096))
-    # num_heads = int(arg_parse("num_heads", 32))
-    # head_dim = int(arg_parse("head_dim", 128))
-    # causal = bool(arg_parse("causal", False))
-    # dtype = arg_parse("dtype", torch.bfloat16)
-    # engine = arg_parse("engine", "modular_max")
-    # output_path = Path(arg_parse("output", "output.csv", short_handle="o"))
-
     parser = argparse.ArgumentParser(description="MHA Prefill Benchmark")
     parser.add_argument(
         "--batch_size", "--batch-size", type=int, default=1, help="Batch size"

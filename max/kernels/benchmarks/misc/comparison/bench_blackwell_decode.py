@@ -16,7 +16,7 @@
 #   python $MODULAR_PATH/Kernels/benchmarks/comparison/setup_bench_env.py
 #   source $MODULAR_PATH/.venv/bin/activate
 # The only SoTA MHA decode kernel on blackwell is from TRTLLM, called via flashinfer.
-# Run via Bazel: br //max/kernels/benchmarks/misc/comparison:bench_decode
+# Run via kbench: kbench bench_decode.yaml
 
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ import math
 import os
 import sys
 import types
-from pathlib import Path
 from typing import Any
 
 import torch
@@ -34,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import argparse
 
 from bench import bench_kineto, setup_ninja_path
-from bencher_utils import Bench, ThroughputMeasure, arg_parse
+from bencher_utils import Bench, ThroughputMeasure
 
 # MAX imports
 from max.driver import Accelerator, Tensor
@@ -558,11 +557,8 @@ def main() -> None:
         "float32": torch.float32,
     }
 
-    engine = arg_parse("engine", "modular_max")
-    output_path = Path(arg_parse("output", "output.csv", short_handle="o"))
-
-    if engine not in ["flashinfer", "modular_max"]:
-        raise ValueError(f"engine {engine} is not supported!")
+    if args.engine not in ["flashinfer", "modular_max"]:
+        raise ValueError(f"engine {args.engine} is not supported!")
 
     # Decode benchmark: batch_size, cache_len, num_heads, num_kv_heads, head_dim, page_size
     result = bench_decode(
@@ -592,7 +588,7 @@ def main() -> None:
         metric_list=[bytes_per_sec],
     )
 
-    b.dump_report(output_path=output_path)
+    b.dump_report(output_path=args.output)
 
 
 if __name__ == "__main__":

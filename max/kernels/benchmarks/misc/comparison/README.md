@@ -14,12 +14,11 @@ Benchmarks comparing MAX kernels against external baselines on NVIDIA B200 GPUs.
 ## Running Benchmarks
 
 ```bash
-# Via Bazel (recommended)
-./bazelw run //Kernels/benchmarks/comparison:bench_prefill
-./bazelw run //Kernels/benchmarks/comparison:bench_decode
-
-# Or use aliases after sourcing start-modular.sh
-br //Kernels/benchmarks/comparison:bench_prefill
+# Via kbench (recommended)
+kbench bench_prefill.yaml
+kbench bench_decode.yaml
+kbench bench_mla_decode.yaml
+kbench bench_grouped_gemm.yaml
 ```
 
 ## Architecture
