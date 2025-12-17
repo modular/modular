@@ -208,10 +208,6 @@ struct Pipe:
 # ===----------------------------------------------------------------------=== #
 # Process execution
 # ===----------------------------------------------------------------------=== #
-
-comptime ERR_STR_LEN = 8
-
-
 struct Process:
     """Create and manage child processes from file executables.
 
