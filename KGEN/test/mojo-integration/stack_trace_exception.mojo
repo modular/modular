@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: system-darwin
+# UNSUPPORTED: system-darwin, NVIDIA-GPU, AMD-GPU
 
-# COM: Stack traces are supported on Darwin, but result to different output.
-# COM: To avoid having fragile test, mark this test as unsupported on MacOS
+# COM: Stack traces are supported on Darwin, but result in different output.
+# COM: Stack traces are disabled on GPU.
+# COM: To avoid having fragile tests, mark this test as unsupported on these platforms.
 
 
 fn foo() raises:
@@ -34,13 +35,27 @@ fn main():
         foo()
     except e:
         print("stack trace of", e)
-        print(String(e.get_stack_trace()))
+        var stack_trace = e.get_stack_trace()
+        if stack_trace:
+            print(stack_trace.value())
+        else:
+            print(
+                "stack trace was not collected. Enable stack trace collection"
+                " with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`"
+            )
 
     try:
         nested_func()
     except e:
         print("stack trace of", e)
-        print(String(e.get_stack_trace()))
+        var stack_trace = e.get_stack_trace()
+        if stack_trace:
+            print(stack_trace.value())
+        else:
+            print(
+                "stack trace was not collected. Enable stack trace collection"
+                " with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`"
+            )
 
 
 # RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t 2>&1
@@ -63,16 +78,14 @@ fn main():
 
 # O3-FULL-LABEL: stack trace of gotcha!
 # O3-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
-# O3-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::__init__(::Int)
+# O3-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::Int)
 # O3-FULL:      #{{.*}} stack_trace_exception::main() {{.*}}/stack_trace_exception.mojo:
 # O3-FULL-NEXT: #{{.*}} std::builtin::_startup::__wrap_and_execute_main[fn() -> None]
 # O3-FULL-NEXT: #{{.*}} main open-source/max/mojo/stdlib/std/builtin/_startup.mojo:
 
 # O3-FULL-LABEL: stack trace of nested gotcha!
 # O3-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
-# O3-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::__init__(::Int)
-# O3-FULL-NEXT: #{{.*}} std::builtin::error::Error::__init__(::String
-# O3-FULL-NEXT: #{{.*}} std::builtin::error::Error::__init__[!kgen.string](::StringLiteral[$0])
+# O3-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::Int)
 # O3-FULL-NEXT: #{{.*}} stack_trace_exception::foo2()_REMOVED_ARG
 # O3-FULL-NEXT: #{{.*}} stack_trace_exception::main() {{.*}}/stack_trace_exception.mojo:
 # O3-FULL-NEXT: #{{.*}} std::builtin::_startup::__wrap_and_execute_main
@@ -97,9 +110,7 @@ fn main():
 
 # O0-FULL-LABEL: stack trace of gotcha!
 # O0-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
-# O0-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::__init__(::Int) open-source/max/mojo/stdlib/std/builtin/error.mojo:{{.*}}:{{.*}}
-# O0-FULL-NEXT: #{{.*}} std::builtin::error::Error::__init__(::String
-# O0-FULL-NEXT: #{{.*}} std::builtin::error::Error::__init__[!kgen.string]
+# O0-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::Int) open-source/max/mojo/stdlib/std/builtin/error.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT: #{{.*}} stack_trace_exception::foo() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT: #{{.*}} stack_trace_exception::main() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT: #{{.*}} std::builtin::_startup::__wrap_and_execute_main[fn() -> None]
@@ -107,9 +118,7 @@ fn main():
 
 # O0-FULL-LABEL: stack trace of nested gotcha!
 # O0-FULL:       #{{.*}} KGEN_CompilerRT_GetStackTrace
-# O0-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::__init__(::Int) open-source/max/mojo/stdlib/std/builtin/error.mojo:{{.*}}:{{.*}}
-# O0-FULL-NEXT: #{{.*}} std::builtin::error::Error::__init__(::String
-# O0-FULL-NEXT:  #{{.*}} std::builtin::error::Error::__init__[!kgen.string]
+# O0-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::Int) open-source/max/mojo/stdlib/std/builtin/error.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT:  #{{.*}} stack_trace_exception::foo2() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT:  #{{.*}} stack_trace_exception::foo1() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT:  #{{.*}} stack_trace_exception::nested_func() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
