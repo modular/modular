@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: system-darwin
+# UNSUPPORTED: system-darwin, NVIDIA-GPU, AMD-GPU
 
-# COM: Stack traces are supported on Darwin, but result to different output.
-# COM: To avoid having fragile test, mark this test as unsupported on MacOS
+# COM: Stack traces are supported on Darwin, but result in different output.
+# COM: Stack traces are disabled on GPU.
+# COM: To avoid having fragile tests, mark this test as unsupported on these platforms.
 
 
 @no_inline
@@ -37,13 +38,10 @@ fn main() raises:
 # RUN: %t > %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O3-FULL-NO-STACK %s
 
-# O3-FULL-NO-STACK: stack trace was not collected. Enable stack trace collection with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
 # O3-FULL-NO-STACK: Unhandled exception caught during execution: nested gotcha!
 
 # O3-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
-# O3-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::__init__(::Int)
-# O3-FULL-NEXT: #{{.*}} std::builtin::error::Error::__init__(::String
-# O3-FULL-NEXT: #{{.*}} std::builtin::error::Error::__init__[!kgen.string]
+# O3-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::Int)
 # O3-FULL-NEXT: #{{.*}} stack_trace_exception_no_handling::foo2()_REMOVED_ARG {{.*}}/stack_trace_exception_no_handling.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} std::builtin::_startup::__wrap_and_execute_raising_main
 # O3-FULL-NEXT: #{{.*}} main {{.*}}open-source/max/mojo/stdlib/std/builtin/_startup.mojo:{{.*}}:{{.*}}
