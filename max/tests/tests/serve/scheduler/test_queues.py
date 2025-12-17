@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import queue
+import sys
 import time
 from dataclasses import fields, is_dataclass
 from typing import Any
@@ -109,6 +110,10 @@ def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
     assert dataclass_equal(context[1], received_context[1])
 
 
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="Shared memory via /dev/shm is not supported on macOS",
+)
 def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
     """Test that vision context serialization falls back gracefully when shared memory is exhausted."""
 
@@ -338,6 +343,10 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     )
 
 
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="Shared memory via /dev/shm is not supported on macOS",
+)
 def test_shared_memory_default_threshold_usage() -> None:
     """Test that numpy arrays greater than the shared memory threshold use shared memory."""
     # Default threshold is 0MB (24 * 1024 * 1024 bytes)
