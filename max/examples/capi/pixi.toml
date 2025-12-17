@@ -1,0 +1,18 @@
+[workspace]
+authors = ["Modular <hello@modular.com>"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+description = "An example of using the MAX C API"
+name = "capi-example"
+platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
+version = "0.1.0"
+
+[tasks]
+build = "cc example.c -I $CONDA_PREFIX/include -L$CONDA_PREFIX/lib -Wl,-rpath,$CONDA_PREFIX/lib -lmax -o graph_executor"
+
+[tasks.test]
+depends-on = ["build"]
+env = { "GRAPH_EXECUTOR" = "graph_executor" }
+cmd = "python test_capi.py"
+
+[dependencies]
+max = "*"

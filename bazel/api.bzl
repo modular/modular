@@ -20,7 +20,6 @@ load("//bazel/internal:py_repl.bzl", _py_repl = "py_repl")  # buildifier: disabl
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 lit_tests = _lit_tests
-modular_cc_binary = _cc_binary
 modular_cc_library = _cc_library
 modular_multi_py_version_test = _modular_multi_py_version_test
 modular_py_binary = _modular_py_binary
@@ -36,6 +35,14 @@ pkg_filegroup = _pkg_filegroup
 py_repl = _py_repl
 requirement = _requirement
 strip_prefix = _strip_prefix
+
+def modular_cc_binary(deps = [], **kwargs):
+    # TODO: This will break in the presence of select()s
+    deps = [dep if dep != "//max/internal:max" else "@modular_wheel//:max_lib" for dep in deps]
+    _cc_binary(
+        deps = deps,
+        **kwargs
+    )
 
 def modular_py_test(external_noop = False, **kwargs):
     if not external_noop:
