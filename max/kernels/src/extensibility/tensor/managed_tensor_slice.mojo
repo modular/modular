@@ -141,7 +141,7 @@ fn simd_store_into_managed_tensor_slice[
 
 @doc_private
 @register_internal("simd_store_into_tensor_pointer")
-@no_inline
+@always_inline
 fn simd_store_into_tensor_pointer[
     dtype: DType,
     rank: Int,
