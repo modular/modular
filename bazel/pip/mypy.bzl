@@ -15,7 +15,7 @@ _TYPES = {
 }
 
 mypy_aspect = mypy(
-    mypy_ini = "@@//:mypy.ini",
+    mypy_ini = "@@//:pyproject.toml",
     mypy_cli = "@@//bazel/internal:mypy_cli",
     suppression_tags = ["no-mypy"],
     types = _TYPES,
