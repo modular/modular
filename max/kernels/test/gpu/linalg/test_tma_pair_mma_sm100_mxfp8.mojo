@@ -16,7 +16,7 @@ from sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import WARP_SIZE, barrier
+from gpu import WARP_SIZE, barrier, warp_id as get_warp_id
 from gpu.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -226,7 +226,7 @@ fn blockscaled_pair_cta_mxfp8[
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
@@ -505,7 +505,7 @@ fn blockscaled_pair_cta_mxfp8[
         tcgen05_release_allocation_lock[cta_group]()
         tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
 
-    warp_id = thread_idx.x // UInt(WARP_SIZE)
+    warp_id = get_warp_id()
 
     var c_gmem_block = c.tile[MMA_M, MMA_N](
         Int(peer_cta_coord[1]), Int(peer_cta_coord[2])

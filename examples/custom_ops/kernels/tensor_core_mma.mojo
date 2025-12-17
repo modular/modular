@@ -1399,8 +1399,7 @@ fn mma_tile_buffers[
     comptime num_k_tiles = WK // k_tile_size
 
     # Thread and warp indices
-    var warp_id = warp_id()
-    var warp_km, warp_n = divmod(warp_id, num_warps_n)
+    var warp_km, warp_n = divmod(warp_id(), num_warps_n)
     var warp_k, warp_m = divmod(warp_km, num_warps_m)
 
     # Helper function for thread layout
