@@ -20,8 +20,6 @@ RUNTIME_SANITIZER_DATA = select({
 def runtime_sanitizer_env(*, preload = True, location_specifier = "location"):
     env = select({
         "@//:asan": {
-            # TODO: SDLC-2566 Remove need for alloc_dealloc_mismatch=0 once python extensions are fixed
-            "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS),alloc_dealloc_mismatch=0",
             "LSAN_OPTIONS": "suppressions=$({} @//bazel/internal:lsan-suppressions.txt)".format(location_specifier),
         },
         "//conditions:default": {},
