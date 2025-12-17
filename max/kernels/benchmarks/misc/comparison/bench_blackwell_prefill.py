@@ -480,4 +480,4 @@ if __name__ == "__main__":
         metric_list=[flops_per_sec],
     )
 
-    b.dump_report(output_path=args.output_path)
+    b.dump_report(output_path=args.output)
