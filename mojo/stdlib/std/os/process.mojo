@@ -237,7 +237,8 @@ struct Process:
         self.status = None
 
     fn __del__(deinit self):
-        """Waits for the process to exit when the `Process` object is destroyed."""
+        """Waits for the process to exit when the `Process` object is destroyed.
+        """
         try:
             _ = self.wait()
         except:
