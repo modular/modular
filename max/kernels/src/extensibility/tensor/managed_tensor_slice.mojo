@@ -71,7 +71,7 @@ fn _gcd_pow2[a: Int, b: Int]() -> Int:
 # They are set to be inlined further down graph compiler stack.
 @doc_private
 @register_internal("simd_store_into_managed_tensor_slice")
-@no_inline
+@always_inline
 fn simd_store_into_managed_tensor_slice[
     dtype: DType,
     rank: Int,
@@ -291,7 +291,7 @@ fn simd_load_from_tensor_pointer[
 
 @doc_private
 @register_internal("simd_load_from_managed_tensor_slice")
-@no_inline
+@always_inline
 fn simd_load_from_managed_tensor_slice[
     dtype: DType,
     rank: Int,
