@@ -44,7 +44,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         `>`,
     ]
 
-    var storage: Self._mlir_type
+    var _mlir_value: Self._mlir_type
     """The underlying storage for the tuple."""
 
     # Overload that crushes down IR generated on the caller side.
@@ -52,7 +52,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     fn __init__(out self: Tuple[]):
         """Construct an empty tuple."""
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
     @always_inline("nodebug")
@@ -76,9 +76,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
             storage: The variadic pack storage to construct from.
         """
 
-        # Mark 'self.storage' as being initialized so we can work on it.
+        # Mark 'self._mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
         # Move each element into the tuple storage.
@@ -104,9 +104,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         Args:
             existing: The value to copy from.
         """
-        # Mark 'storage' as being initialized so we can work on it.
+        # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
         @parameter
@@ -132,9 +132,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         Args:
             existing: The value to move from.
         """
-        # Mark 'storage' as being initialized so we can work on it.
+        # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
         @parameter
@@ -179,7 +179,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         """
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
-        var storage_kgen_ptr = UnsafePointer(to=self.storage).address
+        var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
@@ -227,9 +227,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
             elt_types: The types of the elements contained in the Tuple.
         """
 
-        # Mark 'self.storage' as being initialized so we can work on it.
+        # Mark 'self._mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
         @parameter
