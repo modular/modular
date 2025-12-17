@@ -2533,12 +2533,14 @@ bool Elaborator::checkCodeGenUnreachable(ModuleOp module,
     nodeMap.insert({node->inst, node->parent});
   }
 
-  std::function<void(ParamNode *, Location, ErrorTree)> emitError =
-      [&](ParamNode *node, Location loc, ErrorTree cause) -> void {
+  std::function<void(ParamNode *, Location, ErrorTree, DenseSet<ParamNode *> &)>
+      emitError = [&](ParamNode *node, Location loc, ErrorTree cause,
+                      DenseSet<ParamNode *> &seenParents) -> void {
     DenseMap<ParamNode *, DenseMap<ParamNode *, std::vector<Location>>> &graph =
         callInstantiationGraph.get();
     auto iter = graph.find(node);
-    if (iter == graph.end() || iter->second.empty()) {
+    if (iter == graph.end() || iter->second.empty() ||
+        seenParents.contains(node)) {
       emitLimitedError(
           [&] {
             return std::move(cause).emit(
@@ -2549,9 +2551,14 @@ bool Elaborator::checkCodeGenUnreachable(ModuleOp module,
           errorLimit);
       return;
     }
-
+    seenParents.insert(node);
     DenseMap<ParamNode *, std::vector<Location>> &parents = iter->second;
     for (auto &[parent, locs] : parents) {
+      // callInstantiationGraph can have cycles for recursive function calls at
+      // runtime (with proper runtime leaf condition which is totally legal)
+      // Stop recursing to the parent while emitting the errors if the parent
+      // has already seen.
+
       std::string str = printSimpleParamAttrValues(
           parent->gen.getInputParams(), parent->inputParams,
           options.elaborationErrorVerbose);
@@ -2559,8 +2566,10 @@ bool Elaborator::checkCodeGenUnreachable(ModuleOp module,
       if (!str.empty())
         msg += " with parameter value(s): " + str;
 
-      for (auto loc : locs)
-        emitError(parent, loc, ErrorTree(loc, Twine(msg), cause.copy()));
+      for (auto loc : locs) {
+        emitError(parent, loc, ErrorTree(loc, Twine(msg), cause.copy()),
+                  seenParents);
+      }
     }
   };
 
@@ -2574,11 +2583,14 @@ bool Elaborator::checkCodeGenUnreachable(ModuleOp module,
           // Emit error;
           auto iter = nodeMap.find(func);
           assert(iter != nodeMap.end());
+          DenseSet<ParamNode *> seenParents;
+
           emitError(
               iter->second, op->getLoc(),
               ErrorTree(op.getLoc(),
                         "codegen unreachable: " +
-                            cast<StringAttr>(op.getMessageAttr()).getValue()));
+                            cast<StringAttr>(op.getMessageAttr()).getValue()),
+              seenParents);
           result = false;
         }
       });
