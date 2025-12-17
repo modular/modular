@@ -88,6 +88,7 @@ environment variable set, you'll see a stack trace without symbols:
 ```sh
 mojo build stacktrace_error.mojo
 ```
+
 ```sh
 MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 stacktrace_error
 ```
@@ -106,6 +107,7 @@ To generate a more useful stack trace, you need to compile the program with
 ```sh
 mojo build --debug-level full stacktrace_error.mojo
 ```
+
 ```sh
 MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
 ```
@@ -152,10 +154,8 @@ mojo: error: execution exited with a non-zero result: 1
 As described in [Handle an error](#handle-an-error), you can bind the `Error`
 instance to a variable in the `except` clause. If you do, you can invoke its
 [`get_stack_trace()`](/mojo/std/builtin/error/Error#get_stack_trace) method
-to get a [`StackTrace`](/mojo/std/builtin/error/StackTrace) instance.
-`StackTrace` implements the [`Stringable`](/mojo/std/builtin/str/Stringable)
-trait, so you can construct a `String` with `String(stack_trace)` if you want to
-extract the stack trace as a `String` for further processing. For example:
+to get the stack trace as an `Optional[String]`. The method returns `None` if
+stack trace collection was disabled or unavailable. For example:
 
 ```mojo
 def func2() -> None:
@@ -172,7 +172,11 @@ def main():
     except e:
         print(e)
         print("-" * 20)
-        print(String(e.get_stack_trace()))
+        var stack_trace = e.get_stack_trace()
+        if stack_trace:
+            print(stack_trace.value())
+        else:
+            print("No stack trace available")
 ```
 
 When you compile this program with symbols and run it with stack trace
@@ -181,6 +185,7 @@ generation enabled, you'll see the following output:
 ```sh
 mojo build --debug-level full stacktrace_error_capture.mojo
 ```
+
 ```sh
 MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error_capture
 ```

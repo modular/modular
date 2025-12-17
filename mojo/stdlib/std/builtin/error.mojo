@@ -32,40 +32,72 @@ from io.write import _WriteBufferStack, _TotalWritableBytes
 # ===-----------------------------------------------------------------------===#
 # StackTrace
 # ===-----------------------------------------------------------------------===#
-@register_passable
-struct StackTrace(ImplicitlyCopyable, Stringable):
-    """Holds a stack trace of a location when StackTrace is constructed."""
 
-    var value: ArcPointer[OwnedPointer[UInt8]]
-    """A reference counting pointer to a char array containing the stack trace.
 
-        Note: This owned pointer _can be null_. We'd use Optional[OwnedPointer] but
-        we don't have good niche optimization and Optional[T] requires T: Copyable
+struct StackTrace(Movable, Stringable):
+    """Holds a stack trace captured at a specific location.
+
+    A `StackTrace` instance always contains a valid stack trace. Use the
+    `collect_if_enabled()` static method to conditionally capture a stack
+    trace, which returns `None` if stack trace collection is disabled or
+    unavailable.
     """
 
-    @no_inline
-    fn __init__(out self):
-        """Construct an empty stack trace."""
-        self.value = ArcPointer(OwnedPointer[UInt8](unsafe_from_raw_pointer={}))
+    var _data: OwnedPointer[UInt8]
+    """An owned pointer to a null-terminated C string containing the stack trace."""
 
-    @no_inline
-    fn __init__(out self, *, depth: Int):
-        """Construct a new stack trace.
+    fn __init__(
+        out self,
+        *,
+        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutOrigin.external],
+    ):
+        """Construct a StackTrace from a raw pointer to a C string.
 
         Args:
-            depth: The depth of the stack trace.
-                   When `depth` is zero, entire stack trace is collected.
+            unsafe_from_raw_pointer: A pointer to a null-terminated C string
+                containing the stack trace. The StackTrace takes ownership.
+
+        Safety:
+            The pointer must be valid and point to a null-terminated string.
+            The caller transfers ownership to this StackTrace.
+        """
+        self._data = OwnedPointer(
+            unsafe_from_raw_pointer=unsafe_from_raw_pointer
+        )
+
+    fn __moveinit__(out self, deinit existing: Self):
+        """Move constructor.
+
+        Args:
+            existing: The existing StackTrace to move from.
+        """
+        self._data = existing._data^
+
+    @staticmethod
+    @no_inline
+    fn collect_if_enabled(depth: Int = 0) -> Optional[ArcPointer[StackTrace]]:
+        """Collect a stack trace if enabled by environment variable.
+
+        This method checks the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment
+        variable and collects a stack trace only if it is enabled. Returns
+        `None` if stack traces are disabled, on GPU, or if collection fails.
+
+        Args:
+            depth: The maximum depth of the stack trace to collect.
+                   When `depth` is zero, the entire stack trace is collected.
                    When `depth` is negative, no stack trace is collected.
+
+        Returns:
+            An `Optional[ArcPointer[StackTrace]]` containing the stack trace
+            if collection succeeded, or `None` if disabled or unavailable.
         """
 
         @parameter
         if is_gpu():
-            self = StackTrace()
-            return
+            return None
 
         if depth < 0:
-            self = StackTrace()
-            return
+            return None
 
         var buffer = UnsafePointer[UInt8, MutOrigin.external]()
         var num_bytes = external_call["KGEN_CompilerRT_GetStackTrace", Int](
@@ -73,14 +105,9 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
         )
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:
-            self.value = ArcPointer(
-                OwnedPointer[UInt8](unsafe_from_raw_pointer={})
-            )
-            return
+            return None
 
-        self.value = ArcPointer[OwnedPointer[UInt8]](
-            OwnedPointer(unsafe_from_raw_pointer=buffer)
-        )
+        return ArcPointer(StackTrace(unsafe_from_raw_pointer=buffer))
 
     fn __str__(self) -> String:
         """Converts the StackTrace to string representation.
@@ -88,12 +115,7 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
         Returns:
             A String of the stack trace.
         """
-        if not self.value[].unsafe_ptr():
-            return (
-                "stack trace was not collected. Enable stack trace collection"
-                " with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`"
-            )
-        return String(unsafe_from_utf8_ptr=self.value[].unsafe_ptr())
+        return String(unsafe_from_utf8_ptr=self._data.unsafe_ptr())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -127,10 +149,12 @@ struct Error(
     var data: String
     """The message of the error."""
 
-    var stack_trace: StackTrace
-    """The stack trace of the error.
-    By default the stack trace is not collected for the Error, unless user
-    sets the stack_trace_depth parameter to value >= 0.
+    var _stack_trace: Optional[ArcPointer[StackTrace]]
+    """The stack trace of the error, if collected.
+
+    By default, stack trace is collected for errors created from string
+    literals. Stack trace collection can be controlled via the
+    `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment variable.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -144,10 +168,11 @@ struct Error(
 
         Args:
             value: The error message.
-            depth: The depth of the stack trace to collect.
+            depth: The depth of the stack trace to collect. When negative,
+                no stack trace is collected.
         """
         self.data = value^
-        self.stack_trace = StackTrace(depth=depth)
+        self._stack_trace = StackTrace.collect_if_enabled(depth)
 
     @always_inline
     fn __init__(out self):
@@ -233,13 +258,17 @@ struct Error(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn get_stack_trace(self) -> StackTrace:
-        """Returns the stack trace of the error.
+    fn get_stack_trace(self) -> Optional[String]:
+        """Returns the stack trace of the error, if available.
 
         Returns:
-            The stringable stack trace of the error.
+            An `Optional[String]` containing the stack trace if one was
+            collected, or `None` if stack trace collection was disabled
+            or unavailable.
         """
-        return self.stack_trace
+        if self._stack_trace:
+            return String(self._stack_trace.value()[])
+        return None
 
 
 @doc_private
