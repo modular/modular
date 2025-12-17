@@ -255,7 +255,7 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
     OpOperand &use = worklist.back();
     worklist.pop_back();
     if (visited.count(use.getOwner()) && !worklist.empty()) {
-      // Also check is worklist is not emtpy before continuing. This is needed
+      // Also check is worklist is not empty before continuing. This is needed
       // because of the special handling in code below that can return `Live`.
       continue;
     }
