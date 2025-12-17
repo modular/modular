@@ -51,10 +51,10 @@ using namespace M::KGEN::LIT;
 ///
 /// TODO(MOCO-1259): Support static methods with associated aliases
 FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, ASTDecl *traitDecl, FnOp candidateFunc,
+    DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,
     FnTypeGeneratorType desiredSignature, PValue selfPValue) {
   ParserParameterEvaluator traitAliasReplacer(declResolver.shared);
-  for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
       AliasDeclOp traitAlias =
           dyn_cast_or_null<LIT::AliasDeclOp>(decl->getIfOperation());
@@ -65,7 +65,7 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
       auto traitName = StringAttr::get(
           candidateFunc->getContext(),
           getFlattenedSymbolName(candidateFunc.getInheritedFrom().value_or(
-              traitDecl->getSymbolRef())));
+              traitDecl.getSymbolRef())));
       TypedAttr aliasRef =
           declResolver.shared.getEvaluationContext().getGetWitnessAttr(
               selfPValue, traitName, nameStringAttr, traitAlias.getType());
@@ -1088,9 +1088,9 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
   for (Type type : signature.getInputParamTypes().drop_front())
     paramValues.push_back(UnboundAttr::get(type));
 
-  ASTDecl &traitDecl = *selfExpr.getType().getDecl(shared);
+  ASTDecl *traitDecl = selfExpr.getType().getDecl(shared);
   signature = substituteTraitAliasesIntoSignature(
-      *shared.declResolver, &traitDecl, funcOp, signature, selfExpr);
+      *shared.declResolver, *traitDecl, funcOp, signature, selfExpr);
 
   signature = signature.getSpecializedGenerator(
       paramValues, &shared.getEvaluationContext(), [&]() {
@@ -1102,7 +1102,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
   auto traitName =
       StringAttr::get(funcOp.getContext(),
                       getFlattenedSymbolName(funcOp.getInheritedFrom().value_or(
-                          traitDecl.getSymbolRef())));
+                          traitDecl->getSymbolRef())));
   TypedAttr fnRef = shared.getEvaluationContext().getGetWitnessAttr(
       selfExpr, traitName, funcOp.getSymNameAttr(), signature);
 

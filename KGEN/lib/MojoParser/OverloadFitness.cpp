@@ -680,7 +680,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
     auto parentDecl = candidate->getParentDecl();
     if (dyn_cast_or_null<TraitDeclOp>(parentDecl->getIfOperation())) {
       signature = substituteTraitAliasesIntoSignature(
-          resolver, parentDecl, func, signature, selfPValue);
+          resolver, *parentDecl, func, signature, selfPValue);
     }
   }
 
@@ -733,7 +733,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
             auto parentDecl = funcIfDirect->getParentDecl();
             if (dyn_cast_or_null<TraitDeclOp>(parentDecl->getIfOperation())) {
               signature = substituteTraitAliasesIntoSignature(
-                  *shared.declResolver, parentDecl, func, signature,
+                  *shared.declResolver, *parentDecl, func, signature,
                   selfPValue);
             }
           }
