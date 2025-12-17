@@ -13,7 +13,9 @@
 """Test max.driver Tensors."""
 
 import math
+import sys
 import tempfile
+from collections.abc import Generator
 from itertools import product
 from pathlib import Path
 
@@ -495,13 +497,14 @@ def test_scalar() -> None:
 # NOTE: This is kept at function scope intentionally to avoid issues if tests
 # mutate the stored data.
 @pytest.fixture(scope="function")
-def memmap_example_file():  # noqa: ANN201
+def memmap_example_file() -> Generator[Path, None, None]:
     with tempfile.NamedTemporaryFile(mode="w+b") as f:
         f.write(b"\x00\x01\x02\x03\x04\x05\x06\x07")
         f.flush()
         yield Path(f.name)
 
 
+@pytest.mark.xfail(sys.platform == "darwin", reason="GEX-2968")
 def test_memmap(memmap_example_file: Path) -> None:
     tensor = Tensor.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
     assert tensor.shape == (2, 4)
