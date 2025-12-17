@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides low-level programming constructs for working with GPUs.
+"""GPU programming primitives: thread blocks, async memory, barriers, and sync.
 
 These low level constructs allow you to write code that runs on the GPU with
 traditional programming style--partitioning work across threads that are mapped

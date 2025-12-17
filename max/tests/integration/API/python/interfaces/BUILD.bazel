@@ -12,5 +12,6 @@ modular_py_test(
     srcs = glob(["*.py"]),
     deps = [
         "//max/python/max/interfaces",
+        "//max/python/max/support",
     ],
 )

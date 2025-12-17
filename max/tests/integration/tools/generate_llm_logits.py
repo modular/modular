@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 
 # Standard library
-from collections.abc import Callable, Generator
-from contextlib import contextmanager, nullcontext
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,12 +27,8 @@ import click
 import torch
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from max import driver
-from max.engine import InferenceSession
-from max.engine.api import PrintStyle
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
-from max.nn.hooks import PrintHook
-from max.nn.layer import Module
 from run_models import (
     Flake,
     _detect_hf_flakes,
@@ -46,7 +42,6 @@ from run_models import (
 # Tests
 from test_common import (
     numpy_encoder,
-    torch_print_hook,
 )
 from test_common.evaluate import NUM_STEPS, ModelOutput
 from test_common.github_utils import github_log_group
@@ -59,65 +54,12 @@ from test_common.github_utils import github_log_group
 EX_TEMPFAIL = 75
 
 
-@contextmanager
-def add_max_hooks(
-    output_directory: Path | None = None,
-) -> Generator[None, None, None]:
-    """Context manager that adds tensor printing hooks by patching the model class."""
-
-    # Save original InferenceSession initializer.
-    original_inference_init = InferenceSession.__init__
-    hook = PrintHook()
-    original_inference_init = InferenceSession.__init__
-
-    def get_wrapped_load_state_dict(
-        original_load_state_dict: Callable[..., Any],
-    ) -> Callable[..., Any]:
-        def wrapped_load_state_dict(
-            self: Any, *args: Any, **kwargs: Any
-        ) -> Any:
-            result = original_load_state_dict(self, *args, **kwargs)
-            hook.name_layers(self)
-            return result
-
-        return wrapped_load_state_dict
-
-    # If an output directory is provided, patch InferenceSession to enable debug prints.
-    if output_directory is not None:
-
-        def _patched_inference_init(
-            session_self: InferenceSession, *args: Any, **kwargs: Any
-        ) -> None:
-            original_inference_init(session_self, *args, **kwargs)
-            # Enable debug printing to file-style output when an output directory is specified.
-            # If additional parameters (like output path) are supported, they can be added here.
-            session_self.set_debug_print_options(
-                style=PrintStyle.BINARY_MAX_CHECKPOINT,
-                output_directory=output_directory,
-            )
-
-        InferenceSession.__init__ = _patched_inference_init  # type: ignore[assignment]
-
-    original_load_state_dict = Module.load_state_dict
-    Module.load_state_dict = get_wrapped_load_state_dict(  # type: ignore[method-assign]
-        original_load_state_dict
-    )
-
-    try:
-        yield
-    finally:
-        hook.remove()
-        Module.load_state_dict = original_load_state_dict  # type: ignore[method-assign]
-        # Restore original InferenceSession initializer if we patched it.
-        InferenceSession.__init__ = original_inference_init  # type: ignore[method-assign]
-
-
 @click.command()
 @click.option(
     "--framework",
     "framework_name",
     type=click.Choice(["max", "torch"]),
-    required=True,
+    default="max",
     help="Framework to run pipeline with",
 )
 @click.option(
@@ -145,9 +87,9 @@ def add_max_hooks(
     "-o",
     "--output",
     "output_path",
-    type=click.Path(path_type=Path),
-    required=True,
-    help="Path to output resulting goldens JSON to",
+    type=str,
+    default=None,
+    help="Path to output resulting goldens JSON. If omitted, will output to tmp/<timestamp>_<pipeline_name>_<framework_name>.json",
 )
 @click.option(
     "-r",
@@ -163,22 +105,6 @@ def add_max_hooks(
     type=bool,
     default=False,
     help="Dump goldens in non-JSON format to stdout",
-)
-@click.option(
-    "--print-intermediates",
-    "print_intermediates",
-    is_flag=True,
-    default=False,
-    help="Outputs intermediate tensors from both frameworks to the console.",
-)
-@click.option(
-    "--intermediates-dir",
-    "intermediates_dir",
-    type=click.Path(
-        path_type=Path, dir_okay=True, file_okay=False, writable=True
-    ),
-    default=None,
-    help="Directory to write intermediate tensors. If omitted, no files are written.",
 )
 @click.option(
     "--max-batch-size",
@@ -206,21 +132,14 @@ def main(
     framework_name: str,
     pipeline_name: str,
     encoding_name: str | None,
-    output_path: Path,
+    output_path: str | None,
     reference_path: Path | None,
     print_output: bool,
     max_batch_size: int | None,
     log_hf_downloads: bool,
-    print_intermediates: bool,
-    intermediates_dir: Path | None,
     mini: bool,
 ) -> None:
-    """Click command entry point that delegates to the implementation function.
-
-    This wrapper exists because Click command functions aren't easily picklable,
-    which causes issues when called from multiprocessing.
-    """
-    if pipeline_name == "gemma3-27b":
+    if "gemma3" in pipeline_name:
         # Running into dynamo error:
         # https://huggingface.co/google/gemma-3-4b-it/discussions/51
         torch._dynamo.config.disable = True
@@ -232,19 +151,32 @@ def main(
     else:
         reference_logits = None
 
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    pipeline_name_no_slash = pipeline_name.replace("/", "-")
+    default_output_path = Path(
+        f"{timestamp}_{pipeline_name_no_slash}_{framework_name}.json"
+    )
+    if output_path is None:
+        final_output_path = Path(tempfile.gettempdir()) / default_output_path
+    elif output_path.endswith(".json"):
+        final_output_path = Path(output_path)
+    elif Path(output_path).is_dir():
+        final_output_path = Path(output_path) / default_output_path
+    else:
+        raise ValueError(
+            f"Invalid output path: {output_path}. Please provide a valid file path ending with .json or a directory."
+        )
     try:
         generate_llm_logits(
             device_specs=DevicesOptionType.device_specs(device_type),
             framework_name=framework_name,
             pipeline_name=pipeline_name,
             encoding_name=encoding_name,
-            output_path=output_path,
+            output_path=final_output_path,
             reference=reference_logits,
             print_output=print_output,
             max_batch_size=max_batch_size,
             log_hf_downloads=log_hf_downloads,
-            print_intermediates=print_intermediates,
-            intermediates_dir=intermediates_dir,
             mini=mini,
         )
     except Flake:
@@ -262,8 +194,6 @@ def generate_llm_logits(
     max_batch_size: int | None = None,
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
-    print_intermediates: bool = False,
-    intermediates_dir: Path | None = None,
     mini: bool = False,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
@@ -310,13 +240,7 @@ def generate_llm_logits(
             else:
                 max_encoding_name = encoding_name
 
-            hooks_ctx = (
-                add_max_hooks(output_directory=intermediates_dir)
-                if print_intermediates or intermediates_dir
-                else nullcontext()
-            )
-
-            with maybe_log_hf_downloads(log_hf_downloads), hooks_ctx:
+            with maybe_log_hf_downloads(log_hf_downloads):
                 max_pipeline_and_tokenizer = (
                     pipeline_oracle.create_max_pipeline(
                         encoding=max_encoding_name,
@@ -346,15 +270,6 @@ def generate_llm_logits(
                     )
                 )
 
-            if print_intermediates or intermediates_dir:
-                export_path = (
-                    str(intermediates_dir)
-                    if intermediates_dir is not None
-                    else None
-                )
-                hook = torch_print_hook.TorchPrintHook(export_path=export_path)
-                hook.name_layers(torch_pipeline_and_tokenizer.model)
-
             print(f"Running {pipeline_name} model on Torch")
             results = run_torch_model(
                 pipeline_oracle=pipeline_oracle,
@@ -375,8 +290,12 @@ def generate_llm_logits(
         print(f"Device specs: {device_specs}")
         print("Results:")
         print(results)
+
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         f.write(numpy_encoder.NumpyEncoder().encode(results))
+        print(f"Results written to {output_path}")
 
 
 if __name__ == "__main__":

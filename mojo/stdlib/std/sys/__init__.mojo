@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the sys package."""
+"""System runtime: I/O, hardware info, FFI, intrinsics, compile-time utils."""
 
 from ._io import stderr, stdin, stdout
 from .arg import argv

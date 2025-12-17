@@ -542,9 +542,10 @@ def test_vision_embeddings_multi_gpu_execution(
 
     # Copy input to GPU 1 and execute
     patches_gpu1 = patches_tensor.to("cuda:1")
-    input_tensor1 = Tensor.from_dlpack(patches_gpu1.contiguous()).to(
-        Accelerator(1)
-    )
+    with torch.cuda.device(1):
+        input_tensor1 = Tensor.from_dlpack(patches_gpu1.contiguous()).to(
+            Accelerator(1)
+        )
     result1 = compiled1.execute(input_tensor1)[0]
     assert isinstance(result1, Tensor)
     result1 = result1.to(CPU())

@@ -115,11 +115,11 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    constrained[transpose_b, "Only support transposed B"]()
-    constrained[num_threads == 128]()
-    constrained[
-        accum_type == DType.float32, "Only support float32 for accumulator"
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
+    __comptime_assert num_threads == 128
+    __comptime_assert (
+        accum_type == DType.float32
+    ), "Only support float32 for accumulator"
 
     var expert_idx = Int(block_idx.z)
     M = rebind[UInt32](a_offsets[expert_idx + 1]) - rebind[UInt32](
@@ -138,11 +138,10 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
-    constrained[N % BN == 0, "N must be divisible by BN"]()
-    constrained[
-        BN <= BK or gcd(BN, BK) == BN - BK,
-        "BN <= BK or gcd(BN, BK) == BN - BK",
-    ]()
+    __comptime_assert N % BN == 0, "N must be divisible by BN"
+    __comptime_assert (
+        BN <= BK or gcd(BN, BK) == BN - BK
+    ), "BN <= BK or gcd(BN, BK) == BN - BK"
 
     a_start_row = a_offsets[expert_idx]
     expert = expert_ids[expert_idx]
@@ -169,16 +168,16 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         address_space = b_scales.address_space,
     ](b_scales.ptr)
 
-    constrained[
-        N % b_scales_n == 0 and K % b_scales_k == 0 and K % a_scales_k == 0,
-        "N and K must be divisible by b_scales.shape[1] and b_scales.shape[2]",
-    ]()
+    __comptime_assert (
+        N % b_scales_n == 0 and K % b_scales_k == 0 and K % a_scales_k == 0
+    ), "N and K must be divisible by b_scales.shape[1] and b_scales.shape[2]"
 
     comptime B_SCALING_BLOCK_N = N // b_scales_n
     comptime B_SCALING_BLOCK_K = K // b_scales_k
     comptime A_SCALING_BLOCK = K // a_scales_k
-    constrained[
-        BK == B_SCALING_BLOCK_K == B_SCALING_BLOCK_N == A_SCALING_BLOCK,
+    __comptime_assert (
+        BK == B_SCALING_BLOCK_K == B_SCALING_BLOCK_N == A_SCALING_BLOCK
+    ), (
         "Only support SCALING SIZE of 128! got:"
         + String(BK)
         + " "
@@ -186,8 +185,8 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         + " "
         + String(B_SCALING_BLOCK_N)
         + " "
-        + String(A_SCALING_BLOCK),
-    ]()
+        + String(A_SCALING_BLOCK)
+    )
 
     comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
@@ -237,16 +236,15 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     comptime b_size = b_smem_layout.size()
     comptime a_scales_size = a_scales_smem_layout.size()
 
-    constrained[
-        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((b_size * size_of[b_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((a_scales_size * size_of[accum_type]()) % 16) == 0,
-        "preserve alignment",
-    ]()
+    __comptime_assert (
+        (a_size * size_of[a_type]()) % 128
+    ) == 0, "preserve alignment"
+    __comptime_assert (
+        (b_size * size_of[b_type]()) % 128
+    ) == 0, "preserve alignment"
+    __comptime_assert (
+        (a_scales_size * size_of[accum_type]()) % 16
+    ) == 0, "preserve alignment"
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
@@ -304,9 +302,9 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     comptime repeat = 1  # a higher repeat will probably get us better performance, but it will increase register pressure
     comptime temp_cfrags_size = 4 * repeat
 
-    constrained[
-        total_repeat % repeat == 0, "total_repeat must be divisible by repeat"
-    ]()
+    __comptime_assert (
+        total_repeat % repeat == 0
+    ), "total_repeat must be divisible by repeat"
     var c_frag_temp = SIMD[accum_type, temp_cfrags_size]()
 
     for k_iter in range(num_iters):
@@ -510,7 +508,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     b_scales_type: DType,
     a_offsets_type: DType,
     expert_ids_type: DType,
-    transpose_b: Bool, //,
+    transpose_b: Bool,
+    //,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -526,15 +525,11 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        config.transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert config.transpose_b, "Only support transposed B"
 
-    constrained[
-        a_type == b_type and a_type is DType.float8_e4m3fn,
-        "Only support float8_e4m3fn for A and B",
-    ]()
+    __comptime_assert (
+        a_type == b_type and a_type is DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn for A and B"
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -546,7 +541,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     comptime BN = config.block_tile_shape[1]
     comptime BK = config.block_tile_shape[2]
 
-    constrained[BK == 128, "blockwise scaled fp8 only works with BK = 128"]()
+    __comptime_assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
 
     var a_scales_1 = a_scales.dim(1)
     debug_assert(a_scales_1 == c.dim(0), "a_scales.dim(1) must be equal to M")
@@ -679,7 +674,7 @@ fn _get_accumulator_size[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime stageN = c_smem_layout.shape[1].value()
     comptime cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
@@ -884,7 +879,7 @@ fn multi_stage_reg_epilogue[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime num_stages = accum_layout.shape[0].value()
     comptime num_elements = accum_layout.shape[1].value()
@@ -980,13 +975,12 @@ fn multi_stage_reg_epilogue[
             comptime simd_size = simd_width_of[c_type]()
             comptime alignment = align_of[SIMD[c_type, simd_size]]()
             comptime thread_n = stageN // simd_size
-            constrained[
-                stageN % simd_size == 0, "stageN must be divisible by simd_size"
-            ]()
-            constrained[
-                output_threads % thread_n == 0,
-                "output_threads must be divisible by thread_n",
-            ]()
+            __comptime_assert (
+                stageN % simd_size == 0
+            ), "stageN must be divisible by simd_size"
+            __comptime_assert (
+                output_threads % thread_n == 0
+            ), "output_threads must be divisible by thread_n"
             comptime thread_layout = Layout.row_major(
                 output_threads // thread_n, thread_n
             )
@@ -1128,12 +1122,11 @@ fn promote_accumulators[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
 
-    constrained[
-        a_scales_type == b_scales_type and accum_type == DType.float32,
-        "Only support float32 for a_scales, b_scales, and accum_type",
-    ]()
+    __comptime_assert (
+        a_scales_type == b_scales_type and accum_type == DType.float32
+    ), "Only support float32 for a_scales, b_scales, and accum_type"
     # Rows each warp is responsible for:
     # warp_id 0 -> 0-15 upper, 16-31 lower
     # warp_id 1 -> 32-47 upper, 48-63 lower
@@ -1150,7 +1143,7 @@ fn promote_accumulators[
     comptime bits = 256
     comptime num_elements_per_load = bits // 32  # each element in tmem is 4 bytes, 32 bits
     comptime fragment_size = (data_paths * num_elements_per_load) // WARP_SIZE
-    constrained[fragment_size == 4, "fragment_size must be 4"]()
+    __comptime_assert fragment_size == 4, "fragment_size must be 4"
     comptime repeats = num_elements // fragment_size
     comptime stageN = repeats * (bits // 32)
     comptime load_width = 2
@@ -1170,14 +1163,13 @@ fn promote_accumulators[
 
     @parameter
     if MMA_N != BK:
-        constrained[
-            stageN <= gcd(MMA_N, BK) and (gcd(MMA_N, BK) % stageN == 0),
-            (
-                "gcd(MMA_N, BK) must be divisible by stageN. If not then this"
-                " step should be updated to support non-divisible case"
-                " accordingly"
-            ),
-        ]()
+        __comptime_assert stageN <= gcd(MMA_N, BK) and (
+            gcd(MMA_N, BK) % stageN == 0
+        ), (
+            "gcd(MMA_N, BK) must be divisible by stageN. If not then this"
+            " step should be updated to support non-divisible case"
+            " accordingly"
+        )
 
         var global_bn_start = bn
         var begin_n = min(MMA_N, BK - Int(global_bn_start % UInt(BK)))
@@ -1449,11 +1441,10 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    constrained[
-        b_scales_type == a_scales_type and accum_type == DType.float32,
-        "Only support float32 for a_scales and b_scales",
-    ]()
-    constrained[transpose_b, "only support k-major B"]()
+    __comptime_assert (
+        b_scales_type == a_scales_type and accum_type == DType.float32
+    ), "Only support float32 for a_scales and b_scales"
+    __comptime_assert transpose_b, "only support k-major B"
 
     comptime SCHEDULER_THREADS = WARP_SIZE
     comptime TMA_LOAD_THREADS = WARP_SIZE
@@ -1484,14 +1475,13 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime MMA_N = config.mma_shape[1]
     comptime MMA_K = config.mma_shape[2]
 
-    constrained[BK == 128, "Only support BK = 128"]()
-    constrained[
-        MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK,
+    __comptime_assert BK == 128, "Only support BK = 128"
+    __comptime_assert MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK, (
         "MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK. MMA_N="
         + String(MMA_N)
         + ", GCD="
-        + String(gcd(MMA_N, BK)),
-    ]()
+        + String(gcd(MMA_N, BK))
+    )
 
     comptime num_m_mmas = BM // (config.mma_shape[0] // config.cta_group)
     comptime num_n_mmas = BN // (config.mma_shape[1] // config.cta_group)
@@ -1988,7 +1978,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     b_scales_type: DType,
     a_offsets_type: DType,
     expert_ids_type: DType,
-    transpose_b: Bool, //,
+    transpose_b: Bool,
+    //,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -2004,28 +1995,23 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[config.cta_group == 1, "Only support cta_group == 1"]()
-    constrained[
+    __comptime_assert config.cta_group == 1, "Only support cta_group == 1"
+    __comptime_assert (
         config.cluster_shape[0] == 1
         and config.cluster_shape[1] == 1
-        and config.cluster_shape[2] == 1,
-        "Only support cluster_shape == (1, 1, 1). Got "
-        + String(config.cluster_shape),
-    ]()
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+        and config.cluster_shape[2] == 1
+    ), "Only support cluster_shape == (1, 1, 1). Got " + String(
+        config.cluster_shape
+    )
+    __comptime_assert transpose_b, "Only support transposed B"
 
-    constrained[
-        a_type == b_type and a_type is DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
+    __comptime_assert (
+        a_type == b_type and a_type is DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
 
-    constrained[
-        a_scales_type == b_scales_type,
-        "Only support float32 for scales",
-    ]()
+    __comptime_assert (
+        a_scales_type == b_scales_type
+    ), "Only support float32 for scales"
 
     if (a_scales.dim(1) * size_of[a_scales_type]()) % 16 != 0:
         raise Error(
@@ -2040,11 +2026,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[config.cta_group in (1, 2), "Only support cta_group == 2"]()
-    constrained[
-        (not config.AB_swapped),
-        "Swapped AB is not supported",
-    ]()
+    __comptime_assert config.cta_group in (1, 2), "Only support cta_group == 2"
+    __comptime_assert not config.AB_swapped, "Swapped AB is not supported"
 
     # var M = c.dim(0)
     # var N = c.dim(1)
@@ -2159,10 +2142,9 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         smem_leftover // producer_consumer_smem_per_stage
     )
 
-    constrained[
-        max_pipeline_stages >= 1,
-        "not enough smem even for one pipeline stage!",
-    ]()
+    __comptime_assert (
+        max_pipeline_stages >= 1
+    ), "not enough smem even for one pipeline stage!"
 
     comptime producer_consumer_smem = producer_consumer_smem_per_stage * Int(
         max_pipeline_stages
@@ -2252,7 +2234,8 @@ fn grouped_matmul_dynamic_scaled_fp8[
     a_scales_type: DType,
     b_scales_type: DType,
     a_offsets_type: DType,
-    expert_ids_type: DType, //,
+    expert_ids_type: DType,
+    //,
     input_scale_granularity: StaticString,
     weight_scale_granularity: StaticString,
     m_scale_granularity: Int,
@@ -2273,43 +2256,32 @@ fn grouped_matmul_dynamic_scaled_fp8[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        ctx.default_device_info is B200 or ctx.default_device_info is H100,
-        "Only support SM100 or SM90",
-    ]()
-    constrained[
+    __comptime_assert (
+        ctx.default_device_info is B200 or ctx.default_device_info is H100
+    ), "Only support SM100 or SM90"
+    __comptime_assert (
         m_scale_granularity == 1
-        and n_scale_granularity == k_scale_granularity == 128,
-        "Only support (1,128,128) scale granularity",
-    ]()
-    constrained[transpose_b, "Only support transpose_b = True"]()
-    constrained[
-        a_type == b_type == DType.float8_e4m3fn,
-        "input A and B dtype should be float8_e4m3fn",
-    ]()
-    constrained[
-        a_scales_type == b_scales_type == DType.float32,
-        "input A and B scales dtype should be float32",
-    ]()
-    constrained[
+        and n_scale_granularity == k_scale_granularity == 128
+    ), "Only support (1,128,128) scale granularity"
+    __comptime_assert transpose_b, "Only support transpose_b = True"
+    __comptime_assert (
+        a_type == b_type == DType.float8_e4m3fn
+    ), "input A and B dtype should be float8_e4m3fn"
+    __comptime_assert (
+        a_scales_type == b_scales_type == DType.float32
+    ), "input A and B scales dtype should be float32"
+    __comptime_assert (
         input_scale_granularity == "block"
-        and weight_scale_granularity == "block",
-        "Only support block-wise scale granularity",
-    ]()
-    constrained[
-        a_offsets_type == DType.uint32,
-        (
-            "Only uint32 is supported for a_offsets in grouped blockwise scaled"
-            " fp8 matmul"
-        ),
-    ]()
-    constrained[
-        expert_ids_type == DType.int32,
-        (
-            "Only int32 is supported for expert_ids in grouped blockwise scaled"
-            " fp8 matmul"
-        ),
-    ]()
+        and weight_scale_granularity == "block"
+    ), "Only support block-wise scale granularity"
+    __comptime_assert a_offsets_type == DType.uint32, (
+        "Only uint32 is supported for a_offsets in grouped blockwise scaled"
+        " fp8 matmul"
+    )
+    __comptime_assert expert_ids_type == DType.int32, (
+        "Only int32 is supported for expert_ids in grouped blockwise scaled"
+        " fp8 matmul"
+    )
 
     var a_tensor = from_ndbuffer_row_major(a)
     var b_tensor = from_ndbuffer_row_major(b)

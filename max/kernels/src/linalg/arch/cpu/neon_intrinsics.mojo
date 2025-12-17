@@ -27,8 +27,8 @@ fn _neon_dotprod[
     a: SIMD[a_type, width * 4],
     b: SIMD[b_type, width * 4],
 ) -> SIMD[c_type, width]:
-    constrained[c_type is DType.int32, "the type of C must be int32"]()
-    constrained[width == 4]()
+    __comptime_assert c_type is DType.int32, "the type of C must be int32"
+    __comptime_assert width == 4
 
     @parameter
     @always_inline
@@ -57,11 +57,11 @@ fn _neon_dotprod_lane[
     a: SIMD[a_type, width * 4],
     b: SIMD[b_type, b_width],
 ) -> SIMD[c_type, width]:
-    constrained[
-        b_type is DType.int8 or b_type is DType.uint8, "unsupported B type"
-    ]()
-    constrained[4 <= b_width <= 16, "unsupported B width"]()
-    constrained[0 <= lane < (b_width // 4), "invalid lane index"]()
+    __comptime_assert (
+        b_type is DType.int8 or b_type is DType.uint8
+    ), "unsupported B type"
+    __comptime_assert 4 <= b_width <= 16, "unsupported B width"
+    __comptime_assert 0 <= lane < (b_width // 4), "invalid lane index"
 
     # Helper to generate `sdot r, a, b[lane]` instruction form.
     var tuple = bitcast[DType.int32, b_width // 4](b)[lane]
@@ -81,8 +81,8 @@ fn _neon_matmul[
     a: SIMD[a_type, width * 4],
     b: SIMD[b_type, width * 4],
 ) -> SIMD[c_type, width]:
-    constrained[c_type is DType.int32, "the type of C must be int32"]()
-    constrained[width == 4]()
+    __comptime_assert c_type is DType.int32, "the type of C must be int32"
+    __comptime_assert width == 4
 
     @parameter
     @always_inline

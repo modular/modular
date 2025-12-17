@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Implements the testing package."""
+"""Unit testing: Assertions (equal, true, raises) and test suites."""
 
 from .testing import (
     assert_almost_equal,

@@ -30,7 +30,7 @@ fn vpdpwssd[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    constrained[c_type is DType.int32, "the type of C must be int32"]()
+    __comptime_assert c_type is DType.int32, "the type of C must be int32"
 
     @parameter
     if width == 16:
@@ -42,7 +42,7 @@ fn vpdpwssd[
             "llvm.x86.avx512.vpdpwssd.256", SIMD[c_type, width]
         ](src, a, b)
     else:
-        constrained[width == 4]()
+        __comptime_assert width == 4
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpwssd.128", SIMD[c_type, width]
         ](src, a, b)
@@ -58,7 +58,7 @@ fn vpdpwssds[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    constrained[c_type is DType.int32, "the type of C must be int32"]()
+    __comptime_assert c_type is DType.int32, "the type of C must be int32"
 
     @parameter
     if width == 16:
@@ -70,7 +70,7 @@ fn vpdpwssds[
             "llvm.x86.avx512.vpdpwssds.256", SIMD[c_type, width]
         ](src, a, b)
     else:
-        constrained[width == 4]()
+        __comptime_assert width == 4
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpwssds.128", SIMD[c_type, width]
         ](src, a, b)
@@ -86,7 +86,7 @@ fn vpdpbusd[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    constrained[c_type is DType.int32, "the type of C must be int32"]()
+    __comptime_assert c_type is DType.int32, "the type of C must be int32"
 
     @parameter
     if width == 16:
@@ -106,7 +106,7 @@ fn vpdpbusd[
             bitcast[DType.uint8, width * 4](b),
         )
     else:
-        constrained[width == 4]()
+        __comptime_assert width == 4
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusd.128", SIMD[c_type, width]
         ](
@@ -126,7 +126,7 @@ fn vpdpbusds[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    constrained[c_type is DType.int32, "the type of C must be int32"]()
+    __comptime_assert c_type is DType.int32, "the type of C must be int32"
 
     @parameter
     if width == 16:
@@ -146,7 +146,7 @@ fn vpdpbusds[
             bitcast[DType.uint8, width * 4](b),
         )
     else:
-        constrained[width == 4]()
+        __comptime_assert width == 4
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusds.128", SIMD[c_type, width]
         ](
@@ -265,7 +265,7 @@ fn pmaddubs[
             )
         )
     else:
-        constrained[width == 4]()
+        __comptime_assert width == 4
         return rebind[SIMD[DType.int32, width]](
             bitcast[DType.int32, 4](
                 llvm_intrinsic[
@@ -307,7 +307,7 @@ fn pmaddw[
             )
         )
     else:
-        constrained[width == 4]()
+        __comptime_assert width == 4
         return rebind[SIMD[DType.int32, width]](
             bitcast[DType.int32, 16](
                 llvm_intrinsic[
@@ -404,7 +404,7 @@ fn dot_i8_to_i32_AVX2[
             )
         )
     else:
-        constrained[width == 4]()
+        __comptime_assert width == 4
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_4(
                 rebind[SIMD[DType.int32, 4]](src),
@@ -460,7 +460,7 @@ fn dot_i8_to_i32_saturated_AVX2[
             )
         )
     else:
-        constrained[width == 4]()
+        __comptime_assert width == 4
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_saturated_4(
                 rebind[SIMD[DType.int32, 4]](src),
@@ -581,7 +581,7 @@ fn dot_i16_to_i32_AVX2[
             bitcast[DType.int16, 16](rebind[SIMD[DType.int32, 8]](b)),
         )
     else:
-        constrained[width == 4]()
+        __comptime_assert width == 4
         t = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[c_type, width]](
             bitcast[DType.int16, 8](rebind[SIMD[DType.int32, 4]](a)),
             bitcast[DType.int16, 8](rebind[SIMD[DType.int32, 4]](b)),

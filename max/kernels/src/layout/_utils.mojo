@@ -72,14 +72,13 @@ struct ManagedLayoutTensor[
     ) raises:
         self.ctx = DeviceContext(api="cpu")
 
-        constrained[
-            runtime_layout.linear_idx_type == Self.index_type,
-            "Mismatch of index type for RuntimeLayout: ",
-            String(runtime_layout.linear_idx_type),
-            " and LayoutTensor: ",
-            String(Self.index_type),
-            ".",
-        ]()
+        __comptime_assert runtime_layout.linear_idx_type == Self.index_type, (
+            "Mismatch of index type for RuntimeLayout: "
+            + String(runtime_layout.linear_idx_type)
+            + " and LayoutTensor: "
+            + String(Self.index_type)
+            + "."
+        )
 
         self.runtime_layout = rebind[type_of(self.runtime_layout)](
             runtime_layout
@@ -108,25 +107,23 @@ struct ManagedLayoutTensor[
         runtime_layout: RuntimeLayout[Self.layout, **_],
         ctx: DeviceContext,
     ) raises:
-        constrained[
-            runtime_layout.element_type == Self.element_type,
-            String(
-                "Mismatch of element type for RuntimeLayout:",
-                runtime_layout.element_type,
-                "and LayoutTensor:",
-                Self.element_type,
-                ".",
-                sep=" ",
-            ),
-        ]()
+        __comptime_assert (
+            runtime_layout.element_type == Self.element_type
+        ), String(
+            "Mismatch of element type for RuntimeLayout:",
+            runtime_layout.element_type,
+            "and LayoutTensor:",
+            Self.element_type,
+            ".",
+            sep=" ",
+        )
 
-        constrained[
-            runtime_layout.linear_idx_type == Self.index_type,
-            "Mismatch of index type for RuntimeLayout: ",
-            String(runtime_layout.linear_idx_type),
-            " and LayoutTensor: ",
-            String(Self.index_type),
-        ]()
+        __comptime_assert runtime_layout.linear_idx_type == Self.index_type, (
+            "Mismatch of index type for RuntimeLayout: "
+            + String(runtime_layout.linear_idx_type)
+            + " and LayoutTensor: "
+            + String(Self.index_type)
+        )
 
         self.ctx = ctx
 
@@ -233,10 +230,9 @@ fn load_to_simd(
     tensor: LayoutTensor,
     out res: SIMD[tensor.dtype, product(tensor.layout.shape)],
 ):
-    constrained[
-        tensor.layout.all_dims_known(),
-        "load_to_simd is supported only for tensors with known layout",
-    ]()
+    __comptime_assert (
+        tensor.layout.all_dims_known()
+    ), "load_to_simd is supported only for tensors with known layout"
     comptime size = type_of(res).size
     return rebind[type_of(res)](
         tensor.reshape[Layout(size)]().vectorize[size]()[0]
@@ -245,13 +241,12 @@ fn load_to_simd(
 
 @always_inline
 fn _get_bounds(tensor: LayoutTensor) -> Int:
-    constrained[
-        tensor.element_layout.all_dims_known(),
-        "Element layout must be known for _get_bounds",
-    ]()
-    constrained[
-        tensor.element_layout.size() == 1, "Element layout must be a scalar"
-    ]()
+    __comptime_assert (
+        tensor.element_layout.all_dims_known()
+    ), "Element layout must be known for _get_bounds"
+    __comptime_assert (
+        tensor.element_layout.size() == 1
+    ), "Element layout must be a scalar"
 
     if tensor.dim[0]() == 0 or tensor.dim[1]() == 0:
         return 0
@@ -287,7 +282,9 @@ fn make_amd_buffer_resource(
 
 @always_inline
 fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
-    constrained[layout.all_dims_known(), "Layout must be known for idx2crd"]()
+    __comptime_assert (
+        layout.all_dims_known()
+    ), "Layout must be known for idx2crd"
     var res = IndexList[layout.rank()]()
 
     @parameter
@@ -301,9 +298,9 @@ fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
 @always_inline
 fn hash(tensor: LayoutTensor) -> Int:
     # Calculate hash of the content of the layout tensor, it can be useful for debugging
-    constrained[
-        size_of[tensor.dtype]() == 2, "Only support 2 byte types for hash"
-    ]()
+    __comptime_assert (
+        size_of[tensor.dtype]() == 2
+    ), "Only support 2 byte types for hash"
     var hash_value: Int = 0
     comptime size = tensor.layout.size()
 

@@ -161,7 +161,8 @@ struct KVBufferImpl[
     origin: Origin,
     masked: Bool,
     layout_int_type: DType,
-    linear_idx_type: DType, //,
+    linear_idx_type: DType,
+    //,
     config: KVBufferConfig,
     tensor_core_mma: TiledTensorCore,
     swizzle: OptionalReg[Swizzle],
@@ -303,10 +304,7 @@ struct KVBufferImpl[
             address_space = AddressSpace.SHARED, **_,
         ],
     ):
-        # constrained[
-        #     mma_shape[2] * k_group_size == 16,
-        #     "mma_shape[2] * k_group_size must be 16",
-        # ]()
+        # __comptime_assert
         self.load_tile = type_of(self.load_tile).stack_allocation()
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
         self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
@@ -434,7 +432,8 @@ struct VBufferTransposeLoads[
     origin: Origin,
     masked: Bool,
     layout_int_type: DType,
-    linear_idx_type: DType, //,
+    linear_idx_type: DType,
+    //,
     tensor_core_mma: TiledTensorCore,
     BN: Int,
     BK: Int,
@@ -567,14 +566,15 @@ struct VBufferTransposeLoads[
             address_space = AddressSpace.SHARED, **_,
         ],
     ):
-        constrained[
-            Self.depth in (64, 128, 256), "depth must be 64, 128, or 256"
-        ]()
-        constrained[
+        __comptime_assert Self.depth in (
+            64,
+            128,
+            256,
+        ), "depth must be 64, 128, or 256"
+        __comptime_assert (
             Self.tensor_core_mma.shape[2] * Self.tensor_core_mma.group_size
-            == 16,
-            "tensor_core_mma.shape[2] * tensor_core_mma.group_size must be 16",
-        ]()
+            == 16
+        ), "tensor_core_mma.shape[2] * tensor_core_mma.group_size must be 16"
 
         self.global_base_tile = global_tile
         self.global_iterator = global_tile.tiled_iterator[
@@ -603,10 +603,9 @@ struct VBufferTransposeLoads[
         var global_tile = self.global_iterator[]
         var warp_id = get_warp_id()
 
-        constrained[
-            Self.loads_per_thread_per_depth_tile == 2,
-            "loads_per_thread_per_depth_tile must be 2",
-        ]()
+        __comptime_assert (
+            Self.loads_per_thread_per_depth_tile == 2
+        ), "loads_per_thread_per_depth_tile must be 2"
         var load_tile = self.load_tile.split[Self.num_stages]()[
             self.current_stage
         ]
@@ -996,19 +995,17 @@ struct PRegisterBuffer[
 
             @parameter
             if Self.mma_shape[0] == 32:
-                constrained[
-                    Self.output_frag_size == 16,
-                    "output_frag_size must be 16 for 32x32 mma shape",
-                ]()
+                __comptime_assert (
+                    Self.output_frag_size == 16
+                ), "output_frag_size must be 16 for 32x32 mma shape"
 
                 @parameter
                 for j in range(Self.output_frag_size):
                     out[0, j] = reg_tile[tile_idx, j].cast[Self.mma_dtype]()
             elif Self.mma_shape[0] == 16:
-                constrained[
-                    Self.output_frag_size == 4,
-                    "output_frag_size must be 4 for 16x16 mma shape",
-                ]()
+                __comptime_assert (
+                    Self.output_frag_size == 4
+                ), "output_frag_size must be 4 for 16x16 mma shape"
 
                 var mma_reg_tile = Self.MMATileType.stack_allocation()
                 var reg_tile_split = reg_tile.split[Self.num_n_mmas // 2]()[
@@ -1128,10 +1125,9 @@ struct PRegisterBuffer[
         comptime num_n_mmas_per_bk = Self.num_n_mmas // (Self.WN // Self.BK)
 
         # for the following indexing logic, WN must be equal to BN or BK
-        constrained[
-            Self.WN == Self.BK or Self.WN == Self.BN,
-            "WN must be equal to BN or BK",
-        ]()
+        __comptime_assert (
+            Self.WN == Self.BK or Self.WN == Self.BN
+        ), "WN must be equal to BN or BK"
 
         var p_reg_vectorized = self.vectorize()
 

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Helpers and types for core input and output functionality."""
+"""Core I/O operations: console input/output, file handling, writing traits."""
 
 from .file import FileHandle
 from .file_descriptor import FileDescriptor

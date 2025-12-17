@@ -197,7 +197,8 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable):
 
     fn unsafe_ptr[
         mut: Bool,
-        origin: Origin[mut], //,
+        origin: Origin[mut],
+        //,
     ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
         """Retrieves a pointer to the underlying memory.
 

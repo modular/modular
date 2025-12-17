@@ -91,8 +91,8 @@ fn allreduce_test[
     comptime num_iters = 100
     comptime num_buffers = 1 if use_multimem else ngpus
 
-    constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
-    constrained[rank == 1, "this test code currently assumes rank 1"]()
+    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    __comptime_assert rank == 1, "this test code currently assumes rank 1"
 
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)

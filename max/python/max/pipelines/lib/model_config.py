@@ -362,16 +362,9 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @property
     def huggingface_config(self) -> AutoConfig:
-        # TODO: This is a hack to get around the fact that in serving and the
-        # way we instantiate multiprocess model workers, pickling AutoConfig will
-        # not work and AutoConfig.from_pretrained will need to be called again
-        # when trust_remote_code=True.
-        if self.trust_remote_code:
-            return AutoConfig.from_pretrained(
-                self.huggingface_model_repo.repo_id,
-                trust_remote_code=self.huggingface_model_repo.trust_remote_code,
-                revision=self.huggingface_model_repo.revision,
-            )
+        # Note: For multiprocessing, __getstate__ clears _huggingface_config
+        # before pickling. Each worker process will reload the config fresh,
+        # which properly handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
             self._huggingface_config = (
                 PIPELINE_REGISTRY.get_active_huggingface_config(

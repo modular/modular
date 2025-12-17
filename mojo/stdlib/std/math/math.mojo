@@ -3211,7 +3211,8 @@ fn clamp[
 @always_inline("nodebug")
 fn _llvm_unary_fn[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     fn_name: StaticString,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return llvm_intrinsic[fn_name, type_of(x), has_side_effect=False](x)
@@ -3220,7 +3221,8 @@ fn _llvm_unary_fn[
 @always_inline("nodebug")
 fn _call_libm[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     func_name: StaticString,
 ](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
     __comptime_assert (
@@ -3246,7 +3248,8 @@ fn _call_libm[
 
 
 fn _call_ptx_intrinsic_scalar[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     instruction: StaticString,
     constraints: StaticString,
@@ -3260,7 +3263,8 @@ fn _call_ptx_intrinsic_scalar[
 
 
 fn _call_ptx_intrinsic_scalar[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     instruction: StaticString,
     constraints: StaticString,
@@ -3275,7 +3279,8 @@ fn _call_ptx_intrinsic_scalar[
 
 fn _call_ptx_intrinsic[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     *,
     instruction: StaticString,
     constraints: StaticString,
@@ -3298,7 +3303,8 @@ fn _call_ptx_intrinsic[
 
 fn _call_ptx_intrinsic[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     *,
     scalar_instruction: StaticString,
     vector2_instruction: StaticString,
@@ -3329,7 +3335,8 @@ fn _call_ptx_intrinsic[
 
 fn _call_ptx_intrinsic[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     *,
     scalar_instruction: StaticString,
     vector2_instruction: StaticString,

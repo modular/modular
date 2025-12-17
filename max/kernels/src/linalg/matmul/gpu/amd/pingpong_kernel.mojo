@@ -208,7 +208,8 @@ struct TileLoaderLDS[
 
     @always_inline
     fn load_tile[
-        dst_layout: Layout, //,
+        dst_layout: Layout,
+        //,
     ](
         self,
         dst: SMemTileType[Self.dtype, dst_layout, **_],
@@ -252,7 +253,8 @@ struct TileLoaderLDS[
 
 @always_inline
 fn _load_from_lds[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     width: Int = 1,
 ](
     shared_ptr: UnsafePointer[
@@ -350,7 +352,8 @@ fn load_lds_fragment[
     smem_layout: Layout,
     smem_element_layout: Layout,
     frag_layout: Layout,
-    frag_element_layout: Layout, //,
+    frag_element_layout: Layout,
+    //,
     mma_access_layout: Layout,
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
 ](
@@ -785,7 +788,8 @@ struct MmaOp[
 struct TileBuffers[
     in_type: DType,
     a_layout: Layout,
-    b_layout: Layout, //,
+    b_layout: Layout,
+    //,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -1069,7 +1073,8 @@ struct TileBuffers[
 
     @always_inline
     fn _load_tile_4warp[
-        half_data_rows: Int, //,
+        half_data_rows: Int,
+        //,
         which: Int,
     ](
         self,
@@ -2053,7 +2058,8 @@ fn ping_pong_matmul[
     c_type: DType,
     a_layout: Layout,
     b_layout: Layout,
-    c_layout: Layout, //,
+    c_layout: Layout,
+    //,
     enable_swizzle: Bool = True,
 ](
     a_device_tensor: LayoutTensor[a_type, a_layout],

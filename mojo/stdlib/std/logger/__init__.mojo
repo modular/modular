@@ -10,5 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides logging functionality with different severity levels."""
+"""Logging with configurable severity levels."""
+
 from .logger import Level, Logger

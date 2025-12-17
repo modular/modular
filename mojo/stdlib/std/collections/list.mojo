@@ -37,7 +37,8 @@ from .optional import Optional
 
 @fieldwise_init
 struct _ListIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     T: Copyable,
     origin: Origin[mut],
     forward: Bool = True,

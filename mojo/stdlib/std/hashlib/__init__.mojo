@@ -10,6 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the hashlib package that provides various hash algorithms."""
+"""Cryptographic and non-cryptographic hashing with customizable algorithms."""
 from .hash import Hashable, hash
 from .hasher import Hasher, default_comp_time_hasher, default_hasher

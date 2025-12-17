@@ -112,7 +112,8 @@ fn roi_align_nhwc[
     dtype: DType,
     output_layout: Layout,
     input_layout: Layout,
-    roi_layout: Layout, //,
+    roi_layout: Layout,
+    //,
     aligned: Bool,
     mode: StaticString = "AVG",
 ](
@@ -148,20 +149,17 @@ fn roi_align_nhwc[
         in_sampling_ratio: Number of sampling points in the interpolation grid
           used to compute the output value of each pooled bin.
     """
-    constrained[
-        output.rank == 4 and input.rank == 4,
-        "expect rank 4 tensors for input and output",
-    ]()
-    constrained[rois.rank == 2, "rois must be of rank 2"]()
+    __comptime_assert (
+        output.rank == 4 and input.rank == 4
+    ), "expect rank 4 tensors for input and output"
+    __comptime_assert rois.rank == 2, "rois must be of rank 2"
 
-    constrained[
-        dtype.is_floating_point(),
-        "ROI align input / output must be a floating point",
-    ]()
-    constrained[
-        in_spatial_scale.dtype.is_floating_point(),
-        "the scale factor must be in floating point format",
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "ROI align input / output must be a floating point"
+    __comptime_assert (
+        in_spatial_scale.dtype.is_floating_point()
+    ), "the scale factor must be in floating point format"
 
     debug_assert(mode == "AVG" or mode == "MAX", "mode must be AVG or MAX")
 

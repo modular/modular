@@ -273,7 +273,6 @@ def generate_max_outputs_fp8(
         v_head_dim=config.v_head_dim,
         devices=[DeviceRef.GPU()],
         buffer_size=prefill_buffer_size,
-        graph_mode="prefill",  # Must use prefill
     )
     latent_attention.load_state_dict(quantized_weights, strict=True)
 
@@ -410,7 +409,6 @@ def test_latent_attention_decode(
     max_output = generate_max_outputs_fp8(
         config, input_tensor, attention_weights, use_prefill=False
     )
-    # TODO: Fix correctness of the MLA FP8 layer.
     torch_output = generate_torch_outputs(
         config, input_tensor, attention_mask, attention_weights
     )

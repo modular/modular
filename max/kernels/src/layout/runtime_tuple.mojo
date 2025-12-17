@@ -132,15 +132,12 @@ struct RuntimeTuple[
             values: `IndexList` to initialize from. Must have same length as the `RuntimeTuple`.
                     The values will be cast to the appropriate element type if needed.
         """
-        constrained[
-            Self.scalar_length == l,
-            String(
-                "Must use same tuple length, expected ",
-                Self.scalar_length,
-                " but got ",
-                l,
-            ),
-        ]()
+        __comptime_assert Self.scalar_length == l, String(
+            "Must use same tuple length, expected ",
+            Self.scalar_length,
+            " but got ",
+            l,
+        )
         self.value = rebind[type_of(self.value)](
             values.cast[type_of(values).element_type]()
         )
@@ -370,7 +367,7 @@ struct RuntimeTuple[
         Returns:
             The integer value of the tuple.
         """
-        constrained[Self.S.is_value(), "tuple must be a single int value"]()
+        __comptime_assert Self.S.is_value(), "tuple must be a single int value"
         return self.value[0]
 
 
@@ -498,7 +495,7 @@ fn idx2crd[
         The index must be a scalar value (not a tuple).
     """
 
-    constrained[idx_t.is_value(), "Only scalar index is supported"]()
+    __comptime_assert idx_t.is_value(), "Only scalar index is supported"
 
     result = {}
 
@@ -572,18 +569,16 @@ fn crd2idx[
 
     @parameter
     if crd_t.is_tuple():
-        constrained[
-            shape_t.is_tuple()
-            and (len(crd_t) == len(shape_t) == len(stride_t)),
-            String(
-                "Inputs should have same rank but got crd_t: ",
-                len(crd_t),
-                " shape_t: ",
-                len(shape_t),
-                " stride_t: ",
-                len(stride_t),
-            ),
-        ]()
+        __comptime_assert shape_t.is_tuple() and (
+            len(crd_t) == len(shape_t) == len(stride_t)
+        ), String(
+            "Inputs should have same rank but got crd_t: ",
+            len(crd_t),
+            " shape_t: ",
+            len(shape_t),
+            " stride_t: ",
+            len(stride_t),
+        )
         var r: Scalar[out_type] = 0
         comptime size = min(min(len(crd_t), len(shape_t)), len(stride_t))
 
@@ -596,10 +591,9 @@ fn crd2idx[
 
         @parameter
         if shape_t.is_tuple():  # "int" tuple tuple
-            constrained[
-                len(shape_t) == len(stride_t),
-                "shape and stride should have same rank",
-            ]()
+            __comptime_assert len(shape_t) == len(
+                stride_t
+            ), "shape and stride should have same rank"
             var result: Scalar[out_type] = 0
 
             comptime last_elem_idx = len(shape_t) - 1
@@ -676,9 +670,9 @@ fn shape_div[
 
         @parameter
         if b_t.is_tuple():
-            constrained[
-                len(a_t) == len(b_t), "shape and stride length musth match"
-            ]()
+            __comptime_assert len(a_t) == len(
+                b_t
+            ), "shape and stride length musth match"
             var res = RuntimeTuple[shape_div_int_tuple(a_t, b_t)]()
 
             @parameter
@@ -795,7 +789,7 @@ fn coalesce_nested_tuple[
             var slice = tuple[i]
             var product = 1
 
-            constrained[slice.scalar_length > 0, "Slice is empty"]()
+            __comptime_assert slice.scalar_length > 0, "Slice is empty"
 
             @parameter
             for j in range(slice.scalar_length):

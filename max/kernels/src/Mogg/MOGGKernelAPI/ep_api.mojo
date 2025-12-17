@@ -97,7 +97,8 @@ struct Struct_ep_init:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         dispatch_scale_granularity: StaticString,
-        dispatch_scale_dtype: DType, //,
+        dispatch_scale_dtype: DType,
+        //,
         target: StaticString,
     ](
         dev_ptrs: OutputTensor[dtype = DType.uint64, rank=2],
@@ -131,7 +132,7 @@ struct Struct_ep_init:
             context: GPU device context
         """
         # Ensure this kernel only runs on GPU targets
-        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
         var gpu_ctx = context.get_device_context()
 
         comptime gpu_target = get_gpu_target()
@@ -253,7 +254,8 @@ struct Struct_ep_dispatch:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
-        n_nodes: Int, //,
+        n_nodes: Int,
+        //,
         target: StaticString,
     ](
         atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
@@ -292,20 +294,18 @@ struct Struct_ep_dispatch:
             context: Device context pointer
         """
         # Ensure this kernel only runs on GPU targets
-        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
         var input_tokens_tensor = input_tokens.to_layout_tensor()
         var topk_ids_tensor = topk_ids.to_layout_tensor()
 
         # Ensure the shape for the input tensors are correct
-        constrained[
-            input_tokens_tensor.shape[1]() == hidden_size,
-            "EP dispatch: input tokens shape doesn't match hidden size.",
-        ]()
-        constrained[
-            topk_ids_tensor.shape[1]() == top_k,
-            "EP dispatch: topk ids shape doesn't match top k.",
-        ]()
+        __comptime_assert (
+            input_tokens_tensor.shape[1]() == hidden_size
+        ), "EP dispatch: input tokens shape doesn't match hidden size."
+        __comptime_assert (
+            topk_ids_tensor.shape[1]() == top_k
+        ), "EP dispatch: topk ids shape doesn't match top k."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -406,7 +406,8 @@ struct Struct_ep_dispatch_cb:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
-        n_nodes: Int, //,
+        n_nodes: Int,
+        //,
         target: StaticString,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
@@ -450,7 +451,7 @@ struct Struct_ep_dispatch_cb:
             context: Device context pointer
         """
         # Ensure this kernel only runs on GPU targets
-        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
         var output_tokens_tensor = output_tokens.to_layout_tensor()
         var row_offsets_tensor = row_offsets.to_layout_tensor()
@@ -458,10 +459,9 @@ struct Struct_ep_dispatch_cb:
         var src_info_tensor = src_info.to_layout_tensor()
 
         # Ensure the shape for the input tensors are correct
-        constrained[
-            output_tokens_tensor.shape[1]() == hidden_size,
-            "EP dispatch_cb: output tokens shape doesn't match hidden size.",
-        ]()
+        __comptime_assert (
+            output_tokens_tensor.shape[1]() == hidden_size
+        ), "EP dispatch_cb: output tokens shape doesn't match hidden size."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -477,7 +477,7 @@ struct Struct_ep_dispatch_cb:
 
         comptime n_ranks = n_gpus_per_node * n_nodes
 
-        constrained[dispatch_dtype == DType.bfloat16]()
+        __comptime_assert dispatch_dtype == DType.bfloat16
         var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
             output_tokens_tensor.bitcast[DType.bfloat16]()
         )
@@ -572,7 +572,8 @@ struct Struct_ep_dispatch_fp8:
         n_gpus_per_node: Int,
         n_nodes: Int,
         dispatch_scale_granularity: StaticString,
-        dispatch_scale_dtype: DType, //,
+        dispatch_scale_dtype: DType,
+        //,
         target: StaticString,
     ](
         atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
@@ -614,24 +615,21 @@ struct Struct_ep_dispatch_fp8:
             context: Device context pointer
         """
         # Ensure this kernel only runs on GPU targets
-        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
         var input_tokens_tensor = input_tokens.to_layout_tensor()
         var topk_ids_tensor = topk_ids.to_layout_tensor()
 
         # Ensure the shape for the input tensors are correct
-        constrained[
-            input_tokens_tensor.shape[1]() == hidden_size,
-            "EP dispatch: input tokens shape doesn't match hidden size.",
-        ]()
-        constrained[
-            topk_ids_tensor.shape[1]() == top_k,
-            "EP dispatch: topk ids shape doesn't match top k.",
-        ]()
-        constrained[
-            dispatch_scale_granularity == "block",
-            "EP dispatch.fp8: dispatch scale granularity must be block.",
-        ]()
+        __comptime_assert (
+            input_tokens_tensor.shape[1]() == hidden_size
+        ), "EP dispatch: input tokens shape doesn't match hidden size."
+        __comptime_assert (
+            topk_ids_tensor.shape[1]() == top_k
+        ), "EP dispatch: topk ids shape doesn't match top k."
+        __comptime_assert (
+            dispatch_scale_granularity == "block"
+        ), "EP dispatch.fp8: dispatch scale granularity must be block."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -743,7 +741,8 @@ struct Struct_ep_dispatch_cb_fp8:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         n_nodes: Int,
-        dispatch_scale_granularity: StaticString, //,
+        dispatch_scale_granularity: StaticString,
+        //,
         target: StaticString,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
@@ -791,11 +790,10 @@ struct Struct_ep_dispatch_cb_fp8:
             context: Device context pointer
         """
         # Ensure this kernel only runs on GPU targets
-        constrained[is_gpu[target](), "EP is only supported on GPU."]()
-        constrained[
-            dispatch_scale_granularity == "block",
-            "dispatch scale granularity must be block.",
-        ]()
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        __comptime_assert (
+            dispatch_scale_granularity == "block"
+        ), "dispatch scale granularity must be block."
 
         var output_tokens_tensor = output_tokens.to_layout_tensor()
         var output_scales_tensor = output_scales.to_layout_tensor()
@@ -804,10 +802,9 @@ struct Struct_ep_dispatch_cb_fp8:
         var src_info_tensor = src_info.to_layout_tensor()
 
         # Ensure the shape for the input tensors are correct
-        constrained[
-            output_tokens_tensor.shape[1]() == hidden_size,
-            "EP dispatch_cb: output tokens shape doesn't match hidden size.",
-        ]()
+        __comptime_assert (
+            output_tokens_tensor.shape[1]() == hidden_size
+        ), "EP dispatch_cb: output tokens shape doesn't match hidden size."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -926,7 +923,8 @@ struct Struct_ep_combine:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
-        n_nodes: Int, //,
+        n_nodes: Int,
+        //,
         target: StaticString,
     ](
         atomic_counters_1: MutableInputTensor[dtype = DType.int32, rank=1],
@@ -965,16 +963,15 @@ struct Struct_ep_combine:
             context: Device context pointer.
         """
         # Ensure this kernel only runs on GPU targets
-        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
         var input_tokens_tensor = input_tokens.to_layout_tensor()
         var src_info_tensor = src_info.to_layout_tensor()
 
         # Ensure the shape for the input tensors are correct
-        constrained[
-            input_tokens_tensor.shape[1]() == hidden_size,
-            "EP combine: input tokens shape doesn't match hidden size.",
-        ]()
+        __comptime_assert (
+            input_tokens_tensor.shape[1]() == hidden_size
+        ), "EP combine: input tokens shape doesn't match hidden size."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -1066,7 +1063,8 @@ struct Struct_ep_combine_cb:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
-        n_nodes: Int, //,
+        n_nodes: Int,
+        //,
         target: StaticString,
     ](
         output_tokens: OutputTensor[dtype=combine_dtype, rank=3],
@@ -1100,15 +1098,14 @@ struct Struct_ep_combine_cb:
             context: Device context pointer.
         """
         # Ensure this kernel only runs on GPU targets
-        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
         var output_tokens_tensor = output_tokens.to_layout_tensor()
 
         # Ensure the shape for the output tensor is correct
-        constrained[
-            output_tokens_tensor.shape[2]() == hidden_size,
-            "EP combine: output tokens shape doesn't match hidden size.",
-        ]()
+        __comptime_assert (
+            output_tokens_tensor.shape[2]() == hidden_size
+        ), "EP combine: output tokens shape doesn't match hidden size."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -1193,7 +1190,8 @@ struct Struct_ep_fused_silu:
     @staticmethod
     fn execute[
         output_dtype: DType,
-        input_dtype: DType, //,
+        input_dtype: DType,
+        //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_dtype, rank=2],
@@ -1213,7 +1211,7 @@ struct Struct_ep_fused_silu:
         operation on the received tokens.
         """
         # Ensure this kernel only runs on GPU targets
-        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
         var output_tensor = output.to_layout_tensor()
         var input_tensor = input.to_layout_tensor().get_immutable()
@@ -1286,7 +1284,7 @@ struct Struct_ep_fused_silu_fp8:
         will be stored in a transposed way.
         """
         # Ensure this kernel only runs on GPU targets
-        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
         comptime group_size = 128
 

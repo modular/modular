@@ -42,7 +42,7 @@ from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
 )
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
-from max.support.image import find_contiguous_ranges
+from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
 
@@ -141,10 +141,9 @@ def qwen3vl_image_preprocessing(
         max_pixels=max_pixels,
     )
 
-    # This resize might be causing some accuracy issues because of BICUBIC interpolation.
     if resized_height != height or resized_width != width:
         image = image.resize(
-            (resized_width, resized_height), Image.Resampling.BICUBIC
+            (resized_width, resized_height), resample=Image.Resampling.BICUBIC
         )
         height, width = resized_height, resized_width
 
@@ -153,12 +152,11 @@ def qwen3vl_image_preprocessing(
 
     img_array = np.array(image, dtype=np.float32)
 
-    # Rescale to [0, 1] using the same rescale_factor as transformers (1/255)
-    img_array = img_array / 255.0
-
     # Qwen3VL uses mean=0.5, std=0.5 for normalization to [-1, 1] range
+    # Also, Rescale to [0, 1] using the same rescale_factor as transformers (1/255)
+    # img_array = img_array / 255.0
     # This is equivalent to: (x - 0.5) / 0.5 = 2*x - 1
-    img_array = img_array * 2.0 - 1.0
+    img_array = (img_array - (0.5 * 255.0)) / (0.5 * 255.0)
 
     patches = np.array([img_array])  # Shape: (n_images, height, width, 3)
     patches = patches.transpose(
@@ -388,6 +386,12 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                     self._default_eos_token_ids.add(eos_token_id)
                 elif isinstance(eos_token_id, list):
                     self._default_eos_token_ids.update(eos_token_id)
+
+            self.enable_prefix_caching = (
+                pipeline_config.model_config.kv_cache_config.enable_prefix_caching
+                if pipeline_config
+                else False
+            )
 
             if image_token_id := getattr(
                 pipeline_config.model_config.huggingface_config,
@@ -718,6 +722,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
+                    image_hash=hash_image(pixel_values)
+                    if self.enable_prefix_caching
+                    else None,
                 )
                 for (start_idx, end_idx), pixel_values in zip(
                     start_and_end_idxs, pixel_values_list, strict=True

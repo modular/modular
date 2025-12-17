@@ -294,7 +294,8 @@ struct InlineArray[
 
     @always_inline
     fn __init__[
-        origin: MutOrigin, //,
+        origin: MutOrigin,
+        //,
     ](
         out self,
         *,

@@ -104,10 +104,9 @@ fn test[
     rtol: Float64 = 1e-3 if dtype is DType.float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
-    constrained[
-        Bool(N) and Bool(K),
-        "This test currently requires static N and K.",
-    ]()
+    __comptime_assert Bool(N) and Bool(
+        K
+    ), "This test currently requires static N and K."
 
     print(m, "x", n, "x", k)
 

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the tempfile package."""
+"""Manage temporary files and directories: create, locate, and cleanup."""
 
 from .tempfile import (
     NamedTemporaryFile,

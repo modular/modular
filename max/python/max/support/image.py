@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from max._core import xxhash
 
 
 def find_contiguous_ranges(
@@ -52,3 +53,17 @@ def find_contiguous_ranges(
     ends = ends.tolist()
 
     return list(zip(starts, ends, strict=True))
+
+
+def hash_image(pixel_values: npt.NDArray[Any]) -> int:
+    """Compute the hash of an image.
+
+    Supports any numpy array dtype (float32, uint16 for bfloat16 bits, etc.)
+    since vision models may use different storage formats on CPU.
+
+    Uses xxhash for fast hashing. Ensures C-contiguous memory layout for
+    correct hashing (np.ascontiguousarray is a no-op if already contiguous).
+    """
+    hash_val = xxhash.xxh3_64_intdigest(np.ascontiguousarray(pixel_values).data)  # type: ignore[arg-type]
+    # xxh3_64_intdigest returns unsigned 64-bit int; convert to signed for numpy compatibility
+    return int(np.uint64(hash_val).astype(np.int64))

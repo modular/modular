@@ -14,9 +14,9 @@
 from pathlib import Path
 
 import torch
-from generate_llm_logits import generate_llm_logits
 from max.driver.tensor import load_max_tensor
 from max.entrypoints.cli import DevicesOptionType
+from max.tests.integration.tools.debug_model import debug_model
 
 
 def load_intermediate_tensors(
@@ -39,16 +39,12 @@ def load_intermediate_tensors(
         Dict keyed by emitted file name (str) with loaded torch.Tensor values.
     """
 
-    generate_llm_logits(
+    debug_model(
         pipeline_name=model,
         framework_name=framework,
-        print_intermediates=True,
-        intermediates_dir=output_dir,
+        output_path=output_dir,
         device_specs=DevicesOptionType.device_specs(device_type),
         encoding_name=encoding_name if encoding_name else None,
-        output_path=output_dir / "output.json",
-        print_output=False,
-        mini=True,
     )
     tensors_map: dict[str, torch.Tensor] = {}
     if framework == "torch":

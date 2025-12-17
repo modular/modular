@@ -62,7 +62,8 @@ from .memory.memory import CacheOperation, _int_to_str
 
 @always_inline
 fn ldg[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
@@ -729,7 +730,8 @@ struct _AirMemOrder:
 
 @always_inline
 fn store_release[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
@@ -807,7 +809,8 @@ fn store_release[
 
 @always_inline
 fn store_relaxed[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
@@ -858,7 +861,8 @@ fn store_relaxed[
 
 @always_inline
 fn load_acquire[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
@@ -940,7 +944,8 @@ fn load_acquire[
 
 @always_inline
 fn load_relaxed[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
@@ -1368,7 +1373,8 @@ fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
 
 @always_inline
 fn ds_read_tr16_b64[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     shared_ptr: UnsafePointer[
         mut=False, Scalar[dtype], address_space = AddressSpace.SHARED

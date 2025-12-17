@@ -270,7 +270,8 @@ fn mma[
 
 
 struct MMATileBuffers[
-    tensor_origin: ImmutOrigin, //,
+    tensor_origin: ImmutOrigin,
+    //,
     smem_layout: Layout,
     /,
     tensor_type: type_of(LayoutTensor),

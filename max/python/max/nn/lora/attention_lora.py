@@ -24,6 +24,9 @@ from ..kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
+    fused_qkv_ragged_matmul_scaled_float8,
+    quantize_dynamic_scaled_float8,
+    quantize_static_scaled_float8,
 )
 from ..kv_cache import (
     KVCacheParams,
@@ -79,9 +82,6 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             clip_qkv: If provided, the QKV weights are clamped between
                 `[-clip_qkv, clip_qkv]`
         """
-        if float8_config:
-            raise NotImplementedError("Float8 is not implemented for LoRA.")
-
         if stacked_qkv:
             raise NotImplementedError("LoRA doesn't support stacked QKV.")
 
@@ -110,7 +110,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             kv_dim=self.kv_weight_dim,
             max_lora_rank=max_lora_rank,
             max_num_loras=max_num_loras,
-            dtype=dtype,
+            dtype=dtype if not dtype.is_float8() else DType.bfloat16,
             device=self.devices[0],
         )
 
@@ -119,7 +119,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             out_dim=hidden_size,
             max_lora_rank=max_lora_rank,
             max_num_loras=max_num_loras,
-            dtype=dtype,
+            dtype=dtype if not dtype.is_float8() else DType.bfloat16,
             device=self.devices[0],
         )
 
@@ -140,16 +140,51 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
                 "'set_lora_batch_info' not called before executing forward pass."
             )
 
-        xq_matmul = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=self.wqkv,
-            bias=self.wqkv_bias,
-            input_row_offsets=input_row_offsets,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            n_heads=self.n_heads,
+        wqkv = self.wqkv.to(x.device)
+        wqkv_bias = (
+            self.wqkv_bias.to(x.device) if self.wqkv_bias is not None else None
         )
+
+        if self.float8_config:
+            # FP8 path
+            weight_scale = self.qkv_weight_scale
+            if self.float8_config.is_static:
+                assert self.qkv_input_scale is not None
+                x8 = quantize_static_scaled_float8(
+                    x, self.qkv_input_scale.to(DeviceRef.CPU())
+                )
+                x_scales = self.qkv_input_scale
+            else:
+                x8, x_scales = quantize_dynamic_scaled_float8(
+                    x,
+                    self.float8_config.input_scale,
+                    self.float8_config.weight_scale,
+                    scales_type=weight_scale.dtype,
+                )
+
+            xq_matmul = fused_qkv_ragged_matmul_scaled_float8(
+                self.kv_params,
+                input=x8,
+                wqkv=wqkv,
+                bias=wqkv_bias,
+                input_row_offsets=input_row_offsets,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+                input_scale=x_scales.to(x.device),
+                weight_scale=weight_scale.to(x.device),
+            )
+        else:
+            xq_matmul = fused_qkv_ragged_matmul(
+                self.kv_params,
+                input=x,
+                wqkv=wqkv,
+                bias=wqkv_bias,
+                input_row_offsets=input_row_offsets,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+            )
         freqs_cis = ops.cast(freqs_cis, xq_matmul.dtype).to(xq_matmul.device)
 
         def then_fn() -> TensorValue:
@@ -185,7 +220,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
 
         def else_fn() -> TensorValue:
             xq = self.qkv_lora(
-                x,
+                x.cast(xq_matmul.dtype),
                 xq_matmul,
                 kv_collection,
                 self.kv_params,
@@ -204,6 +239,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
                 layer_idx,
                 interleaved=self.rope.interleaved,
             )
+
             # Calculate Flash Attention.
             attn_out = flash_attention_ragged(
                 self.kv_params,
@@ -226,7 +262,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             self.qkv_lora.num_active_loras.tensor[0] == 0,
             [
                 TensorType(
-                    dtype=self.o_proj.weight.dtype,
+                    dtype=self.o_proj_lora.lora_A.dtype,
                     shape=[total_seq_len, self.q_weight_dim],
                     device=self.o_proj.device,
                 )

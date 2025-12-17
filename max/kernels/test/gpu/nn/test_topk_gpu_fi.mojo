@@ -187,7 +187,7 @@ fn test_topk_sampling[
     comptime largest = test_case.largest
     comptime sampling = test_case.sampling
 
-    constrained[sampling, "This test requires sampling=True"]()
+    __comptime_assert sampling, "This test requires sampling=True"
 
     # Create layouts for input tensor [batch_size, N].
     comptime input_static_layout = Layout.row_major(
@@ -457,7 +457,9 @@ fn test_case_batched[
     comptime block_size = test_case.block_size
 
     # sampling must be False for mask_logits kernel
-    constrained[not sampling, "topk_mask_logits only supports sampling=False"]()
+    __comptime_assert (
+        not sampling
+    ), "topk_mask_logits only supports sampling=False"
 
     # Create layouts for input/masked_logits tensors [batch_size, N].
     comptime input_static_layout = Layout.row_major(

@@ -10,6 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the builtin package."""
+"""Language foundation: built-in types, traits, and fundamental operations."""
 
 from .variadics import Variadic

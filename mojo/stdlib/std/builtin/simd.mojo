@@ -75,7 +75,7 @@ from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
 from builtin.math import DivModable, Powable
 from documentation import doc_private
-from memory import bitcast, memcpy
+from memory import bitcast, memcpy, pack_bits
 from python import ConvertibleToPython, Python, PythonObject
 
 from utils import IndexList, StaticTuple
@@ -1226,7 +1226,7 @@ struct SIMD[dtype: DType, size: Int](
             )
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __lshift__(self, rhs: Self) -> Self:
         """Returns `self << rhs`.
 
@@ -1240,16 +1240,11 @@ struct SIMD[dtype: DType, size: Int](
             `self << rhs`.
         """
         __comptime_assert Self.dtype.is_integral(), "must be an integral type"
-        debug_assert(all(rhs.ge(0)), "unhandled negative value")
-        debug_assert(
-            all(rhs.lt(bit_width_of[Self.dtype]())),
-            "unhandled value greater than size",
-        )
         return Self(
             mlir_value=__mlir_op.`pop.shl`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rshift__(self, rhs: Self) -> Self:
         """Returns `self >> rhs`.
 
@@ -1263,11 +1258,6 @@ struct SIMD[dtype: DType, size: Int](
             `self >> rhs`.
         """
         __comptime_assert Self.dtype.is_integral(), "must be an integral type"
-        debug_assert(all(rhs.ge(0)), "unhandled negative value")
-        debug_assert(
-            all(rhs.lt(bit_width_of[Self.dtype]())),
-            "unhandled value greater than size",
-        )
         return Self(
             mlir_value=__mlir_op.`pop.shr`(self._mlir_value, rhs._mlir_value)
         )
@@ -1844,7 +1834,7 @@ struct SIMD[dtype: DType, size: Int](
         ), "must be an integral or bool type"
         return value | self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rlshift__(self, value: Self) -> Self:
         """Returns `value << self`.
 
@@ -1860,7 +1850,7 @@ struct SIMD[dtype: DType, size: Int](
         __comptime_assert Self.dtype.is_integral(), "must be an integral type"
         return value << self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rrshift__(self, value: Self) -> Self:
         """Returns `value >> self`.
 
@@ -2193,6 +2183,12 @@ struct SIMD[dtype: DType, size: Int](
             return _convert_f32_to_float8[target](self.cast[DType.float32]())
 
         @parameter
+        if target is DType.float8_e8m0fnu:
+            return _convert_f32_to_float8_ue8m0[target, rounding_mode="rp"](
+                self.cast[DType.float32]()
+            )
+
+        @parameter
         if Self.dtype in (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
@@ -2218,6 +2214,12 @@ struct SIMD[dtype: DType, size: Int](
             if target is DType.float16:
                 return _convert_float8_to_f16(self).cast[target]()
             return _convert_float8_to_f32(self).cast[target]()
+
+        @parameter
+        if Self.dtype is DType.float8_e8m0fnu:
+            return _convert_float8_ue8m0_to_f32[DType.float32](self).cast[
+                target
+            ]()
 
         @parameter
         if Self.dtype is DType.bool:
@@ -3091,7 +3093,16 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if Self.dtype is DType.bool:
-            return Int(self.cast[DType.uint8]().reduce_add())
+
+            @parameter
+            if Self.size == 1:
+                return Int(self)
+            else:
+                var packed_mask = pack_bits(
+                    rebind[SIMD[DType.bool, Self.size]](self)
+                )
+                var count = pop_count(packed_mask)
+                return Int(count)
         else:
             return Int(pop_count(self).reduce_add())
 
@@ -3437,7 +3448,8 @@ fn _powi(base: Scalar, exp: Int32) -> type_of(base):
 
 @always_inline
 fn _convert_float8_to_f32_scalar[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     result_dtype: DType,
 ](x: Scalar[dtype]) -> Scalar[result_dtype]:
     comptime FP8_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
@@ -3563,7 +3575,8 @@ fn _convert_float8_to_f16[
 @always_inline
 fn _convert_f32_to_float8[
     dtype: DType,
-    size: Int, //,
+    size: Int,
+    //,
     target: DType,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
     @parameter
@@ -3598,7 +3611,8 @@ fn _convert_f32_to_float8[
 
 @always_inline
 fn _convert_f32_to_float8_scalar[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: DType,
 ](x: Scalar[dtype]) -> Scalar[target]:
     # software implementation rounds toward nearest even
@@ -3704,12 +3718,19 @@ fn _convert_f32_to_float8_scalar[
 
 @always_inline
 fn _convert_f32_to_float8_ue8m0_scalar[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     target: DType,
     *,
     satfinite: Bool = False,
     rounding_mode: String = "rp",
 ](x: Scalar[dtype]) -> Scalar[target]:
+    """Convert float32 to float8_e8m0fnu (UE8M0).
+
+    This follows CUTLASS and uses `rounding_mode="rp"` (round toward +infinity)
+    when mapping float32 to a biased exponent byte. Other rounding modes are
+    currently unsupported in the CPU fallback.
+    """
     __comptime_assert not satfinite, (
         "satfinite is not implemented for CPU path. Extend this function to"
         " support it."
@@ -3737,12 +3758,18 @@ fn _convert_f32_to_float8_ue8m0_scalar[
 @always_inline
 fn _convert_f32_to_float8_ue8m0[
     dtype: DType,
-    size: Int, //,
+    size: Int,
+    //,
     target: DType,
     *,
     satfinite: Bool = False,
     rounding_mode: String = "rp",
 ](val: SIMD[dtype, size],) -> SIMD[target, size]:
+    """Convert float32 to float8_e8m0fnu (UE8M0).
+
+    The default rounding mode is `rounding_mode="rp"` (round toward +infinity),
+    matching CUTLASS. On SM100+ this lowers to `cvt.rp[.satfinite].ue8m0x2.f32`.
+    """
     __comptime_assert (
         dtype is DType.float32 and target is DType.float8_e8m0fnu
     ), (
@@ -3791,6 +3818,39 @@ fn _convert_f32_to_float8_ue8m0[
             ](val)
 
         return _simd_apply[wrapper_fn, result_dtype=target](val)
+
+
+@always_inline
+fn _convert_float8_ue8m0_to_f32[
+    dtype: DType,
+    size: Int,
+    //,
+    target: DType,
+](val: SIMD[dtype, size]) -> SIMD[target, size]:
+    """Convert float8_e8m0fnu to float32.
+
+    float8_e8m0fnu stores an 8-bit biased exponent (bias=127). For values
+    0x01..0xFE, the float32 representation is `exp << 23` (sign=0, mantissa=0).
+
+    Special cases match CUTLASS:
+      - 0x00 maps to 2**-127, which is a float32 subnormal (bits 0x00400000).
+      - 0xFF maps to NaN (bits 0x7fffffff), not +infinity.
+    """
+    __comptime_assert (
+        dtype is DType.float8_e8m0fnu and target is DType.float32
+    ), "this conversion is only supported for float8_e8m0fnu -> float32."
+
+    var exp = val.to_bits[DType.uint8]()
+    var f32_bits = exp.cast[DType.uint32]() << 23
+
+    # 0x00 represents 2**-127, which is a float32 subnormal.
+    f32_bits = exp.eq(0).select(SIMD[DType.uint32, size](0x00400000), f32_bits)
+    # 0xFF is NaN for this format; avoid creating +inf in float32.
+    f32_bits = exp.eq(0xFF).select(
+        SIMD[DType.uint32, size](0x7FFFFFFF), f32_bits
+    )
+
+    return SIMD[target, size](from_bits=f32_bits)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3860,7 +3920,8 @@ fn _f32_to_bfloat16[
 @always_inline
 fn _simd_apply[
     input_dtype: DType,
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     func: fn[input_dtype: DType, result_dtype: DType] (
         Scalar[input_dtype]
     ) capturing -> Scalar[result_dtype],
@@ -3893,7 +3954,8 @@ fn _simd_apply[
 
 @always_inline
 fn _simd_apply[
-    simd_width: Int, //,
+    simd_width: Int,
+    //,
     func: fn[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType] (
         Scalar[lhs_dtype], Scalar[rhs_dtype]
     ) capturing -> Scalar[result_dtype],
@@ -3995,7 +4057,8 @@ fn _floor(x: SIMD) -> type_of(x):
 
 fn _write_scalar[
     dtype: DType,
-    W: Writer, //,
+    W: Writer,
+    //,
 ](mut writer: W, value: Scalar[dtype]):
     @parameter
     if dtype is DType.bool:

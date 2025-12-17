@@ -23,8 +23,9 @@ from template import TEMPLATE
 
 _ALLOWED_DUPLICATE_PACKAGES = {
     "torch",
-    "torchvision",
     "torchaudio",
+    "torchvision",
+    "triton",  # pytorch-triton-rocm was renamed to triton
 }
 
 

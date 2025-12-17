@@ -22,6 +22,7 @@ build --//:modular_config=default
 build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
 build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
 build:public-cache --build_metadata=VISIBILITY=PUBLIC
+build:public-cache --experimental_remote_downloader=grpcs://modular-public.buildbuddy.io
 build:public-cache --remote_cache=grpcs://modular-public.buildbuddy.io
 
 # Check for a local gitignored bazel config.

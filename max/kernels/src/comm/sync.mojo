@@ -183,15 +183,17 @@ fn _multi_gpu_barrier[
     Implementation ported from VLLM's _multi_gpu_barrier in
     https://github.com/vllm-project/vllm/blob/main/csrc/custom_all_reduce.cuh#L169-L198
     """
-    constrained[ngpus <= MAX_GPUS, "too many GPUs for barrier implementation"]()
+    __comptime_assert (
+        ngpus <= MAX_GPUS
+    ), "too many GPUs for barrier implementation"
 
     @parameter
     if not is_start:
         barrier()
 
-    constrained[
-        not (need_fence and is_start), "Start barrier should not need fence"
-    ]()
+    __comptime_assert not (
+        need_fence and is_start
+    ), "Start barrier should not need fence"
     comptime flag_t = Signal.flag_t
     var bid = block_idx.x
 

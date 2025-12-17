@@ -34,7 +34,8 @@ struct MixedLayoutTensor[
     mut: Bool,
     dtype: DType,
     shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    stride_types: Variadic.TypesOfTrait[MixedTupleLike], //,
+    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -82,7 +83,7 @@ struct MixedLayoutTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.
@@ -316,7 +317,8 @@ fn distribute[
     data_shape_0: Int,
     data_shape_1: Int,
     data_stride_0: Int,
-    data_stride_1: Int, //,
+    data_stride_1: Int,
+    //,
     dtype: DType,
     thread_layout: MixedLayout[
         Tuple[
@@ -396,7 +398,8 @@ fn tile[
     shape_types: Variadic.TypesOfTrait[MixedTupleLike],
     stride_types: Variadic.TypesOfTrait[MixedTupleLike],
     coord_types: Variadic.TypesOfTrait[MixedTupleLike],
-    tile_shape_types: Variadic.TypesOfTrait[MixedTupleLike], //,
+    tile_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
 ](
     data_layout_tensor: MixedLayoutTensor[
         dtype=dtype, shape_types=shape_types, stride_types=stride_types
@@ -472,7 +475,8 @@ struct MixedLayoutTensorIter[
     mut: Bool,
     dtype: DType,
     shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    stride_types: Variadic.TypesOfTrait[MixedTupleLike], //,
+    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
     origin: Origin[mut],
     /,
     *,
@@ -595,10 +599,9 @@ struct MixedLayoutTensorIter[
             iterator.
         """
 
-        constrained[
-            Self.linear_idx_type.is_signed(),
-            "Linear index type must be signed.",
-        ]()
+        __comptime_assert (
+            Self.linear_idx_type.is_signed()
+        ), "Linear index type must be signed."
 
         self.ptr = ptr
         self.offset = offset

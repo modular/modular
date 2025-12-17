@@ -40,13 +40,12 @@ fn matrix_band_part[
     output: LayoutTensor[mut=True, dtype, *_, **_],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[
+    __comptime_assert (
         num_lower.layout.rank()
         == num_upper.layout.rank()
         == exclude.layout.rank()
-        == 1,
-        "num_lower, num_upper and exclude must have same rank == 1",
-    ]()
+        == 1
+    ), "num_lower, num_upper and exclude must have same rank == 1"
     var lower_diagonal_index = Int(num_lower[0])
     var upper_diagonal_index = Int(num_upper[0])
 
@@ -90,7 +89,7 @@ fn _matrix_band_part_impl[
     output: LayoutTensor[mut=True, dtype, *_, **_],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[rank >= 2, "Matrix band only supports rank >=2"]()
+    __comptime_assert rank >= 2, "Matrix band only supports rank >=2"
 
     @__copy_capture(lower_diagonal_index, upper_diagonal_index, output)
     @parameter

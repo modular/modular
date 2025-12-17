@@ -129,7 +129,8 @@ fn _adjust_top_p[
 
 fn top_k[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     largest: Bool = True,
     target: StaticString = "cpu",
 ](
@@ -164,12 +165,12 @@ fn top_k[
         ctx: The device call context.
         k: Per batch element k value.
     """
-    constrained[
-        input.rank == out_vals.rank, "input.rank must match out_vals.rank"
-    ]()
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert (
+        input.rank == out_vals.rank
+    ), "input.rank must match out_vals.rank"
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
 
     var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
 
@@ -178,10 +179,9 @@ fn top_k[
 
     @parameter
     if is_cpu[target]():
-        constrained[
-            out_idx_type is DType.int64,
-            "out_idx_type must be int64 for cpu",
-        ]()
+        __comptime_assert (
+            out_idx_type is DType.int64
+        ), "out_idx_type must be int64 for cpu"
 
         comptime grain_size = 1000
         _top_k_cpu[largest=largest](
@@ -229,12 +229,12 @@ fn _top_k_cpu[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
-    constrained[
-        input.rank == out_vals.rank, "input.rank must match out_vals.rank"
-    ]()
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert (
+        input.rank == out_vals.rank
+    ), "input.rank must match out_vals.rank"
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
     var shape = input.runtime_layout.shape.value.canonicalize()
 
     @__copy_capture(shape)
@@ -400,10 +400,10 @@ fn fused_token_sampling_cpu[
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
-    constrained[out_idx_type is DType.int64, "out_idx_type must be int64"]()
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
+    __comptime_assert out_idx_type is DType.int64, "out_idx_type must be int64"
 
     bound_max_k = 255 if max_k == -1 else max_k
 
@@ -487,12 +487,12 @@ fn _top_k_sampling[
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
-    constrained[
-        input.rank == out_vals.rank, "input.rank must match out_vals.rank"
-    ]()
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert (
+        input.rank == out_vals.rank
+    ), "input.rank must match out_vals.rank"
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
 
     # Now reshape for sampling
     var orig_in_shape: IndexList[input.rank] = rebind[IndexList[input.rank]](
@@ -647,7 +647,10 @@ struct TopK_2[T: DType, largest: Bool = True](Defaultable, ImplicitlyCopyable):
 @always_inline
 @parameter
 fn _warp_reduce_topk[
-    T: DType, largest: Bool
+    T: DType,
+    largest: Bool,
+    num_lanes: Int = WARP_SIZE,
+    broadcast: Bool = False,
 ](val: TopK_2[T, largest]) -> TopK_2[T, largest]:
     """
     Performs warp-level reduction to find the maximum TopK_2 element.
@@ -657,6 +660,8 @@ fn _warp_reduce_topk[
     Parameters:
         T: DType - Data type of the values being compared.
         largest: Bool - Whether to find the maximum or minimum value.
+        num_lanes: Int - Number of lanes that participate in the reduction.
+        broadcast: Bool - Whether to broadcast the result to all lanes.
 
     Arguments:
         val: TopK_2[T, largest] - TopK_2 value from each thread to be reduced.
@@ -664,16 +669,26 @@ fn _warp_reduce_topk[
     Returns:
         TopK_2[T, largest] - Maximum TopK_2 value across the warp.
     """
+    __comptime_assert (
+        num_lanes.is_power_of_two()
+    ), "num_lanes must be a power of two"
+
     var res = val
 
-    # Shuffle down function for TopK_2 structure
+    # Shuffle function for TopK_2 structure
     @parameter
-    fn shuffle_down_topk2(
-        v: TopK_2[T, largest], offset: Int
-    ) -> TopK_2[T, largest]:
+    fn shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
+        comptime fn_type = fn[dtype: DType, simd_width: Int] (
+            val: SIMD[dtype, simd_width], offset: UInt32
+        ) -> SIMD[dtype, simd_width]
+        comptime xor_fn: fn_type = warp.shuffle_xor
+        comptime down_fn: fn_type = warp.shuffle_down
+
+        comptime shuffle_fn = xor_fn if broadcast else down_fn
+
         return TopK_2[T, largest](
-            u=warp.shuffle_down(v.u, offset),  # u is the value
-            p=Int(warp.shuffle_down(Int32(v.p), offset)),  # p is the index
+            u=shuffle_fn(v.u, offset),  # u is the value
+            p=Int(shuffle_fn(Int32(v.p), offset)),  # p is the index
         )
 
     @parameter
@@ -695,12 +710,12 @@ fn _warp_reduce_topk[
             return a if a.p < b.p else b
 
     # Reimplement `warp_reduce` for TopK_2 reduce and shuffle function
-    comptime limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(num_lanes)
 
     @parameter
     for i in reversed(range(limit)):
         comptime mask = 1 << i
-        res = reduce_fn(res, shuffle_down_topk2(res, mask))
+        res = reduce_fn(res, shuffle_topk2(res, mask))
 
     return res
 
@@ -733,10 +748,9 @@ fn _block_reduce_topk[
     a final warp-level reduction to compute the block-wide maximum.
     """
     comptime MAX_BLOCK_SIZE = 1024
-    constrained[
-        MAX_BLOCK_SIZE % WARP_SIZE == 0,
-        "block size must be a multiple of the warp size",
-    ]()
+    __comptime_assert (
+        MAX_BLOCK_SIZE % WARP_SIZE == 0
+    ), "block size must be a multiple of the warp size"
 
     # Calculate sizes for shared memory allocation
     comptime p_width = simd_width_of[DType.int]()
@@ -1238,7 +1252,8 @@ fn _topk_stage2[
 
 fn _topk_gpu[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
@@ -1318,17 +1333,16 @@ fn _topk_gpu[
     (https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/tensorrt_llm/kernels/samplingTopKKernels.cu).
 
     """
-    constrained[input_buf.rank == 2, "rank must be 2"]()
-    constrained[
-        not (sampling and not largest),
-        "sampling not supported for largest=False",
-    ]()
-    constrained[
-        input_buf.rank == out_vals.rank, "input.rank must match out_vals.rank"
-    ]()
-    constrained[
-        input_buf.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert input_buf.rank == 2, "rank must be 2"
+    __comptime_assert not (
+        sampling and not largest
+    ), "sampling not supported for largest=False"
+    __comptime_assert (
+        input_buf.rank == out_vals.rank
+    ), "input.rank must match out_vals.rank"
+    __comptime_assert (
+        input_buf.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
 
     # Use largest number of threads per block
     var batch_size = (
@@ -1488,7 +1502,8 @@ fn _topk_gpu[
 @always_inline
 fn topk_gpu[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
@@ -1555,7 +1570,7 @@ fn topk_gpu[
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
-    constrained[input.rank > 0, "Input rank must be positive"]()
+    __comptime_assert input.rank > 0, "Input rank must be positive"
     var orig_in_shape = rebind[IndexList[input.rank]](
         input.runtime_layout.shape.value.canonicalize()
     )
@@ -1724,7 +1739,8 @@ fn topk_gpu[
 @always_inline
 fn fused_token_sampling_gpu[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    //,
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1770,9 +1786,9 @@ fn fused_token_sampling_gpu[
         )
         return
 
-    constrained[
-        input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
-    ]()
+    __comptime_assert (
+        input.rank == out_idxs.rank
+    ), "input.rank must match out_idx.rank"
 
     var bound_max_k = 255 if max_k == -1 else max_k
 
@@ -1835,10 +1851,9 @@ fn apply_gumbel_noise_kernel[
 
     var num_tokens = input.dim[0]()
 
-    constrained[
-        simd_width % 4 == 0,
-        "SIMD width must be divisible by 4 to match RNG output size.",
-    ]()
+    __comptime_assert (
+        simd_width % 4 == 0
+    ), "SIMD width must be divisible by 4 to match RNG output size."
 
     # split workload across blocks
     with PDL():
@@ -1913,7 +1928,8 @@ fn apply_gumbel_noise_kernel[
 fn gumbel_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
-    input_layout: Layout, //,
+    input_layout: Layout,
+    //,
 ](
     ctx: DeviceContext,
     input: LayoutTensor[dtype, input_layout, **_],

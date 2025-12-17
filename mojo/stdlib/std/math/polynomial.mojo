@@ -28,7 +28,8 @@ from math.polynomial import polynomial_evaluate
 @always_inline
 fn polynomial_evaluate[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     coefficients: Span[Scalar[dtype], *_],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial.
@@ -56,7 +57,8 @@ fn polynomial_evaluate[
 @always_inline
 fn _horner_evaluate[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     coefficients: Span[Scalar[dtype], *_],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial using the passed in value and the specified

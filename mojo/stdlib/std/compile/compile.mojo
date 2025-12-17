@@ -217,7 +217,8 @@ fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
 
 @always_inline
 fn compile_info[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyTrivialRegType,
+    //,
     func: func_type,
     /,
     *,

@@ -23,6 +23,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/kv_cache",
         "//max/python/max/nn",
+        "//max/python/max/support",
         "//max/tests/integration/API/python/graph:modular_graph_test",
         "//max/tests/integration/pipelines/python/test_common",
         requirement("hypothesis"),

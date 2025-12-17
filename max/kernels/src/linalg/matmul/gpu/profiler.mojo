@@ -176,7 +176,8 @@ struct BlackwellProfileWarp[
     mma_warps: UInt32,
     scheduler_warps: UInt32,
     epilogue_warps: UInt32,
-    max_entries_per_warp: UInt32, //,
+    max_entries_per_warp: UInt32,
+    //,
     WorkspaceManager: BlackwellWarpProfilingWorkspaceManager[
         load_warps,
         mma_warps,

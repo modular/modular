@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 from os import abort
+
 
 comptime Element = String  # Adapt for your type
 comptime ListNode = Node[Element]  # Constructing a LinkedList
@@ -33,51 +33,57 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     # Constructs a `Node` with a `value` with heap allocation and
     # returns a pointer to the new `Node`.
     @staticmethod
-    fn makeNode(value: Self.ElementType) -> Self.NodePointer:
-        var node_ptr = alloc[Self](1)
-        if not node_ptr:
-            abort("Out of memory")
+    fn make_node(value: Self.ElementType) -> Self.NodePointer:
+        node_ptr = alloc[Self](1)
         node_ptr.init_pointee_move(Self(value))
         return node_ptr
 
     # Constructs a `Node` with allocated memory, assigns a value, appends
     # the pointer to `self.next`. Replaces any existing `next`.
     fn append(mut self, value: Self.ElementType):
-        self.next = Self.makeNode(value)
+        # Free chain if replacing `next`
+        if self.next:
+            self.next[].free_chain()
+            self.next.destroy_pointee()
+            self.next.free()
+
+        self.next = Self.make_node(value)
 
     # Prints the list starting at this pointer's pointee
     @staticmethod
     fn print_list(node_ptr: Self.NodePointer):
-        var current_value: Optional[Self.ElementType] = node_ptr[].value
+        if not node_ptr:
+            print("Empty list")
+            return
+
+        current_value: Optional[Self.ElementType] = node_ptr[].value
         if current_value:
             print(current_value.value(), end=" ")
+
         if node_ptr[].next:
             Self.print_list(node_ptr[].next)
         else:
             print()
 
-    # Release all successive allocated `Node` pointees. Does not release self.
+    # Releases all successively allocated `Node` pointees. Does not release self.
     fn free_chain(self):
-        if self.next:
-            self.next[].free_chain()
-            self.next.destroy_pointee()  # clean up the instance
-            self.next.free()  # free up the reserved memory
+        current = self.next
+        while current:
+            next_node = current[].next
+            current.destroy_pointee()
+            current.free()
+            current = next_node
 
 
 fn main():
-    # Construct a list from these values
-    var values: List[Element] = ["one", "one", "two", "three", "five", "eight"]
+    values: List[Element] = ["one", "one", "two", "three", "five", "eight"]
+    list_head = ListNode.make_node(values[0])
 
-    # Create an anchor for the head of the list
-    list_head = ListNode.makeNode(value=values[0])
-
-    # Iteratively add the rest of the linked list
     current = list_head
     for idx in range(1, len(values), 1):
         current[].append(values[idx])
         current = current[].next
 
-    # Walk the list and print the values
     ListNode.print_list(list_head)
 
     # Demonstrates cleanup. In short-lived programs, the OS reclaims memory at exit

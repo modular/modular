@@ -29,6 +29,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TypeAlias
 
 import torch
@@ -39,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # DeepGEMM
 import deep_gemm
 from bench import bench_kineto_with_cupti_warmup
+from bencher_utils import Bench, ThroughputMeasure
 from deep_gemm.testing import get_arch_major
 from deep_gemm.utils import (
     get_mk_alignment_for_contiguous_layout,
@@ -160,7 +162,7 @@ def contiguous_reference(
     return out
 
 
-def run_case(cfg: ShapeCfg, args: argparse.Namespace) -> tuple[float, float]:
+def run_case(cfg: ShapeCfg, args: argparse.Namespace) -> tuple[float, int]:
     if args.layout == "masked":
         raise NotImplementedError("masked layout is not supported")
 
@@ -205,8 +207,8 @@ def run_case(cfg: ShapeCfg, args: argparse.Namespace) -> tuple[float, float]:
     )
     assert isinstance(time_s, float), "Expected single kernel timing"
 
-    tflops = 2 * m_effective * cfg.n * cfg.k / time_s / 1e12
-    return time_s, tflops
+    total_flops = 2 * m_effective * cfg.n * cfg.k
+    return time_s, total_flops
 
 
 def main() -> None:
@@ -233,7 +235,8 @@ def main() -> None:
         "--check", action="store_true", help="Run float64 reference check"
     )
     parser.add_argument("--seed", type=int, default=0)
-    args = parser.parse_args()
+    parser.add_argument("-o", "--output", type=str, default="output.csv")
+    args, _ = parser.parse_known_args()
 
     torch.manual_seed(args.seed)
 
@@ -244,12 +247,26 @@ def main() -> None:
         k=args.K,
     )
 
-    time_s, tflops = run_case(cfg, args)
+    result = run_case(cfg, args)
+    met_s, total_flops = result if result else [0, 0]
 
-    print("dtype,layout,num_groups,m_per_group,n,k,time_s,TFLOP/s")
-    print(
-        f"{args.dtype},{args.layout},{cfg.num_groups},{cfg.m_per_group},{cfg.n},{cfg.k},{time_s:.6f},{tflops:.3f}"
+    flops = ThroughputMeasure(Bench.bytes, total_flops)
+
+    name = (
+        f"Grouped_GEMM/dtype={args.dtype}/layout={args.layout}/"
+        f"num_groups={cfg.num_groups}/m_per_group={cfg.m_per_group}/"
+        f"n={cfg.n}/k={cfg.k}/"
+        # f"engine={engine}/"
     )
+
+    b = Bench(
+        name,
+        iters=1,
+        met=met_s,
+        metric_list=[flops],
+    )
+
+    b.dump_report(output_path=Path(args.output))
 
 
 if __name__ == "__main__":

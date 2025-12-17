@@ -69,7 +69,7 @@ def test_unsupported_arg_type_error(op_library: CustomOpLibrary) -> None:
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_grayscale(op_library: CustomOpLibrary, backend: str) -> None:
-    @torch.compile(backend=backend, options={"force_disable_caches": True})
+    @torch.compile(backend=backend)
     def grayscale(pic):  # noqa: ANN001, ANN202
         result = pic.new_empty(pic.shape[:-1])
         op_library.grayscale(result, pic)
@@ -163,9 +163,7 @@ def test_graph_ops__specify_input_type(backend: str) -> None:
 def test_binary_add(op_library: CustomOpLibrary, backend: str) -> None:
     myadd_kernel = op_library.myadd
 
-    @torch.compile(
-        backend=backend, fullgraph=True, options={"force_disable_caches": True}
-    )
+    @torch.compile(backend=backend, fullgraph=True)
     def myadd(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
         C = torch.zeros_like(A)
         myadd_kernel(C, A, B)
@@ -191,9 +189,7 @@ def test_binary_add_multiple_sizes(
 ) -> None:
     myadd_kernel = op_library.myadd
 
-    @torch.compile(
-        backend=backend, fullgraph=True, options={"force_disable_caches": True}
-    )
+    @torch.compile(backend=backend, fullgraph=True)
     def myadd(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
         C = torch.zeros_like(A)
         myadd_kernel(C, A, B)
@@ -230,9 +226,7 @@ def test_binary_add_multiple_sizes(
 def test_parameters(op_library: CustomOpLibrary, backend: str) -> None:
     parameter_increment_42 = op_library.parameter_increment[{"increment": 42}]
 
-    @torch.compile(
-        backend=backend, fullgraph=True, options={"force_disable_caches": True}
-    )
+    @torch.compile(backend=backend, fullgraph=True)
     def increment_42(input):  # noqa: ANN001, ANN202
         result = torch.empty_like(input)
         parameter_increment_42(result, input)
@@ -252,9 +246,7 @@ def test_parameters(op_library: CustomOpLibrary, backend: str) -> None:
 
     parameter_increment_17 = op_library.parameter_increment[{"increment": 17}]
 
-    @torch.compile(
-        backend=backend, fullgraph=True, options={"force_disable_caches": True}
-    )
+    @torch.compile(backend=backend, fullgraph=True)
     def increment_17(input):  # noqa: ANN001, ANN202
         result = torch.empty_like(input)
         parameter_increment_17(result, input)
@@ -277,9 +269,7 @@ def test_parameters(op_library: CustomOpLibrary, backend: str) -> None:
 def test_scalar_add(op_library: CustomOpLibrary, backend: str) -> None:
     scalar_add_kernel = op_library.scalar_add
 
-    @torch.compile(
-        backend=backend, fullgraph=True, options={"force_disable_caches": True}
-    )
+    @torch.compile(backend=backend, fullgraph=True)
     def add_scalars(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         result = torch.empty_like(a)
         scalar_add_kernel(result, a, b)

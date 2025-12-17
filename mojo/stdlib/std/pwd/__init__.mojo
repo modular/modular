@@ -10,10 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides access to user and group information from the password database.
-
-Use the [`Passwd`](/mojo/std/pwd/pwd/Passwd) type to access user account
-information such as user name, ID, group, and home directory.
-"""
+"""Password DB Lookups. User account information."""
 
 from .pwd import getpwnam, getpwuid

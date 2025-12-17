@@ -26,6 +26,7 @@ from max.interfaces import ImageMetadata, RequestID
 from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, RaggedKVCacheInputs
 from max.pipelines.core import TextAndVisionContext, TextContext
+from max.support.image import hash_image
 from test_common.context_utils import create_text_context
 
 
@@ -744,7 +745,12 @@ async def test_prefix_caching_with_images() -> None:
         max_length=100,
         tokens=tokens1,
         images=[
-            ImageMetadata(start_idx=3, end_idx=7, pixel_values=img1_pixels),
+            ImageMetadata(
+                start_idx=3,
+                end_idx=7,
+                pixel_values=img1_pixels,
+                image_hash=hash_image(img1_pixels),
+            ),
         ],
         vision_token_ids=vision_token_ids,
     )
@@ -752,7 +758,12 @@ async def test_prefix_caching_with_images() -> None:
         max_length=100,
         tokens=tokens1,
         images=[
-            ImageMetadata(start_idx=3, end_idx=7, pixel_values=img1_pixels),
+            ImageMetadata(
+                start_idx=3,
+                end_idx=7,
+                pixel_values=img1_pixels,
+                image_hash=hash_image(img1_pixels),
+            ),
         ],
         vision_token_ids=vision_token_ids,
     )
@@ -768,7 +779,12 @@ async def test_prefix_caching_with_images() -> None:
         max_length=100,
         tokens=tokens1,
         images=[
-            ImageMetadata(start_idx=3, end_idx=7, pixel_values=img3_pixels),
+            ImageMetadata(
+                start_idx=3,
+                end_idx=7,
+                pixel_values=img3_pixels,
+                image_hash=hash_image(img3_pixels),
+            ),
         ],
         vision_token_ids=vision_token_ids,
     )
@@ -781,7 +797,12 @@ async def test_prefix_caching_with_images() -> None:
         max_length=100,
         tokens=tokens4,
         images=[
-            ImageMetadata(start_idx=1, end_idx=5, pixel_values=img1_pixels),
+            ImageMetadata(
+                start_idx=1,
+                end_idx=5,
+                pixel_values=img1_pixels,
+                image_hash=hash_image(img1_pixels),
+            ),
         ],
         vision_token_ids=vision_token_ids,
     )
@@ -808,8 +829,18 @@ async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
         max_length=100,
         tokens=tokens,
         images=[
-            ImageMetadata(start_idx=3, end_idx=9, pixel_values=img0_pixels),
-            ImageMetadata(start_idx=10, end_idx=13, pixel_values=img1_pixels),
+            ImageMetadata(
+                start_idx=3,
+                end_idx=9,
+                pixel_values=img0_pixels,
+                image_hash=hash_image(img0_pixels),
+            ),
+            ImageMetadata(
+                start_idx=10,
+                end_idx=13,
+                pixel_values=img1_pixels,
+                image_hash=hash_image(img1_pixels),
+            ),
         ],
         vision_token_ids=[IMG],
     )
@@ -819,8 +850,18 @@ async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
         max_length=100,
         tokens=tokens,
         images=[
-            ImageMetadata(start_idx=3, end_idx=9, pixel_values=img0_pixels),
-            ImageMetadata(start_idx=10, end_idx=13, pixel_values=img1_pixels),
+            ImageMetadata(
+                start_idx=3,
+                end_idx=9,
+                pixel_values=img0_pixels,
+                image_hash=hash_image(img0_pixels),
+            ),
+            ImageMetadata(
+                start_idx=10,
+                end_idx=13,
+                pixel_values=img1_pixels,
+                image_hash=hash_image(img1_pixels),
+            ),
         ],
         vision_token_ids=[IMG],
     )

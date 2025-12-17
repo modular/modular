@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from max.dtype import DType
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
@@ -46,9 +47,11 @@ class Gemma3MultiModalProjector(Module, Shardable):
         self.config = config
         self.device = device if device is not None else config.devices[0]
 
+        vision_dtype = DType.bfloat16
+
         self.mm_input_projection_weight = Weight(
             "mm_input_projection_weight",
-            dtype=config.dtype,
+            dtype=vision_dtype,
             shape=(
                 config.vision_config.hidden_size,
                 config.text_config.hidden_size,
@@ -59,7 +62,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
         self.mm_soft_emb_norm = Gemma3RMSNorm(
             config.vision_config.hidden_size,
             eps=config.vision_config.layer_norm_eps,
-            dtype=config.dtype,
+            dtype=vision_dtype,
         )
 
         self.patches_per_image = int(
@@ -162,10 +165,12 @@ class Gemma3VisionMLP(Module):
         self.intermediate_size = config.vision_config.intermediate_size
         self.device = device if device is not None else config.devices[0]
 
+        vision_dtype = DType.bfloat16
+
         self.fc1 = Linear(
             self.hidden_size,
             self.intermediate_size,
-            dtype=config.dtype,
+            dtype=vision_dtype,
             device=self.device,
             has_bias=True,
         )
@@ -173,7 +178,7 @@ class Gemma3VisionMLP(Module):
         self.fc2 = Linear(
             self.intermediate_size,
             self.hidden_size,
-            dtype=config.dtype,
+            dtype=vision_dtype,
             device=self.device,
             has_bias=True,
         )

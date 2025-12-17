@@ -96,16 +96,16 @@ other options, see the [install guide](/mojo/manual/install)).
 
 ## 2. Get a reference to the GPU device
 
-The [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext/) type
+The [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext/) type
 represents a logical instance of a GPU device. It provides methods for
 allocating memory on the device, copying data between the host CPU and the GPU,
 and compiling and running functions (also known as *kernels*) on the device.
 
 Use the
-[`DeviceContext()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#__init__)
+[`DeviceContext()`](/mojo/std/gpu/host/device_context/DeviceContext#__init__)
 constructor to get a reference to the GPU device. The constructor raises an
 error if no compatible GPU is available. You can use the
-[`has_accelerator()`](/mojo/stdlib/sys/info/has_accelerator/) function to check
+[`has_accelerator()`](/mojo/std/sys/info/has_accelerator/) function to check
 if a compatible GPU is available.
 
 Let's start by writing a program that checks if a GPU is available and then
@@ -302,7 +302,7 @@ stream of queued operations to execute on the GPU. Operations within a stream
 execute in the order they are issued.
 
 The
-[`enqueue_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_function_checked)
+[`enqueue_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_function_checked)
 method compiles a kernel function and enqueues it to run on the given device.
 You must provide the name of the kernel function as a compile-time Mojo
 parameter, and the following arguments:
@@ -320,9 +320,9 @@ compile-time parameters and metaprogramming.)
 :::note
 
 `DeviceContext` also includes
-[`enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 and
-[`compile_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function)
+[`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
 methods. However, these methods currently don't typecheck the arguments to the
 compiled kernel function, which can lead to obscure run-time errors if the
 argument ordering, types, or count doesn't match the kernel function's
@@ -396,7 +396,7 @@ that's ready to run.
 
 After enqueuing the kernel function, we want to ensure that the CPU waits for it
 to finish execution before exiting the program. We do this by calling the
-[`synchronize()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#synchronize)
+[`synchronize()`](/mojo/std/gpu/host/device_context/DeviceContext#synchronize)
 method of the `DeviceContext` object, which blocks until the device completes
 all operations in its queue.
 
@@ -501,7 +501,7 @@ function. Similarly, if your kernel function produces data that you want the CPU
 to use later, you must explicitly copy it back to host memory.
 
 For this tutorial, we'll use the
-[`HostBuffer`](/mojo/stdlib/gpu/host/device_context/HostBuffer) type to
+[`HostBuffer`](/mojo/std/gpu/host/device_context/HostBuffer) type to
 represent our vectors on the host. A `HostBuffer` is a block of host memory
 associated with a particular `DeviceContext`. It supports methods for
 transferring data between host and device memory, as well as a basic set of
@@ -551,7 +551,7 @@ def main():
 ```
 
 The
-[`enqueue_create_host_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer)
+[`enqueue_create_host_buffer()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer)
 method accepts the data type as a compile-time parameter and the size of the
 buffer as a run-time argument and returns a `HostBuffer`. As with all
 `DeviceContext` methods whose name starts with `enqueue_`, the method is
@@ -614,7 +614,7 @@ Add the following code to the end of the `main()` function:
         )
 ```
 
-The [`DeviceBuffer`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer) type is
+The [`DeviceBuffer`](/mojo/std/gpu/host/device_context/DeviceBuffer) type is
 analogous to the `HostBuffer` type, but represents a block of device memory
 associated with a particular `DeviceContext`. Specifically, the buffer is
 located in the device's *global memory* space, which is accessible by all
@@ -624,13 +624,13 @@ it is no longer referenced in the program or until the `DeviceContext` itself
 is destroyed.
 
 The
-[`enqueue_create_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_buffer)
+[`enqueue_create_buffer()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_create_buffer)
 method accepts the data type as a compile-time parameter and the size of the
 buffer as a run-time argument and returns a `DeviceBuffer`. The operation is
 asynchronous, but we don't need to call the `synchronize()` method yet because
 we have more operations to add to the queue.
 
-The [`enqueue_copy()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_copy)
+The [`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_copy)
 method is overloaded to support copying from host to device, device to host, or
 even device to device for systems that have multiple GPUs. In this example, we
 use it to copy the data in our `HostBuffer`s to the `DeviceBuffer`s.
@@ -638,9 +638,9 @@ use it to copy the data in our `HostBuffer`s to the `DeviceBuffer`s.
 :::note
 
 Both `DeviceBuffer` and `HostBuffer` also include
-[`enqueue_copy_to()`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer#enqueue_copy_to)
+[`enqueue_copy_to()`](/mojo/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_to)
 and
-[`enqueue_copy_from()`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer#enqueue_copy_from)
+[`enqueue_copy_from()`](/mojo/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_from)
 methods. These are simply convenience methods that call the `enqueue_copy()`
 method on their corresponding `DeviceContext`. Therefore, we could have written
 the copy operations in the previous example with the following equivalent code:
@@ -747,7 +747,7 @@ on.
 
 :::note
 
-As a convenience, the [`gpu`](/mojo/stdlib/gpu) package includes a `global_idx`
+As a convenience, the [`gpu`](/mojo/std/gpu) package includes a `global_idx`
 `comptime` value that contains the unique "global" `x`, `y`, and `z` indices of
 the thread within the grid of thread blocks. So for our one-dimensional grid of
 one-dimensional thread blocks, `global_idx.x` is equivalent to the value of

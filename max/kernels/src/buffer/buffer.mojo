@@ -226,7 +226,8 @@ fn _compute_ndbuffer_stride[
 @fieldwise_init
 @register_passable("trivial")
 struct NDBuffer[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dtype: DType,
     rank: Int,
     origin: Origin[mut],
@@ -1065,7 +1066,8 @@ struct NDBuffer[
 
     @always_inline("nodebug")
     fn store[
-        _alignment: Int, //,
+        _alignment: Int,
+        //,
         *,
         width: Int = 1,
         alignment: Int = Self._default_alignment[width](),
@@ -1102,7 +1104,8 @@ struct NDBuffer[
 
     @always_inline("nodebug")
     fn store[
-        _alignment: Int, //,
+        _alignment: Int,
+        //,
         *,
         width: Int = 1,
         alignment: Int = Self._default_alignment[width](),

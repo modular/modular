@@ -267,11 +267,10 @@ fn topk_mask_logits[
         ]
     ] = None,
 ) raises:
-    constrained[logits.rank == 2, "logits rank must be 2"]()
-    constrained[
-        logits.rank == masked_logits.rank,
-        "logits.rank must match masked_logits.rank",
-    ]()
+    __comptime_assert logits.rank == 2, "logits rank must be 2"
+    __comptime_assert (
+        logits.rank == masked_logits.rank
+    ), "logits.rank must match masked_logits.rank"
 
     var shape = logits.runtime_layout.shape.value.canonicalize()
     var batch_size = shape[0]
@@ -497,10 +496,9 @@ fn _block_reduce_value_count[
         If broadcast=False, only thread 0 has the valid result.
     """
     comptime MAX_BLOCK_SIZE = 1024
-    constrained[
-        MAX_BLOCK_SIZE % WARP_SIZE == 0,
-        "block size must be a multiple of the warp size",
-    ]()
+    __comptime_assert (
+        MAX_BLOCK_SIZE % WARP_SIZE == 0
+    ), "block size must be a multiple of the warp size"
 
     comptime value_width = simd_width_of[Scalar[T]]()
     comptime count_width = simd_width_of[DType.int32]()
@@ -800,8 +798,8 @@ fn topk_sampling_from_prob[
         Error: If tensor ranks or shapes are invalid.
     """
 
-    constrained[probs.rank == 2, "probs rank must be 2"]()
-    constrained[output.rank == 1, "output rank must be 1"]()
+    __comptime_assert probs.rank == 2, "probs rank must be 2"
+    __comptime_assert output.rank == 1, "output rank must be 1"
 
     var shape = probs.runtime_layout.shape.value.canonicalize()
     var batch_size = shape[0]
@@ -1114,8 +1112,10 @@ fn topk_softmax_sample[
             Optional per-batch seed values. If provided, overrides seed_val
             for each batch element.
     """
-    constrained[logits.rank == 2, "logits rank must be 2"]()
-    constrained[sampled_indices.rank == 1, "sampled_indices rank must be 1"]()
+    __comptime_assert logits.rank == 2, "logits rank must be 2"
+    __comptime_assert (
+        sampled_indices.rank == 1
+    ), "sampled_indices rank must be 1"
 
     var shape = logits.runtime_layout.shape.value.canonicalize()
     var batch_size = shape[0]

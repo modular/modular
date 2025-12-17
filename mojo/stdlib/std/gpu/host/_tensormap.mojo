@@ -252,7 +252,8 @@ struct TensorMap(ImplicitlyCopyable):
 @always_inline
 fn create_tensormap[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
 ](
     global_buf: DeviceBuffer[dtype],
     global_shape: IndexList[rank],

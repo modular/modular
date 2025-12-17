@@ -181,7 +181,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
+        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
 
         var n_outer_idx = tile_n_k_idx[0] // (kernel_cols // 2)
         var kl = tile_n_k_idx[1]
@@ -199,7 +199,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
 
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
-        constrained[simd_size == 4]()
+        __comptime_assert simd_size == 4
 
         @parameter
         if prefetch_distance > 0:
@@ -244,7 +244,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows2, TileN, TileK) tile.
         """
-        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
+        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
 
         comptime kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
         comptime single_row = (kernel_rows == 1)

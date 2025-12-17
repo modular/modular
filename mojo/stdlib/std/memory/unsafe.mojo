@@ -29,7 +29,8 @@ from sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
 @always_inline("nodebug")
 fn bitcast[
     src_dtype: DType,
-    src_width: Int, //,
+    src_width: Int,
+    //,
     dtype: DType,
     width: Int = src_width,
 ](val: SIMD[src_dtype, src_width]) -> SIMD[dtype, width]:
@@ -148,7 +149,8 @@ fn _llvm_bitwidth(dtype: DType) -> Int:
 
 @always_inline("nodebug")
 fn pack_bits[
-    src_width: Int, //,
+    src_width: Int,
+    //,
     dtype: DType = _uint(src_width),
     width: Int = 1,
 ](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:

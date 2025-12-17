@@ -20,7 +20,11 @@ from max.graph import DeviceRef, TensorValue, Weight
 from max.graph.quantization import QuantizationEncoding
 from max.nn.lora.interfaces import SupportsLoRA
 
-from ..kernels import sgmv_lora_kernel, sgmv_qkv_lora_kernel, sliced_add
+from ..kernels import (
+    sgmv_lora_kernel,
+    sgmv_qkv_lora_kernel,
+    sliced_add,
+)
 from ..kv_cache import (
     KVCacheParams,
     PagedCacheValues,
@@ -159,6 +163,7 @@ class LinearLoRA(Module, SupportsLoRA):
             lora_ranks=self.lora_ranks,
             grouped_row_offsets=self.lora_grouped_offsets,
             max_lora_seq_len=self.in_dim,
+            lora_end_idx=self.lora_end_idx,
             bias=self.lora_bias,
         )
 

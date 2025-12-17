@@ -21,7 +21,8 @@ from utils.index import IndexList
 # a non-contiguous tensor cannot be fused *into* this as input.
 @always_inline
 fn reshape[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     output_rank: Int,
     single_thread_blocking_override: Bool = True,
 ](
@@ -85,7 +86,9 @@ fn reshape_shape[
     input_buf: LayoutTensor[input_type, **_],
     target_shape_buf: LayoutTensor[target_shape_type, **_],
 ) raises -> IndexList[output_rank]:
-    constrained[target_shape_buf.rank == 1, "target_shape_buf must be rank 1"]()
+    __comptime_assert (
+        target_shape_buf.rank == 1
+    ), "target_shape_buf must be rank 1"
     if output_rank != target_shape_buf.dim(0):
         raise Error("[reshape] requires (len(target_shape) == output_rank)")
 

@@ -683,7 +683,8 @@ struct SplitKTileScheduler[
     fn reduce_add[
         accum_type: DType,
         c_reg_layout: Layout,
-        workspace_layout: Layout, //,
+        workspace_layout: Layout,
+        //,
         *,
         write_back: Bool,
     ](
