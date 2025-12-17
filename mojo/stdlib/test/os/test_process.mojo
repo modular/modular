@@ -24,7 +24,7 @@ def test_process_run():
     # CHECK-LABEL: == test_process_run
     # CHECK-NEXT: == TEST_ECHO
     var command = "echo"
-    _ = Process.run(command, List[String]("== TEST_ECHO"))
+    _ = Process.run(command, ["== TEST_ECHO"])
 
 
 def test_process_run_missing():

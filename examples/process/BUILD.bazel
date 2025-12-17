@@ -12,5 +12,5 @@ mojo_binary(
     # This is the crucial part: it tells Bazel that your script
     # depends on the standard library target. Bazel will build
     # the stdlib from source and make it available to your script.
-    deps = ["//mojo/stdlib/stdlib:stdlib"],
+    deps = ["@mojo//:std"],
 )

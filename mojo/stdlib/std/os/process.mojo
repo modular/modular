@@ -17,7 +17,7 @@ Example:
 ```mojo
 from os import Process
 from collections import List
-_ = Process.run("echo", List[String]("== TEST_ECHO"))
+_ = Process.run("echo", ["== TEST_ECHO"])
 ```
 """
 from collections import List, Optional
@@ -39,7 +39,7 @@ from sys._libc import (
     WaitFlags,
 )
 from sys.ffi import c_char, c_int, c_pid_t, get_errno
-from sys.os import sep
+from sys.os import abort, sep
 
 
 # ===----------------------------------------------------------------------=== #
@@ -189,7 +189,7 @@ struct Pipe:
 # Process execution
 # ===----------------------------------------------------------------------=== #
 
-alias ERR_STR_LEN = 8
+comptime ERR_STR_LEN = 8
 
 
 struct Process:
@@ -369,9 +369,9 @@ struct Process:
             var file_name = String(path.split(sep)[-1])
 
             var arg_count = len(argv)
-            var argv_array_ptr_cstr_ptr = LegacyUnsafePointer[
-                LegacyUnsafePointer[c_char, mut=False]
-            ].alloc(arg_count + 2)
+            var argv_array_ptr_cstr_ptr = alloc[
+                UnsafePointer[mut=False, c_char, ImmutAnyOrigin]
+            ](arg_count + 2)
             var offset = 0
             # Arg 0 in `argv` ptr array should be the file name
             argv_array_ptr_cstr_ptr[offset] = file_name.unsafe_cstr_ptr()
@@ -382,8 +382,7 @@ struct Process:
                 offset += 1
 
             # `argv` ptr array terminates with NULL PTR
-            argv_array_ptr_cstr_ptr[offset] = LegacyUnsafePointer[c_char]()
-
+            argv_array_ptr_cstr_ptr[offset] = UnsafePointer[mut=False, c_char, ImmutAnyOrigin]()
             var path_cptr = path.unsafe_cstr_ptr()
 
             var pid: c_pid_t = 0
@@ -392,7 +391,7 @@ struct Process:
                 UnsafePointer(to=pid),
                 path_cptr,
                 argv_array_ptr_cstr_ptr,
-                LegacyUnsafePointer[LegacyUnsafePointer[Int8, mut=False]](),
+                UnsafePointer[mut=False, UnsafePointer[mut=False, Int8, ImmutAnyOrigin], ImmutAnyOrigin](),
             )
 
             if has_error_code > 0:
@@ -410,4 +409,4 @@ struct Process:
             constrained[
                 False, "Unknown platform process execution not implemented"
             ]()
-            return abort[Process]()
+            abort[prefix="ERROR:"]("Unknown platform process execution not implemented")

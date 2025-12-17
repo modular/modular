@@ -87,7 +87,7 @@ comptime c_float = Float32
 comptime c_double = Float64
 """C `double` type."""
 
-alias c_pid_t = Int
+comptime c_pid_t = Int
 """C `pid_t` type."""
 
 comptime MAX_PATH = _get_max_path()

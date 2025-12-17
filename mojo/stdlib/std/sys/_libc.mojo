@@ -106,11 +106,13 @@ struct BufferMode:
 
 
 @always_inline
-fn posix_spawnp(
-    pid: UnsafePointer[c_pid_t, mut=True, origin=_],
-    file: UnsafePointer[c_char, mut=False, origin=_],
-    argv: UnsafePointer[UnsafePointer[c_char, mut=False, origin=_]],
-    envp: UnsafePointer[UnsafePointer[c_char, mut=False, origin=_]],
+fn posix_spawnp[
+    origin: ImmutOrigin, //,
+](
+    pid: UnsafePointer[mut=True, c_pid_t],
+    file: UnsafePointer[mut=False, c_char],
+    argv: UnsafePointer[UnsafePointer[mut=False, c_char, origin]],
+    envp: UnsafePointer[UnsafePointer[mut=False, c_char, origin]],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
     — function creates a new process (child process) from the specified process image.
@@ -124,7 +126,7 @@ fn posix_spawnp(
     # TODO: Implement `const posix_spawn_file_actions_t`, `*file_actions, const posix_spawnattr_t *restrict attrp,`
     # to allow full control of how process is spawned
     return external_call["posix_spawnp", c_int](
-        pid, file, OpaquePointer(), OpaquePointer(), argv, envp
+        pid, file, OpaquePointer[mut=False, origin](), OpaquePointer[mut=False, origin](), argv, envp
     )
 
 
@@ -143,7 +145,7 @@ fn execvp[
     origin: ImmutOrigin, //,
 ](
     file: UnsafePointer[mut=False, c_char],
-    argv: UnsafePointer[mut=False, UnsafePointer[c_char, origin]],
+    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin]],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -210,14 +212,14 @@ fn write(fd: c_int, buf: OpaquePointer[mut=False], nbyte: c_size_t) -> c_int:
 struct WaitFlags:
     """Flags for `waitpid`."""
 
-    alias WNOHANG: c_int = 1
+    comptime WNOHANG: c_int = 1
 
 
 # pid_t waitpid(pid_t pid, int *wstatus, int options);
 @always_inline
 fn waitpid(
     pid: c_pid_t,
-    status: UnsafePointer[c_int, mut=True, origin=_],
+    status: UnsafePointer[mut=True, c_int],
     options: c_int,
 ) -> c_pid_t:
     """[`waitpid()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/waitpid.html)
