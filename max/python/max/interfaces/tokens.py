@@ -15,14 +15,16 @@
 This module provides high-performance data structures for managing token sequences
 during text generation. The primary components are:
 
-- TokenSlice: Type alias for numpy arrays containing token IDs
-- TokenBuffer: Dynamic, resizable container for token sequences
+- TokenSlice: Type alias for numpy arrays containing token IDs.
+- TokenBuffer: Dynamic, resizable container for token sequences.
 
 The TokenBuffer class provides efficient management of tokens for language model
 inference, including prompt tokens and generated output tokens.
 
 Example:
-    ```python
+
+.. code-block:: python
+
     import numpy as np
     from max.interfaces.tokens import TokenBuffer
 
@@ -38,7 +40,6 @@ Example:
     all_tokens = token_buffer.all  # [1, 2, 3, 4, 5, 6]
     generated = token_buffer.generated  # [5, 6]
     prompt = token_buffer.prompt  # [1, 2, 3, 4]
-    ```
 """
 
 from __future__ import annotations
@@ -169,14 +170,14 @@ class TokenBuffer:
 
     The first diagram shows how prompt and generated tokens share a single
     backing array. Later diagrams explain how processing and streaming walk
-    over that array during generation.
+    over that array during generation::
 
-     +-------------------- all --------------------+
-     +-----------------+---------------------------+
-     |     prompt      |        generated          |
-     +-----------------+---------------------------+
-     0   prompt_length ^          generated_length ^
-     0                                   len(self) ^
+        +-------------------- all --------------------+
+        +-----------------+---------------------------+
+        |     prompt      |        generated          |
+        +-----------------+---------------------------+
+        0   prompt_length ^          generated_length ^
+        0                                   len(self) ^
 
     This includes three attributes for accessing tokens:
     - `all`: The slice of the array containing all valid tokens.
@@ -188,24 +189,25 @@ class TokenBuffer:
     - `generated_length`: The number of tokens in the generated tokens.
     - `len(self)`: The total number of valid tokens in the buffer.
 
-    Processing window (what the model will process next):
+    Processing window (what the model will process next)::
 
-    +-------------------------------- all  -------------------------+
-    +-------------------+---------------------------+---------------+
-    |     processed     |          active           |    pending    |
-    +-------------------+---------------------------+---------------+
-    0  processed_length ^             active_length ^
-    0                              current_position ^
-    0                                                     len(self) ^
+        +-------------------------------- all  -------------------------+
+        +-------------------+---------------------------+---------------+
+        |     processed     |          active           |    pending    |
+        +-------------------+---------------------------+---------------+
+        0  processed_length ^             active_length ^
+        0                              current_position ^
+        0                                                     len(self) ^
 
     This includes one attribute for accessing tokens:
     - `active`: The slice of the array containing the active tokens.
 
     Along with three additional attributes for tracking their lengths:
+
     - `processed_length`: The number of tokens that have already been processed.
     - `active_length`: The number of tokens that are currently active.
     - `current_position`: The global index marking the end of the current
-     active processing window.
+      active processing window.
 
     This processing view is updated by method such as `rewind_processing`,
     `skip_processing`, `chunk`, and `advance_chunk/advance_with_token`. Which
@@ -213,18 +215,19 @@ class TokenBuffer:
     each step.
 
     It also maintains a completion window over the generated tokens
-    for completion streaming:
+    for completion streaming::
 
-    +------------- generated -------------+
-    +------------+------------------------+
-    |  streamed  |  ready to stream next  |
-    +------------+------------------------+
-          (1)               (2)
+        +------------- generated -------------+
+        +------------+------------------------+
+        |  streamed  |  ready to stream next  |
+        +------------+------------------------+
+        |     (1)    |          (2)           |
 
     Generated tokens are conceptually split into:
-    - (1) **streamed**: tokens that have already been returned to the caller.
-    - (2) **read to stream**: the newest generated tokens that have not yet
-      been returned.
+
+    1. **streamed**: tokens that have already been returned to the caller.
+    2. **read to stream**: the newest generated tokens that have not yet
+       been returned.
 
     Each call to `consume_recently_generated_tokens()` returns the (2) region
     and advances the boundary between (1) and (2), so subsequent calls only
@@ -233,7 +236,6 @@ class TokenBuffer:
     Together, these three views let `TokenBuffer` support efficient prompt
     handling, chunked processing, and incremental streaming while exposing a small,
     consistent public API.
-
     """
 
     array: TokenSlice
@@ -663,11 +665,13 @@ class TokenBuffer:
         """Return a concise debug representation of the buffer state.
 
         The representation summarizes:
+
         - Whether the buffer is currently actively chunked.
         - How many tokens are active for processing.
         - How many tokens belong to the prompt.
         - How many tokens have been generated.
         - How many tokens exist in total.
+
         A small preview of the underlying token array is included; for large
         buffers, only the beginning and end of the sequence are shown with an
         ellipsis to avoid overwhelming logs.

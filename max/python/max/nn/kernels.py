@@ -1796,13 +1796,14 @@ def mla_decode_branch_fp8(
 ) -> TensorValue:
     """
     This is a manually fused kernel that performs the following operations:
+
     - Project q_nope to kv_latent_dim through a fp8 batched matmul:
-        q_nope_proj = q_nope_t @ w_uk
+      q_nope_proj = q_nope_t @ w_uk
     - Concatenate q_nope_proj and q_rope:
-        q_full = concat(q_nope_proj, q_rope, axis=2)
+      q_full = concat(q_nope_proj, q_rope, axis=2)
     - Perform MLA decode
     - Project raw_output to v_head_dim through another fp8 batched matmul:
-        output = raw_output_t @ w_uv
+      output = raw_output_t @ w_uv
 
     Args:
         q_nope: Non-rope part of the query tensor. Shape: [tot_seq_len, num_heads,
@@ -2009,9 +2010,10 @@ def flare_mla_decompress_k_cache(
     into the KV space using a weight matrix.
 
     The process involves:
-        1. Copying buffer_length latent vectors from the key cache into a contiguous
-           buffer (k_latent)
-        2. Computing k = k_latent @ weight.T to obtain the decompressed keys
+
+    1. Copying buffer_length latent vectors from the key cache into a contiguous
+        buffer (k_latent)
+    2. Computing k = k_latent @ weight.T to obtain the decompressed keys
 
     Returns:
         A tensor of shape [buffer_size, weight.shape[0]] containing the decompressed
@@ -2227,7 +2229,8 @@ def kv_cache_ragged_radd(
     """This function adds a tensor to a slice of the KVCache, sliced on the batch dimension.
 
     This expects that the requests which should be sliced out are contiguous and
-    in the front of the tensor, and we're only adding to the last requests in the batch
+    in the front of the tensor, and we're only adding to the last requests in the batch.
+
     Args:
         a: The tensor to add to the KVCache.
         kv_collection: The KVCache collection to add to.
@@ -2579,6 +2582,7 @@ def grouped_dynamic_scaled_fp8_matmul(
     tokens_padded_per_expert: bool = False,
 ) -> TensorValue:
     """Grouped blockwise scaled matmul used in MoE layer.
+
     Perform a grouped blockwise scaled matmul of two tensors with scaling factors.
     `hidden_states` and `expert_start_indices` are used together to implement
     the ragged tensor.
@@ -3570,6 +3574,9 @@ def merge_ragged_tensors(
             - The merged row offsets with the same shape as input row offsets.
 
     Example:
+
+    .. code-block:: python
+
         a = [1, 2, 3, 4, 5, 6]
         a_row_offsets = [0, 2, 6]
         b = [7, 8, 9, 10]
@@ -3626,7 +3633,6 @@ def apply_penalties_to_logits(
             indicates the frequency of the token.
         frequency_offsets: 1d tensor of shape [batch_size + 1], indicating
             start of each sequence's data.
-
         frequency_penalty: The frequency penalty to apply to the model's output.
             A positive value will penalize new tokens based on their frequency
             in the generated text: tokens will receive a penalty proportional
