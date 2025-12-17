@@ -11,17 +11,18 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: bench_decode
-file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_blackwell_decode.py
+name: bench_prefill
+file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_blackwell_prefill.py
 
 deepseek-v2-commons: &deepseek-v2-commons
-  $num_heads: 128
-  $num_kv_heads: 128
+  $num_heads: 32
   $head_dim: 128
-  engine: ["flashinfer", "modular_max"]
+  $causal: [True, False]
+  # $dtype: [bfloat16]
+  $engine: ["flashinfer", "tridao", "modular_max"]
   model: "deepseek-v2"
 
 params:
 - <<: *deepseek-v2-commons
-  $batch_size: "[2**i for i in range(4, 8)]"
-  $cache_len: "[2**i for i in [10]]"
+  $batch_size: [1, 2]
+  $qkv_len: [4096, 8192]

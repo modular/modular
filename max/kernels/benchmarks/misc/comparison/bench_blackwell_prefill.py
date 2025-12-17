@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import argparse
 import math
 import types
 from collections.abc import Callable
@@ -26,6 +27,7 @@ import torch
 
 # Import bench utilities from Bazel dependency (bench_utils target)
 from bench import bench_kineto_with_cupti_warmup, setup_ninja_path
+from bencher_utils import Bench, ThroughputMeasure
 
 # MAX imports
 from max.driver import Accelerator
@@ -83,7 +85,7 @@ def bench_flashinfer(
     causal: bool,
     dtype: torch.dtype,
     backend: str = "cutlass",
-) -> tuple[float, float] | None:
+) -> tuple[float, int] | None:
     if _flashinfer is None:
         print("flashinfer not available, skipping bench_flashinfer")
         return None
@@ -161,35 +163,13 @@ def bench_flashinfer(
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
 
-    def flops(time_s: float) -> float:
+    def flops() -> int:
         if causal:
-            return (
-                batch_size
-                * qkv_len
-                * qkv_len
-                * num_heads
-                * head_dim
-                * 2
-                / time_s
-                / 1e12
-            )
+            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 2
         else:
-            return (
-                batch_size
-                * qkv_len
-                * qkv_len
-                * num_heads
-                * head_dim
-                * 4
-                / time_s
-                / 1e12
-            )
+            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 4
 
-    # print(
-    #     f"bench_flashinfer (batch_size={batch_size}, qkv_len={qkv_len}, num_heads={num_heads}, head_dim={head_dim}, causal={causal}), time={time_s*1000:.4f} ms, flops: {flops(time_s):.4f} TFLOPs/s"
-    # )
-
-    return time_s, flops(time_s)
+    return time_s, flops()
 
 
 def bench_max(
@@ -199,7 +179,7 @@ def bench_max(
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
-) -> tuple[float, float] | None:
+) -> tuple[float, int] | None:
     """Benchmark MAX flash_attention_gpu kernel.
 
     Args:
@@ -270,31 +250,13 @@ def bench_max(
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
 
-    def flops(time_s: float) -> float:
+    def flops() -> int:
         if causal:
-            return (
-                batch_size
-                * qkv_len
-                * qkv_len
-                * num_heads
-                * head_dim
-                * 2
-                / time_s
-                / 1e12
-            )
+            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 2
         else:
-            return (
-                batch_size
-                * qkv_len
-                * qkv_len
-                * num_heads
-                * head_dim
-                * 4
-                / time_s
-                / 1e12
-            )
+            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 4
 
-    return time_s, flops(time_s)
+    return time_s, flops()
 
 
 def bench_tridao(
@@ -304,7 +266,7 @@ def bench_tridao(
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
-) -> tuple[float, float] | None:
+) -> tuple[float, int] | None:
     if _flash_attn_varlen_func is None:
         print("flash_attn not available, skipping bench_tridao")
         return None
@@ -353,31 +315,13 @@ def bench_tridao(
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
 
-    def flops(time_s: float) -> float:
+    def flops() -> int:
         if causal:
-            return (
-                batch_size
-                * qkv_len
-                * qkv_len
-                * num_heads
-                * head_dim
-                * 2
-                / time_s
-                / 1e12
-            )
+            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 2
         else:
-            return (
-                batch_size
-                * qkv_len
-                * qkv_len
-                * num_heads
-                * head_dim
-                * 4
-                / time_s
-                / 1e12
-            )
+            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 4
 
-    return time_s, flops(time_s)
+    return time_s, flops()
 
 
 def bench_prefill(
@@ -387,7 +331,8 @@ def bench_prefill(
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
-) -> None:
+    engine: str,
+) -> tuple[float, int] | None:
     """Run all MHA prefill benchmarks and display results side-by-side.
 
     Args:
@@ -397,6 +342,7 @@ def bench_prefill(
         head_dim: Dimension of each head
         causal: Whether to use causal masking
         dtype: torch dtype for inputs (e.g., torch.bfloat16)
+        engine: backend to run the benchmark ("flashinfer" or "tridao" or "modular_max")
     """
     print("=" * 80)
     print(
@@ -404,76 +350,143 @@ def bench_prefill(
     )
     print("=" * 80)
 
-    results: dict[str, tuple[float, float] | None] = {}
+    result: tuple[float, int] | None = None
 
-    # Run FlashInfer benchmark
-    if _flashinfer is not None:
-        try:
-            results["flashinfer"] = bench_flashinfer(
-                batch_size,
-                qkv_len,
-                num_heads,
-                head_dim,
-                causal,
-                dtype,
-                backend="cutlass",
-            )
-        except Exception as e:
-            print(f"FlashInfer benchmark failed: {e}")
-            results["flashinfer"] = None
-    else:
-        results["flashinfer"] = None
+    if engine == "flashinfer":
+        # Run FlashInfer benchmark
+        if _flashinfer is not None:
+            try:
+                result = bench_flashinfer(
+                    batch_size,
+                    qkv_len,
+                    num_heads,
+                    head_dim,
+                    causal,
+                    dtype,
+                    backend="cutlass",
+                )
+            except Exception as e:
+                print(f"FlashInfer benchmark failed: {e}")
 
-    # Run Tri Dao benchmark
-    if _flash_attn_varlen_func is not None:
+    elif engine == "tridao":
+        # Run Tri Dao benchmark
+        if _flash_attn_varlen_func is not None:
+            try:
+                result = bench_tridao(
+                    batch_size, qkv_len, num_heads, head_dim, causal, dtype
+                )
+            except Exception as e:
+                print(f"Tri Dao benchmark failed: {e}")
+
+    # Run MAX benchmark
+    elif engine == "modular_max":
         try:
-            results["tridao"] = bench_tridao(
+            result = bench_max(
                 batch_size, qkv_len, num_heads, head_dim, causal, dtype
             )
         except Exception as e:
-            print(f"Tri Dao benchmark failed: {e}")
-            results["tridao"] = None
-    else:
-        results["tridao"] = None
+            print(f"MAX benchmark failed: {e}")
 
-    print(f"{'Implementation':<20} {'Time (ms)':<15} {'TFLOPs/s':<15}")
-
-    # Run MAX benchmark
-    try:
-        results["max"] = bench_max(
-            batch_size, qkv_len, num_heads, head_dim, causal, dtype
-        )
-    except Exception as e:
-        print(f"MAX benchmark failed: {e}")
-        results["max"] = None
-
-    # FlashInfer
-    if results["flashinfer"] is not None:
-        time_s, tflops = results["flashinfer"]
-        print(f"{'FlashInfer':<20} {time_s * 1000:<15.4f} {tflops:<15.2f}")
-    else:
-        print(f"{'FlashInfer':<20} {'N/A':<15} {'N/A':<15}")
-
-    # Tri Dao
-    if results["tridao"] is not None:
-        time_s, tflops = results["tridao"]
-        print(
-            f"{'Tri Dao Flash-Attn':<20} {time_s * 1000:<15.4f} {tflops:<15.2f}"
-        )
-    else:
-        print(f"{'Tri Dao Flash-Attn':<20} {'N/A':<15} {'N/A':<15}")
-
-    # MAX
-    if results["max"] is not None:
-        time_s, tflops = results["max"]
-        print(f"{'MAX':<20} {time_s * 1000:<15.4f} {tflops:<15.2f}")
-    else:
-        print(f"{'MAX':<20} {'N/A':<15} {'N/A':<15}")
-
-    print("=" * 80)
+    return result
 
 
 if __name__ == "__main__":
-    bench_prefill(1, 4096, 32, 128, False, torch.bfloat16)
-    bench_prefill(2, 4096, 32, 128, False, torch.bfloat16)
-    bench_prefill(1, 8192, 32, 128, False, torch.bfloat16)
+    # batch_size = int(arg_parse("batch_size", 1))
+    # qkv_len = int(arg_parse("qkv_len", 4096))
+    # num_heads = int(arg_parse("num_heads", 32))
+    # head_dim = int(arg_parse("head_dim", 128))
+    # causal = bool(arg_parse("causal", False))
+    # dtype = arg_parse("dtype", torch.bfloat16)
+    # engine = arg_parse("engine", "modular_max")
+    # output_path = Path(arg_parse("output", "output.csv", short_handle="o"))
+
+    parser = argparse.ArgumentParser(description="MHA Prefill Benchmark")
+    parser.add_argument(
+        "--batch_size", "--batch-size", type=int, default=1, help="Batch size"
+    )
+    parser.add_argument(
+        "--qkv_len",
+        "--qkv-len",
+        type=int,
+        default=4096,
+        help="QKV length",
+    )
+    parser.add_argument(
+        "--num_heads",
+        "--num-heads",
+        type=int,
+        default=32,
+        help="Number of query heads",
+    )
+
+    parser.add_argument(
+        "--head_dim", "--head-dim", type=int, default=128, help="Head dimension"
+    )
+
+    parser.add_argument(
+        "--causal",
+        type=bool,
+        default=False,
+        help="Causal",
+    )
+
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="bfloat16",
+        choices=["float16", "bfloat16", "float32"],
+        help="Data type",
+    )
+
+    parser.add_argument(
+        "--engine",
+        type=str,
+        default="modular_max",
+        choices=["flashinfer", "tridao", "modular_max"],
+        help="Engine",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default="output.csv",
+        help="Output path",
+    )
+    args, _ = parser.parse_known_args()
+
+    dtype_map = {
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "float32": torch.float32,
+    }
+
+    if args.engine not in ["flashinfer", "tridao", "modular_max"]:
+        raise ValueError(f"engine {args.engine} is not supported!")
+
+    result = bench_prefill(
+        batch_size=args.batch_size,
+        qkv_len=args.qkv_len,
+        num_heads=args.num_heads,
+        head_dim=args.head_dim,
+        causal=args.causal,
+        dtype=dtype_map[args.dtype],
+        engine=args.engine,
+    )
+
+    met_sec, flops = result if result else [0, 0]
+    flops_per_sec = ThroughputMeasure(Bench.flops, flops)
+    name = (
+        f"MHA_Prefill/batch_size={args.batch_size}/qkv_len={args.qkv_len}/"
+        f"num_heads={args.num_heads}/head_dim={args.head_dim}/"
+        f"causal={args.causal}/dtype={dtype_map[args.dtype]}/"
+        f"engine={args.engine}/"
+    )
+
+    b = Bench(
+        name,
+        iters=1,
+        met=met_sec,
+        metric_list=[flops_per_sec],
+    )
+
+    b.dump_report(output_path=args.output_path)

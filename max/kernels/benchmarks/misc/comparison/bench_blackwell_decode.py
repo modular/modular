@@ -24,13 +24,17 @@ import math
 import os
 import sys
 import types
+from pathlib import Path
 from typing import Any
 
 import torch
 
 # Import bench utilities from current directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import argparse
+
 from bench import bench_kineto, setup_ninja_path
+from bencher_utils import Bench, ThroughputMeasure, arg_parse
 
 # MAX imports
 from max.driver import Accelerator, Tensor
@@ -61,7 +65,7 @@ def bench_flashinfer(
     dtype: torch.dtype,
     use_tensor_cores: bool = True,
     backend: str = "fa",
-) -> tuple[float, float] | None:
+) -> tuple[float, int] | None:
     """Benchmark FlashInfer decode with paged KV cache.
 
     Args:
@@ -189,16 +193,14 @@ def bench_flashinfer(
     bytes_per_element = (
         2 if dtype == torch.bfloat16 or dtype == torch.float16 else 4
     )
-    gb_per_sec = (
+    total_bytes = (
         2
         * batch_size
         * (num_heads * head_dim + cache_len * num_kv_heads * head_dim)
         * bytes_per_element
-        / time_s
-        / 1e9
     )
 
-    return time_s, gb_per_sec
+    return time_s, total_bytes
 
 
 def bench_max(
@@ -209,7 +211,7 @@ def bench_max(
     head_dim: int,
     page_size: int,
     dtype: torch.dtype,
-) -> tuple[float, float]:
+) -> tuple[float, int]:
     """Benchmark MAX flash_attention_ragged with paged KV cache.
 
     Args:
@@ -413,16 +415,14 @@ def bench_max(
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
 
-    gb_per_sec = (
+    total_bytes = (
         2
         * batch_size
         * (num_heads * head_dim + cache_len * num_kv_heads * head_dim)
         * 2
-        / time_s
-        / 1e9
     )
 
-    return time_s, gb_per_sec
+    return time_s, total_bytes
 
 
 def bench_decode(
@@ -432,7 +432,8 @@ def bench_decode(
     num_kv_heads: int,
     head_dim: int,
     dtype: torch.dtype,
-) -> None:
+    engine: str,  # "modular_max" or "flashinfer"
+) -> tuple[float, int] | None:
     """Run all MHA decode benchmarks and display results side-by-side.
 
     Args:
@@ -442,6 +443,7 @@ def bench_decode(
         num_kv_heads: Number of KV heads
         head_dim: Dimension of each head
         dtype: torch dtype for inputs (e.g., torch.bfloat16)
+        engine: backend to run the benchmark ("modular_max" or "flashinfer")
     """
     print("=" * 80)
     print(
@@ -450,91 +452,81 @@ def bench_decode(
     )
     print("=" * 80)
 
-    results: dict[str, tuple[float, float] | None] = {}
+    result: tuple[float, int] | None = None
+    if engine == "flashinfer":
+        # Run FlashInfer benchmark with TensorRT-LLM backend
+        if _flashinfer is not None:
+            try:
+                result = bench_flashinfer(
+                    batch_size,
+                    cache_len,
+                    num_heads,
+                    num_kv_heads,
+                    head_dim,
+                    64,  # TRTLLM's page table size
+                    dtype,
+                    use_tensor_cores=True,
+                    backend="trtllm",
+                )
+            except Exception as e:
+                print(f"FlashInfer benchmark failed: {e}")
+                import traceback
 
-    # Run FlashInfer benchmark with TensorRT-LLM backend
-    if _flashinfer is not None:
+                traceback.print_exc()
+
+    # Run MAX benchmark
+    if engine == "modular_max":
         try:
-            result = bench_flashinfer(
+            result = bench_max(
                 batch_size,
                 cache_len,
                 num_heads,
                 num_kv_heads,
                 head_dim,
-                64,  # TRTLLM's page table size
+                128,  # MAX's page size
                 dtype,
-                use_tensor_cores=True,
-                backend="trtllm",
             )
-            results["flashinfer"] = result
         except Exception as e:
-            print(f"FlashInfer benchmark failed: {e}")
+            print(f"MAX benchmark failed: {e}")
             import traceback
 
             traceback.print_exc()
-            results["flashinfer"] = None
-    else:
-        results["flashinfer"] = None
-
-    # Run MAX benchmark
-    try:
-        result = bench_max(
-            batch_size,
-            cache_len,
-            num_heads,
-            num_kv_heads,
-            head_dim,
-            128,  # MAX's page size
-            dtype,
-        )
-        results["max"] = result
-    except Exception as e:
-        print(f"MAX benchmark failed: {e}")
-        import traceback
-
-        traceback.print_exc()
-        results["max"] = None
-
-    # Print results
-    print(f"{'Implementation':<20} {'Time (ms)':<15} {'GB/s':<15}")
-    print("-" * 50)
-
-    # FlashInfer
-    if results["flashinfer"] is not None:
-        time_s, gb_per_sec = results["flashinfer"]
-        print(f"{'FlashInfer':<20} {time_s * 1000:<15.4f} {gb_per_sec:<15.2f}")
-    else:
-        print(f"{'FlashInfer':<20} {'N/A':<15} {'N/A':<15}")
-
-    # MAX
-    if results["max"] is not None:
-        time_s, gb_per_sec = results["max"]
-        print(f"{'MAX':<20} {time_s * 1000:<15.4f} {gb_per_sec:<15.2f}")
-    else:
-        print(f"{'MAX':<20} {'N/A':<15} {'N/A':<15}")
-
-    print("=" * 80)
+    return result
 
 
 def main() -> None:
     """Main entry point for the MHA decode benchmark."""
-    import argparse
 
     parser = argparse.ArgumentParser(description="MHA Decode Benchmark")
     parser.add_argument(
-        "--batch-size", type=int, default=128, help="Batch size"
+        "--batch_size", "--batch-size", type=int, default=128, help="Batch size"
     )
     parser.add_argument(
-        "--cache-len", type=int, default=1024, help="KV cache length"
+        "--cache_len",
+        "--cache-len",
+        type=int,
+        default=1024,
+        help="KV cache length",
     )
     parser.add_argument(
-        "--num-heads", type=int, default=4, help="Number of query heads"
+        "--num_heads",
+        "--num-heads",
+        type=int,
+        default=4,
+        help="Number of query heads",
     )
     parser.add_argument(
-        "--num-kv-heads", type=int, default=4, help="Number of KV heads"
+        "--num_kv_heads",
+        "--num-kv-heads",
+        type=int,
+        default=4,
+        help="Number of KV heads",
     )
     parser.add_argument(
-        "--head-dim", type=int, default=128, help="Head dimension"
+        "--head_dim", "--head-dim", type=int, default=128, help="Head dimension"
+    )
+    parser.add_argument(
+        "--page_size", "--page-size", type=int, default=128, help="Page size"
     )
     parser.add_argument(
         "--dtype",
@@ -543,7 +535,22 @@ def main() -> None:
         choices=["float16", "bfloat16", "float32"],
         help="Data type",
     )
-    args = parser.parse_args()
+
+    parser.add_argument(
+        "--engine",
+        type=str,
+        default="modular_max",
+        choices=["modular_max", "flashinfer"],
+        help="Engine",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default="output.csv",
+        help="Output path",
+    )
+    args, _ = parser.parse_known_args()
 
     dtype_map = {
         "float16": torch.float16,
@@ -551,14 +558,41 @@ def main() -> None:
         "float32": torch.float32,
     }
 
-    bench_decode(
+    engine = arg_parse("engine", "modular_max")
+    output_path = Path(arg_parse("output", "output.csv", short_handle="o"))
+
+    if engine not in ["flashinfer", "modular_max"]:
+        raise ValueError(f"engine {engine} is not supported!")
+
+    # Decode benchmark: batch_size, cache_len, num_heads, num_kv_heads, head_dim, page_size
+    result = bench_decode(
         batch_size=args.batch_size,
         cache_len=args.cache_len,
         num_heads=args.num_heads,
         num_kv_heads=args.num_kv_heads,
         head_dim=args.head_dim,
         dtype=dtype_map[args.dtype],
+        engine=args.engine,
     )
+
+    met_sec, bytes = result if result else [0, 0]
+    bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
+
+    name = (
+        f"Decode/batch_size={args.batch_size}/cache_len={args.cache_len}/"
+        f"num_heads={args.num_heads}/num_kv_heads={args.num_kv_heads}/"
+        f"head_dim={args.head_dim}/dtype={dtype_map[args.dtype]}/"
+        f"engine={args.engine}/"
+    )
+
+    b = Bench(
+        name,
+        iters=1,
+        met=met_sec,
+        metric_list=[bytes_per_sec],
+    )
+
+    b.dump_report(output_path=output_path)
 
 
 if __name__ == "__main__":

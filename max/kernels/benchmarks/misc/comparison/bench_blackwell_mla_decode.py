@@ -577,11 +577,11 @@ if __name__ == "__main__":
         enable_pdl=True,
     )
 
-    met_ms, bytes = result if result else [0, 0]
+    met_sec, bytes = result if result else [0, 0]
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 
     name = (
-        f"MLA/batch_size={batch_size}/cache_len={cache_len}/"
+        f"MLA_Decode/batch_size={batch_size}/cache_len={cache_len}/"
         f"q_len_per_request={q_len_per_request}/num_q_heads={num_q_heads}/"
         f"qk_nope_head_dim={qk_nope_head_dim}/qk_rope_head_dim={qk_rope_head_dim}/"
         f"kv_lora_rank={kv_lora_rank}/engine={engine}/"
@@ -590,7 +590,7 @@ if __name__ == "__main__":
     b = Bench(
         name,
         iters=1,
-        met=met_ms,
+        met=met_sec,
         metric_list=[bytes_per_sec],
     )
 
