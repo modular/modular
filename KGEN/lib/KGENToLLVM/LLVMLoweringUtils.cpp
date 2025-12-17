@@ -479,7 +479,7 @@ Value VariantHelper::materializeLLVMUnion(
   // Normalize the max_align_t to an (potentially array of) integers.
   if (auto t = dyn_cast<VectorType>(maxAlignTp)) {
     // Flatten the vector.
-    for (int i = 0, e = t.getNumElements(); i < e; i++) {
+    for (int i = 0, e = t.getNumElements(); i < e; ++i) {
       storageValues.push_back(LLVM::ConstantOp::create(
           b, b.getIntegerType(dl.getTypeSizeInBits(t.getElementType())), 0));
     }
@@ -512,7 +512,7 @@ Value VariantHelper::materializeLLVMUnion(
   if (auto vecTp = dyn_cast<VectorType>(maxAlignTp)) {
     // Aggregate the vector.
     maxAlignV = LLVM::UndefOp::create(b, vecTp);
-    for (int i = 0, e = vecTp.getNumElements(); i < e; i++) {
+    for (int i = 0, e = vecTp.getNumElements(); i < e; ++i) {
       auto element = toPack.front();
       maxAlignV = LLVM::InsertElementOp::create(
           b, maxAlignV,

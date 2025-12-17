@@ -247,7 +247,7 @@ FailureOr<TypedAttr> VariadicReduceAttr::evaluateWith(
   // We have a concrete value for both the generator/variadic, then fold
   unsigned eltCnt = va.getValues().size();
   TypedAttr reducedVal = sugarCast<TypedAttr>(getBase());
-  for (unsigned i = 0; i < eltCnt; i++) {
+  for (unsigned i = 0; i < eltCnt; ++i) {
     IntegerAttr vaIdx = IntegerAttr::get(IndexType::get(va.getContext()), i);
     GeneratorAttr spGen = reducer.getSpecializedGenerator(
         {reducedVal, va, vaIdx}, evaluationContext);
@@ -299,7 +299,7 @@ TypedAttr VariadicZipAttr::get(VariadicType type, TypedAttr variadics) {
 
   // Do zipping.
   SmallVector<TypedAttr> zippedElts(zipLen, nullptr);
-  for (unsigned i = 0; i < zipLen; i++) {
+  for (unsigned i = 0; i < zipLen; ++i) {
     SmallVector<TypedAttr> toZip = llvm::map_to_vector(
         elts, [i](VariadicAttr elt) { return elt.getValues()[i]; });
     zippedElts[i] = VariadicAttr::get(toZip, eltVATps);

@@ -1257,7 +1257,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
     }
 
     iterator = *getNextIterResult;
-    loopUnrollCount++;
+    ++loopUnrollCount;
   }
 
   if (options.loopUnrollingWarnThreshold > 0 &&

@@ -496,7 +496,7 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
     return CoordinateAttr::get(ptr.getContext(), offset, indexOfReferencedBlob,
                                ptr.getType());
   });
-  for (unsigned index = 0, e = symbols.size(); index < e; index++)
+  for (unsigned index = 0, e = symbols.size(); index < e; ++index)
     symbols[index] = ::cast<TypedAttr>(symbolReplacer.replace(symbols[index]));
 
   // Replace raw pointers in the results except for null pointers. Error if a
@@ -574,7 +574,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       return PointerAttr::get(addr, coord.getType());
     });
     for (unsigned index = 0, numSymbols = model.getSymbols().size();
-         index < numSymbols; index++) {
+         index < numSymbols; ++index) {
       Attribute newSymbol = symReplacer.replace(model.getSymbols()[index]);
       symbolMap[index] = addSymbolToSymbolTable(::cast<TypedAttr>(newSymbol));
     }

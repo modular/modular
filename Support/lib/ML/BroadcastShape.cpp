@@ -93,7 +93,7 @@ M::BCastList<N>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
     int64_t elements = 1;
     const int rank = x[0].size();
     output.resize(rank);
-    for (int i = 0; i < rank; i++) {
+    for (int i = 0; i < rank; ++i) {
       const int64_t dim = x[0][i];
       elements = multiplySymDims(elements, dim);
       output[i] = dim;

@@ -33,7 +33,7 @@ void TimerHeap::cancel(AsyncValueRef<Chain> &chain) {
       entries.pop_back();
       continue;
     }
-    i++;
+    ++i;
   }
   if (reheap)
     std::make_heap(entries.begin(), entries.end());

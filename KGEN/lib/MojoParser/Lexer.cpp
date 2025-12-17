@@ -487,7 +487,7 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
         size_t i = 0;
         while (isOctalDigit(*curPtr) && i < 3) {
           ++curPtr;
-          i++;
+          ++i;
         }
       } else if (*curPtr == 'x') {
         ++curPtr;
@@ -495,7 +495,7 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
         size_t i = 0;
         while (llvm::isHexDigit(*curPtr) && i < 2) {
           ++curPtr;
-          i++;
+          ++i;
         }
         if (i != 2) {
           emitErrorAt(
@@ -787,7 +787,7 @@ std::string Lexer::getStringLiteralValue(StringRef bytes) {
       continue;
     case '\r':
       if (bytes[i] == '\n')
-        i++;
+        ++i;
       continue;
     case 'a':
       result.push_back('\a');
@@ -830,7 +830,7 @@ std::string Lexer::getStringLiteralValue(StringRef bytes) {
       size_t startDigit = i - 1;
       // At most 3 digits
       while (i < (startDigit + 3) && i < bytes.size() && isOctalDigit(bytes[i]))
-        i++;
+        ++i;
       unsigned int num;
       [[maybe_unused]] bool failed =
           bytes.slice(startDigit, i).getAsInteger(8, num);

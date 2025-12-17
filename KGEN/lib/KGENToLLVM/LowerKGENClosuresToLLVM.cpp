@@ -187,7 +187,7 @@ private:
     if (!func)
       return emitError(op.getLoc(), "Callee does not reference llvm function");
 
-    for (size_t i = 0; i < op.getCaptures().size(); i++) {
+    for (size_t i = 0; i < op.getCaptures().size(); ++i) {
       Type capturedArgType = types.boundArgTypes[i];
       LLVM::GEPOp boundArgPtr = LLVM::GEPOp::create(
           rewriter, wrapperFn.getLoc(), types.opaquePtrType,
@@ -201,7 +201,7 @@ private:
     size_t numCaptures = op.getCaptures().size();
     size_t numberDynamicArgs =
         op.getCalleeType().getBody().getValues().getNumInputs() - numCaptures;
-    for (size_t i = 0; i < numberDynamicArgs; i++)
+    for (size_t i = 0; i < numberDynamicArgs; ++i)
       liftedNestedFunctionCallArgs[i + numCaptures] =
           wrapperFnBody.getArgument(i + 1);
 

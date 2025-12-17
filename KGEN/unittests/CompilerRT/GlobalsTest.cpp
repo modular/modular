@@ -196,7 +196,7 @@ TEST_F(GlobalsTest, TableCapacityLimits) {
     void *obj = KGEN_CompilerRT_GetOrCreateGlobal(name, createTestObject,
                                                   destroyTestObject);
     if (obj)
-      successCount++;
+      ++successCount;
   }
 
   // With 16K table size, 1000 globals should all succeed.
@@ -225,12 +225,12 @@ TEST_F(GlobalsTest, ProbeExhaustionScenario) {
                                                   destroyTestObject);
 
     if (obj) {
-      successCount++;
+      ++successCount;
       // Verify we can retrieve the created global.
       void *retrieved = KGEN_CompilerRT_GetGlobalOrNull(name);
       EXPECT_EQ(retrieved, obj) << "Failed to retrieve global: " << name;
     } else {
-      failureCount++;
+      ++failureCount;
       break; // This stops at first failure to see what happens.
     }
   }

@@ -54,7 +54,7 @@ void BM_SingleProducer(benchmark::State &state) {
   if (state.thread_index() == 0) {
     queue = new (T);
     for (auto _ : state) {
-      for (int i = 0; i < consumers; i++)
+      for (int i = 0; i < consumers; ++i)
         queue->enqueue();
     }
     delete queue;
@@ -75,7 +75,7 @@ void BM_SingleConsumer(benchmark::State &state) {
   if (state.thread_index() == 0) {
     queue = new (T);
     for (auto _ : state) {
-      for (int i = 0; i < producers; i++)
+      for (int i = 0; i < producers; ++i)
         queue->dequeue();
     }
     delete queue;

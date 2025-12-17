@@ -918,7 +918,7 @@ static void emitWideAPInt(SmallVectorImpl<uint64_t> &Vals, const APInt &A) {
   // So, we only write the number of active words.
   unsigned NumWords = A.getActiveWords();
   const uint64_t *RawData = A.getRawData();
-  for (unsigned i = 0; i < NumWords; i++)
+  for (unsigned i = 0; i < NumWords; ++i)
     emitSignedInt64(Vals, RawData[i]);
 }
 
@@ -4976,10 +4976,10 @@ void IndexBitcodeWriter::writeCombinedGlobalValueSummary() {
         continue;
       NameVals.push_back(*RefValueId);
       if (RI.isReadOnly())
-        RORefCnt++;
+        ++RORefCnt;
       else if (RI.isWriteOnly())
-        WORefCnt++;
-      Count++;
+        ++WORefCnt;
+      ++Count;
     }
     NameVals[6] = Count;
     NameVals[7] = RORefCnt;

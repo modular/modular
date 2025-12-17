@@ -202,7 +202,7 @@ insertAndUpdateConventions(SmallVectorImpl<ArgConvention> &conventions,
   for (unsigned i = conventions.size() - 1; i >= argConventionIndex + packSize;
        i--)
     conventions[i] = conventions[i - (packSize - 1)];
-  for (unsigned i = 0; i < packSize; i++) {
+  for (unsigned i = 0; i < packSize; ++i) {
     ArgConvention newConvention = ArgConvention::ReadReg;
     if (auto ptr = dyn_cast<PointerType>(types[i])) {
       // if the depth is 0 then this is a top level kgen.pack and we do not know
@@ -431,7 +431,7 @@ void CallsiteTransform::applyPackTransform(unsigned operandIndex,
         b, member, operand, IntegerAttr::get(b.getIndexType(), curr++)));
   }
   SmallVector<Value> newOperands;
-  for (unsigned i = 0; i < operandIndex; i++)
+  for (unsigned i = 0; i < operandIndex; ++i)
     newOperands.push_back(callOp->getOperand(i));
 
   if (types.empty())
@@ -439,7 +439,7 @@ void CallsiteTransform::applyPackTransform(unsigned operandIndex,
   else
     llvm::append_range(newOperands, newArgs);
 
-  for (unsigned i = operandIndex + 1; i < callOp->getNumOperands(); i++)
+  for (unsigned i = operandIndex + 1; i < callOp->getNumOperands(); ++i)
     newOperands.push_back(callOp->getOperand(i));
   callOp->setOperands(newOperands);
 }

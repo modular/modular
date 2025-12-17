@@ -412,7 +412,7 @@ size_t M::getNumPerformanceCores() {
         // bits 24-31 of eax determine the coreType.
         // https://www.intel.com/content/www/us/en/developer/articles/guide/12th-gen-intel-core-processor-gamedev-guide.html
         if (((eax >> 24) & 0xFF) == 64) {
-          count++;
+          ++count;
           break;
         }
       }
@@ -471,13 +471,13 @@ std::vector<size_t> CPUSystemInfo::getPreferredCpuIDs(size_t numThreads) const {
     } else if (currentPass.size() + cpuIDs.size() <= numThreads) {
       // If this is less than the intended size, we can add this batch.
       cpuIDs.insert(cpuIDs.end(), currentPass.begin(), currentPass.end());
-      virtualCoreIndex++;
+      ++virtualCoreIndex;
     } else {
       // Otherwise, we will add a batch of unpinned CPUs at the end. We don't
       // generally expected this; it should happen only when the precise number
       // of cores has been specified up front (and is greater than the number of
       // physical cores, but does not segment them appropriately).
-      for (size_t i = cpuIDs.size(); i < numThreads; i++)
+      for (size_t i = cpuIDs.size(); i < numThreads; ++i)
         cpuIDs.emplace_back(kNoAffinity);
     }
     assert(cpuIDs.size() <= numThreads);
@@ -489,7 +489,7 @@ std::vector<size_t> CPUSystemInfo::getPreferredCpuIDs(size_t numThreads) const {
 static std::string bytesToHexStr(uint8_t *ptr, int count) {
   std::string s;
   llvm::raw_string_ostream ss(s);
-  for (int i = 0; i < count; i++) {
+  for (int i = 0; i < count; ++i) {
     if (i > 0)
       ss << ":";
     ss << llvm::format_hex_no_prefix(ptr[i], 2, true);

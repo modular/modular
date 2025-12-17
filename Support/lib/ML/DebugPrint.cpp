@@ -420,7 +420,7 @@ ErrorOrSuccess DebugTensorPrintOptions::printTensor(const void *buffer,
 
 #pragma GCC diagnostic pop
 
-    for (uint8_t i = 0; i < rank; i++) {
+    for (uint8_t i = 0; i < rank; ++i) {
       uint32_t dim = spec[i];
       outputFile.write((char *)&dim, sizeof(dim));
     }

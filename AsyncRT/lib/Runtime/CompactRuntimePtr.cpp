@@ -15,7 +15,7 @@ using namespace M::AsyncRT;
 
 Detail::RuntimeTable::RuntimeTable() {
   freeIndices.resize(kInvalidIndex);
-  for (uint8_t i = 0; i < kInvalidIndex; i++) {
+  for (uint8_t i = 0; i < kInvalidIndex; ++i) {
     allRuntimes[i] = nullptr;
     freeIndices[i] = kInvalidIndex - i - 1;
   }

@@ -555,7 +555,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       affinityListAccessTime += (end - start);
-      affinityAccessCount++;
+      ++affinityAccessCount;
 #endif
       goto KeepRunning;
     }
@@ -576,7 +576,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       taskListAccessTime += (end - start);
-      globalAccessCount++;
+      ++globalAccessCount;
 #endif
       goto KeepRunning;
     }
@@ -616,7 +616,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #if ASYNCRT_WORKER_STATS
           auto end = std::chrono::high_resolution_clock::now();
           spinAffinityListAccessTime += (end - start);
-          affinityAccessCount++;
+          ++affinityAccessCount;
 #endif
           goto KeepRunning;
         }
@@ -634,7 +634,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
           }
 #if ASYNCRT_WORKER_STATS
           auto end = std::chrono::high_resolution_clock::now();
-          globalAccessCount++;
+          ++globalAccessCount;
           spinTaskListAccessTime += (end - start);
 #endif
           goto KeepRunning;
@@ -714,7 +714,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       }
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
-      affinityAccessCount++;
+      ++affinityAccessCount;
       affinityListAccessTime += (end - start);
 #endif
       goto KeepRunning;
@@ -741,7 +741,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       }
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
-      globalAccessCount++;
+      ++globalAccessCount;
       taskListAccessTime += (end - start);
 #endif
       goto KeepRunning;
@@ -1036,7 +1036,7 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
       else {
         size_t start = workerIDToPoke << multicastFactor;
         size_t range = 1 << multicastFactor;
-        for (size_t i = start; i < start + range; i++) {
+        for (size_t i = start; i < start + range; ++i) {
           if (i < numWorkers)
             getWorkQueueThread(i)->sema.post();
         }

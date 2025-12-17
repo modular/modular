@@ -1241,7 +1241,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
       return failure();
     }
     iterator = *result;
-    loopUnrollCount++;
+    ++loopUnrollCount;
   }
 
   if (options.loopUnrollingWarnThreshold > 0 &&

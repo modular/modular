@@ -880,10 +880,10 @@ static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
       target ? target.getDataLayout().getIsLittleEndian() : true;
   if (inWidth < outWidth) {
     unsigned elementsPerOutput = outWidth / inWidth;
-    for (unsigned outIdx = 0; outIdx < outSize; outIdx++) {
+    for (unsigned outIdx = 0; outIdx < outSize; ++outIdx) {
       APInt combined(outWidth, 0);
 
-      for (unsigned elemIdx = 0; elemIdx < elementsPerOutput; elemIdx++) {
+      for (unsigned elemIdx = 0; elemIdx < elementsPerOutput; ++elemIdx) {
         unsigned inIdx = outIdx * elementsPerOutput + elemIdx;
         APInt inputValue = operand.getValues()[inIdx].getData();
 
@@ -899,9 +899,9 @@ static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
     unsigned chunkSizeBits = outWidth;
     unsigned numChunks = inWidth / outWidth;
 
-    for (unsigned i = 0; i < inSize; i++) {
+    for (unsigned i = 0; i < inSize; ++i) {
       APInt value = operand.getValues()[i].getData();
-      for (unsigned chunk = 0; chunk < numChunks; chunk++) {
+      for (unsigned chunk = 0; chunk < numChunks; ++chunk) {
         unsigned bitPos = isLittleEndian
                               ? (chunk * chunkSizeBits)
                               : ((numChunks - 1 - chunk) * chunkSizeBits);

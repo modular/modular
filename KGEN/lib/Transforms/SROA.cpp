@@ -582,7 +582,7 @@ void SROAPass::runOnOperation() {
   numReplacedAllocs = 0;
   while (changed && iters < loopLimit) {
     changed = false;
-    iters++;
+    ++iters;
     toDelete.clear();
 
     getOperation()->walk([&](StackAllocationOp alloc) {
