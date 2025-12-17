@@ -35,6 +35,7 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/TargetParser/ARMTargetParser.h"
 
 using namespace M;
 using namespace KGEN;
@@ -84,6 +85,9 @@ public:
   /// This is how MLIR parses multiple files.
   ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
   void addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr);
+
+  /// Set default CPU value.
+  void setDefaultCPU();
 };
 } // namespace
 
@@ -113,6 +117,19 @@ ErrorOrSuccess CLOptions::addInputFilesToSourceMgr(llvm::SourceMgr &mgr) {
 void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
   if (auto err = addInputFilesToSourceMgr(mgr))
     exit(reportError(err.getError()));
+}
+
+void CLOptions::setDefaultCPU() {
+  llvm::Triple triple(targetTriple);
+  if (triple.getArch() == llvm::Triple::hexagon)
+    targetCpu = "hexagonv68";
+  else if (triple.isARM())
+    targetCpu = llvm::ARM::getDefaultCPU(triple.getArchName());
+  else {
+    // If the user provided the target triple without specifying a CPU,
+    // default to `generic`.
+    targetCpu = "generic";
+  }
 }
 
 /// Emit the IR for `theModule` to a file.
@@ -353,15 +370,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       targetOr = getMArchFeatures(ctx, clOptions.targetTriple, clOptions.march,
                                   clOptions.mcpu, clOptions.mtune);
     } else {
-      // If the user provided the target triple without specifying a CPU,
-      // default to `generic`.
       if (clOptions.targetTriple != llvm::sys::getDefaultTargetTriple()) {
-        if (clOptions.targetCpu == llvm::sys::getHostCPUName()) {
-          clOptions.targetCpu = "generic";
-          if (llvm::Triple(clOptions.targetTriple).getArch() ==
-              llvm::Triple::hexagon)
-            clOptions.targetCpu = "hexagonv68";
-        }
+        if (clOptions.targetCpu == llvm::sys::getHostCPUName())
+          clOptions.setDefaultCPU();
+
         if (clOptions.targetFeatures == getHostCPUFeatures())
           clOptions.targetFeatures = "";
       }

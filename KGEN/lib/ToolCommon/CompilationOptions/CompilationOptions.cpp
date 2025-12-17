@@ -8,6 +8,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/TargetParser/ARMTargetParser.h"
 #include <string>
 
 using namespace M;
@@ -34,7 +35,11 @@ CompilationOptions::CompilationOptions(
       elaborationErrorLimit(elaborationErrorLimit),
       elaborationErrorIncludePrelude(elaborationErrorIncludePrelude),
       elaborationErrorVerbose(elaborationErrorVerbose),
-      elaborationMaxDepth(elaborationMaxDepth) {}
+      elaborationMaxDepth(elaborationMaxDepth) {
+
+  if (targetCpu.empty())
+    setDefaultCPU();
+}
 
 llvm::CodeGenOptLevel CompilationOptions::getCodeGenOptLevel() const {
   if (auto level = llvm::CodeGenOpt::getLevel(optimizationLevel))
@@ -131,11 +136,15 @@ void CompilationOptions::print(raw_ostream &os) const {
   os << " }";
 }
 
-void CompilationOptions::getDefaultCPU() {
-  // Set hexagon default CPU same as
-  // https://github.com/llvm/llvm-project/blob/8d59cca1ab9cf4e39e43bf695e415de9ccd41115/clang/lib/Driver/ToolChains/Hexagon.cpp#L804
-  if (isHexagonBackend(*this))
+void CompilationOptions::setDefaultCPU() {
+  if (isHexagonBackend(*this)) {
+    // Set hexagon default CPU same as
+    // https://github.com/llvm/llvm-project/blob/8d59cca1ab9cf4e39e43bf695e415de9ccd41115/clang/lib/Driver/ToolChains/Hexagon.cpp#L804
     targetCpu = "hexagonv68";
+  } else if (isARMBackend(*this)) {
+    llvm::Triple triple(targetTriple);
+    targetCpu = llvm::ARM::getDefaultCPU(triple.getArchName());
+  }
 }
 
 bool M::KGEN::isGPUTriple(const llvm::Triple &triple) {
@@ -176,4 +185,9 @@ bool M::KGEN::isMetalBackend(const CompilationOptions &options) {
 bool M::KGEN::isHexagonBackend(const CompilationOptions &options) {
   llvm::Triple triple(options.targetTriple);
   return triple.getArch() == llvm::Triple::hexagon;
+}
+
+bool M::KGEN::isARMBackend(const CompilationOptions &options) {
+  llvm::Triple triple(options.targetTriple);
+  return triple.isARM();
 }
