@@ -227,6 +227,10 @@ def test_to_numpy_inplace(is_pinned: bool) -> None:
     # It must NOT copy the memory to another buffer.
     tensor_np = tensor.to_numpy()
 
+    # Assert that numpy does not own the underlying buffer. This means that it
+    # is up to MAX to eventually deallocate the memory.
+    assert not tensor_np.flags.owndata
+
     # Overwrite the numpy array.
     for i in range(4):
         tensor_np[i] = 2**i
@@ -235,3 +239,24 @@ def test_to_numpy_inplace(is_pinned: bool) -> None:
     actual = tensor.to_numpy()
     expected = np.array([1, 2, 4, 8])
     assert np.array_equal(actual, expected)
+
+
+def test_pinned_concatenate() -> None:
+    arrs = [
+        np.full((5,), 11, dtype=np.int32),
+        np.full((5,), 22, dtype=np.int32),
+        np.full((5,), 33, dtype=np.int32),
+    ]
+
+    pinned = Tensor(
+        shape=(15,), dtype=DType.int32, device=Accelerator(), pinned=True
+    )
+
+    pinned_np = pinned.to_numpy()
+    np.concatenate(arrs, out=pinned_np)
+
+    expected = np.array(
+        [11, 11, 11, 11, 11, 22, 22, 22, 22, 22, 33, 33, 33, 33, 33]
+    )
+
+    assert np.array_equal(pinned.to_numpy(), expected)
