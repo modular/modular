@@ -585,6 +585,15 @@ fn call_foo():
 Overloading also works with combinations of both `fn` and `def` function
 declarations.
 
+:::note Overload Sets
+An "overload set" is a collection of function overloads that share
+the same name but different signatures.
+
+- Overload sets can't be extended by imports, aliases, or parameters.
+- If you define a function in a Mojo module, it hides any
+  overload sets you imported earlier.
+:::
+
 ### Overload resolution
 
 When resolving an overloaded function, Mojo does not consider the return type
