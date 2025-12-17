@@ -107,7 +107,8 @@ struct BufferMode:
 
 @always_inline
 fn posix_spawnp[
-    origin: ImmutOrigin, //,
+    origin: ImmutOrigin,
+    //,
 ](
     pid: UnsafePointer[mut=True, c_pid_t],
     file: UnsafePointer[mut=False, c_char],
