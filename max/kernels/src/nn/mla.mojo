@@ -14,6 +14,7 @@
 
 from collections import OptionalReg
 from math import ceildiv, recip
+from nn.mha_utils import DynamicInt
 from math.constants import log2e
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
@@ -27,7 +28,7 @@ from sys import (
     CompilationTarget,
 )
 
-
+from nn.mha import q_num_matrix_view_rows
 import gpu.warp as warp
 from algorithm.functional import (
     _elementwise_impl_gpu,
@@ -105,6 +106,8 @@ from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
+from gpu.host.info import B200, GPUInfo
+from nn.mla_decode_sm100 import mla_decode_sm100
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -383,88 +386,132 @@ fn flare_mla_decoding_dispatch[
     if batch_size == 0:
         return
 
-    comptime BM = 16 if (
-        num_heads == 16 or not has_enough_smem or has_amd_gpu_accelerator()
-    ) else 32  # for deepseek-v2 lite
-    comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
-    comptime BK = 64 if has_nvidia_gpu_accelerator() else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
-    comptime WM = BM
-    comptime WN = 16 if has_nvidia_gpu_accelerator() else 32
-    # num warps in M and N, multiplied by warp size.
-    comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+    @parameter
+    if ctx.default_device_info is B200:
+        # For now, it is not partitioned for SM100
+        # TODO: add partitioning for SM100
+        var num_partitions_value: Int = 1
 
-    comptime accum_type = get_accum_type[q.dtype]()
-    comptime num_pipeline_stages = 6
-    # smem for q
-    var shared_mem_bytes = BM * Int(depth) * size_of[q.dtype]()
+        mla_decode_sm100[
+            q.dtype,
+            q.layout,
+            k_t,
+            output.dtype,
+            mask_t,
+            score_mod_t,
+            valid_length.layout,
+            config=config,
+            depth = Int(depth),
+            num_heads = Int(num_heads),
+            group = Int(group),
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            _use_valid_length=_use_valid_length,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            decoding_warp_split_k=decoding_warp_split_k,
+        ](
+            q,
+            k,
+            output,
+            scale,
+            batch_size,
+            num_partitions_value,
+            max_cache_valid_length,
+            valid_length,
+            mask_functor,
+            score_mod_functor,
+            ctx,
+        )
+    else:
+        # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
+        comptime has_enough_smem = ctx.default_device_info is A100 or ctx.default_device_info is H100
 
-    shared_mem_bytes += BN * Int(depth) * size_of[k_t.dtype]()
+        comptime BM = 16 if (
+            num_heads == 16 or not has_enough_smem or has_amd_gpu_accelerator()
+        ) else 32  # for deepseek-v2 lite
+        comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
+        comptime BK = 64 if has_nvidia_gpu_accelerator() else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
+        comptime WM = BM
+        comptime WN = 16 if has_nvidia_gpu_accelerator() else 32
+        # num warps in M and N, multiplied by warp size.
+        comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-    comptime num_warps = ceildiv(num_threads, WARP_SIZE)
+        comptime accum_type = get_accum_type[q.dtype]()
+        comptime num_pipeline_stages = 6
+        # smem for q
+        var shared_mem_bytes = BM * Int(depth) * size_of[q.dtype]()
 
-    # smem for p and warp_scratch
-    shared_mem_bytes += (
-        BM * BN * size_of[k_t.dtype]()
-        + 2 * num_warps * BM * size_of[accum_type]()
-    )
+        shared_mem_bytes += BN * Int(depth) * size_of[k_t.dtype]()
 
-    shared_mem_bytes = shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
+        comptime num_warps = ceildiv(num_threads, WARP_SIZE)
 
-    comptime num_blocks_y = num_heads // UInt(BM)
+        # smem for p and warp_scratch
+        shared_mem_bytes += (
+            BM * BN * size_of[k_t.dtype]()
+            + 2 * num_warps * BM * size_of[accum_type]()
+        )
 
-    comptime kernel = mla_decoding[
-        q.dtype,
-        k_t,
-        output.dtype,
-        mask_t,
-        score_mod_t,
-        valid_length.layout,
-        BM = UInt(BM),
-        BN = UInt(BN),
-        BK = UInt(BK),
-        WM = UInt(WM),
-        WN = UInt(WN),
-        depth=depth,
-        num_heads=num_heads,
-        num_threads = UInt(num_threads),
-        num_pipeline_stages = UInt(num_pipeline_stages),
-        group = UInt(group),
-        use_score_mod=use_score_mod,
-        ragged=ragged,
-        _use_valid_length=_use_valid_length,
-        _is_cache_length_accurate=_is_cache_length_accurate,
-        decoding_warp_split_k=decoding_warp_split_k,
-    ]
+        shared_mem_bytes = (
+            shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
+        )
 
-    comptime nullptr = UnsafePointer[Scalar[accum_type]]()
+        comptime num_blocks_y = num_heads // UInt(BM)
 
-    var num_partitions_value: Int = 1
-    var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
-    var output_device = DeviceBuffer[output.dtype](
-        ctx, output.ptr, output.size(), owning=False
-    )
-    var nullptr_device = DeviceBuffer[accum_type](ctx, nullptr, 0, owning=False)
+        comptime kernel = mla_decoding[
+            q.dtype,
+            k_t,
+            output.dtype,
+            mask_t,
+            score_mod_t,
+            valid_length.layout,
+            BM = UInt(BM),
+            BN = UInt(BN),
+            BK = UInt(BK),
+            WM = UInt(WM),
+            WN = UInt(WN),
+            depth=depth,
+            num_heads=num_heads,
+            num_threads = UInt(num_threads),
+            num_pipeline_stages = UInt(num_pipeline_stages),
+            group = UInt(group),
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            _use_valid_length=_use_valid_length,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            decoding_warp_split_k=decoding_warp_split_k,
+        ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
-        q_device,
-        k,
-        output_device,
-        nullptr_device,
-        nullptr_device,
-        scale,
-        batch_size,
-        num_partitions_value,
-        max_cache_valid_length,
-        valid_length,
-        mask_functor,
-        score_mod_functor,
-        grid_dim=(1, Int(num_blocks_y), Int(batch_size)),
-        block_dim=(num_threads, 1, 1),
-        shared_mem_bytes=shared_mem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            ctx.default_device_info.shared_memory_per_multiprocessor - 4096
-        ),
-    )
+        comptime nullptr = UnsafePointer[Scalar[accum_type]]()
+
+        var num_partitions_value: Int = 1
+        var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
+        var output_device = DeviceBuffer[output.dtype](
+            ctx, output.ptr, output.size(), owning=False
+        )
+        var nullptr_device = DeviceBuffer[accum_type](
+            ctx, nullptr, 0, owning=False
+        )
+
+        ctx.enqueue_function_checked[kernel, kernel](
+            q_device,
+            k,
+            output_device,
+            nullptr_device,
+            nullptr_device,
+            scale,
+            batch_size,
+            num_partitions_value,
+            max_cache_valid_length,
+            valid_length,
+            mask_functor,
+            score_mod_functor,
+            grid_dim=(1, Int(num_blocks_y), Int(batch_size)),
+            block_dim=(num_threads, 1, 1),
+            shared_mem_bytes=shared_mem_bytes,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                ctx.default_device_info.shared_memory_per_multiprocessor - 4096
+            ),
+        )
 
 
 @__llvm_metadata(
@@ -1550,7 +1597,6 @@ fn flare_mla_prefill[
             WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
-
         flare_mla_prefill_dispatch[
             kv_num_heads=kv_num_heads,
             q_depth=q_depth,
