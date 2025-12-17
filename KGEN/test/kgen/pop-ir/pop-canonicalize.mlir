@@ -1926,6 +1926,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // COM: Index folds go through the same path as integer folds. We just need to
 // check that ops can fold for index dtypes and do not fold when the results
+// don't match.
 kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
   // differ between 64-bit and 32-bit arithmetic.
 
@@ -1941,4 +1942,25 @@ kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
   %4 = pop.shr %1, %2 : !pop.scalar<index>
   // CHECK: kgen.return %[[RES]], %[[RES1]] : !pop.scalar<index>, !pop.scalar<index>
   kgen.return %3, %4 : !pop.scalar<index>, !pop.scalar<index>
+}
+
+// -----
+
+// Test that comparing two constant uindex values doesn't crash when the index
+// bit width is unknown. Without target_info, foldSIMDOpResult can't fold when
+// 32-bit and 64-bit results might differ (values >= 2^32), so the code falls
+// through to the unsigned comparison optimization. We verify it doesn't assert
+// and correctly returns without folding.
+// CHECK-LABEL: @cmp_uindex_both_const_no_target_info
+kgen.func @cmp_uindex_both_const_no_target_info() -> (!pop.scalar<bool>, !pop.scalar<bool>) {
+  // Use a value that truncates to 0 in 32-bit (e.g. 2^32), then compare it to 1,
+  // so that comparisons differ between 32-bit (0 < 1 = true) and 64-bit (0x100000000 < 1 = false)
+  %large = kgen.param.constant: scalar<uindex> = <4294967296>
+  %one = kgen.param.constant: scalar<uindex> = <1>
+  // CHECK-DAG: %[[RES0:.*]] = pop.cmp ge
+  %0 = pop.cmp ge(%large, %one) : !pop.scalar<uindex>
+  // CHECK-DAG: %[[RES1:.*]] = pop.cmp lt
+  %1 = pop.cmp lt(%large, %one) : !pop.scalar<uindex>
+  // CHECK-NEXT: kgen.return %[[RES0]], %[[RES1]]
+  kgen.return %0, %1 : !pop.scalar<bool>, !pop.scalar<bool>
 }

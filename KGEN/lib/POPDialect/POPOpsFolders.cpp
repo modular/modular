@@ -641,16 +641,17 @@ static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
       if (!llvm::is_contained({foldIntoTrue, foldIntoFalse}, pred))
         return {};
 
-      // Only one input will be constant.
-      [[maybe_unused]] auto op1SimdAttr = dyn_cast_or_null<SIMDAttr>(op1);
+      // For index-like types (e.g., uindex), the earlier foldSIMDOpResult might
+      // not have handled the constant case if the 32-bit and 64-bit results
+      // differ. In that case, we should not apply this optimization either.
+      auto op1SimdAttr = dyn_cast_or_null<SIMDAttr>(op1);
       auto op2SimdAttr = dyn_cast_or_null<SIMDAttr>(op2);
-      assert(!(op1SimdAttr && op2SimdAttr) &&
-             "constant case should be handled");
-
-      if (!op2SimdAttr) {
-        // Always expect constant value in op2
+      if (op1SimdAttr && op2SimdAttr)
         return {};
-      }
+
+      // Always expect constant value in op2
+      if (!op2SimdAttr)
+        return {};
 
       // If the `op2SimdAttr` is constant and zero, then we can simplify the
       // comparison.
