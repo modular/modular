@@ -1270,11 +1270,19 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "HuggingFaceTB/SmolLM2-360M-Instruct": LoRAOracle(
         hf_repo_id="HuggingFaceTB/SmolLM2-360M-Instruct",
         lora_repo_id="fausap/peft-smollm2-lora-gtx1660",
+        config_params={
+            "max_length": 2048,
+        },
         device_encoding_map={
             "gpu": ["bfloat16"],
         },
-        config_params={
-            "max_length": 2048,
+    ),
+    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA": LoRAOracle(
+        hf_repo_id="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic",
+        lora_repo_id="FinGPT/fingpt-mt_llama3-8b_lora",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float8_e4m3fn"],
         },
     ),
     "sentence-transformers/all-mpnet-base-v2": GenericOracle(

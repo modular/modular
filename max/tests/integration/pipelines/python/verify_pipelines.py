@@ -1251,6 +1251,20 @@ PIPELINES = {
             kl_div_threshold=1e3,
         ),
     ),
+    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only", "no-h100", "float8-support"],
+        run=_make_pipeline_runner(
+            pipeline="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA",
+            encoding="float8_e4m3fn",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_llama_3_1_8B_fp8_bf16_lora/1/6db6cad8339db70f2975e9a610d79a8a57ba9b8c43a949d8008b95a0faf22f28/vllm_llama_3_1_8B_fp8_bf16_lora.tar.gz",
+                json_file="vllm_llama3_1_8B_float8_dyanmic_bf16_lora_golden.json",
+            ),
+            cos_dist_threshold=1.41e-01,
+            kl_div_threshold=6.22e-01,
+        ),
+    ),
 }
 
 

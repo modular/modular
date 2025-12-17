@@ -160,6 +160,7 @@ class Llama3(Transformer):
                 has_bias=config.attention_bias,
                 max_num_loras=config.lora_config.max_num_loras,
                 max_lora_rank=config.lora_config.max_lora_rank,
+                float8_config=config.float8_config,
             )
         else:
             attention_cls = functools.partial(

@@ -262,7 +262,9 @@ class LoRAModel:
         """
         self.name = name
         self.path = path
-        self.base_dtype = base_dtype
+        self.base_dtype = (
+            base_dtype if not base_dtype.is_float8() else DType.bfloat16
+        )
         self.max_lora_rank = max_lora_rank
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
@@ -272,7 +274,7 @@ class LoRAModel:
         self._lora_B: dict[str, WeightData] = {}
         self._lora_bias: dict[str, WeightData] = {}
 
-        self._adapter_config = self._load_weights(base_dtype)
+        self._adapter_config = self._load_weights(self.base_dtype)
 
         self.rank: int = self._adapter_config["r"]
         self.target_modules: list[str] = self._adapter_config["target_modules"]

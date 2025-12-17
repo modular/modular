@@ -3919,6 +3919,7 @@ def sgmv_kernel(  # noqa: ANN201
     lora_ranks: TensorValue,
     input_row_offsets: TensorValue,
     max_lora_seq_len: int,
+    lora_end_idx: TensorValue | None = None,
     bias: TensorValue | None = None,
 ):
     """
@@ -3932,7 +3933,29 @@ def sgmv_kernel(  # noqa: ANN201
         input_row_offsets: The sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
+    if input.rank != 2:
+        raise ValueError(f"expected input to have rank 2, was {input.rank}")
+
+    if lora.rank != 3:
+        raise ValueError(f"expected lora to have rank 3, was {lora.rank}")
+
+    if input.dtype != lora.dtype:
+        raise ValueError(
+            f"expected input and lora to have the same dtype, but got "
+            f"{input.dtype} and {lora.dtype}, respectively."
+        )
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected input_row_offsets to have dtype uint32, was {input_row_offsets.dtype}"
+        )
+
+    M = input.shape[0] if not lora_end_idx else lora_end_idx.shape[0]
+
     out = ops.custom(
         "mo.lora_sgmv.ragged",
         device=input.device,
@@ -3950,7 +3973,7 @@ def sgmv_kernel(  # noqa: ANN201
         out_types=[
             TensorType(
                 dtype=input.dtype,
-                shape=[input.shape[0], lora.shape[1]],
+                shape=[M, lora.shape[1]],
                 device=input.device,
             ),
         ],
@@ -3966,6 +3989,7 @@ def sgmv_lora_kernel(
     lora_ids: TensorValue,
     lora_ranks: TensorValue,
     grouped_row_offsets: TensorValue,
+    lora_end_idx: TensorValue,
     max_lora_seq_len: int,
     bias: TensorValue | None = None,
 ) -> TensorValue:
@@ -3995,7 +4019,36 @@ def sgmv_lora_kernel(
         grouped_row_offsets: The grouped sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
+    if input.rank != 2:
+        raise ValueError(f"expected input to have rank 2, was {input.rank}")
+
+    if lora_a.rank != 3:
+        raise ValueError(f"expected lora_a to have rank 3, was {lora_a.rank}")
+
+    if lora_b.rank != 3:
+        raise ValueError(f"expected lora_b to have rank 3, was {lora_b.rank}")
+
+    if input.dtype != lora_a.dtype:
+        raise ValueError(
+            f"expected input and lora_a to have the same dtype, but got "
+            f"{input.dtype} and {lora_a.dtype}, respectively."
+        )
+
+    if input.dtype != lora_b.dtype:
+        raise ValueError(
+            f"expected input and lora_b to have the same dtype, but got "
+            f"{input.dtype} and {lora_b.dtype}, respectively."
+        )
+
+    if grouped_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected grouped_row_offsets to have dtype uint32, was {grouped_row_offsets.dtype}"
+        )
+
     v = sgmv_kernel(
         input,
         lora_a,
@@ -4003,6 +4056,7 @@ def sgmv_lora_kernel(
         lora_ranks,
         grouped_row_offsets,
         max_lora_seq_len,
+        lora_end_idx,
         bias,
     )
 
@@ -4013,6 +4067,7 @@ def sgmv_lora_kernel(
         lora_ranks,
         grouped_row_offsets,
         max_lora_seq_len,
+        lora_end_idx,
         bias,
     )
 
@@ -4051,7 +4106,27 @@ def sgmv_lora_qkv_shrink(
 
     Returns:
         Output tensor with planar Q/K/V layout, shape (3, M, max_rank).
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
+    if input.rank != 2:
+        raise ValueError(f"expected input to have rank 2, was {input.rank}")
+
+    if lora_a.rank != 3:
+        raise ValueError(f"expected lora_a to have rank 3, was {lora_a.rank}")
+
+    if input.dtype != lora_a.dtype:
+        raise ValueError(
+            f"expected input and lora_a to have the same dtype, but got "
+            f"{input.dtype} and {lora_a.dtype}, respectively."
+        )
+
+    if lora_grouped_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected lora_grouped_offsets to have dtype uint32, was {lora_grouped_offsets.dtype}"
+        )
+
     return ops.custom(
         "mo.lora_sgmv.qkv_shrink.ragged",
         device=input.device,
@@ -4118,11 +4193,71 @@ def sgmv_qkv_lora_kernel(
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch.
         max_rank: The maximum rank for the LoRAs.
         bias: Optional LoRA bias.
-    """
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError("KV cache SGMV only supports Paged KV cache.")
 
-    assert kv_params.page_size is not None
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    if input.rank != 2:
+        raise ValueError(f"expected input to have rank 2, was {input.rank}")
+
+    if lora_a.rank != 3:
+        raise ValueError(f"expected lora_a to have rank 3, was {lora_a.rank}")
+
+    if lora_b_q.rank != 3:
+        raise ValueError(
+            f"expected lora_b_q to have rank 3, was {lora_b_q.rank}"
+        )
+
+    if lora_b_kv.rank != 3:
+        raise ValueError(
+            f"expected lora_b_kv to have rank 3, was {lora_b_kv.rank}"
+        )
+
+    if input.dtype != lora_a.dtype:
+        raise ValueError(
+            f"expected input and lora_a to have the same dtype, but got "
+            f"{input.dtype} and {lora_a.dtype}, respectively."
+        )
+
+    if input.dtype != lora_b_q.dtype:
+        raise ValueError(
+            f"expected input and lora_b_q to have the same dtype, but got "
+            f"{input.dtype} and {lora_b_q.dtype}, respectively."
+        )
+
+    if input.dtype != lora_b_kv.dtype:
+        raise ValueError(
+            f"expected input and lora_b_kv to have the same dtype, but got "
+            f"{input.dtype} and {lora_b_kv.dtype}, respectively."
+        )
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected input_row_offsets to have dtype uint32, was {input_row_offsets.dtype}"
+        )
+
+    if lora_grouped_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected lora_grouped_offsets to have dtype uint32, was {lora_grouped_offsets.dtype}"
+        )
+
+    if lora_grouped_offsets_kv.dtype != DType.uint32:
+        raise ValueError(
+            f"expected lora_grouped_offsets_kv to have dtype uint32, was {lora_grouped_offsets_kv.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for sgmv_qkv_lora_kernel: {kv_params.cache_strategy}"
+        )
+
+    if kv_params.page_size is None:
+        raise ValueError("expected kv_params.page_size to be set")
 
     # shrink GMM:      [M, K] @ [G, 3*N, K]     // unchanged
     # transpose:       [M, 3, N] => [3, M, N]   // shall be fused into above
@@ -4151,7 +4286,8 @@ def sgmv_qkv_lora_kernel(
         lora_ranks,
         lora_grouped_offsets,
         max_lora_seq_len,
-        bias,
+        lora_end_idx=lora_end_idx,
+        bias=bias,
     )
 
     v_kv = v_qkv[lora_end_idx.shape[0] :, :]
@@ -4163,7 +4299,7 @@ def sgmv_qkv_lora_kernel(
         lora_ranks,
         lora_grouped_offsets_kv,
         max_lora_seq_len,
-        bias,
+        bias=bias,
     )
 
     # write to cache:  write [2M, KVdim] directly w/o transforming to [M, 2*KVdim]
