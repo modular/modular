@@ -190,18 +190,10 @@ def test_i16_to_i32():
                 var b_val = b[i * 2 + j].cast[DType.int32]()
                 c_golden[i] += a_val * b_val
 
-        var c_avx2 = dot_i16_to_i32_AVX2(
-            c_start,
-            bitcast[DType.int32, width](a),
-            bitcast[DType.int32, width](b),
-        )
+        var c_avx2 = dot_i16_to_i32_AVX2(c_start, a, b)
         assert_equal(c_golden, c_avx2)
 
-        var c_x86 = dot_i16_to_i32_x86(
-            c_start,
-            bitcast[DType.int32, width](a),
-            bitcast[DType.int32, width](b),
-        )
+        var c_x86 = dot_i16_to_i32_x86(c_start, a, b)
         assert_equal(c_golden, c_x86)
 
     @parameter

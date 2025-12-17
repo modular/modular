@@ -857,8 +857,12 @@ fn _apply_zero_point_correction[
                     )
                     corrections[row, col] = dot_i16_to_i32_x86(
                         corrections[row, col],
-                        bitcast[DType.int32, simd_width](q_mins),
-                        bitcast[DType.int32, 1](a_group_sums),
+                        q_mins,
+                        bitcast[DType.int16, simd_width * 2](
+                            SIMD[DType.int32, simd_width](
+                                bitcast[DType.int32, 1](a_group_sums)
+                            )
+                        ),
                     )
 
         elif CompilationTarget.has_neon():
