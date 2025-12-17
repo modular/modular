@@ -1,5 +1,9 @@
 // RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -verify-diagnostics -allow-unregistered-dialect | FileCheck %s
 
+lit.fn @my_abort() -> !kgen.never {
+  kgen.unreachable
+}
+
 // CHECK-LABEL: lit.struct.decl @SomeStruct
 lit.struct.decl @SomeStruct {
   // CHECK-LABEL: lit.fn @dead_returns
@@ -19,6 +23,16 @@ lit.struct.decl @SomeStruct {
     lit.return %b : i32 // expected-warning {{unreachable code after return statement}}
     lit.end_fn
   // CHECK-NEXT: }
+  }
+
+  // Derived from MOCO-2978.
+  // CHECK-LABEL: lit.fn @calls_unreachable_in_deinit
+  lit.fn @calls_unreachable_in_deinit[mut *"self"](%self: !lit.ref<!lit.struct<@SomeStruct>, mut *"self"> deinit_mem) -> !kgen.none {
+    // CHECK: lit.call tail @my_abort()
+    // CHECK: lit.ownership.mark_destroyed %self
+    // CHECK: kgen.unreachable {isAfterUnreachableCall = true}
+    %0 = lit.call tail @my_abort() : !lit.generator<() -> !kgen.never>
+    lit.end_fn
   }
 }
 
