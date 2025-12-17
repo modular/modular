@@ -57,5 +57,5 @@ fn test_variable_type_parameterization():
     var struct_type = Dep
 
     # .. and try to parameterize it.
-    # expected-error @below {{'Dep[?, ?]' is not subscriptable, it does not implement the `__getitem__`/`__setitem__` methods}}
+    # expected-error @below {{types are not subscriptable}}
     var instance: struct_type[Int]

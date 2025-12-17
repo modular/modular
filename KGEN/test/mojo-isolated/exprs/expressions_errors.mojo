@@ -625,6 +625,14 @@ fn test_int_to_int_error(a: Int, b: NoSelfCtor):
   _ = GetAttrNotString(a)
 
 
+trait t:
+  pass
+
+fn type_subscript(t0 : t):
+# expected-error @below {{types are not subscriptable}}
+  t[]
+
+
 
 ##===----------------------------------------------------------------------===##
 # lambda not supported yet

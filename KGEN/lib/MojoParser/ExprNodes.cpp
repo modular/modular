@@ -1585,6 +1585,14 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // This is either a SubscriptNode for x[i,j] or a AttributeRefNode for x.name.
   bool isSubscript = isa<SubscriptNode>(node);
+
+  // Subscripts on types are ill-formed
+  if (isSubscript && LIT::isMetaType(baseType)) {
+    emitter.emitError(node->getLoc())
+        << "types are not subscriptable" << node->getRange();
+    return {};
+  }
+
   CallSyntax syntax =
       isSubscript ? CallSyntax::kSubscript : CallSyntax::kAttribute;
 

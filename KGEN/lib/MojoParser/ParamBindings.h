@@ -230,7 +230,7 @@ private:
 };
 
 FnTypeGeneratorType substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, ASTDecl *traitDecl, FnOp candidateFunc,
+    DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,
     FnTypeGeneratorType desiredSignature, PValue selfPValue);
 
 /// Result of checking constraints.
