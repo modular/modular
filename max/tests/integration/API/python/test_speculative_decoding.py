@@ -419,20 +419,20 @@ def test_speculative_decoding_context_update(
             [88, 89, 90, 91, 92, 93, 94, 95, 96, 97],
             [98, 99, 100, 101, 102, 103, 104, 105, 106, 107],
         ],
-        dtype=np.int32,
+        dtype=np.int64,
     )
     bonus_tokens = np.array(
         [
             [1001],
             [2001],
         ],
-        dtype=np.int32,
+        dtype=np.int64,
     )
 
     reject_token1_idx = 4
     reject_token2_idx = num_steps
     first_rejected_tokens = np.array(
-        [[reject_token1_idx], [reject_token2_idx]], dtype=np.int32
+        [[reject_token1_idx], [reject_token2_idx]], dtype=np.int64
     )
 
     pipeline.update_contexts(

@@ -50,7 +50,7 @@ def create_text_context(
     shared_prefix: np.ndarray | None = None,
 ) -> TextContext:
     if shared_prefix is None:
-        tokens = np.ones(prompt_len, dtype=np.int32)
+        tokens = np.ones(prompt_len, dtype=np.int64)
     else:
         rem_tokens = prompt_len - len(shared_prefix)
         assert rem_tokens >= 0

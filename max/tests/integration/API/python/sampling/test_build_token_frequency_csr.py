@@ -30,8 +30,8 @@ from max.pipelines.lib.sampling.sampling_logits_processor import (
 
 
 def create_text_context(
-    prompt_tokens: npt.NDArray[np.int32],
-    generated_tokens: npt.NDArray[np.int32] | None = None,
+    prompt_tokens: npt.NDArray[np.int64],
+    generated_tokens: npt.NDArray[np.int64] | None = None,
 ) -> TextContext:
     """Create a TextContext with specified prompt and generated tokens.
 
@@ -43,7 +43,7 @@ def create_text_context(
         A TextContext with the specified token configuration.
     """
     if generated_tokens is None:
-        generated_tokens = np.array([], dtype=np.int32)
+        generated_tokens = np.array([], dtype=np.int64)
 
     total_length = len(prompt_tokens) + len(generated_tokens)
 
@@ -66,8 +66,8 @@ class TestBuildTokenFrequencyCSRBasic:
 
     def test_single_context_generated_only(self) -> None:
         """Test CSR building with a single context, generated tokens only."""
-        prompt = np.array([1, 2, 3], dtype=np.int32)
-        generated = np.array([4, 5, 4, 6, 4], dtype=np.int32)  # 4 appears 3x
+        prompt = np.array([1, 2, 3], dtype=np.int64)
+        generated = np.array([4, 5, 4, 6, 4], dtype=np.int64)  # 4 appears 3x
 
         context = create_text_context(prompt, generated)
         batch = [context]
@@ -123,8 +123,8 @@ class TestBuildTokenFrequencyCSRBasic:
 
     def test_single_context_include_prompt(self) -> None:
         """Test CSR building with a single context, including prompt tokens."""
-        prompt = np.array([1, 2, 3, 1], dtype=np.int32)  # 1 appears 2x
-        generated = np.array([4, 5, 1], dtype=np.int32)  # 1 appears 1x more
+        prompt = np.array([1, 2, 3, 1], dtype=np.int64)  # 1 appears 2x
+        generated = np.array([4, 5, 1], dtype=np.int64)  # 1 appears 1x more
 
         context = create_text_context(prompt, generated)
         batch = [context]
@@ -154,7 +154,7 @@ class TestBuildTokenFrequencyCSRBasic:
 
     def test_empty_generated_tokens(self) -> None:
         """Test CSR building with no generated tokens."""
-        prompt = np.array([1, 2, 3], dtype=np.int32)
+        prompt = np.array([1, 2, 3], dtype=np.int64)
 
         context = create_text_context(prompt)
         batch = [context]
@@ -178,7 +178,7 @@ class TestBuildTokenFrequencyCSRBasic:
 
     def test_empty_generated_tokens_include_prompt(self) -> None:
         """Test CSR building with no generated tokens but include_prompt=True."""
-        prompt = np.array([1, 2, 3, 1], dtype=np.int32)
+        prompt = np.array([1, 2, 3, 1], dtype=np.int64)
 
         context = create_text_context(prompt)
         batch = [context]
@@ -210,14 +210,14 @@ class TestBuildTokenFrequencyCSRBatch:
         """Test CSR building with multiple contexts in batch."""
         # Context 1: generated tokens [10, 10, 11]
         context1 = create_text_context(
-            prompt_tokens=np.array([1, 2], dtype=np.int32),
-            generated_tokens=np.array([10, 10, 11], dtype=np.int32),
+            prompt_tokens=np.array([1, 2], dtype=np.int64),
+            generated_tokens=np.array([10, 10, 11], dtype=np.int64),
         )
 
         # Context 2: generated tokens [20, 21, 20, 20]
         context2 = create_text_context(
-            prompt_tokens=np.array([3, 4, 5], dtype=np.int32),
-            generated_tokens=np.array([20, 21, 20, 20], dtype=np.int32),
+            prompt_tokens=np.array([3, 4, 5], dtype=np.int64),
+            generated_tokens=np.array([20, 21, 20, 20], dtype=np.int64),
         )
 
         batch = [context1, context2]
@@ -258,20 +258,20 @@ class TestBuildTokenFrequencyCSRBatch:
         """Test CSR building with contexts of different lengths."""
         # Short context
         context1 = create_text_context(
-            prompt_tokens=np.array([1], dtype=np.int32),
-            generated_tokens=np.array([2], dtype=np.int32),
+            prompt_tokens=np.array([1], dtype=np.int64),
+            generated_tokens=np.array([2], dtype=np.int64),
         )
 
         # Medium context
         context2 = create_text_context(
-            prompt_tokens=np.array([10, 11, 12], dtype=np.int32),
-            generated_tokens=np.array([13, 14, 15, 16], dtype=np.int32),
+            prompt_tokens=np.array([10, 11, 12], dtype=np.int64),
+            generated_tokens=np.array([13, 14, 15, 16], dtype=np.int64),
         )
 
         # Long context with repetitions
         context3 = create_text_context(
-            prompt_tokens=np.array([20, 21], dtype=np.int32),
-            generated_tokens=np.array([22, 22, 22, 23, 23, 24], dtype=np.int32),
+            prompt_tokens=np.array([20, 21], dtype=np.int64),
+            generated_tokens=np.array([22, 22, 22, 23, 23, 24], dtype=np.int64),
         )
 
         batch = [context1, context2, context3]
@@ -297,8 +297,8 @@ class TestBuildTokenFrequencyCSREdgeCases:
 
     def test_all_same_token(self) -> None:
         """Test CSR building when all tokens are the same."""
-        prompt = np.array([5, 5, 5], dtype=np.int32)
-        generated = np.array([5, 5, 5, 5], dtype=np.int32)
+        prompt = np.array([5, 5, 5], dtype=np.int64)
+        generated = np.array([5, 5, 5, 5], dtype=np.int64)
 
         context = create_text_context(prompt, generated)
         batch = [context]
@@ -323,8 +323,8 @@ class TestBuildTokenFrequencyCSREdgeCases:
 
     def test_all_unique_tokens(self) -> None:
         """Test CSR building when all tokens are unique."""
-        prompt = np.array([1, 2, 3], dtype=np.int32)
-        generated = np.array([4, 5, 6, 7], dtype=np.int32)
+        prompt = np.array([1, 2, 3], dtype=np.int64)
+        generated = np.array([4, 5, 6, 7], dtype=np.int64)
 
         context = create_text_context(prompt, generated)
         batch = [context]
@@ -349,8 +349,8 @@ class TestBuildTokenFrequencyCSREdgeCases:
 
     def test_single_token_prompt(self) -> None:
         """Test CSR building with a single token prompt."""
-        prompt = np.array([42], dtype=np.int32)
-        generated = np.array([43, 44], dtype=np.int32)
+        prompt = np.array([42], dtype=np.int64)
+        generated = np.array([43, 44], dtype=np.int64)
 
         context = create_text_context(prompt, generated)
         batch = [context]
@@ -375,8 +375,8 @@ class TestBuildTokenFrequencyCSREdgeCases:
 
     def test_single_generated_token(self) -> None:
         """Test CSR building with a single generated token."""
-        prompt = np.array([1, 2, 3], dtype=np.int32)
-        generated = np.array([99], dtype=np.int32)
+        prompt = np.array([1, 2, 3], dtype=np.int64)
+        generated = np.array([99], dtype=np.int64)
 
         context = create_text_context(prompt, generated)
         batch = [context]
@@ -402,11 +402,11 @@ class TestBuildTokenFrequencyCSREdgeCases:
         """Test CSR building with large token IDs (like Llama-3 vocab size)."""
         vocab_size = 128256
         large_tokens = np.array(
-            [vocab_size - 1, vocab_size - 2, vocab_size - 1], dtype=np.int32
+            [vocab_size - 1, vocab_size - 2, vocab_size - 1], dtype=np.int64
         )
 
         context = create_text_context(
-            prompt_tokens=np.array([0, 1], dtype=np.int32),
+            prompt_tokens=np.array([0, 1], dtype=np.int64),
             generated_tokens=large_tokens,
         )
         batch = [context]
@@ -434,8 +434,8 @@ class TestBuildTokenFrequencyCSRPadding:
 
     def test_padding_size_zero(self) -> None:
         """Test CSR building with zero padding."""
-        prompt = np.array([1, 2], dtype=np.int32)
-        generated = np.array([3, 4], dtype=np.int32)
+        prompt = np.array([1, 2], dtype=np.int64)
+        generated = np.array([3, 4], dtype=np.int64)
 
         context = create_text_context(prompt, generated)
         batch = [context]
@@ -457,8 +457,8 @@ class TestBuildTokenFrequencyCSRPadding:
 
     def test_padding_included_correctly(self) -> None:
         """Test that padding entries have token_id=-1 and count=0."""
-        prompt = np.array([1], dtype=np.int32)
-        generated = np.array([2], dtype=np.int32)
+        prompt = np.array([1], dtype=np.int64)
+        generated = np.array([2], dtype=np.int64)
 
         context = create_text_context(prompt, generated)
         batch = [context]
@@ -491,8 +491,8 @@ class TestBuildTokenFrequencyCSRDataTypes:
 
     def test_output_tensor_types(self) -> None:
         """Test that output tensors have correct data types."""
-        prompt = np.array([1, 2, 3], dtype=np.int32)
-        generated = np.array([4, 5], dtype=np.int32)
+        prompt = np.array([1, 2, 3], dtype=np.int64)
+        generated = np.array([4, 5], dtype=np.int64)
 
         context = create_text_context(prompt, generated)
         batch = [context]
@@ -503,18 +503,18 @@ class TestBuildTokenFrequencyCSRDataTypes:
             batch, padding_size, device, include_prompt=False
         )
 
-        # Verify data array dtype is int32
+        # Verify data array dtype is int64
         data_np = result.data.to_numpy()
         assert data_np.dtype == np.int32
 
-        # Verify offsets array dtype is uint32
+        # Verify offsets array dtype is int64
         offsets_np = result.offsets.to_numpy()
         assert offsets_np.dtype == np.uint32
 
     def test_data_shape(self) -> None:
         """Test that data array has correct shape (N, 2)."""
-        prompt = np.array([1, 2, 3], dtype=np.int32)
-        generated = np.array([4, 5, 4], dtype=np.int32)
+        prompt = np.array([1, 2, 3], dtype=np.int64)
+        generated = np.array([4, 5, 4], dtype=np.int64)
 
         context = create_text_context(prompt, generated)
         batch = [context]

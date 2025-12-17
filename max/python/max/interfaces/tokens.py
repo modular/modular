@@ -29,7 +29,7 @@ Example:
     from max.interfaces.tokens import TokenBuffer
 
     # Create a token buffer with initial prompt tokens
-    prompt_tokens = np.array([1, 2, 3, 4], dtype=np.int32)
+    prompt_tokens = np.array([1, 2, 3, 4], dtype=np.int64)
     token_buffer = TokenBuffer(prompt_tokens)
 
     # Add generated tokens
@@ -144,8 +144,8 @@ class Range:
         self.start = self.end
 
 
-TokenSlice: TypeAlias = npt.NDArray[np.int32]
-"""Type alias for arrays containing token IDs as 32-bit integers.
+TokenSlice: TypeAlias = npt.NDArray[np.int64]
+"""Type alias for arrays containing token IDs as 64-bit integers.
 
 A TokenSlice represents a contiguous sequence of token IDs, typically used
 for representing portions of text that have been tokenized. This is the
@@ -271,19 +271,20 @@ class TokenBuffer:
         """Initialize a TokenBuffer with the given token array.
 
         Args:
-            array: A 1D numpy array of int32 token IDs. Must be non-empty.
+            array: A 1D numpy array of int64 token IDs. Must be non-empty.
 
         Raises:
-            ValueError: If the array is not 1-dimensional, not int32 dtype, or empty.
+            ValueError: If the array is not 1-dimensional, not int64 dtype, or empty.
         """
         # Validate and set initial array
+        print(f"ndim: {array.ndim}")
         if array.ndim != 1:
             raise ValueError(
                 f"array must be one-dimensional: got shape {array.shape}"
             )
 
-        if array.dtype != np.int32:
-            raise ValueError(f"array must be int32: got dtype {array.dtype}")
+        if array.dtype != np.int64:
+            raise ValueError(f"array must be int64: got dtype {array.dtype}")
 
         if len(array) == 0:
             raise ValueError(
@@ -650,7 +651,7 @@ class TokenBuffer:
         Uses exponential growth for efficient amortized performance.
         """
         if self._current_length >= self.array.size:
-            new_array = np.empty(self.array.size * 2, dtype=np.int32)
+            new_array = np.empty(self.array.size * 2, dtype=np.int64)
             np.copyto(
                 new_array[: self._current_length],
                 self.array[: self._current_length],

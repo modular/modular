@@ -23,22 +23,24 @@ from max.interfaces.tokens import Range, TokenBuffer
 def test_token_buffer__tokens_validation_during_init() -> None:
     # Token array must be one-dimensional
     with pytest.raises(ValueError):
-        TokenBuffer(array=np.array([[1, 2, 3], [3, 4, 5]], dtype=np.int32))
+        TokenBuffer(array=np.array([[1, 2, 3], [3, 4, 5]], dtype=np.int64))
 
+    # Token array must be int64
     with pytest.raises(ValueError):
-        TokenBuffer(array=np.array([1, 2, 3], dtype=np.int64))
+        TokenBuffer(array=np.array([1, 2, 3], dtype=np.int32))
 
+    # Token array cannot be empty
     with pytest.raises(ValueError):
-        TokenBuffer(array=np.array([], dtype=np.int32))
+        TokenBuffer(array=np.array([], dtype=np.int64))
 
-    tokens = np.array([1, 2, 3], dtype=np.int32)
+    tokens = np.array([1, 2, 3], dtype=np.int64)
     token_buffer = TokenBuffer(array=tokens)
 
     np.testing.assert_array_equal(token_buffer.all, tokens)
     np.testing.assert_array_equal(token_buffer.prompt, tokens)
     np.testing.assert_array_equal(token_buffer.active, tokens)
     np.testing.assert_array_equal(
-        token_buffer.generated, np.array([], dtype=np.int32)
+        token_buffer.generated, np.array([], dtype=np.int64)
     )
 
     assert token_buffer.generated.size == 0
@@ -51,7 +53,7 @@ def test_token_buffer__tokens_validation_during_init() -> None:
 
 def test_token_buffer__generated_and_completion_tracking() -> None:
     """Exercise token addition, generation tracking, and completion flow."""
-    token_buffer = TokenBuffer(array=np.array([10, 11, 12], dtype=np.int32))
+    token_buffer = TokenBuffer(array=np.array([10, 11, 12], dtype=np.int64))
 
     assert token_buffer.processed_length == 0
 
@@ -64,17 +66,17 @@ def test_token_buffer__generated_and_completion_tracking() -> None:
     assert token_buffer.processed_length == 4
 
     np.testing.assert_array_equal(
-        token_buffer.generated, np.array([13, 14], dtype=np.int32)
+        token_buffer.generated, np.array([13, 14], dtype=np.int64)
     )
     assert token_buffer.generated_length == 2
     assert len(token_buffer) == 5
     np.testing.assert_array_equal(
-        token_buffer[-2:], np.array([13, 14], dtype=np.int32)
+        token_buffer[-2:], np.array([13, 14], dtype=np.int64)
     )
     assert token_buffer[-1] == 14
 
     completed = token_buffer.consume_recently_generated_tokens
-    np.testing.assert_array_equal(completed, np.array([13, 14], dtype=np.int32))
+    np.testing.assert_array_equal(completed, np.array([13, 14], dtype=np.int64))
 
     assert token_buffer.processed_length == 4
 
@@ -85,13 +87,13 @@ def test_token_buffer__generated_and_completion_tracking() -> None:
     assert token_buffer.processed_length == 5
     np.testing.assert_array_equal(
         token_buffer.consume_recently_generated_tokens,
-        np.array([15], dtype=np.int32),
+        np.array([15], dtype=np.int64),
     )
 
 
 def test_token_buffer__jump_ahead_behavior() -> None:
     """Verify jump_ahead preserves the active window start."""
-    token_buffer = TokenBuffer(array=np.array([1, 2, 3], dtype=np.int32))
+    token_buffer = TokenBuffer(array=np.array([1, 2, 3], dtype=np.int64))
     baseline_active = token_buffer.active.copy()
 
     token_buffer.advance_with_token(4, mark_previous_as_processed=False)
@@ -100,14 +102,14 @@ def test_token_buffer__jump_ahead_behavior() -> None:
     assert token_buffer.processed_length == 0
 
     expected = np.concatenate(
-        [baseline_active, np.array([4, 5], dtype=np.int32)]
+        [baseline_active, np.array([4, 5], dtype=np.int64)]
     )
     np.testing.assert_array_equal(token_buffer.active, expected)
     assert token_buffer.active_length == len(token_buffer)
 
     token_buffer.advance_with_token(6)
     np.testing.assert_array_equal(
-        token_buffer.active, np.array([6], dtype=np.int32)
+        token_buffer.active, np.array([6], dtype=np.int64)
     )
     assert token_buffer.processed_length == 5
 
@@ -115,7 +117,7 @@ def test_token_buffer__jump_ahead_behavior() -> None:
 def test_token_buffer__chunking_behaviors() -> None:
     """Validate maybe_chunk and chunk reset semantics."""
     token_buffer = TokenBuffer(
-        array=np.array([0, 1, 2, 3, 4, 5], dtype=np.int32)
+        array=np.array([0, 1, 2, 3, 4, 5], dtype=np.int64)
     )
 
     assert token_buffer.processed_length == 0
@@ -129,7 +131,7 @@ def test_token_buffer__chunking_behaviors() -> None:
     assert token_buffer.active_length == 2
     assert token_buffer.processed_length == 0
     np.testing.assert_array_equal(
-        token_buffer.active, np.array([0, 1], dtype=np.int32)
+        token_buffer.active, np.array([0, 1], dtype=np.int64)
     )
 
     # We can advance a chunk if it is actively chunked.
@@ -138,7 +140,7 @@ def test_token_buffer__chunking_behaviors() -> None:
     # This should have reset the chunking.
     assert not token_buffer.actively_chunked
     np.testing.assert_array_equal(
-        token_buffer.active, np.array([2, 3, 4, 5], dtype=np.int32)
+        token_buffer.active, np.array([2, 3, 4, 5], dtype=np.int64)
     )
     assert token_buffer.processed_length == 2
 
@@ -152,7 +154,7 @@ def test_token_buffer__chunking_behaviors() -> None:
         token_buffer.advance_with_token(6)
 
     # When there are less tokens than the chunk size, the chunking should be disabled.
-    no_chunk_buffer = TokenBuffer(array=np.array([0, 1, 2, 3], dtype=np.int32))
+    no_chunk_buffer = TokenBuffer(array=np.array([0, 1, 2, 3], dtype=np.int64))
 
     assert no_chunk_buffer.processed_length == 0
 
@@ -162,7 +164,7 @@ def test_token_buffer__chunking_behaviors() -> None:
 
     assert not no_chunk_buffer.actively_chunked
     np.testing.assert_array_equal(
-        no_chunk_buffer.active, np.array([0, 1, 2, 3], dtype=np.int32)
+        no_chunk_buffer.active, np.array([0, 1, 2, 3], dtype=np.int64)
     )
 
     # If we pass a negative value this should also fail.
@@ -173,14 +175,14 @@ def test_token_buffer__chunking_behaviors() -> None:
 def test_token_buffer__rewind_and_skip_processing() -> None:
     """Test skip_processing and rewind_processing window management."""
     token_buffer = TokenBuffer(
-        array=np.array([1, 2, 3, 4, 5, 6, 7], dtype=np.int32)
+        array=np.array([1, 2, 3, 4, 5, 6, 7], dtype=np.int64)
     )
 
     assert token_buffer.processed_length == 0
 
     token_buffer.skip_processing(3)
     np.testing.assert_array_equal(
-        token_buffer.active, np.array([4, 5, 6, 7], dtype=np.int32)
+        token_buffer.active, np.array([4, 5, 6, 7], dtype=np.int64)
     )
     assert token_buffer.active_length == 4
     assert token_buffer.processed_length == 3
@@ -190,7 +192,7 @@ def test_token_buffer__rewind_and_skip_processing() -> None:
 
     token_buffer.rewind_processing(2)
     np.testing.assert_array_equal(
-        token_buffer.active, np.array([2, 3, 4, 5, 6, 7], dtype=np.int32)
+        token_buffer.active, np.array([2, 3, 4, 5, 6, 7], dtype=np.int64)
     )
     assert token_buffer.active_length == 6
     assert token_buffer.processed_length == 1
@@ -207,7 +209,7 @@ def test_token_buffer__rewind_and_skip_processing() -> None:
 
 def test_token_buffer__reset_as_new_prompt() -> None:
     """Ensure reset_as_new_prompt promotes generated tokens to prompt."""
-    token_buffer = TokenBuffer(array=np.array([9, 10], dtype=np.int32))
+    token_buffer = TokenBuffer(array=np.array([9, 10], dtype=np.int64))
     token_buffer.advance_with_token(11)
     token_buffer.advance_with_token(12)
     assert token_buffer.generated_length == 2
@@ -219,7 +221,7 @@ def test_token_buffer__reset_as_new_prompt() -> None:
     assert token_buffer.prompt_length == len(token_buffer)
     np.testing.assert_array_equal(token_buffer.prompt, token_buffer.all)
     np.testing.assert_array_equal(
-        token_buffer.generated, np.array([], dtype=np.int32)
+        token_buffer.generated, np.array([], dtype=np.int64)
     )
     np.testing.assert_array_equal(token_buffer.active, token_buffer.all)
     assert token_buffer.active_length == len(token_buffer)
@@ -232,7 +234,7 @@ def test_token_buffer__reset_as_new_prompt() -> None:
 def test_token_buffer__getitem_access() -> None:
     """Test TokenBuffer.__getitem__ for integer and slice access."""
     token_buffer = TokenBuffer(
-        array=np.array([10, 20, 30, 40, 50], dtype=np.int32)
+        array=np.array([10, 20, 30, 40, 50], dtype=np.int64)
     )
 
     assert token_buffer.processed_length == 0
@@ -249,19 +251,19 @@ def test_token_buffer__getitem_access() -> None:
 
     # Test slice access
     np.testing.assert_array_equal(
-        token_buffer[1:3], np.array([20, 30], dtype=np.int32)
+        token_buffer[1:3], np.array([20, 30], dtype=np.int64)
     )
     np.testing.assert_array_equal(
-        token_buffer[:2], np.array([10, 20], dtype=np.int32)
+        token_buffer[:2], np.array([10, 20], dtype=np.int64)
     )
     np.testing.assert_array_equal(
-        token_buffer[2:], np.array([30, 40, 50], dtype=np.int32)
+        token_buffer[2:], np.array([30, 40, 50], dtype=np.int64)
     )
     np.testing.assert_array_equal(
-        token_buffer[::2], np.array([10, 30, 50], dtype=np.int32)
+        token_buffer[::2], np.array([10, 30, 50], dtype=np.int64)
     )
     np.testing.assert_array_equal(
-        token_buffer[::-1], np.array([50, 40, 30, 20, 10], dtype=np.int32)
+        token_buffer[::-1], np.array([50, 40, 30, 20, 10], dtype=np.int64)
     )
 
     # Test out-of-bounds access raises IndexError
@@ -283,7 +285,7 @@ def test_token_buffer__getitem_access() -> None:
     assert token_buffer[5] == 60
     assert token_buffer[-1] == 60
     np.testing.assert_array_equal(
-        token_buffer[:], np.array([10, 20, 30, 40, 50, 60], dtype=np.int32)
+        token_buffer[:], np.array([10, 20, 30, 40, 50, 60], dtype=np.int64)
     )
     assert token_buffer.processed_length == 5
 
@@ -321,17 +323,17 @@ def test_range() -> None:
 
 def test_token_buffer__apply_processing_offset_behaviour() -> None:
     """Verify apply_processing_offset windowing, reset semantics, and validation."""
-    token_buffer = TokenBuffer(array=np.array([1, 2, 3, 4, 5], dtype=np.int32))
+    token_buffer = TokenBuffer(array=np.array([1, 2, 3, 4, 5], dtype=np.int64))
 
     # Baseline: no offset, active window is the full prompt.
     np.testing.assert_array_equal(
-        token_buffer.active, np.array([1, 2, 3, 4, 5], dtype=np.int32)
+        token_buffer.active, np.array([1, 2, 3, 4, 5], dtype=np.int64)
     )
 
     # 1) Applying a valid offset should change which tokens are returned by `active`.
     token_buffer.apply_processing_offset(2)
     np.testing.assert_array_equal(
-        token_buffer.active, np.array([3, 4, 5], dtype=np.int32)
+        token_buffer.active, np.array([3, 4, 5], dtype=np.int64)
     )
 
     # 2) After adding a token, the processing offset should be reset to 0 and
@@ -341,7 +343,7 @@ def test_token_buffer__apply_processing_offset_behaviour() -> None:
     # the newly added token.
     assert token_buffer.processed_length == 5
     np.testing.assert_array_equal(
-        token_buffer.active, np.array([6], dtype=np.int32)
+        token_buffer.active, np.array([6], dtype=np.int64)
     )
 
     # 3) Invalid offsets should raise ValueError.

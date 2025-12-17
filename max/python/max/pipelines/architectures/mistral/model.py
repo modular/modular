@@ -174,12 +174,9 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         ).to(self.devices[0])
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        next_tokens_batch = np.concatenate(
-            [ctx.next_tokens for ctx in context_batch]
-        )
-        next_tokens_batch = Tensor.from_numpy(next_tokens_batch).to(
-            self.devices[0]
-        )
+        next_tokens_batch = Tensor.from_numpy(
+            np.concatenate([ctx.next_tokens for ctx in context_batch])
+        ).to(self.devices[0])
 
         return MistralInputs(
             input_tokens=next_tokens_batch,
