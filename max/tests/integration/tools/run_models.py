@@ -264,6 +264,7 @@ def run_torch_model(
             torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
             device=device,
             num_steps=num_steps,
+            inputs=inputs,
         )
     elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
         results = torch_utils.run_embeddings_generation(
