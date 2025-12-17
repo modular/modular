@@ -126,7 +126,12 @@ fn posix_spawnp[
     # TODO: Implement `const posix_spawn_file_actions_t`, `*file_actions, const posix_spawnattr_t *restrict attrp,`
     # to allow full control of how process is spawned
     return external_call["posix_spawnp", c_int](
-        pid, file, OpaquePointer[mut=False, origin](), OpaquePointer[mut=False, origin](), argv, envp
+        pid,
+        file,
+        OpaquePointer[mut=False, origin](),
+        OpaquePointer[mut=False, origin](),
+        argv,
+        envp,
     )
 
 

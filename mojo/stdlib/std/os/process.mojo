@@ -64,17 +64,29 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
         exit_code: Optional[Int] = None,
         term_signal: Optional[Int] = None,
     ):
-        """Initializes a new `ProcessStatus`."""
+        """Initializes a new `ProcessStatus`.
+
+        Args:
+            exit_code: The exit code if the process terminated normally.
+            term_signal: The signal number that terminated the process.
+        """
         self.exit_code = exit_code
         self.term_signal = term_signal
 
     @staticmethod
     fn running() -> Self:
-        """Creates a status for a running process."""
+        """Creates a status for a running process.
+
+        Returns:
+            A `ProcessStatus` for a running process.
+        """
         return Self()
 
     fn has_exited(self) -> Bool:
-        """Returns true if the process has terminated, either normally or by a signal.
+        """Checks if the process has terminated.
+
+        Returns:
+            True if the process has terminated, either normally or by a signal.
         """
         return Bool(self.exit_code) or Bool(self.term_signal)
 
@@ -98,11 +110,16 @@ struct Pipe:
         in_close_on_exec: Bool = False,
         out_close_on_exec: Bool = False,
     ) raises:
-        """Struct to manage interprocess pipe comms.
+        """Initializes a new `Pipe`.
 
         Args:
-            in_close_on_exec: Close the read side of pipe if `exec` sys. call is issued in process.
-            out_close_on_exec: Close the write side of pipe if `exec` sys. call is issued in process.
+            in_close_on_exec: Close the read side of pipe if an `exec` syscall
+              is issued in the process.
+            out_close_on_exec: Close the write side of pipe if an `exec`
+              syscall is issued in the process.
+
+        Raises:
+            Error: If the pipe could not be created or configured.
         """
         var pipe_fds = alloc[c_int](2)
         if pipe(pipe_fds) < 0:
@@ -156,12 +173,13 @@ struct Pipe:
 
     @always_inline
     fn write_bytes(mut self, bytes: Span[Byte, _]) raises:
-        """
-        Write a span of bytes to the pipe.
+        """Writes a span of bytes to the pipe.
 
         Args:
             bytes: The byte span to write to this pipe.
 
+        Raises:
+            Error: If called on a read-only pipe.
         """
         if self.fd_out:
             self.fd_out.value().write_bytes(bytes)
@@ -170,14 +188,16 @@ struct Pipe:
 
     @always_inline
     fn read_bytes(mut self, mut buffer: Span[mut=True, Byte]) raises -> UInt:
-        """
-        Read a number of bytes from this pipe.
+        """Read a number of bytes from this pipe.
 
         Args:
             buffer: Span[Byte] of length n where to store read bytes. n = number of bytes to read.
 
         Returns:
             Actual number of bytes read.
+
+        Raises:
+            Error: If the pipe is in write-only mode.
         """
         if self.fd_in:
             return self.fd_in.value().read_bytes(buffer)
@@ -221,6 +241,7 @@ struct Process:
         self.status = None
 
     fn __del__(deinit self):
+        """Waits for the process to exit when the `Process` object is destroyed."""
         try:
             _ = self.wait()
         except:
@@ -362,6 +383,9 @@ struct Process:
 
         Returns:
           An instance of `Process` struct.
+
+        Raises:
+            Error: If the process fails to spawn.
         """
 
         @parameter
@@ -382,7 +406,9 @@ struct Process:
                 offset += 1
 
             # `argv` ptr array terminates with NULL PTR
-            argv_array_ptr_cstr_ptr[offset] = UnsafePointer[mut=False, c_char, ImmutAnyOrigin]()
+            argv_array_ptr_cstr_ptr[offset] = UnsafePointer[
+                mut=False, c_char, ImmutAnyOrigin
+            ]()
             var path_cptr = path.unsafe_cstr_ptr()
 
             var pid: c_pid_t = 0
@@ -391,7 +417,11 @@ struct Process:
                 UnsafePointer(to=pid),
                 path_cptr,
                 argv_array_ptr_cstr_ptr,
-                UnsafePointer[mut=False, UnsafePointer[mut=False, Int8, ImmutAnyOrigin], ImmutAnyOrigin](),
+                UnsafePointer[
+                    mut=False,
+                    UnsafePointer[mut=False, Int8, ImmutAnyOrigin],
+                    ImmutAnyOrigin,
+                ](),
             )
 
             if has_error_code > 0:
@@ -409,4 +439,6 @@ struct Process:
             constrained[
                 False, "Unknown platform process execution not implemented"
             ]()
-            abort[prefix="ERROR:"]("Unknown platform process execution not implemented")
+            abort[prefix="ERROR:"](
+                "Unknown platform process execution not implemented"
+            )
