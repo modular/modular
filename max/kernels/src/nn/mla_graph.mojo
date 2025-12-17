@@ -233,7 +233,7 @@ fn mla_prefill_branch_fp8[
         seq_len * num_heads * (qk_nope_head_dim + qk_rope_head_dim)
     )
     var q = LayoutTensor[dtype, q_layout](
-        q_buf.unsafe_ptr(),
+        q_buf,
         RuntimeLayout[q_layout].row_major(
             Index(seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim)
         ),
@@ -281,7 +281,7 @@ fn mla_prefill_branch_fp8[
         buffer_length * kv_latent_dim
     )
     var k_latent = LayoutTensor[dtype, k_latent_layout](
-        k_latent_buf.unsafe_ptr(),
+        k_latent_buf,
         RuntimeLayout[k_latent_layout].row_major(
             Index(buffer_length, kv_latent_dim)
         ),
@@ -305,7 +305,7 @@ fn mla_prefill_branch_fp8[
         buffer_length * kv_latent_dim
     )
     var fp8_k_latent = LayoutTensor[fp8_dtype, k_latent_layout](
-        fp8_k_latent_buf.unsafe_ptr(),
+        fp8_k_latent_buf,
         RuntimeLayout[k_latent_layout].row_major(
             Index(buffer_length, kv_latent_dim)
         ),
@@ -323,7 +323,7 @@ fn mla_prefill_branch_fp8[
     var fp8_k_latent_scale = LayoutTensor[
         fp8_scale_dtype, fp8_k_latent_scale_layout
     ](
-        fp8_k_latent_scale_buf.unsafe_ptr(),
+        fp8_k_latent_scale_buf,
         RuntimeLayout[fp8_k_latent_scale_layout].row_major(
             Index(kv_latent_dim // k_scale_granularity, scales_padded_m)
         ),
@@ -336,7 +336,6 @@ fn mla_prefill_branch_fp8[
         1200.0,
         ctx,
     )
-    _ = k_latent_buf^
 
     # allocate buffers for concatenated KV
     comptime kv_layout = Layout.row_major(
@@ -346,7 +345,7 @@ fn mla_prefill_branch_fp8[
         buffer_length * num_heads * (qk_nope_head_dim + v_head_dim)
     )
     var kv = LayoutTensor[dtype, kv_layout](
-        kv_buf.unsafe_ptr(),
+        kv_buf,
         RuntimeLayout[kv_layout].row_major(
             Index(
                 buffer_length,
@@ -372,8 +371,6 @@ fn mla_prefill_branch_fp8[
         _layout_tensor_to_nd_buffer(kv_b_proj_scale),
         ctx,
     )
-    _ = fp8_k_latent_buf^
-    _ = fp8_k_latent_scale_buf^
 
     # allocate buffers for full K and V
     comptime k_layout = Layout.row_major(
@@ -387,13 +384,13 @@ fn mla_prefill_branch_fp8[
         buffer_length * num_heads * v_head_dim
     )
     var k = LayoutTensor[dtype, k_layout](
-        k_buf.unsafe_ptr(),
+        k_buf,
         RuntimeLayout[k_layout].row_major(
             Index(buffer_length, num_heads, qk_nope_head_dim)
         ),
     )
     var v = LayoutTensor[dtype, v_layout](
-        v_buf.unsafe_ptr(),
+        v_buf,
         RuntimeLayout[v_layout].row_major(
             Index(buffer_length, num_heads, v_head_dim)
         ),
@@ -442,7 +439,6 @@ fn mla_prefill_branch_fp8[
     _elementwise_impl_gpu[
         func=split_kv_fn, simd_width = UInt(target_simd_width)
     ](launch_shape, ctx)
-    _ = kv_buf^
 
     generic_flare_mla_prefill_kv_cache_ragged[
         write_softmax_info=False,
@@ -466,10 +462,6 @@ fn mla_prefill_branch_fp8[
         ),
         ctx,
     )
-
-    _ = q_buf^
-    _ = k_buf^
-    _ = v_buf^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -508,7 +500,7 @@ fn quantize_and_bmm_fp8_helper[
     # allocate buffers for quantized a and its scales
     var fp8_a_buf = ctx.enqueue_create_buffer[fp8_dtype](B * m * K)
     var fp8_a = LayoutTensor[fp8_dtype, a.layout](
-        fp8_a_buf.unsafe_ptr(),
+        fp8_a_buf,
         a.runtime_layout,
     )
 
@@ -522,7 +514,7 @@ fn quantize_and_bmm_fp8_helper[
         B * (K // k_scale_granularity) * scales_padded_m
     )
     var fp8_a_scale = LayoutTensor[fp8_scale_dtype, fp8_a_scale_layout](
-        fp8_a_scale_buf.unsafe_ptr(),
+        fp8_a_scale_buf,
         RuntimeLayout[fp8_a_scale_layout].row_major(
             Index(B, K // k_scale_granularity, scales_padded_m)
         ),
@@ -552,9 +544,6 @@ fn quantize_and_bmm_fp8_helper[
         _layout_tensor_to_nd_buffer[3](b_scales),
         ctx,
     )
-
-    _ = fp8_a_buf^
-    _ = fp8_a_scale_buf^
 
 
 @always_inline
@@ -718,7 +707,7 @@ fn mla_decode_branch_fp8[
         num_heads * seq_len * qk_nope_head_dim
     )
     var q_nope_t = LayoutTensor[dtype, q_nope_t_layout](
-        q_nope_t_buf.unsafe_ptr(),
+        q_nope_t_buf,
         RuntimeLayout[q_nope_t_layout].row_major(
             Index(num_heads, seq_len, qk_nope_head_dim)
         ),
@@ -733,7 +722,7 @@ fn mla_decode_branch_fp8[
         num_heads * seq_len * kv_latent_dim
     )
     var q_nope_proj = LayoutTensor[dtype, q_nope_proj_layout](
-        q_nope_proj_buf.unsafe_ptr(),
+        q_nope_proj_buf,
         RuntimeLayout[q_nope_proj_layout].row_major(
             Index(num_heads, seq_len, kv_latent_dim)
         ),
@@ -745,7 +734,6 @@ fn mla_decode_branch_fp8[
         k_scale_granularity=k_scale_granularity,
         target=target,
     ](q_nope_proj, q_nope_t, w_uk, w_uk_scale, ctx)
-    _ = q_nope_t_buf^
 
     # concatenate the transposed q_nope_proj and q_rope tensors
     comptime q_full_layout = Layout.row_major(
@@ -755,7 +743,7 @@ fn mla_decode_branch_fp8[
         seq_len * num_heads * (kv_latent_dim + qk_rope_head_dim)
     )
     var q_full = LayoutTensor[dtype, q_full_layout](
-        q_full_buf.unsafe_ptr(),
+        q_full_buf,
         RuntimeLayout[q_full_layout].row_major(
             Index(seq_len, num_heads, kv_latent_dim + qk_rope_head_dim)
         ),
@@ -798,7 +786,6 @@ fn mla_decode_branch_fp8[
     _elementwise_impl_gpu[func=concat_fn, simd_width = UInt(concat_simd_width)](
         concat_launch_shape, ctx
     )
-    _ = q_nope_proj_buf^
 
     # Perform MLA decode
     comptime raw_output_layout = Layout.row_major(
@@ -808,7 +795,7 @@ fn mla_decode_branch_fp8[
         seq_len * num_heads * kv_latent_dim
     )
     var raw_output = LayoutTensor[dtype, raw_output_layout](
-        raw_output_buf.unsafe_ptr(),
+        raw_output_buf,
         RuntimeLayout[raw_output_layout].row_major(
             Index(seq_len, num_heads, kv_latent_dim)
         ),
@@ -827,7 +814,6 @@ fn mla_decode_branch_fp8[
         raw_output,
         ctx,
     )
-    _ = q_full_buf^
 
     comptime raw_output_t_layout = Layout.row_major(
         num_heads, UNKNOWN_VALUE, kv_latent_dim
@@ -836,13 +822,12 @@ fn mla_decode_branch_fp8[
         num_heads * seq_len * kv_latent_dim
     )
     var raw_output_t = LayoutTensor[dtype, raw_output_t_layout](
-        raw_output_t_buf.unsafe_ptr(),
+        raw_output_t_buf,
         RuntimeLayout[raw_output_t_layout].row_major(
             Index(num_heads, seq_len, kv_latent_dim)
         ),
     )
     transpose_helper[dtype](raw_output_t, raw_output, ctx)
-    _ = raw_output_buf^
 
     # Another batched matmul to project the raw output to the original space
     comptime output_t_layout = Layout.row_major(
@@ -852,7 +837,7 @@ fn mla_decode_branch_fp8[
         num_heads * seq_len * v_head_dim
     )
     var output_t = LayoutTensor[dtype, output_t_layout](
-        output_t_buf.unsafe_ptr(),
+        output_t_buf,
         RuntimeLayout[output_t_layout].row_major(
             Index(num_heads, seq_len, v_head_dim)
         ),
@@ -867,11 +852,9 @@ fn mla_decode_branch_fp8[
         k_scale_granularity=k_scale_granularity,
         target=target,
     ](output_t, raw_output_t, w_uv, w_uv_scale, ctx)
-    _ = raw_output_t_buf^
 
     # Transpose the output tensor from [num_heads, tot_seq_len, v_head_dim] to [tot_seq_len, num_heads, v_head_dim].
     transpose_helper[dtype](output, output_t, ctx)
-    _ = output_t_buf^
 
 
 # ===-----------------------------------------------------------------------===#
