@@ -25,18 +25,16 @@ from pytest_mock import MockerFixture
 def test_load_torch_intermediates(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    def fake_generate_llm_logits(
-        *args: Any, intermediates_dir: Path, **kwargs: Any
-    ) -> None:
-        intermediates_dir.mkdir(parents=True, exist_ok=True)
-        torch.save(torch.ones(2, 2), intermediates_dir / "layer0.out.pt")
-        torch.save(torch.zeros(1), intermediates_dir / "layer1.out.pt")
+    def fake_debug_model(*args: Any, output_path: Path, **kwargs: Any) -> None:
+        output_path.mkdir(parents=True, exist_ok=True)
+        torch.save(torch.ones(2, 2), output_path / "layer0.out.pt")
+        torch.save(torch.zeros(1), output_path / "layer1.out.pt")
 
     mocker.patch.object(
         dbg,
-        "generate_llm_logits",
+        "debug_model",
         autospec=True,
-        side_effect=fake_generate_llm_logits,
+        side_effect=fake_debug_model,
     )
 
     tensors = dbg.load_intermediate_tensors(
@@ -52,21 +50,19 @@ def test_load_torch_intermediates(
 
 
 def test_load_max_intermediates(tmp_path: Path, mocker: MockerFixture) -> None:
-    def fake_generate_llm_logits(
-        *args: Any, intermediates_dir: Path, **kwargs: Any
-    ) -> None:
-        intermediates_dir.mkdir(parents=True, exist_ok=True)
-        (intermediates_dir / "node0-output.max").write_bytes(b"dummy")
-        (intermediates_dir / "node1-output.max").write_bytes(b"dummy")
+    def fake_debug_model(*args: Any, output_path: Path, **kwargs: Any) -> None:
+        output_path.mkdir(parents=True, exist_ok=True)
+        (output_path / "node0-output.max").write_bytes(b"dummy")
+        (output_path / "node1-output.max").write_bytes(b"dummy")
 
     def fake_load_max_tensor(path: PathLike[str]) -> MaxTensor:
         return MaxTensor.from_numpy(np.ones((3, 3), dtype=np.float32))
 
     mocker.patch.object(
         dbg,
-        "generate_llm_logits",
+        "debug_model",
         autospec=True,
-        side_effect=fake_generate_llm_logits,
+        side_effect=fake_debug_model,
     )
     mocker.patch.object(
         dbg, "load_max_tensor", autospec=True, side_effect=fake_load_max_tensor

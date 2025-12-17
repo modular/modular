@@ -13,7 +13,7 @@ modular_py_library(
         "debugging_utils.py",
     ],
     deps = [
-        ":generate_llm_logits",
+        ":debug_model",
         "//max/python/max/driver",
         "//max/python/max/entrypoints",
         requirement("torch"),
@@ -74,6 +74,8 @@ modular_py_binary(
     imports = ["."],
     main = "generate_llm_logits.py",
     deps = [
+        ":create_pipelines",
+        ":run_models",
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
@@ -83,25 +85,75 @@ modular_py_binary(
         "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
         "//max/tests/integration/pipelines/python/test_common",
         requirement("click"),
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
         requirement("einops"),  # Req'd by replit
+        requirement("peft"),  # Required for LoRA support
         requirement("pillow"),
         requirement("requests"),
         requirement("timm"),  # Required by InternVL.
         requirement("torch"),
         requirement("transformers"),
-        requirement("peft"),  # Required for LoRA support
-        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
-        ":create_pipelines",
-        ":run_models",
     ] + select({
         "//:has_gpu": [
-            requirement("gptqmodel"),
             requirement("datasets"),  # Required by gptqmodel
             requirement("device-smi"),  # Required by gptqmodel
+            requirement("gptqmodel"),
             requirement("logbar"),  # Required by gptqmodel
+            requirement("optimum"),
             requirement("threadpoolctl"),  # Required by gptqmodel
             requirement("tokenicer"),  # Required by gptqmodel
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+modular_py_binary(
+    name = "debug_model",
+    testonly = True,
+    srcs = [
+        "debug_model.py",
+    ],
+    data = [
+        "//max/tests/integration/pipelines/python/llama3/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/pipelines/python/llama3/testdata"
+        ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    imports = ["."],
+    main = "debug_model.py",
+    deps = [
+        ":create_pipelines",
+        ":run_models",
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
+        "//max/tests/integration/pipelines/python/internvl:torch_utils",
+        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
+        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("click"),
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("einops"),  # Req'd by replit
+        requirement("peft"),  # Required for LoRA support
+        requirement("pillow"),
+        requirement("requests"),
+        requirement("timm"),  # Required by InternVL.
+        requirement("torch"),
+        requirement("transformers"),
+    ] + select({
+        "//:has_gpu": [
+            requirement("datasets"),  # Required by gptqmodel
+            requirement("device-smi"),  # Required by gptqmodel
+            requirement("gptqmodel"),
+            requirement("logbar"),  # Required by gptqmodel
             requirement("optimum"),
+            requirement("threadpoolctl"),  # Required by gptqmodel
+            requirement("tokenicer"),  # Required by gptqmodel
         ],
         "//conditions:default": [],
     }),

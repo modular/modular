@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 
 # Standard library
-from datetime import datetime
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -27,8 +27,12 @@ import click
 import torch
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from max import driver
+from max.engine import InferenceSession
+from max.engine.api import PrintStyle
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
+from max.nn.hooks import PrintHook
+from max.nn.layer import Module
 from run_models import (
     Flake,
     _detect_hf_flakes,
@@ -41,17 +45,70 @@ from run_models import (
 
 # Tests
 from test_common import (
-    numpy_encoder,
+    torch_print_hook,
 )
-from test_common.evaluate import NUM_STEPS, ModelOutput
 from test_common.github_utils import github_log_group
+from test_common.test_data import MockTextGenerationRequest
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
 # "sysexits.h", which defines this exit code as "temp failure; user is invited
-# to retry".  generate_llm_logits will emit this if it detects a failure is
+# to retry".  debug_model will emit this if it detects a failure is
 # likely caused by a network flake and could be resolved by a retry.
 EX_TEMPFAIL = 75
+
+
+@contextmanager
+def add_max_hooks(
+    output_directory: Path | None = None,
+) -> Generator[None, None, None]:
+    """Context manager that adds tensor printing hooks by patching the model class."""
+
+    # Save original InferenceSession initializer.
+    original_inference_init = InferenceSession.__init__
+    hook = PrintHook()
+    original_inference_init = InferenceSession.__init__
+
+    def get_wrapped_load_state_dict(
+        original_load_state_dict: Callable[..., Any],
+    ) -> Callable[..., Any]:
+        def wrapped_load_state_dict(
+            self: Any, *args: Any, **kwargs: Any
+        ) -> Any:
+            result = original_load_state_dict(self, *args, **kwargs)
+            hook.name_layers(self)
+            return result
+
+        return wrapped_load_state_dict
+
+    # If an output directory is provided, patch InferenceSession to enable debug prints.
+    if output_directory is not None:
+
+        def _patched_inference_init(
+            session_self: InferenceSession, *args: Any, **kwargs: Any
+        ) -> None:
+            original_inference_init(session_self, *args, **kwargs)
+            # Enable debug printing to file-style output when an output directory is specified.
+            # If additional parameters (like output path) are supported, they can be added here.
+            session_self.set_debug_print_options(
+                style=PrintStyle.BINARY_MAX_CHECKPOINT,
+                output_directory=output_directory,
+            )
+
+        InferenceSession.__init__ = _patched_inference_init  # type: ignore[assignment]
+
+    original_load_state_dict = Module.load_state_dict
+    Module.load_state_dict = get_wrapped_load_state_dict(  # type: ignore[method-assign]
+        original_load_state_dict
+    )
+
+    try:
+        yield
+    finally:
+        hook.remove()
+        Module.load_state_dict = original_load_state_dict  # type: ignore[method-assign]
+        # Restore original InferenceSession initializer if we patched it.
+        InferenceSession.__init__ = original_inference_init  # type: ignore[method-assign]
 
 
 @click.command()
@@ -87,24 +144,9 @@ EX_TEMPFAIL = 75
     "-o",
     "--output",
     "output_path",
-    type=str,
-    default=None,
-    help="Path to output resulting goldens JSON. If omitted, will output to tmp/<timestamp>_<pipeline_name>_<framework_name>.json",
-)
-@click.option(
-    "-r",
-    "--reference",
-    "reference_path",
     type=click.Path(path_type=Path),
-    required=False,
-    help="Path to reference golden JSON to compare to",
-)
-@click.option(
-    "--print/--no-print",
-    "print_output",
-    type=bool,
-    default=False,
-    help="Dump goldens in non-JSON format to stdout",
+    default=None,
+    help="Output directory to write intermediate tensors. If omitted, tensors are printed to the console.",
 )
 @click.option(
     "--max-batch-size",
@@ -121,88 +163,75 @@ EX_TEMPFAIL = 75
     help="Log HuggingFace file downloads for MAX and Torch models.",
 )
 @click.option(
-    "--mini",
-    "mini",
-    is_flag=True,
-    default=False,
-    help="Run only a single prompt for a single step.",
+    "--num-steps",
+    "num_steps",
+    type=int,
+    default=1,
+    help="The number of steps to run the model for (default: 1).",
+)
+@click.option(
+    "--prompt",
+    "prompt",
+    type=str,
+    required=False,
+    help="Override the default TEXT prompt (plain text only). For multimodal inputs pass images via --image. If omitted, uses the pipeline's first default prompt.",
+)
+@click.option(
+    "--image",
+    "images",
+    type=str,
+    multiple=True,
+    required=False,
+    help="Image URL or path for multimodal pipelines. Can be passed multiple times.",
 )
 def main(
     device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
     encoding_name: str | None,
-    output_path: str | None,
-    reference_path: Path | None,
-    print_output: bool,
+    output_path: Path,
     max_batch_size: int | None,
     log_hf_downloads: bool,
-    mini: bool,
+    num_steps: int,
+    prompt: str | None,
+    images: tuple[str, ...] | None,
 ) -> None:
     if "gemma3" in pipeline_name:
         # Running into dynamo error:
         # https://huggingface.co/google/gemma-3-4b-it/discussions/51
         torch._dynamo.config.disable = True
 
-    if reference_path is not None:
-        reference_logits = numpy_encoder.NumpyDecoder().decode(
-            reference_path.read_text()
-        )
-    else:
-        reference_logits = None
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    pipeline_name_no_slash = pipeline_name.replace("/", "-")
-    default_output_path = Path(
-        f"{timestamp}_{pipeline_name_no_slash}_{framework_name}.json"
-    )
-    if output_path is None:
-        final_output_path = Path(tempfile.gettempdir()) / default_output_path
-    elif output_path.endswith(".json"):
-        final_output_path = Path(output_path)
-    elif Path(output_path).is_dir():
-        final_output_path = Path(output_path) / default_output_path
-    else:
-        raise ValueError(
-            f"Invalid output path: {output_path}. Please provide a valid file path ending with .json or a directory."
-        )
     try:
-        generate_llm_logits(
+        debug_model(
             device_specs=DevicesOptionType.device_specs(device_type),
             framework_name=framework_name,
             pipeline_name=pipeline_name,
             encoding_name=encoding_name,
-            output_path=final_output_path,
-            reference=reference_logits,
-            print_output=print_output,
+            output_path=output_path,
             max_batch_size=max_batch_size,
             log_hf_downloads=log_hf_downloads,
-            mini=mini,
+            num_steps=num_steps,
+            prompt=prompt,
+            images=images,
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)
 
 
 @_detect_hf_flakes
-def generate_llm_logits(
+def debug_model(
     device_specs: list[driver.DeviceSpec],
     framework_name: str,
     pipeline_name: str,
     output_path: Path,
-    print_output: bool,
     encoding_name: str | None = None,
     max_batch_size: int | None = None,
-    reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
-    mini: bool = False,
+    num_steps: int = 1,
+    prompt: str | None = None,
+    images: tuple[str, ...] | None = None,
 ) -> None:
-    """Output logits to a file for a model based on a fixed set of prompts.
-
-    The resulting logit golden files for two different frameworks can be used
-    with //max/tests/integration/pipelines/python/llama3/verify to check their
-    similarity.
-
-    """
+    """Run a model with print hooks enabled and write intermediate tensors. Intermediate tensors are written to the output directory if specified."""
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
     configure_cli_logging(level="INFO")
@@ -214,12 +243,26 @@ def generate_llm_logits(
             model_path=pipeline_name,
         )
 
-    if mini:
+    # Build input based on user-provided prompt and/or images
+    if prompt is None and not images:
         inputs = pipeline_oracle.inputs[:1]
-        num_steps = 1
+    elif images and len(images) > 0:
+        inputs = [
+            MockTextGenerationRequest.with_images(
+                prompt=prompt
+                if prompt is not None
+                else pipeline_oracle.inputs[0].prompt,
+                images=list(images),
+            )
+        ]
     else:
-        inputs = pipeline_oracle.inputs
-        num_steps = NUM_STEPS
+        inputs = [
+            MockTextGenerationRequest.text_only(
+                prompt
+                if prompt is not None
+                else pipeline_oracle.inputs[0].prompt
+            )
+        ]
 
     evaluation_batch_size: int | list[int]
     if max_batch_size is None:
@@ -240,7 +283,10 @@ def generate_llm_logits(
             else:
                 max_encoding_name = encoding_name
 
-            with maybe_log_hf_downloads(log_hf_downloads):
+            with (
+                maybe_log_hf_downloads(log_hf_downloads),
+                add_max_hooks(output_directory=output_path),
+            ):
                 max_pipeline_and_tokenizer = (
                     pipeline_oracle.create_max_pipeline(
                         encoding=max_encoding_name,
@@ -255,7 +301,7 @@ def generate_llm_logits(
                 inputs=inputs,
                 num_steps=num_steps,
                 evaluation_batch_size=evaluation_batch_size,
-                reference=reference,
+                reference=None,
             )
         elif framework_name == "torch":
             torch_device = get_torch_device(device_specs)
@@ -269,6 +315,9 @@ def generate_llm_logits(
                         device=device,
                     )
                 )
+            export_path = str(output_path) if output_path is not None else None
+            hook = torch_print_hook.TorchPrintHook(export_path=export_path)
+            hook.name_layers(torch_pipeline_and_tokenizer.model)
 
             print(f"Running {pipeline_name} model on Torch")
             results = run_torch_model(
@@ -282,20 +331,6 @@ def generate_llm_logits(
             raise NotImplementedError(
                 f"Framework {framework_name!r} not implemented"
             )
-
-    if print_output:
-        print(f"Framework:    {framework_name}")
-        print(f"Pipeline:     {pipeline_name}")
-        print(f"Encoding:     {encoding_name}")
-        print(f"Device specs: {device_specs}")
-        print("Results:")
-        print(results)
-
-    # Ensure parent directory exists
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
-        f.write(numpy_encoder.NumpyEncoder().encode(results))
-        print(f"Results written to {output_path}")
 
 
 if __name__ == "__main__":
