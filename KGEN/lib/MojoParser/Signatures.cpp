@@ -964,8 +964,10 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       // Store the constraint in the parameter list as is. These will be
       // remapped to using index refs later when constructing the final
       // GeneratorType.
+      // Translate location without any DebugInfo scope since this metadata is
+      // purely frontend use and never ends up in DWARF.
       auto paramConstraint = ConstraintAttr::get(
-          propVal, result.shared.translateLocation(constraint.loc));
+          propVal, result.shared.diags.translateLocation(constraint.loc));
       paramConstraints.push_back(paramConstraint);
 
       // Must insert the constraint into the temporary scope immediately so that
