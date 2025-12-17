@@ -642,8 +642,16 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   liftStore.addReplacement(
       [&](StoreToMemAttr store) -> std::pair<Attribute, WalkResult> {
         // Recursively lift the stored value first.
-        TypedAttr liftedValue =
-            cast<TypedAttr>(liftStore.replace(store.getValue()));
+        TypedAttr liftedValue = llvm::dyn_cast_if_present<TypedAttr>(
+            liftStore.replace(store.getValue()));
+
+        if (!liftedValue) {
+          // error happened and err should already set, just interrupt here.
+          if (!err.has_value())
+            err = Error("store to memory has null value");
+          return {store, WalkResult::interrupt()};
+        }
+
         Type ptrType = liftStore.replace(store.getType());
 
         Type valueType = liftedValue.getType();
