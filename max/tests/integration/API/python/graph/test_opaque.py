@@ -95,6 +95,11 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     return reader_compiled
 
 
+# TODO(GEX-2979): Re-enable this.
+@pytest.mark.skipif(
+    os.environ.get("EMIT_MOJO") == "1",
+    reason="Emit Mojo doesn't support mutable opaque graph inputs yet",
+)
 def test_opaque_introspection(bumper_model: Model, reader_model: Model) -> None:
     # assert len(maker_model.input_metadata) == 0
     # assert len(maker_model.output_metadata) == 1
@@ -104,6 +109,11 @@ def test_opaque_introspection(bumper_model: Model, reader_model: Model) -> None:
     assert len(reader_model.output_metadata) == 1
 
 
+# TODO(GEX-2979): Re-enable this.
+@pytest.mark.skipif(
+    os.environ.get("EMIT_MOJO") == "1",
+    reason="Emit mojo Moesn't support opaque type parameterization yet",
+)
 def test_opaque_type_parameterization(
     session: InferenceSession,
     custom_ops_mojopkg: Path,
