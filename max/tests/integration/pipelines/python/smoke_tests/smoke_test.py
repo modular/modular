@@ -422,13 +422,14 @@ def smoke_test(
     is_vision_model = any(
         kw in model
         for kw in (
-            "qwen2.5-vl",
-            "vision",
-            "internvl",
             "idefics",
-            "pixtral",
+            "internvl",
             "olmocr",
+            "pixtral",
+            "qwen2.5-vl",
+            "qwen3-vl",
             "tbmod/gemma-3-4b-it",
+            "vision",
         )
     )
     tasks = ["gsm8k_cot_llama"]
