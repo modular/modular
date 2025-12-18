@@ -782,7 +782,7 @@ def test_text_context_repr(capsys: pytest.CaptureFixture) -> None:  # type: igno
     outerr = capsys.readouterr()
     assert (
         re.match(
-            r"TextContext\(request_id=.*\, start_idx=0\, active_idx=5\, end_idx=5\)",
+            r"TextContext\(request_id=.*\, start_idx=0\, current_position=5\, end_idx=5\)",
             outerr.out,
         )
         is not None
@@ -1093,7 +1093,7 @@ def test_text_and_vision_context_sad_case() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="It is invalid for the active_idx \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
+        match="It is invalid for the current_position \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
     ):
         ctx.chunk(7)
 

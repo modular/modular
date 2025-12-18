@@ -1001,7 +1001,7 @@ class Qwen3VLModel(
                 ):
                     decoder_position_ids_list.append(
                         ctx_decoder_position_ids[
-                            :, ctx.processed_length : ctx.active_idx
+                            :, ctx.processed_length : ctx.current_position
                         ]
                     )
                 else:

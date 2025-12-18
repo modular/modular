@@ -185,7 +185,7 @@ class TextContext:
         return self._start_idx + self._draft_offset
 
     @property
-    def active_idx(self) -> int:
+    def current_position(self) -> int:
         return self._active_idx
 
     def skip_processing(self, n: int) -> None:
@@ -231,9 +231,11 @@ class TextContext:
             )
 
         # Calculate how much to bump the token indices by
-        # If chunk_size = 10, and available_active_tokens = 30, we have to move back the active_idx
+        # If chunk_size = 10, and available_active_tokens = 30, we have to move back the current_position
         # by 20.
-        self._bump_token_indices(active_idx=chunk_size - self.active_length)
+        self._bump_token_indices(
+            current_position=chunk_size - self.active_length
+        )
 
     @property
     def min_tokens(self) -> int:
@@ -339,43 +341,45 @@ class TextContext:
     def _bump_token_indices(
         self,
         start_idx: int = 0,
-        active_idx: int = 0,
+        current_position: int = 0,
         end_idx: int = 0,
     ) -> None:
-        """Update the start_idx, active_idx and end_idx without manipulating the token array."""
+        """Update the start_idx, current_position and end_idx without manipulating the token array."""
         new_start_idx = start_idx + self._start_idx
-        new_active_idx = active_idx + self._active_idx
+        new_active_idx = current_position + self._active_idx
         new_end_idx = end_idx + self._end_idx
 
         self._set_token_indices(
             start_idx=new_start_idx,
-            active_idx=new_active_idx,
+            current_position=new_active_idx,
             end_idx=new_end_idx,
         )
 
     def _set_token_indices(
         self,
         start_idx: int | None = None,
-        active_idx: int | None = None,
+        current_position: int | None = None,
         end_idx: int | None = None,
     ) -> None:
         """Set the token indices without manipulating the token array."""
         new_start_idx = start_idx if start_idx is not None else self._start_idx
         new_active_idx = (
-            active_idx if active_idx is not None else self._active_idx
+            current_position
+            if current_position is not None
+            else self._active_idx
         )
         new_end_idx = end_idx if end_idx is not None else self._end_idx
 
         if new_start_idx >= new_active_idx:
             raise ValueError(f"""
-            active_idx must always be greater than start_idx, unable to bump token indices
-            as new start_idx ({new_start_idx}) is greater than new active_idx ({new_active_idx}).
+            current_position must always be greater than start_idx, unable to bump token indices
+            as new start_idx ({new_start_idx}) is greater than new current_position ({new_active_idx}).
             """)
 
         if new_active_idx > new_end_idx:
             raise ValueError(f"""
-            end_idx must always be greater than active_idx, unable to bump token indices
-            as new active_idx ({new_active_idx}) is greater than new end_idx ({new_end_idx}).
+            end_idx must always be greater than current_position, unable to bump token indices
+            as new current_position ({new_active_idx}) is greater than new end_idx ({new_end_idx}).
             """)
 
         self._start_idx = new_start_idx
@@ -384,7 +388,7 @@ class TextContext:
 
     @property
     def next_tokens(self) -> TokenSlice:
-        """Returns the tokens between start_idx and active_idx.
+        """Returns the tokens between start_idx and current_position.
 
         Returns:
             np.ndarray: Array of tokens that have been generated but not yet processed.
@@ -465,9 +469,9 @@ class TextContext:
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         # This is required for chunked prefill.
-        # The scheduler will update the active_idx via _bump_token_indices and pass through the model
-        # To accommodate this, if we identify that the active_idx is not at the end of the completed
-        # token array, we only update the start_idx and active_idx, leaving the token array alone.
+        # The scheduler will update the current_position via _bump_token_indices and pass through the model
+        # To accommodate this, if we identify that the current_position is not at the end of the completed
+        # token array, we only update the start_idx and current_position, leaving the token array alone.
         if self._active_idx < self._end_idx:
             self._start_idx = self._active_idx
             self._active_idx = self._end_idx
@@ -486,7 +490,7 @@ class TextContext:
 
         if self._is_eos(new_token):
             self.status = GenerationStatus.END_OF_SEQUENCE
-        elif self.active_idx >= self.max_length:
+        elif self.current_position >= self.max_length:
             self.status = GenerationStatus.MAXIMUM_LENGTH
             # We must return the last token that fits in max length.
             self._completion_end_idx += 1
@@ -559,7 +563,7 @@ class TextContext:
             f"{self.__class__.__name__}("
             f"request_id={self.request_id}, "
             f"start_idx={self._start_idx}, "
-            f"active_idx={self._active_idx}, "
+            f"current_position={self._active_idx}, "
             f"end_idx={self._end_idx}"
             ")"
         )
@@ -593,7 +597,7 @@ class TextAndVisionContext(TextContext):
     the first image that is not yet encoded. For example in the above diagram
     when start_idx=11, this implies that image_idx=1.
 
-    Currently we restrict start_idx and active_idx from being in the middle of an image!
+    Currently we restrict start_idx and current_position from being in the middle of an image!
     This is verified in `_validate_state` methods that are called before and after
     mutating methods like `_bump_token_indices`.
 
@@ -683,36 +687,40 @@ class TextAndVisionContext(TextContext):
 
     def _validate_state(self) -> None:
         """Validates the state of the context."""
-        if img := self._find_bisected_image(self.active_idx):
+        if img := self._find_bisected_image(self.current_position):
             raise ValueError(
-                f"It is invalid for the active_idx ({self.active_idx}) to bisect an image ({img})."
+                f"It is invalid for the current_position ({self.current_position}) to bisect an image ({img})."
             )
-        if self.active_idx != self.end_idx:
+        if self.current_position != self.end_idx:
             raise ValueError(
-                f"It is invalid for the active_idx ({self.active_idx}) to not be equal to the end_idx ({self._end_idx}) for VLM as chunked prefill is not supported."
+                f"It is invalid for the current_position ({self.current_position}) to not be equal to the end_idx ({self._end_idx}) for VLM as chunked prefill is not supported."
             )
 
     def _bump_token_indices(
         self,
         start_idx: int = 0,
-        active_idx: int = 0,
+        current_position: int = 0,
         end_idx: int = 0,
     ) -> None:
         self._validate_state()
         super()._bump_token_indices(
-            start_idx=start_idx, active_idx=active_idx, end_idx=end_idx
+            start_idx=start_idx,
+            current_position=current_position,
+            end_idx=end_idx,
         )
         self._validate_state()
 
     def _set_token_indices(
         self,
         start_idx: int | None = None,
-        active_idx: int | None = None,
+        current_position: int | None = None,
         end_idx: int | None = None,
     ) -> None:
         self._validate_state()
         super()._set_token_indices(
-            start_idx=start_idx, active_idx=active_idx, end_idx=end_idx
+            start_idx=start_idx,
+            current_position=current_position,
+            end_idx=end_idx,
         )
         self._validate_state()
 
@@ -734,7 +742,7 @@ class TextAndVisionContext(TextContext):
             f"{self.__class__.__name__}("
             f"request_id={self.request_id}, "
             f"processed_length={self.processed_length}, "
-            f"active_idx={self.active_idx}, "
+            f"current_position={self.current_position}, "
             f"end_idx={self.end_idx}, "
             f"images={self.images}"
             ")"

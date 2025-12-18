@@ -828,7 +828,7 @@ class Qwen2_5VLModel(
                 and ctx_decoder_position_ids.shape[1] == ctx.current_length
             ):
                 result_array = ctx_decoder_position_ids[
-                    :, ctx.processed_length : ctx.active_idx
+                    :, ctx.processed_length : ctx.current_position
                 ].astype(np.uint32, copy=False)
             elif ctx.needs_vision_encoding:
                 # Recompute decoder_position_ids using get_rope_index
@@ -873,7 +873,7 @@ class Qwen2_5VLModel(
 
                 # Slice to get only the active portion and convert type
                 result_array = temp_position_ids[
-                    :, ctx.processed_length : ctx.active_idx
+                    :, ctx.processed_length : ctx.current_position
                 ].astype(np.uint32, copy=False)
             else:
                 # This case should only happen during Token Generation
@@ -926,7 +926,7 @@ class Qwen2_5VLModel(
             ):
                 # Direct slice and write to output
                 src_slice = ctx_decoder_position_ids[
-                    :, ctx.processed_length : ctx.active_idx
+                    :, ctx.processed_length : ctx.current_position
                 ]
                 out_array[:, write_offset : write_offset + active_len] = (
                     src_slice.astype(np.uint32, copy=False)
@@ -974,7 +974,7 @@ class Qwen2_5VLModel(
 
                 # Slice to get only the active portion and write directly
                 src_slice = temp_position_ids[
-                    :, ctx.processed_length : ctx.active_idx
+                    :, ctx.processed_length : ctx.current_position
                 ]
                 out_array[:, write_offset : write_offset + active_len] = (
                     src_slice.astype(np.uint32, copy=False)

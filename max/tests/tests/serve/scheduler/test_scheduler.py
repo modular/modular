@@ -118,7 +118,7 @@ def create_mock_request(
         max_length=100,
         tokens=tokens,
     )
-    assert context.active_idx == seq_len
+    assert context.current_position == seq_len
     context.skip_processing(start_idx)
     if is_tg:
         context.update(ARBITRARY_TOKEN_ID)
@@ -154,7 +154,7 @@ def test_try_create_chunked_ce_batch() -> None:
     assert mock_data.request_id in batch
     # Cache management is now handled by the paged_manager/pipeline
     assert batch[mock_data.request_id] is not None
-    assert batch[mock_data.request_id].active_idx == 20
+    assert batch[mock_data.request_id].current_position == 20
     assert batch[mock_data.request_id].active_length == 20
 
 
@@ -288,12 +288,12 @@ def test_schedule_ce_with_chunked_prefill() -> None:
         x = response_pull_socket.get_nowait()
         print(f"There should be no response but mysteriously got: {x}")
 
-    # check req1 is put back in the request queue with the correct active_idx and active_length
+    # check req1 is put back in the request queue with the correct current_position and active_length
     assert batch_constructor.all_ce_reqs
     req_id, data = list(batch_constructor.all_ce_reqs.items())[-1]
     assert req_id == mock_request.request_id
     assert data.processed_length == 20
-    assert data.active_idx == 30
+    assert data.current_position == 30
     assert data.active_length == 10
 
 

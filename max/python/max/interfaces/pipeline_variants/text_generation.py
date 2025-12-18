@@ -245,10 +245,10 @@ class TextGenerationContext(BaseContext, Protocol):
     The context maintains a token array with the following layout::
 
         .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
-        . +--------------------+---------------+-----------------+----------------+
-        . |     completed      |  next_tokens  |                 |  preallocated  |
-        . +--------------------+---------------+-----------------+----------------+
-        .            processed_length ^    active_idx ^         end_idx ^
+        . +--------------------+------------------+-----------------+----------------+
+        . |     completed      |     next_tokens  |                 |  preallocated  |
+        . +--------------------+------------------+-----------------+----------------+
+        .     processed_length ^ current_position ^         end_idx ^
 
     Token Array Regions:
         - completed: Tokens that have already been processed and encoded.
@@ -259,7 +259,7 @@ class TextGenerationContext(BaseContext, Protocol):
 
     Key Indices:
         - ``processed_length``: Marks the beginning of uncompleted tokens
-        - ``active_idx``: Marks the start of next_tokens within the array
+        - ``current_position``: Marks the end of next_tokens within the array
         - ``end_idx``: Marks the end of all active tokens (one past the last token)
     """
 
@@ -274,8 +274,8 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def active_idx(self) -> int:
-        """The index marking the start of ``next_tokens`` within the token array.
+    def current_position(self) -> int:
+        """The index marking the end of ``next_tokens`` within the token array.
 
         This index separates completed tokens from tokens that will be processed
         in the next iteration during chunked prefill or generation.
