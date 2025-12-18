@@ -66,7 +66,7 @@ MODELS = {
     "opengvlab/internvl3-8b-instruct": [
         "sglang@B200",
         "multi",
-        "MI355",  # Times out
+        "max@MI355",  # 26.1
     ],
     "opengvlab/internvl3_5-8b-instruct": [
         "multi",
@@ -75,19 +75,25 @@ MODELS = {
         "max",
     ],
     "qwen/qwen2.5-7b-instruct": ["multi"],
-    "qwen/qwen2.5-vl-3b-instruct": ["multi", "MI355"],  # Memory access fault
-    "qwen/qwen2.5-vl-7b-instruct": ["multi", "MI355"],  # Memory access fault
+    "qwen/qwen2.5-vl-3b-instruct": [
+        "multi",
+        "max@MI355",  # 26.1
+    ],
+    "qwen/qwen2.5-vl-7b-instruct": [
+        "multi",
+        "max@MI355",  # 26.1
+    ],
     "qwen/qwen3-8b": ["multi"],
     "redhatai/gemma-3-27b-it-fp8-dynamic": [],
     "tbmod/gemma-3-4b-it": [
         "multi",
         "H100",
-        "MI355",
+        "max@MI355",  # 26.1
     ],  # B200 only, copy of gemma-3-4b
     "unsloth/gpt-oss-20b-bf16": [
         "max-ci@H100",
         "max@H100",
-        "max@MI355",
+        "max@MI355",  # 26.1
         "multi",
     ],
 }
