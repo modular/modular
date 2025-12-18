@@ -196,7 +196,6 @@ class Qwen3VLMoeTextDecoderLayer(Module):
                 num_experts=config.num_experts,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
-                norm_topk_prob=config.norm_topk_prob,
                 mlp_only_layers=config.mlp_only_layers,
                 dtype=config.dtype,
             )
