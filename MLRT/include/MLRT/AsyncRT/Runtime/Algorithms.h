@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASYNCRT_RUNTIME_ALGORITHMS_H
-#define ASYNCRT_RUNTIME_ALGORITHMS_H
+#ifndef MLRT_ASYNCRT_RUNTIME_ALGORITHMS_H
+#define MLRT_ASYNCRT_RUNTIME_ALGORITHMS_H
 
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
@@ -506,4 +506,4 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
 
 } // namespace M::AsyncRT
 
-#endif // ASYNCRT_RUNTIME_ALGORITHMS_H
+#endif // MLRT_ASYNCRT_RUNTIME_ALGORITHMS_H

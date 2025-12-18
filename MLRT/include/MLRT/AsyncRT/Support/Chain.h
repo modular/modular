@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASYNCRT_SUPPORT_CHAIN_H
-#define ASYNCRT_SUPPORT_CHAIN_H
+#ifndef MLRT_ASYNCRT_SUPPORT_CHAIN_H
+#define MLRT_ASYNCRT_SUPPORT_CHAIN_H
 
 namespace M::AsyncRT {
 
@@ -20,4 +20,4 @@ public:
 
 } // namespace M::AsyncRT
 
-#endif // ASYNCRT_SUPPORT_CHAIN_H
+#endif // MLRT_ASYNCRT_SUPPORT_CHAIN_H

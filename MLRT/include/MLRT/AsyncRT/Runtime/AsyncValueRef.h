@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASYNCRT_RUNTIME_ASYNCVALUEREF_H
-#define ASYNCRT_RUNTIME_ASYNCVALUEREF_H
+#ifndef MLRT_ASYNCRT_RUNTIME_ASYNCVALUEREF_H
+#define MLRT_ASYNCRT_RUNTIME_ASYNCVALUEREF_H
 
 #include "MLRT/AsyncRT/Runtime/AnyAsyncValueRef.h"
 #include "MLRT/AsyncRT/Runtime/AsyncValue.h"
@@ -193,4 +193,4 @@ private:
 
 } // namespace M::AsyncRT
 
-#endif // ASYNCRT_RUNTIME_ASYNCVALUEREF_H
+#endif // MLRT_ASYNCRT_RUNTIME_ASYNCVALUEREF_H

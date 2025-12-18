@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASYNCRT_RUNTIME_RUNTIMECLOPTIONS_H
-#define ASYNCRT_RUNTIME_RUNTIMECLOPTIONS_H
+#ifndef MLRT_ASYNCRT_RUNTIME_RUNTIMECLOPTIONS_H
+#define MLRT_ASYNCRT_RUNTIME_RUNTIMECLOPTIONS_H
 
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/ADT/GenericUniquePtrSet.h"
@@ -165,4 +165,4 @@ private:
 
 } // namespace M::AsyncRT
 
-#endif // ASYNCRT_RUNTIME_RUNTIMECLOPTIONS_H
+#endif // MLRT_ASYNCRT_RUNTIME_RUNTIMECLOPTIONS_H
