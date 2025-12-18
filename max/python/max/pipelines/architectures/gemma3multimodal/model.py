@@ -261,6 +261,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             for dev in self.devices
         ]
 
+        self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self.load_model(session)
 
     @classmethod
@@ -673,7 +674,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if not images:
             return None
 
-        final_images = _VisionStacker().stack(images)
+        final_images = self._stacker.stack(images)
 
         tensor = cast_dlpack_to(
             final_images, DType.float32, DType.bfloat16, self.devices[0]
