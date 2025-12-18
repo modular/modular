@@ -340,3 +340,14 @@ modular_cc_test(
         "@llvm-project//llvm:Support",
     ],
 )
+
+modular_cc_test(
+    name = "cppzmqTest",
+    size = "small",
+    srcs = ["cppzmq.cpp"],
+    # Requires two machines to run
+    tags = ["manual"],
+    deps = [
+        "//MLRT:AsyncRT/cppzmq",
+    ],
+)
