@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoServer.h"
+#include "DocumentDebouncer.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/tools/mojo-lsp-server/LSPTelemetryContext.h"
 #include "MojoDocument.h"
@@ -42,6 +43,7 @@
 #include "llvm/Support/LSP/Logging.h"
 #include "llvm/Support/LSP/Protocol.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include <chrono>
 #include <optional>
 #include <random>
 
@@ -2227,6 +2229,25 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 struct MojoServer::Impl {
+  /// Callback functor for document debouncing. Using a named struct instead of
+  /// a lambda allows us to have a concrete type for the templated debouncer.
+  struct DebouncerCallback {
+    Impl *impl;
+    LSPTelemetryContext *telemetryCtx;
+    ProgressManager *progressMgr;
+
+    void operator()(const lsp::URIForFile &uri, std::string contents,
+                    int64_t version, uint64_t generation) const {
+      // Pass the generation to addDocumentImmediate for atomic check-and-add.
+      // This prevents TOCTOU races where the document is closed/reopened
+      // between checking the generation and adding the document.
+      // When flushing during shutdown, forceAdd bypasses the shutdown check.
+      impl->addDocumentImmediate(uri, std::move(contents), version,
+                                 *telemetryCtx, *progressMgr, generation,
+                                 impl->flushing);
+    }
+  };
+
   Impl(ContextRef ctx, bool waitOnShutdown,
        llvm::lsp::MessageHandler &messageHandler,
        ArrayRef<std::string> includeDirs)
@@ -2244,11 +2265,33 @@ struct MojoServer::Impl {
     if (shuttingDown.exchange(true))
       return;
 
+    // Flush any pending debounced updates if we're waiting on shutdown,
+    // otherwise just destroy the debouncer to cancel pending updates.
+    // The reset() joins the worker thread, ensuring any in-flight callback
+    // completes before we iterate over files below.
+    if (debouncer) {
+      if (waitOnShutdown) {
+        flushing = true;
+        debouncer->flush();
+        flushing = false;
+      }
+      debouncer.reset();
+    }
+
+    // Copy document refs under lock, then process without holding the lock
+    // to avoid blocking while awaiting async operations.
+    std::vector<MojoDocumentRef> filesToProcess;
+    {
+      std::lock_guard<std::mutex> lock(filesMutex);
+      for (auto &[filename, file] : files)
+        filesToProcess.push_back(file.copy());
+    }
+
     // Invalidate all of the current documents if we aren't waiting for
     // shutdown, otherwise wait for them to parse and resolve actions. The
     // document ready chain is set and all related notifications are fired
     // synchronously.
-    for (auto &[filename, file] : files) {
+    for (auto &file : filesToProcess) {
       if (waitOnShutdown)
         AsyncRT::await(file->getDocumentReadyChain());
       else
@@ -2257,12 +2300,14 @@ struct MojoServer::Impl {
 
     // We always need to block on outstanding tasks, they may simple have been
     // cancelled above and we can expect them to finish quickly.
-    for (auto &[filename, file] : files) {
+    for (auto &file : filesToProcess)
       AsyncRT::await(file->getQuiescentChain());
-    }
 
-    files.clear();
-    notebookCellToFile.clear();
+    {
+      std::lock_guard<std::mutex> lock(filesMutex);
+      files.clear();
+      notebookCellToFile.clear();
+    }
   }
 
   /// Return if the server is shutting down.
@@ -2271,12 +2316,66 @@ struct MojoServer::Impl {
   /// Retrieve the document that matches completely the given filename. Return
   /// `nullptr` if no document is found.
   MojoDocumentRef findDocument(StringRef filename) {
+    std::lock_guard<std::mutex> lock(filesMutex);
     if (auto it = files.find(filename); it != files.end())
       return it->second.copy();
 
     auto it = notebookCellToFile.find(filename);
     return it != notebookCellToFile.end() ? it->second.copy()
                                           : MojoDocumentRef();
+  }
+
+  /// Initialize the debouncer. Must be called after construction.
+  void initDebouncer(LSPTelemetryContext &telemetryCtx,
+                     ProgressManager &progressMgr) {
+    debouncer.emplace(DebouncerCallback{this, &telemetryCtx, &progressMgr});
+  }
+
+  /// Add a document immediately without debouncing. If expectedGeneration is
+  /// provided (for debounced updates), verifies the generation still matches
+  /// before adding - this prevents stale updates from overwriting newer content
+  /// if the document was closed and reopened. If forceAdd is true, bypasses the
+  /// shutdown check (used by flush() to process pending updates during
+  /// shutdown).
+  void addDocumentImmediate(
+      const lsp::URIForFile &uri, std::string contents, int64_t version,
+      LSPTelemetryContext &telemetryCtx, ProgressManager &progressMgr,
+      std::optional<uint64_t> expectedGeneration = std::nullopt,
+      bool forceAdd = false) {
+    if ((!forceAdd && isShuttingDown()) ||
+        !llvm::is_contained({"file", "test"}, uri.scheme()))
+      return;
+
+    std::lock_guard<std::mutex> lock(filesMutex);
+
+    // For debounced updates, verify the generation still matches. This prevents
+    // TOCTOU races where the document is closed/reopened between the generation
+    // check and adding the document.
+    if (expectedGeneration) {
+      auto genIt = documentGenerations.find(uri.file());
+      if (genIt == documentGenerations.end() ||
+          genIt->second != *expectedGeneration)
+        return; // Document was closed or reopened, skip stale update.
+    }
+
+    auto [it, _] = files.try_emplace(uri.file(), MojoDocumentRef());
+
+    // If a document already exists, invalidate that version.
+    AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
+    AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(runtime);
+    if (it->second) {
+      it->second->invalidate();
+
+      // Chain the new document to the old one.
+      chain = it->second->getDocumentReadyChain();
+    }
+
+    // Create a new document.
+    it->second =
+        MojoTextDocumentRef::create(uri, std::move(contents), version,
+                                    sendDiagnosticsFn, runtime, includeDirs);
+
+    it->second->startDocumentParse(std::move(chain), telemetryCtx, progressMgr);
   }
 
   /// The global context.
@@ -2288,6 +2387,10 @@ struct MojoServer::Impl {
   /// Records whether we are shutting down. Note that we can't clear
   /// the context, as this may teardown the associated telemetry.
   std::atomic<bool> shuttingDown = false;
+
+  /// Set to true during flush() to allow pending updates to be processed
+  /// even though shuttingDown is true.
+  bool flushing = false;
 
   /// A flag indicating if the server should not invalidate requests on
   /// shutdown, and instead wait for them to complete.
@@ -2303,6 +2406,15 @@ struct MojoServer::Impl {
 
   /// The files held by the server, mapped by their URI file name.
   llvm::StringMap<MojoDocumentRef> files;
+  std::mutex filesMutex; // Guards access to files, notebookCellToFile, and
+                         // documentGenerations.
+
+  /// Generation counter for detecting stale debounced updates. Each time a
+  /// document is opened, it gets a new generation. The debouncer callback
+  /// checks if the generation matches before adding, preventing races where
+  /// a document is closed/reopened while a debounced update is in flight.
+  std::atomic<uint64_t> nextDocumentGeneration{0};
+  llvm::StringMap<uint64_t> documentGenerations;
 
   /// A mapping from individual notebook cells to their documents.
   llvm::StringMap<MojoDocumentRef> notebookCellToFile;
@@ -2314,6 +2426,28 @@ struct MojoServer::Impl {
 
   /// Additional directories to append to the search paths list.
   std::vector<std::string> includeDirs;
+
+  /// Debouncer for document updates. Initialized lazily because it needs
+  /// a reference to this Impl.
+  std::optional<DocumentDebouncer<DebouncerCallback>> debouncer;
+
+  // TODO(performance): Bytecode package caching infrastructure.
+  // The current architecture creates a new MLIRContext per document, which
+  // means bytecode packages (like the standard library) are re-parsed for each
+  // open file. True bytecode caching would require:
+  //
+  // 1. Sharing MLIRContext across documents (major architectural change)
+  // 2. Implementing a thread-safe cache for resolved bytecode modules
+  // 3. Handling invalidation when package files change on disk
+  // 4. Managing lifetimes of shared MLIR operations
+  //
+  // For now, debouncing provides the most immediate benefit. Bytecode caching
+  // is deferred as a larger project.
+  //
+  // Potential simpler alternatives to explore:
+  // - Preload stdlib bytecode at server startup
+  // - Share resolved package metadata (not full IR) across documents
+  // - Cache file modification times to skip unchanged packages
 };
 
 //===----------------------------------------------------------------------===//
@@ -2334,9 +2468,11 @@ MojoServer::create(bool singleThreaded, bool waitOnShutdown,
                                              .withMainWillNotDonate()));
   if (ctxOr.isError())
     return ctxOr.takeError();
-  auto impl = std::make_unique<Impl>(ctxOr->copy(), waitOnShutdown,
-                                     messageHandler, includeDirs);
-  MojoServer server(std::move(impl));
+  auto implPtr = std::make_unique<Impl>(ctxOr->copy(), waitOnShutdown,
+                                        messageHandler, includeDirs);
+  // Initialize the debouncer before moving the impl.
+  implPtr->initDebouncer(implPtr->lspTelemetryContext, implPtr->progressMgr);
+  MojoServer server(std::move(implPtr));
   return server;
 }
 
@@ -2360,28 +2496,14 @@ void MojoServer::receiveCapabilities(bool workDoneProgress) {
 
 void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
                              int64_t version) {
-  if (impl->isShuttingDown() ||
-      !llvm::is_contained({"file", "test"}, uri.scheme()))
-    return;
-  auto [it, _] = impl->files.try_emplace(uri.file(), MojoDocumentRef());
-
-  // If a document already exists, invalidate that version.
-  AsyncRT::Runtime &runtime = *impl->ctx->get<AsyncRT::Runtime>();
-  AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(runtime);
-  if (it->second) {
-    it->second->invalidate();
-
-    // Chain the new document to the old one.
-    chain = it->second->getDocumentReadyChain();
+  // Assign a new generation for this document open. This is used to detect
+  // stale debounced updates if the document is closed and reopened.
+  {
+    std::lock_guard<std::mutex> lock(impl->filesMutex);
+    impl->documentGenerations[uri.file()] = ++impl->nextDocumentGeneration;
   }
-
-  // Create a new document.
-  it->second = MojoTextDocumentRef::create(uri, std::move(contents), version,
-                                           impl->sendDiagnosticsFn, runtime,
-                                           impl->includeDirs);
-
-  it->second->startDocumentParse(std::move(chain), getLSPTelemetryContext(),
-                                 impl->progressMgr);
+  impl->addDocumentImmediate(uri, std::move(contents), version,
+                             impl->lspTelemetryContext, impl->progressMgr);
 }
 
 /// Convert a UTF-16 based offset to a UTF-8 offset, using a UTF-8 encoded
@@ -2444,10 +2566,21 @@ static StringRef getLine(llvm::SourceMgr &mgr, int lineNum) {
 void MojoServer::updateDocument(
     const lsp::URIForFile &uri,
     ArrayRef<lsp::TextDocumentContentChangeEvent> changes, int64_t version) {
-  auto it = impl->files.find(uri.file());
-  if (it == impl->files.end())
-    return;
-  MojoTextDocument *textDoc = dyn_cast<MojoTextDocument>(&*it->second);
+  MojoDocumentRef docRef;
+  uint64_t generation = 0;
+  {
+    std::lock_guard<std::mutex> lock(impl->filesMutex);
+    auto it = impl->files.find(uri.file());
+    if (it == impl->files.end())
+      return;
+    docRef = it->second.copy();
+    // Get the current generation for this document to pass to the debouncer.
+    auto genIt = impl->documentGenerations.find(uri.file());
+    if (genIt != impl->documentGenerations.end())
+      generation = genIt->second;
+  }
+
+  MojoTextDocument *textDoc = dyn_cast<MojoTextDocument>(&*docRef);
   if (!textDoc) {
     lsp::Logger::error("Updating a non-text document: {0}", uri.file());
     return;
@@ -2487,14 +2620,34 @@ void MojoServer::updateDocument(
     }
   }
 
-  // Overwrite the original document with the new contents.
-  addDocument(uri, std::move(contents), version);
+  // Schedule the document update with debouncing. This avoids parsing on every
+  // keystroke, instead waiting for a short delay after the user stops typing.
+  if (impl->debouncer) {
+    impl->debouncer->scheduleUpdate(uri, std::move(contents), version,
+                                    generation);
+  } else {
+    // Fallback if debouncer not initialized (shouldn't happen in practice).
+    addDocument(uri, std::move(contents), version);
+  }
 }
 
 void MojoServer::removeDocument(const lsp::URIForFile &uri) {
-  auto it = impl->files.find(uri.file());
-  if (it == impl->files.end())
-    return;
+  // Cancel any pending debounced update first, before removing from files,
+  // to avoid a race where the debouncer re-adds the document after removal.
+  if (impl->debouncer)
+    impl->debouncer->cancelUpdate(uri.file());
+
+  MojoDocumentRef doc;
+  {
+    std::lock_guard<std::mutex> lock(impl->filesMutex);
+    auto it = impl->files.find(uri.file());
+    if (it == impl->files.end())
+      return;
+    doc = it->second.copy();
+    impl->files.erase(it);
+    // Erase the generation so any in-flight debounced updates are rejected.
+    impl->documentGenerations.erase(uri.file());
+  }
 
   { // Clear out the semantic token state for the file.
     std::lock_guard<std::mutex> lock(impl->lastSemanticTokensMutex);
@@ -2505,9 +2658,8 @@ void MojoServer::removeDocument(const lsp::URIForFile &uri) {
   // anything currently displayed by the client for this document (e.g. in the
   // "Problems" pane of VSCode).
   impl->sendDiagnosticsFn(
-      lsp::PublishDiagnosticsParams(uri, it->second->getVersion()));
-  it->second->invalidate();
-  impl->files.erase(it);
+      lsp::PublishDiagnosticsParams(uri, doc->getVersion()));
+  doc->invalidate();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2518,6 +2670,8 @@ void MojoServer::addNotebookDocument(
     int64_t version, ArrayRef<lsp::TextDocumentItem> cellDocuments) {
   if (impl->isShuttingDown())
     return;
+
+  std::lock_guard<std::mutex> lock(impl->filesMutex);
   MojoDocumentRef &file = impl->files[uri.file()];
 
   // If a document already exists, invalidate that version.
@@ -2555,7 +2709,10 @@ void MojoServer::removeNotebookDocument(
 
   // Clear out mappings from the cell documents to the notebook document.
   for (const lsp::TextDocumentIdentifier &cell : cellDocuments) {
-    impl->notebookCellToFile.erase(cell.uri.file());
+    {
+      std::lock_guard<std::mutex> lock(impl->filesMutex);
+      impl->notebookCellToFile.erase(cell.uri.file());
+    }
 
     { // Clear out the semantic token state for the cell.
       std::lock_guard<std::mutex> lock(impl->lastSemanticTokensMutex);
@@ -2567,10 +2724,16 @@ void MojoServer::removeNotebookDocument(
 void MojoServer::updateNotebookDocument(
     const lsp::URIForFile &uri, int64_t version,
     const lsp::NotebookDocumentChangeEvent &change) {
-  auto it = impl->files.find(uri.file());
-  if (it == impl->files.end())
-    return;
-  MojoNotebookDocument *doc = dyn_cast<MojoNotebookDocument>(&*it->second);
+  MojoDocumentRef docRef;
+  {
+    std::lock_guard<std::mutex> lock(impl->filesMutex);
+    auto it = impl->files.find(uri.file());
+    if (it == impl->files.end())
+      return;
+    docRef = it->second.copy();
+  }
+
+  MojoNotebookDocument *doc = dyn_cast<MojoNotebookDocument>(&*docRef);
   if (!doc) {
     lsp::Logger::error("Updating a non-notebook document: {0}", uri.file());
     return;
@@ -2593,6 +2756,7 @@ void MojoServer::updateNotebookDocument(
       // Erase the deleted cells.
       for (const lsp::NotebookCell &cell :
            ArrayRef(cells).slice(array.start, array.deleteCount)) {
+        std::lock_guard<std::mutex> lock(impl->filesMutex);
         impl->notebookCellToFile.erase(cell.document.file());
       }
       cells.erase(cells.begin() + array.start,

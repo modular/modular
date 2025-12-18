@@ -13,6 +13,16 @@ modular_cc_library(
     ],
 )
 
+# Unit test for DocumentDebouncer - doesn't need LSP server infrastructure.
+modular_cc_test(
+    name = "DocumentDebouncerTest",
+    srcs = ["DocumentDebouncerTest.cpp"],
+    deps = [
+        "//KGEN/tools/mojo-lsp-server",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 # Some tests are very slow, because of which we split all the tests among
 # different test targets to allow parallel execution.
 # You can execute all of them with
