@@ -553,6 +553,27 @@ void FnMetadataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
   p << '>';
 }
 
+bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
+  auto other = ::dyn_cast<FnMetadataAttr>(otherMetadata);
+  if (!other)
+    return false;
+
+  // Check that constraints are equal (ignoring the locations).
+  auto thisConstraints = getConstraints();
+  auto otherConstraints = other.getConstraints();
+  if (thisConstraints.size() != otherConstraints.size())
+    return false;
+  for (auto [lhs, rhs] : llvm::zip_equal(thisConstraints, otherConstraints))
+    if (lhs.getProposition() != rhs.getProposition())
+      return false;
+
+  return getArgListAttrs() == other.getArgListAttrs() &&
+         getNumImplicitOriginDecls() == other.getNumImplicitOriginDecls() &&
+         getCaptureOrigins() == other.getCaptureOrigins() &&
+         getIsNestedOriginExclusivityCheckingDisabled() ==
+             other.getIsNestedOriginExclusivityCheckingDisabled();
+}
+
 //===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//

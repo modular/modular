@@ -2157,15 +2157,24 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(
     return failure();
   }
 
-  if (lhsSig.getMetadata() != rhsSig.getMetadata() &&
-      getCanonicalAttr(lhsSig.getMetadata()) !=
-          getCanonicalAttr(rhsSig.getMetadata())) {
-    auto diag = emitError(lhsLoc, lhsName)
-                << " metadata is " << lhsSig.getMetadata() << " but @"
-                << rhsName << " expected " << rhsSig.getMetadata();
-    if (lhsLoc != rhsLoc)
-      diag.attachNote(rhsLoc) << rhsName << " declared here";
-    return failure();
+  FnMetadataAttrInterface lhsMetadata = lhsSig.getMetadata();
+  FnMetadataAttrInterface rhsMetadata = rhsSig.getMetadata();
+  if (lhsMetadata != rhsMetadata) {
+    // Metadata itself is not a parameter, so canonicalization will not modify
+    // the top level attribute kind.
+    auto lhsCanonMetadata =
+        cast<FnMetadataAttrInterface>(getCanonicalAttr(lhsMetadata));
+    auto rhsCanonMetadata =
+        cast<FnMetadataAttrInterface>(getCanonicalAttr(rhsMetadata));
+    if (lhsCanonMetadata != rhsCanonMetadata &&
+        !lhsCanonMetadata.equals(rhsCanonMetadata)) {
+      auto diag = emitError(lhsLoc, lhsName)
+                  << " metadata is " << lhsSig.getMetadata() << " but @"
+                  << rhsName << " expected " << rhsSig.getMetadata();
+      if (lhsLoc != rhsLoc)
+        diag.attachNote(rhsLoc) << rhsName << " declared here";
+      return failure();
+    }
   }
 
   return success();

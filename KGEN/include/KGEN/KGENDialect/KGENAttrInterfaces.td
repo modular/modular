@@ -215,6 +215,10 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       explicitly bound to values, such as in closure formation.
     }], "FnMetadataAttrInterface", "getWithBoundPosArgs", (ins
       "size_t":$numBound)>,
+    InterfaceMethod<[{
+      Check if this metadata attribute is equal to another metadata attribute.
+      Returns true if they are equal.
+    }], "bool", "equals", (ins "FnMetadataAttrInterface":$other)>,
   ];
 }
 
