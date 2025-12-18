@@ -969,6 +969,7 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
   Value container = LLVM::UndefOp::create(b, structType);
   for (auto [index, element] : llvm::enumerate(elements))
     container = LLVM::InsertValueOp::create(b, container, element, index);
+
   return container;
 }
 
@@ -1142,7 +1143,9 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
       return Error("cannot lower variadic sequence constant with unknown type");
 
     Value size = LLVM::ConstantOp::create(
-        b, b.getI64IntegerAttr(variadic.getValues().size()));
+        b, b.getIntegerAttr(cast<IntegerType>(tc.getIndexType()),
+                            variadic.getValues().size()));
+
     Value ptr = LLVM::AllocaOp::create(
         b, LLVM::LLVMPointerType::get(b.getContext()), elementType, size);
 
