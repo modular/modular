@@ -9309,6 +9309,7 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
 
 @compiler.register("mo.quantize_dynamic_scaled_float8")
 struct QuantizeDynamicScaledFloat8:
+    @parameter
     @always_inline
     @staticmethod
     fn execute[
@@ -9321,17 +9322,34 @@ struct QuantizeDynamicScaledFloat8:
     ](
         output: OutputTensor[dtype=output_type, rank=2],
         scales: OutputTensor[dtype=scales_type, rank=2],
-        input: InputTensor[dtype=input_type, rank=2],
+        input: FusedInputTensor[dtype=input_type, rank=2],
         scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         __comptime_assert is_gpu[target](), "only valid on GPUs"
-        quantize_dynamic_scaled_fp8[group_size_or_per_token](
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int
+        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+            return input._lambda_load[width=width](IndexList[2](row, col))
+
+        comptime hidden_dim = input.static_spec.shape.get[1]()
+
+        quantize_dynamic_scaled_fp8[
+            out_dtype=output_type,
+            in_dtype=input_type,
+            scales_dtype=scales_type,
+            input_fn,
+            group_size_or_per_token,
+            hidden_dim,
+        ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
-            managed_tensor_slice_to_ndbuffer(input),
             scale_ub,
             ctx.get_device_context(),
+            input.dim_size(0),
         )
 
 

@@ -329,12 +329,20 @@ fn mla_prefill_branch_fp8[
         ),
     )
 
-    quantize_dynamic_scaled_fp8[k_scale_granularity](
+    @__copy_capture(k_latent)
+    @always_inline
+    @parameter
+    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[k_latent.dtype, width]:
+        return k_latent.load[width=width](row, col)
+
+    quantize_dynamic_scaled_fp8[
+        input_fn, k_scale_granularity, k_latent.shape[1]()
+    ](
         _layout_tensor_to_nd_buffer(fp8_k_latent),
         _layout_tensor_to_nd_buffer(fp8_k_latent_scale),
-        _layout_tensor_to_nd_buffer(k_latent),
         1200.0,
         ctx,
+        k_latent.dim[0](),
     )
 
     # allocate buffers for concatenated KV
