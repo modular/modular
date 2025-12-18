@@ -292,7 +292,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
     assert batch_constructor.all_ce_reqs
     req_id, data = list(batch_constructor.all_ce_reqs.items())[-1]
     assert req_id == mock_request.request_id
-    assert data.start_idx == 20
+    assert data.processed_length == 20
     assert data.active_idx == 30
     assert data.active_length == 10
 

@@ -504,7 +504,7 @@ class TextGenerationPipeline(
         """
         self.batch_infos.append(
             BatchInfo(
-                past_seq_lens=[x.start_idx for x in contexts],
+                past_seq_lens=[x.processed_length for x in contexts],
                 seq_lens=[x.active_length for x in contexts],
                 num_steps=num_steps,
             )
@@ -623,7 +623,9 @@ class TextGenerationPipeline(
                     )
                 except Exception:
                     batch_size = len(flat_batch)
-                    cache_tokens = sum(ctx.start_idx for ctx in flat_batch)
+                    cache_tokens = sum(
+                        ctx.processed_length for ctx in flat_batch
+                    )
                     input_tokens = sum(ctx.active_length for ctx in flat_batch)
                     logger.error(
                         "Encountered an exception while executing batch: "

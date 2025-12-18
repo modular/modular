@@ -296,7 +296,7 @@ class _TPPagedKVCacheManager:
             )
 
             # Get the existing cache length for this sequence.
-            cache_length = ctx.start_idx
+            cache_length = ctx.processed_length
             cache_lengths_np[batch_idx] = cache_length
 
             # Update the maximum lengths seen so far.

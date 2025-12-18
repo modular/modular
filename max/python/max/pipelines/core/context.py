@@ -181,7 +181,7 @@ class TextContext:
         return self.status.is_done
 
     @property
-    def start_idx(self) -> int:
+    def processed_length(self) -> int:
         return self._start_idx + self._draft_offset
 
     @property
@@ -300,7 +300,7 @@ class TextContext:
         This will be the prompt size for context encoding, and simply 1 (or more) for
         token generation.
         """
-        return self._active_idx - self.start_idx
+        return self._active_idx - self._start_idx
 
     def to_generation_output(self) -> TextGenerationOutput:
         """Get completion tokens that are ready to be returned to the user.
@@ -389,7 +389,7 @@ class TextContext:
         Returns:
             np.ndarray: Array of tokens that have been generated but not yet processed.
         """
-        return self.tokens[self.start_idx : self._active_idx]
+        return self.tokens[self._start_idx : self._active_idx]
 
     @property
     def prompt_tokens(self) -> TokenSlice:
@@ -645,7 +645,7 @@ class TextAndVisionContext(TextContext):
     def image_idx(self) -> int:
         """Index of the next unencoded image in the prompt."""
         for i, img in enumerate(self.images):
-            if self.start_idx < img.end_idx:
+            if self.processed_length < img.end_idx:
                 return i
         return len(self.images)
 
@@ -733,7 +733,7 @@ class TextAndVisionContext(TextContext):
         return (
             f"{self.__class__.__name__}("
             f"request_id={self.request_id}, "
-            f"start_idx={self.start_idx}, "
+            f"processed_length={self.processed_length}, "
             f"active_idx={self.active_idx}, "
             f"end_idx={self.end_idx}, "
             f"images={self.images}"

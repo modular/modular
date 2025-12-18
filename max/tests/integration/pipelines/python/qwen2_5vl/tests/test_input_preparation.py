@@ -432,7 +432,7 @@ async def test_qwen_input_preparation__position_ids_after_reset(
     context.reset()
 
     # Verify reset state: indices reset, but tokens remain
-    assert context.start_idx == 0
+    assert context.processed_length == 0
     assert (
         context.active_idx == initial_current_length + 5
     )  # Includes the 5 added tokens
@@ -629,7 +629,7 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
     context.reset()
 
     # Verify reset state: indices reset, tokens and images remain
-    assert context.start_idx == 0
+    assert context.processed_length == 0
     assert context.active_idx == initial_current_length + 3
     assert context.current_length == initial_current_length + 3
     assert len(context.images) == len(initial_images), (
@@ -783,7 +783,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
     )
 
     # Verify initial state: prefill phase (start_idx=0, active range covers all tokens).
-    assert ctx.start_idx == 0
+    assert ctx.processed_length == 0
     assert ctx.active_idx == L
     assert ctx.end_idx == L
 
@@ -807,7 +807,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
 
     # Simulate first decode step (single-token generation).
     # Mimic the pipeline's next iteration: move to decode phase with single active token.
-    ctx.start_idx = L  # type: ignore
+    ctx.rewind_processing(ctx.processed_length - L)
     ctx.active_idx = L + 1  # type: ignore
     ctx.end_idx = L + 1  # type: ignore
 

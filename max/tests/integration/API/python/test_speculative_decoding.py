@@ -203,8 +203,8 @@ def test_speculative_decoding_no_rejection(
     context2 = setup_speculative_decoding_pipeline.context2
     num_steps = setup_speculative_decoding_pipeline.num_steps
 
-    assert context1.start_idx == 0
-    assert context2.start_idx == 0
+    assert context1.processed_length == 0
+    assert context2.processed_length == 0
 
     # Generate draft tokens.
     draft_inputs, draft_num_steps = pipeline.prepare_batch(
@@ -259,8 +259,12 @@ def test_speculative_decoding_no_rejection(
     context1, context2 = context_batch
 
     # subtract 1 because all draft tokens are accepted, next draft input includes the token generated from the target model
-    assert context1.start_idx == (len(context1.prompt_tokens) + num_steps - 1)
-    assert context2.start_idx == (len(context2.prompt_tokens) + num_steps - 1)
+    assert context1.processed_length == (
+        len(context1.prompt_tokens) + num_steps - 1
+    )
+    assert context2.processed_length == (
+        len(context2.prompt_tokens) + num_steps - 1
+    )
 
     assert np.all(context1.generated_tokens[:-1] == draft_tokens.to_numpy()[0])
     assert np.all(context2.generated_tokens[:-1] == draft_tokens.to_numpy()[1])
@@ -275,8 +279,8 @@ def test_speculative_decoding_partial_rejection(
     context2 = setup_speculative_decoding_pipeline.context2
     num_steps = setup_speculative_decoding_pipeline.num_steps
 
-    assert context1.start_idx == 0
-    assert context2.start_idx == 0
+    assert context1.processed_length == 0
+    assert context2.processed_length == 0
 
     # Generate draft tokens.
     draft_inputs, _draft_num_steps = pipeline.prepare_batch(
@@ -351,11 +355,13 @@ def test_speculative_decoding_partial_rejection(
     context1, context2 = context_batch
 
     # subtract 1 because recovered token has not been processed by either model
-    assert context1.start_idx == (
+    assert context1.processed_length == (
         len(context1.prompt_tokens) + (num_steps // 2) - 1
     )
     # subtract 1 because all draft tokens are accepted, next draft input includes the token generated from the target model
-    assert context2.start_idx == (len(context2.prompt_tokens) + num_steps - 1)
+    assert context2.processed_length == (
+        len(context2.prompt_tokens) + num_steps - 1
+    )
 
     assert np.all(
         context1.generated_tokens[:-1] == draft_tokens_host[0, : num_steps // 2]
@@ -460,13 +466,13 @@ def test_speculative_decoding_context_update(
     # subtract 1 because the recovered token has not been processed by the draft
     # or dtarget model
     assert (
-        context1.start_idx
+        context1.processed_length
         == len(context1.prompt_tokens) + reject_token1_idx - 1
     )
 
     # subtract 1 because the bonus token has not been run through the draft model
     assert (
-        context2.start_idx
+        context2.processed_length
         == len(context2.prompt_tokens) + reject_token2_idx - 1
     )
 

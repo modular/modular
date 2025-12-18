@@ -751,7 +751,7 @@ def test_vision_context_reset() -> None:
     )
     assert len(context.images) == 1
     assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
-    assert context.start_idx == 0
+    assert context.processed_length == 0
     assert context.active_length == 5
     assert context.needs_vision_encoding is True
 
@@ -760,14 +760,14 @@ def test_vision_context_reset() -> None:
     assert len(context.images) == 1
     assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
     assert context.needs_vision_encoding is False
-    assert context.start_idx == 5
+    assert context.processed_length == 5
     assert context.active_length == 1
 
     # The pixel values should be restored after reset.
     context.reset()
     assert len(context.images) == 1
     assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
-    assert context.start_idx == 0
+    assert context.processed_length == 0
     assert context.active_length == 6
     assert context.needs_vision_encoding is True
 
@@ -864,7 +864,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
         context.update(1)
 
         # Verify that indices were updated correctly
-        assert context._start_idx == processed_tokens + current_chunk_size
+        assert context.processed_length == processed_tokens + current_chunk_size
         processed_tokens += current_chunk_size
 
         # Key test: verify needs_ce behavior after chunk processing
@@ -885,7 +885,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
             # - Status is still ACTIVE
             assert context._active_idx == new_prompt_len + 1
 
-            assert context._start_idx == context._prompt_len, (
+            assert context.processed_length == context._prompt_len, (
                 "Should have processed all prompt tokens"
             )
             assert context.status == GenerationStatus.ACTIVE, (
@@ -901,7 +901,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
 
     # Verify final state before first completion token
     _ = context.to_generation_output()
-    assert context._start_idx == new_prompt_len
+    assert context.processed_length == new_prompt_len
     assert context.active_length == 1
     assert (
         context._completion_start_idx == context._completion_end_idx

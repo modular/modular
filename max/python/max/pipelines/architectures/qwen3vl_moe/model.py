@@ -1001,7 +1001,7 @@ class Qwen3VLModel(
                 ):
                     decoder_position_ids_list.append(
                         ctx_decoder_position_ids[
-                            :, ctx.start_idx : ctx.active_idx
+                            :, ctx.processed_length : ctx.active_idx
                         ]
                     )
                 else:
@@ -1019,7 +1019,7 @@ class Qwen3VLModel(
                             1,
                         ),
                     )
-                    delta = ctx.start_idx + ctx.rope_delta
+                    delta = ctx.processed_length + ctx.rope_delta
                     temp_position_ids = (temp_pos_ids + delta).squeeze(1)
                     decoder_position_ids_list.append(temp_position_ids)
 

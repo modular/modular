@@ -248,7 +248,7 @@ class TextGenerationContext(BaseContext, Protocol):
         . +--------------------+---------------+-----------------+----------------+
         . |     completed      |  next_tokens  |                 |  preallocated  |
         . +--------------------+---------------+-----------------+----------------+
-        .            start_idx ^    active_idx ^         end_idx ^
+        .            processed_length ^    active_idx ^         end_idx ^
 
     Token Array Regions:
         - completed: Tokens that have already been processed and encoded.
@@ -258,7 +258,7 @@ class TextGenerationContext(BaseContext, Protocol):
           resizes to multiples of ``CHUNK_SIZE`` to accommodate new tokens.
 
     Key Indices:
-        - ``start_idx``: Marks the beginning of uncompleted tokens
+        - ``processed_length``: Marks the beginning of uncompleted tokens
         - ``active_idx``: Marks the start of next_tokens within the array
         - ``end_idx``: Marks the end of all active tokens (one past the last token)
     """
@@ -286,7 +286,7 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def start_idx(self) -> int:
+    def processed_length(self) -> int:
         """The index marking the start of completed tokens in the token array.
 
         Completed tokens are those that have already been processed and encoded
@@ -719,7 +719,9 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         self.input_tokens = sum(
             ctx.active_length for ctx in self.batch.values()
         )
-        self.context_tokens = sum(ctx.start_idx for ctx in self.batch.values())
+        self.context_tokens = sum(
+            ctx.processed_length for ctx in self.batch.values()
+        )
         self.batch_type = BatchType.TG
         for req in self.batch.values():
             if req.needs_ce:

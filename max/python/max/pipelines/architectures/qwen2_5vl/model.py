@@ -828,7 +828,7 @@ class Qwen2_5VLModel(
                 and ctx_decoder_position_ids.shape[1] == ctx.current_length
             ):
                 result_array = ctx_decoder_position_ids[
-                    :, ctx.start_idx : ctx.active_idx
+                    :, ctx.processed_length : ctx.active_idx
                 ].astype(np.uint32, copy=False)
             elif ctx.needs_vision_encoding:
                 # Recompute decoder_position_ids using get_rope_index
@@ -873,7 +873,7 @@ class Qwen2_5VLModel(
 
                 # Slice to get only the active portion and convert type
                 result_array = temp_position_ids[
-                    :, ctx.start_idx : ctx.active_idx
+                    :, ctx.processed_length : ctx.active_idx
                 ].astype(np.uint32, copy=False)
             else:
                 # This case should only happen during Token Generation
@@ -886,7 +886,7 @@ class Qwen2_5VLModel(
                 temp_position_ids = temp_position_ids.reshape(1, 1, -1)
                 temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
                 # Offset by the number of previous tokens (start_idx).
-                delta = ctx.start_idx + ctx.rope_delta
+                delta = ctx.processed_length + ctx.rope_delta
                 temp_position_ids = temp_position_ids + delta
                 result_array = temp_position_ids.squeeze(1).astype(
                     np.uint32, copy=False
@@ -926,7 +926,7 @@ class Qwen2_5VLModel(
             ):
                 # Direct slice and write to output
                 src_slice = ctx_decoder_position_ids[
-                    :, ctx.start_idx : ctx.active_idx
+                    :, ctx.processed_length : ctx.active_idx
                 ]
                 out_array[:, write_offset : write_offset + active_len] = (
                     src_slice.astype(np.uint32, copy=False)
@@ -973,7 +973,9 @@ class Qwen2_5VLModel(
                 ctx.rope_delta = int(rope_delta_array.item())
 
                 # Slice to get only the active portion and write directly
-                src_slice = temp_position_ids[:, ctx.start_idx : ctx.active_idx]
+                src_slice = temp_position_ids[
+                    :, ctx.processed_length : ctx.active_idx
+                ]
                 out_array[:, write_offset : write_offset + active_len] = (
                     src_slice.astype(np.uint32, copy=False)
                 )
@@ -988,7 +990,7 @@ class Qwen2_5VLModel(
                 temp_position_ids = temp_position_ids.reshape(1, 1, -1)
                 temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
                 # Offset by the number of previous tokens (start_idx).
-                delta = ctx.start_idx + ctx.rope_delta
+                delta = ctx.processed_length + ctx.rope_delta
                 temp_position_ids = temp_position_ids + delta
                 temp_position_ids = temp_position_ids.squeeze(1)
                 out_array[:, write_offset : write_offset + active_len] = (

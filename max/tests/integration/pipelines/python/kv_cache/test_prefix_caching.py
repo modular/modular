@@ -302,11 +302,11 @@ async def test_prefix_caching_with_random_prompts(
 
             prompt = gen_prompt(prompt_len - 1)
 
-            orig_start_idx = context.start_idx
+            orig_start_idx = context.processed_length
             for tok in prompt:
                 context.update(tok)
 
-            context.rewind_processing(context.start_idx - orig_start_idx)
+            context.rewind_processing(context.processed_length - orig_start_idx)
 
             # This fetch can trigger evictions from the tree.
             for ctx in batch:
@@ -607,10 +607,10 @@ async def test_prefix_caching_grouped_prefixes(
     for _ in range(num_tg_steps):
         for ctx in batch.values():
             extended = gen_prompt(np.random.randint(0, 10))
-            orig_start_idx = ctx.start_idx
+            orig_start_idx = ctx.processed_length
             for tok in extended:
                 ctx.update(tok)
-            ctx.rewind_processing(ctx.start_idx - orig_start_idx)
+            ctx.rewind_processing(ctx.processed_length - orig_start_idx)
 
         ctxs = list(batch.values())
         orig_request_ids_and_prompts = {
@@ -650,10 +650,10 @@ def run_forward(
     run_fetch: bool = True,
     run_step: bool = True,
 ) -> None:
-    orig_start_idx = ctx.start_idx
+    orig_start_idx = ctx.processed_length
     for tok in prompt:
         ctx.update(tok)
-    ctx.rewind_processing(ctx.start_idx - orig_start_idx)
+    ctx.rewind_processing(ctx.processed_length - orig_start_idx)
     if orig_start_idx == 0:
         ctx._prompt_len = len(prompt)
     batch = [ctx]
@@ -872,7 +872,7 @@ async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
         run_and_check_num_cached_tokens(kv_manager, ctx1, do_step=False) == 12
     )
 
-    assert ctx1.start_idx == 12
+    assert ctx1.processed_length == 12
     assert (
         kv_manager._replica_managers[0].block_manager.req_to_committed_idx[
             ctx1.request_id
