@@ -1,13 +1,12 @@
 # Code examples
 
 These examples demonstrate the power and flexibility of the Modular Platform,
-including a wide range of Mojo code examples. See the following subdirectory
+including a wide range of MAX code examples. See the following subdirectory
 READMEs for usage instructions.
 
-## [Mojo code examples](mojo/)
+## Mojo code examples
 
-A wide variety of [Mojo](https://docs.modular.com/mojo/manual/) programs
-to help you learn the language.
+We moved the Mojo examples to [/mojo/examples](../../mojo/examples/)
 
 ## [Basic MAX graph](max-graph/)
 
@@ -31,26 +30,6 @@ collection of examples that how to construct custom graph operations in Mojo
 that run on both GPUs and CPUs that run on different hardware architectures. It
 includes GPU kernels written in Mojo for algorithms such as top-k, matrix
 multiplication, fused attention, and more.
-
-## [GPU functions written in Mojo](mojo/gpu-functions/)
-
-In addition to placing custom Mojo functions within a computational graph, Mojo
-can handle direct compilation and dispatch of GPU functions. This is a
-programming model that may be familiar to those who have worked with CUDA or
-similar GPGPU frameworks.
-
-These examples show how to compile and run Mojo functions, from simple to
-complex, on an available GPU, without using a MAX graph.
-
-## [Using Mojo from Python](mojo/python-interop/)
-
-To enable progressive introduction of Mojo into an existing Python codebase,
-Mojo modules and functions can be referenced as if they were native Python
-code. This interoperability between Python and Mojo can allow for slower Python
-algorithms to be selectively replaced with faster Mojo alternatives.
-
-These examples illustrate how that can work, including using Mojo functions
-running on a compatible GPU.
 
 ## [PyTorch custom operations in Mojo](pytorch_custom_ops/)
 
@@ -98,7 +77,7 @@ modular_py_binary(
 You can run it directly to confirm it works like this:
 
 ```sh
-br //open-source/max/examples/max-graph:addition
+br //max/examples/max-graph:addition
 ```
 
 For help writing this code, look at the other `BUILD.bazel` files in the
@@ -147,7 +126,7 @@ You can run it directly to confirm it works like this (but notice this example
 requires a GPU):
 
 ```sh
-bt //open-source/max/examples/mojo/gpu-intro:vector_addition_test
+bt //open-source/max/mojo/examples/gpu-intro:vector_addition_test
 ```
 
 With this, we can now be sure that the code runs under specific build

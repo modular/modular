@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "modular_cc_binary", "modular_py_test")
 
-package(default_visibility = ["//max:consumers"])
+package(default_visibility = ["//visibility:private"])
 
 modular_cc_binary(
     name = "example",
