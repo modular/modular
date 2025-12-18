@@ -441,3 +441,5 @@ or removed in future releases.
   crashes on alias of parametrized function with origin.
 - [Issue #5618](https://github.com/modular/modular/issues/5618): Compiler crash
   when should be implicit conversion error.
+- [Issue #5635](https://github.com/modular/modular/issues/5635): `Deque` shrink
+  reallocation incorrectly handled empty deque with `capacity > min_capacity`.
