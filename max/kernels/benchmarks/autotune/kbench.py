@@ -296,6 +296,13 @@ def run(
     )
     logging.info(f"output-dir: [{output_dir}]\n{LINE}")
 
+    logging.info(f"Number of specs: {scheduler.num_specs}")
+    logging.info(
+        f"Number of unique build items: {scheduler.num_unique_build_items}"
+    )
+    logging.info(f"num-cpu: {scheduler.num_cpu}")
+    logging.info(f"num-gpu: {scheduler.num_gpu}")
+
 
 def _validate_partition(partition: str) -> list[int]:
     assert ":" in partition
@@ -526,7 +533,7 @@ def cli(
     num_cpu,  # noqa: ANN001
     num_gpu,  # noqa: ANN001
     mpirun_np: int,
-    dryrun,  # noqa: ANN001
+    dryrun: bool,
     verbose,  # noqa: ANN001
     shapes,  # noqa: ANN001
     build_opts,  # noqa: ANN001
@@ -548,7 +555,6 @@ def cli(
         skip_clock_check = True
 
     mode = KBENCH_MODE.BUILD_AND_RUN
-
     if run_only:
         mode = KBENCH_MODE.RUN
 

@@ -816,6 +816,7 @@ class Scheduler:
     output_suffix: str
     output_dir: Path
     num_specs: int
+    num_unique_build_items: int = 0
 
     CHUNK_SIZE: int = 1
     EXEC_STRIDE: int = 100
@@ -976,6 +977,7 @@ class Scheduler:
         unique_build_items_dict, unique_build_paths = (
             self.schedule_unique_build_items()
         )
+        self.num_unique_build_items = len(unique_build_items_dict)
 
         if self.run_only and len(unique_build_items_dict) > 0:
             logging.error("Run only but not all binaries are found")
@@ -1039,7 +1041,7 @@ class Scheduler:
 
                 self.progress.update(build_progress, advance=1)
             logging.info(
-                f"finished building {len(unique_build_paths)} unique items"
+                f"finished building {self.num_unique_build_items} unique items"
                 + utils.LINE
             )
 
