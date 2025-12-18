@@ -74,6 +74,16 @@ kgen.generator @lift_from_bind_params<
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @preserve_gen_attr
+kgen.generator @preserve_gen_attr() {
+  // COM: Make sure that the `apply` inside the generator attr is not lifted, otherwise the index reference will be invalid.
+  // CHECK-NEXT: <#kgen.gen<apply(:(index) -> index @pass, *(0,0))>
+  kgen.param.constant: !kgen.generator<<index>index> = <
+     #kgen.gen<apply(:(index) -> index @pass, *(0,0))>
+  >
+  kgen.return
+}
+
 kgen.generator @bad() -> index {
   kgen.unreachable
 }

@@ -956,9 +956,15 @@ BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
            << "bind_params generator operand must have a GeneratorType, got "
            << generator.getType();
 
-  // It's not currently possible to always enforce result type equivalence
-  // since it's possible that types involve not yet resolved param decl
-  // references.
+  if (paramValues.size() > genType.getInputParamTypes().size())
+    return emitError()
+           << "bind_params has more parameters than the generator expects";
+
+  // It is possible that the parameter values do not have identical types as
+  // what the generator type expects. This happens for example during
+  // LiftAndFoldApply, where we may lift an apply from the operand, but not from
+  // its type due to us not lifting apply operators out of generator types.
+  // We will have to rely on post-elaboration verification to catch these.
   return success();
 }
 
