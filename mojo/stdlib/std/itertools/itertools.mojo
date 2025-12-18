@@ -15,6 +15,8 @@
 # ===-----------------------------------------------------------------------===#
 
 from builtin.constrained import _constrained_conforms_to
+from builtin.rebind import downcast
+from builtin.variadics import Variadic
 
 
 @fieldwise_init
@@ -63,7 +65,7 @@ fn count(start: Int = 0, step: Int = 1) -> _CountIterator:
 
 
 @fieldwise_init
-struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
+struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
     Copyable, Iterable, Iterator
 ):
     comptime Element = Tuple[
@@ -88,16 +90,22 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         self._inner_a_elem = None
         self._initial_inner_b = inner_b^
 
+    fn __copyinit__(out self, existing: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Copyable",
+        ]()
+        self._inner_a = rebind_var[Self.IteratorTypeA](
+            trait_downcast[Copyable](existing._inner_a).copy()
+        )
+        self._inner_b = existing._inner_b.copy()
+        self._inner_a_elem = existing._inner_a_elem.copy()
+        self._initial_inner_b = existing._initial_inner_b.copy()
+
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
-
-    fn copy(self) -> Self:
-        return Self(
-            self._inner_a.copy(),
-            self._inner_b.copy(),
-            self._inner_a_elem.copy(),
-            self._initial_inner_b.copy(),
-        )
 
     fn __has_next__(self) -> Bool:
         if not self._inner_a_elem:
@@ -156,7 +164,7 @@ fn product[
     IterableTypeA: Iterable, IterableTypeB: Iterable
 ](ref iterable_a: IterableTypeA, ref iterable_b: IterableTypeB) -> _Product2[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    downcast[Copyable & Iterator, type_of(iter(iterable_b))],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables.
@@ -182,7 +190,12 @@ fn product[
         print(a, b)
     ```
     """
-    return {iter(iterable_a), iter(iterable_b)}
+    return {
+        iter(iterable_a),
+        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_b))]](
+            iter(iterable_b)
+        ),
+    }
 
 
 # ===-----------------------------------------------------------------------===#
@@ -192,7 +205,9 @@ fn product[
 
 @fieldwise_init
 struct _Product3[
-    IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
+    IteratorTypeA: Iterator,
+    IteratorTypeB: Copyable & Iterator,
+    IteratorTypeC: Copyable & Iterator,
 ](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
@@ -277,8 +292,8 @@ fn product[
     ref iterable_c: IterableTypeC,
 ) -> _Product3[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    IterableTypeB.IteratorType[origin_of(iterable_b)],
-    IterableTypeC.IteratorType[origin_of(iterable_c)],
+    downcast[Copyable & Iterator, type_of(iter(iterable_b))],
+    downcast[Copyable & Iterator, type_of(iter(iterable_c))],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables.
@@ -307,7 +322,15 @@ fn product[
         print(a, b, c)
     ```
     """
-    return {iter(iterable_a), iter(iterable_b), iter(iterable_c)}
+    return {
+        iter(iterable_a),
+        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_b))]](
+            iter(iterable_b)
+        ),
+        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_c))]](
+            iter(iterable_c)
+        ),
+    }
 
 
 # ===-----------------------------------------------------------------------===#
@@ -318,9 +341,9 @@ fn product[
 @fieldwise_init
 struct _Product4[
     IteratorTypeA: Iterator,
-    IteratorTypeB: Iterator,
-    IteratorTypeC: Iterator,
-    IteratorTypeD: Iterator,
+    IteratorTypeB: Copyable & Iterator,
+    IteratorTypeC: Copyable & Iterator,
+    IteratorTypeD: Copyable & Iterator,
 ](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
@@ -422,9 +445,9 @@ fn product[
     ref iterable_d: IterableTypeD,
 ) -> _Product4[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    IterableTypeB.IteratorType[origin_of(iterable_b)],
-    IterableTypeC.IteratorType[origin_of(iterable_c)],
-    IterableTypeD.IteratorType[origin_of(iterable_d)],
+    downcast[Copyable & Iterator, type_of(iter(iterable_b))],
+    downcast[Copyable & Iterator, type_of(iter(iterable_c))],
+    downcast[Copyable & Iterator, type_of(iter(iterable_d))],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables.
@@ -458,9 +481,15 @@ fn product[
     """
     return {
         iter(iterable_a),
-        iter(iterable_b),
-        iter(iterable_c),
-        iter(iterable_d),
+        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_b))]](
+            iter(iterable_b)
+        ),
+        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_c))]](
+            iter(iterable_c)
+        ),
+        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_d))]](
+            iter(iterable_d)
+        ),
     }
 
 
