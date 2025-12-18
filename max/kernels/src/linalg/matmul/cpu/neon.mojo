@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
 
 from layout import Layout, LayoutTensor, RuntimeTuple
 
@@ -141,7 +141,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
+                    rebind[LegacyUnsafePointer[Scalar[c.dtype]]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -169,7 +169,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                     Index(idx_n, idx_k1),
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
+                rebind[LegacyUnsafePointer[Scalar[c.dtype]]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

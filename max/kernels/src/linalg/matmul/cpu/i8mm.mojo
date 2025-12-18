@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer, UnsafePointer
 from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
@@ -55,7 +55,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _load_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype], **_],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -102,12 +102,16 @@ struct LoadStore_i8mm[
     @always_inline
     fn _store_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
     ):
-        var c_ptr_loc = c_ptr.offset(tile_n_idx)
+        # Convert to LegacyUnsafePointer for partial_simd_store compatibility
+        var c_ptr_legacy = rebind[LegacyUnsafePointer[Scalar[Self.dtype]]](
+            c_ptr
+        )
+        var c_ptr_loc = c_ptr_legacy.offset(tile_n_idx)
 
         @parameter
         for idx0 in range(Self.tile_rows):
@@ -270,7 +274,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                 acc._initialize_c_tile()
             else:
                 acc._load_c_tile(
-                    rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
+                    rebind[LegacyUnsafePointer[Scalar[c.dtype]]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -285,7 +289,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                     Index(idx_n, idx_k),
                 )
             acc._store_c_tile(
-                rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
+                rebind[LegacyUnsafePointer[Scalar[c.dtype]]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,
