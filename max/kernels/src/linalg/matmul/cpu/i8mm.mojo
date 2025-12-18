@@ -107,11 +107,7 @@ struct LoadStore_i8mm[
         tile_n_idx: Int,
         c_bound: IndexList[2],
     ):
-        # Convert to LegacyUnsafePointer for partial_simd_store compatibility
-        var c_ptr_legacy = rebind[LegacyUnsafePointer[Scalar[Self.dtype]]](
-            c_ptr
-        )
-        var c_ptr_loc = c_ptr_legacy.offset(tile_n_idx)
+        var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
         @parameter
         for idx0 in range(Self.tile_rows):

@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import fma
+from memory import alloc
 from os import abort
 from sys import CompilationTarget, simd_width_of
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
@@ -260,16 +261,14 @@ fn apple_gemv[
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
     var transposed_b = NDBuffer[b.type, 2, MutAnyOrigin]()
-    var transposed_b_ptr = LegacyUnsafePointer[Scalar[b.type]]()
+    var transposed_b_ptr = UnsafePointer[Scalar[b.type], MutOrigin.external]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).
     @parameter
     if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
-        transposed_b_ptr = LegacyUnsafePointer[Scalar[b.type]].alloc(
-            b.num_elements()
-        )
+        transposed_b_ptr = alloc[Scalar[b.type]](b.num_elements())
         transposed_b = NDBuffer[b.type, 2](transposed_b_ptr, transposed_b_shape)
 
         pack_b_ndbuffer[

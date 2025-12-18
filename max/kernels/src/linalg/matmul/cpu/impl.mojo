@@ -20,7 +20,7 @@ from buffer.buffer import NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from buffer.dimlist import DimList
 from layout import Layout, LayoutTensor
-from memory import LegacyUnsafePointer, memset_zero
+from memory import alloc, memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
 from utils.index import Index, IndexList
@@ -595,11 +595,9 @@ fn _matmul_cpu_impl[
         comptime alignment = align_of[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr = LegacyUnsafePointer[Scalar[a.type]]()
+        var a_packed_ptr = UnsafePointer[Scalar[a.type], MutOrigin.external]()
         if use_i8mm:
-            a_packed_ptr = LegacyUnsafePointer[Scalar[a.type]].alloc(
-                mh * kh, alignment=alignment
-            )
+            a_packed_ptr = alloc[Scalar[a.type]](mh * kh, alignment=alignment)
         var a_packed = NDBuffer[a.type, 2, _, a.shape](
             a_packed_ptr, DimList(mh, kh)
         )
@@ -649,15 +647,21 @@ fn _matmul_cpu_impl[
             ](
                 alg,
                 c,
-                a_packed if use_i8mm else type_of(a).OriginCastType[
-                    MutAnyOrigin
-                ](
-                    # TODO: This is VERY unsafe. `a` may not be mutable which could
-                    # result in undefined behavior. `a` and all dependents of this
-                    # function should have their mutability explicitly specified.
-                    a.data.unsafe_mut_cast[True]().as_any_origin(),
-                    a.dynamic_shape,
-                    a.dynamic_stride,
+                (
+                    type_of(a_packed)
+                    .OriginCastType[MutAnyOrigin](
+                        a_packed.data,
+                        a_packed.dynamic_shape,
+                        a_packed.dynamic_stride,
+                    ) if use_i8mm else type_of(a)
+                    .OriginCastType[MutAnyOrigin](
+                        # TODO: This is VERY unsafe. `a` may not be mutable which could
+                        # result in undefined behavior. `a` and all dependents of this
+                        # function should have their mutability explicitly specified.
+                        a.data.unsafe_mut_cast[True]().as_any_origin(),
+                        a.dynamic_shape,
+                        a.dynamic_stride,
+                    )
                 ),
                 b,
                 GemmShape(sub_matmul_config.shape),
