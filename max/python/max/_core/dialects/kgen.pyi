@@ -54,6 +54,7 @@ class FnMetadataAttrInterface(Protocol):
     def get_with_bound_pos_args(
         self, arg: int, /
     ) -> FnMetadataAttrInterface: ...
+    def equals(self, arg: FnMetadataAttrInterface, /) -> bool: ...
 
 class GeneratorMetadataAttrInterface(Protocol):
     """
