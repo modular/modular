@@ -14,8 +14,8 @@
 // The full design is also described in excruciating detail at:
 //    http://moodycamel.com/blog/2014/detailed-design-of-a-lock-free-queue
 
-#ifndef ASYNCRT_SUPPORT_CONCURRENTMPMCQUEUE_H
-#define ASYNCRT_SUPPORT_CONCURRENTMPMCQUEUE_H
+#ifndef MLRT_ASYNCRT_SUPPORT_CONCURRENTMPMCQUEUE_H
+#define MLRT_ASYNCRT_SUPPORT_CONCURRENTMPMCQUEUE_H
 
 #if defined(__APPLE__)
 #include "TargetConditionals.h"
@@ -3769,4 +3769,4 @@ swap(typename ConcurrentQueue<T, Traits>::ImplicitProducerKVP &a,
 
 } // namespace MoodyCamel
 
-#endif // ASYNCRT_SUPPORT_CONCURRENTMPMCQUEUE_H
+#endif // MLRT_ASYNCRT_SUPPORT_CONCURRENTMPMCQUEUE_H

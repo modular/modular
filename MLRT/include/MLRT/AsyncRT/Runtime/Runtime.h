@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASYNCRT_RUNTIME_H
-#define ASYNCRT_RUNTIME_H
+#ifndef MLRT_ASYNCRT_RUNTIME_H
+#define MLRT_ASYNCRT_RUNTIME_H
 
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "MLRT/AsyncRT/Runtime/AnyAsyncValueRef.h"
@@ -473,4 +473,4 @@ inline void checkUniqueRuntime(const Runtime &runtime) {
 
 } // namespace M::AsyncRT
 
-#endif // ASYNCRT_RUNTIME_H
+#endif // MLRT_ASYNCRT_RUNTIME_H

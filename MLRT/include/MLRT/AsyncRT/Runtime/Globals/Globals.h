@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASYNCRT_RUNTIME_GLOBALS_H
-#define ASYNCRT_RUNTIME_GLOBALS_H
+#ifndef MLRT_ASYNCRT_RUNTIME_GLOBALS_H
+#define MLRT_ASYNCRT_RUNTIME_GLOBALS_H
 
 #include "Support/SymbolExport.h"
 
@@ -61,4 +61,4 @@ MODULAR_CXX_EXPORT uint64_t getUniqueTaskIdForWorkItem();
 
 } // namespace M::AsyncRT
 
-#endif // ASYNCRT_RUNTIME_GLOBALS_H
+#endif // MLRT_ASYNCRT_RUNTIME_GLOBALS_H

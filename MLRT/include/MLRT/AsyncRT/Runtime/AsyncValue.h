@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASYNCRT_RUNTIME_ASYNCVALUE_H
-#define ASYNCRT_RUNTIME_ASYNCVALUE_H
+#ifndef MLRT_ASYNCRT_RUNTIME_ASYNCVALUE_H
+#define MLRT_ASYNCRT_RUNTIME_ASYNCVALUE_H
 
 #include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "MLRT/AsyncRT/Runtime/Globals/Globals.h"
@@ -865,4 +865,4 @@ inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
 
 } // namespace M::AsyncRT
 
-#endif // ASYNCRT_RUNTIME_ASYNCVALUE_H
+#endif // MLRT_ASYNCRT_RUNTIME_ASYNCVALUE_H

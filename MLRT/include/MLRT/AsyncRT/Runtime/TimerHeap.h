@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASYNCRT_SUPPORT_TIMERHEAP_H
-#define ASYNCRT_SUPPORT_TIMERHEAP_H
+#ifndef MLRT_ASYNCRT_SUPPORT_TIMERHEAP_H
+#define MLRT_ASYNCRT_SUPPORT_TIMERHEAP_H
 
 #include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
@@ -60,4 +60,4 @@ private:
 
 } // namespace M::AsyncRT
 
-#endif // ASYNCRT_SUPPORT_SEMAPHORE_H
+#endif // MLRT_ASYNCRT_SUPPORT_TIMERHEAP_H

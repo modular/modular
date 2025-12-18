@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASYNCRT_SUPPORT_LOCKFREERINGBUFFER_H
-#define ASYNCRT_SUPPORT_LOCKFREERINGBUFFER_H
+#ifndef MLRT_ASYNCRT_SUPPORT_LOCKFREERINGBUFFER_H
+#define MLRT_ASYNCRT_SUPPORT_LOCKFREERINGBUFFER_H
 
 #include "Support/Threading/Atomics.h"
 #include "Support/Threading/SpinWaiter.h"
@@ -160,4 +160,4 @@ private:
 
 } // namespace M::AsyncRT
 
-#endif // ASYNCRT_SUPPORT_LOCKFREERINGBUFFER_H
+#endif // MLRT_ASYNCRT_SUPPORT_LOCKFREERINGBUFFER_H
