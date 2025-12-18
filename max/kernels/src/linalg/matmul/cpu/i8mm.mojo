@@ -274,7 +274,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                 acc._initialize_c_tile()
             else:
                 acc._load_c_tile(
-                    rebind[LegacyUnsafePointer[Scalar[c.dtype]]](c_ptr),
+                    c_ptr,
                     c_stride,
                     idx_n,
                     c_bound,
@@ -289,7 +289,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                     Index(idx_n, idx_k),
                 )
             acc._store_c_tile(
-                rebind[LegacyUnsafePointer[Scalar[c.dtype]]](c_ptr),
+                c_ptr,
                 c_stride,
                 idx_n,
                 c_bound,
