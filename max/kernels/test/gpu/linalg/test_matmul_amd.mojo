@@ -46,10 +46,9 @@ fn test[
     N: Optional[Int] = None,
     K: Optional[Int] = None,
 ](ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
-    constrained[
-        Bool(N) and Bool(K),
-        "This test currently requires static N and K.",
-    ]()
+    __comptime_assert Bool(N) and Bool(
+        K
+    ), "This test currently requires static N and K."
 
     print(m, "x", n, "x", k)
 
@@ -170,7 +169,8 @@ fn test[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    transpose_b: Bool, //,
+    transpose_b: Bool,
+    //,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     M: Optional[Int] = None,
     N: Optional[Int] = None,

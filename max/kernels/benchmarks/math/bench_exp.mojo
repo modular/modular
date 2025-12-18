@@ -231,7 +231,9 @@ fn _exp_taylor0[
 fn exp_mojo_opt[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    constrained[dtype.is_floating_point(), "must be a floating point value"]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
     comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
@@ -259,7 +261,9 @@ fn exp_mojo_opt[
 fn exp_mojo_opt2[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    constrained[dtype.is_floating_point(), "must be a floating point value"]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
@@ -299,7 +303,9 @@ fn _exp_taylor3[
 fn exp_mojo_opt3[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    constrained[dtype.is_floating_point(), "must be a floating point value"]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
@@ -340,7 +346,9 @@ fn _exp_taylor_mlas[
 fn exp_mlas[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    constrained[dtype.is_floating_point(), "must be a floating point value"]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
     comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
@@ -370,7 +378,9 @@ fn llvm_ldexp[
 fn mlas_llvm_ldexp[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    constrained[dtype.is_floating_point(), "must be a floating point value"]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
     comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 

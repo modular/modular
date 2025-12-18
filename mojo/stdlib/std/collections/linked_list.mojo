@@ -87,7 +87,8 @@ struct Node[
 
 @fieldwise_init
 struct _LinkedListIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     ElementType: Copyable,
     origin: Origin[mut],
     forward: Bool = True,

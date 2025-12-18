@@ -124,7 +124,7 @@ fn _get_bounding_box[
     Returns:
         A BoundingBox instance constructed from the extracted coordinates.
     """
-    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
+    __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
     var y1 = boxes[batch_size, box_idx, 0][0]
     var x1 = boxes[batch_size, box_idx, 1][0]
     var y2 = boxes[batch_size, box_idx, 2][0]
@@ -163,9 +163,9 @@ fn non_max_suppression[
         score_threshold: Minimum score threshold. Boxes with score < threshold
                         are filtered out.
     """
-    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
-    constrained[scores.rank == 3, "scores must be of rank 3"]()
-    constrained[output.rank == 2, "output must be of rank 2"]()
+    __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
+    __comptime_assert scores.rank == 3, "scores must be of rank 3"
+    __comptime_assert output.rank == 2, "output must be of rank 2"
 
     var pred_count = 0
 
@@ -212,8 +212,8 @@ fn non_max_suppression_shape_func[
     Returns:
         A 2-element IndexList specifying the output shape (num_selected_boxes, 3).
     """
-    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
-    constrained[scores.rank == 3, "scores must be of rank 3"]()
+    __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
+    __comptime_assert scores.rank == 3, "scores must be of rank 3"
 
     var box_pred_count: Int64 = 0
 
@@ -246,8 +246,8 @@ fn non_max_suppression[
 ):
     """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression.
     """
-    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
-    constrained[scores.rank == 3, "scores must be of rank 3"]()
+    __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
+    __comptime_assert scores.rank == 3, "scores must be of rank 3"
 
     var batch_size = Int(boxes.runtime_layout.shape[0])
     var num_boxes = Int(boxes.runtime_layout.shape[1])

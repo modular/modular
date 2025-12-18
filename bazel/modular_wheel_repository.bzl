@@ -72,6 +72,41 @@ filegroup(
     ],
     visibility = ["//visibility:public"],
 )
+
+INDIRECT_DEPENDENCIES = [
+    "AsyncRTMojoBindings",
+    "AsyncRTRuntimeGlobals",
+    "KGENCompilerRTShared",
+    "MGPRT",
+    "MOGGLoader",
+    "MSupportGlobals",
+]
+
+[
+    cc_import(
+        name = "{}_lib".format(lib_name),
+        shared_library = glob(["modular/lib/lib{}.*".format(lib_name)])[0],
+    )
+    for lib_name in INDIRECT_DEPENDENCIES
+]
+
+# Special case, NVPTX is platform-specific.
+cc_import(
+    name = "NVPTX_lib",
+    shared_library = "modular/lib/libNVPTX.so",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+cc_import(
+    name = "max_lib",
+    shared_library = glob(["modular/lib/libmax.*"])[0],
+    visibility = ["//visibility:public"],
+    data = ["modular/lib/*.so"],
+    deps = [":" + dep + "_lib" for dep in INDIRECT_DEPENDENCIES] + select({
+        "@platforms//os:linux": [":NVPTX_lib"],
+        "//conditions:default": [],
+    })
+)
 """,
     )
 
@@ -113,6 +148,16 @@ alias(
         "@//:linux_aarch64": "@module_platlib_linux_aarch64//:tblgen_python_srcs",
         "@//:linux_x86_64": "@module_platlib_linux_x86_64//:tblgen_python_srcs",
         "@platforms//os:macos": "@module_platlib_macos_arm64//:tblgen_python_srcs",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "max_lib",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:max_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:max_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:max_lib",
     }),
     visibility = ["//visibility:public"],
 )

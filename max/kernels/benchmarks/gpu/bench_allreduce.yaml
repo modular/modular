@@ -18,14 +18,7 @@ commons: &commons
   dtype: [DType.bfloat16, DType.float32]
   num_gpus: [2, 4, 8]
   rank: [1]
-
-  # Test configurations covering edge cases
-  $num_bytes: [(16 * 1024),        # Small latency bound.
-            (256 * 1024),         # Larger latency bound.
-            (32 * 1024 * 1024),   # Bandwidth bound.
-            (128 * 1024 * 1024),   # Bandwidth bound: 8192 chunk size at dim = 8192.
-            ]
-
+  $num_bytes: "[2**i for i in range(14, 28)]"
   TUNE_MAX_NUM_BLOCKS: [0] # To force picking the tuning results
 
 params:

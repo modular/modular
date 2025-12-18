@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import csv
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,14 +47,24 @@ class ThroughputMeasure:
             The throughput values as a floating point 64.
         """
         # TODO: do we need support other units of time (ms, ns)?
-        return (self.value) * 1e-9 / elapsed_sec
+        return (self.value * 1e-9) / elapsed_sec
 
 
 @dataclass
 class Bench:
+    """Constructs a Benchmark object, used for running multiple benchmarks
+    and comparing the results.
+
+    Args:
+        name: Name of benchmark entry (string).
+        met: Measured execution time for the entry in seconds (float).
+        iters: Number of iterations in the measurement (int).
+        metric_list: List of ThroughputMeasure's.
+    """
+
     name: str
-    iters: int
     met: float
+    iters: int
 
     metric_list: list[ThroughputMeasure] = field(default_factory=list)
 
@@ -63,29 +74,25 @@ class Bench:
     theoretical_flops = BenchMetric(3, "TheoreticalArithmetic", "GFLOPS/s")
 
     BENCH_LABEL = "name"
-    ITERS_LABEL = "iters"
     MET_LABEL = "met (ms)"
+    ITERS_LABEL = "iters"
 
-    def dump_report(self, output_path: Path) -> None:
-        output: list[str] = []
-
-        metrics = [
+    def dump_report(self, output_path: Path | None = None) -> None:
+        metrics = [self.BENCH_LABEL, self.MET_LABEL, self.ITERS_LABEL] + [
             f"{m.metric.name} ({m.metric.unit})" for m in self.metric_list
         ]
-        s = [self.BENCH_LABEL, self.ITERS_LABEL, self.MET_LABEL] + metrics
-        output += [",".join(s)]
-
-        metric_vals = [
-            f"{m.compute(self.met * 1e-3)}" for m in self.metric_list
+        vals = ['"' + self.name + '"', self.met, self.iters] + [
+            f"{m.compute(self.met)}" for m in self.metric_list
         ]
-        vals = [self.name, self.iters, self.met] + metric_vals
-        output += [",".join([str(v) for v in vals])]
+        rows = (metrics, vals)
 
-        output_str = "\n".join(output)
-        with open(output_path, "w") as f:
-            f.write(output_str + "\n")
-
-        print(output_str)
+        if output_path:
+            with open(output_path, "w") as f:
+                w = csv.writer(f, delimiter=",", quotechar="'")
+                w.writerows(rows)
+        with sys.stdout as f:
+            w = csv.writer(f, delimiter=",", quotechar="'")
+            w.writerows(rows)
 
 
 def arg_parse(handle: str, default: Any = None, short_handle: str = "") -> str:

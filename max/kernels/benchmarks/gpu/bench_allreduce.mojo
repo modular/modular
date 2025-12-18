@@ -113,8 +113,8 @@ fn bench_reduce[
     num_bytes: Int,
     max_num_blocks: Optional[Int],
 ) raises:
-    constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
-    constrained[rank == 1, "this test code currently assumes rank 1"]()
+    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    __comptime_assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl](ngpus, num_bytes)
@@ -381,7 +381,7 @@ fn bench_reduce[
                 print("Verification failed at GPU", i, "index", j)
                 print("Value:", host_buffers[i][j])
                 print("Expected:", expected_sum)
-                raise e
+                raise e^
 
     # Cleanup
     for i in range(ngpus):

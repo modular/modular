@@ -43,7 +43,7 @@ def main():
         report = suite.generate_report()
     except e:
         suite^.abandon()
-        raise e
+        raise e^
 
     # NOTE: The suite should not fail, since we skip the failing test from the
     # CLI. The flags are passed directly to the bazel target.

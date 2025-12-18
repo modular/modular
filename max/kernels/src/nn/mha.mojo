@@ -119,7 +119,8 @@ from .softmax import (
 
 fn flash_attention[
     dtype: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[2])),
@@ -251,7 +252,8 @@ fn flash_attention[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
@@ -308,22 +310,18 @@ fn flash_attention[
     This kernels handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    constrained[
-        ragged or q.rank == 4,
-        "only support rank 4 inputs for non-ragged inputs.",
-    ]()
-    constrained[
-        not ragged or q.rank == 3,
-        "only support rank 3 inputs for ragged inputs.",
-    ]()
-    constrained[
-        q.dtype == cache_t.dtype == output.dtype,
-        "Q, K, V, output should have same type.",
-    ]()
-    constrained[
-        q.dtype is DType.float32 or q.dtype.is_half_float(),
-        "Only support single and half precision.",
-    ]()
+    __comptime_assert (
+        ragged or q.rank == 4
+    ), "only support rank 4 inputs for non-ragged inputs."
+    __comptime_assert (
+        not ragged or q.rank == 3
+    ), "only support rank 3 inputs for ragged inputs."
+    __comptime_assert (
+        q.dtype == cache_t.dtype == output.dtype
+    ), "Q, K, V, output should have same type."
+    __comptime_assert (
+        q.dtype is DType.float32 or q.dtype.is_half_float()
+    ), "Only support single and half precision."
 
     # TODO docstring
     @always_inline
@@ -425,7 +423,8 @@ fn flash_attention_dispatch[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
@@ -480,8 +479,8 @@ fn flash_attention_dispatch[
     # K V smem is only separate for GPUs with shared memory greater or equal to A100's.
     comptime is_shared_kv = ctx.default_device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
 
-    constrained[depth == UInt(Int(q.layout.shape[q.rank - 1]))]()
-    constrained[num_heads == UInt(Int(q.layout.shape[q.rank - 2]))]()
+    __comptime_assert depth == UInt(Int(q.layout.shape[q.rank - 1]))
+    __comptime_assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
     var batch_size: Int
 
     @parameter
@@ -544,7 +543,7 @@ fn flash_attention_dispatch[
                         sink_weights,
                     )
                 else:
-                    constrained[is_sm100]()
+                    __comptime_assert is_sm100
 
                     @parameter
                     if depth == 256 or not env_get_bool["ENABLE_FA4", True]():
@@ -1099,7 +1098,8 @@ fn flash_attention[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[2])),
@@ -1132,7 +1132,7 @@ fn flash_attention[
 ) raises:
     # See the kV cache overloads for comments.
 
-    constrained[q.rank == 4, "only support rank 4 inputs."]()
+    __comptime_assert q.rank == 4, "only support rank 4 inputs."
 
     # Runtime dimensions.
     var batch_size = q.dim[0]()
@@ -1205,7 +1205,8 @@ fn flash_attention_ragged[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     type: DType,
-    q_layout: Layout, //,
+    q_layout: Layout,
+    //,
     use_score_mod: Bool = False,
     config: MHAConfig[type] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),  # num_heads
@@ -1233,16 +1234,16 @@ fn flash_attention_ragged[
 ) raises:
     # See the kV cache overloads for comments.
 
-    constrained[q.rank == 3, "only support rank 3 inputs for ragged inputs."]()
-    constrained[
-        q.dtype == k.dtype == v.dtype == output.dtype,
-        "Q, K, V, output should have same type.",
-    ]()
+    __comptime_assert (
+        q.rank == 3
+    ), "only support rank 3 inputs for ragged inputs."
+    __comptime_assert (
+        q.dtype == k.dtype == v.dtype == output.dtype
+    ), "Q, K, V, output should have same type."
 
-    constrained[
-        q.dtype is DType.float32 or q.dtype.is_half_float(),
-        "Only support single and half precision.",
-    ]()
+    __comptime_assert (
+        q.dtype is DType.float32 or q.dtype.is_half_float()
+    ), "Only support single and half precision."
 
     # Runtime dimensions.
     # For ragged inputs: [total_seq_len, num_heads, head_dim]
@@ -1490,10 +1491,9 @@ fn mha[
                 sink_weights,
             )
     elif is_amd_gpu():
-        constrained[
-            use_score_mod == False,
-            "use_score_mod must be False for AMD flash attention",
-        ]()
+        __comptime_assert (
+            use_score_mod == False
+        ), "use_score_mod must be False for AMD flash attention"
 
         comptime attention_config = MHAAttentionConfig[False, config, group]()
         var attention = Attention[config, group, False, sink](
@@ -1569,7 +1569,7 @@ fn mha_single_batch[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    constrained[q_type == k_type and k_type == v_type]()
+    __comptime_assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -1582,10 +1582,9 @@ fn mha_single_batch[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
+    __comptime_assert num_warps_m * num_warps_n == UInt(
+        num_threads // UInt(WARP_SIZE)
+    ), "Number of warps doesn't match warp tile sizes."
 
     var tid: UInt32 = thread_idx.x
     var warp_id: UInt32 = warp.broadcast(tid // WARP_SIZE)
@@ -2303,7 +2302,7 @@ fn mha_single_batch_pipelined[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    constrained[q_type == k_type and k_type == v_type]()
+    __comptime_assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -2316,10 +2315,9 @@ fn mha_single_batch_pipelined[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
+    __comptime_assert num_warps_m * num_warps_n == UInt(
+        num_threads // UInt(WARP_SIZE)
+    ), "Number of warps doesn't match warp tile sizes."
 
     var tid: UInt32 = thread_idx.x
     var warp_id: UInt32 = warp.broadcast(tid // WARP_SIZE)
@@ -3131,10 +3129,9 @@ fn mha_decoding[
             num_pipeline_stages=num_pipeline_stages,
             k_group_size=group,
         )
-        constrained[
-            use_score_mod == False,
-            "use_score_mod must be False for AMD flash attention",
-        ]()
+        __comptime_assert (
+            use_score_mod == False
+        ), "use_score_mod must be False for AMD flash attention"
         var sink_weights_lt: OptionalReg[
             LayoutTensor[
                 q_ptr.type.dtype,
@@ -3337,28 +3334,24 @@ fn mha_decoding_single_batch[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    constrained[q_type == k_type and k_type == v_type]()
+    __comptime_assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
+    __comptime_assert num_warps_m * num_warps_n == UInt(
+        num_threads // UInt(WARP_SIZE)
+    ), "Number of warps doesn't match warp tile sizes."
 
     # It's because in online-softmax we only use the top 8x4 sub-matrix
     # in the 16x8 mma output for Nvidia GPU. It shouldn't matter for AMD
-    constrained[
-        group <= 16,
-        String(
-            "Only support GQA with group <= 16 for Nvidia, but got a group = '",
-            group,
-            "'.",
-        ),
-    ]()
+    __comptime_assert group <= 16, String(
+        "Only support GQA with group <= 16 for Nvidia, but got a group = '",
+        group,
+        "'.",
+    )
 
     var tid = thread_idx.x
     var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
@@ -4036,26 +4029,22 @@ fn mha_decoding_single_batch_pipelined[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    constrained[q_type == k_type and k_type == v_type]()
+    __comptime_assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
+    __comptime_assert num_warps_m * num_warps_n == UInt(
+        num_threads // UInt(WARP_SIZE)
+    ), "Number of warps doesn't match warp tile sizes."
 
-    constrained[
-        group <= 8,
-        String(
-            "Only support GQA with group <= 8 for Nvidia, but got a group = '",
-            group,
-            "'.",
-        ),
-    ]()
+    __comptime_assert group <= 8, String(
+        "Only support GQA with group <= 8 for Nvidia, but got a group = '",
+        group,
+        "'.",
+    )
 
     var tid = thread_idx.x
     var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
@@ -4483,13 +4472,12 @@ fn mha_splitk_reduce[
     num_partitions: Int,
 ):
     # we only reduce over a warp so limit number of warps to 1
-    constrained[
-        num_threads == UInt(WARP_SIZE),
+    __comptime_assert num_threads == UInt(WARP_SIZE), (
         "num_threads: "
         + String(num_threads)
         + " should be equal to the warp_size:"
-        + String(WARP_SIZE),
-    ]()
+        + String(WARP_SIZE)
+    )
     debug_assert(
         block_dim.x == UInt(WARP_SIZE),
         "block_dim.x should be equal to the warp_size",
@@ -4614,7 +4602,8 @@ fn mha_gpu_naive[
     output_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
     ragged: Bool = False,
     sink: Bool = False,
     _use_valid_length: Bool = False,
@@ -4981,7 +4970,8 @@ fn mha_gpu_naive[
     k_type: DType,
     v_type: DType,
     output_type: DType,
-    mask_type: DType, //,
+    mask_type: DType,
+    //,
     sink: Bool = False,
 ](
     q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, **_],
@@ -5060,7 +5050,8 @@ fn mha_gpu_naive[
     q_type: DType,
     output_type: DType,
     cache_t: KVCacheT,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
     ragged: Bool = False,
     sink: Bool = False,
 ](

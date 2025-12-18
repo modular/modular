@@ -77,11 +77,10 @@ fn test[
         mask_rank,
     )
 
-    constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()
-    constrained[
-        against_gpu_naive or mask_rank == 3,
-        "Testing against cpu requires mask of rank 3.",
-    ]()
+    __comptime_assert mask_rank in (3, 4), "mha only support rank 3 or 4."
+    __comptime_assert (
+        against_gpu_naive or mask_rank == 3
+    ), "Testing against cpu requires mask of rank 3."
 
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -172,9 +171,9 @@ fn test[
 
     @parameter
     if not against_gpu_naive:
-        constrained[
-            qkv_type == mask_type, "expect qkv and mask have same type for CPU."
-        ]()
+        __comptime_assert (
+            qkv_type == mask_type
+        ), "expect qkv and mask have same type for CPU."
         _naive_attention_with_transpose[qkv_type](
             output, q, k, k, mask.bitcast[qkv_type](), scale
         )
@@ -373,20 +372,28 @@ fn test[
 
     # since we pass the whole K tensor as the V tensor to our naive mha kernel,
     # the last 64 elements of each head in the reference result are invalid.
+    # b , s, h, d
     var rtol = 1e-3
-    for h in range(num_heads):
+    for b in range(batch_size):
         for s in range(seq_len):
-            for d in range(depth - 64):
-                var expect = output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
-                var actual = flash_output_ptr.load(
-                    d + (depth - 64) * (h + s * num_heads)
-                ).cast[DType.float64]()
-                # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
-                #     var rerr = abs((actual - expect) / expect)
-                #     print(h, s, d, actual, expect, rerr)
-                assert_almost_equal(actual, expect, atol=1e-1, rtol=rtol)
+            for h in range(num_heads):
+                for d in range(depth - 64):
+                    var expect = output_ptr.load(
+                        d
+                        + depth * (h + s * num_heads)
+                        + b * depth * num_heads * seq_len
+                    ).cast[DType.float64]()
+                    var actual = flash_output_ptr.load(
+                        d
+                        + (depth - 64) * (h + s * num_heads)
+                        + b * (depth - 64) * num_heads * seq_len
+                    ).cast[DType.float64]()
+                    # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
+                    #     var rerr = abs((actual - expect) / expect)
+                    #     print(h, s, d, actual, expect, rerr)
+                    # if abs((actual - expect)) > 9e-2:
+                    #     print(b, h, s, d, actual, expect)
+                    assert_almost_equal(actual, expect, atol=1e-1, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -1227,6 +1234,19 @@ fn test_decoding[
         use_causal_mask=use_causal_mask,
     ](1, 1024, ctx, use_index_input=use_index_input)
 
+    test[
+        3,
+        qkv_type,
+        DType.float32,
+        576,
+        128,
+        group=128,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+        decoding_warp_split_k=split_k,
+        use_causal_mask=use_causal_mask,
+    ](1, 4096, ctx, use_index_input=use_index_input)
     # BF16 token gen, with num_heads=16 (deepseek-v2 lite)
     test[
         4,
@@ -1340,6 +1360,7 @@ def main():
         if has_nvidia_gpu_accelerator():
             # tests with mask tensor
             test_decoding[27, 1, False, False](ctx, False)
+            test_decoding[128, 1, False, False](ctx, False)
 
             # test mla cascade prefill
             test_mla_cascade_prefill[2](ctx)
@@ -1348,6 +1369,7 @@ def main():
 
         # tests with causal mask
         test_decoding[27, 1, False, True](ctx, False)
+        test_decoding[128, 1, False, True](ctx, False)
         test_decoding[0, 1, False, True](ctx, False)
 
         # test mla prefill

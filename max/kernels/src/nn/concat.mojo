@@ -88,7 +88,7 @@ fn memcpy_or_fuse[
             var load = input.load[width=simd_width](index)
 
             # Convert the linearized address back to the n-D indices.
-            constrained[_rank == 1]()
+            __comptime_assert _rank == 1
             var out_index = _get_start_indices_of_nth_subvolume[0](
                 index[0] + typed_offset,
                 out_shape,
@@ -165,7 +165,8 @@ fn _canonical_reshape_output[
 
 
 fn _concat_parallel[
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
@@ -322,7 +323,8 @@ fn _concat_parallel[
 
 @always_inline
 fn _concat[
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
@@ -379,7 +381,8 @@ fn _concat[
 
 @always_inline
 fn _concat_inner[
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
@@ -427,7 +430,8 @@ fn _check_input_consistency[
 
 @always_inline
 fn _concat_serial[
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
@@ -456,7 +460,8 @@ fn _concat_serial[
 
 @always_inline
 fn _concat_small[
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
@@ -531,7 +536,8 @@ fn _concat_small[
 
 @always_inline
 fn _concat_cpu[
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
@@ -568,7 +574,8 @@ fn _concat_cpu[
 
 @always_inline
 fn concat_shape[
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     input_type: DType,
     single_thread_blocking_override: Bool,
 ](
@@ -633,7 +640,8 @@ fn concat_shape[
 @always_inline
 fn concat[
     output_layout: Layout,
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
@@ -644,7 +652,7 @@ fn concat[
     inputs: StaticTuple[LayoutTensor[dtype, inputs_layout, MutAnyOrigin], *_],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    constrained[is_valid_target[target](), "not a valid target"]()
+    __comptime_assert is_valid_target[target](), "not a valid target"
 
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(context)
@@ -680,7 +688,8 @@ fn concat[
 
 fn _concat_inner_most_single_dim[
     output_layout: Layout,
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     num_inputs: Int,
     block_size: Int,
@@ -717,7 +726,8 @@ fn _concat_inner_most_single_dim[
 @always_inline
 fn _concat_gpu_elementwise[
     output_layout: Layout,
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     num_inputs: Int,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
@@ -740,7 +750,8 @@ fn _concat_gpu_elementwise[
 
 @always_inline
 fn _concat_gpu_elementwise[
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     axis: Int,
     dtype: DType,
     num_inputs: Int,
@@ -795,7 +806,8 @@ fn _concat_gpu_elementwise[
 @always_inline
 fn _concat_gpu[
     output_layout: Layout,
-    inputs_layout: Layout, //,
+    inputs_layout: Layout,
+    //,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
@@ -923,7 +935,8 @@ fn _fused_concat_cpu[
 
 @always_inline
 fn _fused_concat_inner_most_single_dim[
-    output_layout: Layout, //,
+    output_layout: Layout,
+    //,
     rank: Int,
     dtype: DType,
     block_size: Int,
@@ -1009,7 +1022,8 @@ fn _fused_concat_gpu_elementwise[
 
 @always_inline
 fn _fused_concat_gpu[
-    output_layout: Layout, //,
+    output_layout: Layout,
+    //,
     rank: Int,
     dtype: DType,
     input_fn: fn[input_index: Int, width: Int, _rank: Int] (
@@ -1075,7 +1089,8 @@ fn _fused_concat_gpu[
 
 @always_inline
 fn fused_concat[
-    output_layout: Layout, //,
+    output_layout: Layout,
+    //,
     dtype: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
@@ -1090,7 +1105,7 @@ fn fused_concat[
     output: LayoutTensor[mut=True, dtype, output_layout],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[is_valid_target[target](), "not a valid target"]()
+    __comptime_assert is_valid_target[target](), "not a valid target"
 
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(ctx)

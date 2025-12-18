@@ -33,7 +33,8 @@ comptime BATCH_SIZE = 2048
 
 fn _filler_impl[
     dtype: DType,
-    layout: Layout, //,
+    layout: Layout,
+    //,
     filler: fn (i: Int) capturing [_] -> Scalar[dtype],
     use_runtime_layout: Bool = (
         not layout.all_dims_known() or layout.size() > BATCH_SIZE
@@ -190,7 +191,7 @@ fn random[
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
-    constrained[not is_nvidia_gpu(), "Cannot run random on the gpu"]()
+    __comptime_assert not is_nvidia_gpu(), "Cannot run random on the gpu"
 
     @parameter
     fn filler(i: Int) -> Scalar[tensor.dtype]:

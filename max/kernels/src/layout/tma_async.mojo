@@ -99,14 +99,13 @@ fn _tma_desc_tile_layout[
     tile_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ]() -> Layout:
-    constrained[
-        size_of[dtype]() >= 1, "Don't support sub-byte dtype in TMA yet."
-    ]()
+    __comptime_assert (
+        size_of[dtype]() >= 1
+    ), "Don't support sub-byte dtype in TMA yet."
 
-    constrained[
-        rank == 2 or rank == 3 or rank == 4 or rank == 5,
-        "Only support 2D/3D/4D/5D TMA descriptor for now.",
-    ]()
+    __comptime_assert (
+        rank == 2 or rank == 3 or rank == 4 or rank == 5
+    ), "Only support 2D/3D/4D/5D TMA descriptor for now."
 
     @parameter
     if rank == 2:
@@ -330,10 +329,9 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         # Based on cccl
         # https://github.com/NVIDIA/cccl/blob/ba510b38e01dac5ab9b5faad9b9b1701d60d9980/libcudacxx/include/cuda/__ptx/instructions/generated/mbarrier_try_wait_parity.h#L94
 
-        constrained[
-            scope == Scope.CLUSTER or scope == Scope.BLOCK,
-            "wait_acquire is only supported for cluster or block/CTA scope.",
-        ]()
+        __comptime_assert (
+            scope == Scope.CLUSTER or scope == Scope.BLOCK
+        ), "wait_acquire is only supported for cluster or block/CTA scope."
 
         comptime asm = (
             """{
@@ -375,10 +373,9 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         # Based on cccl
         # https://github.com/NVIDIA/cccl/blob/ba510b38e01dac5ab9b5faad9b9b1701d60d9980/libcudacxx/include/cuda/__ptx/instructions/generated/mbarrier_try_wait_parity.h#L104
 
-        constrained[
-            scope == Scope.CLUSTER or scope == Scope.BLOCK,
-            "wait_relaxed is only supported for cluster or block/CTA scope.",
-        ]()
+        __comptime_assert (
+            scope == Scope.CLUSTER or scope == Scope.BLOCK
+        ), "wait_relaxed is only supported for cluster or block/CTA scope."
 
         comptime asm = (
             """{
@@ -398,7 +395,8 @@ struct SharedMemBarrier(ImplicitlyCopyable):
 
     @always_inline
     fn unsafe_ptr[
-        mut: Bool, //,
+        mut: Bool,
+        //,
         origin: Origin[mut],
     ](
         ref [origin, AddressSpace.SHARED]self,
@@ -749,15 +747,13 @@ struct TMATensorTile[
               to accommodate hardware requirements.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(dst).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
 
-        constrained[
-            type_of(dst).dtype == Self.dtype,
-            "Input tensor has a different type than the TMA op",
-        ]()
+        __comptime_assert (
+            type_of(dst).dtype == Self.dtype
+        ), "Input tensor has a different type than the TMA op"
 
         # The descriptor layout i.e. data per copy can be smaller than the shared memory
         # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
@@ -786,8 +782,9 @@ struct TMATensorTile[
                     i * num_copies_dim1 + j
                 ) * copy_size
 
-                constrained[
-                    (copy_offset * size_of[Self.dtype]()) % 128 == 0,
+                __comptime_assert (
+                    copy_offset * size_of[Self.dtype]()
+                ) % 128 == 0, (
                     "copy_offset="
                     + String(copy_offset)
                     + ", size_of[dtype]()="
@@ -795,8 +792,8 @@ struct TMATensorTile[
                     + "\nlayout="
                     + String(Self.layout)
                     + "\ndesc_layout="
-                    + String(Self.desc_layout),
-                ]()
+                    + String(Self.desc_layout)
+                )
                 cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
                     dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
@@ -836,10 +833,9 @@ struct TMATensorTile[
               to accommodate hardware requirements.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(dst).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
 
         # The descriptor layout i.e. data per copy can be smaller than the shared memory
         # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
@@ -929,10 +925,9 @@ struct TMATensorTile[
               to accommodate hardware requirements.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(dst).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
 
         comptime copy_dim0 = Self.desc_layout.shape[0].value()
         comptime copy_dim1 = Self.desc_layout.shape[1].value()
@@ -989,7 +984,9 @@ struct TMATensorTile[
                         )
 
     @always_inline
-    fn async_copy_5d(
+    fn async_copy_5d[
+        cta_group: Int = 1
+    ](
         self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
@@ -1004,6 +1001,11 @@ struct TMATensorTile[
         to the specified destination in shared memory for 5D tensors. The transfer is tracked by the
         provided memory barrier.
 
+        Parameters:
+            cta_group: Int
+                If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
+
         Args:
             dst: The destination tensor in shared memory where data will be copied.
                  Must be 128-byte aligned.
@@ -1017,10 +1019,9 @@ struct TMATensorTile[
               to accommodate hardware requirements.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(dst).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
 
         comptime copy_dim0 = Self.desc_layout.shape[0].value()
         comptime copy_dim1 = Self.desc_layout.shape[1].value()
@@ -1075,7 +1076,9 @@ struct TMATensorTile[
                                 IntTuple(o, n, m, i, j)
                             ) * copy_size
 
-                            cp_async_bulk_tensor_shared_cluster_global(
+                            cp_async_bulk_tensor_shared_cluster_global[
+                                cta_group=cta_group
+                            ](
                                 dst.ptr.mut_cast[True]() + copy_offset,
                                 UnsafePointer(to=self.descriptor).bitcast[
                                     NoneType
@@ -1123,7 +1126,7 @@ struct TMATensorTile[
             - The rank must be 2, 3, 4, or 5.
             - The destination tensor must be 128-byte aligned in shared memory.
         """
-        constrained[rank in (2, 3, 4, 5)]()
+        __comptime_assert rank in (2, 3, 4, 5)
 
         @parameter
         if rank == 2:
@@ -1190,7 +1193,7 @@ struct TMATensorTile[
             - The rank must be 2, 3, 4, or 5.
             - The source tensor must be 128-byte aligned in shared memory.
         """
-        constrained[rank in (2, 3, 4, 5)]()
+        __comptime_assert rank in (2, 3, 4, 5)
 
         @parameter
         if rank == 2:
@@ -1261,10 +1264,9 @@ struct TMATensorTile[
             The destination tensor must be 128-byte aligned in shared memory.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(dst).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
 
         comptime copy_dim0 = Self.desc_layout.shape[0].value()
         comptime copy_dim1 = Self.desc_layout.shape[1].value()
@@ -1293,6 +1295,105 @@ struct TMATensorTile[
                     ),
                     multicast_mask,
                 )
+
+    @always_inline
+    fn async_multicast_load_3d[
+        cta_group: Int = 1
+    ](
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+        ],
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        coords: Tuple[UInt, UInt, UInt],
+        multicast_mask: UInt16,
+    ):
+        """
+        Schedules an asynchronous 3D multicast load from global memory to multiple shared memory locations.
+
+        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
+        to multiple destination locations in shared memory across different CTAs (Cooperative Thread Arrays)
+        as specified by the multicast mask.
+
+        Parameters:
+            cta_group: Int
+                If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
+
+        Args:
+            dst: LayoutTensor
+                The destination tensor in shared memory where data will be copied.
+                Must be 128-byte aligned.
+            mem_barrier: SharedMemBarrierArray
+                The memory barrier used to track and synchronize the asynchronous transfer.
+            coords: Tuple[UInt, UInt, UInt]
+                The 2D coordinates in the source tensor from which to copy data.
+            multicast_mask: UInt16
+                A bit mask specifying which CTAs should receive the data.
+
+        Constraints:
+            The destination tensor must be 128-byte aligned in shared memory.
+        """
+        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
+        constrained[
+            type_of(dst).alignment % 128 == 0,
+            "TMA requires 128B alignment in shared memory",
+        ]()
+
+        # The descriptor layout i.e. data per copy can be smaller than the shared memory
+        # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
+        # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
+        #
+        # dim0, dim1 are MN, K for K-major and K, MN for MN-major because our inputs are
+        # row_major(K, MN) for the latter.
+        #
+        # TODO: use layout algebra here
+        comptime copy_dim0 = Self.desc_layout.shape[0].value()
+        comptime copy_dim1 = Self.desc_layout.shape[1].value()
+        comptime copy_dim2 = Self.desc_layout.shape[2].value()
+        comptime copy_size = Self.desc_layout.size()
+        comptime num_copies_dim0 = ceildiv(
+            Self.layout.shape[0].value(), copy_dim0
+        )
+        comptime num_copies_dim1 = ceildiv(
+            Self.layout.shape[1].value(), copy_dim1
+        )
+        comptime num_copies_dim2 = ceildiv(
+            Self.layout.shape[2].value(), copy_dim2
+        )
+
+        # This is the layout with which the descs themselves are arranged.
+        comptime layout_of_descs = Layout.col_major(
+            num_copies_dim0, num_copies_dim1, num_copies_dim2
+        ) if Self.is_k_major else Layout.row_major(
+            num_copies_dim0, num_copies_dim1, num_copies_dim2
+        )
+
+        @parameter
+        for m in range(num_copies_dim0):
+
+            @parameter
+            for i in range(num_copies_dim1):
+
+                @parameter
+                for j in range(num_copies_dim2):
+                    comptime copy_offset: UInt32 = layout_of_descs(
+                        IntTuple(m, i, j)
+                    ) * copy_size
+
+                    cp_async_bulk_tensor_shared_cluster_global_multicast[
+                        cta_group=cta_group
+                    ](
+                        dst.ptr.mut_cast[True]() + copy_offset,
+                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        mem_barrier.unsafe_ptr(),
+                        Index(
+                            coords[0] + UInt(j * copy_dim2),
+                            coords[1] + UInt(i * copy_dim1),
+                            coords[2] + UInt(m * copy_dim0),
+                        ),
+                        multicast_mask,
+                    )
 
     @always_inline
     fn async_multicast_load_partitioned[
@@ -1376,10 +1477,9 @@ struct TMATensorTile[
             The source tensor must be 128-byte aligned in shared memory.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(src).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(src).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
 
         comptime copy_dim0 = Self.desc_layout.shape[0].value()
         comptime copy_dim1 = Self.desc_layout.shape[1].value()
@@ -1435,10 +1535,9 @@ struct TMATensorTile[
               to accommodate hardware requirements.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(src).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(src).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
 
         # The descriptor layout i.e. data per copy can be smaller than the shared memory
         # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
@@ -1517,10 +1616,9 @@ struct TMATensorTile[
               to accommodate hardware requirements.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(src).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(src).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
 
         comptime copy_dim0 = Self.desc_layout.shape[0].value()
         comptime copy_dim1 = Self.desc_layout.shape[1].value()
@@ -1599,10 +1697,9 @@ struct TMATensorTile[
               to accommodate hardware requirements.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(src).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(src).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
 
         comptime copy_dim0 = Self.desc_layout.shape[0].value()
         comptime copy_dim1 = Self.desc_layout.shape[1].value()
@@ -1701,10 +1798,9 @@ struct TMATensorTile[
             The source tensor must be 128-byte aligned in shared memory.
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        constrained[
-            type_of(src).alignment % 128 == 0,
-            "TMA requires 128B alignment in shared memory",
-        ]()
+        __comptime_assert (
+            type_of(src).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
         cp_async_bulk_tensor_reduce[reduction_kind=reduction_kind](
             src.ptr,
             UnsafePointer(to=self.descriptor).bitcast[NoneType](),
@@ -1803,11 +1899,10 @@ struct TMATensorTile[
             of the changes to other threads.
         """
 
-        constrained[
-            src_ptr.address_space
-            in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
-            "src address space must be GENERIC or GLOBAL.",
-        ]()
+        __comptime_assert src_ptr.address_space in (
+            AddressSpace.GENERIC,
+            AddressSpace.GLOBAL,
+        ), "src address space must be GENERIC or GLOBAL."
 
         var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
 
@@ -1901,11 +1996,10 @@ struct TMATensorTile[
             - Typically used with descriptors previously initialized with `smem_tensormap_init`.
         """
 
-        constrained[
-            src_ptr.address_space
-            in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
-            "src address space must be GENERIC or GLOBAL.",
-        ]()
+        __comptime_assert src_ptr.address_space in (
+            AddressSpace.GENERIC,
+            AddressSpace.GLOBAL,
+        ), "src address space must be GENERIC or GLOBAL."
 
         # NOTE: Only one thread should call this
         inlined_assembly[
@@ -2162,14 +2256,13 @@ def create_tma_tile[
 
     @parameter
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-        constrained[
-            swizzle_rows_bytes <= swizzle_mode.bytes(),
-            "Current swizzle bytes is ",
-            String(swizzle_rows_bytes),
-            " which exceeds ",
-            String(swizzle_mode.bytes()),
-            "B swizzle requirement.",
-        ]()
+        __comptime_assert swizzle_rows_bytes <= swizzle_mode.bytes(), (
+            "Current swizzle bytes is "
+            + String(swizzle_rows_bytes)
+            + " which exceeds "
+            + String(swizzle_mode.bytes())
+            + "B swizzle requirement."
+        )
 
     return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
         DeviceBuffer(
@@ -2189,7 +2282,8 @@ def create_tma_tile[
 @always_inline
 def _create_tma_descriptor_helper[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     desc_index_list: IndexList[rank],
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext, tensor: LayoutTensor[dtype, *_, **_]) -> TMADescriptor:
@@ -2229,7 +2323,7 @@ def _create_tma_descriptor_helper[
           byte limit (32B for SWIZZLE_32B, 64B for SWIZZLE_64B, 128B for SWIZZLE_128B).
     """
 
-    constrained[rank == tensor.rank, "Rank mismatch"]()
+    __comptime_assert rank == tensor.rank, "Rank mismatch"
 
     var global_shape = coalesce_nested_tuple(tensor.runtime_layout.shape)
     var global_strides = coalesce_nested_tuple(tensor.runtime_layout.stride)
@@ -2243,14 +2337,13 @@ def _create_tma_descriptor_helper[
 
     @parameter
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-        constrained[
-            swizzle_rows_bytes <= swizzle_mode.bytes(),
-            "Current swizzle bytes is ",
-            String(swizzle_rows_bytes),
-            " which exceeds ",
-            String(swizzle_mode.bytes()),
-            "B swizzle requirement.",
-        ]()
+        __comptime_assert swizzle_rows_bytes <= swizzle_mode.bytes(), (
+            "Current swizzle bytes is "
+            + String(swizzle_rows_bytes)
+            + " which exceeds "
+            + String(swizzle_mode.bytes())
+            + "B swizzle requirement."
+        )
 
     return create_tma_descriptor[tensor.dtype, rank, swizzle_mode](
         DeviceBuffer(
@@ -2270,7 +2363,8 @@ def _create_tma_descriptor_helper[
 @always_inline
 def create_tma_tile[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     tile_shape: IndexList[rank],
     /,
     k_major_tma: Bool = True,
@@ -2331,10 +2425,9 @@ def create_tma_tile[
         - For 3D, 4D, and 5D tensors, only K-major layout is supported.
     """
     # Current impl limitations
-    constrained[
-        rank == 2 or rank == 3 or rank == 4 or rank == 5,
-        "Only support 2D/3D/4D/5D TMA",
-    ]()
+    __comptime_assert (
+        rank == 2 or rank == 3 or rank == 4 or rank == 5
+    ), "Only support 2D/3D/4D/5D TMA"
 
     comptime desc_bytes_size = __desc_layout.size() * size_of[dtype]()
     comptime layout_size = __tile_layout.size() * size_of[dtype]()
@@ -2342,35 +2435,33 @@ def create_tma_tile[
     @parameter
     if desc_bytes_size < layout_size:
         # When we do multiple TMA copy, every address has to be align to 128.
-        constrained[
-            desc_bytes_size % 128 == 0,
-            (
-                "desc layout byte size has to be  align to 128 bytes for"
-                " multiple TMA copies. desc_layout: "
-                + String(__desc_layout.shape[0].value())
-                + " "
-                + String(__desc_layout.shape[1].value())
-                + " tile_layout: "
-                + String(__tile_layout.shape[0].value())
-                + " "
-                + String(__tile_layout.shape[1].value())
-            ),
-        ]()
+        __comptime_assert desc_bytes_size % 128 == 0, (
+            "desc layout byte size has to be  align to 128 bytes for"
+            " multiple TMA copies. desc_layout: "
+            + String(__desc_layout.shape[0].value())
+            + " "
+            + String(__desc_layout.shape[1].value())
+            + " tile_layout: "
+            + String(__tile_layout.shape[0].value())
+            + " "
+            + String(__tile_layout.shape[1].value())
+        )
 
     @parameter
     if rank == 2:
 
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-            constrained[
-                (tile_shape[1] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
-                String(swizzle_mode),
-                " mode requires K dim multiple of ",
-                String(swizzle_mode.bytes()),
-                "B. K dim is now ",
-                String(tile_shape[1] * size_of[dtype]()),
-                " bytes.",
-            ]()
+            __comptime_assert (
+                tile_shape[1] * size_of[dtype]()
+            ) % swizzle_mode.bytes() == 0, (
+                String(swizzle_mode)
+                + " mode requires K dim multiple of "
+                + String(swizzle_mode.bytes())
+                + "B. K dim is now "
+                + String(tile_shape[1] * size_of[dtype]())
+                + " bytes."
+            )
 
         return create_tma_descriptor[dtype, 2, swizzle_mode](
             DeviceBuffer(
@@ -2390,15 +2481,16 @@ def create_tma_tile[
 
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-            constrained[
-                (tile_shape[2] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
-                String(swizzle_mode),
-                " mode requires K dim multiple of ",
-                String(swizzle_mode.bytes()),
-                "B. K dim is now ",
-                String(tile_shape[2] * size_of[dtype]()),
-                "bytes.",
-            ]()
+            __comptime_assert (
+                tile_shape[2] * size_of[dtype]()
+            ) % swizzle_mode.bytes() == 0, (
+                String(swizzle_mode)
+                + " mode requires K dim multiple of "
+                + String(swizzle_mode.bytes())
+                + "B. K dim is now "
+                + String(tile_shape[2] * size_of[dtype]())
+                + "bytes."
+            )
 
         return create_tma_descriptor[dtype, 3, swizzle_mode](
             DeviceBuffer(
@@ -2422,15 +2514,16 @@ def create_tma_tile[
 
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-            constrained[
-                (tile_shape[3] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
-                String(swizzle_mode),
-                " mode requires K dim multiple of ",
-                String(swizzle_mode.bytes()),
-                "B. K dim is now ",
-                String(tile_shape[3] * size_of[dtype]()),
-                "bytes.",
-            ]()
+            __comptime_assert (
+                tile_shape[3] * size_of[dtype]()
+            ) % swizzle_mode.bytes() == 0, (
+                String(swizzle_mode)
+                + " mode requires K dim multiple of "
+                + String(swizzle_mode.bytes())
+                + "B. K dim is now "
+                + String(tile_shape[3] * size_of[dtype]())
+                + "bytes."
+            )
 
         return create_tma_descriptor[dtype, 4, swizzle_mode](
             DeviceBuffer(
@@ -2462,15 +2555,16 @@ def create_tma_tile[
 
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-            constrained[
-                (tile_shape[4] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
-                String(swizzle_mode),
-                " mode requires K dim multiple of ",
-                String(swizzle_mode.bytes()),
-                "B. K dim is now ",
-                String(tile_shape[4] * size_of[dtype]()),
-                "bytes.",
-            ]()
+            __comptime_assert (
+                tile_shape[4] * size_of[dtype]()
+            ) % swizzle_mode.bytes() == 0, (
+                String(swizzle_mode)
+                + " mode requires K dim multiple of "
+                + String(swizzle_mode.bytes())
+                + "B. K dim is now "
+                + String(tile_shape[4] * size_of[dtype]())
+                + "bytes."
+            )
 
         return create_tma_descriptor[dtype, 5, swizzle_mode](
             DeviceBuffer(
@@ -2588,7 +2682,8 @@ fn _ragged_desc_layout[
 
 
 comptime SplitLastDimTMATensorTile[
-    rank: Int, //,
+    rank: Int,
+    //,
     dtype: DType,
     smem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
@@ -2622,7 +2717,8 @@ fn _tile_shape[smem_layout: Layout]() -> IndexList[len(smem_layout)]:
 @always_inline
 fn _split_tma_gmem_tensor[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
@@ -2648,7 +2744,8 @@ fn _split_tma_gmem_tensor[
 @always_inline
 fn _split_tma_gmem_tensor[
     dtype: DType,
-    rank: Int, //,
+    rank: Int,
+    //,
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
@@ -2677,21 +2774,21 @@ fn _split_tma_gmem_tensor[
     if split:
         runtime_shape[rank - 1] = shape[rank - 1] // swizzle_granularity
         runtime_shape[rank] = swizzle_granularity
-    constrained[
-        rank + Int(split) == len(flatten(ret.layout.shape)),
+    __comptime_assert rank + Int(split) == len(flatten(ret.layout.shape)), (
         "rank + split = "
         + String(rank)
         + " + "
         + String(Int(split))
         + "\nlayout = "
-        + String(ret.layout),
-    ]()
+        + String(ret.layout)
+    )
     ret = {ptr, RuntimeLayout[ret.layout].row_major(runtime_shape)}
 
 
 fn create_split_tma[
     rank: Int,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
@@ -2743,7 +2840,8 @@ fn create_split_tma[
 
 fn create_split_tma[
     rank: Int,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
@@ -2961,7 +3059,8 @@ struct TMATensorTileArray[
 
 
 struct RaggedTensorMap[
-    descriptor_rank: Int, //,
+    descriptor_rank: Int,
+    //,
     dtype: DType,
     descriptor_shape: IndexList[descriptor_rank],
     remaining_global_dim_rank: Int,
@@ -3161,10 +3260,9 @@ struct RaggedTensorMap[
             - max_descriptor_length must be less than or equal to 256.
         """
 
-        constrained[
-            Self.global_rank >= 2,
-            "global_rank must be at least 2 with one ragged dimension",
-        ]()
+        __comptime_assert (
+            Self.global_rank >= 2
+        ), "global_rank must be at least 2 with one ragged dimension"
 
         var cumulative_length = (batch_size + 1) * max_length
 
@@ -3213,7 +3311,8 @@ struct RaggedTensorMap[
 
     @always_inline
     fn store_ragged_tile[
-        rank: Int, //,
+        rank: Int,
+        //,
         using_max_descriptor_size: Bool = False,
     ](
         self,
@@ -3247,7 +3346,7 @@ struct RaggedTensorMap[
                 The iterator over the tile in shared memory.
         """
 
-        constrained[rank == Self.global_rank]()
+        __comptime_assert rank == Self.global_rank
 
         # Assume we have the folowing ragged tensor:
 

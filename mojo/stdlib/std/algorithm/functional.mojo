@@ -117,7 +117,8 @@ fn map[
 
 @always_inline
 fn vectorize[
-    func: fn[width: Int] (idx: Int) unified -> None, //,
+    func: fn[width: Int] (idx: Int) unified -> None,
+    //,
     simd_width: Int,
     /,
     *,
@@ -223,7 +224,8 @@ fn vectorize[
 
 @always_inline
 fn vectorize[
-    func: fn[width: Int] (idx: Int) unified -> None, //,
+    func: fn[width: Int] (idx: Int) unified -> None,
+    //,
     simd_width: Int,
     /,
     *,
@@ -342,7 +344,8 @@ fn vectorize[
 
 @always_inline
 fn sync_parallelize[
-    origins: OriginSet, //,
+    origins: OriginSet,
+    //,
     func: fn (Int) raises capturing [origins] -> None,
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
@@ -1156,7 +1159,8 @@ fn _get_start_indices_of_nth_subvolume[
 # to the Int overload.
 @always_inline
 fn _get_start_indices_of_nth_subvolume_uint[
-    rank: Int, //,
+    rank: Int,
+    //,
     subvolume_rank: UInt = 1,
 ](n: UInt, shape: IndexList[rank, **_]) -> type_of(shape):
     """Converts a flat index into the starting ND indices of the nth subvolume
@@ -1239,7 +1243,8 @@ fn elementwise[
 
 @always_inline
 fn elementwise[
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int, rank: Int, alignment: Int = 1] (
         IndexList[rank]
     ) capturing [_] -> None,
@@ -1318,7 +1323,8 @@ fn elementwise[
 
 @always_inline
 fn elementwise[
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int, rank: Int, alignment: Int = 1] (
         IndexList[rank]
     ) capturing [_] -> None,
@@ -1355,7 +1361,8 @@ fn elementwise[
 
 @always_inline
 fn elementwise[
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int, rank: Int, alignment: Int = 1] (
         IndexList[rank]
     ) capturing [_] -> None,
@@ -1417,7 +1424,8 @@ fn elementwise[
 
 @always_inline
 fn _elementwise_impl[
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int, rank: Int, alignment: Int = 1] (
         IndexList[rank]
     ) capturing [_] -> None,
@@ -1441,7 +1449,8 @@ fn _elementwise_impl[
 
 @always_inline
 fn _elementwise_impl_cpu[
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int, rank: Int, alignment: Int = 1] (
         IndexList[rank]
     ) capturing [_] -> None,
@@ -1456,7 +1465,8 @@ fn _elementwise_impl_cpu[
 
 @always_inline
 fn _elementwise_impl_cpu_1d[
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int, rank: Int, alignment: Int = 1] (
         IndexList[rank]
     ) capturing [_] -> None,
@@ -1517,7 +1527,8 @@ fn _elementwise_impl_cpu_1d[
 
 @always_inline
 fn _elementwise_impl_cpu_nd[
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int, rank: Int, alignment: Int = 1] (
         IndexList[rank]
     ) capturing [_] -> None,
@@ -1612,7 +1623,8 @@ fn _elementwise_impl_cpu_nd[
 
 @always_inline
 fn _elementwise_impl_gpu[
-    rank: Int, //,
+    rank: Int,
+    //,
     func: fn[width: Int, rank: Int, alignment: Int = 1] (
         IndexList[rank]
     ) capturing [_] -> None,
@@ -1800,7 +1812,8 @@ comptime stencil_gpu = _stencil_impl_gpu
 
 fn _stencil_impl_cpu[
     shape_element_type: DType,
-    input_shape_element_type: DType, //,
+    input_shape_element_type: DType,
+    //,
     rank: Int,
     stencil_rank: Int,
     stencil_axis: IndexList[stencil_rank, **_],
@@ -1968,7 +1981,8 @@ fn _stencil_impl_cpu[
 
 fn _stencil_impl_gpu[
     shape_element_type: DType,
-    input_shape_element_type: DType, //,
+    input_shape_element_type: DType,
+    //,
     rank: Int,
     stencil_rank: Int,
     stencil_axis: IndexList[stencil_rank, **_],

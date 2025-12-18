@@ -77,10 +77,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     b_device: LayoutTensor[b_type, b_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -90,43 +87,36 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
+    __comptime_assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
 
-    constrained[
-        config.num_pipeline_stages % config.k_group_size == 0,
-        "num_pipeline_stages must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        config.num_pipeline_stages % config.k_group_size == 0
+    ), "num_pipeline_stages must be a multiple of k_group_size"
 
     @parameter
     if config.cta_group == 2:
-        constrained[
-            (MMA_M == 256 or MMA_M == 128),
-            "Only support cta_group == 2 with MMA_M == 128 or 256",
-        ]()
-        constrained[
-            (MMA_M != 256) or (MMA_N % 16 == 0),
-            "MMA_N must be a multiple of 16 when MMA_M is 256",
-        ]()
-        constrained[
-            (
-                config.AB_swapped
-                or MMA_M != 128
-                or register_based_epilogue
-                or elementwise_compute_lambda_fn is None
-            )
-            or (MMA_N % 32 == 0),
-            (
-                "SM100 doesn't support shared memory based epilogue when MMA_M"
-                " == 128 and MMA_N is not a multiple of 32"
-            ),
-        ]()
+        __comptime_assert (
+            MMA_M == 256 or MMA_M == 128
+        ), "Only support cta_group == 2 with MMA_M == 128 or 256"
+        __comptime_assert (MMA_M != 256) or (
+            MMA_N % 16 == 0
+        ), "MMA_N must be a multiple of 16 when MMA_M is 256"
+        __comptime_assert (
+            config.AB_swapped
+            or MMA_M != 128
+            or register_based_epilogue
+            or elementwise_compute_lambda_fn is None
+        ) or (MMA_N % 32 == 0), (
+            "SM100 doesn't support shared memory based epilogue when MMA_M =="
+            " 128 and MMA_N is not a multiple of 32"
+        )
     else:
-        constrained[
-            MMA_M == 128 or MMA_M == 64,
-            "Only support MMA_M == 128 or 64 when cta_group == 1",
-        ]()
+        __comptime_assert (
+            MMA_M == 128 or MMA_M == 64
+        ), "Only support MMA_M == 128 or 64 when cta_group == 1"
 
     comptime cluster_shape = config.cluster_shape
 
@@ -136,15 +126,15 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     var N_maybe_swapped = b_device.dim[0]()
     comptime K = a_layout.shape[1].value()
 
-    constrained[
-        ceildiv(K, BK) % Int(config.k_group_size) == 0,
-        "K iterations must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        ceildiv(K, BK) % Int(config.k_group_size) == 0
+    ), "K iterations must be a multiple of k_group_size"
 
     a_tma_op = create_tma_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
     ](ctx, a_device)
 
+    # fmt: off
     b_tma_op = create_tma_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
@@ -163,10 +153,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    constrained[
-        (not config.AB_swapped) or config.c_swizzle.bytes() == 128,
-        "Only support 128B swizzle mode when AB_swapped is True",
-    ]()
+    __comptime_assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
     var c_tma_op = create_tma_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
@@ -174,6 +161,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ),
         swizzle_mode = config.c_swizzle,
     ](ctx, c_device)
+    # fmt: on
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -390,10 +378,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     b_device: LayoutTensor[b_type, b_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -403,36 +388,32 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
+    __comptime_assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
 
     @parameter
     if config.cta_group == 2:
-        constrained[
-            (MMA_M == 256 or MMA_M == 128),
-            "Only support cta_group == 2 with MMA_M == 128 or 256",
-        ]()
-        constrained[
-            (MMA_M != 256) or (MMA_N % 16 == 0),
-            "MMA_N must be a multiple of 16 when MMA_M is 256",
-        ]()
+        __comptime_assert (
+            MMA_M == 256 or MMA_M == 128
+        ), "Only support cta_group == 2 with MMA_M == 128 or 256"
+        __comptime_assert (MMA_M != 256) or (
+            MMA_N % 16 == 0
+        ), "MMA_N must be a multiple of 16 when MMA_M is 256"
 
         # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
-        constrained[
-            (not config.AB_swapped) or MMA_M == 256,
-            "swapAB is only supported for MMA_M == 256",
-        ]()
+        __comptime_assert (
+            not config.AB_swapped
+        ) or MMA_M == 256, "swapAB is only supported for MMA_M == 256"
 
     else:
-        constrained[
-            MMA_M == 128 or MMA_M == 64,
-            "Only support MMA_M == 128 or 64 when cta_group == 1",
-        ]()
-        constrained[
-            register_based_epilogue or elementwise_compute_lambda_fn is None,
-            "only register-based epilogue is supported for cta_group == 1",
-        ]()
+        __comptime_assert (
+            MMA_M == 128 or MMA_M == 64
+        ), "Only support MMA_M == 128 or 64 when cta_group == 1"
+        __comptime_assert (
+            register_based_epilogue or elementwise_compute_lambda_fn is None
+        ), "only register-based epilogue is supported for cta_group == 1"
 
     comptime cluster_shape = config.cluster_shape
 
@@ -442,15 +423,13 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     var N_maybe_swapped = b_device.dim[0]()
     comptime K = a_layout.shape[1].value()
 
-    constrained[
-        ceildiv(K, BK) % Int(config.k_group_size) == 0,
-        "K iterations must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        ceildiv(K, BK) % Int(config.k_group_size) == 0
+    ), "K iterations must be a multiple of k_group_size"
 
-    constrained[
-        config.num_pipeline_stages % config.k_group_size == 0,
-        "num_pipeline_stages must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        config.num_pipeline_stages % config.k_group_size == 0
+    ), "num_pipeline_stages must be a multiple of k_group_size"
 
     a_tma_op = create_tma_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
@@ -631,15 +610,12 @@ fn matmul_sm100_fallback[
     b: LayoutTensor[b_type, b_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
-    constrained[
-        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
-        "Only support bfloat16 and float8_e4m3fn",
-    ]()
+    __comptime_assert a_type == b_type and a_type in (
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+    ), "Only support bfloat16 and float8_e4m3fn"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]

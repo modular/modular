@@ -83,10 +83,9 @@ fn shrink_qkv_permute_3mn_sm100[
     var c_tensor_lora = from_ndbuffer_row_major(c_lora)  # LayoutTensor[3]
     comptime N = c_shape.get[2]()
     comptime B = c_shape.get[0]()
-    constrained[
-        c_shape.has_value[2]() and c_shape.get[0]() == 3,
-        "the outer dimension of c_shape must be known and equal to 3",
-    ]()
+    __comptime_assert (
+        c_shape.has_value[2]() and c_shape.get[0]() == 3
+    ), "the outer dimension of c_shape must be known and equal to 3"
     comptime N_Total = B * N
     # Create an empty (null-backed) 2D NDBuffer for C with only shape/stride set.
     # This ensures GroupGEMM does NOT write into C directly; any changes to the
@@ -136,7 +135,7 @@ fn shrink_qkv_permute_3mn_sm100[
         var i = idx[0]
         var j = idx[1]
         var new_j, new_k = divmod(j, N)
-        constrained[N % width == 0, "N must be divisible by width"]()
+        __comptime_assert N % width == 0, "N must be divisible by width"
         # The current index is [i, new_j, new_k] in the M x 3 x N row major
         # tensor.
         # The permdim tensor has the shape 3 x M x N, so the index is then

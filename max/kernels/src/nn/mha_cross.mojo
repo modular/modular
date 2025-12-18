@@ -31,7 +31,8 @@ from utils.numerics import get_accum_type
 @always_inline
 fn _bmm0_bs[
     q_layout: Layout,
-    kv_layout: Layout, //,
+    kv_layout: Layout,
+    //,
     cache_t: KVCacheT,
     mask_t: MHAMask,
     q_type: DType,
@@ -136,7 +137,8 @@ fn _bmm0_bs[
 @always_inline
 fn _bmm1_bs[
     q_layout: Layout,
-    kv_layout: Layout, //,
+    kv_layout: Layout,
+    //,
     cache_t: KVCacheT,
     p_type: DType,
     output_type: DType,
@@ -213,7 +215,8 @@ fn _bmm1_bs[
 fn mha_cross_gpu_naive[
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    dtype: DType, //,
+    dtype: DType,
+    //,
     rank: Int,
 ](
     output: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
@@ -251,15 +254,13 @@ fn mha_cross_gpu_naive[
     This kernel also handles grouped attention optimization. In this case the shape of
     K and V are BShD where h = H / num_groups.
     """
-    constrained[rank == 3, "only support rank 3 inputs for ragged inputs."]()
-    constrained[
-        q.dtype == cache_t.dtype == cache_t.dtype == output.dtype,
-        "Q, K, V, output should have same type.",
-    ]()
-    constrained[
-        q.dtype is DType.float32 or q.dtype.is_half_float(),
-        "Only support single and half precision.",
-    ]()
+    __comptime_assert rank == 3, "only support rank 3 inputs for ragged inputs."
+    __comptime_assert (
+        q.dtype == cache_t.dtype == cache_t.dtype == output.dtype
+    ), "Q, K, V, output should have same type."
+    __comptime_assert (
+        q.dtype is DType.float32 or q.dtype.is_half_float()
+    ), "Only support single and half precision."
 
     comptime config = MHAConfig[dtype](
         UInt(Int(q.layout.shape[rank - 2])),

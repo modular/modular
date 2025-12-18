@@ -31,7 +31,8 @@ from utils.numerics import FPUtils
 
 @always_inline
 fn assert_almost_equal[
-    dtype: DType, //,
+    dtype: DType,
+    //,
 ](
     x: UnsafePointer[Scalar[dtype]],
     y: type_of(x),
@@ -107,7 +108,8 @@ fn assert_equal(
 
 @always_inline
 fn _assert_with_measure_impl[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     measure: fn[dtype: DType] (
         UnsafePointer[Scalar[dtype], mut=False],
         UnsafePointer[Scalar[dtype], mut=False],

@@ -70,7 +70,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
-        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
+        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
         ...
 
 
@@ -166,7 +166,8 @@ fn tiled_matmul_run[
 @fieldwise_init
 struct TiledMatmul[
     a_mut: Bool,
-    b_mut: Bool, //,
+    b_mut: Bool,
+    //,
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,

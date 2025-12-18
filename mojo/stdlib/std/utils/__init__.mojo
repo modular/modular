@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the utils package."""
+"""General utils: indexing, variants, static tuples, and thread synchronization."""
 
 from .index import Index, IndexList, product
 from .lock import BlockingScopedLock, BlockingSpinLock, SpinWaiter

@@ -714,7 +714,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
 @always_inline
 fn _compare_exchange_integral_impl[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     scope: StaticString,
     failure_ordering: Consistency,
@@ -781,7 +782,8 @@ fn _min_impl_base[
 
 @always_inline
 fn _max_impl[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     scope: StaticString,
     ordering: Consistency,
@@ -807,7 +809,8 @@ fn _max_impl[
 
 @always_inline
 fn _min_impl[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     scope: StaticString,
     ordering: Consistency,

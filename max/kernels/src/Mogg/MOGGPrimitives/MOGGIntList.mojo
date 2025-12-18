@@ -102,7 +102,7 @@ struct IntList[static_values: DimList = DimList()](
 
     @always_inline
     fn __init__[rank: Int](out self, shape: IndexList[rank]):
-        constrained[rank == len(Self.static_values)]()
+        __comptime_assert rank == len(Self.static_values)
         self.length = rank
         self.data = UnsafePointer[Int]()
         self.stack_alloc_data = rebind[IndexList[Self._safe_len]](shape)
@@ -165,13 +165,10 @@ struct IntList[static_values: DimList = DimList()](
 
     @always_inline
     fn to_static_tuple(self) -> IndexList[Self._safe_len]:
-        constrained[
-            Self.has_static_length(),
-            (
-                "IntList must have statically known length to be converted into"
-                " static tuple"
-            ),
-        ]()
+        __comptime_assert Self.has_static_length(), (
+            "IntList must have statically known length to be converted into"
+            " static tuple"
+        )
 
         @parameter
         if Self.is_fully_static():
@@ -217,10 +214,9 @@ struct IntList[static_values: DimList = DimList()](
 
     @always_inline("nodebug")
     fn __setitem__(mut self, index: Int, value: Int):
-        constrained[
-            not Self.is_fully_static(),
-            "Fully static int lists can't be modified",
-        ]()
+        __comptime_assert (
+            not Self.is_fully_static()
+        ), "Fully static int lists can't be modified"
 
         @parameter
         if Self.has_static_length():

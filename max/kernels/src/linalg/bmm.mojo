@@ -115,7 +115,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
     address_space = buffer.address_space,
 ]:
     comptime rank = buffer.rank
-    constrained[rank >= 3, "expecting at least rank-3 NDBuffer"]()
+    __comptime_assert rank >= 3, "expecting at least rank-3 NDBuffer"
 
     var batch_size = 1
 
@@ -180,7 +180,7 @@ fn _reshape_layout_tensor_with_batch_to_3d[
     address_space = tensor.address_space,
 ]:
     comptime rank = tensor.rank
-    constrained[rank >= 3, "expecting at least rank-3 NDBuffer"]()
+    __comptime_assert rank >= 3, "expecting at least rank-3 NDBuffer"
 
     var batch_size = 1
 
@@ -221,7 +221,7 @@ fn _reshape_nd_buffer_with_batch_to_2d(
     buffer.type, 2, buffer.origin, address_space = buffer.address_space
 ]:
     comptime rank = buffer.rank
-    constrained[rank >= 2, "expecting at least rank-2 NDBuffer"]()
+    __comptime_assert rank >= 2, "expecting at least rank-2 NDBuffer"
 
     var batch_size = 1
 
@@ -370,7 +370,8 @@ fn batched_matmul[
     rank: Int,
     a_type: DType,
     b_type: DType,
-    c_type: DType, //,
+    c_type: DType,
+    //,
     *,
     transpose_a: Bool,
     transpose_b: Bool,
@@ -385,7 +386,7 @@ fn batched_matmul[
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    constrained[not transpose_a, "transpose_a not yet supported"]()
+    __comptime_assert not transpose_a, "transpose_a not yet supported"
 
     @always_inline
     @parameter
@@ -433,7 +434,8 @@ fn _batched_matmul_cpu[
     rank: Int,
     a_type: DType,
     b_type: DType,
-    c_type: DType, //,
+    c_type: DType,
+    //,
     *,
     transpose_b: Bool,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -443,7 +445,7 @@ fn _batched_matmul_cpu[
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
 ) raises:
-    constrained[rank < 5, "max rank for batched matmul is currently 4"]()
+    __comptime_assert rank < 5, "max rank for batched matmul is currently 4"
 
     # Batched matmul calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
     # directed to the special Apple-specific implementation.
@@ -781,7 +783,8 @@ fn _batched_matmul_gpu[
     rank: Int,
     a_type: DType,
     b_type: DType,
-    c_type: DType, //,
+    c_type: DType,
+    //,
     *,
     transpose_b: Bool = False,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -964,10 +967,9 @@ fn _batched_matmul_gpu[
 
     else:
         # TODO: support non-A100 transposed kernels
-        constrained[
-            not transpose_b,
-            "transpose b is not supported on non-A100 capable GPUs",
-        ]()
+        __comptime_assert (
+            not transpose_b
+        ), "transpose b is not supported on non-A100 capable GPUs"
 
         c_shape = get_shape_index_list[rank, c_type, c_tensor.layout](c_tensor)
 
@@ -1001,7 +1003,8 @@ fn batched_matmul[
     rank: Int,
     a_type: DType,
     b_type: DType,
-    c_type: DType, //,
+    c_type: DType,
+    //,
     *,
     transpose_b: Bool,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -1014,7 +1017,7 @@ fn batched_matmul[
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    constrained[is_valid_target[target](), "unsupported target"]()
+    __comptime_assert is_valid_target[target](), "unsupported target"
 
     @parameter
     if is_cpu[target]():
@@ -1024,10 +1027,9 @@ fn batched_matmul[
             saturated_vnni=saturated_vnni,
         ](c_buf, a_buf, b_buf)
     else:
-        constrained[
-            saturated_vnni == False,
-            "saturated_vnni is not applicable on the gpu",
-        ]()
+        __comptime_assert (
+            saturated_vnni == False
+        ), "saturated_vnni is not applicable on the gpu"
         _batched_matmul_gpu[
             transpose_b=transpose_b,
             elementwise_epilogue_fn=elementwise_epilogue_fn,
@@ -1231,36 +1233,27 @@ fn bmm_sm100_blockwise_scaled_fp8[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
-    constrained[
-        a_type == b_type == DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
+    __comptime_assert (
+        a_type == b_type == DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
 
-    constrained[
-        b_scales_type == a_scales_type == DType.float32,
-        "Only support float32 for a_scales and b_scales",
-    ]()
+    __comptime_assert (
+        b_scales_type == a_scales_type == DType.float32
+    ), "Only support float32 for a_scales and b_scales"
 
-    constrained[
-        c.rank == 3,
-        "Only support rank 3 tensors",
-    ]()
+    __comptime_assert c.rank == 3, "Only support rank 3 tensors"
 
-    constrained[
-        c.rank == b.rank and c.rank == a.rank,
-        "all tensors must have the same rank",
-    ]()
+    __comptime_assert (
+        c.rank == b.rank and c.rank == a.rank
+    ), "all tensors must have the same rank"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    constrained[BK == 128, "blockwise scaled fp8 only works with BK = 128"]()
+    __comptime_assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
 
     var batch_size = c.dim(0)
     var M = c.dim(1)
@@ -1394,7 +1387,8 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    b_scales_type: DType, //,
+    b_scales_type: DType,
+    //,
     *,
     scales_granularity_mnk: IndexList[3],
     transpose_b: Bool = False,
@@ -1406,23 +1400,19 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
     b_scales_device: NDBuffer[b_scales_type, 3, _, _],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        a_device.shape.has_value[2]() and c_device.shape.has_value[2](),
-        "N and K must be static",
-    ]()
+    __comptime_assert (
+        a_device.shape.has_value[2]() and c_device.shape.has_value[2]()
+    ), "N and K must be static"
 
-    constrained[
+    __comptime_assert (
         scales_granularity_mnk[0] == 1
-        and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128,
-        (
-            "Only support (1,128,128) scale granularity. Extend it for other"
-            " cases."
-        ),
-    ]()
+        and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
+    ), "Only support (1,128,128) scale granularity. Extend it for other cases."
 
     comptime BLOCK_SCALE_K = 128
     var bs = c_device.dim(0)
     var M = c_device.dim(1)
+    var M_a_scales = a_scales_device.dim(2)
     comptime N = c_device.shape.get[2]()
     comptime K = a_device.shape.get[2]()
     comptime n_dim = Dim(N)
@@ -1444,7 +1434,9 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
     var dynamic_a_shape_2D = DimList(M, K)
     var dynamic_b_shape_2D = DimList(N, K) if transpose_b else DimList(K, N)
     var dynamic_c_shape_2D = DimList(M, N)
-    var dynamic_a_scales_shape_2D = DimList(ceildiv(K, BLOCK_SCALE_K), M)
+    var dynamic_a_scales_shape_2D = DimList(
+        ceildiv(K, BLOCK_SCALE_K), M_a_scales
+    )
     var dynamic_b_scales_shape_2D = DimList(
         ceildiv(N, BLOCK_SCALE_K), ceildiv(K, BLOCK_SCALE_K)
     )
@@ -1454,7 +1446,7 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
         var a_ptr = a_device.data + batch * M * K
         var b_ptr = b_device.data + batch * N * K
         var a_scales_ptr = (
-            a_scales_device.data + batch * (K // BLOCK_SCALE_K) * M
+            a_scales_device.data + batch * (K // BLOCK_SCALE_K) * M_a_scales
         )
         var b_scales_ptr = b_scales_device.data + batch * (
             N // BLOCK_SCALE_K
@@ -1495,7 +1487,8 @@ fn batched_matmul_dynamic_scaled_fp8[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    b_scales_type: DType, //,
+    b_scales_type: DType,
+    //,
     input_scale_granularity: StaticString,
     weight_scale_granularity: StaticString,
     m_scale_granularity: Int,
@@ -1511,30 +1504,25 @@ fn batched_matmul_dynamic_scaled_fp8[
     b_scales: NDBuffer[b_scales_type, 3, _, _],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        ctx.default_device_info is B200 or ctx.default_device_info is H100,
-        "Only support SM100 or SM90",
-    ]()
-    constrained[
+    __comptime_assert (
+        ctx.default_device_info is B200 or ctx.default_device_info is H100
+    ), "Only support SM100 or SM90"
+    __comptime_assert (
         m_scale_granularity == 1
         and n_scale_granularity == 128
-        and k_scale_granularity == 128,
-        "Only support (1,128,128) scale granularity",
-    ]()
-    constrained[
-        a_type == b_type == DType.float8_e4m3fn,
-        "input A and B dtype should be float8_e4m3fn",
-    ]()
-    constrained[
-        a_scales_type == b_scales_type == DType.float32,
-        "input A and B scales dtype should be float32",
-    ]()
+        and k_scale_granularity == 128
+    ), "Only support (1,128,128) scale granularity"
+    __comptime_assert (
+        a_type == b_type == DType.float8_e4m3fn
+    ), "input A and B dtype should be float8_e4m3fn"
+    __comptime_assert (
+        a_scales_type == b_scales_type == DType.float32
+    ), "input A and B scales dtype should be float32"
 
-    constrained[
+    __comptime_assert (
         input_scale_granularity == "block"
-        and weight_scale_granularity == "block",
-        "Only support block-wise scale granularity",
-    ]()
+        and weight_scale_granularity == "block"
+    ), "Only support block-wise scale granularity"
 
     @parameter
     if ctx.default_device_info is B200:

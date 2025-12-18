@@ -22,6 +22,8 @@ from memory import Span
 from builtin.builtin_slice import ContiguousSlice
 from builtin._location import __call_location
 from bit._mask import splat
+from bit import pop_count
+from memory import pack_bits
 from collections._index_normalization import normalize_index
 from sys import align_of
 from sys.info import simd_width_of
@@ -33,7 +35,8 @@ from compile import get_type_name
 
 @fieldwise_init
 struct _SpanIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     T: Copyable,
     origin: Origin[mut],
     forward: Bool = True,
@@ -508,7 +511,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        _T: Equatable & Copyable, //,
+        _T: Equatable & Copyable,
+        //,
     ](self: Span[_T, Self.origin], rhs: Span[_T, _],) -> Bool:
         """Verify if span is equal to another span.
 
@@ -680,7 +684,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
 
     fn apply[
         dtype: DType,
-        O: MutOrigin, //,
+        O: MutOrigin,
+        //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace.
@@ -712,7 +717,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
 
     fn apply[
         dtype: DType,
-        O: MutOrigin, //,
+        O: MutOrigin,
+        //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
         cond: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
@@ -750,7 +756,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
                 (ptr + processed + i).init_pointee_move(func(vec))
 
     fn count[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype]]) -> UInt:
         """Count the amount of times the function returns `True`.
@@ -763,26 +770,17 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
             The amount of times the function returns `True`.
         """
 
-        comptime simdwidth = simd_width_of[DType.int]()
+        comptime simdwidth = simd_width_of[dtype]()
         var ptr = self.unsafe_ptr()
         var length = len(self)
-        var countv = SIMD[DType.int, simdwidth](0)
-        var count = Scalar[DType.int](0)
+        var count = 0
 
-        fn do_count[
-            width: Int
-        ](idx: Int) unified {mut count, mut countv, read ptr}:
-            var vec = func(ptr.load[width=width](idx)).cast[DType.int]()
-
-            @parameter
-            if width == 1:
-                count += rebind[type_of(count)](vec)
-            else:
-                countv += rebind[type_of(countv)](vec)
+        fn do_count[width: Int](idx: Int) unified {mut count, read ptr}:
+            var mask = func(ptr.load[width=width](idx))
+            count += mask.reduce_bit_count()
 
         vectorize[simdwidth](length, do_count)
-
-        return UInt(countv.reduce_add() + count)
+        return UInt(count)
 
     @always_inline
     fn unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
@@ -811,7 +809,8 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
         return Self(ptr=self._data + offset, length=length)
 
     fn _binary_search_index[
-        dtype: DType, //,
+        dtype: DType,
+        //,
     ](self: Span[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
         """Finds the index of `needle` with binary search.
         Args:

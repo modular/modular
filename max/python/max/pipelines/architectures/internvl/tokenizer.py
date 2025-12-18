@@ -582,6 +582,12 @@ class InternVLTokenizer(TextAndVisionTokenizer):
             else {}
         )
 
+        self.enable_prefix_caching = (
+            pipeline_config.model_config.kv_cache_config.enable_prefix_caching
+            if pipeline_config
+            else False
+        )
+
         # Create custom processor instead of AutoProcessor (which doesn't exist for InternVL)
         self.processor = InternVLProcessor(
             self.delegate, config, vision_overrides

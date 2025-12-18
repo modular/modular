@@ -82,9 +82,9 @@ def test_tma_swizzle[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     is_k_major: Bool = True,
 ](ctx: DeviceContext):
-    constrained[
-        shape == tile_shape, "Only support same shape and tile shape."
-    ]()
+    __comptime_assert (
+        shape == tile_shape
+    ), "Only support same shape and tile shape."
 
     comptime layout = Layout.row_major(shape[0], shape[1])
     var src = ManagedLayoutTensor[dtype, layout](ctx)

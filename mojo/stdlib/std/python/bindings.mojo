@@ -413,7 +413,8 @@ struct PythonModuleBuilder:
         )
 
     fn def_function[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: PyObjectFunction[func_type, has_kwargs=_],
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a module-level function.
@@ -672,7 +673,8 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     fn def_py_init[
-        T: Movable, //,
+        T: Movable,
+        //,
         init_func: fn (out T, args: PythonObject, kwargs: PythonObject),
     ](mut self) raises -> ref [self] Self:
         """Declare a binding for the `__init__` method of the type.
@@ -697,7 +699,8 @@ struct PythonTypeBuilder(Copyable):
         return self.def_py_init[raising_wrapper[init_func]]()
 
     fn def_py_init[
-        T: Movable, //,
+        T: Movable,
+        //,
         init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
     ](mut self) raises -> ref [self] Self:
         """Declare a binding for the `__init__` method of the type.
@@ -852,7 +855,8 @@ struct PythonTypeBuilder(Copyable):
         )
 
     fn def_method[
-        method_type: AnyTrivialRegType, //,
+        method_type: AnyTrivialRegType,
+        //,
         method: PyObjectFunction[method_type, self_type=_, has_kwargs=_],
     ](
         mut self: Self,
@@ -890,7 +894,8 @@ struct PythonTypeBuilder(Copyable):
         ](method_name, docstring)
 
     fn def_staticmethod[
-        method_type: AnyTrivialRegType, //,
+        method_type: AnyTrivialRegType,
+        //,
         method: PyObjectFunction[method_type, has_kwargs=_],
     ](
         mut self: Self,
@@ -1068,7 +1073,8 @@ fn _py_c_function_wrapper[
 @always_inline
 fn _py_function_wrapper[
     method_type: AnyTrivialRegType,
-    self_type: ImplicitlyDestructible, //,
+    self_type: ImplicitlyDestructible,
+    //,
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
     is_method: Bool = False,

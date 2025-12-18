@@ -170,8 +170,7 @@ fn leaky_relu[
     Returns:
         The result of the Leaky ReLU operation.
     """
-    constrained[
-        dtype.is_floating_point(),
-        "dtype must be a floating point dtype",
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "dtype must be a floating point dtype"
     return x.ge(0).select(x, negative_slope * x)

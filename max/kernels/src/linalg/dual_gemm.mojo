@@ -71,7 +71,8 @@ fn multistage_dual_mma[
     a_smem_layout: Layout,
     b_type: DType,
     b_layout: Layout,
-    b_smem_layout: Layout, //,
+    b_smem_layout: Layout,
+    //,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -125,10 +126,9 @@ fn multistage_dual_mma[
     *,
     num_b_rows: OptionalReg[Int] = None,
 ):
-    constrained[
-        b0_iter_arg.address_space == b1_iter_arg.address_space,
-        "b0 and b1 should have the same address space",
-    ]()
+    __comptime_assert (
+        b0_iter_arg.address_space == b1_iter_arg.address_space
+    ), "b0 and b1 should have the same address space"
     comptime simd_size = simd_width_of[a_type]()
 
     var tid: UInt32 = thread_idx.x
@@ -252,11 +252,10 @@ fn multistage_dual_mma[
     comptime num_k_mma_iters: UInt = num_k_mmas // k_group_size
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // (2 * MMA_N)
-    constrained[
-        num_k_mmas % UInt(2 * Int(k_group_size)) == 0,
-        "num_k_mmas must be an integer multiple of 2*k_group_size",
-    ]()
-    constrained[num_n_mmas % 2 == 0]()
+    __comptime_assert (
+        num_k_mmas % UInt(2 * Int(k_group_size)) == 0
+    ), "num_k_mmas must be an integer multiple of 2*k_group_size"
+    __comptime_assert num_n_mmas % 2 == 0
 
     comptime frag_size = get_fragment_size[mma_shape]()
     comptime a_frag_size = frag_size[0]
@@ -479,11 +478,10 @@ fn multistage_dual_gemm_kernel[
     b1: LayoutTensor[b_type, b_layout, MutAnyOrigin],
 ):
     # Hold on adding fp16 because it could have different precisions than bf16.
-    constrained[
+    __comptime_assert (
         a_type in (DType.float32, DType.bfloat16, DType.float16)
-        and a_type == b_type,
-        "Pipeline gemm only supports tf32, BF16 mma, or fp16",
-    ]()
+        and a_type == b_type
+    ), "Pipeline gemm only supports tf32, BF16 mma, or fp16"
 
     comptime simd_size = simd_width_of[c_type]()
 
@@ -791,7 +789,8 @@ fn multistage_dual_gemm[
     a_type: DType,
     a_layout: Layout,
     b_type: DType,
-    b_layout: Layout, //,
+    b_layout: Layout,
+    //,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type = swilu,
@@ -807,16 +806,15 @@ fn multistage_dual_gemm[
     var N = c.dim[1]()
 
     comptime smem_usage = config.shared_mem_usage()
-    constrained[
-        smem_usage <= ctx.default_device_info.shared_memory_per_multiprocessor,
-        String(
-            "using ",
-            smem_usage,
-            "B shared memory but max is ",
-            ctx.default_device_info.shared_memory_per_multiprocessor,
-            "B",
-        ),
-    ]()
+    __comptime_assert (
+        smem_usage <= ctx.default_device_info.shared_memory_per_multiprocessor
+    ), String(
+        "using ",
+        smem_usage,
+        "B shared memory but max is ",
+        ctx.default_device_info.shared_memory_per_multiprocessor,
+        "B",
+    )
     comptime gemm_kernel_type = multistage_dual_gemm_kernel[
         c_type,
         c_layout,
@@ -849,7 +847,8 @@ fn multistage_dual_gemm[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
-    b_shape: DimList, //,
+    b_shape: DimList,
+    //,
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -878,7 +877,8 @@ fn config_in_smem[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    transpose_b: Bool, //,
+    transpose_b: Bool,
+    //,
     max_smem: Int,
 ](
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -935,7 +935,8 @@ fn dual_gemm[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
-    b_shape: DimList, //,
+    b_shape: DimList,
+    //,
     *,
     transpose_b: Bool,
     binary_lambda_fn: binary_fn_type = swilu,
@@ -974,14 +975,12 @@ fn dual_gemm[
     )
     comptime max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
 
-    constrained[
-        matmul_supported_format,
-        String("unsupported dual_gemm dtypes", a_type, b_type, c_type),
-    ]()
-    constrained[
-        multistage_gemm_supported_shape,
-        String("unsupported dual_gemm shapes", a_shape, b_shape, c_shape),
-    ]()
+    __comptime_assert matmul_supported_format, String(
+        "unsupported dual_gemm dtypes", a_type, b_type, c_type
+    )
+    __comptime_assert multistage_gemm_supported_shape, String(
+        "unsupported dual_gemm shapes", a_shape, b_shape, c_shape
+    )
     if multi_gemm_cond:
         comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
@@ -1325,7 +1324,8 @@ fn dual_gemv[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
-    b_shape: DimList, //,
+    b_shape: DimList,
+    //,
     *,
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -1382,7 +1382,8 @@ fn swishGLU[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
-    b_shape: DimList, //,
+    b_shape: DimList,
+    //,
     target: StaticString = "cpu",
 ](
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -1400,7 +1401,7 @@ fn swishGLU[
     and writing to the destination once.
     """
 
-    constrained[is_gpu[target](), "only valid on GPUs"]()
+    __comptime_assert is_gpu[target](), "only valid on GPUs"
 
     @always_inline
     @parameter

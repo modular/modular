@@ -3,7 +3,7 @@ title: Unsafe pointers
 description: Using unsafe pointers to access dynamically-allocated memory.
 ---
 
-The [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type
+The [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) type
 is one of several pointer types available in the standard library to indirectly
 reference locations in memory.
 
@@ -24,10 +24,10 @@ pointers](/mojo/manual/pointers/).
 
 The implementation of `UnsafePointer` documented here replaces an earlier
 version with a slightly different API. The old version has been renamed to
-[`LegacyUnsafePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
+[`LegacyUnsafePointer`](/mojo/std/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
 and will be deprecated.
 
-The [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer)
+The [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)
 reference page briefly describes the differences between the new and old
 versions.
 
@@ -168,8 +168,8 @@ not initialized.
 ### Initializing the pointee
 
 To initialize allocated memory, `UnsafePointer` provides the
-[`init_pointee_copy()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
-and [`init_pointee_move()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
+[`init_pointee_copy()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
+and [`init_pointee_move()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
 methods. For example:
 
 ```mojo
@@ -245,12 +245,12 @@ str_ptr[] += " pointers" # Works now
 
 ### Destroying or removing values
 
-The [`take_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#take_pointee)
+The [`take_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#take_pointee)
 method moves a pointee from the memory location pointed to by `ptr`. This is
 a consuming move. It invokes `__moveinit__()` on the destination value. It leaves
 the memory location uninitialized.
 
-The [`destroy_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
+The [`destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
 method calls the destructor on the pointee, and leaves the memory location
 pointed to by `ptr` uninitialized.
 
@@ -258,7 +258,7 @@ Both `take_pointee()` and `destroy_pointee()` require that the pointer is
 non-null, and the memory location contains a valid, initialized value of the
 pointee's type; otherwise the function results in undefined behavior.
 
-Calling [`init_pointee_move_from(self, src)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/#init_pointee_move_from)
+Calling [`init_pointee_move_from(self, src)`](/mojo/std/memory/unsafe_pointer/UnsafePointer/#init_pointee_move_from)
 moves the value pointed to by `src` into the memory location pointed to by `self`.
 After this operation, ownership of that value transfers from `src` to `self`
 and the memory at `src` is uninitialized:
@@ -273,11 +273,11 @@ It does not destroy existing contents before writing the value from `src`.
 
 ### Freeing memory
 
-Calling [`free()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#free) on a
+Calling [`free()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#free) on a
 pointer frees the memory allocated by the pointer. It doesn't call the
 destructors on any values stored in the memory—you need to do that explicitly
 (for example, using
-[`destroy_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#destroy_pointee) or
+[`destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee) or
 one of the other functions described in
 [Destroying or removing values](#destroying-or-removing-values)).
 
@@ -437,7 +437,7 @@ failure to to do may result in undefined behavior.
 ### Creating a Mojo pointer from a Python pointer
 
 The `PythonObject` type defines an
-[`unsafe_get_as_pointer()`](/mojo/stdlib/python/python_object/PythonObject/#unsafe_get_as_pointer)
+[`unsafe_get_as_pointer()`](/mojo/std/python/python_object/PythonObject/#unsafe_get_as_pointer)
 method to construct an `UnsafePointer` from a Python address.
 
 For example, the following code creates a NumPy array and then accesses the
@@ -471,7 +471,7 @@ attribute to access the raw pointer to the underlying storage
 ### Working with C/C++ pointers
 
 If you call a C/C++ function that returns a pointer using the
-[`external_call`](/mojo/stdlib/sys/ffi/external_call) function, you can specify
+[`external_call`](/mojo/std/sys/ffi/external_call) function, you can specify
 the return type as an `UnsafePointer`, and Mojo will handle the type conversion
 for you.
 
@@ -558,7 +558,7 @@ integer, it would be represented as E9 03 00 00.
 Big-endian or most-significant byte (MSB) ordering is the opposite: in the
 32-bit case, 00 00 03 E9. MSB ordering is frequently used in file formats and
 when transmitting data over the network. You can use the
-[`byte_swap()`](/mojo/stdlib/bit/bit/byte_swap) function to swap the byte
+[`byte_swap()`](/mojo/std/bit/bit/byte_swap) function to swap the byte
 order of  a SIMD value from big-endian to little-endian or the reverse. For
 example, if the method above was reading big-endian data, you'd just need to
 change a single line:
@@ -570,8 +570,8 @@ chunk.append(byte_swap(ui32_ptr[i]))
 ## Working with SIMD vectors
 
 The `UnsafePointer` type includes
-[`load()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#load) and
-[`store()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#store) methods for
+[`load()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#load) and
+[`store()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#store) methods for
 performing aligned loads and stores of scalar values. It also has methods
 supporting strided load/store and gather/scatter.
 
@@ -591,9 +591,9 @@ you want to access just the red values, you can use a strided load or store.
 </figure>
 
 The following function uses the
-[`strided_load()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#strided_load)
+[`strided_load()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#strided_load)
 and
-[`strided_store()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#strided_store)
+[`strided_store()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#strided_store)
 methods to invert the red pixel values in an image, 8 values at a time. (Note
 that this function only handles images where the number of pixels is evenly
 divisible by eight.)
@@ -610,8 +610,8 @@ def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
         ptr.offset(i).strided_store[width=simd_width](~red_values, bpp)
 ```
 
-The [`gather()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#gather) and
-[`scatter()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#scatter) methods
+The [`gather()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#gather) and
+[`scatter()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#scatter) methods
 let you load or store a set of values that are stored in arbitrary locations.
 You do this by passing in a SIMD vector of *offsets* to the current pointer. For
 example, when using `gather()`, the <var>n</var>th value in the vector is loaded

@@ -279,13 +279,12 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
             DType.uint32, Self.cache_layout, MutAnyOrigin
         ],
     ):
-        constrained[
-            buffer.rank == 3, "only support rank 3 inputs for ragged inputs."
-        ]()
-        constrained[
-            cache_row_offsets.rank == 1,
-            "only support rank 1 inputs for cache offsets.",
-        ]()
+        __comptime_assert (
+            buffer.rank == 3
+        ), "only support rank 3 inputs for ragged inputs."
+        __comptime_assert (
+            cache_row_offsets.rank == 1
+        ), "only support rank 1 inputs for cache offsets."
         self.buffer = buffer
         self.cache_row_offsets = cache_row_offsets
 

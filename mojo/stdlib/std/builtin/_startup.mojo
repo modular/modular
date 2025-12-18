@@ -103,7 +103,9 @@ fn __wrap_and_execute_raising_main[
     try:
         main_func()
     except e:
-        print(String(e.get_stack_trace()))
+        var stack_trace = e.get_stack_trace()
+        if stack_trace:
+            print(stack_trace.value())
         print("Unhandled exception caught during execution:", e)
         return 1
 

@@ -167,6 +167,20 @@ def test_deepseekv3_estimate_weights_size_no_expert_parallelism() -> None:
     assert mem > 0
 
 
+def test_deepseekv3_estimate_weights_size_dp_ep_exact() -> None:
+    deepseek_model = deepseekV3_arch.pipeline_model
+
+    # EP=8, 8 GPUs, DP=8
+    pipeline_config = mock_weights_pipeline_config(
+        n_gpus=8, ep_size=8, dp_degree=8
+    )
+
+    # The result is quite large because the mock weights size is larger
+    # than the actual weights size.
+    mem = deepseek_model.estimate_weights_size(pipeline_config)
+    assert mem == 1124551261664
+
+
 def test_deepseekv3_estimate_weights_size_routing_experts_scaling() -> None:
     """Verify routing experts memory scales correctly with EP configurations.
 

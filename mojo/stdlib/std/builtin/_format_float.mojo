@@ -627,7 +627,8 @@ fn _umul96_lower64(x: UInt32, y: UInt64) -> UInt64:
 
 
 fn _check_divisibility_and_divide_by_pow10[
-    CarrierDType: DType, //,
+    CarrierDType: DType,
+    //,
     carrier_bits: Int,
     divide_magic_number: InlineArray[UInt32, 2],
 ](mut n: Scalar[CarrierDType], N: Int) -> Bool:

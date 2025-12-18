@@ -19,7 +19,7 @@ from sys import align_of, env_get_bool, simd_width_of, size_of
 from bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
+from gpu import WARP_SIZE, warp_id, barrier
 from gpu.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -414,10 +414,9 @@ fn f32_frag_to_smem[
     var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
         lane_id()
     )
-    constrained[
-        2 * dst_frag.layout.size() == vec.size,
-        "2*dst_frag.layout.size() must be equal to vec.size",
-    ]()
+    __comptime_assert (
+        2 * dst_frag.layout.size() == vec.size
+    ), "2*dst_frag.layout.size() must be equal to vec.size"
 
     @parameter
     for i in range(dst_frag.layout.shape[0].value()):
@@ -447,7 +446,7 @@ fn stsm_helper[
 ):
     @parameter
     if size_of[dst.dtype]() == 4:
-        constrained[not transpose_c, "transpose_c must be False"]()
+        __comptime_assert not transpose_c, "transpose_c must be False"
         return f32_frag_to_smem[swizzle_mode, stageN](vec, dst)
     # Number of elements in one row is 32B and 16B per stsmx4 and stmtx2 tile, respectively.
     comptime stsmx_row_size = 32 // size_of[
@@ -461,13 +460,12 @@ fn stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.layout.stride[0].value()
     comptime stride1 = dst.layout.stride[1].value()
-    constrained[
-        stride1 == 1,
+    __comptime_assert stride1 == 1, (
         "stride1 must be 1. Got: "
         + String(stride1)
         + " for layout: "
-        + String(dst.layout),
-    ]()
+        + String(dst.layout)
+    )
     comptime shape0 = dst.layout.shape[
         1
     ].value() if not transpose_c else dst.layout.shape[0].value()
@@ -558,7 +556,7 @@ fn shared_memory_epilogue_transpose[
     if warp_dim == 2:
         comptime layout_3d = Layout.row_major(2, Int(stageN), swizzle_dim)
         var rt_layout_3d = RLayout32Bits[layout_3d]()
-        constrained[c_smem_layout.rank() == 4, "c_smem_layout must be 4D"]()
+        __comptime_assert c_smem_layout.rank() == 4, "c_smem_layout must be 4D"
         comptime thread_layout = Layout.row_major(1, 8, 1, 4)
         comptime result = zipped_divide(
             upcast(c_smem_layout, simd_size), thread_layout
@@ -638,7 +636,7 @@ fn shared_memory_epilogue_transpose[
                     ptr.store[width=simd_size, alignment=alignment](reg_val)
     else:
         # Layout F: https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-f
-        constrained[c_smem_layout.rank() == 3, "c_smem_layout must be 3D"]()
+        __comptime_assert c_smem_layout.rank() == 3, "c_smem_layout must be 3D"
         comptime thread_layout = Layout.row_major(min(16, Int(stageN)), 1, 2)
         comptime thread_bound = UInt(thread_layout.cosize())
         var lane = lane_id()
@@ -915,10 +913,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     b_device: LayoutTensor[b_type, b_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -928,43 +923,36 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
+    __comptime_assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
 
-    constrained[
-        config.num_pipeline_stages % config.k_group_size == 0,
-        "num_pipeline_stages must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        config.num_pipeline_stages % config.k_group_size == 0
+    ), "num_pipeline_stages must be a multiple of k_group_size"
 
     @parameter
     if config.cta_group == 2:
-        constrained[
-            (MMA_M == 256 or MMA_M == 128),
-            "Only support cta_group == 2 with MMA_M == 128 or 256",
-        ]()
-        constrained[
-            (MMA_M != 256) or (MMA_N % 16 == 0),
-            "MMA_N must be a multiple of 16 when MMA_M is 256",
-        ]()
-        constrained[
-            (
-                config.AB_swapped
-                or MMA_M != 128
-                or register_based_epilogue
-                or elementwise_compute_lambda_fn is None
-            )
-            or (MMA_N % 32 == 0),
-            (
-                "SM100 doesn't support shared memory based epilogue when MMA_M"
-                " == 128 and MMA_N is not a multiple of 32"
-            ),
-        ]()
+        __comptime_assert (
+            MMA_M == 256 or MMA_M == 128
+        ), "Only support cta_group == 2 with MMA_M == 128 or 256"
+        __comptime_assert (MMA_M != 256) or (
+            MMA_N % 16 == 0
+        ), "MMA_N must be a multiple of 16 when MMA_M is 256"
+        __comptime_assert (
+            config.AB_swapped
+            or MMA_M != 128
+            or register_based_epilogue
+            or elementwise_compute_lambda_fn is None
+        ) or (MMA_N % 32 == 0), (
+            "SM100 doesn't support shared memory based epilogue when MMA_M =="
+            " 128 and MMA_N is not a multiple of 32"
+        )
     else:
-        constrained[
-            MMA_M == 128 or MMA_M == 64,
-            "Only support MMA_M == 128 or 64 when cta_group == 1",
-        ]()
+        __comptime_assert (
+            MMA_M == 128 or MMA_M == 64
+        ), "Only support MMA_M == 128 or 64 when cta_group == 1"
 
     comptime cluster_shape = config.cluster_shape
 
@@ -974,15 +962,15 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     var N_maybe_swapped = b_device.dim[0]()
     comptime K = a_layout.shape[1].value()
 
-    constrained[
-        ceildiv(K, BK) % Int(config.k_group_size) == 0,
-        "K iterations must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        ceildiv(K, BK) % Int(config.k_group_size) == 0
+    ), "K iterations must be a multiple of k_group_size"
 
     a_tma_op = create_tma_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
     ](ctx, a_device)
 
+    # fmt: off
     b_tma_op = create_tma_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
@@ -1001,10 +989,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    constrained[
-        (not config.AB_swapped) or config.c_swizzle.bytes() == 128,
-        "Only support 128B swizzle mode when AB_swapped is True",
-    ]()
+    __comptime_assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
     var c_tma_op = create_tma_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
@@ -1012,6 +997,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ),
         swizzle_mode = config.c_swizzle,
     ](ctx, c_device)
+    # fmt: on
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -1202,10 +1188,9 @@ fn register_epilogue[
     c_col: UInt32,
     N: UInt32,
 ):
-    constrained[
-        bits == 256 and data_paths == 16,
-        "Only 16x256b tensor memory load is supported",
-    ]()
+    __comptime_assert (
+        bits == 256 and data_paths == 16
+    ), "Only 16x256b tensor memory load is supported"
 
     comptime load_width = 2
 
@@ -1790,7 +1775,7 @@ fn multi_stage_store_C_split_k[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
 
     # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
     # We should remove this once GEX-2630 is fixed.
@@ -1917,7 +1902,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
 
     # assume N dimension is static
     comptime simd_size = simd_width_of[c_type]()
@@ -2028,8 +2013,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
-    constrained[c_type is not DType.float32, "c_type cannot be float32"]()
-    constrained[transpose_b, "only support k-major B"]()
+    __comptime_assert c_type is not DType.float32, "c_type cannot be float32"
+    __comptime_assert transpose_b, "only support k-major B"
 
     comptime num_output_warps = 4
 
@@ -2179,13 +2164,13 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var warp_id = get_warp_id()
+    var elect_one_warp = warp_id == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = (
         block_rank_in_cluster() % 2 == 0 if config.cta_group == 2 else True
     )
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
-    var warp_id = get_warp_id()
     comptime max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:
@@ -2550,8 +2535,8 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
-    constrained[c_type is not DType.float32, "c_type cannot be float32"]()
-    constrained[transpose_b, "only support k-major B"]()
+    __comptime_assert c_type is not DType.float32, "c_type cannot be float32"
+    __comptime_assert transpose_b, "only support k-major B"
 
     comptime num_output_warps = 4
     comptime num_split_k = config.num_split_k
@@ -2696,13 +2681,13 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
 
     tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var warp_id = get_warp_id()
+    var elect_one_warp = warp_id == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = (
         block_rank_in_cluster() % 2 == 0 if config.cta_group == 2 else True
     )
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
-    var warp_id = get_warp_id()
     comptime max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:
@@ -3171,10 +3156,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     b_device: LayoutTensor[b_type, b_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -3184,36 +3166,32 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
+    __comptime_assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
 
     @parameter
     if config.cta_group == 2:
-        constrained[
-            (MMA_M == 256 or MMA_M == 128),
-            "Only support cta_group == 2 with MMA_M == 128 or 256",
-        ]()
-        constrained[
-            (MMA_M != 256) or (MMA_N % 16 == 0),
-            "MMA_N must be a multiple of 16 when MMA_M is 256",
-        ]()
+        __comptime_assert (
+            MMA_M == 256 or MMA_M == 128
+        ), "Only support cta_group == 2 with MMA_M == 128 or 256"
+        __comptime_assert (MMA_M != 256) or (
+            MMA_N % 16 == 0
+        ), "MMA_N must be a multiple of 16 when MMA_M is 256"
 
         # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
-        constrained[
-            (not config.AB_swapped) or MMA_M == 256,
-            "swapAB is only supported for MMA_M == 256",
-        ]()
+        __comptime_assert (
+            not config.AB_swapped
+        ) or MMA_M == 256, "swapAB is only supported for MMA_M == 256"
 
     else:
-        constrained[
-            MMA_M == 128 or MMA_M == 64,
-            "Only support MMA_M == 128 or 64 when cta_group == 1",
-        ]()
-        constrained[
-            register_based_epilogue or elementwise_compute_lambda_fn is None,
-            "only register-based epilogue is supported for cta_group == 1",
-        ]()
+        __comptime_assert (
+            MMA_M == 128 or MMA_M == 64
+        ), "Only support MMA_M == 128 or 64 when cta_group == 1"
+        __comptime_assert (
+            register_based_epilogue or elementwise_compute_lambda_fn is None
+        ), "only register-based epilogue is supported for cta_group == 1"
 
     comptime cluster_shape = config.cluster_shape
 
@@ -3223,20 +3201,19 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     var N_maybe_swapped = b_device.dim[0]()
     comptime K = a_layout.shape[1].value()
 
-    constrained[
-        ceildiv(K, BK) % Int(config.k_group_size) == 0,
-        "K iterations must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        ceildiv(K, BK) % Int(config.k_group_size) == 0
+    ), "K iterations must be a multiple of k_group_size"
 
-    constrained[
-        config.num_pipeline_stages % config.k_group_size == 0,
-        "num_pipeline_stages must be a multiple of k_group_size",
-    ]()
+    __comptime_assert (
+        config.num_pipeline_stages % config.k_group_size == 0
+    ), "num_pipeline_stages must be a multiple of k_group_size"
 
     a_tma_op = create_tma_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
     ](ctx, a_device)
 
+    # fmt: off
     b_tma_op = create_tma_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
@@ -3265,6 +3242,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         ),
         swizzle_mode = config.c_swizzle,
     ](ctx, c_device)
+    # fmt: on
 
     comptime SmemType = B200MatmulSmem[
         a_type, b_type, c_type, transpose_b, config=config
@@ -3415,7 +3393,7 @@ fn matmul_sm100_fallback_kernel[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    constrained[num_threads == 128 or num_threads == 256]()
+    __comptime_assert num_threads == 128 or num_threads == 256
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -3468,12 +3446,12 @@ fn matmul_sm100_fallback_kernel[
     comptime a_size = a_smem_layout.size()
     comptime b_size = b_smem_layout.size()
 
-    constrained[
-        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
-    ]()
+    __comptime_assert (
+        (a_size * size_of[a_type]()) % 128
+    ) == 0, "preserve alignment"
+    __comptime_assert (
+        (b_size * size_of[b_type]()) % 16
+    ) == 0, "preserve alignment"
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
@@ -3505,7 +3483,7 @@ fn matmul_sm100_fallback_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var elect_one_warp = warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
@@ -3592,7 +3570,7 @@ fn matmul_sm100_fallback_kernel[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     comptime num_warps = num_threads // UInt(WARP_SIZE)
-    warp_id = thread_idx.x // UInt(WARP_SIZE)
+    warp_id = get_warp_id()
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         Int(block_idx.y), Int(block_idx.x)
@@ -3682,15 +3660,12 @@ fn matmul_sm100_fallback[
     b: LayoutTensor[b_type, b_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
-    constrained[
-        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
-        "Only support bfloat16 and float8_e4m3fn",
-    ]()
+    __comptime_assert a_type == b_type and a_type in (
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+    ), "Only support bfloat16 and float8_e4m3fn"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]

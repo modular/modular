@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides access to operating-system dependent functionality.
+"""OS interface layer: environment, filesystem, process control.
 
 The types and functions in this package primarily provide operating-system
 independent access to operating-system dependent features, such as file systems

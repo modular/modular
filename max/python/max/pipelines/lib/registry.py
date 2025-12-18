@@ -303,23 +303,17 @@ class PipelineRegistry:
         create a new one using AutoConfig.from_pretrained() with the model's
         settings.
 
+        Note: The cache key (HuggingFaceRepo) includes trust_remote_code in its
+        hash, so configs with different trust settings are cached separately.
+        For multiprocessing, each worker process has its own registry instance
+        with an empty cache, so configs are loaded fresh in each worker.
+
         Args:
             huggingface_repo: The HuggingFaceRepo containing the model.
 
         Returns:
             AutoConfig: The HuggingFace configuration object for the model.
         """
-        # TODO: This is a hack to get around the fact that in serving and the
-        # way we instantiate multiprocess model workers, pickling AutoConfig will
-        # not work and AutoConfig.from_pretrained will need to be called again
-        # when trust_remote_code=True.
-        if huggingface_repo.trust_remote_code:
-            return AutoConfig.from_pretrained(
-                huggingface_repo.repo_id,
-                trust_remote_code=huggingface_repo.trust_remote_code,
-                revision=huggingface_repo.revision,
-            )
-
         if huggingface_repo not in self._cached_huggingface_configs:
             self._cached_huggingface_configs[huggingface_repo] = (
                 AutoConfig.from_pretrained(

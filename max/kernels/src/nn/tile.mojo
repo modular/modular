@@ -51,9 +51,9 @@ fn tile[
                  input tensor rank.
         output: The output tensor. Has the same dimensions and type as input.
     """
-    constrained[
-        input.rank == output.rank, "input and output must have the same rank"
-    ]()
+    __comptime_assert (
+        input.rank == output.rank
+    ), "input and output must have the same rank"
 
     if input.rank > 4:
         raise Error(
@@ -91,6 +91,25 @@ fn tile[
 
     var repeats_len = Int(repeats.runtime_layout.shape[0])
 
+    # Pre-compute repeat values, using 1 for dimensions that don't exist
+    # to avoid negative index access when rank < 4
+    var repeat_cols = Int(repeats[repeats_len - 1])
+    var repeat_rows = 1
+    var repeat_depth = 1
+    var repeat_dp = 1
+
+    @parameter
+    if input.rank >= 2:
+        repeat_rows = Int(repeats[repeats_len - 2])
+
+    @parameter
+    if input.rank >= 3:
+        repeat_depth = Int(repeats[repeats_len - 3])
+
+    @parameter
+    if input.rank >= 4:
+        repeat_dp = Int(repeats[repeats_len - 4])
+
     # Initializes output by first copying in the original input to the
     # appropriate output elements, and then handles tiling across the column
     # (last) dimension.
@@ -116,21 +135,21 @@ fn tile[
                 var output_src_index = (
                     dp
                     * num_depth_input
-                    * Int(repeats[repeats_len - 3])
+                    * repeat_depth
                     * num_rows_input
-                    * Int(repeats[repeats_len - 2])
+                    * repeat_rows
                     * num_cols_input
-                    * Int(repeats[repeats_len - 1])
+                    * repeat_cols
                     + d
                     * num_rows_input
-                    * Int(repeats[repeats_len - 2])
+                    * repeat_rows
                     * num_cols_input
-                    * Int(repeats[repeats_len - 1])
-                    + r * num_cols_input * Int(repeats[repeats_len - 1])
+                    * repeat_cols
+                    + r * num_cols_input * repeat_cols
                 )
                 var output_src_stride = num_cols_input
                 var count = output_src_stride
-                for rep in range(repeats[repeats_len - 1]):
+                for rep in range(repeat_cols):
                     var src_ptr = input.ptr.offset(input_src_index)
                     var dst_ptr = output.ptr.offset(
                         output_src_index + rep * output_src_stride
@@ -149,24 +168,25 @@ fn tile[
     # replicate contiguous memory areas (representing a dimension to be tiled).
     @parameter
     if input.rank >= 2:
-        var src_index_stride = (
-            num_rows_input * num_cols_input * Int(repeats[repeats_len - 1])
-        )
+        var src_index_stride = num_rows_input * num_cols_input * repeat_cols
         var count = src_index_stride
         for dp in range(num_dp_input):
             for d in range(num_depth_input):
-                var src_index = dp * num_depth_input * Int(
-                    repeats[repeats_len - 3]
-                ) * num_rows_input * Int(
-                    repeats[repeats_len - 2]
-                ) * num_cols_input * Int(
-                    repeats[repeats_len - 1]
-                ) + d * num_rows_input * Int(
-                    repeats[repeats_len - 2]
-                ) * num_cols_input * Int(
-                    repeats[repeats_len - 1]
+                var src_index = (
+                    dp
+                    * num_depth_input
+                    * repeat_depth
+                    * num_rows_input
+                    * repeat_rows
+                    * num_cols_input
+                    * repeat_cols
+                    + d
+                    * num_rows_input
+                    * repeat_rows
+                    * num_cols_input
+                    * repeat_cols
                 )
-                for rep in range(repeats[repeats_len - 2] - 1):
+                for rep in range(repeat_rows - 1):
                     var src_ptr = output.ptr.offset(src_index)
                     var dst_ptr = output.ptr.offset(
                         src_index + (rep + 1) * src_index_stride
@@ -178,46 +198,44 @@ fn tile[
     if input.rank >= 3:
         var src_index_stride = (
             num_depth_input
-            * Int(repeats[repeats_len - 2])
+            * repeat_rows
             * num_rows_input
             * num_cols_input
-            * Int(repeats[repeats_len - 1])
+            * repeat_cols
         )
         var count = src_index_stride
         for dp in range(num_dp_input):
             var src_index = (
                 dp
                 * num_depth_input
-                * Int(repeats[repeats_len - 3])
+                * repeat_depth
                 * num_rows_input
-                * Int(repeats[repeats_len - 2])
+                * repeat_rows
                 * num_cols_input
-                * Int(repeats[repeats_len - 1])
+                * repeat_cols
             )
-            for rep in range(repeats[repeats_len - 3] - 1):
+            for rep in range(repeat_depth - 1):
                 var src_ptr = output.ptr.offset(src_index)
                 var dst_ptr = output.ptr.offset(
                     src_index + (rep + 1) * src_index_stride
                 )
                 memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
-    # Handles tiling across the fourth dimension from the end(if tensor rank >= 3)
+    # Handles tiling across the fourth dimension from the end (if tensor rank == 4)
     @parameter
     if input.rank == 4:
         var src_index_stride = (
             num_dp_input
-            * Int(repeats[Int(repeats.runtime_layout.shape[0]) - 3])
+            * repeat_depth
             * num_depth_input
-            * Int(repeats[Int(repeats.runtime_layout.shape[0]) - 2])
+            * repeat_rows
             * num_rows_input
             * num_cols_input
-            * Int(repeats[Int(repeats.runtime_layout.shape[0]) - 1])
+            * repeat_cols
         )
         var count = src_index_stride
         var src_index = 0
-        for rep in range(
-            Int(repeats[Int(repeats.runtime_layout.shape[0]) - 4] - 1)
-        ):
+        for rep in range(repeat_dp - 1):
             var src_ptr = output.ptr.offset(src_index)
             var dst_ptr = output.ptr.offset(
                 src_index + (rep + 1) * src_index_stride
@@ -251,7 +269,7 @@ fn tile_shape[
     Returns:
         The output shape.
     """
-    constrained[repeats_buf.rank == 1, "repeats_buf must be of rank 1"]()
+    __comptime_assert repeats_buf.rank == 1, "repeats_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::TileOp` prevents testing this with static rank.

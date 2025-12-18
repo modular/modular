@@ -22,6 +22,7 @@ _KNOWN_FEATURES = {
     "asan",
     "DISABLED",
     "disabled",
+    "emit-mojo",
     "manual",  # Alias for disabling
     "msan",
     "system-darwin",

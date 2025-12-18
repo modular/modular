@@ -85,7 +85,7 @@ fn fill_iota[dtype: DType](mut buf: LayoutTensor[mut=True, dtype, **_]):
 fn test_is_sorted_descending[
     dtype: DType
 ](mut buf: LayoutTensor[dtype, **_], vocab_size: Int) -> Bool:
-    constrained[buf.rank == 2, "rank must be 2"]()
+    __comptime_assert buf.rank == 2, "rank must be 2"
     var batch_size = buf.size() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
 

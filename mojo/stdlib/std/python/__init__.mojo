@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the python package."""
+"""Python interoperability: import modules, call functions, type conversion."""
 
 from .python import Python
 from .conversions import ConvertibleFromPython, ConvertibleToPython

@@ -552,7 +552,8 @@ fn shmem_g[
 
 
 fn shmem_put[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     kind: SHMEMScope = SHMEMScope.default,
 ](
     dest: UnsafePointer[Scalar[dtype]],
@@ -587,7 +588,8 @@ fn shmem_put[
 
 
 fn shmem_put_nbi[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     kind: SHMEMScope = SHMEMScope.default,
 ](
     dest: UnsafePointer[Scalar[dtype]],

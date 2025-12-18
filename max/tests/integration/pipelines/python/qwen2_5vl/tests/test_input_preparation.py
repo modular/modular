@@ -750,7 +750,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
 
     # Create a text-only prompt of length L=33.
     L = 33
-    tokens = np.arange(L, dtype=np.int32)
+    tokens = np.arange(L, dtype=np.int64)
 
     # Create initial decoder position IDs for prefill (3D RoPE: temporal, height, width).
     # For text-only inputs, all 3 dimensions have identical position IDs.

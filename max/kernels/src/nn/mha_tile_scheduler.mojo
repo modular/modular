@@ -90,7 +90,8 @@ struct SeqInfo(ImplicitlyCopyable):
     @staticmethod
     @always_inline
     fn create[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         work: WorkInfo,
         valid_length: ValidLengthType,
@@ -338,7 +339,8 @@ trait MHATileScheduler(Copyable, DevicePassable):
     """
 
     fn get_current_work_info[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
@@ -347,7 +349,8 @@ trait MHATileScheduler(Copyable, DevicePassable):
 
     @always_inline
     fn advance[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
     ](
@@ -371,7 +374,8 @@ trait MHATileScheduler(Copyable, DevicePassable):
 
     @always_inline
     fn initial_state[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self,
         ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
@@ -382,7 +386,8 @@ trait MHATileScheduler(Copyable, DevicePassable):
 
     @always_inline
     fn unsafe_seq_info[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> SeqInfo:
@@ -453,7 +458,8 @@ struct TransientScheduler[
 
     @always_inline
     fn get_current_work_info[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
@@ -461,7 +467,8 @@ struct TransientScheduler[
 
     @always_inline
     fn advance[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
     ](
@@ -485,7 +492,8 @@ struct TransientScheduler[
 
     @always_inline
     fn initial_state[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self,
         ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
@@ -495,7 +503,8 @@ struct TransientScheduler[
 
     @always_inline
     fn unsafe_seq_info[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> SeqInfo:
@@ -544,7 +553,8 @@ struct TileScheduler[
 
     @always_inline
     fn get_current_work_info[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
@@ -565,7 +575,8 @@ struct TileScheduler[
 
     @always_inline
     fn advance[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
     ](
@@ -597,7 +608,8 @@ struct TileScheduler[
 
     @always_inline
     fn initial_state[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self,
         ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
@@ -609,7 +621,8 @@ struct TileScheduler[
 
     @always_inline
     fn unsafe_seq_info[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> SeqInfo:
@@ -647,7 +660,8 @@ struct QueuedTileScheduler[
 
     @always_inline
     fn get_current_work_info[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
@@ -657,7 +671,8 @@ struct QueuedTileScheduler[
 
     @always_inline
     fn advance[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
     ](
@@ -741,7 +756,8 @@ struct QueuedTileScheduler[
 
     @always_inline
     fn initial_state[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self,
         ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
@@ -757,7 +773,8 @@ struct QueuedTileScheduler[
 
     @always_inline
     fn unsafe_seq_info[
-        ValidLengthType: OptionalPointer, //,
+        ValidLengthType: OptionalPointer,
+        //,
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> SeqInfo:

@@ -149,7 +149,8 @@ struct OwnedPointer[T: ImplicitlyDestructible]:
 
     fn unsafe_ptr[
         mut: Bool,
-        origin: Origin[mut], //,
+        origin: Origin[mut],
+        //,
     ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
         """Returns the backing pointer for this `OwnedPointer`.
 

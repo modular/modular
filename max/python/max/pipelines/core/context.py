@@ -33,6 +33,7 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationContext,
     TextGenerationOutput,
+    TokenSlice,
     VLMTextGenerationContext,
 )
 
@@ -73,7 +74,7 @@ class TextContext:
     """
 
     max_length: int
-    tokens: npt.NDArray[np.integer[Any]]
+    tokens: TokenSlice
     request_id: RequestID = field(default_factory=RequestID)
     eos_token_ids: set[int] = field(default_factory=set)
     eos_sequences: list[list[int]] = field(default_factory=list)
@@ -172,7 +173,7 @@ class TextContext:
             self.tokens = np.resize(self.tokens, self._size)
 
     @property
-    def all_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def all_tokens(self) -> TokenSlice:
         return self.tokens[: self.end_idx]
 
     @property
@@ -382,7 +383,7 @@ class TextContext:
         self._end_idx = new_end_idx
 
     @property
-    def next_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def next_tokens(self) -> TokenSlice:
         """Returns the tokens between start_idx and active_idx.
 
         Returns:
@@ -391,7 +392,7 @@ class TextContext:
         return self.tokens[self.start_idx : self._active_idx]
 
     @property
-    def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def prompt_tokens(self) -> TokenSlice:
         """Returns the original prompt tokens.
 
         Returns:
@@ -400,7 +401,7 @@ class TextContext:
         return self.tokens[: self._prompt_len]
 
     @property
-    def generated_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def generated_tokens(self) -> TokenSlice:
         """Returns all tokens that have been generated after the prompt.
 
         Returns:

@@ -256,7 +256,7 @@ default implementations listed as *provided methods*.
 
 
 The
-[`Equatable`](/mojo/stdlib/builtin/equality_comparable/Equatable/)
+[`Equatable`](/mojo/std/builtin/equality_comparable/Equatable/)
 trait is a good example of the use case for default implementations. The trait
 includes two methods: `__eq__()` (corresponding to the `==` operator) and
 `__ne__()` (corresponding to the `!=` operator). Every type that conforms to
@@ -382,9 +382,9 @@ constructors, copy constructors and move constructors.
 For example, the following code creates a `MassProducible` trait. A
 `MassProducible` type has a default (no-argument) constructor and can be moved.
 It uses two built-in traits:
-[`Defaultable`](/mojo/stdlib/builtin/value/Defaultable), which requires a default
+[`Defaultable`](/mojo/std/builtin/value/Defaultable), which requires a default
 (no-argument) constructor, and
-[`Movable`](/mojo/stdlib/builtin/value/Movable),
+[`Movable`](/mojo/std/builtin/value/Movable),
 which requires the type to have a [move
 constructor](/mojo/manual/lifecycle/life#move-constructor).
 
@@ -450,38 +450,38 @@ The Mojo standard library includes many traits. They're implemented
 by a number of standard library types, and you can also implement these on your
 own types. These standard library traits include:
 
-* [`Absable`](/mojo/stdlib/builtin/math/Absable)
-* [`AnyType`](/mojo/stdlib/builtin/anytype/AnyType)
-* [`Boolable`](/mojo/stdlib/builtin/bool/Boolable)
-* [`Comparable`](/mojo/stdlib/builtin/comparable/Comparable)
-* [`Copyable`](/mojo/stdlib/builtin/value/Copyable)
-* [`Defaultable`](/mojo/stdlib/builtin/value/Defaultable)
-* [`Hashable`](/mojo/stdlib/hashlib/hash/Hashable)
-* [`Indexer`](/mojo/stdlib/builtin/int/Indexer)
-* [`Intable`](/mojo/stdlib/builtin/int/Intable)
-* [`IntableRaising`](/mojo/stdlib/builtin/int/IntableRaising)
-* [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement)
-* [`Movable`](/mojo/stdlib/builtin/value/Movable)
-* [`PathLike`](/mojo/stdlib/os/pathlike/PathLike)
-* [`Powable`](/mojo/stdlib/builtin/math/Powable)
-* [`Representable`](/mojo/stdlib/builtin/repr/Representable)
-* [`Sized`](/mojo/stdlib/builtin/len/Sized)
-* [`Stringable`](/mojo/stdlib/builtin/str/Stringable)
-* [`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising)
-* [`Roundable`](/mojo/stdlib/builtin/math/Roundable)
-* [`Writable`](/mojo/stdlib/io/write/Writable)
-* [`Writer`](/mojo/stdlib/io/write/Writer)
+* [`Absable`](/mojo/std/builtin/math/Absable)
+* [`AnyType`](/mojo/std/builtin/anytype/AnyType)
+* [`Boolable`](/mojo/std/builtin/bool/Boolable)
+* [`Comparable`](/mojo/std/builtin/comparable/Comparable)
+* [`Copyable`](/mojo/std/builtin/value/Copyable)
+* [`Defaultable`](/mojo/std/builtin/value/Defaultable)
+* [`Hashable`](/mojo/std/hashlib/hash/Hashable)
+* [`Indexer`](/mojo/std/builtin/int/Indexer)
+* [`Intable`](/mojo/std/builtin/int/Intable)
+* [`IntableRaising`](/mojo/std/builtin/int/IntableRaising)
+* [`KeyElement`](/mojo/std/collections/dict/#keyelement)
+* [`Movable`](/mojo/std/builtin/value/Movable)
+* [`PathLike`](/mojo/std/os/pathlike/PathLike)
+* [`Powable`](/mojo/std/builtin/math/Powable)
+* [`Representable`](/mojo/std/builtin/repr/Representable)
+* [`Sized`](/mojo/std/builtin/len/Sized)
+* [`Stringable`](/mojo/std/builtin/str/Stringable)
+* [`StringableRaising`](/mojo/std/builtin/str/StringableRaising)
+* [`Roundable`](/mojo/std/builtin/math/Roundable)
+* [`Writable`](/mojo/std/io/write/Writable)
+* [`Writer`](/mojo/std/io/write/Writer)
 
 The API reference docs linked above include usage examples for each trait. The
 following sections discuss a few of these traits.
 
 ### The `Sized` trait
 
-The [`Sized`](/mojo/stdlib/builtin/len/Sized) trait identifies types that
+The [`Sized`](/mojo/std/builtin/len/Sized) trait identifies types that
 have a measurable length, like strings and arrays.
 
 Specifically, `Sized` requires a type to implement the `__len__()` method.
-This trait is used by the built-in [`len()`](/mojo/stdlib/builtin/len/len)
+This trait is used by the built-in [`len()`](/mojo/std/builtin/len/len)
 function. For example, if you're writing a custom list type, you could
 implement this trait so your type works with `len()`:
 
@@ -505,9 +505,9 @@ print(len(MyList()))
 
 ### The `Intable` and `IntableRaising` traits
 
-The [`Intable`](/mojo/stdlib/builtin/int/Intable) trait identifies a type that
+The [`Intable`](/mojo/std/builtin/int/Intable) trait identifies a type that
 can be converted to `Int`. The
-[`IntableRaising`](/mojo/stdlib/builtin/int/IntableRaising) trait describes a
+[`IntableRaising`](/mojo/std/builtin/int/IntableRaising) trait describes a
 type can be converted to an `Int`, but the conversion might raise an error.
 
 Both of these traits require the type to implement the `__int__()` method. For
@@ -531,45 +531,45 @@ True
 
 ### The `Stringable`, `Representable`, and `Writable` traits
 
-The [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait identifies a type
+The [`Stringable`](/mojo/std/builtin/str/Stringable) trait identifies a type
 that can be explicitly converted to
-[`String`](/mojo/stdlib/collections/string/string/String). The
-[`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising) trait
+[`String`](/mojo/std/collections/string/string/String). The
+[`StringableRaising`](/mojo/std/builtin/str/StringableRaising) trait
 describes a type that can be converted to a `String`, but the conversion might
 raise an error. These traits also mean that the type can support both the `{!s}`
 and `{}` format specifiers of the `String` and `StringSlice` class's
-[`format()`](/mojo/stdlib/collections/string/string/String#format) method. These
+[`format()`](/mojo/std/collections/string/string/String#format) method. These
 traits require the type to define the
-[`__str__()`](/mojo/stdlib/builtin/str/Stringable#__str__) method.
+[`__str__()`](/mojo/std/builtin/str/Stringable#__str__) method.
 
-In contrast, the [`Representable`](/mojo/stdlib/builtin/repr/Representable)
+In contrast, the [`Representable`](/mojo/std/builtin/repr/Representable)
 trait defines a type that can be used with the built-in
-[`repr()`](/mojo/stdlib/builtin/repr/repr) function, as well as the `{!r}`
+[`repr()`](/mojo/std/builtin/repr/repr) function, as well as the `{!r}`
 format specifier of the `format()` method. This trait requires the type to
-define the [`__repr__()`](/mojo/stdlib/builtin/repr/Representable#__repr__)
+define the [`__repr__()`](/mojo/std/builtin/repr/Representable#__repr__)
 method, which should compute the "official" string representation of a type. If
 at all possible, this should look like a valid Mojo expression that could be
 used to recreate a struct instance with the same value.
 
-The [`Writable`](/mojo/stdlib/io/write/Writable) trait describes a
+The [`Writable`](/mojo/std/io/write/Writable) trait describes a
 type that can be converted to a stream of UTF-8 encoded data by writing to a
-`Writer` object. The [`print()`](/mojo/stdlib/builtin/io/print) function
+`Writer` object. The [`print()`](/mojo/std/builtin/io/print) function
 requires that its arguments conform to the `Writable` trait. This enables
 efficient stream-based writing by default, avoiding unnecessary intermediate
 String heap allocations.
 
 The `Writable` trait requires a type to implement a
-[`write_to()`](/mojo/stdlib/io/write/Writable#write_to) method, which
+[`write_to()`](/mojo/std/io/write/Writable#write_to) method, which
 is provided with an object that conforms to the
-[`Writer`](/mojo/stdlib/io/write/Writer) as an argument. You then
+[`Writer`](/mojo/std/io/write/Writer) as an argument. You then
 invoke the `Writer` instance's
-[`write()`](/mojo/stdlib/io/write/Writer#write) method to write a
+[`write()`](/mojo/std/io/write/Writer#write) method to write a
 sequence of `Writable` arguments constituting the `String` representation of
 your type.
 
 While this might sound complex at first, in practice you can minimize
 boilerplate and duplicated code by using the
-[`String.write()`](/mojo/stdlib/collections/string/string/String#write) static
+[`String.write()`](/mojo/std/collections/string/string/String#write) static
 function to implement the type's `Stringable` implementation in terms of its
 `Writable` implementation. Here is a simple example of a type that implements
 all of the `Stringable`, `Representable`, and `Writable` traits:
@@ -618,9 +618,9 @@ dynamically allocates memory needs to supply a
 that must be called to free the allocated memory. But not all types have a
 destructor.
 
-The [`AnyType`](/mojo/stdlib/builtin/anytype/AnyType) trait (also provided as
+The [`AnyType`](/mojo/std/builtin/anytype/AnyType) trait (also provided as
 the
-[`ImplicitlyDestructible`](/mojo/stdlib/builtin/anytype/#implicitlydestructible)
+[`ImplicitlyDestructible`](/mojo/std/builtin/anytype/#implicitlydestructible)
 alias) represents a type with a destructor. Almost all traits inherit from
 `AnyType`, and all structs conform to `AnyType` by default. For any type that
 conforms to `AnyType` and doesn't define a destructor, Mojo generates a no-op
@@ -630,7 +630,7 @@ from `AnyType`/`ImplicitlyDestructible`.
 :::note TODO
 
 In the Mojo standard library docs you will also see a trait called
-[`UnknownDestructability`](/mojo/stdlib/builtin/anytype/UnknownDestructibility),
+[`UnknownDestructability`](/mojo/std/builtin/anytype/UnknownDestructibility),
 which represents a type that may or may not have a destructor. All structs
 implicitly conform to this trait.
 
@@ -648,7 +648,7 @@ items to a container. But in a statically-typed environment the compiler needs
 to be able to identify the types at compile time. For example, if the container
 needs to copy a value, the compiler needs to verify that the type can be copied.
 
-The [`List`](/mojo/stdlib/collections/list) type is an example of a
+The [`List`](/mojo/std/collections/list) type is an example of a
 generic container. A single `List` can only hold a single type of data.
 The list elements must conform to the `Copyable` trait:
 
@@ -767,7 +767,7 @@ Because a struct that conforms to `Copyable` is not necessarily
 printable, `MyStack` uses
 [conditional conformance](/mojo/manual/parameters/#conditional-conformance) to
 define a `dump()` method that works as long as the element type is
-[writable](/mojo/stdlib/io/write/Writable/).
+[writable](/mojo/std/io/write/Writable/).
 
 The following code exercises this new trait by defining a generic method,
 `add_to_stack()` that adds an item to any `Stacklike` type.

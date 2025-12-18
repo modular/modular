@@ -23,6 +23,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/kv_cache",
         "//max/python/max/nn",
+        "//max/python/max/support",
         "//max/tests/integration/API/python/graph:modular_graph_test",
         "//max/tests/integration/pipelines/python/test_common",
         requirement("hypothesis"),
@@ -59,7 +60,10 @@ modular_py_test(
     name = "kvcache_gpu_tests",
     srcs = glob(
         ["*_gpu.py"],
-        exclude = ["*_distributed_gpu.py"],
+        exclude = [
+            "*_distributed_gpu.py",
+            "test_lora_kv_cache_gpu.py",
+        ],
     ) + ["conftest.py"],
     exec_properties = {
         "test.resources:gpu-memory": "1.2",
@@ -96,6 +100,33 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "lora_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_lora_kv_cache_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "b200",
+        "gpu",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("hypothesis"),
+        requirement("numpy"),
         requirement("torch"),
     ],
 )

@@ -745,7 +745,7 @@ def generic_assert_output_equals[
     max_seq_length_batch: Int,
     ctx: DeviceContext,
 ):
-    constrained[cache_t.dtype == dtype, "type mismatch"]()
+    __comptime_assert cache_t.dtype == dtype, "type mismatch"
     comptime kv_params = cache_t.kv_params
     comptime hidden_size = num_q_heads * Int(kv_params.head_size)
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
@@ -796,7 +796,7 @@ def generic_assert_output_equals[
                     )
                 except e:
                     print("Q", bs, s, q_dim)
-                    raise e
+                    raise e^
 
             for k_dim in range(kv_hidden_size):
                 head_idx = k_dim // kv_params.head_size
@@ -817,7 +817,7 @@ def generic_assert_output_equals[
                     )
                 except e:
                     print("K", bs, s, k_dim)
-                    raise e
+                    raise e^
 
             for v_dim in range(kv_hidden_size):
                 head_idx = v_dim // kv_params.head_size
@@ -838,7 +838,7 @@ def generic_assert_output_equals[
                     )
                 except e:
                     print("V", bs, s, v_dim)
-                    raise e
+                    raise e^
 
         ragged_offset += prompt_len
 
@@ -848,7 +848,8 @@ def generic_assert_output_equals[
 
 
 def generic_execute_fused_qkv_cache_ragged[
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    //,
     kv_params: KVCacheStaticParams,
     dtype: DType,
     num_q_heads: Int,

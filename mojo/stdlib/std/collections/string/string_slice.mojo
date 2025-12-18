@@ -61,7 +61,7 @@ from collections.string._utf8 import (
     _utf8_byte_type,
     _utf8_first_byte_sequence_length,
 )
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
+from collections.string.format import _CurlyEntryFormattable, _FormatUtils
 from hashlib.hasher import Hasher
 from io.write import _TotalWritableBytes, _WriteBufferStack
 from math import align_down
@@ -85,7 +85,8 @@ comptime StaticString = StringSlice[StaticConstantOrigin]
 
 
 struct CodepointSliceIter[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     origin: Origin[mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator, Sized):
@@ -1830,7 +1831,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Raises:
             If the operation fails.
         """
-        return _FormatCurlyEntry.format(self, args)
+        return _FormatUtils.format(self, args)
 
     fn find(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset in bytes of the first occurrence of `substr`
@@ -2426,7 +2427,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return result
 
     fn join[
-        T: Copyable & Writable, //,
+        T: Copyable & Writable,
+        //,
     ](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
@@ -2530,7 +2532,8 @@ fn get_static_string[
 
 
 fn _to_string_list[
-    O: Origin, //,
+    O: Origin,
+    //,
     T: Copyable,  # TODO(MOCO-1446): Make `T` parameter inferred
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],

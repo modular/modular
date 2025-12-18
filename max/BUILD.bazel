@@ -1,5 +1,5 @@
 load("@mojo//:mojo.bzl", "max_aliases")
-load("//bazel:api.bzl", "py_repl", "requirement")
+load("//bazel:api.bzl", "modular_cc_library", "pkg_files", "py_repl", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
 # gazelle:default_visibility //max:consumers
@@ -40,5 +40,30 @@ py_repl(
         requirement("nvitop"),
         requirement("rich"),
         requirement("pytest"),
+    ],
+)
+
+modular_cc_library(
+    name = "CAPI.headers",
+    hdrs = glob(["include/max/c/*.h"]),
+    # NOTE: Internal modular_cc_library sets this by default,
+    # this is for OSS compatibility.
+    includes = ["include"],
+    # NOTE: Target mainly exists to run clang-tidy as C files,
+    # but also so these headers are accessible in the OSS build.
+    tags = ["clang-tidy-is-c-tu"],
+)
+
+pkg_files(
+    name = "API.c.headers",
+    srcs = glob(["include/max/c/*.h"]),
+)
+
+filegroup(
+    name = "doxygen-sources",
+    srcs = glob(["include/max/c/*.h"]),
+    visibility = [
+        "//max/internal/include/max/API/max/c/docs:__pkg__",
+        "//open-source/max/max/internal/include/max/API/max/c/docs:__pkg__",
     ],
 )

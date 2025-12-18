@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides types and functions for working with complex numbers."""
+"""Complex numbers: SIMD types, scalar types, and operations."""
 from .complex import (
     ComplexScalar,
     ComplexFloat32,

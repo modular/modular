@@ -326,7 +326,7 @@ fn choose_config[
     var mma_mn = Tuple[Int, Int](256, 256)
     var min_num_waves = Int.MAX
 
-    # Travers possible combinations of BM x MMA_N to choose the one minimizes the
+    # Traverse possible combinations of BM x MMA_N to choose the one minimizes the
     # workload per SM. The computation per SM is the flops (ignoring 2x in 2MNK)
     # timed by max number of ctas per SM i.e. number of waves.
     # We first minimize the number of waves, then use the flops to break tie.

@@ -147,10 +147,7 @@ fn _mask_apply[
     comptime rowwise_stride = fragment_layout.shape[0].value()
     comptime colwise_stride = fragment_layout.shape[1].value()
     comptime frag_is_row_vector = rowwise_stride == 1
-    constrained[
-        frag_is_row_vector,
-        "fragment layout is not a row vector",
-    ]()
+    __comptime_assert frag_is_row_vector, "fragment layout is not a row vector"
 
     var lane = lane_id()
 
@@ -304,7 +301,8 @@ struct Attention[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    //,
     config: MHAConfig,
     group: Int,
     token_gen: Bool,
@@ -524,7 +522,8 @@ struct Attention[
 
     @always_inline
     fn mma_qk[
-        k_buffer_type: KVBuffer, //,
+        k_buffer_type: KVBuffer,
+        //,
         prefetch_function: OptionalReg[fn () capturing -> None] = None,
         beg_iter: Int = 0,
         num_iters: Int = Int(Self.depth // Self.BK),
@@ -546,7 +545,8 @@ struct Attention[
 
     @always_inline
     fn mma_pv[
-        v_buffer_type: KVBuffer, //,
+        v_buffer_type: KVBuffer,
+        //,
         prefetch_function: OptionalReg[fn () capturing -> None] = None,
         prefetched_b_tile: Bool = True,
     ](mut self, mut v_buffer: v_buffer_type):
@@ -726,12 +726,14 @@ struct Attention[
         self.mask_warp_col = warp_col * Int(Self.WN)
 
         self.batch_idx = batch_idx
-        var scale_log2e: Scalar[Self.accum_type] = scale.cast[
-            Self.accum_type
-        ]() * (
+
+        comptime scaling_factor = (
             log2e if (
                 Self.use_exp2 and (not Self.mask_t.apply_log2e_after_mask)
             ) else Scalar[Self.accum_type](1)
+        )
+        var scale_log2e: Scalar[Self.accum_type] = (
+            scale.cast[Self.accum_type]() * scaling_factor
         )
 
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()

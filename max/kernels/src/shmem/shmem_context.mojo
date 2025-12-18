@@ -174,10 +174,9 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        constrained[
-            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
-            "SHMEMContext is currently only available on NVIDIA and AMD GPUs",
-        ]()
+        __comptime_assert (
+            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        ), "SHMEMContext is currently only available on NVIDIA and AMD GPUs"
         shmem_init()
         var mype = shmem_team_my_pe(team)
         self._ctx = DeviceContext(device_id=Int(mype))
@@ -218,10 +217,9 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        constrained[
-            has_nvidia_gpu_accelerator(),
-            "SHMEMContext is currently only available on NVIDIA GPUs",
-        ]()
+        __comptime_assert (
+            has_nvidia_gpu_accelerator()
+        ), "SHMEMContext is currently only available on NVIDIA GPUs"
 
         shmem_init_thread(ctx)
         self._ctx = ctx
@@ -315,7 +313,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         Pinned memory is guaranteed to remain resident in the host's RAM, not be
         paged/swapped out to disk. Memory allocated normally (for example, using
-        [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_ptr/UnsafePointer#alloc))
+        [`alloc()`](/mojo/std/memory/unsafe_pointer/alloc)
         is pageable—individual pages of memory can be moved to secondary storage
         (disk/SSD) when main memory fills up.
 
@@ -357,7 +355,8 @@ struct SHMEMContext(ImplicitlyCopyable):
     @always_inline
     @parameter
     fn enqueue_function[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
@@ -454,7 +453,8 @@ struct SHMEMContext(ImplicitlyCopyable):
     @parameter
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
@@ -557,7 +557,8 @@ struct SHMEMContext(ImplicitlyCopyable):
     @always_inline
     @parameter
     fn enqueue_function_collective[
-        func_type: AnyTrivialRegType, //,
+        func_type: AnyTrivialRegType,
+        //,
         func: func_type,
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
@@ -709,7 +710,8 @@ struct SHMEMContext(ImplicitlyCopyable):
     @parameter
     fn enqueue_function_collective_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,

@@ -37,7 +37,7 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
     MXFP8_SF_VECTOR_SIZE,
-    _set_scale_factor,
+    set_scale_factor,
 )
 from random import random_ui64
 from builtin.simd import _convert_f32_to_float8_ue8m0
@@ -302,11 +302,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 var scale_value = _convert_f32_to_float8_ue8m0[scales_dtype](
                     (1 << random_ui64(0, 3)).cast[DType.float32]()
                 )
-                _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_tensor_host, idx0, idx1, scale_value
                 )
             else:
-                _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
@@ -318,11 +318,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 var scale_value = _convert_f32_to_float8_ue8m0[scales_dtype](
                     (1 << random_ui64(0, 3)).cast[DType.float32]()
                 )
-                _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     b_scales_tensor_host, idx0, idx1, scale_value
                 )
             else:
-                _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     b_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
@@ -358,13 +358,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    constrained[
-        a_type != DType.float8_e4m3fn or transpose_b,
-        (
-            "Testing is only supported for transposed_b==True when"
-            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
-        ),
-    ]()
+    __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+        "Testing is only supported for transposed_b==True when"
+        " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+    )
 
     vendor_blas.matmul(
         ctx,
@@ -418,7 +415,6 @@ def main():
             comptime BK = (swizzle.bytes() // size_of[dtype]())
             comptime MMA_K = 32
 
-            # we support all range of mma_n_scales in range(1, 33) but the test will time out so we only test a subset
             @parameter
             for bm in [128]:
 

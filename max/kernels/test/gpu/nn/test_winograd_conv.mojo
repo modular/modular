@@ -101,7 +101,8 @@ fn matmul[
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
-    element_layout: Layout, //,
+    element_layout: Layout,
+    //,
     transpose_b: Bool,
     s_type: DType = get_accum_type[c_type](),
 ](
@@ -168,7 +169,8 @@ fn get_tile[
 # Each thread processes a 4x4 input tile to produce a 2x2 output tile.
 # The thread accumulates contributions from all input channels for each output channel.
 fn winograd_conv2d_gpu_nhwc[
-    element_layout: Layout, //,
+    element_layout: Layout,
+    //,
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -321,7 +323,8 @@ fn winograd_conv2d_gpu_nhwc[
 
 
 fn winograd_conv2d_gpu_launcher[
-    element_layout: Layout, //,
+    element_layout: Layout,
+    //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,

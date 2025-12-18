@@ -19,6 +19,7 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, Shape, TensorValue, Weight, ops
+from max.nn.kernels import moe_router_group_limited
 from max.nn.moe import MoEGate
 from max.nn.moe.moe import ShardingStrategy
 
@@ -49,6 +50,7 @@ class DeepseekV3TopKRouter(MoEGate):
         gate_dtype: DType,
         correction_bias_dtype: DType | None,
         devices: list[DeviceRef],
+        use_fused_kernel: bool = True,
     ) -> None:
         """
         Args:
@@ -64,6 +66,7 @@ class DeepseekV3TopKRouter(MoEGate):
             dtype: The data type of the MoEGate.
             correction_bias_dtype: The data type of the correction bias.
             devices: The devices to use for the MoEGate.
+            use_fused_kernel: Whether to use the fused kernel for the MoEGate.
         """
         super().__init__(
             devices=devices,
@@ -88,6 +91,7 @@ class DeepseekV3TopKRouter(MoEGate):
         self.scoring_func = scoring_func
         self.gate_dtype = gate_dtype
         self.correction_bias_dtype = correction_bias_dtype
+        self.use_fused_kernel = use_fused_kernel
 
         if self.num_experts % self.n_group != 0:
             raise ValueError(
@@ -119,8 +123,6 @@ class DeepseekV3TopKRouter(MoEGate):
                 - topk_idx: Indices of top-k selected experts of shape (seq_len, num_experts_per_token)
                 - topk_weight: Routing weights for selected experts of shape (seq_len, num_experts_per_token)
         """
-        bsz_seq_len, _ = hidden_states.shape
-
         # compute gate score
         weight = self.gate_score.weight.cast(DType.float32).to(
             hidden_states.device
@@ -134,73 +136,16 @@ class DeepseekV3TopKRouter(MoEGate):
                 f"insupportable scoring function for MoE gating: {self.scoring_func}"
             )
 
-        # select top-k experts
-        if self.topk_method == "noaux_tc":
-            scores_for_choice = scores.reshape(
-                (bsz_seq_len, self.num_experts)
-            ) + ops.unsqueeze(self.e_score_correction_bias, 0)
-            group_scores = ops.squeeze(
-                ops.sum(
-                    ops.top_k(
-                        scores_for_choice.reshape(
-                            (
-                                bsz_seq_len,
-                                self.n_group,
-                                self.num_experts // self.n_group,
-                            )
-                        ),
-                        2,
-                        axis=-1,
-                    )[0],
-                    axis=-1,
-                ),
-                -1,
-            )  # [n, n_group]
-
-            # Note: In the original implementation, none of these top-k
-            # calls are sorted. We currently only support sorted=True (has no
-            # effect on the output of the MoE layer).
-            group_idx = ops.top_k(group_scores, k=self.topk_group, axis=-1)[
-                1
-            ]  # [n, top_k_group]
-
-            group_mask = _fill(
-                False, DType.bool, group_scores.shape, group_scores.device
-            )
-            update = _fill(True, DType.bool, group_idx.shape, group_idx.device)
-            group_mask = ops.scatter(group_mask, update, group_idx, 1)
-
-            score_mask = ops.broadcast_to(
-                ops.unsqueeze(group_mask, -1),
-                (
-                    bsz_seq_len,
-                    self.n_group,
-                    self.num_experts // self.n_group,
-                ),
-            ).reshape((bsz_seq_len, self.num_experts))  # [n, e]
-            tmp_scores = ops.where(
-                score_mask.cast(DType.bool),
-                scores_for_choice,
-                ops.constant(
-                    float("-inf"), dtype=DType.float32, device=score_mask.device
-                ),
-            )  # [n, e]
-            _, topk_idx = ops.top_k(tmp_scores, k=self.top_k, axis=-1)
-            topk_weight = ops.gather_nd(scores, ops.unsqueeze(topk_idx, 2), 1)
-
-        else:
-            raise NotImplementedError(
-                f"insupportable TopK function for MoE gating: {self.topk_method}"
-            )
-
-        # norm gate to sum 1
-        if self.top_k > 1 and self.norm_topk_prob:
-            denominator = ops.sum(topk_weight, axis=-1) + 1e-20
-            topk_weight = topk_weight / denominator
-        topk_weight = (
-            topk_weight * self.routed_scaling_factor
-        )  # must multiply the scaling factor
-
+        topk_idx, topk_weight = moe_router_group_limited(
+            scores,
+            self.e_score_correction_bias,
+            self.num_experts,
+            self.num_experts_per_token,
+            self.n_group,
+            self.topk_group,
+            self.norm_topk_prob,
+            self.routed_scaling_factor,
+        )
         return topk_idx, topk_weight
 
     @property

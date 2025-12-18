@@ -92,6 +92,8 @@ class DeepseekV3DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
+            graph_mode=config.graph_mode,
+            buffer_size=config.max_batch_context_length,
         )
 
         mla_cls: (
@@ -100,12 +102,9 @@ class DeepseekV3DecoderLayer(Module):
         )
         if config.float8_config is not None:
             mla_kwargs["float8_config"] = config.float8_config
-            # Decode is not yet supported for FP8.
-            mla_kwargs["graph_mode"] = "prefill"
             mla_cls = DataParallelLatentAttentionWithRopeFp8
         else:
             mla_kwargs["dtype"] = config.dtype
-            mla_kwargs["graph_mode"] = config.graph_mode
             mla_cls = DataParallelLatentAttentionWithRope
 
         self.self_attn = mla_cls(**mla_kwargs)

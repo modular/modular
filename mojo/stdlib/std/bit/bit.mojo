@@ -615,7 +615,8 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
 @always_inline("nodebug")
 fn rotate_bits_left[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
     """Shifts bits to the left by `shift` positions (with wrap-around) for each element of a SIMD vector.
@@ -687,7 +688,8 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
 @always_inline("nodebug")
 fn rotate_bits_right[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
     """Shifts bits to the right by `shift` positions (with wrap-around) for each element of a SIMD vector.

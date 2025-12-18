@@ -10,9 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the prelude package.  This package provide the public entities
-that are automatically imported into every Mojo program.
-"""
+"""Standard library prelude: fundamental types, traits, and operations auto-imported."""
 
 from collections import Dict, InlineArray, KeyElement, List, Optional
 from collections.string import (

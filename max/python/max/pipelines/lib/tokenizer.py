@@ -33,7 +33,7 @@ from max.interfaces import (
     TextGenerationRequestTool,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.support.image import find_contiguous_ranges
+from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import (
     AutoConfig,
@@ -640,6 +640,12 @@ class TextAndVisionTokenizer(
                 elif isinstance(eos_token_id, list):
                     self._default_eos_token_ids.update(eos_token_id)
 
+            self.enable_prefix_caching = (
+                pipeline_config.model_config.kv_cache_config.enable_prefix_caching
+                if pipeline_config
+                else False
+            )
+
         self._context_validators = (
             context_validators if context_validators else []
         )
@@ -842,6 +848,9 @@ class TextAndVisionTokenizer(
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixels,
+                    image_hash=hash_image(pixels)
+                    if self.enable_prefix_caching
+                    else None,
                 )
                 for (start_idx, end_idx), pixels in zip(
                     start_and_end_idxs, pixel_values, strict=True

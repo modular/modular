@@ -24,7 +24,8 @@ from .buffers import KVBuffer, RegisterBuffer, RegisterMMABuffer
 fn mma[
     c_register_buffer_type: RegisterBuffer,
     a_register_buffer_type: RegisterMMABuffer,
-    b_buffer_type: KVBuffer, //,
+    b_buffer_type: KVBuffer,
+    //,
     tensor_core_mma: TiledTensorCore,
     BK: Int,
     prefetch_function: OptionalReg[fn () capturing -> None],
@@ -37,7 +38,9 @@ fn mma[
     mut a_tile: a_register_buffer_type,
     mut b_tile: b_buffer_type,
 ):
-    constrained[b_buffer_type._num_stages == 2, "b_tile.num_stages must be 2"]()
+    __comptime_assert (
+        b_buffer_type._num_stages == 2
+    ), "b_tile.num_stages must be 2"
     comptime num_k_mmas2 = ceildiv(
         BK, tensor_core_mma.shape[2] * tensor_core_mma.group_size
     )

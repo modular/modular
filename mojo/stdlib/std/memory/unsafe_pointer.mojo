@@ -121,7 +121,8 @@ Parameters:
 """
 
 comptime OpaquePointer[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -161,7 +162,8 @@ Parameters:
 
 @register_passable("trivial")
 struct UnsafePointer[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     type: AnyType,
     origin: Origin[mut],
     *,
@@ -1036,7 +1038,8 @@ struct UnsafePointer[
 
     @always_inline("nodebug")
     fn load[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -1082,7 +1085,8 @@ struct UnsafePointer[
 
     @always_inline("nodebug")
     fn load[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -1120,7 +1124,8 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn load[
         I: Indexer,
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -1156,7 +1161,8 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn store[
         I: Indexer,
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -1190,7 +1196,8 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn store[
         dtype: DType,
-        offset_type: DType, //,
+        offset_type: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -1222,7 +1229,8 @@ struct UnsafePointer[
 
     @always_inline("nodebug")
     fn store[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         width: Int = 1,
         *,
         alignment: Int = align_of[dtype](),
@@ -1301,7 +1309,8 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn strided_store[
         dtype: DType,
-        T: Intable, //,
+        T: Intable,
+        //,
         width: Int = 1,
     ](
         self: UnsafePointer[Scalar[dtype], **_],
@@ -1323,7 +1332,8 @@ struct UnsafePointer[
 
     @always_inline("nodebug")
     fn gather[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         *,
         width: Int = 1,
         alignment: Int = align_of[dtype](),
@@ -1370,7 +1380,8 @@ struct UnsafePointer[
 
     @always_inline("nodebug")
     fn scatter[
-        dtype: DType, //,
+        dtype: DType,
+        //,
         *,
         width: Int = 1,
         alignment: Int = align_of[dtype](),
@@ -1633,7 +1644,8 @@ struct UnsafePointer[
 
     @always_inline
     fn take_pointee[
-        T: Movable, //,
+        T: Movable,
+        //,
     ](self: UnsafePointer[T]) -> T where type_of(self).mut:
         """Move the value at the pointer out, leaving it uninitialized.
 
@@ -1655,7 +1667,8 @@ struct UnsafePointer[
 
     @always_inline
     fn init_pointee_move[
-        T: Movable, //,
+        T: Movable,
+        //,
     ](self: UnsafePointer[T], var value: T) where type_of(self).mut:
         """Emplace a new value into the pointer location, moving from `value`.
 
@@ -1677,7 +1690,8 @@ struct UnsafePointer[
 
     @always_inline
     fn init_pointee_copy[
-        T: Copyable, //,
+        T: Copyable,
+        //,
     ](self: UnsafePointer[T], value: T) where type_of(self).mut:
         """Emplace a copy of `value` into the pointer location.
 
@@ -1699,7 +1713,8 @@ struct UnsafePointer[
 
     @always_inline
     fn init_pointee_move_from[
-        T: Movable, //,
+        T: Movable,
+        //,
     ](self: UnsafePointer[T], src: UnsafePointer[T]) where (
         type_of(self).mut
     ) and (type_of(src).mut):

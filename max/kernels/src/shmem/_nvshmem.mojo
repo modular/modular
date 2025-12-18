@@ -160,9 +160,9 @@ struct NVSHMEMXInitAttr:
     var args: NVSHMEMXInitArgs
 
     fn __init__(out self, mpi_comm: UnsafePointer[MPIComm]):
-        constrained[
-            size_of[Self]() == 144, "NVSHMEMXInitAttr must be 144 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 144
+        ), "NVSHMEMXInitAttr must be 144 bytes"
         self.version = (1 << 16) + size_of[NVSHMEMXInitAttr]()
         self.mpi_comm = mpi_comm
         self.args = NVSHMEMXInitArgs()
@@ -174,9 +174,9 @@ struct NVSHMEMXInitArgs:
     var content: InlineArray[Byte, 96]
 
     fn __init__(out self):
-        constrained[
-            size_of[Self]() == 128, "NVSHMEMXInitArgs must be 128 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 128
+        ), "NVSHMEMXInitArgs must be 128 bytes"
         self.version = (1 << 16) + size_of[NVSHMEMXInitArgs]()
         self.uid_args = NVSHMEMXUniqueIDArgs()
         self.content = InlineArray[Byte, 96](fill=0)
@@ -189,9 +189,9 @@ struct NVSHMEMXUniqueIDArgs:
     var nranks: c_int
 
     fn __init__(out self):
-        constrained[
-            size_of[Self]() == 24, "NVSHMEMXUniqueIDArgs must be 24 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 24
+        ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
         self.version = (1 << 16) + size_of[NVSHMEMXUniqueIDArgs]()
         self.id = UnsafePointer[NVSHMEMXUniqueID]()
         self.myrank = 0
@@ -203,9 +203,9 @@ struct NVSHMEMXUniqueID:
     var internal: InlineArray[Byte, 124]
 
     fn __init__(out self):
-        constrained[
-            size_of[Self]() == 128, "nvshmemx_uniqueid_t must be 128 bytes"
-        ]()
+        __comptime_assert (
+            size_of[Self]() == 128
+        ), "nvshmemx_uniqueid_t must be 128 bytes"
         self.version = (1 << 16) + size_of[NVSHMEMXUniqueID]()
         self.internal = InlineArray[Byte, 124](fill=0)
 
@@ -476,7 +476,8 @@ fn nvshmemx_team_init() -> c_int:
 
 
 fn nvshmem_put[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],
@@ -491,7 +492,8 @@ fn nvshmem_put[
 
 
 fn nvshmem_put_nbi[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],
@@ -513,7 +515,8 @@ fn nvshmem_p[
 
 
 fn nvshmem_get[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],
@@ -528,7 +531,8 @@ fn nvshmem_get[
 
 
 fn nvshmem_get_nbi[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],

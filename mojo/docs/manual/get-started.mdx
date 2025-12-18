@@ -1,7 +1,7 @@
 ---
 title: "Get started with Mojo"
 description: "Install Mojo and learn the language basics by building a complete Mojo program"
-github_url: https://github.com/modular/modular/tree/main/examples/mojo/life
+github_url: https://github.com/modular/modular/tree/main/mojo/examples/life
 image: /images/artwork/mojo-get-started.jpg
 ---
 
@@ -25,7 +25,7 @@ started so you can learn Mojo programming basics, including the following:
 
 There's a lot to learn, but we've tried to keep the explanations simple. If you
 just want to see the finished code, you can [get it on
-GitHub](https://github.com/modular/modular/tree/main/examples/mojo/life).
+GitHub](https://github.com/modular/modular/tree/main/mojo/examples/life).
 
 System requirements:
 
@@ -150,7 +150,7 @@ If you've programmed in Python before, this should look familiar.
 - You can use any number of spaces or tabs for indentation as long as you use
   the same indentation for the entire code block. We'll follow the [Python style
   guide](https://peps.python.org/pep-0008/) and use 4 spaces.
-- This [`print()`](/mojo/stdlib/builtin/io/print) function is a Mojo built-in,
+- This [`print()`](/mojo/std/builtin/io/print) function is a Mojo built-in,
   so it doesn't require an import.
 
 An executable Mojo program *requires* you to define a no-argument `main()`
@@ -202,8 +202,8 @@ Hello, World!
 
 Let's extend this basic program by prompting the user for their name and
 including it in the greeting. The built-in
-[`input()`](/mojo/stdlib/io/io/input) function accepts an optional
-[`String`](/mojo/stdlib/collections/string/string/String) argument to use as a
+[`input()`](/mojo/std/io/io/input) function accepts an optional
+[`String`](/mojo/std/collections/string/string/String) argument to use as a
 prompt and returns a `String` consisting of the characters the user entered
 (with the newline character at the end stripped off).
 
@@ -266,7 +266,7 @@ come into play later when we implement the algorithm for calculating each
 subsequent generation.
 
 To keep track of the height and width of our grid, we'll use
-[`Int`](/mojo/stdlib/builtin/int/Int), which represents a signed integer of the
+[`Int`](/mojo/std/builtin/int/Int), which represents a signed integer of the
 [word size](https://en.wikipedia.org/wiki/Word_(computer_architecture)) of the
 CPU, typically 32 or 64 bits.
 
@@ -277,7 +277,7 @@ neighboring cells.
 
 To represent the state of the entire grid, we need a [collection
 type](/mojo/manual/types#collection-types). The most appropriate for this use
-case is [`List`](/mojo/stdlib/collections/list/List), which is a
+case is [`List`](/mojo/std/collections/list/List), which is a
 dynamically-sized sequence of values.
 
 All values in a Mojo `List` must be the same type so the Mojo compiler can
@@ -417,13 +417,13 @@ checking its API documentation to see what *traits* it conforms to. A Mojo
 implement, usually in the form of one or more method signatures.
 
 - The `List` type and other Mojo collection types like
-  [`Dict`](/mojo/stdlib/collections/dict/Dict/) and
-  [`Set`](/mojo/stdlib/collections/set/Set/) conform to the
-  [`Copyable`](/mojo/stdlib/builtin/value/Copyable/) trait, which indicates that
+  [`Dict`](/mojo/std/collections/dict/Dict/) and
+  [`Set`](/mojo/std/collections/set/Set/) conform to the
+  [`Copyable`](/mojo/std/builtin/value/Copyable/) trait, which indicates that
   they are **explicitly copyable**.
 
 - The `String`, `Int` and other numeric types conform to the
-  [`ImplicitlyCopyable`](/mojo/stdlib/builtin/value/ImplicitlyCopyable/) trait,
+  [`ImplicitlyCopyable`](/mojo/std/builtin/value/ImplicitlyCopyable/) trait,
   which indicates that they are **implicitly copyable**. Additionally, the
   `ImplicitlyCopyable` trait inherits from the `Copyable` and `Movable` traits, so you can also
   use types that conform to the `ImplicitlyCopyable` trait in the same way you
@@ -481,7 +481,7 @@ In the body of the function, we generate a `String` by appending an asterisk for
 each populated cell and a space for each unpopulated cell, separating each row
 of the grid with a newline character. We use nested `for` loops to iterate
 through each row and column of the grid, using
-[`range()`](/mojo/stdlib/builtin/range/range) to generate a sequence of integers
+[`range()`](/mojo/std/builtin/range/range) to generate a sequence of integers
 from 0 up to (but not including) the given end value. Then we append the correct
 characters to the `String` representation. See [Control
 flow](/mojo/manual/control-flow) for more information about `if`, `for`, and
@@ -626,9 +626,9 @@ structs support several different [lifecycle methods](/mojo/manual/lifecycle/)
 that define the behavior when an instance of the struct is created, moved,
 copied, and destroyed.
 
-Structs that conform to the [`Movable`](/mojo/stdlib/builtin/value/Movable/)
+Structs that conform to the [`Movable`](/mojo/std/builtin/value/Movable/)
 [trait](/mojo/manual/traits) denote a type whose value can be moved, and structs
-that conform to the [`Copyable`](/mojo/stdlib/builtin/value/Copyable/) trait
+that conform to the [`Copyable`](/mojo/std/builtin/value/Copyable/) trait
 denote a type whose value can be *explicitly* copied and/or moved. You can then
 implement custom move and copy constructors that perform the necessary
 operations to move or copy the instance.
@@ -823,8 +823,8 @@ can accept a value only if its type implements some required behavior—in this
 case, it only accepts types that can generate a `String` representation.
 
 To enforce this, the `String()` constructors require a type to conform to either
-the [`Stringable`](/mojo/stdlib/builtin/str/Stringable) or
-[`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising) trait. (This
+the [`Stringable`](/mojo/std/builtin/str/Stringable) or
+[`StringableRaising`](/mojo/std/builtin/str/StringableRaising) trait. (This
 type of function is sometimes referred to as a [*generic*
 function](/mojo/manual/parameters/#parameters-and-generics).) Each trait
 requires a conforming type to implement a `__str__()` method that returns a
@@ -1036,14 +1036,14 @@ unique value every time.
 
 Then we create `data` as an empty `List[List[Int]]`, which we'll populate with a
 random initial state. For each cell, we call
-[`random.random_si64()`](/mojo/stdlib/random/random/random_si64), which returns
+[`random.random_si64()`](/mojo/std/random/random/random_si64), which returns
 a random integer value from the provided minimum and maximum values of 0 and 1,
 respectively. This function actually returns a value of type `Int64`, which is a
 signed 64-bit integer value. As described in [Numeric
 types](/mojo/manual/types#numeric-types), this is *not* the same as the `Int`
 type, whose precision is dependent on the native word size of the system.
 Therefore, we're passing this value to the
-[`Int()`](/mojo/stdlib/builtin/int/Int/#__init__) constructor, which explicitly
+[`Int()`](/mojo/std/builtin/int/Int/#__init__) constructor, which explicitly
 converts a numeric value to an `Int`.
 
 After creating a complete row of random values, we append it to `data`. The
@@ -1250,7 +1250,7 @@ and run your Mojo executable in a virtual environment, such as one managed by
 :::
 
 You can import a Python module in Mojo using
-[`Python.import_module()`](/mojo/stdlib/python/python/Python#import_module).
+[`Python.import_module()`](/mojo/std/python/python/Python#import_module).
 This returns a reference to the module in the form of a `PythonObject` wrapper.
 You must store the reference in a variable so that you can then access the
 functions and objects in the module. For example:
@@ -1371,7 +1371,7 @@ pygame subsystems.
 
 The `set_mode()` function creates and initializes a window with the width and
 height passed as a Python tuple of two values. This returns a
-[`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) wrapper for the
+[`PythonObject`](/mojo/std/python/python_object/PythonObject) wrapper for the
 window, which we can then use to call functions and set attributes to manipulate
 the window. (For more information about interacting with Python objects from
 Mojo, see [Python types](/mojo/manual/python/types).)
@@ -1439,7 +1439,7 @@ export const Examples = {
     title: "Code examples",
     description: "Browse a wide range of Mojo code examples on GitHub",
     metadata: {
-        permalink: "https://github.com/modular/modular/tree/main/examples/mojo"
+        permalink: "https://github.com/modular/modular/tree/main/mojo/examples"
     }
 };
 

@@ -92,18 +92,18 @@ or a “null pointer”). Safe pointers aren't nullable.
 The Mojo standard library includes several pointer types with different
 characteristics:
 
-- [`Pointer`](/mojo/stdlib/memory/pointer/Pointer) is a safe pointer that points
+- [`Pointer`](/mojo/std/memory/pointer/Pointer) is a safe pointer that points
   to a single value that it doesn't own.
 
-- [`OwnedPointer`](/mojo/stdlib/memory/owned_pointer/OwnedPointer) is a smart
+- [`OwnedPointer`](/mojo/std/memory/owned_pointer/OwnedPointer) is a smart
   pointer that points to a single value, and maintains exclusive ownership of
   that value.
 
-- [`ArcPointer`](/mojo/stdlib/memory/arc/ArcPointer) is a reference-counted
+- [`ArcPointer`](/mojo/std/memory/arc/ArcPointer) is a reference-counted
   smart pointer that points to an owned value with ownership potentially shared
   with other instances of `ArcPointer`.
 
-- [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) points to
+- [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) points to
   one or more consecutive memory locations, and can refer to uninitialized
   memory.
 
@@ -138,7 +138,7 @@ The following sections provide more details on each pointer type.
 
 ## `Pointer`
 
-The [`Pointer`](/mojo/stdlib/memory/pointer/Pointer) type is a safe pointer that
+The [`Pointer`](/mojo/std/memory/pointer/Pointer) type is a safe pointer that
 points to a initialized value that it doesn't own. Some example use cases for a
 `Pointer` include:
 
@@ -166,7 +166,7 @@ value, so Mojo can track the lifetime of the referenced value.
 
 ## `OwnedPointer`
 
-The [`OwnedPointer`](/mojo/stdlib/memory/owned_pointer/OwnedPointer) type is a
+The [`OwnedPointer`](/mojo/std/memory/owned_pointer/OwnedPointer) type is a
 smart pointer designed for cases where there is single ownership of the
 underlying data. An `OwnedPointer` points to a single item, which is passed in
 when you initialize the `OwnedPointer`. The `OwnedPointer` allocates memory and
@@ -191,7 +191,7 @@ to use `ArcPointer` where you need a smart pointer that can be `Optional`.)
 
 ## `ArcPointer`
 
-An [`ArcPointer`](/mojo/stdlib/memory/arc/ArcPointer) is a reference-counted
+An [`ArcPointer`](/mojo/std/memory/arc/ArcPointer) is a reference-counted
 smart pointer, ideal for shared resources where the last owner for a given value
 may not be clear. Like an `OwnedPointer`, it points to a single value, and it
 allocates memory when you initialize the `ArcPointer` with a value:
@@ -239,14 +239,14 @@ def main():
 ```
 
 Note: The reference count is stored using an
-[`Atomic`](/mojo/stdlib/os/atomic/Atomic)
+[`Atomic`](/mojo/std/os/atomic/Atomic)
 value to ensure that updates to the reference count are thread-safe. However,
 Mojo doesn't currently enforce exclusive access across thread boundaries, so
 it's possible to form race conditions.
 
 ## UnsafePointer
 
-[`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) is a
+[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) is a
 low-level pointer that can access a block of contiguous memory locations, which
 might be uninitialized. It's analogous to a raw pointer in the C and C++
 programming languages. `UnsafePointer` provides unsafe methods for initializing

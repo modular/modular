@@ -13,8 +13,7 @@
 
 from sys import size_of, argv
 from utils.numerics import min_finite, max_finite
-from gpu import WARP_SIZE, barrier
-from gpu import lane_id as get_lane_id
+from gpu import WARP_SIZE, barrier, warp_id as get_warp_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx
@@ -106,11 +105,10 @@ fn block_scaled_mxfp8_kernel[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    constrained[num_threads == 256]()
-    constrained[
-        a_type == b_type and a_type is DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
+    __comptime_assert num_threads == 256
+    __comptime_assert (
+        a_type == b_type and a_type is DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -151,10 +149,10 @@ fn block_scaled_mxfp8_kernel[
         alignment=128,
     ]
 
-    constrained[
-        BM == BK == 128 and BN in (128, 256),
-        "Only support 128x128x128 or 128x256x128 block size",
-    ]()
+    __comptime_assert BM == BK == 128 and BN in (
+        128,
+        256,
+    ), "Only support 128x128x128 or 128x256x128 block size"
 
     comptime a_scales_smem_layout = tile_sf_layout_k_major[
         BM, BK, MXFP8_SF_VECTOR_SIZE
@@ -183,20 +181,18 @@ fn block_scaled_mxfp8_kernel[
     comptime a_scales_size = a_scales_smem_layout.size()
     comptime b_scales_size = b_scales_smem_layout.size()
 
-    constrained[
-        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((b_size * size_of[b_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((a_scales_size * size_of[a_scales_type]()) % 128) == 0,
-        "preserve alignment",
-    ]()
-    constrained[
-        ((b_scales_size * size_of[b_scales_type]()) % 16) == 0,
-        "preserve alignment",
-    ]()
+    __comptime_assert (
+        (a_size * size_of[a_type]()) % 128
+    ) == 0, "preserve alignment"
+    __comptime_assert (
+        (b_size * size_of[b_type]()) % 128
+    ) == 0, "preserve alignment"
+    __comptime_assert (
+        (a_scales_size * size_of[a_scales_type]()) % 128
+    ) == 0, "preserve alignment"
+    __comptime_assert (
+        (b_scales_size * size_of[b_scales_type]()) % 16
+    ) == 0, "preserve alignment"
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
     var a_scales_smem = (b_smem + b_size).bitcast[Scalar[a_scales_type]]()
@@ -233,7 +229,7 @@ fn block_scaled_mxfp8_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
@@ -444,7 +440,7 @@ fn block_scaled_mxfp8_kernel[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     comptime num_warps = num_threads // UInt(WARP_SIZE)
-    var warp_id = Int(thread_idx.x) // WARP_SIZE
+    var warp_id = get_warp_id()
     warp_id = 2 * (warp_id % 4) + warp_id // 4
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
@@ -511,15 +507,11 @@ fn sm100_block_scaled_mxfp8[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
-    constrained[
-        a_type == b_type and a_type is DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
+    __comptime_assert (
+        a_type == b_type and a_type is DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
 
     var M = c.dim(0)
     comptime N = c_layout.shape[1].value()
@@ -529,10 +521,10 @@ fn sm100_block_scaled_mxfp8[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    constrained[
-        BM == BK == 128 and BN in (128, 256),
-        "Only support 128x128x128 or 128x256x128 block size",
-    ]()
+    __comptime_assert BM == BK == 128 and BN in (
+        128,
+        256,
+    ), "Only support 128x128x128 or 128x256x128 block size"
 
     a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
     b_tma_op = create_tma_tile[
@@ -540,32 +532,27 @@ fn sm100_block_scaled_mxfp8[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    constrained[
-        a_scales_type == b_scales_type and a_scales_type == MXFP8_SF_DTYPE,
-        "Only support F8-UE8M0 scales",
-    ]()
-    constrained[
-        a_scales.rank == b_scales.rank == 5,
-        "a_scales and b_scales must be 5D tensors",
-    ]()
-    constrained[
+    __comptime_assert (
+        a_scales_type == b_scales_type and a_scales_type == MXFP8_SF_DTYPE
+    ), "Only support F8-UE8M0 scales"
+    __comptime_assert (
+        a_scales.rank == b_scales.rank == 5
+    ), "a_scales and b_scales must be 5D tensors"
+    __comptime_assert (
         a_scales_layout.shape[2].value()
         == b_scales_layout.shape[2].value()
-        == SF_ATOM_M[0],
-        "",
-    ]()
-    constrained[
+        == SF_ATOM_M[0]
+    ), ""
+    __comptime_assert (
         a_scales_layout.shape[3].value()
         == b_scales_layout.shape[3].value()
-        == SF_ATOM_M[1],
-        "",
-    ]()
-    constrained[
+        == SF_ATOM_M[1]
+    ), ""
+    __comptime_assert (
         a_scales_layout.shape[4].value()
         == b_scales_layout.shape[4].value()
-        == SF_ATOM_K,
-        "",
-    ]()
+        == SF_ATOM_K
+    ), ""
 
     comptime scales_4d_layout[layout: Layout] = Layout.row_major(
         layout.shape[0].value(),
@@ -675,7 +662,7 @@ def test_block_scaled_mxfp8[
     umma_shape: IndexList[3],
     transpose_b: Bool = True,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
-    constrained[transpose_b, "transpose_b must be true"]()
+    __comptime_assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value

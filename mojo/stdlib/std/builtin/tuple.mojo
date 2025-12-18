@@ -44,7 +44,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         `>`,
     ]
 
-    var storage: Self._mlir_type
+    var _mlir_value: Self._mlir_type
     """The underlying storage for the tuple."""
 
     # Overload that crushes down IR generated on the caller side.
@@ -52,7 +52,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     fn __init__(out self: Tuple[]):
         """Construct an empty tuple."""
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
     @always_inline("nodebug")
@@ -76,9 +76,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
             storage: The variadic pack storage to construct from.
         """
 
-        # Mark 'self.storage' as being initialized so we can work on it.
+        # Mark 'self._mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
         # Move each element into the tuple storage.
@@ -104,9 +104,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         Args:
             existing: The value to copy from.
         """
-        # Mark 'storage' as being initialized so we can work on it.
+        # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
         @parameter
@@ -132,9 +132,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         Args:
             existing: The value to move from.
         """
-        # Mark 'storage' as being initialized so we can work on it.
+        # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
         @parameter
@@ -179,7 +179,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         """
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
-        var storage_kgen_ptr = UnsafePointer(to=self.storage).address
+        var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
@@ -227,9 +227,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
             elt_types: The types of the elements contained in the Tuple.
         """
 
-        # Mark 'self.storage' as being initialized so we can work on it.
+        # Mark 'self._mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+            __get_mvalue_as_litref(self._mlir_value)
         )
 
         @parameter
@@ -333,7 +333,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     @always_inline
     fn __lt__[
         self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than comparison.
 
@@ -352,7 +353,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     @always_inline
     fn __le__[
         self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than or equal to comparison.
 
@@ -371,7 +373,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     @always_inline
     fn __gt__[
         self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than comparison.
 
@@ -392,7 +395,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     @always_inline
     fn __ge__[
         self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than or equal to comparison.
 
@@ -417,6 +421,14 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
 
         Returns:
             A new tuple with the elements in reverse order.
+
+        Usage:
+
+        ```mojo
+        image_coords = Tuple[Int, Int](100, 200) # row-major indexing
+        screen_coords = image_coords.reverse() # (col, row) for x,y display
+        print(screen_coords[0], screen_coords[1]) # output: 200, 100
+        ```
         """
         # Mark 'result' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -453,6 +465,14 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
 
         Returns:
             A new tuple with the concatenated elements.
+
+        Usage:
+
+        ```
+        var rgb = Tuple[Int, Int, Int](0xFF, 0xF0, 0x0)
+        var rgba = rgb.concat(Tuple[Int](0xFF)) # Adds alpha channel
+        print(rgba[0], rgba[1], rgba[2], rgba[3]) # 255 240 0 255
+        ```
         """
         # Mark 'result' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(

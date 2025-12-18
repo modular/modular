@@ -77,7 +77,7 @@ no longer used, and it is also immediately destroyed.
 
 The `String` value is a little more complicated. Mojo strings are mutable. The
 `String` object has an internal buffer—a
-[`List`](/mojo/stdlib/collections/list/List) field,
+[`List`](/mojo/std/collections/list/List) field,
 which holds the characters that make up the string. A `List` stores
 its contents in dynamically allocated memory on the heap, so the string can
 grow or shrink. The string itself doesn't have any special destructor logic,
@@ -146,7 +146,7 @@ dynamically allocate memory.
 
 Whereas, the following struct must define the `__del__()` method to free the
 memory allocated by its
-[`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer):
+[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer):
 
 ```mojo
 struct HeapArray(Writable):

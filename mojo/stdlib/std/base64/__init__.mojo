@@ -10,6 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the base64 package."""
+"""Binary data encoding: base64 and base16 encode/decode functions."""
 
 from .base64 import b16decode, b16encode, b64decode, b64encode

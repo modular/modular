@@ -86,7 +86,8 @@ fn llvm_intrinsic[
 @always_inline("nodebug")
 fn gather[
     dtype: DType,
-    size: Int, //,
+    size: Int,
+    //,
     *,
     invariant: Bool = False,
     alignment: Int = 0,
@@ -177,7 +178,8 @@ fn gather[
 @always_inline("nodebug")
 fn scatter[
     dtype: DType,
-    size: Int, //,
+    size: Int,
+    //,
     alignment: Int = 0,
 ](
     value: SIMD[dtype, size],
@@ -516,7 +518,8 @@ fn prefetch[
 
 @always_inline("nodebug")
 fn masked_load[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     size: Int,
     alignment: Int = 1,
 ](
@@ -820,7 +823,9 @@ fn _type_is_eq_parse_time[
 
 @register_passable("trivial")
 struct _RegisterPackType[*a: AnyTrivialRegType]:
-    var storage: __mlir_type[`!kgen.pack<`, Self.a, `>`]
+    comptime _mlir_type = __mlir_type[`!kgen.pack<`, Self.a, `>`]
+
+    var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
     fn __getitem__[i: Int](self) -> Self.a[i]:
@@ -833,7 +838,7 @@ struct _RegisterPackType[*a: AnyTrivialRegType]:
             The tuple element at the requested index.
         """
         return __mlir_op.`kgen.pack.extract`[index = i.__mlir_index__()](
-            self.storage
+            self._mlir_value
         )
 
 

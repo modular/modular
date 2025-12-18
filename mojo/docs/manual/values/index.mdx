@@ -54,7 +54,7 @@ managed automatically—the code to push and pop stack frames is added by the
 compiler. Heap memory, on the other hand, is managed by the programmer
 explicitly allocating and deallocating memory. You may do this indirectly—by
 using standard library types like `List` and `String`—or directly, using the
-[`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) API.
+[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) API.
 
 Values that need to outlive the lifetime of a function (such as
 an array that's passed between functions and should not be copied) are stored

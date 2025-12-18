@@ -1248,7 +1248,8 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
 
 @always_inline
 fn mma[
-    kind: UMMAKind, //,
+    kind: UMMAKind,
+    //,
     cta_group: Int = 1,
     /,
     *,
@@ -1339,7 +1340,8 @@ fn mma[
 
 @always_inline
 fn mma[
-    kind: UMMAKind, //,
+    kind: UMMAKind,
+    //,
     cta_group: Int = 1,
     /,
 ](
@@ -1424,7 +1426,8 @@ fn mma[
 
 @always_inline
 fn mma[
-    kind: UMMAKind, //,
+    kind: UMMAKind,
+    //,
     cta_group: Int = 1,
     /,
     *,
@@ -1511,7 +1514,8 @@ fn mma[
 
 @always_inline
 fn mma[
-    kind: UMMAKind, //,
+    kind: UMMAKind,
+    //,
     cta_group: Int = 1,
     /,
 ](
@@ -1597,7 +1601,8 @@ fn mma[
 
 @always_inline
 fn mma[
-    kind: UMMAKind, //,
+    kind: UMMAKind,
+    //,
     cta_group: Int = 1,
     /,
     *,

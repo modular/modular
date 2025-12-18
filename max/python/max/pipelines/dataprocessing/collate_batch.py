@@ -31,7 +31,7 @@ class PaddingDirection(enum.Enum):
 
 
 def collate_batch(
-    batch: list[npt.NDArray[np.integer[Any]]],
+    batch: list[npt.NDArray[np.int64]],
     direction: PaddingDirection = PaddingDirection.RIGHT,
     pad_value: int = 0,
     batch_size: int | None = None,
@@ -87,7 +87,7 @@ def collate_batch(
 
 def batch_padded_tokens_and_mask(
     start_pos: list[int],
-    tokens: list[npt.NDArray[np.integer[Any]]],
+    tokens: list[npt.NDArray[np.int64]],
 ) -> tuple[
     npt.NDArray[np.integer[Any]],
     npt.NDArray[np.integer[Any]],

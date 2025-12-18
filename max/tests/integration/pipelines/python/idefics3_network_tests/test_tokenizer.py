@@ -22,15 +22,35 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.idefics3.tokenizer import Idefics3Tokenizer
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from PIL import Image
+
+
+class MockKVCacheConfig(KVCacheConfig):
+    def __init__(self):
+        self.enable_prefix_caching = True
+
+
+class MockModelConfig(MAXModelConfig):
+    def __init__(self):
+        self._kv_cache_config = MockKVCacheConfig()
+
+
+class MockPipelineConfig(PipelineConfig):
+    def __init__(self):
+        self._model_config = MockModelConfig()
 
 
 @pytest.mark.asyncio
 async def test_idefics3_tokenizer_image_token_indices() -> None:
     """Test that the tokenizer correctly computes image token indices."""
 
-    tokenizer = Idefics3Tokenizer("HuggingFaceM4/Idefics3-8B-Llama3")
+    pipeline_config = MockPipelineConfig()
+    tokenizer = Idefics3Tokenizer(
+        "HuggingFaceM4/Idefics3-8B-Llama3", pipeline_config=pipeline_config
+    )
     assert tokenizer.vision_token_ids == [128257]
+    assert tokenizer.enable_prefix_caching is True
 
     # Create a real image for the test using config dimensions
     img_buffer = io.BytesIO()

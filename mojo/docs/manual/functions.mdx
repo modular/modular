@@ -290,7 +290,7 @@ We hope to remove these differences in the future.
 :::
 
 Register-passable types, such as `Int`, are available as a
-[`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList) type. As
+[`VariadicList`](/mojo/std/builtin/variadics/VariadicList) type. As
 shown in the previous example, you can iterate over the values using a `for..in`
 loop.
 
@@ -303,7 +303,7 @@ fn sum(*values: Int) -> Int:
 ```
 
 Memory-only types, such as `String`, are available as a
-[`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem).
+[`VariadicListMem`](/mojo/std/builtin/variadics/VariadicListMem).
 Iterating over this list directly with a `for..in` loop currently produces a
 reference to the element, which can be mutable with a `mut` variadic list. Use
 the `ref` binding pattern to capture a mutable reference if you
@@ -343,7 +343,7 @@ def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
 
 The parameter list, `[*ArgTypes: Intable]` specifies that the function takes an
 `ArgTypes` parameter, which is a list of types, all of which conform to the
-[`Intable`](/mojo/stdlib/builtin/int/Intable) trait. The asterisk in `*ArgTypes`
+[`Intable`](/mojo/std/builtin/int/Intable) trait. The asterisk in `*ArgTypes`
 indicates that `ArgTypes` is a **variadic type parameter** (a list of types).
 
 The argument list, `(*args: *ArgTypes)` has the familiar `*args` for the
@@ -356,7 +356,7 @@ This means that each argument in `args` has a corresponding type in `ArgTypes`,
 so <code>args[<var>n</var>]</code> is of type <code>ArgTypes[<var>n</var>]</code>.
 
 Inside the function, `args` becomes a
-[`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack) because the
+[`VariadicPack`](/mojo/std/builtin/variadics/VariadicPack) because the
 syntax `*args: *ArgTypes` creates a heterogeneous variadic argument. That means
 each element in `args` can be a different type that requires a different amount
 of memory. To iterate through the `VariadicPack`, the compiler must know each
@@ -408,7 +408,7 @@ In this example, the argument name `kwargs` is a placeholder that accepts any
 number of keyword arguments. Inside the body of the function, you can access
 the arguments as a dictionary of keywords and argument values (specifically,
 an instance of
-[`OwnedKwargsDict`](/mojo/stdlib/collections/dict/OwnedKwargsDict)).
+[`OwnedKwargsDict`](/mojo/std/collections/dict/OwnedKwargsDict)).
 
 There are currently a few limitations:
 
@@ -428,7 +428,7 @@ There are currently a few limitations:
   `OwnedKwargsDict[Float64]`.
 
 * The argument type must conform to the
-  [`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait.
+  [`Copyable`](/mojo/std/builtin/value/Copyable) trait.
 
 * Dictionary unpacking is not supported yet:
 
@@ -584,6 +584,15 @@ fn call_foo():
 
 Overloading also works with combinations of both `fn` and `def` function
 declarations.
+
+:::note Overload Sets
+An "overload set" is a collection of function overloads that share
+the same name but different signatures.
+
+- Overload sets can't be extended by imports, aliases, or parameters.
+- If you define a function in a Mojo module, it hides any
+  overload sets you imported earlier.
+:::
 
 ### Overload resolution
 

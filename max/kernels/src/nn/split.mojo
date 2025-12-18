@@ -43,10 +43,9 @@ fn split[
     ],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        input.rank == outputs[0].rank,
-        "Input and outputs must have the same rank.",
-    ]()
+    __comptime_assert (
+        input.rank == outputs[0].rank
+    ), "Input and outputs must have the same rank."
 
     # check inputs have same rank and same dims except for axis dim
     @parameter

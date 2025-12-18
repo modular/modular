@@ -678,7 +678,7 @@ fn mbarrier_arrive_expect_tx_shared[
 
     @parameter
     if is_nvidia_gpu():
-        __mlir_op.`nvvm.mbarrier.arrive.expect_tx`(
+        _ = __mlir_op.`nvvm.mbarrier.arrive.expect_tx`[_type = __mlir_type.i64](
             to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
         )
     else:

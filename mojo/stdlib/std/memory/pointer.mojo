@@ -178,7 +178,8 @@ compatibility and will be removed in a future release."""
 
 @register_passable("trivial")
 struct Pointer[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     type: UnknownDestructibility,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,

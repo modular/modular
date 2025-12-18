@@ -224,7 +224,8 @@ struct _WriteBufferHeap(Writable, Writer):
 
 struct _WriteBufferStack[
     origin: MutOrigin,
-    W: Writer, //,
+    W: Writer,
+    //,
     stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
 ](Writer):
     var data: InlineArray[UInt8, Int(Self.stack_buffer_bytes)]
@@ -281,7 +282,8 @@ struct _TotalWritableBytes(Writer):
         self.size = 0
 
     fn __init__[
-        T: Copyable & Writable, //,
+        T: Copyable & Writable,
+        //,
         origin: ImmutOrigin = StaticConstantOrigin,
     ](
         out self,

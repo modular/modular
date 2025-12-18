@@ -17,7 +17,8 @@
 fn my_sort[
     # infer-only parameters
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     # positional-only parameter
     values: SIMD[dtype, width],
     /,

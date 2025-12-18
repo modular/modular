@@ -2,7 +2,7 @@
 title: GPU block and warp operations and synchronization
 sidebar_label: Block and warp operations and synchronization
 description: A description of GPU block and warp operations and synchronization.
-github_url: https://github.com/modular/modular/tree/main/examples/mojo/gpu-block-and-warp
+github_url: https://github.com/modular/modular/tree/main/mojo/examples/gpu-block-and-warp
 ---
 
 When multiple GPU threads write to the same memory location without a defined
@@ -53,13 +53,13 @@ for coordinating parallel work on the GPU. Key topics include:
 
 - [Block-level synchronization and operations](#block-level-synchronization-and-operations):
   How to coordinate all threads within a thread block using
-  [`barrier()`](/mojo/stdlib/gpu/sync/sync/barrier) and block reduction
+  [`barrier()`](/mojo/std/gpu/sync/sync/barrier) and block reduction
   operations from the
-  [`gpu.primitives.block`](/mojo/stdlib/gpu/primitives/block) module.
+  [`gpu.primitives.block`](/mojo/std/gpu/primitives/block) module.
 - [Warp-level operations](#warp-level-operations): How to perform fine-grained
-  synchronization with [`syncwarp()`](/mojo/stdlib/gpu/sync/sync/syncwarp) and
+  synchronization with [`syncwarp()`](/mojo/std/gpu/sync/sync/syncwarp) and
   leverage high-speed data exchange using
-  [`gpu.primitives.warp`](/mojo/stdlib/gpu/primitives/warp) primitives.
+  [`gpu.primitives.warp`](/mojo/std/gpu/primitives/warp) primitives.
 - [Best practices and common pitfalls](#best-practices-and-common-pitfalls): How
   to use these primitives correctly to write reliable and portable GPU code.
 
@@ -86,7 +86,7 @@ and computation together.
 
 ### The `barrier()` primitive
 
-The [`gpu.sync.barrier()`](/mojo/stdlib/gpu/sync/sync/barrier) function is the
+The [`gpu.sync.barrier()`](/mojo/std/gpu/sync/sync/barrier) function is the
 primary mechanism for coordinating all threads within a single thread block. It
 creates a synchronization point in the kernel's execution flow that no thread
 can pass until every other thread in its block has also reached that point.
@@ -160,21 +160,21 @@ synchronization.
 
 In addition to the basic `barrier()` primitive, Mojo provides higher-level
 block-wide collective operations through the
-[`gpu.primitives.block`](/mojo/stdlib/gpu/primitives/block) module. These
+[`gpu.primitives.block`](/mojo/std/gpu/primitives/block) module. These
 operations combine the coordination functionality of `barrier()` with common
 computational patterns, offering both convenience and performance benefits.
 
 The `gpu.primitives.block` module includes several reduction primitives:
 
-- [`sum(val)`](/mojo/stdlib/gpu/primitives/block/sum): Computes the sum of `val`
+- [`sum(val)`](/mojo/std/gpu/primitives/block/sum): Computes the sum of `val`
   across all threads in the block.
-- [`max(val)`](/mojo/stdlib/gpu/primitives/block/max): Computes the maximum
+- [`max(val)`](/mojo/std/gpu/primitives/block/max): Computes the maximum
   `val` across all threads in the block.
-- [`min(val)`](/mojo/stdlib/gpu/primitives/block/min): Computes the minimum
+- [`min(val)`](/mojo/std/gpu/primitives/block/min): Computes the minimum
   `val` across all threads in the block.
-- [`broadcast(val, src_thread=0)`](/mojo/stdlib/gpu/primitives/block/broadcast):
+- [`broadcast(val, src_thread=0)`](/mojo/std/gpu/primitives/block/broadcast):
   Broadcasts the value from `src_thread` to all other threads in the block.
-- [`prefix_sum[exclusive=False](val)`](/mojo/stdlib/gpu/primitives/block/prefix_sum):
+- [`prefix_sum[exclusive=False](val)`](/mojo/std/gpu/primitives/block/prefix_sum):
   Computes an inclusive (default) or exclusive prefix sum (scan) across threads
   in the block. A prefix sum transforms an input sequence into cumulative sums:
   given $[x_0, x_1, x_2, x_3]$, an *inclusive* scan produces $[x_0, x_0+x_1,
@@ -425,7 +425,7 @@ warp:
 
 ### Warp-level synchronization
 
-The [`gpu.sync.syncwarp()`](/mojo/stdlib/gpu/sync/sync/syncwarp) function
+The [`gpu.sync.syncwarp()`](/mojo/std/gpu/sync/sync/syncwarp) function
 provides a more granular synchronization barrier that operates only on the
 threads within a single warp.
 
@@ -509,30 +509,30 @@ to achieve near-zero latency data exchange. This makes them ideal for:
 
 #### Warp shuffle operations
 
-The [`gpu.primitives.warp`](/mojo/stdlib/gpu/primitives/warp) module provides
+The [`gpu.primitives.warp`](/mojo/std/gpu/primitives/warp) module provides
 five shuffle primitives, each optimized for specific data movement patterns:
 
-- [`shuffle_up(value, delta)`](/mojo/stdlib/gpu/primitives/warp/shuffle_up):
+- [`shuffle_up(value, delta)`](/mojo/std/gpu/primitives/warp/shuffle_up):
   Each thread receives the value from a thread with a lower lane ID (that is,
   from lane current_lane - `delta`). If the resulting lane ID is less than 0,
   the thread receives an undefined value.
 
-- [`shuffle_down(value, delta)`](/mojo/stdlib/gpu/primitives/warp/shuffle_down):
+- [`shuffle_down(value, delta)`](/mojo/std/gpu/primitives/warp/shuffle_down):
   Each thread receives a value from a thread with a higher lane ID (that is,
   from lane current_lane + `delta`). If the resulting lane ID is greater than or
   equal to the warp size, the thread receives an undefined value.
 
-- [`shuffle_xor(value, offset)`](/mojo/stdlib/gpu/primitives/warp/shuffle_xor):
+- [`shuffle_xor(value, offset)`](/mojo/std/gpu/primitives/warp/shuffle_xor):
   Each thread exchanges its value with the thread at lane current_lane XOR
   `offset`. This is particularly useful for implementing butterfly patterns
   common in algorithms like FFTs and parallel reductions.
 
-- [`shuffle_idx(value, src_lane)`](/mojo/stdlib/gpu/primitives/warp/shuffle_idx):
+- [`shuffle_idx(value, src_lane)`](/mojo/std/gpu/primitives/warp/shuffle_idx):
   Each thread receives the value from the thread at the specified `src_lane`.
   This is effectively a broadcast from one lane to all others in the warp.
   Essential for sharing computed results or constants across the entire warp.
 
-- [`broadcast(value)`](/mojo/stdlib/gpu/primitives/warp/broadcast): A
+- [`broadcast(value)`](/mojo/std/gpu/primitives/warp/broadcast): A
   convenience wrapper around `shuffle_idx()` that distributes the value from
   lane 0 to all other threads in the warp.
 
@@ -614,16 +614,16 @@ performing common reduction computations across all threads in a warp. These
 functions take advantage of hardware-specific intrinsics where possible, and
 fall back to shuffle-based reduction on other architectures:
 
-- [`max(value)`](/mojo/stdlib/gpu/primitives/warp/max): Computes the maximum
+- [`max(value)`](/mojo/std/gpu/primitives/warp/max): Computes the maximum
   `value` across all threads in the warp. The result is broadcast to all lanes.
 
-- [`min(value)`](/mojo/stdlib/gpu/primitives/warp/min): Computes the minimum
+- [`min(value)`](/mojo/std/gpu/primitives/warp/min): Computes the minimum
   `value` across all threads in the warp. The result is broadcast to all lanes.
 
-- [`sum(value)`](/mojo/stdlib/gpu/primitives/warp/sum): Computes the sum of
+- [`sum(value)`](/mojo/std/gpu/primitives/warp/sum): Computes the sum of
   `value` across all threads in the warp. The result is broadcast to all lanes.
 
-- [`prefix_sum[exclusive=False](value)`](/mojo/stdlib/gpu/primitives/warp/prefix_sum):
+- [`prefix_sum[exclusive=False](value)`](/mojo/std/gpu/primitives/warp/prefix_sum):
   Computes an inclusive (default) or exclusive prefix sum (scan) across threads
   in the warp. A prefix sum transforms an input sequence into cumulative sums:
   given $[x_0, x_1, x_2, x_3]$, an *inclusive* scan produces $[x_0, x_0+x_1,
@@ -675,19 +675,19 @@ latest information on availability.
 Mechanisms currently available only on NVIDIA GPUs:
 
 - **Semaphores**
-  ([`gpu.sync.semaphore.Semaphore`](/mojo/stdlib/gpu/sync/semaphore/Semaphore),
-  [`gpu.sync.semaphore.NamedBarrierSemaphore`](/mojo/stdlib/gpu/sync/semaphore/NamedBarrierSemaphore)):
+  ([`gpu.sync.semaphore.Semaphore`](/mojo/std/gpu/sync/semaphore/Semaphore),
+  [`gpu.sync.semaphore.NamedBarrierSemaphore`](/mojo/std/gpu/sync/semaphore/NamedBarrierSemaphore)):
   Device-wide semaphore implementations for inter-CTA synchronization using
   shared lock variables. Provides
-  [`fetch()`](/mojo/stdlib/gpu/sync/semaphore/Semaphore/#fetch),
-  [`wait()`](/mojo/stdlib/gpu/sync/semaphore/Semaphore/#wait),
-  [`release()`](/mojo/stdlib/gpu/sync/semaphore/Semaphore/#release), and
-  [`state()`](/mojo/stdlib/gpu/sync/semaphore/Semaphore/#state) methods for
+  [`fetch()`](/mojo/std/gpu/sync/semaphore/Semaphore/#fetch),
+  [`wait()`](/mojo/std/gpu/sync/semaphore/Semaphore/#wait),
+  [`release()`](/mojo/std/gpu/sync/semaphore/Semaphore/#release), and
+  [`state()`](/mojo/std/gpu/sync/semaphore/Semaphore/#state) methods for
   state management methods for coordinating work across thread blocks.
 
 - **Named barriers**
-  ([`gpu.sync.named_barrier()`](/mojo/stdlib/gpu/sync/sync/named_barrier),
-  [`gpu.sync.named_barrier_arrive()`](/mojo/stdlib/gpu/sync/sync/named_barrier_arrive)):
+  ([`gpu.sync.named_barrier()`](/mojo/std/gpu/sync/sync/named_barrier),
+  [`gpu.sync.named_barrier_arrive()`](/mojo/std/gpu/sync/sync/named_barrier_arrive)):
   Hardware-accelerated block-level barriers using barrier IDs (0-16) for
   split-phase synchronization patterns. Useful for TMA operations and high-performance
   pipeline algorithms.
@@ -695,38 +695,38 @@ Mechanisms currently available only on NVIDIA GPUs:
 - **Memory barriers**:
   A suite of functions for tracking asynchronous memory operations and
   coordinating phased synchronization in shared memory. Includes
-  [`gpu.sync.mbarrier_init()`](/mojo/stdlib/gpu/sync/sync/mbarrier_init),
-  ([`gpu.sync.mbarrier_arrive()`](/mojo/stdlib/gpu/sync/sync/mbarrier_arrive),
-  [`gpu.sync.mbarrier_arrive_expect_tx_shared()`](/mojo/stdlib/gpu/sync/sync/mbarrier_arrive_expect_tx_shared),
-  [`gpu.sync.mbarrier_arrive_expect_tx_relaxed()`](/mojo/stdlib/gpu/sync/sync/mbarrier_arrive_expect_tx_relaxed),
-  [`gpu.sync.mbarrier_test_wait()`](/mojo/stdlib/gpu/sync/sync/mbarrier_test_wait),
+  [`gpu.sync.mbarrier_init()`](/mojo/std/gpu/sync/sync/mbarrier_init),
+  ([`gpu.sync.mbarrier_arrive()`](/mojo/std/gpu/sync/sync/mbarrier_arrive),
+  [`gpu.sync.mbarrier_arrive_expect_tx_shared()`](/mojo/std/gpu/sync/sync/mbarrier_arrive_expect_tx_shared),
+  [`gpu.sync.mbarrier_arrive_expect_tx_relaxed()`](/mojo/std/gpu/sync/sync/mbarrier_arrive_expect_tx_relaxed),
+  [`gpu.sync.mbarrier_test_wait()`](/mojo/std/gpu/sync/sync/mbarrier_test_wait),
   and
-  [`gpu.sync.mbarrier_try_wait_parity_shared()`](/mojo/stdlib/gpu/sync/sync/mbarrier_try_wait_parity_shared)).
+  [`gpu.sync.mbarrier_try_wait_parity_shared()`](/mojo/std/gpu/sync/sync/mbarrier_try_wait_parity_shared)).
 
 - **Thread fence**
-  ([`gpu.intrinsics.threadfence()`](/mojo/stdlib/gpu/intrinsics/threadfence)):
+  ([`gpu.intrinsics.threadfence()`](/mojo/std/gpu/intrinsics/threadfence)):
   Memory ordering fence (no execution barrier) that ensures memory operations
   are visible within a specified scope (block, GPU-wide, or system). Essential
   for lock-free algorithms and cross-block communication.
 
 - **Async bulk copy synchronization**
-  ([`gpu.sync.cp_async_bulk_commit_group()`](/mojo/stdlib/gpu/sync/sync/cp_async_bulk_commit_group),
-  [`gpu.sync.cp_async_bulk_wait_group()`](/mojo/stdlib/gpu/sync/sync/cp_async_bulk_wait_group)):
+  ([`gpu.sync.cp_async_bulk_commit_group()`](/mojo/std/gpu/sync/sync/cp_async_bulk_commit_group),
+  [`gpu.sync.cp_async_bulk_wait_group()`](/mojo/std/gpu/sync/sync/cp_async_bulk_wait_group)):
   Functions for coordinating asynchronous bulk memory transfer groups. Essential
   for managing pipeline stages with bulk memory operations.
 
 Mechanisms currently available only on AMD GPUs:
 
 - **Schedule barriers**
-  ([`gpu.sync.schedule_barrier()`](/mojo/stdlib/gpu/sync/sync/schedule_barrier),
-  [`gpu.sync.schedule_group_barrier()`](/mojo/stdlib/gpu/sync/sync/schedule_group_barrier)):
+  ([`gpu.sync.schedule_barrier()`](/mojo/std/gpu/sync/sync/schedule_barrier),
+  [`gpu.sync.schedule_group_barrier()`](/mojo/std/gpu/sync/sync/schedule_group_barrier)):
   Compiler instruction scheduling controls that allow selective reordering of
   instruction types across barriers. Enables performance optimizations by
   controlling which instruction categories can cross the barrier.
 
 - **Wait count**
-  ([`gpu.sync.s_waitcnt()`](/mojo/stdlib/gpu/sync/sync/s_waitcnt),
-  [`gpu.sync.s_waitcnt_barrier()`](/mojo/stdlib/gpu/sync/sync/s_waitcnt_barrier)):
+  ([`gpu.sync.s_waitcnt()`](/mojo/std/gpu/sync/sync/s_waitcnt),
+  [`gpu.sync.s_waitcnt_barrier()`](/mojo/std/gpu/sync/sync/s_waitcnt_barrier)):
   Precise synchronization primitives that wait for outstanding memory operations
   to complete based on counter values (vector memory, export, and LGKM
   counters). Available on **AMD CDNA GPUs only** (not available on older AMD
@@ -770,9 +770,9 @@ shared_counter[0] += my_value  # Multiple threads modify same location
 This leads to "lost updates" because the read-modify-write sequence isn't
 atomic. To prevent this, you must use synchronization primitives like
 `barrier()` to coordinate access or use
-[`Atomic`](/mojo/stdlib/os/atomic/Atomic/) operations for simple updates. For
+[`Atomic`](/mojo/std/os/atomic/Atomic/) operations for simple updates. For
 example, you could use the
-[`Atomic.fetch_add()`](/mojo/stdlib/os/atomic/Atomic/#fetch_add) method to
+[`Atomic.fetch_add()`](/mojo/std/os/atomic/Atomic/#fetch_add) method to
 atomically increment the counter:
 
 ```mojo
@@ -879,7 +879,7 @@ and correctness everywhere else.
 
 Second, always avoid hardcoding hardware-specific values. The most common
 mistake is assuming a warp size of 32. Use the
-[`gpu.WARP_SIZE`](/mojo/stdlib/gpu/globals/#warp_size) constant to ensure your
+[`gpu.WARP_SIZE`](/mojo/std/gpu/globals/#warp_size) constant to ensure your
 code works correctly on all vendors' hardware.
 
 Finally, for highly-tuned kernels, you can use `@parameter if` blocks to write

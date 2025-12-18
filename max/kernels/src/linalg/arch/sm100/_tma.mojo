@@ -94,13 +94,12 @@ fn create_tma_descriptor[
         If the TMA descriptor creation fails.
     """
 
-    constrained[depth(tile_shape) == 1, "Tile shape must be a flat tuple"]()
+    __comptime_assert depth(tile_shape) == 1, "Tile shape must be a flat tuple"
 
     comptime rank = len(tile_shape)
-    constrained[
-        rank == gmem_tensor.rank,
-        "Tile shape and input tensor's rank must match",
-    ]()
+    __comptime_assert (
+        rank == gmem_tensor.rank
+    ), "Tile shape and input tensor's rank must match"
 
     # Convert IntTuple to IndexList for create_tensormap
     return TMADescriptor[dtype, tile_shape, swizzle_mode](
@@ -167,44 +166,32 @@ struct TMALoad[
 
     @staticmethod
     fn verify_destination_tensor(dst: LayoutTensor):
-        constrained[
-            Self.dtype == dst.dtype,
-            String(
-                "type mismatch: expected ", Self.dtype, " passed in ", dst.dtype
-            ),
-        ]()
+        __comptime_assert Self.dtype == dst.dtype, String(
+            "type mismatch: expected ", Self.dtype, " passed in ", dst.dtype
+        )
 
-        constrained[
-            dst.address_space == AddressSpace.SHARED,
-            String(
-                "address space mismatch: expected ",
-                AddressSpace.SHARED,
-                " passed in ",
-                dst.address_space,
-            ),
-        ]()
+        __comptime_assert dst.address_space == AddressSpace.SHARED, String(
+            "address space mismatch: expected ",
+            AddressSpace.SHARED,
+            " passed in ",
+            dst.address_space,
+        )
 
-        constrained[
-            dst.alignment % Self.smem_alignment == 0,
-            String(
-                "alignment mismatch: expected ",
-                Self.smem_alignment,
-                " passed in ",
-                dst.alignment,
-            ),
-        ]()
+        __comptime_assert dst.alignment % Self.smem_alignment == 0, String(
+            "alignment mismatch: expected ",
+            Self.smem_alignment,
+            " passed in ",
+            dst.alignment,
+        )
 
     @staticmethod
     fn verify_source_tensor(src: LayoutTensor):
-        constrained[
-            src.address_space == AddressSpace.GLOBAL,
-            String(
-                "address space mismatch: expected ",
-                AddressSpace.GLOBAL,
-                " passed in ",
-                src.address_space,
-            ),
-        ]()
+        __comptime_assert src.address_space == AddressSpace.GLOBAL, String(
+            "address space mismatch: expected ",
+            AddressSpace.GLOBAL,
+            " passed in ",
+            src.address_space,
+        )
 
     @staticmethod
     fn layout_is_tma_compatible[repeat_pattern: Layout]() -> Bool:
@@ -248,12 +235,11 @@ struct TMALoad[
             1
         ]
 
-        constrained[
+        __comptime_assert (
             Self.layout_is_tma_compatible[repeat_pattern]()
             or repeat_pattern.size() == 1
-            or check_tma_compatibility == False,
-            "Layout does not respect TMA bank alignment",
-        ]()
+            or check_tma_compatibility == False
+        ), "Layout does not respect TMA bank alignment"
 
         return repeat_pattern
 
@@ -265,7 +251,8 @@ comptime MBarPtr = UnsafePointer[
 
 
 fn copy[
-    rank: Int, //,
+    rank: Int,
+    //,
     cta_group: Int = 1,
 ](
     policy: TMALoad[*_],
@@ -323,10 +310,9 @@ fn copy[
         coalesced_layout, check_tma_compatibility=False
     ]()
 
-    constrained[
-        dst_repeat_pattern.size() == src_repeat_pattern.size(),
-        "Repeat patterns must have the same size",
-    ]()
+    __comptime_assert (
+        dst_repeat_pattern.size() == src_repeat_pattern.size()
+    ), "Repeat patterns must have the same size"
 
     comptime num_copies = src_repeat_pattern.size()
 

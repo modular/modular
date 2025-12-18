@@ -38,7 +38,7 @@ class Gemma3VisionEmbeddings(Module):
         self.embed_dim = config.vision_config.hidden_size
         self.image_size = config.vision_config.image_size
         self.patch_size = config.vision_config.patch_size
-        self.dtype = config.dtype
+        self.dtype = DType.bfloat16
 
         self.patch_embedding = Conv2d(
             in_channels=self.num_channels,

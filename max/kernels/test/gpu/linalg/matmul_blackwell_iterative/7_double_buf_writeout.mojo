@@ -374,7 +374,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
 
     # We break down the output tile BM x MMA_N to BM x stageN tiles
     # and output one tile per stage.
@@ -606,10 +606,10 @@ fn kernel_7[
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
     compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var warp_id = get_warp_id()
+    var elect_one_warp = warp_id == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
-    var warp_id = get_warp_id()
     comptime max_tmem_cols = 512
 
     if elect_one_warp:
@@ -781,10 +781,7 @@ fn blackwell_kernel_7[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]

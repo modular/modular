@@ -198,7 +198,8 @@ fn index_tensor[
 # Batch dims refer to the number of sliced dimensions at the beginning
 fn _index_tensor_1d[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     batch_dims: Int,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -208,10 +209,9 @@ fn _index_tensor_1d[
     output: LayoutTensor[mut=True, dtype, **_],
     ctx: Optional[DeviceContext] = None,
 ):
-    constrained[
-        data.rank >= 2 and indices.rank == 2,
-        "Constraint: data_rank >= 2 and indices_rank == 2",
-    ]()
+    __comptime_assert (
+        data.rank >= 2 and indices.rank == 2
+    ), "Constraint: data_rank >= 2 and indices_rank == 2"
 
     var last_index_dim = indices.runtime_layout.shape.value[indices.rank - 1]
 
@@ -288,7 +288,8 @@ fn _index_tensor_1d[
 
 fn _index_tensor_impl[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     batch_dims: Int,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -298,10 +299,9 @@ fn _index_tensor_impl[
     output: LayoutTensor[mut=True, dtype, **_],
     ctx: Optional[DeviceContext] = None,
 ) raises:
-    constrained[
-        data.rank >= 2 and indices.rank >= 2,
-        "Constraint: data_rank >= 2 and indices_rank >= 2",
-    ]()
+    __comptime_assert (
+        data.rank >= 2 and indices.rank >= 2
+    ), "Constraint: data_rank >= 2 and indices_rank >= 2"
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
@@ -433,7 +433,8 @@ fn advanced_indexing_getitem[
     input_rank: Int,
     index_rank: Int,
     input_type: DType,
-    index_type: DType, //,
+    index_type: DType,
+    //,
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
@@ -504,10 +505,10 @@ fn advanced_indexing_getitem[
     TODO(GEX-1953): Support fusion (especially view-fusion)
     """
     # Do not support boolean masks at this time.
-    constrained[index_type != DType.bool]()
-    constrained[
+    __comptime_assert index_type != DType.bool
+    __comptime_assert (
         out_tensor.rank == input_rank + index_rank - num_index_tensors
-    ]()
+    )
 
     @parameter
     @always_inline
@@ -580,7 +581,8 @@ fn advanced_indexing_getitem[
 @always_inline
 fn advanced_indexing_getitem_shape[
     input_rank: Int,
-    index_rank: Int, //,
+    index_rank: Int,
+    //,
     start_axis: Int,
     num_index_tensors: Int,
 ](
@@ -621,7 +623,8 @@ fn advanced_indexing_setitem_inplace[
     index_rank: Int,
     updates_rank: Int,
     input_type: DType,
-    index_type: DType, //,
+    index_type: DType,
+    //,
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
@@ -717,7 +720,7 @@ fn advanced_indexing_setitem_inplace[
 
     # First calculate
     comptime iteration_rank = input_tensor.rank + index_rank - num_index_tensors
-    constrained[iteration_rank == updates_rank]()
+    __comptime_assert iteration_rank == updates_rank
     var iteration_shape = IndexList[iteration_rank]()
 
     # Find the common iteration space

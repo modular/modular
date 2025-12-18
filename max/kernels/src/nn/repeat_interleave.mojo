@@ -78,8 +78,8 @@ fn repeat_interleave[
         is_row_major[input.rank](input.layout)
         and is_row_major[output.rank](output.layout)
     )
-    constrained[input.rank == output.rank]()
-    constrained[repeats.rank == 1]()
+    __comptime_assert input.rank == output.rank
+    __comptime_assert repeats.rank == 1
 
     # Compute the shape of the input and result buffers.
     # These are the shapes of the buffers we will be working on.
@@ -158,8 +158,8 @@ fn repeat_interleave_shape[
     repeats: LayoutTensor[type_repeats, _, _, **_],
     axis: Int,
 ) raises -> IndexList[input.rank]:
-    constrained[type_repeats.is_integral()]()
-    constrained[repeats.rank == 1]()
+    __comptime_assert type_repeats.is_integral()
+    __comptime_assert repeats.rank == 1
 
     var repeats_size = repeats.dim[0]()
     if repeats_size != 1 and repeats_size != input.dim(axis):

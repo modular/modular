@@ -839,7 +839,8 @@ fn _find_dylib[name: StaticString = ""](*paths: Path) -> OwnedDLHandle:
 # NOTE: This is vending shared mutable pointers to the client without locking.
 # This is not guaranteeing any sort of thread safety.
 struct _Global[
-    StorageType: Movable, //,
+    StorageType: Movable,
+    //,
     name: StaticString,
     init_fn: fn () -> StorageType,
     on_error_msg: Optional[fn () -> Error] = None,

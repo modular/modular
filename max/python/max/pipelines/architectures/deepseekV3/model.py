@@ -127,6 +127,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
+        max_batch_context_length = self.pipeline_config.max_batch_context_length
+        # PipelineConfig would automatically resolve it if not set by user.
+        assert max_batch_context_length is not None, "max_length must be set"
+
         if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
             graph_mode = "prefill"
         elif self.pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
@@ -227,6 +231,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            max_batch_context_length=max_batch_context_length,
             float8_config=float8_config,
             ep_config=ep_config,
             graph_mode=graph_mode,
@@ -256,7 +261,12 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # better than directly using the raw weights size.
 
         # First, Calculate the lm_head/embed_tokens size.
-        lm_head_size = config.vocab_size * config.hidden_size * dtype
+        # There are always in Bf16.
+        lm_head_size = (
+            config.vocab_size
+            * config.hidden_size
+            * DType.bfloat16.size_in_bytes
+        )
         embed_tokens_size = lm_head_size
 
         # Subtract the lm_head/embed_tokens size from the weights size
@@ -266,7 +276,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # We don't use the MTP module for now, so subtract the MTP attn/moe size.
         # Estimate the MTP module size by assuming the MTP layer is of the same
         # size as a sparse model layer.
-        weights_size *= n_sparse_layers / (n_sparse_layers + n_mtp_layers)
+        weights_size = int(
+            weights_size * n_sparse_layers / (n_sparse_layers + n_mtp_layers)
+        )
 
         # Calculate the routing experts and the shared experts size.
         expert_size = (

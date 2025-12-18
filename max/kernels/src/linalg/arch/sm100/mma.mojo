@@ -34,7 +34,7 @@ from utils.index import Index, IndexList, product
 
 # TODO: Add methods to conveniently extract specific modes from a layout.
 fn extract_first_2_modes[l: Layout]() -> Layout:
-    constrained[l.rank() >= 2]()
+    __comptime_assert l.rank() >= 2
 
     return Layout(
         IntTuple(l.shape[0].value(), l.shape[1].value()),
@@ -55,7 +55,8 @@ struct Major:
 
 
 fn max_contiguous_tile_shape[
-    rank: Int, //,
+    rank: Int,
+    //,
     dtype: DType,
     tile_shape: IndexList[rank],
     /,
@@ -66,7 +67,7 @@ fn max_contiguous_tile_shape[
     """Returns the maximum shape of a tile that's contiguous in memory for mma op. This is used to create TMA descriptor.
     """
 
-    constrained[rank == 2, "Only 2D tensors are supported!"]()
+    __comptime_assert rank == 2, "Only 2D tensors are supported!"
 
     @parameter
     if major == Major.K:
@@ -126,7 +127,8 @@ fn _create_mma_desc_pair[
 
 @always_inline
 fn smem_descriptor[
-    dtype: DType, //,
+    dtype: DType,
+    //,
     *,
     BMN: Int,
     BK: Int,
@@ -170,15 +172,16 @@ struct MmaOpSM100_SS[
 
     @always_inline
     fn __init__(out self):
-        constrained[Self.transpose_b, "MmaOpSM100 only supports transposed B"]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "MmaOpSM100 only supports cta_group 1 or 2",
-        ]()
-        constrained[
-            Self.a_type == Self.b_type,
-            "a_type and b_type must be the same",
-        ]()
+        __comptime_assert (
+            Self.transpose_b
+        ), "MmaOpSM100 only supports transposed B"
+        __comptime_assert Self.cta_group in (
+            1,
+            2,
+        ), "MmaOpSM100 only supports cta_group 1 or 2"
+        __comptime_assert (
+            Self.a_type == Self.b_type
+        ), "a_type and b_type must be the same"
 
         self.idesc = UMMAInsDescriptor[
             Self._get_umma_kind[Self.a_type]()
