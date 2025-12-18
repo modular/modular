@@ -38,7 +38,7 @@ def test_op_with_int_parameter_passed_as_string(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_int_parameter' attribute 'IntParameter'.*",
+            match="""failed to convert custom op 'op_with_int_parameter' attribute 'IntParameter' with value '"Not an int!"' to the proper Mojo parameter type: expected an integer type""",
         ):
             graph.output(
                 ops.custom(
@@ -64,7 +64,7 @@ def test_op_with_int_parameter_passed_as_dtype(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_int_parameter' attribute 'IntParameter'.*",
+            match="failed to convert custom op 'op_with_int_parameter' attribute 'IntParameter' with value 'si32' to the proper Mojo parameter type: expected an integer type",
         ):
             graph.output(
                 ops.custom(
@@ -90,7 +90,7 @@ def test_op_with_dtype_parameter_passed_as_string(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_dtype_parameter' attribute 'DTypeParameter'.*",
+            match="failed to convert custom op 'op_with_dtype_parameter' attribute 'DTypeParameter' with value '\"Not a dtype!\"' to the proper Mojo parameter type: expected a DType",
         ):
             graph.output(
                 ops.custom(
@@ -116,7 +116,7 @@ def test_op_with_dtype_parameter_passed_as_int(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_dtype_parameter' attribute 'DTypeParameter'.*",
+            match="failed to convert custom op 'op_with_dtype_parameter' attribute 'DTypeParameter' with value '42 : index' to the proper Mojo parameter type: expected a DType",
         ):
             graph.output(
                 ops.custom(
@@ -142,7 +142,7 @@ def test_op_with_string_parameter_passed_as_int(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_string_parameter' attribute 'StringParameter'.*",
+            match=r"in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -168,7 +168,7 @@ def test_op_with_string_parameter_passed_as_dtype(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_string_parameter' attribute 'StringParameter'.*",
+            match=r"in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -194,7 +194,7 @@ def test_op_with_string_parameter_passed_as_string_literal(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_string_parameter' attribute 'StringParameter'.*",
+            match=r"in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -220,7 +220,7 @@ def test_op_with_string_slice_parameter_passed_as_int(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_string_slice_parameter' attribute 'StringParameter'.*",
+            match=r"in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -246,7 +246,7 @@ def test_op_with_string_slice_parameter_passed_as_dtype(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_string_slice_parameter' attribute 'StringParameter'.*",
+            match=r"in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -272,7 +272,7 @@ def test_op_with_string_slice_parameter_passed_as_string_literal(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_string_slice_parameter' attribute 'StringParameter'.*",
+            match=r"in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -298,7 +298,7 @@ def test_op_with_static_string_parameter_passed_as_int(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_static_string_parameter' attribute 'StringParameter'.*",
+            match="failed to convert custom op 'op_with_static_string_parameter' attribute 'StringParameter' with value '42 : index' to the proper Mojo parameter type: expected string type",
         ):
             graph.output(
                 ops.custom(
@@ -322,11 +322,9 @@ def test_op_with_unused_parameter_int(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        # Test that validation catches either the unused parameter or a type
-        # mismatch (validation order may differ between implementations)
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_int_parameter'.*",
+            match="parameter 'UnusedParameter' supplied to custom op 'op_with_int_parameter' does not exist in the corresponding Mojo code",
         ):
             graph.output(
                 ops.custom(
@@ -350,11 +348,9 @@ def test_op_with_unused_parameter_dtype(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        # Test that validation catches either the unused parameter or a type
-        # mismatch (validation order may differ between implementations)
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_dtype_parameter'.*",
+            match="parameter 'UnusedParameter' supplied to custom op 'op_with_dtype_parameter' does not exist in the corresponding Mojo code",
         ):
             graph.output(
                 ops.custom(
@@ -381,11 +377,9 @@ def test_op_with_unused_parameter_string(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        # Test that validation catches either the unused parameter or a type
-        # mismatch (validation order may differ between implementations)
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_static_string_parameter'.*",
+            match="parameter 'UnusedParameter' supplied to custom op 'op_with_static_string_parameter' does not exist in the corresponding Mojo code",
         ):
             graph.output(
                 ops.custom(
@@ -412,11 +406,9 @@ def test_op_with_multiple_unused_parameters(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        # Test that validation catches either the unused parameters or a type
-        # mismatch (validation order may differ between implementations)
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_int_parameter'.*",
+            match="parameter 'UnusedParam1' supplied to custom op 'op_with_int_parameter' does not exist in the corresponding Mojo code",
         ):
             graph.output(
                 ops.custom(
@@ -447,7 +439,7 @@ def test_op_with_static_string_parameter_passed_as_dtype(
     with graph:
         with pytest.raises(
             ValueError,
-            match=r".*custom op 'op_with_static_string_parameter' attribute 'StringParameter'.*",
+            match="failed to convert custom op 'op_with_static_string_parameter' attribute 'StringParameter' with value 'si32' to the proper Mojo parameter type: expected string type",
         ):
             graph.output(
                 ops.custom(
