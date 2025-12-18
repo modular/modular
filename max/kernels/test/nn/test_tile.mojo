@@ -13,6 +13,7 @@
 
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.tile import tile
+from testing import assert_equal
 
 from utils import IndexList
 
@@ -1082,7 +1083,54 @@ fn test_tile_eg14() raises:
     print()
 
 
+fn test_tile_1d() raises:
+    """Test tiling a 1D tensor.
+
+    This tests the edge case where input.rank == 1, which previously would
+    cause negative index access (repeats[-1], repeats[-2]) in the tile function.
+    """
+    comptime type = DType.float32
+    comptime type_repeats = DType.int64
+
+    var input_stack = InlineArray[Scalar[type], 3](uninitialized=True)
+    var input = LayoutTensor[type, Layout.row_major(3)](input_stack)
+
+    input[0] = 1
+    input[1] = 2
+    input[2] = 3
+
+    var repeats_stack = InlineArray[Scalar[type_repeats], 1](uninitialized=True)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(1)](repeats_stack)
+
+    repeats[0] = 3  # Tile 3 times along the single dimension
+
+    # Output: 3 * 3 = 9 elements
+    var output_stack = InlineArray[Scalar[type], 9](uninitialized=True)
+    var output = LayoutTensor[type, Layout.row_major(9)](output_stack)
+
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_1d](
+            input_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](1)),
+        ),
+        LayoutTensor[type, layout_unknown_1d](
+            output_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](9)),
+        ),
+    )
+
+    # Expected: [1, 2, 3] repeated 3 times
+    var expected = InlineArray[Scalar[type], 9](1, 2, 3, 1, 2, 3, 1, 2, 3)
+    for i in range(9):
+        assert_equal(output[i], expected[i])
+
+
 def main():
+    test_tile_1d()
     test_tile_eg1()
     test_tile_eg2()
     test_tile_eg3()
