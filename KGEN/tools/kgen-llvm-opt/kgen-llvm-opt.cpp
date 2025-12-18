@@ -184,8 +184,7 @@ int main(int argc, char **argv) {
   initializeTarget(registry);
   // For codegen passes, only passes that do IR to IR transformation are
   // supported.
-  initializeExpandLargeDivRemLegacyPassPass(registry);
-  initializeExpandFpLegacyPassPass(registry);
+  initializeExpandIRInstsLegacyPassPass(registry);
   initializeExpandMemCmpLegacyPassPass(registry);
   initializeScalarizeMaskedMemIntrinLegacyPassPass(registry);
   initializeSelectOptimizePass(registry);
