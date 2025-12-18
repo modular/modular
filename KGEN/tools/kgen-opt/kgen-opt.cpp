@@ -8,8 +8,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Runtime/Runtime.h"
 #include "Init/Init.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/Support/CompilerProfiling.h"
@@ -18,6 +16,8 @@
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "MLRT/AsyncRT/CompilerSupport/Context.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "mlir/IR/BuiltinOps.h"

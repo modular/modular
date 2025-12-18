@@ -1,0 +1,46 @@
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_test")
+
+# gazelle:default_visibility //visibility:private
+
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+modular_cc_test(
+    name = "QueueBenchmark",
+    srcs = ["QueueBenchmark.cpp"],
+    deps = [
+        "//MLRT:AsyncRT/Support",
+        "@google_benchmark//:benchmark_main",
+    ],
+)
+
+modular_cc_binary(
+    name = "bench_gpu_kernel_enqueue_cuda",
+    srcs = [
+        "bench_gpu_kernel_enqueue_cuda.cpp",
+        "cuda_common.h",
+    ],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_binary(
+    name = "bench_gpu_kernel_enqueue_devicecontext",
+    srcs = [
+        "bench_gpu_kernel_enqueue_devicecontext.cpp",
+    ],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        "//MLRT:AsyncRT/DeviceContext",
+        "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
+    ],
+)

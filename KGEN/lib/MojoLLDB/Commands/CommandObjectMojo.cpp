@@ -8,7 +8,7 @@
 #include "../REPL/MojoREPL.h"
 #include "../ScriptingBridge/SBClassUtils.h"
 #include "../TypeSystem/MojoTypeSystem.h"
-#include "AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "lldb/Target/Target.h"
 #include "lldb/lldb-types.h"

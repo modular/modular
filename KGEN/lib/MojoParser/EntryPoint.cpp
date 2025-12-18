@@ -9,11 +9,11 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/SharedState.h"
 
-#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Filesystem/Paths.h"
 #include "Support/Telemetry/Telemetry.h"

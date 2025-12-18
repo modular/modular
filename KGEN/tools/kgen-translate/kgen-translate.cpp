@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Runtime/Runtime.h"
 #include "Init/Init.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/MojoParser/EntryPoint.h"
@@ -14,6 +12,8 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "MLRT/AsyncRT/CompilerSupport/Context.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"

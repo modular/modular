@@ -25,10 +25,10 @@ modular_cc_library(
     srcs = glob(["lib/**/*.cpp"]),
     hdrs = glob(["include/Cache/**/*.h"]),
     deps = [
-        "//AsyncRT:CompilerSupport",
-        "//AsyncRT:Runtime",
-        "//AsyncRT:Support",
         "//Config",
+        "//MLRT:AsyncRT/CompilerSupport",
+        "//MLRT:AsyncRT/Runtime",
+        "//MLRT:AsyncRT/Support",
         "//Support:Base",
         "//Support:Base64",
         "//Support:Buffer",

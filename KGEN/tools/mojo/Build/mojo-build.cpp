@@ -7,7 +7,6 @@
 #include "mojo-build.h"
 #include "../Common/Compilation.h"
 
-#include "AsyncRT/CompilerSupport/Context.h"
 #include "Cache/CachedTransform.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
@@ -18,6 +17,7 @@
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/Config.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"

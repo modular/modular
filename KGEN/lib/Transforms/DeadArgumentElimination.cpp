@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/Runtime/Allocator.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
+#include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "Support/STLExtras.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/IRMapping.h"

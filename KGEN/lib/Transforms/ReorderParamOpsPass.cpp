@@ -19,8 +19,6 @@
 
 #include "KGEN/ToolCommon/KGENPasses.h"
 
-#include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -28,6 +26,8 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "MLRT/AsyncRT/CompilerSupport/Context.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/Threading/ThreadLocalCache.h"

@@ -6,9 +6,6 @@
 
 #include "mojo-doc.h"
 
-#include "AsyncRT/Runtime/Allocator.h"
-#include "AsyncRT/Runtime/Runtime.h"
-#include "AsyncRT/Runtime/WorkQueue.h"
 #include "Config/Version.h"
 #include "Init/Init.h"
 #include "KGEN/MojoParser/EntryPoint.h"
@@ -16,6 +13,9 @@
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "MLRT/AsyncRT/Runtime/Allocator.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
 

@@ -6,11 +6,6 @@
 
 #include "KGEN/Compiler/ObjectCompiler.h"
 
-#include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
-#include "AsyncRT/DeviceContext/CompilationDevice.h"
-#include "AsyncRT/Runtime/Algorithms.h"
-#include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -22,6 +17,11 @@
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLVMPassesPipeline.h"
+#include "MLRT/AsyncRT/CompilerSupport/Context.h"
+#include "MLRT/AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
+#include "MLRT/AsyncRT/DeviceContext/CompilationDevice.h"
+#include "MLRT/AsyncRT/Runtime/Algorithms.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"
