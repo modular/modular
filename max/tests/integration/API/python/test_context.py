@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
-import re
 from dataclasses import fields, is_dataclass
 from typing import Any
 
@@ -770,23 +769,6 @@ def test_vision_context_reset() -> None:
     assert context.processed_length == 0
     assert context.active_length == 6
     assert context.needs_vision_encoding is True
-
-
-def test_text_context_repr(capsys: pytest.CaptureFixture) -> None:  # type: ignore
-    context = TextContext(
-        request_id=RequestID(),
-        tokens=np.array([0, 1, 2, 3, 4]),
-        max_length=5,
-    )
-    print(context)
-    outerr = capsys.readouterr()
-    assert (
-        re.match(
-            r"TextContext\(request_id=.*\, start_idx=0\, current_position=5\, end_idx=5\)",
-            outerr.out,
-        )
-        is not None
-    )
 
 
 def test_context__chunked_prefill_needs_ce_edge_case() -> None:

@@ -298,18 +298,6 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def end_idx(self) -> int:
-        """The index marking the end of all active tokens in the token array.
-
-        This is an exclusive end index (one past the last active token), following
-        Python's standard slicing conventions.
-
-        Returns:
-            The zero-based index one position past the last active token.
-        """
-        ...
-
-    @property
     def current_length(self) -> int:
         """The current total length of the sequence.
 
@@ -442,7 +430,7 @@ class TextGenerationContext(BaseContext, Protocol):
         Returns:
             A 1D NumPy array of int32 values containing all prompt and generated tokens.
         """
-        return self.tokens[: self.end_idx]
+        ...
 
     @property
     def prompt_tokens(self) -> TokenSlice:

@@ -225,7 +225,6 @@ class AudioGenerationSchedulerOutput:
                     "arrival_time": req_data._arrival_time,
                     "req_id": req_id,
                     "start_idx": req_data.processed_length,
-                    "end_idx": req_data.end_idx,
                     "input_tokens": req_data.active_length,
                 }
                 for req_id, req_data in reqs.items()

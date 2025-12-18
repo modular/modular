@@ -174,7 +174,7 @@ class TextContext:
 
     @property
     def all_tokens(self) -> TokenSlice:
-        return self.tokens[: self.end_idx]
+        return self.tokens[: self._end_idx]
 
     @property
     def is_done(self) -> bool:
@@ -241,10 +241,6 @@ class TextContext:
     def min_tokens(self) -> int:
         """The minimum number of new tokens to generate."""
         return self.sampling_params.min_new_tokens
-
-    @property
-    def end_idx(self) -> int:
-        return self._end_idx
 
     @property
     def draft_offset(self) -> int:
@@ -558,16 +554,6 @@ class TextContext:
         """Returns true if the context has not been updated with tokens."""
         return self._is_initial_prompt
 
-    def __repr__(self):
-        return (
-            f"{self.__class__.__name__}("
-            f"request_id={self.request_id}, "
-            f"start_idx={self._start_idx}, "
-            f"current_position={self._active_idx}, "
-            f"end_idx={self._end_idx}"
-            ")"
-        )
-
 
 @dataclass(kw_only=True)
 class TextAndVisionContext(TextContext):
@@ -628,7 +614,7 @@ class TextAndVisionContext(TextContext):
                     raise ValueError("Images must be non-overlapping")
 
         for img in self.images:
-            if self.end_idx < img.end_idx:
+            if self._end_idx < img.end_idx:
                 raise ValueError(
                     "Images must be before the end of the token array"
                 )
@@ -691,7 +677,7 @@ class TextAndVisionContext(TextContext):
             raise ValueError(
                 f"It is invalid for the current_position ({self.current_position}) to bisect an image ({img})."
             )
-        if self.current_position != self.end_idx:
+        if self.current_position != self._end_idx:
             raise ValueError(
                 f"It is invalid for the current_position ({self.current_position}) to not be equal to the end_idx ({self._end_idx}) for VLM as chunked prefill is not supported."
             )
@@ -743,7 +729,6 @@ class TextAndVisionContext(TextContext):
             f"request_id={self.request_id}, "
             f"processed_length={self.processed_length}, "
             f"current_position={self.current_position}, "
-            f"end_idx={self.end_idx}, "
             f"images={self.images}"
             ")"
         )
