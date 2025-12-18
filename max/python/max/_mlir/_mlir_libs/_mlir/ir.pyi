@@ -506,6 +506,11 @@ class Operation(_OperationBase):
     def successors(self) -> OpSuccessors:
         """Returns the list of Operation successors."""
 
+    def replace_uses_of_with(self, of: Value, with_: Value) -> None:
+        """
+        Replaces uses of the 'of' value with the 'with' value inside the operation.
+        """
+
 class OpView(_OperationBase):
     @overload
     def __init__(self, operation: Operation) -> None: ...
@@ -898,7 +903,7 @@ class Value(Generic[_T]):
         """Dumps a debug representation of the object to stderr."""
 
     @property
-    def owner(self) -> object:
+    def owner(self) -> OpView:
         """
         Returns the owner of the value (`Operation` for results, `Block` for arguments).
         """
@@ -1014,7 +1019,7 @@ class OpResult(Value[_T]):
     def isinstance(other_value: Value) -> bool: ...
     def maybe_downcast(self) -> OpResult: ...
     @property
-    def owner(self) -> Operation:
+    def owner(self) -> OpView:
         """Returns the operation that produces this result."""
 
     @property
