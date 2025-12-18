@@ -302,9 +302,9 @@ class Qwen3VLMoE(MoE):
         )
 
         # Standard gated activation: up * act_fn(gate)
-        # Split gate and up projections (interleaved format like GPT-OSS)
-        gate = gate_up_projs[:, 0::2]
-        up = gate_up_projs[:, 1::2]
+        # Split gate and up projections (concatenated format)
+        up = gate_up_projs[:, self.moe_dim :]
+        gate = gate_up_projs[:, : self.moe_dim]
 
         gated_output = up * ops.silu(gate)
 
