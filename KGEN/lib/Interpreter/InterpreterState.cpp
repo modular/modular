@@ -37,14 +37,34 @@ static constexpr int64_t kConstGlobalBaseAddr = kStackBaseAddr + kTableSize;
 static constexpr int64_t kPersistentBaseAddr =
     kConstGlobalBaseAddr + kTableSize;
 
+static constexpr int64_t kOffset32Bit = 250'000'000;
+
+static int64_t getScaledAddress(TargetInfoAttr target, int64_t value) {
+  if (target.getDataLayout().getPointerBitWidth() >= 64)
+    return value;
+  if (target.getDataLayout().getPointerBitWidth() >= 32) {
+    // Reduce memory segment to fit into 32bit memory address space
+    // Heap base address: 250'000'000
+    // Stack base address: 750'000'000
+    // ConstGlobal base address: 1'250'000'000
+    // Persistent base address: 1'750'000'000 (up to int32_max = 2'147'483'647)
+    return value / 2 - kOffset32Bit;
+  }
+  llvm_unreachable("target index bitwidth smaller than 32 support TBD.");
+}
+
 InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
     : ctx(ctx), target(target),
-      memory{{MemoryKind::Heap, kHeapBaseAddr, kHeapBaseAddr + kTableSize},
-             {MemoryKind::Stack, kStackBaseAddr, kStackBaseAddr + kTableSize},
-             {MemoryKind::ConstGlobal, kConstGlobalBaseAddr,
-              kConstGlobalBaseAddr + kTableSize},
-             {MemoryKind::Persistent, kPersistentBaseAddr,
-              kPersistentBaseAddr + kTableSize}} {}
+      memory{{MemoryKind::Heap, getScaledAddress(target, kHeapBaseAddr),
+              getScaledAddress(target, kHeapBaseAddr + kTableSize)},
+             {MemoryKind::Stack, getScaledAddress(target, kStackBaseAddr),
+              getScaledAddress(target, kStackBaseAddr + kTableSize)},
+             {MemoryKind::ConstGlobal,
+              getScaledAddress(target, kConstGlobalBaseAddr),
+              getScaledAddress(target, kConstGlobalBaseAddr + kTableSize)},
+             {MemoryKind::Persistent,
+              getScaledAddress(target, kPersistentBaseAddr),
+              getScaledAddress(target, kPersistentBaseAddr + kTableSize)}} {}
 
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
