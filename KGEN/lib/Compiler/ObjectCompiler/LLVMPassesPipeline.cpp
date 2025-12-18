@@ -10,6 +10,7 @@
 #include "LLVMAccessorHelper.h"
 #include "MCLinker.h"
 #include "LLVM/Transforms/MetalAIRPass.h"
+#include "LLVM/Transforms/MetalRewriteDebugInfo.h"
 #include "LLVM/Transforms/PointerRewriter.h"
 #include "LLVM/Transforms/SetFunctionAttributes.h"
 #include "llvm/Analysis/GlobalsModRef.h"
@@ -382,10 +383,13 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
 
   // Add Metal AIR transformation pass at the very end for Metal GPU targets
   if (isMetalBackend(options)) {
-    // First run MetalAIRPass to do address space conversions
+    // Run MetalAIRPass to do address space conversions
     mpm.addPass(MetalAIRPass());
-    // Then run PointerRewriter to add bitcasts for typed IR
+    // Run PointerRewriter to add bitcasts for typed IR
     mpm.addPass(PointerRewriter());
+    // Rewrite all debuginfo to what Instruments expects (for now just strip
+    // debuginfo)
+    mpm.addPass(MetalRewriteDebugInfoPass());
     return mpm;
   }
 
@@ -559,10 +563,13 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
 
   // Add Metal AIR transformation pass at the very end for Metal GPU targets
   if (isMetalBackend(options)) {
-    // First run MetalAIRPass to do address space conversions
+    // Run MetalAIRPass to do address space conversions
     mpm.addPass(MetalAIRPass());
-    // Then run PointerRewriter to add bitcasts for typed IR
+    // Run PointerRewriter to add bitcasts for typed IR
     mpm.addPass(PointerRewriter());
+    // Rewrite all debuginfo to what Instruments expects (for now just strip
+    // debuginfo)
+    mpm.addPass(MetalRewriteDebugInfoPass());
     return mpm;
   }
 
