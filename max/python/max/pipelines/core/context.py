@@ -242,11 +242,7 @@ class TextContext:
         """The minimum number of new tokens to generate."""
         return self.sampling_params.min_new_tokens
 
-    @property
-    def draft_offset(self) -> int:
-        return self._draft_offset
-
-    def set_draft_offset(self, offset: int) -> None:
+    def apply_processing_offset(self, offset: int) -> None:
         self._draft_offset = offset
 
     def get_min_token_logit_mask(
