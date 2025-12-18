@@ -44,6 +44,10 @@ modular_py_test(
             "shared_mlp_impl.py",
         ],
     ),
+    args = [
+        "-n",
+        "auto",
+    ],
     imports = ["."],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -66,6 +70,7 @@ modular_py_test(
         requirement("gguf"),
         requirement("pytest-mock"),
         requirement("pytest-asyncio"),
+        requirement("pytest-xdist"),
     ],
 )
 
