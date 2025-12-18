@@ -380,6 +380,10 @@ what we publish.
   that public aliases have properly formatted docstrings (summary ends with
   period, starts with capital letter). Parametric aliases are also checked for
   proper `Parameters:` sections.
+- The Mojo LSP server now debounces document updates to reduce CPU usage during
+  rapid typing. Previously, every keystroke triggered a full document parse;
+  now updates are coalesced with a 150ms delay, reducing parse frequency by
+  10-50x during active editing.
 
 ### Experimental changes
 
