@@ -18,4 +18,14 @@ kgen.func @string_32bit() -> !kgen.string {
   kgen.return %0 : !kgen.string
 }
 
+kgen.func @variadic_32bit() -> !kgen.variadic<pointer<struct<(pointer<none>, index, index) memoryOnly>>> {
+  // CHECK: [[V0:%.*]] = llvm.mlir.constant(0 : i32) : i32
+  // CHECK: [[V1:%.*]] = llvm.alloca [[V0]] x !llvm.ptr : (i32) -> !llvm.ptr
+  // CHECK: [[V2:%.*]] = llvm.mlir.undef : !llvm.struct<(ptr, i32)>
+  // CHECK: [[V3:%.*]] = llvm.insertvalue [[V1]], [[V2]][0] : !llvm.struct<(ptr, i32)>
+  // CHECK: [[V4:%.*]] = llvm.insertvalue [[V0]], [[V3]][1] : !llvm.struct<(ptr, i32)>
+  %0 = kgen.param.constant: variadic<pointer<struct<(pointer<none>, index, index) memoryOnly>>> = <[]>
+  kgen.return %0 : !kgen.variadic<pointer<struct<(pointer<none>, index, index) memoryOnly>>>
+}
+
 }
