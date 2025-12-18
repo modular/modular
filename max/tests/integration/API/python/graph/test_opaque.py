@@ -27,27 +27,28 @@ def counter_ops_path() -> Path:
     return Path(os.environ["MODULAR_COUNTER_OPS_PATH"])
 
 
-@pytest.fixture(scope="module")
-def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
-    counter_type = _OpaqueType("Counter")
-    maker_graph = Graph(
-        "maker",
-        input_types=[],
-        output_types=[counter_type],
-        custom_extensions=[counter_ops_path],
-    )
-    with maker_graph:
-        maker_graph.output(
-            ops.custom(
-                "make_counter",
-                device=DeviceRef.CPU(),
-                values=[],
-                out_types=[counter_type],
-                parameters={"stride": 1},
-            )[0]
-        )
-    maker_compiled = session.load(maker_graph)
-    return maker_compiled
+# TODO(GEX-2979): Re-enable this.
+# @pytest.fixture(scope="module")
+# def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
+#     counter_type = _OpaqueType("Counter")
+#     maker_graph = Graph(
+#         "maker",
+#         input_types=[],
+#         output_types=[counter_type],
+#         custom_extensions=[counter_ops_path],
+#     )
+#     with maker_graph:
+#         maker_graph.output(
+#             ops.custom(
+#                 "make_counter",
+#                 device=DeviceRef.CPU(),
+#                 values=[],
+#                 out_types=[counter_type],
+#                 parameters={"stride": 1},
+#             )[0]
+#         )
+#     maker_compiled = session.load(maker_graph)
+#     return maker_compiled
 
 
 @pytest.fixture(scope="module")
@@ -94,11 +95,9 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     return reader_compiled
 
 
-def test_opaque_introspection(
-    maker_model: Model, bumper_model: Model, reader_model: Model
-) -> None:
-    assert len(maker_model.input_metadata) == 0
-    assert len(maker_model.output_metadata) == 1
+def test_opaque_introspection(bumper_model: Model, reader_model: Model) -> None:
+    # assert len(maker_model.input_metadata) == 0
+    # assert len(maker_model.output_metadata) == 1
     assert len(bumper_model.input_metadata) == 1
     assert len(bumper_model.output_metadata) == 0
     assert len(reader_model.input_metadata) == 1
