@@ -128,21 +128,11 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
   if (auto pocAttr = sugarDynCast<ParamOperatorAttr>(typedAttr))
     return inlineApply(pocAttr);
 
-  if (auto downcast = sugarDynCast<DowncastAttr>(typedAttr)) {
-    if (getStructInstIfResolved(downcast.getTypeRefIfResolved())) {
-      // FIXME: We should raise an error when the resolved struct type does not
-      // conforms to the downcast traits. The folding below leads to an indirect
-      // error message. However, there is currently no good way to emit an error
-      // in evaluation context where the downcast error can be detected, and the
-      // current error message is better than an elaboration error (if we do not
-      // fold it).
-      return downcast.getInputTypeValue();
-    }
-  }
-
   if (auto variadicReduce = sugarDynCast<VariadicReduceAttr>(typedAttr))
     return variadicReduce.evaluateWith(this);
 
+  // Downcast should have been erased at this point.
+  assert(!sugarIsa<DowncastAttr>(typedAttr));
   return failure();
 }
 

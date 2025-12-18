@@ -17,13 +17,19 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-static ASTDecl *getDeclForTypeValue(SharedState &shared, TypedAttr typeValue) {
+static LIT::StructType getStructTypeForTypeValue(SharedState &shared,
+                                                 TypedAttr typeValue) {
   // We can only simplify if the type reference is resolved already.
   auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
   if (!typeParam)
     return nullptr;
 
-  auto structType = sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
+  return sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
+}
+
+static ASTDecl *getDeclForTypeValue(SharedState &shared, TypedAttr typeValue) {
+  // We can only simplify if the type reference is resolved already.
+  auto structType = getStructTypeForTypeValue(shared, typeValue);
   if (!structType)
     return nullptr;
 
@@ -52,14 +58,11 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
   }
 
   if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
-    if (getDeclForTypeValue(shared, downcast.getInputTypeValue())) {
+    if (StructType structTp =
+            getStructTypeForTypeValue(shared, downcast.getInputTypeValue())) {
       // FIXME: We should raise an error when the resolved struct type does not
-      // conforms to the downcast traits. The folding below leads to an indirect
-      // error message. However, there is currently no good way to emit an error
-      // in evaluation context where the downcast error can be detected, and the
-      // current error message is better than an elaboration error (if we do not
-      // fold it).
-      return downcast.getInputTypeValue();
+      // conforms to the downcast traits. The folding below is unsafe.
+      return TypeParamAttr::get(structTp, downcast.getType());
     }
   }
 

@@ -1221,15 +1221,13 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
   }
 
   if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
-    if (getStructTypeForTypeValue(downcast.getInputTypeValue())) {
+    if (auto structTp =
+            getStructTypeForTypeValue(downcast.getInputTypeValue())) {
       // FIXME: We should raise an error when the resolved struct type does not
-      // conforms to the downcast traits. The folding below leads to an indirect
-      // error message. However, there is currently no good way to emit an error
-      // in evaluation context where the downcast error can be detected, and the
-      // current error message is better than an elaboration error (if we do not
-      // fold it).
-      return downcast.getInputTypeValue();
+      // conforms to the downcast traits. The folding below is unsafe.
+      return TypeParamAttr::get(structTp, downcast.getType());
     }
+    return failure();
   }
 
   // Delegate to base class logic.
