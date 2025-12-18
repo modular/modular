@@ -38,6 +38,25 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_buffer_cache_gpu",
+    srcs = [
+        "accelerator_tests/test_buffer_cache.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/support",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "multi_gpu_tests",
     srcs = ["accelerator_tests/test_multi_device.py"],
     gpu_constraints = ["//:has_multi_gpu"] + select({

@@ -21,11 +21,11 @@ def to_human_readable_bytes(bytes: int | float) -> str:
     GiB = MiB * 1024
     TiB = GiB * 1024
     bytes = int(bytes)
-    if bytes > TiB:
+    if bytes >= TiB:
         return f"{bytes / TiB:.2f} TiB"
-    if bytes > GiB:
+    if bytes >= GiB:
         return f"{bytes / GiB:.2f} GiB"
-    if bytes > MiB:
+    if bytes >= MiB:
         return f"{bytes / MiB:.2f} MiB"
     return f"{bytes / KiB:.2f} KiB"
 
