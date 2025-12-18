@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/CompilerSupport/Context.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
@@ -13,6 +12,7 @@
 #include "KGEN/Support/ForceLinkMLIRC.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "Support/CPython/PythonGIL.h"
 #include "Support/CPython/PythonObject.h"
 #include "Support/CPython/Util.h"

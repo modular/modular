@@ -10,12 +10,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoLLDB/Plugin.h"
-#include "AsyncRT/Runtime/Runtime.h"
 #include "Commands/CommandObjectLLVMDebug.h"
 #include "Commands/CommandObjectMojo.h"
 #include "Init/Init.h"
 #include "Language/MojoLanguage.h"
 #include "Language/MojoLanguageRuntime.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "REPL/MojoREPL.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/SymbolExport.h"

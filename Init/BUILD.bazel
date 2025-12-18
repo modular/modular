@@ -22,8 +22,8 @@ modular_cc_library(
         "include/Init/Init.h",
     ],
     deps = [
-        "//AsyncRT:Runtime",
         "//Config",
+        "//MLRT:AsyncRT/Runtime",
         "//Support:Base",
         "//Support:Configuration",
         "//Support:Context",

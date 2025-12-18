@@ -12,8 +12,6 @@
 #include "ParametricElaborator.h"
 #include "ParametricIREvaluator.h"
 
-#include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Runtime/ForkJoin.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -23,6 +21,8 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
+#include "MLRT/AsyncRT/CompilerSupport/Context.h"
+#include "MLRT/AsyncRT/Runtime/ForkJoin.h"
 #include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/Compiler/Error.h"
 #include "Support/Compiler/ErrorTree.h"

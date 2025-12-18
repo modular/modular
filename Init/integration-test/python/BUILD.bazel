@@ -15,8 +15,8 @@ modular_nanobind_extension(
     testonly = True,
     srcs = ["InitBindings.cpp"],
     deps = [
-        "//AsyncRT:RuntimeGlobals",
         "//Init",
+        "//MLRT:AsyncRT/RuntimeGlobals",
     ],
 )
 

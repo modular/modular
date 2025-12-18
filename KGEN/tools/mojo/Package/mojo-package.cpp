@@ -7,8 +7,6 @@
 #include "mojo-package.h"
 #include "../Common/Compilation.h"
 
-#include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Runtime/Runtime.h"
 #include "Cache/CachedTransform.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
@@ -18,6 +16,8 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "MLRT/AsyncRT/CompilerSupport/Context.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/Compiler/MLIRDenseAttr.h"

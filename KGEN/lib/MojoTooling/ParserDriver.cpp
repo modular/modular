@@ -22,7 +22,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 
-#include "AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "ParserDriverImpl.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/Filesystem/Paths.h"

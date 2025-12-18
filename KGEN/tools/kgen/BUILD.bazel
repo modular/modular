@@ -13,8 +13,6 @@ modular_cc_binary(
         "//conditions:default": [],
     }),
     deps = [
-        "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
         "//Config",
         "//Init",
         "//KGEN:Compiler",
@@ -26,6 +24,8 @@ modular_cc_binary(
         "//KGEN:Support",
         "//KGEN:SupportForceLinkMLIRC",
         "//KGEN:ToolCommon",
+        "//MLRT:AsyncRT/Runtime",
+        "//MLRT:AsyncRT/RuntimeGlobals",
         "//Support:Base",
         "//Support:Compiler",
         "//Support:Globals",

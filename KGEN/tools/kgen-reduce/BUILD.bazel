@@ -9,7 +9,6 @@ modular_cc_binary(
         "*.h",
     ]),
     deps = [
-        "//AsyncRT:RuntimeGlobals",
         "//Init",
         "//KGEN:Compiler",
         "//KGEN:CompilerRT",
@@ -21,6 +20,7 @@ modular_cc_binary(
         "//KGEN:Pipeline",
         "//KGEN:ToolCommon",
         "//KGEN:TransformUtils",
+        "//MLRT:AsyncRT/RuntimeGlobals",
         "//Support:Base",
         "//Support:Context",
         "//Support:Globals",

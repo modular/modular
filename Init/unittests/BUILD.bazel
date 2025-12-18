@@ -14,9 +14,9 @@ modular_cc_test(
     name = "InitTests",
     srcs = glob(["*.cpp"]),
     deps = [
-        "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
         "//Init",
+        "//MLRT:AsyncRT/Runtime",
+        "//MLRT:AsyncRT/RuntimeGlobals",
         "@llvm-project//llvm:Support",
     ],
 )

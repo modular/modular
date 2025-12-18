@@ -10,12 +10,12 @@ modular_cc_binary(
         "//KGEN/tools/mojo-repl-entry-point",
     ],
     deps = [
-        "//AsyncRT:RuntimeGlobals",
         "//Init",
         "//KGEN:ExecutionEngine",
         "//KGEN:MojoJupyter",
         "//KGEN:MojoLLDB",
         "//KGEN:MojoLLDBPublicHeaders",
+        "//MLRT:AsyncRT/RuntimeGlobals",
         "//Support:Globals",
         "@llvm-project//lldb:liblldb.wrapper",
     ],

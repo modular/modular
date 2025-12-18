@@ -14,10 +14,10 @@ modular_cc_test(
     name = "unittests",
     srcs = glob(["*.cpp"]),
     deps = [
-        "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
-        "//AsyncRT:Support",
         "//Cache",
+        "//MLRT:AsyncRT/Runtime",
+        "//MLRT:AsyncRT/RuntimeGlobals",
+        "//MLRT:AsyncRT/Support",
         "//Support:Base",
         "//Support:Filesystem",
         "//Support:Globals",

@@ -9,8 +9,6 @@ modular_cc_binary(
         "*.h",
     ]),
     deps = [
-        "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
         "//Init",
         "//KGEN:LITDialect",
         "//KGEN:MojoParser",
@@ -20,6 +18,8 @@ modular_cc_binary(
         "//KGEN:Support",
         "//KGEN:ToolCommon",
         "//KGEN/tools/common/lsp-protocol",
+        "//MLRT:AsyncRT/Runtime",
+        "//MLRT:AsyncRT/RuntimeGlobals",
         "//Support:Base",
         "//Support:Context",
         "//Support:Globals",
