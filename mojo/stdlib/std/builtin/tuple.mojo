@@ -421,6 +421,14 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
 
         Returns:
             A new tuple with the elements in reverse order.
+
+        Usage:
+
+        ```mojo
+        image_coords = Tuple[Int, Int](100, 200) # row-major indexing
+        screen_coords = image_coords.reverse() # (col, row) for x,y display
+        print(screen_coords[0], screen_coords[1]) # output: 200, 100
+        ```
         """
         # Mark 'result' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -457,6 +465,14 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
 
         Returns:
             A new tuple with the concatenated elements.
+
+        Usage:
+
+        ```
+        var rgb = Tuple[Int, Int, Int](0xFF, 0xF0, 0x0)
+        var rgba = rgb.concat(Tuple[Int](0xFF)) # Adds alpha channel
+        print(rgba[0], rgba[1], rgba[2], rgba[3]) # 255 240 0 255
+        ```
         """
         # Mark 'result' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
