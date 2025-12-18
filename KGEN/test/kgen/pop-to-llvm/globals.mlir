@@ -1,4 +1,5 @@
-// RUN: kgen-opt -split-input-file -allow-unregistered-dialect -lower-global-pop-to-llvm %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -allow-unregistered-dialect -lower-global-pop-to-llvm %s | FileCheck %s --check-prefix=CHECK
+// RUN: kgen-opt -split-input-file -allow-unregistered-dialect -lower-global-pop-to-llvm --mlir-print-debuginfo %s | FileCheck %s --check-prefix=CHECK-DEBUG-INFO
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @external_call
@@ -687,4 +688,18 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
 
     kgen.return
   }
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch = "", data_layout = "", simd_bit_width = 128>} {
+  // CHECK: llvm.func @air.thread_position_in_threadgroup.x() -> i32
+  // CHECK-DEBUG-INFO: llvm.func @air.thread_position_in_threadgroup.x() -> i32 loc(#[[LOCATION:.*]])
+  kgen.func @test_no_debug_on_air_func_declaration() {
+    %undef = llvm.mlir.undef : !llvm.struct<()> loc(unknown)
+    %empty_struct = builtin.unrealized_conversion_cast %undef : !llvm.struct<()> to !kgen.struct<()> loc(unknown)
+    %res = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.thread_position_in_threadgroup.x", (%empty_struct) : (!kgen.struct<()>) -> !pop.scalar<ui32> loc("dummy.mlir":1:1)
+    kgen.return
+  }
+  // CHECK-DEBUG-INFO: #[[LOCATION]] = loc(unknown)
 }

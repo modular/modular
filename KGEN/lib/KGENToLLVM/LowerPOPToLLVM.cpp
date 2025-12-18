@@ -2550,7 +2550,9 @@ struct ConvertSymbolOpToAIR : public ConvertSymbolOpToLLVM<OpT> {
       // Get or create the AIR function declaration
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(module.getBody());
-      func = LLVM::LLVMFuncOp::create(rewriter, loc, funcName, llvmFuncType);
+      func = LLVM::LLVMFuncOp::create(rewriter,
+                                      UnknownLoc::get(rewriter.getContext()),
+                                      funcName, llvmFuncType);
       symtab.insert(func);
     }
     return func;

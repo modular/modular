@@ -141,9 +141,6 @@ enum {
   FUNCTION_INST_GEP_ABBREV,
   FUNCTION_INST_CMP_ABBREV,
   FUNCTION_INST_CMP_FLAGS_ABBREV,
-  FUNCTION_DEBUG_RECORD_VALUE_ABBREV,
-  FUNCTION_DEBUG_LOC_ABBREV,
-
 };
 
 /// Abstract class to manage the bitcode writing, subclassed for each bitcode
@@ -2060,18 +2057,16 @@ void ModuleBitcodeWriter::writeDICompositeType(
     const DICompositeType *N, SmallVectorImpl<uint64_t> &Record,
     unsigned Abbrev) {
   const unsigned IsNotUsedInOldTypeRef = 0x2;
-  const unsigned SizeIsMetadata = 0x4;
-  Record.push_back(SizeIsMetadata | IsNotUsedInOldTypeRef |
-                   (unsigned)N->isDistinct());
+  Record.push_back(IsNotUsedInOldTypeRef | (unsigned)N->isDistinct());
   Record.push_back(N->getTag());
   Record.push_back(VE.getMetadataOrNullID(N->getRawName()));
   Record.push_back(VE.getMetadataOrNullID(N->getFile()));
   Record.push_back(N->getLine());
   Record.push_back(VE.getMetadataOrNullID(N->getScope()));
   Record.push_back(VE.getMetadataOrNullID(N->getBaseType()));
-  Record.push_back(VE.getMetadataOrNullID(N->getRawSizeInBits()));
+  Record.push_back(N->getSizeInBits());
   Record.push_back(N->getAlignInBits());
-  Record.push_back(VE.getMetadataOrNullID(N->getRawOffsetInBits()));
+  Record.push_back(N->getOffsetInBits());
   Record.push_back(N->getFlags());
   Record.push_back(VE.getMetadataOrNullID(N->getElements().get()));
   Record.push_back(N->getRuntimeLang());
@@ -2084,11 +2079,6 @@ void ModuleBitcodeWriter::writeDICompositeType(
   Record.push_back(VE.getMetadataOrNullID(N->getRawAllocated()));
   Record.push_back(VE.getMetadataOrNullID(N->getRawRank()));
   Record.push_back(VE.getMetadataOrNullID(N->getAnnotations().get()));
-  Record.push_back(N->getNumExtraInhabitants());
-  Record.push_back(VE.getMetadataOrNullID(N->getRawSpecification()));
-  Record.push_back(
-      N->getEnumKind().value_or(dwarf::DW_APPLE_ENUM_KIND_invalid));
-  Record.push_back(VE.getMetadataOrNullID(N->getRawBitStride()));
 
   Stream.EmitRecord(bitc::METADATA_COMPOSITE_TYPE, Record, Abbrev);
   Record.clear();
@@ -3823,88 +3813,9 @@ void ModuleBitcodeWriter::writeFunction(
           Vals.push_back(VE.getMetadataOrNullID(DL->getScope()));
           Vals.push_back(VE.getMetadataOrNullID(DL->getInlinedAt()));
           Vals.push_back(DL->isImplicitCode());
-          Vals.push_back(DL->getAtomGroup());
-          Vals.push_back(DL->getAtomRank());
-          Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_LOC, Vals,
-                            FUNCTION_DEBUG_LOC_ABBREV);
+          Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_LOC, Vals);
           Vals.clear();
           LastDL = DL;
-        }
-      }
-
-      // If the instruction has DbgRecords attached to it, emit them. Note
-      // that they come after the instruction so that it's easy to attach them
-      // again when reading the bitcode, even though conceptually the debug
-      // locations start "before" the instruction.
-      if (I.hasDbgRecords()) {
-        /// Try to push the value only (unwrapped), otherwise push the
-        /// metadata wrapped value. Returns true if the value was pushed
-        /// without the ValueAsMetadata wrapper.
-        auto PushValueOrMetadata = [&Vals, InstID,
-                                    this](Metadata *RawLocation) {
-          assert(RawLocation &&
-                 "RawLocation unexpectedly null in DbgVariableRecord");
-          if (ValueAsMetadata *VAM = dyn_cast<ValueAsMetadata>(RawLocation)) {
-            SmallVector<unsigned, 2> ValAndType;
-            // If the value is a fwd-ref the type is also pushed. We don't
-            // want the type, so fwd-refs are kept wrapped (pushValueAndType
-            // returns false if the value is pushed without type).
-            if (!pushValueAndType(VAM->getValue(), InstID, ValAndType)) {
-              Vals.push_back(ValAndType[0]);
-              return true;
-            }
-          }
-          // The metadata is a DIArgList, or ValueAsMetadata wrapping a
-          // fwd-ref. Push the metadata ID.
-          Vals.push_back(VE.getMetadataID(RawLocation));
-          return false;
-        };
-
-        // Write out non-instruction debug information attached to this
-        // instruction. Write it after the instruction so that it's easy to
-        // re-attach to the instruction reading the records in.
-        for (DbgRecord &DR : I.DebugMarker->getDbgRecordRange()) {
-          if (DbgLabelRecord *DLR = dyn_cast<DbgLabelRecord>(&DR)) {
-            Vals.push_back(VE.getMetadataID(&*DLR->getDebugLoc()));
-            Vals.push_back(VE.getMetadataID(DLR->getLabel()));
-            Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_RECORD_LABEL, Vals);
-            Vals.clear();
-            continue;
-          }
-
-          // First 3 fields are common to all kinds:
-          //   DILocation, DILocalVariable, DIExpression
-          // dbg_value (FUNC_CODE_DEBUG_RECORD_VALUE)
-          //   ..., LocationMetadata
-          // dbg_value (FUNC_CODE_DEBUG_RECORD_VALUE_SIMPLE - abbrev'd)
-          //   ..., Value
-          // dbg_declare (FUNC_CODE_DEBUG_RECORD_DECLARE)
-          //   ..., LocationMetadata
-          // dbg_assign (FUNC_CODE_DEBUG_RECORD_ASSIGN)
-          //   ..., LocationMetadata, DIAssignID, DIExpression,
-          //   LocationMetadata
-          DbgVariableRecord &DVR = cast<DbgVariableRecord>(DR);
-          Vals.push_back(VE.getMetadataID(&*DVR.getDebugLoc()));
-          Vals.push_back(VE.getMetadataID(DVR.getVariable()));
-          Vals.push_back(VE.getMetadataID(DVR.getExpression()));
-          if (DVR.isDbgValue()) {
-            if (PushValueOrMetadata(DVR.getRawLocation()))
-              Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_RECORD_VALUE_SIMPLE, Vals,
-                                FUNCTION_DEBUG_RECORD_VALUE_ABBREV);
-            else
-              Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_RECORD_VALUE, Vals);
-          } else if (DVR.isDbgDeclare()) {
-            Vals.push_back(VE.getMetadataID(DVR.getRawLocation()));
-            Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_RECORD_DECLARE, Vals);
-          } else {
-            assert(DVR.isDbgAssign() && "Unexpected DbgRecord kind");
-            Vals.push_back(VE.getMetadataID(DVR.getRawLocation()));
-            Vals.push_back(VE.getMetadataID(DVR.getAssignID()));
-            Vals.push_back(VE.getMetadataID(DVR.getAddressExpression()));
-            Vals.push_back(VE.getMetadataID(DVR.getRawAddress()));
-            Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_RECORD_ASSIGN, Vals);
-          }
-          Vals.clear();
         }
       }
     }
@@ -4198,32 +4109,6 @@ void ModuleBitcodeWriter::writeBlockInfo() {
     Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 8)); // flags
     if (Stream.EmitBlockInfoAbbrev(bitc::FUNCTION_BLOCK_ID, Abbv) !=
         FUNCTION_INST_CMP_FLAGS_ABBREV)
-      llvm_unreachable("Unexpected abbrev ordering!");
-  }
-  {
-    auto Abbv = std::make_shared<BitCodeAbbrev>();
-    Abbv->Add(BitCodeAbbrevOp(bitc::FUNC_CODE_DEBUG_RECORD_VALUE_SIMPLE));
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 7)); // dbgloc
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 7)); // var
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 7)); // expr
-    Abbv->Add(ValAbbrevOp);                              // val
-    if (Stream.EmitBlockInfoAbbrev(bitc::FUNCTION_BLOCK_ID, Abbv) !=
-        FUNCTION_DEBUG_RECORD_VALUE_ABBREV)
-      llvm_unreachable("Unexpected abbrev ordering! 1");
-  }
-  {
-    auto Abbv = std::make_shared<BitCodeAbbrev>();
-    Abbv->Add(BitCodeAbbrevOp(bitc::FUNC_CODE_DEBUG_LOC));
-    // NOTE: No IsDistinct field for FUNC_CODE_DEBUG_LOC.
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6));
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8));
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6));
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6));
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1));
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Atom group.
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 3)); // Atom rank.
-    if (Stream.EmitBlockInfoAbbrev(bitc::FUNCTION_BLOCK_ID, Abbv) !=
-        FUNCTION_DEBUG_LOC_ABBREV)
       llvm_unreachable("Unexpected abbrev ordering!");
   }
   Stream.ExitBlock();
