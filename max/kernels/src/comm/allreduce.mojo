@@ -1388,8 +1388,10 @@ fn allreduce_2stage_quickreduce[
     atom_size: Int,
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
-    local_src: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    local_src: UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin],
+    rank_sigs: InlineArray[
+        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
+    ],
     num_elements: Int,
     my_rank: Int,
     iteration: Int,
