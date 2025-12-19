@@ -621,6 +621,7 @@ struct UnaryOpNode final : public ExprNode {
   void print(mlir::raw_indented_ostream &os) const override;
   AnyValue emitTransfer(AnyValue argValue, ValueDest &dest,
                         IREmitter &emitter) const;
+  AnyValue emitComptime(ValueDest &dest, IREmitter &emitter) const;
 
   /// Emit a unary arithmetic operation.
   static AnyValue emitArith(Kind kind, const ExprNode *expr,

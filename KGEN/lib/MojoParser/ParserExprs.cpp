@@ -380,6 +380,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_not:
   case Token::kw_var:
   case Token::kw_ref:
+  case Token::kw_comptime:
   case Token::identifier:
   case Token::escaped_identifier:
   case Token::integer:
@@ -427,6 +428,8 @@ getUnaryOpInfo(Token::Kind tokKind) {
     return {ExprNode::kVarPat, Precedence::kVarRefPat};
   case Token::kw_ref:
     return {ExprNode::kRefPat, Precedence::kVarRefPat};
+  case Token::kw_comptime:
+    return {ExprNode::kComptime, Precedence::kUnpack};
   case Token::plus:
     return {ExprNode::kPos, Precedence::kFactor};
   case Token::minus:
@@ -464,10 +467,27 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw_await:
   case Token::kw_var:
   case Token::kw_ref:
+  case Token::kw_comptime:
   case Token::kw_not: { // u_expr
     consumeToken();
     // Get the kind enum and the precedence of the subexpression.
     auto [unaryKind, subExprPrec] = getUnaryOpInfo(startTok.getKind());
+
+    // We limit comptime subexpression to have parens after it.  If we relax
+    // this in the future, this special case would be eliminated.
+    if (unaryKind == ExprNode::kComptime) {
+      SMLoc lparenLoc;
+      if (!consumeIf(Token::l_paren, &lparenLoc)) {
+        emitTokenError("expected '(' after 'comptime'");
+        return failure();
+      }
+      if (parsePrefixLParen(result, lparenLoc))
+        return failure();
+      result =
+          alloc<UnaryOpNode>(ExprNode::kComptime, startTok.getLoc(), result);
+      break;
+    }
+
     ExprNode *expr = nullptr;
     // "var" and "ref" take a star list after them to handle "var x, y" as
     // "var (x, y)".

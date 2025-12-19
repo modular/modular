@@ -543,3 +543,14 @@ fn test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %t)
     # CHECK-NEXT: hlcf.yield
     # CHECK-NEXT: }
+
+##===----------------------------------------------------------------------===##
+# comptime expression
+##===----------------------------------------------------------------------===##
+
+struct NotRuntimeMaterializable:
+    fn method(self) -> Int: pass
+
+fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
+    # Ok to materialize an int.
+    var b = comptime(nrm.method())

@@ -18,8 +18,8 @@ def test_simple_parametric_alias():
 
 def test_parametric_alias_with_default_values():
     """Test parametric alias with default parameter values."""
-    source = "alias Float64[size: Int = 1] = SIMD[DType.float64, size]"
-    expected = "alias Float64[size: Int = 1] = SIMD[DType.float64, size]\n"
+    source = "comptime Float64[size: Int = 1] = SIMD[DType.float64, size]"
+    expected = "comptime Float64[size: Int = 1] = SIMD[DType.float64, size]\n"
     assert_mojo_format(source, expected)
 
 

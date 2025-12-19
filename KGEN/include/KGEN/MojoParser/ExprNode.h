@@ -99,8 +99,9 @@ public:
     kTransfer, // x^
     kVarPat,   // var x
     kRefPat,   // ref x
+    kComptime, // comptime (x)
     kFirstUnaryOp = kNeg,
-    kLastUnaryOp = kRefPat,
+    kLastUnaryOp = kComptime,
 
     // Binary expressions.
     kAdd,

@@ -3514,6 +3514,19 @@ UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
       kind, range.getStart(), const_cast<ExprNode *>(newSubExpr));
 }
 
+AnyValue UnaryOpNode::emitComptime(ValueDest &dest, IREmitter &emitter) const {
+  // Reject comptime if already here, this reduces confusion and cruft.
+  if (!emitter.builder) {
+    emitter.emitError(getLoc(), "expression is already evaluated at compile "
+                                "time; remove 'comptime' keyword")
+        << FixIt::remove(getLoc());
+    return {};
+  }
+
+  PValue subPVal = emitter.emitExprPValue(subExpr, dest.getContext());
+  return emitter.emitResult(subPVal, this, dest);
+}
+
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // var/ref patterns are special unary operators that affect their enclosing
   // lvalue.  They are not valid on the right side of an assignment.
@@ -3530,6 +3543,9 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     }
     return result;
   }
+
+  if (kind == kComptime)
+    return emitComptime(dest, emitter);
 
   auto exprRep = emitter.emitExpr(subExpr, EC_OperatorOperandValue);
   if (!exprRep)

@@ -1088,3 +1088,26 @@ struct MemberAliasSugarCrash:
       # expected-error @below {{cannot implicitly convert 'MemberAliasSugarCrash.ValueType' value to 'MemberAliasSugarCrash'}}
       # expected-note @below {{'MemberAliasSugarCrash.ValueType' is aka 'Int'}}
         return self._value
+
+
+##===----------------------------------------------------------------------===##
+# comptime expression
+##===----------------------------------------------------------------------===##
+
+struct NotRuntimeMaterializable:
+    fn method(self) -> Int: pass
+
+fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
+    # expected-error @below {{cannot materialize comptime value of type 'NotRuntimeMaterializable' to runtime because it is not 'ImplicitlyCopyable'}}
+    # expected-note @below {{use 'materialize' to explicitly materialize the value}}
+    var a = nrm.method()
+
+    # ok.
+    var b = comptime(nrm.method())
+
+    # expected-error @below {{cannot materialize comptime value of type 'NotRuntimeMaterializable' to runtime because it is not 'ImplicitlyCopyable'}}
+    # expected-note @below {{use 'materialize' to explicitly materialize the value}}
+    var c = comptime(nrm).method()
+
+    # expected-error @below {{expected '(' after 'comptime'}}
+    var d = comptime nrm.method()

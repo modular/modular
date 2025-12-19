@@ -109,7 +109,7 @@ expr_stmt: testlist_star_expr_stmt (annassign | augassign (yield_expr|testlist) 
 top_expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
                      ('=' (yield_expr|testlist_star_expr))*)
 annassign: ':' test ['=' (yield_expr|testlist_star_expr)]
-testlist_star_expr_stmt: (top_test|star_expr) (',' (test|star_expr))* [',']
+testlist_star_expr_stmt: (if_else_test|star_expr) (',' (test|star_expr))* [',']
 testlist_star_expr: (test|star_expr) (',' (test|star_expr))* [',']
 augassign: ('+=' | '-=' | '*=' | '@=' | '/=' | '%=' | '&=' | '|=' | '^=' |
             '<<=' | '>>=' | '**=' | '//=')
@@ -178,7 +178,8 @@ namedexpr_test: asexpr_test [':=' asexpr_test]
 asexpr_test: test ['as' test]
 
 test: functype | top_test
-top_test: or_test ['if' or_test 'else' test] | lambdef
+top_test: [ALIAS|COMPTIME] if_else_test
+if_else_test: or_test ['if' or_test 'else' test] | lambdef
 or_test: and_test ('or' and_test)*
 and_test: not_test ('and' not_test)*
 not_test: 'not' not_test | comparison

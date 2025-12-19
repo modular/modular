@@ -847,8 +847,7 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   }
 
   auto diag =
-      emitError(expr->getLoc(),
-                "cannot implicitly materialize compile-time value of type ")
+      emitError(expr->getLoc(), "cannot materialize comptime value of type ")
       << value.ir.getType()
       << " to runtime because it is not 'ImplicitlyCopyable'"
       << expr->getRange();
