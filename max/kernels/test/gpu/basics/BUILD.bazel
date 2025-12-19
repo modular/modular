@@ -2,13 +2,6 @@ load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
-# Wrap binary data files in filegroup to exclude them from source file queries
-# (e.g., lint_unused_lit_directives.py which can't process binary files)
-filegroup(
-    name = "testdata",
-    srcs = ["vector_add.cubin"],
-)
-
 _LIT_TESTS = [
     "test_accelerator_arch_cli.mojo",
     "test_accelerator_arch_cli_kernels.mojo",
@@ -27,15 +20,6 @@ _FILECHECK_TESTS = [
     "test_tbc_launch_config.mojo",
     "test_tensor_core_fp8_mma_sync.mojo",
 ]
-
-# Tests with data dependencies (excluded from glob)
-_DATA_TESTS = [
-    "test_launch_cubin.mojo",
-]
-
-_EXTRA_DATA = {
-    "test_launch_cubin.mojo": [":testdata"],
-}
 
 _EXTRA_COPTS = {
     "test_grid_dependence_control.mojo": [
@@ -99,25 +83,8 @@ _EXTRA_CONSTRAINTS = {
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _LIT_TESTS + _FILECHECK_TESTS + _DATA_TESTS,
+        exclude = _LIT_TESTS + _FILECHECK_TESTS,
     )
-]
-
-# Tests with data dependencies
-[
-    mojo_test(
-        name = src + ".test",
-        srcs = [src],
-        copts = _EXTRA_COPTS.get(src, []),
-        data = _EXTRA_DATA.get(src, []),
-        tags = ["gpu"],
-        target_compatible_with = [
-            "//:has_gpu",
-            "//:b200_gpu",
-        ],
-        deps = ["@mojo//:std"],
-    )
-    for src in _DATA_TESTS
 ]
 
 [
