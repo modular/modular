@@ -203,6 +203,8 @@ what we publish.
 
 ### Library changes
 
+- `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
+
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
   and generic algorithms that already require `Copyable` don't need to also
   mention they require `Movable.
