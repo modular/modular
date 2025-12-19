@@ -23,6 +23,10 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: MOCO-2435
 }
 
+_TEST_SIZE = {
+    "test_matmul_kernel_10.mojo": "large",
+}
+
 [
     mojo_filecheck_test(
         name = src + ".test",
@@ -44,6 +48,7 @@ _EXTRA_CONSTRAINTS = {
 [
     mojo_test(
         name = src + ".test",
+        size = _TEST_SIZE.get(src, "medium"),
         srcs = [src],
         exec_properties = {
             "test.resources:gpu-memory": "1.5",
