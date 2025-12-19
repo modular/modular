@@ -1098,15 +1098,18 @@ struct NotRuntimeMaterializable:
     fn method(self) -> Int: pass
 
 fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
+    # expected-error @below {{expression is already evaluated at compile time; remove 'comptime' keyword}}
+    test_comptime_expression[comptime(nrm)]()
+
     # expected-error @below {{cannot materialize comptime value of type 'NotRuntimeMaterializable' to runtime because it is not 'ImplicitlyCopyable'}}
-    # expected-note @below {{use 'materialize' to explicitly materialize the value}}
+    # expected-note @below {{use 'comptime' to evaluate the entire call at 'comptime' and materialize its result}}
     var a = nrm.method()
 
     # ok.
     var b = comptime(nrm.method())
 
     # expected-error @below {{cannot materialize comptime value of type 'NotRuntimeMaterializable' to runtime because it is not 'ImplicitlyCopyable'}}
-    # expected-note @below {{use 'materialize' to explicitly materialize the value}}
+    # expected-note @below {{use 'comptime' to evaluate the entire call at 'comptime' and materialize its result}}
     var c = comptime(nrm).method()
 
     # expected-error @below {{expected '(' after 'comptime'}}

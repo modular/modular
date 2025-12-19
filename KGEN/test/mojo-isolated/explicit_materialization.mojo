@@ -31,8 +31,8 @@ fn main():
     # This should not raise a warning.
     func()
 
-    # This should.
     comptime x = NonEM()
+    # This should.
     # expected-error@+2 {{cannot materialize comptime value of type 'NonEM' to runtime because it is not 'ImplicitlyCopyable'}}
     # expected-note@+1 {{use 'materialize' to explicitly materialize the value}}
     func(x)

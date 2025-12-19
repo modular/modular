@@ -1926,6 +1926,38 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     return result;
   }
 
+  // Ok, we're going to emit this expression as a dynamic call.  If all of the
+  // arguments are PValues and any of them are not materializable, then emit a
+  // custom error message with a nice fixit that pulls a "comptime" around the
+  // call.
+  auto isPValue = [](ASTExprAnd<AnyValue> arg) { return arg.ir.getIfPValue(); };
+  if (llvm::all_of(argumentValues, isPValue) &&
+      !ASTType(calleeSig.getUserResultType()).isNoneType()) {
+    for (auto [argIdx, argValAndExpr] : llvm::enumerate(argumentValues)) {
+      auto argType = argValAndExpr.ir.getIfPValue().getRValueType();
+      const ExprNode *expr = argValAndExpr.expr;
+      if (argType.isImplicitlyCopyable(expr->getLoc(), shared))
+        continue;
+      // We allow implicitly materializing default values to runtime.
+      if (isDefaultMask.test(argIdx))
+        continue;
+
+      auto diag = emitError(expr->getLoc(),
+                            "cannot materialize comptime value of type ")
+                  << argType
+                  << " to runtime because it is not 'ImplicitlyCopyable'"
+                  << expr->getRange();
+      diag.attachNote(callExpr->getLoc())
+          << "use 'comptime' to evaluate the entire call at 'comptime' and "
+             "materialize its result"
+          << FixIt::insertBeforeToken(callExpr->getRangeStart(), "comptime(")
+          << FixIt::insertAfterToken(callExpr->getRangeEnd(), ")",
+                                     shared.diags);
+      dest.resetForError(*this);
+      return {};
+    }
+  }
+
   // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   Location loc = translateLocation(callExpr->getLoc());
 
