@@ -154,7 +154,9 @@ def safe_model_name(model: str) -> str:
     return model.replace("/", "__")
 
 
-def call_lm_eval(model: str, task: str) -> tuple[LmEvalResults, LmEvalSamples]:
+def call_lm_eval(
+    model: str, task: str, *, max_concurrent: int, num_questions: int
+) -> tuple[LmEvalResults, LmEvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
         kw in model for kw in ("qwen3", "gpt-oss", "internvl3_5")
@@ -179,10 +181,10 @@ def call_lm_eval(model: str, task: str) -> tuple[LmEvalResults, LmEvalSamples]:
             f"--tasks={task}",
             "--model=local-chat-completions",
             "--log_samples",
-            f"--model_args=model={model},base_url={URL},num_concurrent=64,max_retries=1",
+            f"--model_args=model={model},base_url={URL},num_concurrent={max_concurrent},max_retries=1",
             "--apply_chat_template",
             f"--output_path={tempdir}",
-            "--limit=320",
+            f"--limit={num_questions}",
             "--seed=42",
             f"--gen_kwargs=seed=42,temperature=0{extra_gen_kwargs}",
             f"--include_path={include_path}",
@@ -387,12 +389,26 @@ def write_results(
     default=False,
     help="Print the model's chain-of-thought reasoning for each sample. Must be used with --print-responses",
 )
+@click.option(
+    "--max-concurrent",
+    type=int,
+    default=64,
+    help="Maximum concurrent requests to send to the server",
+)
+@click.option(
+    "--num-questions",
+    type=int,
+    default=320,
+    help="Number of questions to ask the model",
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
     output_path: Path | None,
     print_responses: bool,
     print_cot: bool,
+    max_concurrent: int,
+    num_questions: int,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
@@ -450,7 +466,12 @@ def smoke_test(
 
         for task in tasks:
             test_single_request(model, task)
-            result, samples = call_lm_eval(model, task)
+            result, samples = call_lm_eval(
+                model,
+                task,
+                max_concurrent=max_concurrent,
+                num_questions=num_questions,
+            )
             if print_responses:
                 print_samples(samples, print_cot)
 
