@@ -32,11 +32,61 @@ filesystem and getting system information, and so on.
 
 ## Numeric types
 
-Mojo's most basic numeric type is `Int`, which represents a signed integer of
-the largest size supported by the system—typically 64 bits or 32 bits.
+Mojo provides built-in numeric types that represent signed integers, unsigned
+integers, and floating-point values. These types support multiple precisions and
+are used to model both low-level data and high-level numeric computation.
 
-Mojo also has built-in types for integer, unsigned integer, and floating-point
-values of various precisions:
+The following sections introduce integer and floating-point types in Mojo.
+
+:::note
+All numeric types support the usual numeric and bitwise operators. The
+[`math`](/mojo/std/math/) module provides additional math functions.
+:::
+
+### Integers and unsigned integers
+
+Mojo supports both signed (`Int`) and unsigned (`UInt`) integer types. These
+include both fixed-size and general types:
+
+- If you need a fixed-size integer, Mojo provides explicit-width integer types
+  such as `Int8`, `Int16`, `UInt32`, and `UInt64`. These fixed-precision integer
+  types are aliases to the [`SIMD`](/mojo/std/builtin/simd/SIMD) type.
+
+- Use the general `Int` or `UInt` types when you don’t require a specific bit
+  width.
+
+`Int` represents a signed integer that uses the system’s native word size,
+typically 64 bits on 64-bit CPUs and 32 bits on 32-bit CPUs. Similarly, `UInt`
+represents an unsigned integer that uses the system’s default word size.
+
+You may wonder when to use `Int` and when to use the other integer
+types. In general, `Int` is a good safe default when you need an integer type
+and you don't require a specific bit width. Using `Int` as the default integer
+type for APIs makes APIs more consistent and predictable.
+
+#### Signed versus unsigned
+
+Signed and unsigned integers with the same bit width can represent the same
+number of distinct values, but over different ranges. For example:
+
+- `Int8` represents 256 values ranging from `-128` to `127`
+- `UInt8` represents 256 values ranging from `0` to `255`
+
+#### Overflow behavior
+
+Signed and unsigned integers differ in how they handle overflow.
+
+- When a signed integer overflows, the value wraps around into the negative range
+  using two's complement arithmetic. For example, adding `1` to `var si: Int8 = 127`
+  results in `-128`.
+- When an unsigned integer overflows, the value wraps around to the beginning of its
+  range. For example, adding `1` to `var ui: UInt8 = 255` results in `0`.
+
+You may prefer unsigned integers when negative values are not required, when
+you are not designing a public API, or when you want to maximize the usable
+positive range.
+
+#### Mojo-supported fixed-width integer types
 
 <figure id="table-1">
 <figcaption><b>Table 1.</b> Mojo signed integer types</figcaption>
@@ -64,112 +114,20 @@ values of various precisions:
 | `UInt256` | 256-bit unsigned integer |
 </figure>
 
-<figure id="table-3">
-<figcaption><b>Table 3.</b> Mojo floating point types</figcaption>
-
-| Type name | Description |
-| --------- | ----------- |
-| `Float16` | 16-bit floating point<br />(IEEE 754-2008 binary16) |
-| `Float32` | 32-bit floating point<br />(IEEE 754-2008 binary32) |
-| `Float64` | 64-bit floating point<br />(IEEE 754-2008 binary64) |
-| `BFloat16` | 16-bit floating point<br />(16-bit version of IEEE 754 binary32) |
-| `Float4_e2m1fn` | 4-bit floating point<br />(e2m1 format from Open Compute MX specification) |
-| `Float8_e5m2` | 8-bit floating point<br />(OFP8 e5m2 format) |
-| `Float8_e5m2fnuz` | 8-bit floating point<br />(AMD-only e5m2fnuz format - finite values and NaN only, no infinities) |
-| `Float8_e4m3fn` | 8-bit floating point<br />(OFP8 e4m3fn format) |
-| `Float8_e4m3fnuz` | 8-bit floating point<br />(AMD-only e4m3fnuz format - finite values and NaN only, no infinities) |
-</figure>
-
-:::note Floating Points, Exponents, and Mantissas
-eXmX format (like `Float8_e5m2` and `Float8_e4m3fn` in table 3)
-refers to the number of bits allocated to a floating
-point number's exponent and mantissa.
-
-All IEEE 754 floating point
-use an implied leading 1. That means `Float32` is e8m23 but effectively e8m24,
-`Float16` is e5m10 but effectively e5m11, `BFloat16` is e8m7 but
-effectively e8m8, and `Float8_e4m3fn` is e4m3 but effectively e4m4.
-:::
-
-The types in tables 1, 2, and 3 are actually all aliases to a single type,
-[`SIMD`](/mojo/std/builtin/simd/SIMD), which is discussed later.
-
-All of the numeric types support the usual numeric and bitwise operators. The
-[`math`](/mojo/std/math/) module provides a number of additional math
-functions.
-
-You may wonder when to use `Int` and when to use the other integer
-types. In general, `Int` is a good safe default when you need an integer type
-and you don't require a specific bit width. Using `Int` as the default integer
-type for APIs makes APIs more consistent and predictable.
-
-### AI-optimized floating point formats
-
-Several floating point types are specifically designed for AI and machine
-learning workloads, trading precision for memory efficiency and computational
-throughput.
-
-**BFloat16 (Brain Floating Point)** uses the same 8 exponent bits as
-`Float32`, preserving its dynamic range, but uses only 7 bits for the mantissa (compared to Float32's 23 bits).
-This makes it ideal for neural network training where gradient magnitudes
-vary widely but high precision is less critical.
-
-**8-bit formats** (`Float8_e5m2`, `Float8_e4m3fn`, and their `fnuz`
-variants) are ultra-compact formats for AI accelerators where memory
-bandwidth is the primary bottleneck. The naming indicates bit allocation:
-`e5m2` means 5 exponent bits and 2 mantissa bits. The `fnuz` suffix denotes
-variants that are finite-only (no infinities) and have unsigned zero (no -0), used in AMD hardware.
-
-**4-bit format** (`Float4_e2m1fn`) offers extreme compression with only 2
-exponent bits and 1 mantissa bit, used in specialized inference scenarios
-where accuracy can be traded for maximum throughput.
-
-### Signed and unsigned integers
-
-Mojo supports both signed (`Int`) and unsigned (`UInt`) integers. You can use
-the general `Int` or `UInt` types when you do not require a specific bit width.
-Note that any alias to a fixed-precision type will be of type
-[`SIMD`](/mojo/std/builtin/simd/SIMD).
-
-You might prefer to use unsigned integers over signed integers in conditions
-where you don't need negative numbers, are not writing for a public API, or need
-additional range.
-
-Mojo's `UInt` type represents an unsigned integer of the
-[word size](https://en.wikipedia.org/wiki/Word_\(computer_architecture\)) of the
-CPU, which is 64 bits on 64-bit CPUs and 32 bits on 32-bit CPUs. If you wish to
-use a fixed size unsigned integer, you can use `UInt8`, `UInt16`, `UInt32`, or
-`UInt64`, which are aliases to the [`SIMD`](/mojo/std/builtin/simd/SIMD)
-type.
-
-Signed and unsigned integers of the same bit width can represent the same number
-of values, but have different ranges. For example, an `Int8` can represent 256
-values ranging from -128 to 127. A `UInt8` can also represent 256 values, but
-represents a range of 0 to 255.
-
-Signed and unsigned integers also have different overflow behavior. When a
-signed integer overflows outside the range of values that its type can
-represent, the value overflows to negative numbers. For example, adding `1` to
-`var si: Int8 = 127` results in `-128`.
-
-When an unsigned integer overflows outside the range of values that its type can
-represent, the value overflows to zero. So, adding `1` to `var ui: UInt8 = 255`
-is equal to `0`.
-
 ### Floating-point numbers
 
-Floating-point types represent real numbers. Because not all real numbers can be
-expressed in a finite number of bits, floating-point numbers can't represent
-every value exactly.
+Mojo provides several floating-point types for representing real numbers at
+different precisions. Since floating-point values use a fixed number of bits,
+some numbers can’t be represented exactly.
 
-The floating-point types listed in Table 1—`Float64`, `Float32`, and
-`Float16`—follow the IEEE 754-2008 standard for representing floating-point
-values. Each type includes a sign bit, one set of bits representing an exponent,
-and another set representing the fraction or mantissa. Table 4 shows how each of
-these types are represented in memory.
+The floating-point types `Float64`, `Float32`, and `Float16` follow the
+IEEE 754-2008 standard for representing floating-point values. Each type
+includes a sign bit, a set of bits representing an exponent, and a set of bits
+representing the mantissa (also called fraction or significand).
+Table 3 shows how these types are represented in memory.
 
-<figure>
-<figcaption><b>Table 4.</b> Details of floating-point types</figcaption>
+<figure id="table-3">
+<figcaption><b>Table 3.</b> Details of floating-point types</figcaption>
 
 | Type name | Sign  | Exponent | Mantissa |
 | --------- | ----- | -------- | -------- |
@@ -180,29 +138,30 @@ these types are represented in memory.
 
 Numbers with exponent values of all ones or all zeros represent special values,
 allowing floating-point numbers to represent infinity, negative infinity,
-signed zeros, and not-a-number (NaN). For more details on how numbers are
-represented, see [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754) on
-Wikipedia.
+signed zeros, and not-a-number (NaN). For more details on how floating-point
+numbers are represented, see [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754).
 
-A few things to note with floating-point values:
+#### Floating-point approximations and comparisons
 
-* Rounding errors. Rounding may produce unexpected results. For example, 1/3
-  can't be represented exactly in these floating-point formats. The more
-  operations you perform with floating-point numbers, the more the rounding
-  errors accumulate.
+Because floating-point values are approximate, they often cannot represent the
+exact mathematical value they are intended to model.
 
-* Space between consecutive numbers. The space between consecutive numbers is
-  variable across the range of a floating-point number format. For numbers close
-  to zero, the distance between consecutive numbers is very small. For large
-  positive and negative numbers, the space between consecutive numbers is
-  greater than 1, so it may not be possible to represent consecutive integers.
+* **Rounding errors.** Rounding may produce unexpected results. For example,
+  `1/3` cannot be represented exactly in floating-point formats. As more
+  floating-point operations are performed, rounding errors may accumulate.
 
-Because the values are approximate, it is rarely useful to compare them with
-the equality operator (`==`). Consider the following example:
+* **Space between consecutive numbers.** The distance between consecutive
+  representable values varies across the range of a floating-point type. Near
+  zero, values are densely packed. For large positive or negative numbers, the
+  spacing can exceed 1, making it impossible to represent some consecutive
+  integers.
+
+Because values are approximate, it is rarely useful to compare floating-point
+numbers using the equality operator (`==`). For example:
 
 ```mojo
 var big_num = 1.0e16
-var bigger_num = big_num+1.0
+var bigger_num = big_num + 1.0
 print(big_num == bigger_num)
 ```
 
@@ -210,10 +169,83 @@ print(big_num == bigger_num)
 True
 ```
 
-Comparison operators (`<` `>=` and so on) work with floating point numbers. You
-can also use the [`math.isclose()`](/mojo/std/math/math/isclose) function to
-compare whether two floating-point numbers are equal within a specified
-tolerance.
+Comparison operators (such as `<` and `>=`) work as expected with floating-point
+values. To test whether two values are equal within a tolerance,
+use the [`math.isclose()`](/mojo/std/math/math/isclose) function to
+compare whether two floating-point numbers are equal within a
+specified tolerance.
+
+#### Mojo-supported floating-point types
+
+In the following table, the **eXmX** format (for example, `Float8_e5m2` and
+`Float8_e4m3fn`) refers to the number of bits allocated to a floating-point
+number’s exponent and mantissa.
+
+All IEEE 754 floating-point formats use an implied leading 1. That means
+`Float32` is e8m23 but effectively e8m24, `Float16` is e5m10 but effectively
+e5m11, `BFloat16` is e8m7 but effectively e8m8, and `Float8_e4m3fn` is e4m3 but
+effectively e4m4.
+
+In addition to eXmX:
+
+- **fn** signifies finite numbers only. The numbers are valid floating-point
+  values that are not infinite. NaN is supported.
+- **uz** means unsigned zero. Only +0 is supported, not -0.
+
+Although Mojo supports all these types, these types are not supported
+on all hardware.
+
+:::note
+The *B* in `BFloat16` stands for Brain, from the Google Brain artificial
+intelligence research group. Google developed it specifically for their
+Tensor Processing Units (TPUs) to accelerate machine learning workloads.
+Therefore the B is a project identifier and not a technical format indicator.
+:::
+
+<figure id="table-4">
+<figcaption><b>Table 4.</b> Mojo floating-point types</figcaption>
+
+| Type name | Description | CPU/GPU Support |
+| --------- | ----------- |----------------|
+| `Float16` | 16-bit floating-point<br />(IEEE 754-2008 binary16) | CPU and GPU |
+| `Float32` | 32-bit floating-point<br />(IEEE 754-2008 binary32) | CPU and GPU |
+| `Float64` | 64-bit floating-point<br />(IEEE 754-2008 binary64) | CPU and GPU |
+| `BFloat16` | 16-bit floating-point<br />(16-bit version of IEEE 754 binary32) | CPU and GPU |
+| `Float4_e2m1fn` | 4-bit floating-point<br />(e2m1 format from Open Compute MX specification — finite values and NaN only, no infinities) | GPU |
+| `Float8_e5m2` | 8-bit floating-point<br />(OFP8 e5m2 format) | GPU |
+| `Float8_e5m2fnuz` | 8-bit floating-point<br />(AMD-only e5m2fnuz format — finite values and NaN only, no infinities) | GPU |
+| `Float8_e4m3fn` | 8-bit floating-point<br />(OFP8 e4m3fn format — finite values and NaN only, no infinities) | GPU |  ← MISSING!
+| `Float8_e4m3fnuz` | 8-bit floating-point<br />(AMD-only e4m3fnuz format — finite values and NaN only, no infinities) | GPU |
+</figure>
+
+:::note
+GPU-only floating-point types are supported on specific accelerator hardware and
+may not be available on all GPUs.
+:::
+
+#### AI-optimized floating-point formats
+
+Several floating-point types are specifically designed for AI and machine
+learning workloads, trading precision for memory efficiency and computational
+throughput.
+
+**BFloat16 (Brain Floating Point)** uses the same 8 exponent bits as
+`Float32`, preserving its dynamic range, but uses 7 explicit bits (8 effective
+bits) for the mantissa compared to Float32's 23 bits.
+This makes it ideal for neural network training where gradient magnitudes
+vary widely but high precision is less critical.
+
+**8-bit formats** (`Float8_e5m2`, `Float8_e4m3fn`, and their `fnuz`
+variants) are ultra-compact formats for AI accelerators where memory
+bandwidth is the primary bottleneck.
+The naming indicates bit allocation: `e5m2` means 5 exponent bits and
+2 mantissa bits.
+The `fnuz` suffix additionally denotes unsigned zero (no -0), used
+in AMD hardware.
+
+**4-bit format** (`Float4_e2m1fn`) offers extreme compression with only 2
+exponent bits and 1 mantissa bit, used in specialized inference scenarios
+where accuracy can be traded for maximum throughput.
 
 ### Numeric literals
 
@@ -341,7 +373,7 @@ same thing).
 from utils.numerics import max_finite, min_finite
 
 def describeDType[dtype: DType]():
-    print(dtype, "is floating point:", dtype.is_floating_point())
+    print(dtype, "is floating-point:", dtype.is_floating_point())
     print(dtype, "is integral:", dtype.is_integral())
     print("Min/max finite values for", dtype)
     print(min_finite[dtype](), max_finite[dtype]())
@@ -350,7 +382,7 @@ describeDType[DType.float32]()
 ```
 
 ```output
-float32 is floating point: True
+float32 is floating-point: True
 float32 is integral: False
 Min/max finite values for float32
 -3.4028234663852886e+38 3.4028234663852886e+38

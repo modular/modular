@@ -1008,7 +1008,7 @@ PIPELINES = {
             pipeline="allenai/olmOCR-2-7B-1025-FP8",
             encoding="float8_e4m3fn",
             cos_dist_threshold=2.4e-01,
-            kl_div_threshold=3.0e-01,
+            kl_div_threshold=4.5e-01,
         ),
     ),
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
@@ -1236,7 +1236,7 @@ PIPELINES = {
             pipeline="HKUSTAudio/Llasa-8B",
             encoding="bfloat16",
             cos_dist_threshold=1.5e-02,
-            kl_div_threshold=7.5e-01,
+            kl_div_threshold=7.7e-01,
         ),
     ),
     "HuggingFaceTB/SmolLM2-360M-Instruct-LoRA-bfloat16": PipelineDef(

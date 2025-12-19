@@ -14,14 +14,11 @@
 # DeepGEMM grouped matmul benchmark (contiguous layout).
 # Mimics bench.py scaffolding; uses naive float64 reference for correctness.
 #
-# Run via Bazel: ./bazelw run //max/kernels/benchmarks/misc/comparison:bench_grouped_gemm
+# Run via kbench: kbench bench_grouped_gemm.yaml
 # Usage example:
 #   python $MODULAR_PATH/max/kernels/benchmarks/misc/comparison/setup_bench_env.py
 #   source $MODULAR_PATH/.venv/bin/activate
-#   # Uniform M per group:
-#   br //max/kernels/benchmarks/misc/comparison:bench_grouped_gemm -- --num-groups 2 --M 64 --N 512 --K 512
-#   # Varied M per group:
-#   br //max/kernels/benchmarks/misc/comparison:bench_grouped_gemm -- --num-groups 2 --M 31,97 --N 512 --K 512
+#   kbench bench_grouped_gemm.yaml
 # ===----------------------------------------------------------------------=== #
 
 import argparse

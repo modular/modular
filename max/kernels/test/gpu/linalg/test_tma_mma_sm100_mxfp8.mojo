@@ -13,8 +13,7 @@
 
 from sys import size_of, argv
 from utils.numerics import min_finite, max_finite
-from gpu import WARP_SIZE, barrier
-from gpu import lane_id as get_lane_id
+from gpu import WARP_SIZE, barrier, warp_id as get_warp_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx
@@ -230,7 +229,7 @@ fn block_scaled_mxfp8_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
@@ -441,7 +440,7 @@ fn block_scaled_mxfp8_kernel[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     comptime num_warps = num_threads // UInt(WARP_SIZE)
-    var warp_id = Int(thread_idx.x) // WARP_SIZE
+    var warp_id = get_warp_id()
     warp_id = 2 * (warp_id % 4) + warp_id // 4
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))

@@ -803,7 +803,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     m = n + chunk_size + 5  # Additional tokens: m > (n + chunk_size)
 
     # a. Create a random prompt of length n
-    initial_prompt = np.arange(n, dtype=np.int32)
+    initial_prompt = np.arange(n, dtype=np.int64)
 
     context = TextContext(
         max_length=200,  # Large enough to accommodate all tokens

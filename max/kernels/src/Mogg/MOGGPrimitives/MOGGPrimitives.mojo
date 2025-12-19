@@ -1595,7 +1595,7 @@ fn mogg_async_pack_borrow_v2[
 
 
 @register_internal("mogg.tensor.__init__")
-@no_inline
+@always_inline
 fn mogg_tensor_init[
     dtype: DType,
     rank: Int,

@@ -296,8 +296,10 @@ struct Struct_ep_dispatch:
         # Ensure this kernel only runs on GPU targets
         __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
-        var input_tokens_tensor = input_tokens.to_layout_tensor()
-        var topk_ids_tensor = topk_ids.to_layout_tensor()
+        var input_tokens_tensor = (
+            input_tokens.to_layout_tensor().get_immutable()
+        )
+        var topk_ids_tensor = topk_ids.to_layout_tensor().get_immutable()
 
         # Ensure the shape for the input tensors are correct
         __comptime_assert (
@@ -334,6 +336,7 @@ struct Struct_ep_dispatch:
             n_experts,
             n_ranks,
             max_token_per_rank,
+            n_gpus_per_node,  # p2p world size
             token_fmt_type,
         ]
 
@@ -371,24 +374,39 @@ struct Struct_ep_dispatch:
                     ),
                 )
 
-            var send_buf = unsafe_aliasing_address_to_device_buffer[
-                DType.uint8
-            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
-            var recv_buf = unsafe_aliasing_address_to_device_buffer[
-                DType.uint8
-            ](Int(recv_ptrs[gpu_id]), 1, gpu_ctx)
-            var recv_count_p = unsafe_aliasing_address_to_device_buffer[
-                DType.uint64
-            ](Int(recv_count_ptrs[gpu_id]), 1, gpu_ctx)
+            var send_ptr = UnsafePointer[UInt8, MutOrigin.external](
+                unsafe_from_address=Int(send_ptrs[gpu_id])
+            )
+
+            # Create inline arrays to store all the p2p accessable pointers
+            var recv_ptrs_arr = InlineArray[
+                UnsafePointer[UInt8, MutOrigin.external], n_gpus_per_node
+            ](fill={})
+            var recv_count_ptrs_arr = InlineArray[
+                UnsafePointer[UInt64, MutOrigin.external], n_gpus_per_node
+            ](fill={})
+
+            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+                atomic_counters_0._ptr
+            )
+
+            @parameter
+            for i in range(n_gpus_per_node):
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutOrigin.external](
+                    unsafe_from_address=Int(recv_ptrs[i])
+                )
+                recv_count_ptrs_arr[i] = UnsafePointer[
+                    UInt64, MutOrigin.external
+                ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
             gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
-                send_buf,
-                recv_buf,
-                recv_count_p,
-                atomic_counters_0.to_layout_tensor().to_device_buffer(gpu_ctx),
+                send_ptr,
+                recv_ptrs_arr,
+                recv_count_ptrs_arr,
+                atomic_counters_ptr,
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -517,23 +535,14 @@ struct Struct_ep_dispatch_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = UnsafePointer[UInt8, MutAnyOrigin](
+            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
                 unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = UnsafePointer[UInt64, MutAnyOrigin](
+            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var recv_buf_p_dev = DeviceBuffer[DType.uint8](
-                gpu_ctx, recv_buf_p, 1, owning=False
-            )
-            var recv_count_p_dev = DeviceBuffer[DType.uint64](
-                gpu_ctx, recv_count_p, 1, owning=False
-            )
-            var atomic_counters_0_dev = DeviceBuffer[DType.int32](
-                gpu_ctx,
-                atomic_counters_0._ptr,
-                atomic_counters_0.size(),
-                owning=False,
+            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+                atomic_counters_0._ptr
             )
 
             gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
@@ -541,9 +550,9 @@ struct Struct_ep_dispatch_cb:
                 row_offsets_tensor,
                 expert_ids_tensor,
                 src_info_tensor,
-                recv_buf_p_dev,
-                recv_count_p_dev,
-                atomic_counters_0_dev,
+                recv_buf_ptr,
+                recv_count_ptr,
+                atomic_counters_ptr,
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -617,8 +626,10 @@ struct Struct_ep_dispatch_fp8:
         # Ensure this kernel only runs on GPU targets
         __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
-        var input_tokens_tensor = input_tokens.to_layout_tensor()
-        var topk_ids_tensor = topk_ids.to_layout_tensor()
+        var input_tokens_tensor = (
+            input_tokens.to_layout_tensor().get_immutable()
+        )
+        var topk_ids_tensor = topk_ids.to_layout_tensor().get_immutable()
 
         # Ensure the shape for the input tensors are correct
         __comptime_assert (
@@ -664,6 +675,7 @@ struct Struct_ep_dispatch_fp8:
             n_experts,
             n_ranks,
             max_token_per_rank,
+            n_gpus_per_node,  # p2p world size
             token_fmt_type,
         ]
 
@@ -707,21 +719,36 @@ struct Struct_ep_dispatch_fp8:
             var send_buf = unsafe_aliasing_address_to_device_buffer[
                 DType.uint8
             ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
-            var recv_buf = unsafe_aliasing_address_to_device_buffer[
-                DType.uint8
-            ](Int(recv_ptrs[gpu_id]), 1, gpu_ctx)
-            var recv_count_p = unsafe_aliasing_address_to_device_buffer[
-                DType.uint64
-            ](Int(recv_count_ptrs[gpu_id]), 1, gpu_ctx)
+
+            # Marshal signal buffers.
+            var recv_ptrs_arr = InlineArray[
+                UnsafePointer[UInt8, MutOrigin.external], n_gpus_per_node
+            ](fill={})
+            var recv_count_ptrs_arr = InlineArray[
+                UnsafePointer[UInt64, MutOrigin.external], n_gpus_per_node
+            ](fill={})
+
+            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+                atomic_counters_0._ptr
+            )
+
+            @parameter
+            for i in range(n_gpus_per_node):
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutOrigin.external](
+                    unsafe_from_address=Int(recv_ptrs[i])
+                )
+                recv_count_ptrs_arr[i] = UnsafePointer[
+                    UInt64, MutOrigin.external
+                ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
             gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
                 send_buf,
-                recv_buf,
-                recv_count_p,
-                atomic_counters_0.to_layout_tensor().to_device_buffer(gpu_ctx),
+                recv_ptrs_arr,
+                recv_count_ptrs_arr,
+                atomic_counters_ptr,
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -866,23 +893,14 @@ struct Struct_ep_dispatch_cb_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = UnsafePointer[UInt8, MutAnyOrigin](
+            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
                 unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = UnsafePointer[UInt64, MutAnyOrigin](
+            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var recv_buf_p_dev = DeviceBuffer[DType.uint8](
-                gpu_ctx, recv_buf_p, 1, owning=False
-            )
-            var recv_count_p_dev = DeviceBuffer[DType.uint64](
-                gpu_ctx, recv_count_p, 1, owning=False
-            )
-            var atomic_counters_0_dev = DeviceBuffer[DType.int32](
-                gpu_ctx,
-                atomic_counters_0._ptr,
-                atomic_counters_0.size(),
-                owning=False,
+            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+                atomic_counters_0._ptr
             )
 
             gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
@@ -890,9 +908,9 @@ struct Struct_ep_dispatch_cb_fp8:
                 row_offsets_tensor,
                 expert_ids_tensor,
                 src_info_tensor,
-                recv_buf_p_dev,
-                recv_count_p_dev,
-                atomic_counters_0_dev,
+                recv_buf_ptr,
+                recv_count_ptr,
+                atomic_counters_ptr,
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -1028,24 +1046,27 @@ struct Struct_ep_combine:
                     ),
                 )
 
-            var send_buf = unsafe_aliasing_address_to_device_buffer[
-                DType.uint8
-            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
-            var recv_buf = unsafe_aliasing_address_to_device_buffer[
-                DType.uint8
-            ](Int(recv_ptrs[gpu_id]), 1, gpu_ctx)
-            var recv_count_p = unsafe_aliasing_address_to_device_buffer[
-                DType.uint64
-            ](Int(recv_count_ptrs[gpu_id]), 1, gpu_ctx)
+            var send_ptr = UnsafePointer[UInt8, MutOrigin.external](
+                unsafe_from_address=Int(send_ptrs[gpu_id])
+            )
+            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
+                unsafe_from_address=Int(recv_ptrs[gpu_id])
+            )
+            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
+                unsafe_from_address=Int(recv_count_ptrs[gpu_id])
+            )
+            var atomic_counters_1_ptr = UnsafePointer[
+                Int32, MutOrigin.external
+            ](atomic_counters_1._ptr)
 
             gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 src_info_tensor,
-                send_buf,
-                recv_buf,
-                recv_count_p,
-                atomic_counters_1.to_layout_tensor().to_device_buffer(gpu_ctx),
+                send_ptr,
+                recv_buf_ptr,
+                recv_count_ptr,
+                atomic_counters_1_ptr,
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -1149,30 +1170,21 @@ struct Struct_ep_combine_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = UnsafePointer[UInt8, MutAnyOrigin](
+            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
                 unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = UnsafePointer[UInt64, MutAnyOrigin](
+            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var recv_buf_p_dev = DeviceBuffer[DType.uint8](
-                gpu_ctx, recv_buf_p, 1, owning=False
-            )
-            var recv_count_p_dev = DeviceBuffer[DType.uint64](
-                gpu_ctx, recv_count_p, 1, owning=False
-            )
-            var atomic_counters_1_dev = DeviceBuffer[DType.int32](
-                gpu_ctx,
-                atomic_counters_1._ptr,
-                atomic_counters_1.size(),
-                owning=False,
-            )
+            var atomic_counters_1_ptr = UnsafePointer[
+                Int32, MutOrigin.external
+            ](atomic_counters_1._ptr)
 
             gpu_ctx.enqueue_function_checked[combine_cb, combine_cb](
                 output_tokens_tensor,
-                recv_buf_p_dev,
-                recv_count_p_dev,
-                atomic_counters_1_dev,
+                recv_buf_ptr,
+                recv_count_ptr,
+                atomic_counters_1_ptr,
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,

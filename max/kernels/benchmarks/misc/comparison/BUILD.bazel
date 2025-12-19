@@ -25,6 +25,7 @@ modular_py_library(
     srcs = [
         "bench_blackwell_grouped_gemm.py",
         "bench_blackwell_mla_decode.py",
+        "bench_blackwell_prefill.py",
     ],
     # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
     # nvidia-cutlass-dsl uses a .pth file which Bazel doesn't process.
@@ -45,21 +46,8 @@ modular_py_library(
 )
 
 # MHA prefill benchmark: MAX vs FlashInfer vs flash-attention
-modular_py_binary(
-    name = "bench_prefill",
-    srcs = ["bench_blackwell_prefill.py"],
-    main = "bench_blackwell_prefill.py",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:b200_gpu"],
-    deps = [
-        requirement("torch"),
-        "//max/kernels/benchmarks/misc/comparison:bench_baseline_lib",
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-    ],
-)
+# Moved to kbench. Please run the following:
+# kbench bench_prefill.yaml --param engine:"[modular_max, flashinfer, tridao]"
 
 # MHA decode benchmark: MAX vs FlashInfer (TensorRT-LLM backend)
 # Moved to kbench. Please run the following:
@@ -78,6 +66,7 @@ modular_py_library(
         "//max/kernels/benchmarks/misc/utils:bench_utils",
         blackwell_bench_wheel("flashinfer"),
         requirement("torch"),
+        "//max/kernels/benchmarks/autotune:bencher_utils",
         "//max/python/max",
     ],
 )

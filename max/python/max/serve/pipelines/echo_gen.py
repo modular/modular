@@ -26,6 +26,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenSlice,
 )
 from max.pipelines.core import TextContext
 
@@ -56,7 +57,7 @@ class EchoPipelineTokenizer(
         self,
         prompt: str | Sequence[int],
         add_special_tokens: bool = False,
-    ) -> npt.NDArray[np.integer[Any]]:
+    ) -> TokenSlice:
         """Encode the prompt into token IDs.
 
         For simplicity, we convert string characters to their ASCII values as token IDs.

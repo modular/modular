@@ -30,6 +30,7 @@ from gpu import (
     block_idx,
     global_idx,
     grid_dim,
+    warp_id,
     lane_id,
     thread_idx,
     warp_id as get_warp_id,
@@ -398,7 +399,7 @@ fn grouped_matmul_kernel_sm100[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var elect_one_warp = warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
     comptime max_tmem_cols = 512
 
@@ -495,7 +496,7 @@ fn grouped_matmul_kernel_sm100[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     comptime num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // UInt(WARP_SIZE)
+    warp_id = get_warp_id()
 
     comptime c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     comptime c_gmem_type = LayoutTensor[

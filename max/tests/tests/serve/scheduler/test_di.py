@@ -80,7 +80,7 @@ def create_text_context(
     prompt_len: int,
     output_len: int | None = None,
 ) -> TextContext:
-    tokens = np.ones(prompt_len, dtype=np.int32)
+    tokens = np.ones(prompt_len, dtype=np.int64)
     if output_len is not None:
         max_length = prompt_len + output_len
     else:

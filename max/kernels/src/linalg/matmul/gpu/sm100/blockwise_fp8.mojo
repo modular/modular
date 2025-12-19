@@ -256,7 +256,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     var mma_phase: UInt32 = 0
 
     var warp_id = get_warp_id()
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var elect_one_warp = warp_id == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
 
@@ -407,7 +407,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     comptime num_warps = num_threads // UInt(WARP_SIZE)
-    warp_id = thread_idx.x // UInt(WARP_SIZE)
+    warp_id = get_warp_id()
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         Int(block_idx.y), Int(block_idx.x)
