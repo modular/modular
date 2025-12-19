@@ -666,6 +666,91 @@ fn map[
 
 
 # ===-----------------------------------------------------------------------===#
+# peekable
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
+    comptime Element = Self.InnerIterator.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+
+    var _inner: Self.InnerIterator
+    var _next: Optional[Self.Element]
+
+    fn __init__(out self, var inner: Self.InnerIterator):
+        self._inner = inner^
+        self._next = None
+
+    fn __copyinit__(out self, other: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.InnerIterator, Copyable),
+            Parent=Self,
+            Element = Self.InnerIterator,
+            ParentConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.Element, Copyable),
+            Parent=Self,
+            Element = Self.Element,
+            ParentConformsTo="Copyable",
+        ]()
+
+        self._inner = rebind_var[Self.InnerIterator](
+            trait_downcast[Copyable](other._inner).copy()
+        )
+        self._next = other._next.copy()
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    fn __has_next__(self) -> Bool:
+        return self._next or self._inner.__has_next__()
+
+    fn __next__(mut self) -> Self.Element:
+        if self._next:
+            return self._next.unsafe_take()
+        return next(self._inner)
+
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var peek_len = 1 if self._next else 0
+        var lower, upper = self._inner.bounds()
+        if upper:
+            return (lower + peek_len, upper.value() + peek_len)
+        else:
+            return (lower + peek_len, None)
+
+    fn peek(
+        mut self,
+    ) -> Optional[
+        Pointer[Self.Element, ImmutOrigin.cast_from[origin_of(self._next[])]]
+    ]:
+        if not self._next and self._inner.__has_next__():
+            self._next = next(self._inner)
+
+        if self._next:
+            return Pointer(to=self._next.unsafe_value()).get_immutable()
+        return None
+
+
+fn peekable(
+    ref iterable: Some[Iterable],
+) -> _PeekableIterator[type_of(iterable).IteratorType[origin_of(iterable)]]:
+    """Returns a peekable iterator that can use the `peek` method to look ahead
+    at the next element without advancing the iterator.
+
+    Args:
+        iterable: The iterable to create a peekable iterator from.
+
+    Returns:
+        A peekable iterator.
+    """
+    return {iter(iterable)}
+
+
+# ===-----------------------------------------------------------------------===#
 # utilities
 # ===-----------------------------------------------------------------------===#
 

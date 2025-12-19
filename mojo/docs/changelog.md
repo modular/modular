@@ -370,6 +370,9 @@ what we publish.
 
 - `Counter` now conforms to `Writable`, `Stringable`, and `Representable`.
 
+- The `iter.peekable` function has been added. This allows users to peek at
+  the next element of an iterator without advancing it.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
