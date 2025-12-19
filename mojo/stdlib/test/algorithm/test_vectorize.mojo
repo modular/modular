@@ -17,7 +17,6 @@ from testing import assert_equal
 from testing import TestSuite
 from math import iota
 from sys.intrinsics import masked_load, masked_store
-from random import random_ui64, random_float64
 
 
 def test_vectorize():
@@ -56,7 +55,7 @@ def test_vectorize():
     assert_equal(vector[4], 14.0)
 
 
-def test_vectorize_vp():
+def test_vectorize_evl():
     # Create a mem of size 5
     var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
     var vector = Span(vector_stack)

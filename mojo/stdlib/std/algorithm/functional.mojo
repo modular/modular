@@ -307,7 +307,7 @@ fn vectorize[
     cost of binary size:
 
     ```
-    vectorize[closure, width, unroll_factor=2](size)
+    vectorize[simd_width, unroll_factor=2](size, closure)
     ```
 
     In the generated assembly the full-width calls will be repeated, resulting
