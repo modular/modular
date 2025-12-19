@@ -34,7 +34,10 @@ from math import (
     sqrt,
     tanh,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    UnsafePointer as RealUnsafePointer,
+)
 from random import randn, seed
 from sys import align_of, external_call, llvm_intrinsic
 from sys.info import simd_width_of, size_of, _current_target
@@ -8789,7 +8792,9 @@ struct DistributedAllReduceSum:
         var out_buf = managed_tensor_slice_to_ndbuffer(output)
 
         # Marshal signal buffers.
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            RealUnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8873,7 +8878,9 @@ struct DistributedAllGather:
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            RealUnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8974,7 +8981,9 @@ struct DistributedMatmulAllReduce:
                 NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape]
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            RealUnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
