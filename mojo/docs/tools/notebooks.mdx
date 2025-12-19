@@ -12,8 +12,7 @@ You can run Mojo language notebooks locally or in GPU-backed Google Colab enviro
 to accelerate workloads. For teaching, learning, and exploration, notebooks provide
 a hands-on, iterative workflow.
 
-#### Choose an environment
-This overview assumes you'll work with Mojo notebooks in one of two ways:
+This page assumes you'll work with Mojo notebooks in one of two ways:
 
 - **Google Colab** <br />
   Fast setup, optional GPU acceleration, ideal for quick experiments and for
@@ -26,90 +25,100 @@ Both options use the same notebook model and the same Mojo cell magic.
 
 ## Using Mojo on Google Colab
 
-#### 1. Create a Notebook
-Visit [Google Colab](https://colab.google) and create a new notebook.
+1. Create a Notebook:
 
-#### 2. Install Mojo
-For the nightly release:
+    Visit [Google Colab](https://colab.google) and create a new notebook.
 
-```python
-!pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/ --prerelease allow
-```
+2. Install Mojo:
 
-For the stable release:
+    For the nightly release:
+    
+    ```python
+    !pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/ --prerelease allow
+    ```
+    
+    For the stable release:
+    
+    ```python
+    !pip install mojo
+    ```
+    
+    Wait for the "Successfully installed" message.
 
-```python
-!pip install mojo
-```
+3. Enable Mojo:
 
-Wait for the "Successfully installed" message.
-
-#### 3. Enable Mojo
-In the first cell, run:
-
-```python
-import mojo.notebook
-```
-
-This adds the `%%mojo` cell magic, so you can compile and
-run Mojo code.
-
-Your Colab notebook is now ready to run Mojo programs.
+    In the first cell, run:
+    
+    ```python
+    import mojo.notebook
+    ```
+    
+    This adds the `%%mojo` cell magic, so you can compile and
+    run Mojo code.
+    
+    Your Colab notebook is now ready to run Mojo programs.
 
 ## Using Mojo in Local Jupyter Notebooks
 
 Local notebooks use `pixi` to manage an environment with
 Jupyter and Mojo.
 
-#### 1. Create a project
-```shell
-pixi init notebooks \
-    -c https://conda.modular.com/max-nightly/ \
-    -c conda-forge
-cd notebooks
-pixi shell
-```
+1. Create a project:
+    
+    ```shell
+    pixi init notebooks \
+        -c https://conda.modular.com/max-nightly/ \
+        -c conda-forge
+    cd notebooks
+    pixi shell
+    ```
+    
+    This creates a project directory and enters the Pixi shell.
 
-This creates a project directory and enters the Pixi shell.
+2. Install required tools:
 
-#### 2. Install required tools
-```shell
-pixi add mojo jupyterlab ipykernel
-```
+    ```shell
+    pixi add mojo jupyterlab ipykernel
+    ```
+    
+    This installs:
+    - Mojo
+    - JupyterLab
+    - The Python kernel required for notebook execution
 
-This installs:
-- Mojo
-- JupyterLab
-- The Python kernel required for notebook execution
+3. Start JupyterLab:
 
-#### 3. Start JupyterLab
-```shell
-jupyter lab
-```
+    ```shell
+    jupyter lab
+    ```
+    
+    JupyterLab opens in your browser.
 
-JupyterLab opens in your browser.
+4. Create a Python-backed notebook:
 
-#### 4. Create a Python-backed notebook
-In your web browser:
+    In your web browser:
+    
+    - Select _File > New > Notebook_.
+    - Choose the _Python_ kernel.
 
-- Select _File > New > Notebook_.
-- Choose the _Python_ kernel.
+5. Enable Mojo support:
 
-#### 5. Enable Mojo support
-In the first cell, run:
-
-```python
-import mojo.notebook
-```
-
-This registers the `%%mojo` magic command.
-Your local environment is now ready for interactive Mojo development.
+    In the first cell, run:
+    
+    ```python
+    import mojo.notebook
+    ```
+    
+    This registers the `%%mojo` magic command.
+    Your local environment is now ready for interactive Mojo development.
 
 ## Writing and running Mojo code
+
 Mojo code runs inside notebook cells marked with the `%%mojo` directive.
 Each Mojo cell must contain a complete program, including a `main()` function.
 
-#### Example: Hello Mojo
+### Example: Hello Mojo
+
 ```mojo
 %%mojo
 
@@ -123,7 +132,8 @@ Output:
 Hello Mojo
 ```
 
-#### Example: Parameterized compilation
+### Example: Parameterized compilation
+
 ```mojo
 %%mojo
 
@@ -151,12 +161,14 @@ Hello 🔥!
 ```
 
 ## Using Mojo with GPU support
+
 Google Colab offers GPU-backed runtimes so you can run Mojo GPU
 examples even without local hardware. T4, L4, and A100
 accelerators are supported. Before running GPU code,
 select _Runtime > Change runtime type > [GPU]_.
 
-#### Example: GPU Hello World
+### Example: GPU Hello World
+
 ```mojo
 %%mojo
 
@@ -178,25 +190,13 @@ Output:
 Hello from the GPU
 ```
 
-#### Example: GPU vector addition
+### Example: GPU vector addition
+
 This example runs elementwise vector addition on the GPU.
 Each GPU thread updates one element.
 
 ```mojo
 %%mojo
-
-# ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
-#
-# Licensed under the Apache License v2.0 with LLVM Exceptions:
-# https://llvm.org/LICENSE.txt
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ===----------------------------------------------------------------------=== #
 
 from gpu import thread_idx
 from gpu.host import DeviceContext
