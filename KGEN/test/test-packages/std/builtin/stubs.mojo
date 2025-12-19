@@ -854,12 +854,10 @@ struct _VariadicListMemIter[
     var index: Int
     var src: Pointer[Self.variadic_list_type, Self.list_origin]
 
-    fn __next_ref__(mut self) -> ref [Self.elt_origin] Self.elt_type:
-        while True:
-            pass
-
-    fn __has_next__(self) -> Bool:
-        return False
+    fn __next_ref__(
+        mut self,
+    ) raises StopIteration -> ref [Self.elt_origin] Self.elt_type:
+        raise StopIteration()
 
 
 struct VariadicListMem[
@@ -1188,6 +1186,12 @@ struct _StridedRangeIterator(Iterator):
 # ===-----------------------------------------------------------------------===#
 # parameter_for
 # ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct StopIteration:
+    pass
 
 
 trait Iterator(Movable):

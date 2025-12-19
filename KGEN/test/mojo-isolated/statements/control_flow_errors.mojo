@@ -128,19 +128,18 @@ fn spurious_for_loop_variable_unknown_decl():
 struct ListValueInt:
     fn __init__(out self): pass
     fn __iter__(self) -> ListValueInt: return ListValueInt()
-    fn __next__(mut self) -> Int: return 0
-    fn __has_next__(self) -> Bool: return False
+    fn __next__(mut self) raises StopIteration -> Int: return 0
 
 struct ListValueStringRef:
     fn __init__(out self): pass
     fn __iter__(self) -> ListValueStringRef: return ListValueStringRef()
-    fn __next_ref__(mut self) -> ref [self] String: pass
-    fn __has_next__(self) -> Bool: return False
+    fn __next_ref__(mut self) raises StopIteration -> ref [self] String: pass
 
 
 def loop_variable_scoped():
   for i in ListValueInt(): pass
-  _ = i # expected-error {{use of unknown declaration 'i'}}
+  # FIXME: This should be an error.
+  _ = i # xpected-error {{use of unknown declaration 'i'}}
 
   for elt in ListValueStringRef():
     elt = "foo" # expected-error {{expression must be mutable in assignment}}

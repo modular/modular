@@ -349,8 +349,12 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %iter)
   var iter = mems.__iter__()
 
+  # CHECK-NEXT: %__try_error__ = lit.var.decl
+  # CHECK-NEXT: lit.try
+
   # CHECK-NEXT: %x = lit.var.decl
-  # CHECK-NEXT: [[ELTREF:%.*]] = lit.call {{.*}}__next_ref__{{.*}}(%iter)
+  # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl {{.*}} : !lit.ref<!lit.ref<
+  # CHECK: lit.call {{.*}}__next_ref__{{.*}}(%iter, {{.*}}, %__call_result_tmp__)
 
   # Iterator is destroyed as soon as we're done with it.
   # CHECK-NEXT: lifetime.end %iter
@@ -359,20 +363,24 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
   ## Since the iterator can refer to the mems struct.
   # CHECK-NEXT: lifetime.end %mems_0
 
+  # CHECK: [[ELTREF:%.*]] = lit.load.consume %__call_result_tmp__
+  # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
+
   # Copy the result of __next_ref__ into !lit.ref
   # CHECK-NEXT: [[ELTREFIMM:%.*]] = lit.ref.immut [[ELTREF]]
   # CHECK-NEXT: lifetime.start %x
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ELTREFIMM]], %x)
-  var x : MemExample = iter.__next_ref__()
+  try:
+    var x : MemExample = iter.__next_ref__()
 
-  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
-  x.mutate()
+    # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
+    x.mutate()
+  except:
+    pass
 
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
   # CHECK-NEXT: lifetime.end %x
 
-  # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
 
 # CHECK-LABEL: lit.fn @"test_pvalue_ref_formation
 fn test_pvalue_ref_formation[a: SelfRefTest]():
