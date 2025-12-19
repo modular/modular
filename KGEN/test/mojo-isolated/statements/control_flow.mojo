@@ -435,12 +435,12 @@ fn use(value: Int): pass
 fn for_range_loop():
     var value_iter_list = ListValueIter()
 
-    # CHECK: %$RANGE = lit.var.decl "$RANGE" synth
+    # CHECK: %$ITER = lit.var.decl "$ITER" synth
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %value_iter_list
-    # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %$RANGE)
+    # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %$ITER)
     for item in value_iter_list:
         # CHECK: lit.loop cond {
-        # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
+        # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$ITER
         # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
         # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
         # CHECK:   lit.loop.condition [[COND]]
@@ -469,16 +469,16 @@ struct ListWithRefIter:
 fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
                       mut mut_list_ref_iter: ListWithRefIter):
 
-    # CHECK-NEXT: %$RANGE = lit.var.decl "$RANGE" synth
-    # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$RANGE)
+    # CHECK-NEXT: %$ITER = lit.var.decl "$ITER" synth
+    # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$ITER)
     for ref item in mut_list_ref_iter:
         # CHECK: lit.loop cond {
-        # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
+        # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$ITER
         # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
         # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
         # CHECK:   lit.loop.condition [[COND]]
         # CHECK: } body {
-        # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next_ref__{{.*}}(%$RANGE)
+        # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next_ref__{{.*}}(%$ITER)
         # CHECK:   %item = lit.var.decl "item" ref
 
         # The Index value from this element is captured into item, not the reference.
