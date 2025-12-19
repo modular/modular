@@ -26,7 +26,7 @@ class raw_ostream;
 
 } // namespace llvm
 
-namespace M::KGEN {
+namespace M::KGEN::LLVM {
 
 /// BitcodeWriter - Legacy bitcode writer for LLVM bitcode version 5.0
 /// This class writes LLVM modules to bitcode format version 5.0, which is
@@ -107,6 +107,6 @@ void WriteIndexToFile(const llvm::ModuleSummaryIndex &Index,
                       llvm::raw_ostream &Out,
                       const void *ModuleToSummariesForIndex = nullptr);
 
-} // namespace M::KGEN
+} // namespace M::KGEN::LLVM
 
 #endif // KGEN_COMPILER_LLVMIR_BITCODE_METALBITCODEWRITER_H

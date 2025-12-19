@@ -4,14 +4,15 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the MetalBitcodeWriter class for writing Metal bitcode.
+// This file implements the BitcodeWriter to generate LLVM17 IR
+// (for writing Metal bitcode).
 //
 // The writer is taken from Julia's LLVM downgrader
 // https://github.com/JuliaLLVM/llvm-downgrade
 //
 //===----------------------------------------------------------------------===//
 
-#include "MetalBitcodeWriter.h"
+#include "BitcodeWriter17.h"
 #include "../Transforms/PointerRewriter.h"
 #include "MetalValueEnumerator.h"
 
@@ -92,12 +93,12 @@
 #include <vector>
 
 using namespace llvm;
-using namespace M::KGEN;
+using namespace M::KGEN::LLVM;
 
 /// Special encoding used for unsupported attributes.
-namespace M::KGEN {
+namespace M::KGEN::LLVM {
 static constexpr uint64_t UNSUPPORTED_ATTR_KIND_ENCODING = 0;
-} // namespace M::KGEN
+} // namespace M::KGEN::LLVM
 
 namespace {
 
@@ -693,7 +694,7 @@ uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
   case Attribute::Captures:
     // Return 0 for unknown attributes (newer LLVM attributes not supported
     // in 5.0)
-    return M::KGEN::UNSUPPORTED_ATTR_KIND_ENCODING;
+    return M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING;
   case Attribute::Alignment:
     return bitc::ATTR_KIND_ALIGNMENT;
   case Attribute::AllocAlign:
@@ -953,7 +954,7 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
     for (Attribute Attr : AS) {
       if (Attr.isEnumAttribute() || Attr.isIntAttribute()) {
         uint64_t AttrKindEncoding = getAttrKindEncoding(Attr.getKindAsEnum());
-        if (AttrKindEncoding != M::KGEN::UNSUPPORTED_ATTR_KIND_ENCODING) {
+        if (AttrKindEncoding != M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING) {
           if (Attr.isEnumAttribute()) {
             Record.push_back(0);
             Record.push_back(AttrKindEncoding);
@@ -5280,7 +5281,7 @@ void IndexBitcodeWriter::write() {
 // writing the combined index file for ThinLTO. When writing a subset of the
 // index for a distributed backend, provide a \p ModuleToSummariesForIndex
 // map. M::KGEN namespace wrapper functions for Metal bitcode writing
-namespace M::KGEN {
+namespace M::KGEN::LLVM {
 
 void WriteIndexToFile(
     const ModuleSummaryIndex &Index, raw_ostream &Out,
@@ -5295,12 +5296,12 @@ void WriteIndexToFile(
   Out.write((char *)&Buffer.front(), Buffer.size());
 }
 
-void WriteBitcodeToFile(const llvm::Module &M, llvm::raw_ostream &Out,
-                        bool ShouldPreserveUseListOrder,
-                        const llvm::ModuleSummaryIndex *Index,
-                        bool GenerateHash, llvm::ModuleHash *ModHash) {
-  ::WriteBitcodeToFile(M, Out, ShouldPreserveUseListOrder, Index, GenerateHash,
-                       ModHash);
+void WriteBitcode17ToFile(const llvm::Module &M, llvm::raw_ostream &Out,
+                          bool ShouldPreserveUseListOrder,
+                          const llvm::ModuleSummaryIndex *Index,
+                          bool GenerateHash, llvm::ModuleHash *ModHash) {
+  WriteBitcodeToFile(M, Out, ShouldPreserveUseListOrder, Index, GenerateHash,
+                     ModHash);
 }
 
 void WriteIndexToFile(const llvm::ModuleSummaryIndex &Index,
@@ -5312,4 +5313,4 @@ void WriteIndexToFile(const llvm::ModuleSummaryIndex &Index,
           ModuleToSummariesForIndex));
 }
 
-} // namespace M::KGEN
+} // namespace M::KGEN::LLVM
