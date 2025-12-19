@@ -361,6 +361,7 @@ fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
     if is_sm90orsm100:
         depths.append(72)
         depths.append(80)
+        depths.append(96)
         depths.append(256)
     return depths^
 
