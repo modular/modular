@@ -181,6 +181,7 @@ private:
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(const CompilationOptions &options, bool isJIT);
 
+namespace LLVM {
 /// Write the specified module to the specified raw output stream using
 /// bitcode format version 5.0.
 ///
@@ -203,11 +204,12 @@ createTargetMachine(const CompilationOptions &options, bool isJIT);
 /// Can be used to produce the same module hash for a minimized bitcode
 /// used just for the thin link as in the regular full bitcode that will
 /// be used in the backend.
-void WriteBitcodeToFile(const llvm::Module &M, llvm::raw_ostream &Out,
-                        bool ShouldPreserveUseListOrder = false,
-                        const llvm::ModuleSummaryIndex *Index = nullptr,
-                        bool GenerateHash = false,
-                        llvm::ModuleHash *ModHash = nullptr);
+void WriteBitcode17ToFile(const llvm::Module &M, llvm::raw_ostream &Out,
+                          bool ShouldPreserveUseListOrder = false,
+                          const llvm::ModuleSummaryIndex *Index = nullptr,
+                          bool GenerateHash = false,
+                          llvm::ModuleHash *ModHash = nullptr);
+} // namespace LLVM
 
 } // namespace M::KGEN
 

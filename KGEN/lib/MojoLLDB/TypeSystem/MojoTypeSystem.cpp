@@ -57,7 +57,7 @@ static std::optional<mlir::Type>
 getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype, size_t indexBitwidth) {
   // `address` and `index` are extensions to the regular dtype.
   if (dtype.isAddress())
-    return LLVM::LLVMPointerType::get(ctx);
+    return mlir::LLVM::LLVMPointerType::get(ctx);
 
   if (dtype.isIndex() || dtype.isUIndex())
     return IntegerType::get(ctx, indexBitwidth);

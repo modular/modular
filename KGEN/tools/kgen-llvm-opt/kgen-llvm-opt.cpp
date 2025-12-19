@@ -371,11 +371,11 @@ int main(int argc, char **argv) {
     return 1;
 
   if (isMetalTriple && outputKind == OK_OutputBitcode) {
-    M::KGEN::WriteBitcodeToFile(*module, out->os(),
-                                /*ShouldPreserveUseListOrder = */ false,
-                                /*ModuleSummaryIndex =*/nullptr,
-                                /*GenerateHash = */ false,
-                                /*ModuleHash = */ nullptr);
+    M::KGEN::LLVM::WriteBitcode17ToFile(*module, out->os(),
+                                        /*ShouldPreserveUseListOrder = */ false,
+                                        /*ModuleSummaryIndex =*/nullptr,
+                                        /*GenerateHash = */ false,
+                                        /*ModuleHash = */ nullptr);
   }
 
   // Declare success.

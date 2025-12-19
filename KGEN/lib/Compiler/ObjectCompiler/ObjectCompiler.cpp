@@ -28,7 +28,7 @@
 #include "MCLinker.h"
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
-#include "LLVM/Bitcode/MetalBitcodeWriter.h"
+#include "LLVM/Bitcode/BitcodeWriter17.h"
 
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
@@ -1406,11 +1406,11 @@ ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
                                            llvm::raw_pwrite_stream &os) {
   CompilerTimeTraceScope traceScope("emitBitcode");
   if (isMetalTriple(llvmModule.getTargetTriple())) {
-    M::KGEN::WriteBitcodeToFile(llvmModule, os,
-                                /*ShouldPreserveUseListOrder = */ false,
-                                /*ModuleSummaryIndex =*/nullptr,
-                                /*GenerateHash = */ false,
-                                /*ModuleHash = */ nullptr);
+    M::KGEN::LLVM::WriteBitcode17ToFile(llvmModule, os,
+                                        /*ShouldPreserveUseListOrder = */ false,
+                                        /*ModuleSummaryIndex =*/nullptr,
+                                        /*GenerateHash = */ false,
+                                        /*ModuleHash = */ nullptr);
   } else {
     llvm::WriteBitcodeToFile(llvmModule, os,
                              /* ShouldPreserveUseListOrder */ true);
@@ -1653,11 +1653,11 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
   }
 
   // Use Metal bitcode writer to write AIR bitcode
-  M::KGEN::WriteBitcodeToFile(module, airOS,
-                              /*ShouldPreserveUseListOrder = */ false,
-                              /*ModuleSummaryIndex =*/nullptr,
-                              /*GenerateHash = */ false,
-                              /*ModuleHash = */ nullptr);
+  M::KGEN::LLVM::WriteBitcode17ToFile(module, airOS,
+                                      /*ShouldPreserveUseListOrder = */ false,
+                                      /*ModuleSummaryIndex =*/nullptr,
+                                      /*GenerateHash = */ false,
+                                      /*ModuleHash = */ nullptr);
 
   airOS.flush();
   airOS.close();
