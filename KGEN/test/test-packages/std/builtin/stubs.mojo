@@ -72,7 +72,7 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]]:
 comptime KeyElement = Copyable  # & Hashable & Equatable
 
 
-struct Error(ImplicitlyCopyable):
+struct Error(Copyable):
     fn __init__(out self):
         pass
 

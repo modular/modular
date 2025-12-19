@@ -176,10 +176,10 @@ fn use_of_uninit_while(cond: Bool):
     use(b)  # expected-error {{use of uninitialized value 'b'}}
 
 
-fn use_of_uninit_raise(cond: Bool, err: Error):
+fn use_of_uninit_raise(cond: Bool):
     var a: MemExample
     try:
-        raise err
+        raise Error()
     except:
         a = MemExample()
         pass
@@ -188,7 +188,7 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
     var b: MemExample
     try:
         b = MemExample()
-        raise err
+        raise Error()
     except:
         pass
     use(b)  # ok
@@ -197,9 +197,9 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
     try:
         if cond:
             c = MemExample()
-            raise err
+            raise Error()
         else:
-            raise err
+            raise Error()
     except:
         pass
     use(c)  # expected-error {{use of uninitialized value 'c'}}
@@ -207,7 +207,7 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
     var d: MemExample
     try:
         if cond:
-            raise err
+            raise Error()
     except:
         d = MemExample()
     else:
@@ -424,11 +424,11 @@ fn testStructWithNoDel():
 
 
 # expected-note @+1 {{'x' declared here}}
-fn inout_restored_at_throw(mut x: MemExample, err: Error) raises:
+fn inout_restored_at_throw(mut x: MemExample) raises:
     # x is uninit after this point, needs to be restored if an
     # error is thrown.
     x^.consume()
-    raise err  # expected-error {{use of uninitialized value 'x'}}
+    raise Error()  # expected-error {{use of uninitialized value 'x'}}
 
 
 # Invalid error field 'w.x.y' destroyed out of the middle of a value, preventing the overall value from being destroyed
