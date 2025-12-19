@@ -365,6 +365,8 @@ what we publish.
   # note: constraint failed: Conversion flag "invalid" not recognized.
   ```
 
+- `Counter` now conforms to `Writable`, `Stringable`, and `Representable`.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
