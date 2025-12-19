@@ -1,0 +1,121 @@
+from docutils import nodes, utils
+
+# -- Project information -----------------------------------------------------
+
+project = "MAX Engine Python APIs"
+copyright = "2023, Modular Inc"
+author = "Modular"
+
+# The semantic version
+version = "@MODULAR_VERSION_MAJOR@.@MODULAR_VERSION_MINOR@.@MODULAR_VERSION_PATCH@"
+
+# List of patterns, relative to source directory, that match files and
+# directories to ignore when looking for source files.
+# This pattern also affects html_static_path and html_extra_path.
+exclude_patterns = []
+
+# The suffix of source filenames.
+source_suffix = ".rst"
+
+extensions = ["sphinx.ext.autodoc",
+              "sphinx.ext.napoleon",
+              "sphinx.ext.intersphinx",
+              "sphinx_markdown_builder",]
+
+markdown_anchor_signatures_docusaurus = True
+markdown_first_heading_level = 2
+markdown_short_heading_names = True
+markdown_meta_front_matter = True
+markdown_meta_wrapper_class = "sphinx-docs"
+markdown_field_definition_lists = True
+
+# Use both the class summary and the __init__ function for class description
+# This is to ensure that constructor args are documented via lint on __init__.
+autoclass_content = "both"
+# This ensures that all instances of CustomExtensionsType are not unfolded
+# (previously it was only sometimes unfolded, which was confusing/inconsistent)
+autodoc_type_aliases = {
+  'CustomExtensionsType': 'max.engine.CustomExtensionsType'
+}
+
+# Show argument type hints in the parameters description only, because a lot
+# of type names can't be resolved and they make the signatures a mess.
+autodoc_typehints = "description"
+
+# Suppress warnings for ambiguous cross-references
+# This allows multiple classes with the same name in different modules
+suppress_warnings = ['ref.python']
+
+napoleon_custom_sections = [("Configuration", "params_style")]
+
+# Link to other libraries for API links such as "pathlib.Path"
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None)
+}
+
+# templates_path = ["_templates"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+
+# -- Options for HTML output -------------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
+
+def process_links(app, what, name, obj, options, lines):
+    """This is a callback from Sphinx that lets us preprocess docstrings
+    (registered below with connect()). Here we just prepare `np` references
+    in code (the natural way to refer to numpy members) for processing by
+    intersphinx_mapping, above, which requires `numpy` module name. The tilde
+    then tells Sphinx to shorten the link name to remove the module name."""
+    for i in range(len(lines)):
+        lines[i] = lines[i].replace("`np.", "`~numpy.")
+        lines[i] = lines[i].replace("max._core", "max")
+
+def process_signature(app, what, name, obj, options, signature, return_annotation):
+    """This is a callback from Sphinx that lets us preprocess function signatures.
+    We use this to replace "max._core" references with "max"."""
+    if signature is not None:
+        signature = signature.replace("max._core", "max")
+
+    if return_annotation is not None:
+        return_annotation = return_annotation.replace("max._core", "max")
+
+    return signature, return_annotation
+
+def code_link_role(name, rawtext, text, lineno, inliner, options={}, content=[]):
+    """
+    Creates a code font link. Catches the format "url|link text in RST and
+    adds a code-font node. Example usage:
+      :code_link:`url-path|link-text`
+    """
+    url, title = text.split('|', 1)
+    code_node = nodes.literal('', utils.unescape(title.strip()))
+    reference_node = nodes.reference('', '', refuri=url.strip(), **options)
+    reference_node += code_node
+    return [reference_node], []
+
+def setup(app):
+    import inspect
+    from sphinx.util import inspect as sphinx_inspect
+
+    app.connect("autodoc-process-docstring", process_links)
+    app.connect("autodoc-process-signature", process_signature)
+    app.add_role('code_link', code_link_role)
+
+    # Sphinx inspects all objects in the module and tries to resolve their type
+    # (attribute, function, class, module, etc.) by using its own functions in
+    # `sphinx.util.inspect`. These functions misidentify certain nanobind
+    # objects. We monkey patch those functions here.
+    # From https://github.com/wjakob/nanobind/discussions/707
+    def mpatch_ismethod(object):
+        if hasattr(object, '__name__') and type(object).__name__ == "nb_method":
+            return True
+        return inspect.ismethod(object)
+
+    sphinx_inspect_isclassmethod = sphinx_inspect.isclassmethod
+    def mpatch_isclassmethod(object, cls=None, name=None):
+        if hasattr(object, '__name__') and type(object).__name__ == "nb_method":
+            return False
+        return sphinx_inspect_isclassmethod(object, cls,name)
+
+    sphinx_inspect.ismethod = mpatch_ismethod
+    sphinx_inspect.isclassmethod = mpatch_isclassmethod

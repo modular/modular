@@ -536,3 +536,29 @@ http_file(
     sha256 = "3f4db99ab00437fb50c61da11d0647e5ab7aeab1b0b7337ae048dd8ee1b308b2",
     urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/flash_attn/sm100/3f4db99ab00437fb50c61da11d0647e5ab7aeab1b0b7337ae048dd8ee1b308b2/flash_attn-2.8.3-py3-none-any.whl"],
 )
+
+# https://github.com/modularml/breathe
+http_archive(
+    name = "breathe",
+    build_file = "//bazel/public-patches:breathe.BUILD",
+    integrity = "sha256-Y1XQwi/+pN46XJgXsELvLQQ7VCj1euW7b1ByFQx+koI=",
+    strip_prefix = "breathe-main",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/python/breathe/362ea3ed28e38517cf4836d71790c6c04217ba39.zip",
+)
+
+# https://github.com/modularml/sphinx-markdown-builder
+http_archive(
+    name = "sphinx-markdown-builder",
+    build_file = "//bazel/public-patches:sphinx-markdown-builder.BUILD",
+    integrity = "sha256-hYIjXHXV+dtu8zeRVcWLoAzomwlL6mL2RgD+LsT4p7Q=",
+    strip_prefix = "sphinx-markdown-builder-0.7.10",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/python/sphinx-markdown-builder/bc944a9b5a1c4706506ee465bb311db49bb648be.zip",
+)
+
+# https://github.com/scottamain/sphinx-click
+http_archive(
+    name = "sphinx-click",
+    sha256 = "56614eb1f03c258e426012f0f71ee1d39254bfea3095add64394ac2aae234328",
+    strip_prefix = "sphinx-click-7c1a85c2667ed8b3b4060e94ce07456e5fa4fef6",
+    url = "https://github.com/scottamain/sphinx-click/archive/7c1a85c2667ed8b3b4060e94ce07456e5fa4fef6.tar.gz",
+)
