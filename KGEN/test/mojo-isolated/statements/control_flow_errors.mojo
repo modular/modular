@@ -99,7 +99,7 @@ fn test():
     for item in my_list_no_len:
         pass
 
-    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method}}
+    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' or '__next_ref__' method required for iteration}}
     for item in my_list_no_next:
         pass
 
@@ -111,7 +111,7 @@ fn test():
     for item in my_list_invalid_int:
         pass
 
-    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method}}
+    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' or '__next_ref__' method required for iteration}}
     for key, item in my_list_no_next:
         pass
 

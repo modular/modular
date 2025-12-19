@@ -1351,52 +1351,76 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   //       ref e = it.__next_ref__()
   //       # or: var e = it.__next__()
   //       <BODY>
+  auto emitter = getEmitter();
 
   // Emit the expression for the iterable.
-  ASTExprAnd<AnyValue> loadedSeq = {
-      getEmitter().emitExpr(seqExpr, EC_ForIterator), seqExpr};
+  ASTExprAnd<AnyValue> loadedSeq = {emitter.emitExpr(seqExpr, EC_ForIterator),
+                                    seqExpr};
   if (!loadedSeq.ir)
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
   // Get an iterator into the iterable by emitting a call to `__iter__`.
-  VarDeclOp rangeRef =
-      getEmitter().emitVarDecl("$RANGE", UnresolvedType::get(getContext()),
-                               forLocation, VarDeclKind::Synthesized);
-  ValueDest rangeDest(rangeRef, EC_ForIterator);
-  if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
-                                        CallSyntax::kMethodCall, seqExpr))
+  VarDeclOp iterVar =
+      emitter.emitVarDecl("$ITER", UnresolvedType::get(getContext()),
+                          forLocation, VarDeclKind::Synthesized);
+  ValueDest rangeDest(iterVar, EC_ForIterator);
+  if (!emitter.emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
+                                   CallSyntax::kMethodCall, seqExpr))
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
+
+  // Now that we have the iterator (and its type), see if we're calling
+  // __next_ref__ or __next__ to know what we're dealing with.
+  CallOperands nextOperands({{MLValue(iterVar), seqExpr}});
+  ASTType iterType = iterVar.getType().getElementType();
+  PValue nextFn =
+      OverloadSet::lookupAndResolve(iterType, "__next_ref__", nextOperands,
+                                    seqExpr, CallSyntax::kMethodCall, emitter);
+  if (!nextFn) {
+    nextFn = OverloadSet::lookupAndResolve(iterType, "__next__", nextOperands,
+                                           seqExpr, CallSyntax::kMethodCall,
+                                           emitter);
+    if (!nextFn) {
+      emitter.emitError(seqExpr->getLoc())
+          << iterType
+          << " does not implement the '__next__' or '__next_ref__' method "
+             "required for iteration"
+          << seqExpr->getRange();
+      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
+    }
+  }
 
   // Create the LoopOp
   auto loopOp = LIT::LoopOp::create(builder, forLocation);
   Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
   Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
-  Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
+  // Fill in the noop 'else' region.
+  (void)builder.createBlock(&loopOp.getElseRegion());
+  LIT::LoopYieldOp::create(builder, forLocation);
 
   // Create the condition region.
-  builder = OpBuilder::atBlockEnd(condBlock);
+  emitter.builder = OpBuilder::atBlockEnd(condBlock);
 
   ValueDest lengthDest(EC_ForIterator);
-  CValue hasNextBool = getEmitter().emitNamedMethodCall(
-      "__has_next__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
+  CValue hasNextBool = emitter.emitNamedMethodCall(
+      "__has_next__", CallOperands({{MLValue(iterVar), seqExpr}}), lengthDest,
       CallSyntax::kMethodCall, seqExpr);
   if (!hasNextBool)
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-  CValue hasNext = getEmitter().emitI1({hasNextBool, seqExpr}, EC_ForIterator);
+  CValue hasNext = emitter.emitI1({hasNextBool, seqExpr}, EC_ForIterator);
   if (!hasNext)
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
   SRValue shouldContinue =
-      getEmitter().emitSRValue({hasNext, seqExpr}, EC_ForIterator);
+      emitter.emitSRValue({hasNext, seqExpr}, EC_ForIterator);
   if (!shouldContinue)
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-  LIT::LoopConditionOp::create(builder, forLocation, shouldContinue);
+  LIT::LoopConditionOp::create(*emitter.builder, forLocation, shouldContinue);
 
   // Create the body. Add Target element to the continue block by calling next
   // method. Emit the result into an implicitly declared variable at the current
   // scope.
-  builder.setInsertionPointToStart(bodyBlock);
 
   // Push a new local variable scope for the subsequent body.
+  builder.setInsertionPointToStart(bodyBlock);
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
   pushChildScope(scopeGuard, keepDecl);
@@ -1408,20 +1432,12 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
   indvarDest.patternDeclKind = PatternDeclKind::kBind;
 
-  // See if we're calling __next_ref__ or __next__, call the first one that
-  // works.
-  CallOperands nextOperands({{MLValue(rangeRef), seqExpr}});
-  auto emitter = getEmitter();
-  if (PValue nextRef = OverloadSet::lookupAndResolve(
-          rangeRef.getType().getElementType(), "__next_ref__", nextOperands,
-          seqExpr, CallSyntax::kMethodCall, emitter)) {
-    emitter.emitIndirectCall(nextRef, std::move(nextOperands), indvarDest,
-                             CallSyntax::kOperator, seqExpr);
-  } else if (!emitter.emitNamedMethodCall("__next__", std::move(nextOperands),
-                                          indvarDest, CallSyntax::kMethodCall,
-                                          seqExpr)) {
+  // Call __next_ref__ or __next__, with an emitter set to the right body
+  // scope.
+  if (!getEmitter().emitIndirectCall(nextFn, std::move(nextOperands),
+                                     indvarDest, CallSyntax::kMethodCall,
+                                     seqExpr))
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-  }
 
   builder.setInsertionPointToEnd(&loopOp.getBodyRegion().front());
 
@@ -1432,10 +1448,6 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   if (failed(bodyFn()))
     return LoopResult(LoopResult::ErrorKind::inLoopBody);
   LIT::LoopContinueOp::create(builder, forLocation);
-
-  // Create the else region.
-  builder.setInsertionPointToStart(elseBlock);
-  LIT::LoopYieldOp::create(builder, forLocation);
   return LoopResult(loopOp);
 }
 

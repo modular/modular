@@ -647,6 +647,10 @@ public:
                                const Twine &message = {}) const {
     return shared.emitWarning(loc, message);
   }
+  // Allow assignments in derived classes.
+  void operator=(const SharedStateUser &other) {
+    assert(&other.shared == &shared);
+  }
 };
 
 /// This is the result of lookupDecl.
