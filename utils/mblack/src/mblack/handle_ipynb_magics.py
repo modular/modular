@@ -73,8 +73,8 @@ class Replacement:
 @lru_cache()
 def jupyter_dependencies_are_installed(*, verbose: bool, quiet: bool) -> bool:
     try:
-        import IPython  # noqa:F401
-        import tokenize_rt  # noqa:F401
+        import IPython  # type: ignore
+        import tokenize_rt  # type: ignore
     except ModuleNotFoundError:
         if verbose or not quiet:
             msg = (
@@ -169,7 +169,7 @@ def mask_cell(src: str) -> Tuple[str, List[Replacement]]:
         # Syntax is fine, nothing to mask, early return.
         return src, replacements
 
-    from IPython.core.inputtransformer2 import TransformerManager
+    from IPython.core.inputtransformer2 import TransformerManager  # type: ignore
 
     transformer_manager = TransformerManager()
     transformed = transformer_manager.transform_cell(src)
@@ -321,7 +321,7 @@ def _get_str_args(args: List[ast.expr]) -> List[str]:
     for arg in args:
         assert isinstance(arg, ast.Constant)
         str_args.append(arg.s)
-    return str_args
+    return str_args  # type: ignore
 
 
 @dataclasses.dataclass(frozen=True)

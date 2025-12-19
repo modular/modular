@@ -16,7 +16,6 @@ modular_py_library(
     ),
     data = glob(["src/**/*.txt"]),
     imports = ["src"],
-    tags = ["no-mypy"],  # mypy_extensions conflicts with builtin from mypy
     deps = [
         requirement("click"),
         requirement("mypy-extensions"),
@@ -30,7 +29,6 @@ modular_py_binary(
     name = "mblack",
     srcs = ["src/mblack/__main__.py"],
     main = "src/mblack/__main__.py",
-    tags = ["no-mypy"],  # mypy_extensions conflicts with builtin from mypy
     deps = [":mblack-lib"],
 )
 

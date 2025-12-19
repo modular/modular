@@ -45,7 +45,7 @@ def maybe_install_uvloop() -> None:
     interfering with the parent process if Black is used as a library.
     """
     try:
-        import uvloop
+        import uvloop  # type: ignore
 
         uvloop.install()
     except ImportError:
@@ -180,8 +180,8 @@ async def schedule_formatting(
     }
     pending = tasks.keys()
     try:
-        loop.add_signal_handler(signal.SIGINT, cancel, pending)
-        loop.add_signal_handler(signal.SIGTERM, cancel, pending)
+        loop.add_signal_handler(signal.SIGINT, cancel, pending)  # type: ignore
+        loop.add_signal_handler(signal.SIGTERM, cancel, pending)  # type: ignore
     except NotImplementedError:
         # There are no good alternatives for these on Windows.
         pass

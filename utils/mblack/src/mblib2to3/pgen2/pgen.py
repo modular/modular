@@ -399,7 +399,7 @@ class ParserGenerator(object):
             except:
                 msg = " ".join([msg] + list(map(str, args)))
         raise SyntaxError(
-            msg, (self.filename, self.end[0], self.end[1], self.line)
+            msg, (self.filename, self.end[0], self.end[1], self.line)  # type: ignore
         )
 
 

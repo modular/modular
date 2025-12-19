@@ -706,7 +706,7 @@ def get_sources(
             sources.add(p)
         elif p.is_dir():
             if using_default_exclude:
-                gitignore = {
+                gitignore = {  # type: ignore
                     root: root_gitignore,
                     root / p: get_gitignore(p),
                 }
@@ -719,7 +719,7 @@ def get_sources(
                     extend_exclude,
                     force_exclude,
                     report,
-                    gitignore,
+                    gitignore,  # type: ignore
                     verbose=verbose,
                     quiet=quiet,
                 )
