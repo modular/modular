@@ -16,8 +16,9 @@ from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
 from testing import TestSuite, assert_equal
+from sys import has_apple_gpu_accelerator
 
-comptime T = DType.float64
+comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
 
 
