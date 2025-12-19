@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/CommonCLOptions.h"
+#include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/Support/FileUtilities.h"
@@ -19,6 +20,49 @@
 #include <system_error>
 
 using namespace M;
+
+#define _STRINGIFY(str) #str
+#define _X_STRINGIFY(str) _STRINGIFY(str)
+#define STRINGIFY_MAX_CONFIG(path) _X_STRINGIFY(MAX_CONFIG_SECTION) path
+
+/// Helper function that creates a directory, finds a unique filename (adding
+/// numerical suffix if needed), and opens the file for writing.
+static std::unique_ptr<llvm::ToolOutputFile>
+openUniqueFile(StringRef directory, StringRef baseName, StringRef extension) {
+  // Create the temps directory if it doesn't exist.
+  std::error_code errorCode;
+  std::filesystem::create_directories(directory.str(), errorCode);
+  if (errorCode)
+    return nullptr;
+
+  // Build the output file path.
+  std::string outFile = (std::filesystem::path(directory.str()) /
+                         (baseName.str() + extension.str()))
+                            .string();
+
+  auto absoluteOutputFile = std::filesystem::absolute(outFile, errorCode);
+  if (errorCode)
+    return nullptr;
+
+  // Get a unique filename by adding numerical suffix if file exists.
+  std::filesystem::path uniquePath = absoluteOutputFile;
+  std::string stem = uniquePath.stem().string();
+  std::string ext = uniquePath.extension().string();
+  int suffix = 1;
+
+  // Only try up to 999 suffixes before falling back to overwriting.
+  while (std::filesystem::exists(uniquePath) && suffix <= 999) {
+    uniquePath =
+        uniquePath.parent_path() / (stem + "_" + std::to_string(suffix) + ext);
+    ++suffix;
+  }
+
+  llvm::outs() << "Emitting intermediate file to '" << uniquePath.string()
+               << "'.\n";
+
+  std::string errorMessage;
+  return mlir::openOutputFile(uniquePath.string(), &errorMessage);
+}
 
 std::unique_ptr<llvm::ToolOutputFile>
 CommonOptions::getOutputFile(bool hasBinaryOutput,
@@ -58,47 +102,25 @@ std::unique_ptr<llvm::ToolOutputFile>
 CommonOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
   if (!saveTemps)
     return nullptr;
-  std::string outFile = (inputName + ext).str();
 
-  // If a directory has been provided, use it.
+  std::filesystem::path inputPath(inputName.str());
+  std::string directory;
+  std::string baseName;
+
   if (!tempsDir.empty()) {
-    // Unconditionally create the dir, this simply returns a bool if the
-    // directory already exists.
-    std::error_code errorCode;
-    std::filesystem::create_directories(tempsDir, errorCode);
-    outFile = (std::filesystem::path(tempsDir) /
-               std::filesystem::path(inputName.str()).filename())
-                  .replace_extension(ext.str())
-                  .string();
+    // Use the provided temps directory with just the stem of the filename.
+    directory = tempsDir;
+    baseName = inputPath.stem().string();
+  } else {
+    // Use the input file's directory (or current dir) with the full filename.
+    directory =
+        inputPath.has_parent_path() ? inputPath.parent_path().string() : ".";
+    baseName = inputPath.filename().string();
   }
 
-  std::error_code errorCode;
-  auto absoluteOutputFile = std::filesystem::absolute(outFile, errorCode);
-  if (errorCode) {
-    exit(reportError("Cannot get absolute path for output file: '" + outFile +
-                     "': " + errorCode.message()));
-  }
-
-  // Get a unique filename by adding numerical suffix if file exists
-  std::filesystem::path uniquePath = absoluteOutputFile;
-  std::string stem = uniquePath.stem().string();
-  std::string extension = uniquePath.extension().string();
-  int suffix = 1;
-
-  // Only try up to 999 suffixes before falling back to overwriting
-  while (std::filesystem::exists(uniquePath) && suffix <= 999) {
-    uniquePath = uniquePath.parent_path() /
-                 (stem + "_" + std::to_string(suffix) + extension);
-    ++suffix;
-  }
-
-  llvm::outs() << "Emitting intermediate file to '" << uniquePath.string()
-               << "'.\n";
-
-  std::string errorMessage;
-  auto result = mlir::openOutputFile(uniquePath.string(), &errorMessage);
+  auto result = openUniqueFile(directory, baseName, ext);
   if (!result)
-    exit(reportError(errorMessage));
+    exit(reportError("Failed to open intermediate file"));
   return result;
 }
 
@@ -112,4 +134,17 @@ LogicalResult CommonOptions::emitArchive(StringRef object) const {
   outFile->keep();
 
   return mlir::success();
+}
+
+std::unique_ptr<llvm::ToolOutputFile>
+M::openIntermediateTextFile(StringRef baseName, StringRef extension) {
+  auto configOr = Config::open();
+  if (configOr.isError())
+    return nullptr;
+
+  StringRef tempsDir = configOr->getValue(STRINGIFY_MAX_CONFIG(".temps_dir"));
+  if (tempsDir.empty())
+    return nullptr;
+
+  return openUniqueFile(tempsDir, baseName, extension);
 }

@@ -34,6 +34,14 @@ class ToolOutputFile;
 
 namespace M {
 
+/// Opens an intermediate text file for writing if max.temps_dir config is set.
+/// The filename is generated from `baseName` and `extension`, with a
+/// numerical suffix added if the file already exists to avoid overwriting.
+/// Returns nullptr if max.temps_dir is not set or on error.
+/// Caller is responsible for calling keep() on the returned file after writing.
+std::unique_ptr<llvm::ToolOutputFile>
+openIntermediateTextFile(StringRef baseName, StringRef extension);
+
 class OptionsBase {
 public:
   StringRef getProgramName() const { return programName; }

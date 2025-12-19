@@ -1,5 +1,5 @@
 load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_nanobind_library", "modular_shared_library", "pkg_files", "td_library")
-load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
+load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "CONFIG_SECTION_LOCAL_DEFINES")
 load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
 # gazelle:default_visibility //visibility:public
@@ -150,8 +150,10 @@ modular_cc_library(
     name = "CommonCLOptions",
     srcs = ["lib/CommonCLOptions.cpp"],
     hdrs = ["include/Support/CommonCLOptions.h"],
+    local_defines = CONFIG_SECTION_LOCAL_DEFINES,
     deps = [
         ":Base",
+        ":Configuration",
         ":Filesystem",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
