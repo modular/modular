@@ -366,7 +366,7 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
             result = result * 10 + (ord(sub_string[pos]) - ord("0"))
         int_tuple.append(result)
 
-    return int_tuple
+    return int_tuple^
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.

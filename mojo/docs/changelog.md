@@ -152,6 +152,23 @@ what we publish.
 
 ### Language changes
 
+- Mojo now allows the use of a `comptime(x)` expression to force a subexpression
+  to be evaluated at compile time.  This can help make working with certain
+  types more elegant when you can't (or don't want to) materialize them into a
+  runtime value.  For example, if you just want the size from a compile time
+  layout:
+
+  ```mojo
+  fn takes_layout[a: Layout]():
+    # materializes entire layout value just to get the size out of it
+    print(a.size())
+    # Could already work around this with a comptime declaration, verbosely.
+    comptime a_size = a.size()
+    print(a_size)
+    # Can now tell Mojo to evaluate the expression at comptime.
+    print(comptime(a.size()))
+  ```
+
 - The compiler will now warn on unqualified access to struct parameters, e.g.
 
   ```mojo

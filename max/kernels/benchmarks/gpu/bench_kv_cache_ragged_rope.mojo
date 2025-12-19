@@ -182,7 +182,7 @@ def execute_kv_cache_ragged_rope[
 
     comptime freqs_cis_table_layout = Layout.row_major(max_seq_len, head_dim)
     var freqs_cis_table_device = ctx.enqueue_create_buffer[dtype](
-        freqs_cis_table_layout.size()
+        comptime (freqs_cis_table_layout.size())
     )
 
     num_flops_per_elem = 6
