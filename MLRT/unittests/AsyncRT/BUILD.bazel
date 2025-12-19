@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_test")
 
 # gazelle:default_visibility //visibility:private
 
@@ -7,18 +7,6 @@ package(
     features = [
         "layering_check",
         "parse_headers",
-    ],
-)
-
-# Header adding test helpers for using gtest with `ErrorOr<T>`.
-modular_cc_library(
-    name = "TestUtils",
-    testonly = True,
-    hdrs = [
-        "TestUtils.h",
-    ],
-    deps = [
-        "@llvm-project//third-party/unittest:gmock",
     ],
 )
 
@@ -52,53 +40,6 @@ modular_cc_test(
 )
 
 modular_cc_test(
-    name = "BufferCacheTest",
-    size = "small",
-    srcs = [
-        "BufferCacheTest.cpp",
-        "ScopedEnvVar.h",
-    ],
-    env = {
-        # Set up consistent buffer cache environment for testing
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE": "25",
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT": "25",
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SELF_CHECK": "True",
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_LOG": "False",
-    },
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-        "//Support:Base",
-        "@llvm-project//llvm:Support",
-    ],
-)
-
-modular_cc_test(
-    name = "GPUBufferCacheTest",
-    size = "small",
-    srcs = [
-        "GPUBufferCacheTest.cpp",
-        "ScopedEnvVar.h",
-    ],
-    env = {
-        # Set up consistent buffer cache environment for testing
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SELF_CHECK": "True",
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_LOG": "False",
-    },
-    gpu_constraints = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    tags = ["gpu"],
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-        "//Support:Base",
-        "@llvm-project//llvm:Support",
-    ],
-)
-
-modular_cc_test(
     name = "DebuggingAllocatorsTest",
     size = "small",
     srcs = ["DebuggingAllocatorsTest.cpp"],
@@ -106,150 +47,6 @@ modular_cc_test(
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//Support:Globals",
-    ],
-)
-
-modular_cc_test(
-    name = "DeviceContextTest",
-    size = "small",
-    srcs = ["DeviceContextTest.cpp"],
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-    ],
-)
-
-modular_cc_test(
-    name = "VirtualDeviceContextTest",
-    size = "small",
-    srcs = ["VirtualDeviceContextTest.cpp"],
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-    ],
-)
-
-modular_cc_test(
-    name = "GPUDeviceContextTest",
-    size = "small",
-    srcs = ["GPUDeviceContextTest.cpp"],
-    # Setup environment ensuring that the buffer cache is properly configured
-    # for the tests being run.
-    env = {
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE": "1073741824",
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT": "100",
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY": "true",
-        # Log buffer cache operations for debugging.
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_LOG": "true",
-        # These tests exercise the host buffer cache, so give them 8GB
-        # to use for the tests.
-        "MODULAR_DEVICE_CONTEXT_HOST_BUFFER_CACHE_SIZE": "8589934592",
-    },
-    gpu_constraints = ["//:has_gpu"],
-    tags = ["gpu"],
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-    ],
-)
-
-# This is a temporary test for the Metal device context. It will be removed once has_gpu is updated to include metal.
-# The goal for it is to test the Metal device context implementation on macos.
-# TODO(amir): remove this test once has_gpu is updated to include metal.
-modular_cc_test(
-    name = "MetalGPUDeviceContextTest",
-    size = "small",
-    srcs = ["GPUDeviceContextTest.cpp"],
-    gpu_constraints = ["//:apple_gpu"],
-    tags = ["gpu"],
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-    ],
-)
-
-modular_cc_test(
-    name = "MetalDeviceContextTest",
-    size = "small",
-    srcs = ["MetalDeviceContextTest.cpp"],
-    gpu_constraints = ["//:apple_gpu"],
-    tags = ["gpu"],
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-        "@metal-cpp//:metal-cpp",
-    ],
-)
-
-modular_cc_test(
-    name = "CUDADeviceContextTest",
-    size = "small",
-    srcs = ["CUDADeviceContextTest.cpp"],
-    gpu_constraints = ["//:nvidia_gpu"],
-    tags = ["gpu"],
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-    ],
-)
-
-modular_cc_test(
-    name = "CUDAMultiDeviceContextTest",
-    size = "small",
-    srcs = ["CUDADeviceContextTest.cpp"],
-    gpu_constraints = [
-        "//:nvidia_gpu",
-        "//:has_multi_gpu",
-    ],
-    tags = ["gpu"],
-    target_compatible_with = select({
-        "//:b200_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-    ],
-)
-
-modular_cc_test(
-    name = "GPUDeviceTest",
-    size = "small",
-    srcs = ["GPUDeviceTest.cpp"],
-    gpu_constraints = ["//:has_gpu"],
-    tags = ["gpu"],
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-    ],
-)
-
-modular_cc_test(
-    name = "MultiGPUDeviceTest",
-    size = "small",
-    srcs = ["MultiGPUDeviceTest.cpp"],
-    gpu_constraints = ["//:has_multi_gpu"],
-    tags = ["gpu"],
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-        "//Support:Buffer",
     ],
 )
 
@@ -277,9 +74,9 @@ modular_cc_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//MLRT:AsyncRT/DeviceContextImpl",
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
+        "//MLRT:Driver/DeviceContextImpl",
         "//Support:Globals",
     ],
 )
@@ -305,39 +102,6 @@ modular_cc_test(
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//MLRT:AsyncRT/Support",
         "//Support:Globals",
-    ],
-)
-
-modular_cc_test(
-    name = "NixlTest",
-    size = "small",
-    srcs = ["NixlTest.cpp"],
-    # Even though this is just a CPU transfer, we still require a GPU because
-    # we build NIXL to necessarily pick up either CUDA or ROCm.
-    gpu_constraints = [
-        "//:has_gpu",
-    ],
-    tags = ["gpu"],
-    deps = [
-        "//MLRT:AsyncRT/NIXL",
-    ],
-)
-
-modular_cc_test(
-    name = "NixlTestUcx",
-    size = "small",
-    srcs = ["NixlTestUcx.cpp"],
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:has_multi_gpu",
-    ],
-    tags = ["gpu"],
-    deps = [
-        ":TestUtils",
-        "//MLRT:AsyncRT/DeviceContextImpl",
-        "//MLRT:AsyncRT/NIXL",
-        "//Support:Base",
-        "@llvm-project//llvm:Support",
     ],
 )
 

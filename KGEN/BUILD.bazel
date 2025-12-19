@@ -884,7 +884,7 @@ modular_cc_library(
     visibility = ["//visibility:private"],
     deps = [
         ":KGENPassesIncGen",
-        "//MLRT:AsyncRT/DeviceContext",
+        "//MLRT:Driver/DeviceContext",
         "//Support:CommonCLOptions",
     ],
 )
@@ -933,12 +933,12 @@ modular_shared_library(
     ] + CONFIG_SECTION_LOCAL_DEFINES,
     output_name = "KGENCompilerRTShared",
     deps = [
-        "//MLRT:AsyncRT/DeviceContext",
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//MLRT:AsyncRT/Support",
         "//MLRT:Core",
         "//MLRT:Core/Tensor",
+        "//MLRT:Driver/DeviceContext",
         "//Support:Base",
         "//Support:BinaryID",
         "//Support:Filesystem",

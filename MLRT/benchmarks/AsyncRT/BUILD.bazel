@@ -39,7 +39,7 @@ modular_cc_binary(
     ],
     target_compatible_with = ["//:nvidia_gpu"],
     deps = [
-        "//MLRT:AsyncRT/DeviceContext",
+        "//MLRT:Driver/DeviceContext",
         "//Support:MicroBenchmark",
         "@llvm-project//llvm:Support",
     ],
