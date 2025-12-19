@@ -6531,8 +6531,8 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     fn execute[
         dtype: DType,
         freq_dtype: DType,
-        mrope_section: StaticString,
         //,
+        mrope_section: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
