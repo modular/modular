@@ -2342,6 +2342,18 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
       callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
     return DtorEmissionResult::KeepOp;
 
+  // Register passable and memory types both pass the source in memory.
+  Value copySrcMem = RefImmutOp::strip(copyInitCall.getOperand(0));
+
+  // These optimizations are only valid if the type is implicitly destructible.
+  // Linear types shouldn't "optimize things into working", they should
+  // predictably generate an error message when an implicit destructor (such as
+  // what we're processing in this code) is needed.
+  if (!valueSet.typeDeclInfo.getDestructorForType(
+          cast<RefType>(copySrcMem.getType()).getElementType(),
+          opWithUse->getLoc()))
+    return DtorEmissionResult::KeepOp;
+
   // Check to see if the copy is immediately destroyed.  If so, we can elide
   // both the copy and the destroy.
   // NOTE: There is a corner case here to be aware of: the copyinit could be
@@ -2350,9 +2362,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // values when the input is a reference with an origin set containing
   // multiple things.  We prefer to delete the copy entirely if we can.
 
-  // Handle the register form: `__copyinit__(src) -> T`.  Note that the src is
-  // passed in memory.
-  Value copySrcMem = RefImmutOp::strip(copyInitCall.getOperand(0));
+  // Handle the register form: `__copyinit__(src) -> T`.
   if (copyInitCall.getNumOperands() == 1) {
     assert(copyInitCall.getCalleeType().getArgConvention(0) ==
                ArgConvention::ReadMem &&
@@ -2383,7 +2393,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
       }
 
       // Check to see the copy is the last use of the src value.  If so we can
-      // always use the source and avoid a copy.
+      // always use the source, optimizing a copy to a move.
       if (elt.value == copySrcMem && elt.valueRef.isIndirect)
         deadSrc = &elt;
     }
