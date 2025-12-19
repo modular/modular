@@ -373,6 +373,25 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
 
 
 # ===----------------------------------------------------------------------=== #
+# ExplicitDelOnly
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy
+@fieldwise_init
+struct ExplicitDelOnly(Movable):
+    """Utility for testing container support for linear types."""
+
+    var data: Int
+    """Test data payload."""
+
+    fn destroy(deinit self):
+        """Explicitly destroy this linear type."""
+
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
 # DelCounter
 # ===----------------------------------------------------------------------=== #
 

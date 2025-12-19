@@ -276,7 +276,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         return UnsafePointer(discr_ptr).bitcast[UInt8]()[]
 
     @always_inline
-    fn take[T: Movable](mut self) -> T:
+    fn take[T: Movable](deinit self) -> T:
         """Take the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -458,3 +458,29 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         For example, the `Variant[Int, Bool]` permits `Int` and `Bool`.
         """
         return Self._check[T]() != Self._sentinel
+
+    # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
+    fn destroy_with[T: AnyType](deinit self, destroy_func: fn (var T)):
+        """Destroy a value contained in this Variant in-place using a caller
+        provided destructor function.
+
+        This method can be used to destroy linear types in a `Variant` in-place,
+        without requiring that they be `Movable`.
+
+        This method will abort if this variant does not current contain an
+        element of the specified type `T`.
+
+        Parameters:
+            T: The element type the variant is expected to currently contain,
+                and which will be destroyed by `destroy_func`.
+
+        Args:
+            destroy_func: Caller-provided destructor function for destroying
+                an instance of `T`.
+        """
+        if not self.isa[T]():
+            abort("Variant.destroy_with: wrong variant type")
+
+        var ptr = self._get_ptr[T]()
+
+        ptr.destroy_pointee_with(destroy_func)
