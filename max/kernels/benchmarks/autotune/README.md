@@ -47,72 +47,70 @@ with `kbench`.
 
 1. Clone the repository:
 
-```bash
-git clone -b main https://github.com/modular/modular && cd modular
-```
+    ```bash
+    git clone -b main https://github.com/modular/modular && cd modular
+    ```
 
 1. Set the environment variable for the kernel benchmarks directory:
 
-```bash
-export KERNEL_BENCHMARKS_ROOT=$MODULAR_PATH/max/kernels/benchmarks
-```
+    ```bash
+    export KERNEL_BENCHMARKS_ROOT=$MODULAR_PATH/max/kernels/benchmarks
+    ```
 
 1. Set up the clock frequencies for consistent benchmarking:
 
-```bash
-sudo utils/setup-gpu-clock.sh
-```
+    ```bash
+    sudo utils/setup-gpu-clock.sh
+    ```
 
 1. Verify your environment is set up correctly by running the following command
-from the top-level `modular` directory:
+    from the top-level `modular` directory:
 
-```bash
-./bazelw run //max/kernels/benchmarks/autotune:kbench -- --help
-```
+    ```bash
+    ./bazelw run //max/kernels/benchmarks/autotune:kbench -- --help
+    ```
 
-> [!NOTE]
-> **Bazel**
-> The Modular repository uses [Bazel](https://bazel.build/), a fast, scalable
-  build and test tool to ensure reproducible builds through dependency tracking
-  and caching.
+    The Modular repository uses [Bazel](https://bazel.build/), a fast, scalable
+    build and test tool to ensure reproducible builds through dependency
+    tracking and caching.
 
 1. Run a benchmark on our provided test file. The command must reference your
-benchmarking configuration file location.
+    benchmarking configuration file location.
 
-```bash
-./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
-  max/kernels/benchmarks/autotune/test.yaml
-```
+    ```bash
+    ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+      max/kernels/benchmarks/autotune/test.yaml
+    ```
 
-For more information on creating your own benchmarks, see [usage](#usage).
+    For more information on creating your own benchmarks, see [usage](#usage).
 
-Your output should look similar to the following:
+    Your output should look similar to the following:
 
-```bash
-INFO     running binary [4/4] (100%)
-INFO     finished running all binaries
-INFO     Total elapsed time per step:
-         ╭─────────────────┬─────────────╮
-         │ Step            │   Total (s) │
-         ├─────────────────┼─────────────┤
-         │ build           │       0.023 │
-         ├─────────────────┼─────────────┤
-         │ benchmark       │       0.026 │
-         ├─────────────────┼─────────────┤
-         │ kbench overhead │       0.007 │
-         ├─────────────────┼─────────────┤
-         │ TOTAL           │       0.056 │
-         ╰─────────────────┴─────────────╯
-INFO     wrote results to [kbench-output/output.txt]
-INFO     wrote results to [kbench-output/output.csv]
-INFO     wrote results to [kbench-output/output.pkl]
-INFO     output-dir: [kbench-output]
+    ```bash
+    INFO     running binary [4/4] (100%)
+    INFO     finished running all binaries
+    INFO     Total elapsed time per step:
+             ╭─────────────────┬─────────────╮
+             │ Step            │   Total (s) │
+             ├─────────────────┼─────────────┤
+             │ build           │       0.023 │
+             ├─────────────────┼─────────────┤
+             │ benchmark       │       0.026 │
+             ├─────────────────┼─────────────┤
+             │ kbench overhead │       0.007 │
+             ├─────────────────┼─────────────┤
+             │ TOTAL           │       0.056 │
+             ╰─────────────────┴─────────────╯
+    INFO     wrote results to [kbench-output/output.txt]
+    INFO     wrote results to [kbench-output/output.csv]
+    INFO     wrote results to [kbench-output/output.pkl]
+    INFO     output-dir: [kbench-output]
 
-         ----------------------------------------------------------------------
-INFO     Number of shapes: 1
-```
+             ----------------------------------------------------------------------
+    INFO     Number of shapes: 1
+    ```
 
-For more information on results, see [output files](#output-files).
+    For more information on results, see [output files](#output-files).
 
 ## Usage
 
@@ -408,22 +406,22 @@ params:
 To run Python benchmarks with `kbench`:
 
 1. Create a YAML config file with a `.py` file in the `file` path. See
-[`test_python.yaml`](test_python.yaml) for an example template.
+    [`test_python.yaml`](test_python.yaml) for an example template.
 
 1. Create a Python script. See [`sample.py`](sample.py) for an example. In your
-Python script, import the required functions from
-[`bencher_utils`](bencher_utils.py):
+    Python script, import the required functions from
+    [`bencher_utils`](bencher_utils.py):
 
-```python
-   from bencher_utils import Bench, ThroughputMeasure, arg_parse
-```
+    ```python
+       from bencher_utils import Bench, ThroughputMeasure, arg_parse
+    ```
 
 1. Run with `kbench`:
 
-```bash
-./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
-  max/kernels/benchmarks/autotune/test_python.yaml --dryrun
-```
+    ```bash
+    ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+      max/kernels/benchmarks/autotune/test_python.yaml --dryrun
+    ```
 
 ## FAQ
 

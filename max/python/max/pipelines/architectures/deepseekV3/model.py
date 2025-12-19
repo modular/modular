@@ -26,7 +26,6 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -37,6 +36,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.config_enums import PipelineRole
+from max.pipelines.lib.float8 import parse_float8_config
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig

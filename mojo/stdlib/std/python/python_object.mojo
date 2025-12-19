@@ -153,7 +153,9 @@ struct PythonObject(
         self._obj_ptr = from_borrowed
 
     @always_inline
-    fn __init__[T: Movable](out self, *, var alloc: T) raises:
+    fn __init__[
+        T: Movable & ImplicitlyDestructible
+    ](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
         The newly allocated Python object will contain the provided Mojo `T`
@@ -1807,7 +1809,7 @@ fn _unsafe_alloc[
 
 
 fn _unsafe_init[
-    T: Movable,
+    T: Movable & ImplicitlyDestructible,
     //,
 ](obj_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
@@ -1830,7 +1832,7 @@ fn _unsafe_init[
 
 
 fn _unsafe_alloc_init[
-    T: Movable,
+    T: Movable & ImplicitlyDestructible,
     //,
 ](
     type_obj_ptr: UnsafePointer[PyTypeObject, MutAnyOrigin], var mojo_value: T

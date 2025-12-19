@@ -199,7 +199,7 @@ class BlockManager:
         # Query prefix cache for full blocks.
         prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(ctx)
 
-        orig_start_idx = ctx.start_idx
+        orig_start_idx = ctx.processed_length
 
         if len(prefix_cache_blocks) > 0:
             # Update metrics.
@@ -218,7 +218,7 @@ class BlockManager:
             )
             # Update BlockManager's committed index and advance ctx start_idx
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
-            ctx.skip_processing(new_committed_idx - ctx.start_idx)
+            ctx.skip_processing(new_committed_idx - ctx.processed_length)
 
     @traced
     def _count_full_blocks_from_prefix_cache(
@@ -404,7 +404,7 @@ class BlockManager:
 
         # Count the number of tokens for which we know the values of and align
         # to the block size.
-        num_computed_blocks = ctx.start_idx // self.block_size
+        num_computed_blocks = ctx.processed_length // self.block_size
 
         # Commit these blocks into the prefix cache.
         for block_idx in range(num_committed_blocks, num_computed_blocks):
@@ -494,8 +494,8 @@ class BlockManager:
         # currently store in the reserved blocks.
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
-        assert ctx.start_idx <= (num_current_blocks * self.block_size), (
-            f"Expected at least {ceildiv(ctx.start_idx, self.block_size)} blocks to store KV for {ctx.start_idx} tokens, but only {num_current_blocks} are assigned. This should never happen."
+        assert ctx.processed_length <= (num_current_blocks * self.block_size), (
+            f"Expected at least {ceildiv(ctx.processed_length, self.block_size)} blocks to store KV for {ctx.processed_length} tokens, but only {num_current_blocks} are assigned. This should never happen."
         )
 
         # Check that we have enough free blocks to allocate the new blocks.
@@ -599,7 +599,7 @@ class BlockManager:
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
             self.device_block_pool.free_block(block)
-        delta = ctx.start_idx - self.req_to_committed_idx[ctx.request_id]
+        delta = ctx.processed_length - self.req_to_committed_idx[ctx.request_id]
         if delta > 0:
             ctx.rewind_processing(delta)
         elif delta < 0:

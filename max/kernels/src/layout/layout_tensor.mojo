@@ -2759,7 +2759,7 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
-    fn stride[idx: Int]() -> Int:
+    fn stride[idx: Int where idx != UNKNOWN_VALUE]() -> Int:
         """Returns the memory stride of the tensor along the specified
         dimension.
 
@@ -2796,7 +2796,6 @@ struct LayoutTensor[
         - For non-contiguous tensors (e.g., tensor slices), strides may not
             follow a simple pattern.
         """
-        __comptime_assert idx != UNKNOWN_VALUE
 
         comptime stride = Self._to_static[
             Self.layout.stride, Self.linear_idx_type

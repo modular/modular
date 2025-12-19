@@ -256,7 +256,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 context.active_length
             )
             context._start_idx = start_indices[i]
-            context.set_draft_offset(0)
+            context.apply_processing_offset(0)
 
         return (base_inputs, num_steps)
 
@@ -599,7 +599,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 context.update(token)
 
             # This is added because the draft needs to process the same tokens but with the hidden states received from the target model. This will also set the start index to the correct position for the kv cache
-            context.set_draft_offset(-rejected_token_idx)
+            context.apply_processing_offset(-rejected_token_idx)
 
             if not context.is_done:
                 if rejected_token_idx < num_draft_tokens_generated:

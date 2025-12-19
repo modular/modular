@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
-import re
 from dataclasses import fields, is_dataclass
 from typing import Any
 
@@ -751,7 +750,7 @@ def test_vision_context_reset() -> None:
     )
     assert len(context.images) == 1
     assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
-    assert context.start_idx == 0
+    assert context.processed_length == 0
     assert context.active_length == 5
     assert context.needs_vision_encoding is True
 
@@ -760,33 +759,16 @@ def test_vision_context_reset() -> None:
     assert len(context.images) == 1
     assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
     assert context.needs_vision_encoding is False
-    assert context.start_idx == 5
+    assert context.processed_length == 5
     assert context.active_length == 1
 
     # The pixel values should be restored after reset.
     context.reset()
     assert len(context.images) == 1
     assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
-    assert context.start_idx == 0
+    assert context.processed_length == 0
     assert context.active_length == 6
     assert context.needs_vision_encoding is True
-
-
-def test_text_context_repr(capsys: pytest.CaptureFixture) -> None:  # type: ignore
-    context = TextContext(
-        request_id=RequestID(),
-        tokens=np.array([0, 1, 2, 3, 4]),
-        max_length=5,
-    )
-    print(context)
-    outerr = capsys.readouterr()
-    assert (
-        re.match(
-            r"TextContext\(request_id=.*\, start_idx=0\, active_idx=5\, end_idx=5\)",
-            outerr.out,
-        )
-        is not None
-    )
 
 
 def test_context__chunked_prefill_needs_ce_edge_case() -> None:
@@ -864,7 +846,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
         context.update(1)
 
         # Verify that indices were updated correctly
-        assert context._start_idx == processed_tokens + current_chunk_size
+        assert context.processed_length == processed_tokens + current_chunk_size
         processed_tokens += current_chunk_size
 
         # Key test: verify needs_ce behavior after chunk processing
@@ -885,7 +867,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
             # - Status is still ACTIVE
             assert context._active_idx == new_prompt_len + 1
 
-            assert context._start_idx == context._prompt_len, (
+            assert context.processed_length == context._prompt_len, (
                 "Should have processed all prompt tokens"
             )
             assert context.status == GenerationStatus.ACTIVE, (
@@ -901,7 +883,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
 
     # Verify final state before first completion token
     _ = context.to_generation_output()
-    assert context._start_idx == new_prompt_len
+    assert context.processed_length == new_prompt_len
     assert context.active_length == 1
     assert (
         context._completion_start_idx == context._completion_end_idx
@@ -1093,7 +1075,7 @@ def test_text_and_vision_context_sad_case() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="It is invalid for the active_idx \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
+        match="It is invalid for the current_position \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
     ):
         ctx.chunk(7)
 

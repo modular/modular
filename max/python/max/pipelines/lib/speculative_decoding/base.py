@@ -640,7 +640,7 @@ class SpeculativeDecodingPipelineBase(
             )
 
             # Break early if beyond max length
-            current_length = context.start_idx + 1
+            current_length = context.processed_length + 1
             if current_length >= context_max_length:
                 context.status = GenerationStatus.MAXIMUM_LENGTH
 

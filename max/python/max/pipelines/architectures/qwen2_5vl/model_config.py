@@ -21,10 +21,11 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn import ReturnLogits
-from max.nn.float8_config import Float8Config, parse_float8_config
+from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.float8 import parse_float8_config
 from transformers.models.auto.configuration_auto import AutoConfig
 
 

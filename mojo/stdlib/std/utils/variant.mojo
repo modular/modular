@@ -319,7 +319,10 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         return self._get_ptr[T]().take_pointee()
 
     @always_inline
-    fn replace[Tin: Movable, Tout: Movable](mut self, var value: Tin) -> Tout:
+    fn replace[
+        Tin: Movable & ImplicitlyDestructible,
+        Tout: Movable,
+    ](mut self, var value: Tin) -> Tout:
         """Replace the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.

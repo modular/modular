@@ -216,7 +216,7 @@ fn run_matvec_with_epilogue_fn(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var const_val = 4.0
+    var const_val: Float32 = 4.0
 
     @parameter
     @always_inline

@@ -152,25 +152,31 @@ struct B200BlockScaledMatmulSmem[
     comptime AScalesType = Scalar[Self.sfa_dtype]
     comptime BScalesType = Scalar[Self.sfb_dtype]
 
-    comptime a_smem_size = Self.BM * Self.BK * Int(
-        Self.config.num_pipeline_stages
+    comptime a_smem_size = (
+        Self.BM * Self.BK * Int(Self.config.num_pipeline_stages)
     )
-    comptime b_smem_size = Self.BN * Self.BK * Int(
-        Self.config.num_pipeline_stages
+    comptime b_smem_size = (
+        Self.BN * Self.BK * Int(Self.config.num_pipeline_stages)
     )
-    comptime c_smem_size = Self.OutputM * Self.OutputN * Int(
-        Self.config.num_output_stages
+    comptime c_smem_size = (
+        Self.OutputM * Self.OutputN * Int(Self.config.num_output_stages)
     )
 
     comptime sf_block_atom_size = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
     comptime sfa_smem_size = (
-        Self.BM // SF_MN_GROUP_SIZE
-    ) * Self.sf_block_atom_size * Int(Self.config.num_pipeline_stages)
+        (Self.BM // SF_MN_GROUP_SIZE)
+        * Self.sf_block_atom_size
+        * Int(Self.config.num_pipeline_stages)
+    )
     comptime sfb_smem_size = (
-        Self.MMA_N // SF_MN_GROUP_SIZE
-    ) * Self.sf_block_atom_size * Int(Self.config.num_pipeline_stages)
+        (Self.MMA_N // SF_MN_GROUP_SIZE)
+        * Self.sf_block_atom_size
+        * Int(Self.config.num_pipeline_stages)
+    )
 
-    comptime num_group_pipeline_stages = Self.config.num_pipeline_stages // Self.config.k_group_size
+    comptime num_group_pipeline_stages = (
+        Self.config.num_pipeline_stages // Self.config.k_group_size
+    )
 
     # AB pipelines
     var a_smem: InlineArray[Self.AType, Self.a_smem_size]
@@ -575,7 +581,9 @@ fn multi_stage_store_C[
 
     # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
     # We should remove this once GEX-2630 is fixed.
-    comptime epilogue_dtype = c_type if input_type is DType.bfloat16 else DType.float32
+    comptime epilogue_dtype = (
+        c_type if input_type is DType.bfloat16 else DType.float32
+    )
 
     comptime N_dim = 0 if transpose_c else 1
     comptime stageN = c_smem_layout.shape[N_dim].value()
@@ -670,7 +678,9 @@ fn copy_accum_to_gmem[
     var lower_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
 
     comptime is_lower_frag_required = not (cta_group == 1 and BM == 64)
-    comptime cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
+    comptime cg2_num_stages = (
+        MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
+    )
     comptime cg1_num_stages = MMA_N // stageN
     comptime num_stages = cg2_num_stages if cta_group == 2 else cg1_num_stages
 
@@ -944,9 +954,9 @@ fn copy_accum_to_gmem[
 
         var lane = lane_id()
 
-        comptime CG2_TMA_BM = c_smem_tile.layout.shape[
-            0
-        ].value() if MMA_M == 256 else BM
+        comptime CG2_TMA_BM = (
+            c_smem_tile.layout.shape[0].value() if MMA_M == 256 else BM
+        )
         comptime CG1_TMA_BM = c_smem_tile.layout.shape[0].value()
         comptime TMA_BM = CG2_TMA_BM if cta_group == 2 else CG1_TMA_BM
 
@@ -996,8 +1006,10 @@ fn copy_accum_to_gmem[
                     )
 
                 else:
-                    comptime num_c_smem_tiles = 128 // swizzle_width // (
-                        1 if is_lower_frag_required else 2
+                    comptime num_c_smem_tiles = (
+                        128
+                        // swizzle_width
+                        // (1 if is_lower_frag_required else 2)
                     )
 
                     @parameter
@@ -1059,8 +1071,8 @@ fn _reshape_to_3d[layout: Layout]() -> Layout:
     else:
         return Layout.row_major(
             1,
-            layout.shape[0].value(),
-            layout.shape[1].value(),
+            comptime (layout.shape[0].value()),
+            comptime (layout.shape[1].value()),
         )
 
 
@@ -1358,7 +1370,10 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ]
     comptime smem_size = size_of[SmemType]()
 
-    comptime max_profiled_tiles = 0 if max_profiled_tiles_per_SM is None else max_profiled_tiles_per_SM.value()
+    comptime max_profiled_tiles = (
+        0 if max_profiled_tiles_per_SM
+        is None else max_profiled_tiles_per_SM.value()
+    )
     comptime enable_profiling = max_profiled_tiles > 0
 
     comptime kernel = blackwell_block_scaled_tma_umma_warp_specialized_kernel[
@@ -1512,7 +1527,9 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
 
     comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = config.cta_group * EPILOGUE_THREADS
+    comptime accum_pipeline_consumer_arv_count = (
+        config.cta_group * EPILOGUE_THREADS
+    )
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]

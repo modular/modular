@@ -33,7 +33,6 @@ class Qwen3VLMoEGate(MoEGate):
         num_experts_per_token: int,
         dtype: DType,
         is_sharding: bool = False,
-        norm_topk_prob: bool = True,
     ) -> None:
         """
         Args:
@@ -42,7 +41,6 @@ class Qwen3VLMoEGate(MoEGate):
             num_experts: The number of experts.
             num_experts_per_token: The number of experts per token.
             dtype: The data type of the MoEGate.
-            norm_topk_prob: Whether to normalize top-k probabilities to sum to 1.
         """
         super().__init__(
             devices=devices,
@@ -52,7 +50,6 @@ class Qwen3VLMoEGate(MoEGate):
             dtype=dtype,
             is_sharding=is_sharding,
         )
-        self.norm_topk_prob = norm_topk_prob
 
     def __call__(
         self, hidden_states: TensorValue
@@ -69,10 +66,8 @@ class Qwen3VLMoEGate(MoEGate):
         """
         # Compute router logits
         router_logits = self.gate_score(hidden_states).cast(DType.float32)
-
         # Apply softmax to get routing weights
         routing_weights = ops.softmax(router_logits, axis=-1)
-
         # Select top-k experts
         topk_weights, topk_indices = ops.top_k(
             routing_weights, k=self.num_experts_per_token, axis=-1
@@ -82,10 +77,8 @@ class Qwen3VLMoEGate(MoEGate):
         denominator = ops.sum(topk_weights, axis=-1) + 1e-20
 
         topk_weights = topk_weights / denominator
-
         # Cast back to original dtype
         topk_weights = topk_weights.cast(hidden_states.dtype)
-
         return topk_indices, topk_weights
 
     @property
@@ -131,7 +124,6 @@ class Qwen3VLMoEGate(MoEGate):
                 num_experts_per_token=self.num_experts_per_token,
                 dtype=self.dtype,
                 is_sharding=True,
-                norm_topk_prob=self.norm_topk_prob,
             )
 
             # Replace the weights with sharded versions.
@@ -152,7 +144,6 @@ class Qwen3VLMoE(MoE):
         moe_dim: int,
         gate_cls: Callable[..., MoEGate] = Qwen3VLMoEGate,
         dtype: DType = DType.bfloat16,
-        norm_topk_prob: bool = True,
         mlp_only_layers: list[int] | None = None,
         is_sharding: bool = False,
     ) -> None:
@@ -164,7 +155,6 @@ class Qwen3VLMoE(MoE):
             num_experts_per_token: The number of experts per token.
             moe_dim: The intermediate dimension of each expert.
             dtype: The data type of the MoE.
-            norm_topk_prob: Whether to normalize top-k probabilities.
             mlp_only_layers: List of layer indices that use MLP instead of MoE (unused here, kept for compatibility).
         """
         super().__init__(
@@ -183,7 +173,6 @@ class Qwen3VLMoE(MoE):
             float8_config=None,
             is_sharding=is_sharding,
         )
-        self.norm_topk_prob = norm_topk_prob
         self.mlp_only_layers = mlp_only_layers
 
     def _init_experts(self) -> None:
@@ -274,6 +263,7 @@ class Qwen3VLMoE(MoE):
         router_idx = ops.reshape(
             router_idx, [-1]
         )  # (seq_len * n_expert_per_token,)
+        router_idx_int32 = ops.cast(router_idx, DType.int32)
 
         (
             token_expert_order,
@@ -281,17 +271,18 @@ class Qwen3VLMoE(MoE):
             restore_token_order,
             expert_ids,
             expert_usage_stats,
-        ) = moe_create_indices(
-            ops.cast(router_idx, DType.int32), self.num_experts
+        ) = moe_create_indices(router_idx_int32, self.num_experts)
+
+        # Extract token indices from token_expert_order
+        # token_expert_order contains indices into the flattened router_idx array
+        # which has shape [seq_len * num_experts_per_token]
+        # To get the token index, we divide by num_experts_per_token
+        token_indices = ops.cast(
+            token_expert_order // self.num_experts_per_token, DType.int32
         )
 
-        permutated_states = ops.gather(
-            x,
-            ops.cast(
-                token_expert_order // self.num_experts_per_token, DType.int32
-            ),
-            axis=0,
-        )
+        permutated_states = ops.gather(x, token_indices, axis=0)
+
         # Gate + Up projection
         gate_up_projs = grouped_matmul_ragged(
             permutated_states,
@@ -302,9 +293,9 @@ class Qwen3VLMoE(MoE):
         )
 
         # Standard gated activation: up * act_fn(gate)
-        # Split gate and up projections (interleaved format like GPT-OSS)
-        gate = gate_up_projs[:, 0::2]
-        up = gate_up_projs[:, 1::2]
+        # Split gate and up projections (concatenated format)
+        up = gate_up_projs[:, self.moe_dim :]
+        gate = gate_up_projs[:, : self.moe_dim]
 
         gated_output = up * ops.silu(gate)
 
@@ -362,7 +353,6 @@ class Qwen3VLMoE(MoE):
                 moe_dim=sharded_moe_dim,
                 gate_cls=self.gate_cls,
                 dtype=self.dtype,
-                norm_topk_prob=self.norm_topk_prob,
                 mlp_only_layers=self.mlp_only_layers,
             )
             # Replace layers and weights with sharded versions.

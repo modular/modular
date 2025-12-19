@@ -26,7 +26,6 @@ from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits, Signals
-from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -44,6 +43,7 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
+from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,

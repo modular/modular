@@ -862,29 +862,6 @@ struct List[T: Copyable](
         memcpy(dest=self._unsafe_next_uninit_ptr(), src=v_ptr, count=count)
         self._len += count
 
-    fn extend[
-        dtype: DType, //
-    ](mut self: List[Scalar[dtype], *_, **_], value: Span[Scalar[dtype]]):
-        """Extends this list with the elements of a `Span`.
-
-        Parameters:
-            dtype: The DType.
-
-        Args:
-            value: The value to append.
-
-        Notes:
-            If there is no capacity left, resizes to `len(self) + len(value)`.
-        """
-        self.reserve(self._len + len(value))
-        self._annotate_increase(len(value))
-        memcpy(
-            dest=self._unsafe_next_uninit_ptr(),
-            src=value.unsafe_ptr(),
-            count=len(value),
-        )
-        self._len += len(value)
-
     fn pop(mut self, i: Int = -1) -> Self.T:
         """Pops a value from the list at the given index.
 

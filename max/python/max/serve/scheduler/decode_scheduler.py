@@ -180,7 +180,7 @@ class DecodeScheduler(Scheduler):
 
         # Set dst_idx to -1 to denote pages which the decode already has due to
         # prefix caching.
-        for i in range(data.start_idx // self.paged_manager.page_size):
+        for i in range(data.processed_length // self.paged_manager.page_size):
             dst_idxs[i] = -1
 
         self.dispatcher.send_request_nowait(
