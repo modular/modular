@@ -28,7 +28,9 @@ from memory.unsafe import bitcast
 fn vpdpwssd[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
-    src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
+    src: SIMD[c_type, width],
+    a: SIMD[a_type, width * 2],
+    b: SIMD[b_type, width * 2],
 ) -> SIMD[c_type, width]:
     __comptime_assert c_type is DType.int32, "the type of C must be int32"
 
@@ -56,7 +58,9 @@ fn vpdpwssd[
 fn vpdpwssds[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
-    src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
+    src: SIMD[c_type, width],
+    a: SIMD[a_type, width * 2],
+    b: SIMD[b_type, width * 2],
 ) -> SIMD[c_type, width]:
     __comptime_assert c_type is DType.int32, "the type of C must be int32"
 
@@ -544,7 +548,9 @@ fn dot_i8_to_i32_saturated_x86[
 fn dot_i16_to_i32_AVX2[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
-    src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
+    src: SIMD[c_type, width],
+    a: SIMD[a_type, width * 2],
+    b: SIMD[b_type, width * 2],
 ) -> SIMD[c_type, width]:
     """The dot product of the two words in each int32 element of a and b plus a int32 from src.
 
@@ -572,20 +578,13 @@ fn dot_i16_to_i32_AVX2[
     @parameter
     if width == 16:
         t = llvm_intrinsic["llvm.x86.avx512.pmaddw.d.512", SIMD[c_type, width]](
-            bitcast[DType.int16, 32](rebind[SIMD[DType.int32, 16]](a)),
-            bitcast[DType.int16, 32](rebind[SIMD[DType.int32, 16]](b)),
+            a, b
         )
     elif width == 8:
-        t = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[c_type, width]](
-            bitcast[DType.int16, 16](rebind[SIMD[DType.int32, 8]](a)),
-            bitcast[DType.int16, 16](rebind[SIMD[DType.int32, 8]](b)),
-        )
+        t = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[c_type, width]](a, b)
     else:
         __comptime_assert width == 4
-        t = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[c_type, width]](
-            bitcast[DType.int16, 8](rebind[SIMD[DType.int32, 4]](a)),
-            bitcast[DType.int16, 8](rebind[SIMD[DType.int32, 4]](b)),
-        )
+        t = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[c_type, width]](a, b)
 
     return src + t
 
@@ -593,7 +592,9 @@ fn dot_i16_to_i32_AVX2[
 fn dot_i16_to_i32_x86[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
-    src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
+    src: SIMD[c_type, width],
+    a: SIMD[a_type, width * 2],
+    b: SIMD[b_type, width * 2],
 ) -> SIMD[c_type, width]:
     """The dot product of the two words in each int32 element of a and b plus a int32 from src using VNNI or AVX2.
 

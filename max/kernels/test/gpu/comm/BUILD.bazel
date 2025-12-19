@@ -34,6 +34,12 @@ mojo_test(
     ],
 )
 
+# Tests requiring higher GPU memory allocation (20GB instead of 4GB)
+HIGH_GPU_MEMORY_TESTS = [
+    "test_p2p_ep_dispatch.mojo",
+    "test_p2p_ep_dispatch_fp8.mojo",
+]
+
 # Regular tests for all other files
 [
     mojo_test(
@@ -45,7 +51,7 @@ mojo_test(
             "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT": "80",
         },
         exec_properties = {
-            "test.resources:gpu-memory": "4",
+            "test.resources:gpu-memory": "20" if src in HIGH_GPU_MEMORY_TESTS else "4",
         },
         tags = ["gpu"],
         target_compatible_with = [
@@ -58,6 +64,7 @@ mojo_test(
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
+            "//max:shmem",
             "@mojo//:std",
         ],
     )

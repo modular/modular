@@ -427,7 +427,7 @@ def execute_ragged_flash_attention[
                             ref_out[ragged_offset + s, h, Int(hd)],
                             test_out[ragged_offset + s, h, Int(hd)],
                         )
-                        raise e
+                        raise e^
 
     # check reproducibility
     for repeat in range(16):

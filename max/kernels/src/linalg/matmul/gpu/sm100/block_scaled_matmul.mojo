@@ -1686,13 +1686,13 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+    var warp_id = get_warp_id()
+    var elect_one_warp = warp_id == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = (
         block_rank_in_cluster() % 2 == 0 if config.cta_group == 2 else True
     )
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
-    var warp_id = get_warp_id()
     comptime max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:

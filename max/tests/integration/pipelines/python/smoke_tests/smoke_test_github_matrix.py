@@ -51,7 +51,6 @@ MODELS = {
         "sglang",
         "multi",
         "max",  # Wait for 26.1
-        "max-ci@MI355",  # TODO(KERN-2272)
     ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
     "deepseek-ai/deepseek-v2-lite-chat": ["max-ci", "max", "multi"],

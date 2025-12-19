@@ -171,8 +171,20 @@ fn test_dynamic_fp8_quant[
         DimList(n // group_size, m),
     )
 
-    quantize_dynamic_scaled_fp8[group_size_or_per_token](
-        out_ndbuffer, scales_ndbuffer, in_ndbuffer, 1200.0, ctx
+    @__copy_capture(in_ndbuffer)
+    @always_inline
+    @parameter
+    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[in_dtype, width]:
+        return in_ndbuffer.load[width=width](row, col)
+
+    quantize_dynamic_scaled_fp8[
+        input_fn, group_size_or_per_token, in_ndbuffer.shape.get[1]()
+    ](
+        out_ndbuffer,
+        scales_ndbuffer,
+        1200.0,
+        ctx,
+        in_ndbuffer.dim[0](),
     )
 
     ctx.enqueue_copy(out_host_ptr, out_device)
@@ -201,7 +213,6 @@ fn test_dynamic_fp8_quant[
             for j in range(group_size):
                 var in_val = in_host[i, j + group_idx * Int(group_size)]
                 var out_val = out_host[i, j + group_idx * Int(group_size)]
-
                 assert_equal(
                     out_val.cast[DType.float32](),
                     (in_val / scale_factor)

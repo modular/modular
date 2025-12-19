@@ -36,7 +36,7 @@ from math import ceildiv
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of
 
-from gpu import WARP_SIZE, barrier
+from gpu import WARP_SIZE, barrier, warp_id
 from gpu.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -216,13 +216,13 @@ struct KernelContext[
     fn __init__(out self, ptr_tmem_addr: SMemPtr[UInt32]):
         """Initialize context from TMEM pointer; computes all derived state."""
         # Election variables
-        self.elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+        self.warp_id = get_warp_id()
+        self.elect_one_warp = self.warp_id == 0
         self.elect_one_thread = elect_one_sync_with_mask()
         self.elect_one_cta = (
             block_rank_in_cluster() % 2 == 0 if Self.cta_group == 2 else True
         )
         self.is_first_cta_in_cluster = block_rank_in_cluster() == 0
-        self.warp_id = get_warp_id()
 
         # CTA coordinates
         self.rank_m = block_id_in_cluster.x
@@ -1639,7 +1639,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         var tma_phase: UInt32 = 0
         var mma_phase: UInt32 = 0
 
-        var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+        var elect_one_warp = warp_id() == 0
         var elect_one_thread = thread_idx.x == 0
         var elect_one_cta = block_rank_in_cluster() % 2 == 0
 
@@ -1724,7 +1724,7 @@ struct BlackwellMatmulSM100FallbackKernel[
 
         # Write output to global memory
         comptime num_warps = Self.num_threads // UInt(WARP_SIZE)
-        var warp_id = thread_idx.x // UInt(WARP_SIZE)
+        var warp_id = get_warp_id()
 
         ctile, ctile_coords, _ = c.tile_with_offset[Self.BM, Self.BN](
             Int(block_idx.y), Int(block_idx.x)

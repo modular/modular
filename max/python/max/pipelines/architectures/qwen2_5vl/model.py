@@ -1086,12 +1086,13 @@ class Qwen2_5VLModel(
                 vision_data.concatenated_pixel_values
                 for vision_data in vision_datas
             ]
-            concatenated = self._parallel_ops.concatenate(pixel_values_list)
-            pixel_values_tensor = Tensor.from_numpy(concatenated)
+            pixel_values_tensor = self._parallel_ops.concatenate(
+                pixel_values_list
+            )
 
             # If uint16, interpret as bfloat16 to work around lack of Numpy
             # bfloat16 support.
-            if concatenated.dtype == np.uint16:
+            if pixel_values_tensor.dtype == DType.uint16:
                 pixel_values_tensor = pixel_values_tensor.view(
                     DType.bfloat16, pixel_values_tensor.shape
                 )
@@ -1118,13 +1119,13 @@ class Qwen2_5VLModel(
 
         with Tracer("preparing_vision_position_ids"):
             vision_position_ids_list = [
-                vision_data.vision_position_ids for vision_data in vision_datas
+                vision_data.vision_position_ids.astype(np.int64)
+                for vision_data in vision_datas
             ]
-            vision_position_ids_tensor = Tensor.from_numpy(
-                self._parallel_ops.concatenate(vision_position_ids_list).astype(
-                    np.int64
-                )
+            vision_position_ids_tensor = self._parallel_ops.concatenate(
+                vision_position_ids_list
             )
+
             vision_position_ids = vision_position_ids_tensor.to(self.devices)
 
         with Tracer("preparing_max_grid_size"):

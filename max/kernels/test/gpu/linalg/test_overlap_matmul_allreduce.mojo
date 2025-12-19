@@ -231,7 +231,7 @@ fn overlap_matmul_allreduce_test[
                 print("Verification failed at GPU", i, "index", j)
                 print("Value:", C_reduced_host_list[i][j])
                 print("Expected:", expected_sum)
-                raise e
+                raise e^
     print("Verification passed")
 
     # Cleanup
