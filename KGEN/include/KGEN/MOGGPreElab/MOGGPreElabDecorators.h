@@ -269,6 +269,12 @@ constexpr StringLiteral
 constexpr StringLiteral MOJO_INTERNAL_STATIC_STRING_TYPE_NAME =
     "std::StringSlice";
 
+constexpr StringLiteral MOJO_STATIC_STRING_TYPE_NAME = "std::StaticString";
+
+// In the emit-mojo path, DType parameters appear as LIT struct types with
+// type name "std::DType" rather than KGEN::DTypeType.
+constexpr StringLiteral MOJO_DTYPE_TYPE_NAME = "std::DType";
+
 constexpr StringLiteral MOJO_STRING_TYPE_NAME = "std::String";
 
 constexpr StringLiteral MOJO_INTERNAL_STRING_SLICE_TYPE_NAME = "std::Origin";
