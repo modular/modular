@@ -29,6 +29,7 @@ from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal, assert_equal
+from sys import has_nvidia_gpu_accelerator
 
 from utils import IndexList
 
@@ -511,6 +512,21 @@ def execute_flash_attention_suite(ctx: DeviceContext):
             execute_ragged_flash_attention[
                 llama_num_q_heads, type, kv_params_llama3
             ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+
+            @parameter
+            if has_nvidia_gpu_accelerator():
+                print("TG", bs, type, "q_heads//kv_heads = 16//1")
+                execute_ragged_flash_attention[
+                    16,
+                    type,
+                    KVCacheStaticParams(num_heads=1, head_size=128),
+                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+                print("TG", bs, type, "q_heads//kv_heads = 32//2")
+                execute_ragged_flash_attention[
+                    32,
+                    type,
+                    KVCacheStaticParams(num_heads=2, head_size=128),
+                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
 
     # edge cases
     print("CE", 1, DType.bfloat16)
