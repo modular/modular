@@ -1241,6 +1241,100 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
 // Call Emission Implementation
 //===----------------------------------------------------------------------===//
 
+/// Emit an indirect call to a resolved value in a try block, invoking a
+/// callback to generate logic in the 'catch' block that is wrapped around the
+/// call. This ensures that the ValueDest is updated and live after the try
+/// block, which only works if the "catch" logic doesn't fall through.
+///
+/// This emits an error and returns null on failure.
+CValue IREmitter::emitIndirectCallInTryBlock(
+    CValue callee, CallOperands &&operands, ValueDest &dest, CallSyntax syntax,
+    const ExprNode *callExpr,
+    std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
+  ValueDest throwDest = std::move(dest);
+
+  auto calleeSig = sugarCast<FnTypeGeneratorType>(callee.getRValueType());
+  auto loc = translateLocation(callExpr->getLoc());
+
+  // If the ValueDest is a lazy materialized vardecl, we need to materialize
+  // it outside the try block. This is safe because it will update the
+  // ValueDest in place now that we know the type we're binding to.
+  if (!calleeSig.isRefResult()) {
+    MLValue destBuf = throwDest.getMLValueForResult(
+        callExpr->getLoc(), calleeSig.getUserResultType(), *this);
+    if (!destBuf)
+      return {};
+    throwDest = ValueDest(LValue(destBuf), throwDest.getContext());
+  } else {
+    dest = std::move(throwDest);
+    // A ref result will infer the origin of the ref from the arguments.
+    // We will do an indirect dance here since the type will be inferred
+    // from the result.
+    auto varDecl =
+        emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
+                    loc, VarDeclKind::Synthesized);
+    throwDest = ValueDest(varDecl, dest.getContext());
+  }
+
+  VarDeclOp errDecl =
+      emitVarDecl("__call_error_tmp__", calleeSig.getUserThrownType(), loc,
+                  VarDeclKind::Synthesized);
+
+  // We're going to move the builder around, but restore it to the same
+  // insertion point when we're done.
+  auto savedBuilder = builder;
+  auto tryOp = TryOp::create(*builder, loc, errDecl,
+                             /*suppressWarnings=*/true);
+  // Stub out the else and finally regions of this try.
+  builder->createBlock(&tryOp.getElseRegion());
+  TryYieldOp::create(*builder, tryOp.getLoc());
+  builder->createBlock(&tryOp.getFinallyRegion());
+  TryYieldOp::create(*builder, tryOp.getLoc());
+  // Emit this call into the try region.
+  builder->createBlock(&tryOp.getTryRegion());
+
+  CValue result = emitIndirectCall(callee, std::move(operands), throwDest,
+                                   syntax, callExpr);
+  if (!result) {
+    throwDest.resetForError(*this);
+    dest.resetForError(*this);
+  }
+  TryYieldOp::create(*builder, tryOp.getLoc());
+
+  // Emit the except block now that we're good to go.
+  builder->createBlock(&tryOp.getExceptRegion());
+  emitCatchLogic(errDecl);
+  TryYieldOp::create(*builder, tryOp.getLoc());
+
+  // If we had a ref result, we would have emitted a call into our
+  // __ref_result_tmp__ temporary above, and then call emission would have
+  // emitted a lit.load.consume to get the value.  The problem is that it
+  // drops it INTO the try block and we need it live afterwards.  Move it
+  // now.
+  if (calleeSig.isRefResult()) {
+    Value resultVal = result.getIfMBValue();
+    assert(resultVal && "ref result must be a MBValue");
+
+    // We might have a rebind to adjust type sugar.
+    if (auto rebindOp = resultVal.getDefiningOp<RebindOp>()) {
+      rebindOp->moveAfter(tryOp);
+      resultVal = rebindOp.getOperand();
+    }
+
+    auto loadConsume = resultVal.getDefiningOp<LIT::LoadConsumeOp>();
+    assert(loadConsume && "expected ref result to be a lit.load.consume");
+    loadConsume->moveAfter(tryOp);
+
+    // Rebind the result of the ref call.  Assigning through the VarDecl
+    // will turn this into an MBValue, stripping (parametric) mutability.
+    // Restore this.
+    result = CValue::getMValueForRef(resultVal);
+  }
+
+  builder = savedBuilder;
+  return emitCResult(result, callExpr, dest);
+}
+
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
 CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,

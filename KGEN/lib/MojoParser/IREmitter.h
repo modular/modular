@@ -450,6 +450,17 @@ public:
                           ValueDest &dest, CallSyntax syntax,
                           const ExprNode *callExpr);
 
+  /// Emit an indirect call to a resolved value in a try block, invoking a
+  /// callback to generate logic in the 'catch' block that is wrapped around the
+  /// call. This ensures that the ValueDest is updated and live after the try
+  /// block, which only works if the "catch" logic doesn't fall through.
+  ///
+  /// This emits an error and returns null on failure.
+  CValue emitIndirectCallInTryBlock(
+      CValue callee, CallOperands &&operands, ValueDest &dest,
+      CallSyntax syntax, const ExprNode *callExpr,
+      std::function<void(VarDeclOp errDecl)> emitCatchLogic);
+
   /// This helper emits a named method call with the provided `operands`,
   /// where the first positional operand is the receiver of the call. This emits
   /// an error if the call is invalid and returns null. The `operands` must
