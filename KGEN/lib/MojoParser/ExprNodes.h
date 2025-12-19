@@ -596,25 +596,20 @@ private:
 
 struct UnaryOpNode final : public ExprNode {
   UnaryOpNode(Kind kind, SMLoc opLoc, ExprNode *subExpr)
-      : ExprNode(kind), subExpr(subExpr) {
-    SMLoc begin = opLoc, end = subExpr->getRangeEnd();
-    // A postfix expression will have subExpr first, and opLoc be the postfix
-    // operator. Swap the range round.
-    if (opLoc.getPointer() > end.getPointer()) {
-      begin = subExpr->getRangeStart();
-      end = opLoc;
-    }
-    range = SourceRange(begin, end);
-  }
+      : ExprNode(kind), opLoc(opLoc), subExpr(subExpr) {}
 
-  SourceRange range;
+  const SMLoc opLoc;
   ExprNode *const subExpr;
 
   static bool classof(const ExprNode *node) {
     return node->kind >= kFirstUnaryOp && node->kind <= kLastUnaryOp;
   }
-  SMLoc getLoc() const override { return range.getStart(); }
-  SourceRange getRange() const override { return range; }
+  bool isPostfix() const { return kind == kTransfer; }
+  SMLoc getLoc() const override { return opLoc; }
+  SourceRange getRange() const override {
+    return isPostfix() ? SourceRange(subExpr->getRangeStart(), opLoc)
+                       : SourceRange(opLoc, subExpr->getRangeEnd());
+  }
   AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
                                            PatternDeclKind kind) const override;
