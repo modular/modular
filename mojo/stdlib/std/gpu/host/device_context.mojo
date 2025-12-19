@@ -3576,6 +3576,7 @@ struct DeviceContext(ImplicitlyCopyable):
     """`GPUInfo` object for the default accelerator."""
 
     var _handle: _DeviceContextPtr
+    var _owning: Bool
 
     @always_inline
     fn __init__(
@@ -3627,6 +3628,7 @@ struct DeviceContext(ImplicitlyCopyable):
             )
         )
         self._handle = result
+        self._owning = True
 
     fn _retain(self):
         # Increment the reference count.
@@ -3643,14 +3645,14 @@ struct DeviceContext(ImplicitlyCopyable):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = handle.bitcast[_DeviceContextCpp]()
-        self._retain()
+        self._owning = False
 
     @doc_private
     fn __init__(out self, ctx_ptr: _DeviceContextPtr):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = ctx_ptr
-        self._retain()
+        self._owning = False
 
     fn __copyinit__(out self, existing: Self):
         """Creates a copy of an existing device context by incrementing its reference count.
@@ -3663,8 +3665,10 @@ struct DeviceContext(ImplicitlyCopyable):
             existing: The device context to copy.
         """
         # Increment the reference count before copying the handle.
-        existing._retain()
+        if existing._owning:
+            existing._retain()
         self._handle = existing._handle
+        self._owning = existing._owning
 
     fn __del__(deinit self):
         """Releases resources associated with this device context.
@@ -3673,6 +3677,8 @@ struct DeviceContext(ImplicitlyCopyable):
         When the reference count reaches zero, the underlying resources are released,
         including any cached memory buffers and compiled device functions.
         """
+        if not self._owning:
+            return
         # Decrement the reference count held by this struct.
         #
         # void AsyncRT_DeviceContext_release(const DeviceContext *ctx)
