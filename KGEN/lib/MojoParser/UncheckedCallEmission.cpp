@@ -1772,88 +1772,16 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
         // Thrown type must be implicitly convertible to the error slot type.
         canImplicitlyConvertToType({UnboundAttr::get(thrownType), callExpr},
                                    errSlot.getRValueType(), getDeclScope())) {
-      auto loc = translateLocation(callExpr->getLoc());
 
-      ValueDest throwDest = std::move(dest);
-
-      // If the ValueDest is a lazy materialized vardecl, we need to materialize
-      // it outside the try block. This is safe because it will update the
-      // ValueDest in place now that we know the type we're binding to.
-      if (!calleeSig.isRefResult()) {
-        MLValue destBuf = throwDest.getMLValueForResult(
-            callExpr->getLoc(), calleeSig.getUserResultType(), *this);
-        if (!destBuf)
-          return {};
-        throwDest = ValueDest(LValue(destBuf), throwDest.getContext());
-      } else {
-        dest = std::move(throwDest);
-        // A ref result will infer the origin of the ref from the arguments.
-        // We will do an indirect dance here since the type will be inferred
-        // from the result.
-        auto varDecl =
-            emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
-                        loc, VarDeclKind::Synthesized);
-        throwDest = ValueDest(varDecl, dest.getContext());
-      }
-
-      VarDeclOp errDecl = emitVarDecl("__call_error_tmp__", thrownType, loc,
-                                      VarDeclKind::Synthesized);
-
-      // We're going to move the builder around, but restore it to the same
-      // insertion point when we're done.
-      auto savedBuilder = builder;
-      auto tryOp = TryOp::create(*builder, loc, errDecl,
-                                 /*suppressWarnings=*/true);
-      // Stub out the else and finally regions of this try.
-      builder->createBlock(&tryOp.getElseRegion());
-      TryYieldOp::create(*builder, tryOp.getLoc());
-      builder->createBlock(&tryOp.getFinallyRegion());
-      TryYieldOp::create(*builder, tryOp.getLoc());
-      // Emit this call into the try region.
-      builder->createBlock(&tryOp.getTryRegion());
-
-      CValue result =
-          emitCallUnchecked(callee, callOperands, throwDest, syntax, callExpr);
-      if (!result) {
-        throwDest.resetForError(*this);
-        dest.resetForError(*this);
-      }
-      TryYieldOp::create(*builder, tryOp.getLoc());
-
-      // Move the error into the overall error slot.
-      builder->createBlock(&tryOp.getExceptRegion());
-      ValueDest moveDest(errSlot, EC_RaiseValue);
-      (void)emitResult(MRValue(errDecl), callExpr, moveDest);
-      RaiseOp::create(*builder, tryOp.getLoc());
-      TryYieldOp::create(*builder, tryOp.getLoc());
-
-      // If we had a ref result, we would have emitted a call into our
-      // __ref_result_tmp__ temporary above, and then call emission would have
-      // emitted a lit.load.consume to get the value.  The problem is that it
-      // drops it INTO the try block and we need it live afterwards.  Move it
-      // now.
-      if (calleeSig.isRefResult()) {
-        Value resultVal = result.getIfMBValue();
-        assert(resultVal && "ref result must be a MBValue");
-
-        // We might have a rebind to adjust type sugar.
-        if (auto rebindOp = resultVal.getDefiningOp<RebindOp>()) {
-          rebindOp->moveAfter(tryOp);
-          resultVal = rebindOp.getOperand();
-        }
-
-        auto loadConsume = resultVal.getDefiningOp<LIT::LoadConsumeOp>();
-        assert(loadConsume && "expected ref result to be a lit.load.consume");
-        loadConsume->moveAfter(tryOp);
-
-        // Rebind the result of the ref call.  Assigning through the VarDecl
-        // will turn this into an MBValue, stripping (parametric) mutability.
-        // Restore this.
-        result = CValue::getMValueForRef(resultVal);
-      }
-
-      builder = savedBuilder;
-      return emitCResult(result, callExpr, dest);
+      return emitIndirectCallInTryBlock(
+          callee, CallOperands(callOperands), dest, syntax, callExpr,
+          [&](VarDeclOp errDecl) {
+            // Move the error out of the temporary and into the overall error
+            // slot, performing the implicit conversion.
+            ValueDest moveDest(errSlot, EC_RaiseValue);
+            (void)emitResult(MRValue(errDecl), callExpr, moveDest);
+            RaiseOp::create(*builder, translateLocation(callExpr->getLoc()));
+          });
     }
   }
 
