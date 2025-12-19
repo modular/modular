@@ -109,6 +109,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "VarPat";
   case ExprNode::kRefPat:
     return "RefPat";
+  case ExprNode::kComptime:
+    return "Comptime";
   case ExprNode::kAdd:
     return "Add";
   case ExprNode::kSub:

@@ -33,6 +33,6 @@ fn main():
 
     # This should.
     comptime x = NonEM()
-    # expected-error@+2 {{cannot implicitly materialize compile-time value of type 'NonEM' to runtime because it is not 'ImplicitlyCopyable'}}
+    # expected-error@+2 {{cannot materialize comptime value of type 'NonEM' to runtime because it is not 'ImplicitlyCopyable'}}
     # expected-note@+1 {{use 'materialize' to explicitly materialize the value}}
     func(x)
