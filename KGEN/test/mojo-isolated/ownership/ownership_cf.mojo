@@ -137,7 +137,7 @@ fn if_examples(cond: __mlir_type.i1):
 
 
 # CHECK-LABEL: lit.fn @"try_examples
-fn try_examples(cond: __mlir_type.i1, err: Error):
+fn try_examples(cond: __mlir_type.i1):
     # CHECK-NEXT: %a = lit.var.decl
     # CHECK-NEXT: %caught_error = lit.var.decl
     var a: MemExample
@@ -148,9 +148,9 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
         # is completely optimized out.
 
         # CHECK-NEXT: lit.var.lifetime.start %caught_error
-        # CHECK-NEXT: %11 = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err, %caught_error)
+        # CHECK-NEXT: lit.call {{.*}}@Error::@"__init__{{.*}}(%caught_error)
         # CHECK-NEXT: lit.try.raise
-        raise err
+        raise Error()
     # CHECK: } except {
     except caught_error:
         # CHECK-NEXT: lifetime.start %a
@@ -181,7 +181,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
         _b = MemExample()
         # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%_b)
         # CHECK-NEXT: lifetime.end %_b
-        raise err
+        raise Error()
     # CHECK: } except {
     # CHECK-NEXT: [[ERR:%.*]] = lit.ref.immut [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
@@ -210,7 +210,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%c)
         c = MemExample()
         # CHECK-NOT: %c
-        raise err
+        raise Error()
     # CHECK: } except {
     # CHECK-NEXT: [[ERR:%.*]] = lit.ref.immut [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
@@ -238,7 +238,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
         # CHECK-NEXT:  hlcf.elif
         # CHECK-NEXT:  hlcf.elif.yield
         if cond:
-            raise err
+            raise Error()
         # CHECK-NOT: %d
     # CHECK: } except {
     except e:
