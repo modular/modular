@@ -47,7 +47,7 @@ from mblib2to3.pgen2.grammar import Grammar
 from mblib2to3.pytree import convert, NL, Context, RawNode, Leaf, Node
 
 if TYPE_CHECKING:
-    from mblib2to3.driver import TokenProxy
+    from mblib2to3.driver import TokenProxy  # type: ignore
 
 
 Results = Dict[Text, NL]
@@ -133,7 +133,7 @@ class Recorder:
                 args = [tok_type, tok_val, self.context]
                 if raw:
                     args.insert(0, ilabel)
-                func(*args)
+                func(*args)  # type: ignore
 
     def determine_route(
         self, value: Optional[Text] = None, force: bool = False

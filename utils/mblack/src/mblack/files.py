@@ -51,7 +51,7 @@ from mblack.output import err
 from mblack.report import Report
 
 if TYPE_CHECKING:
-    import colorama  # noqa: F401
+    import colorama  # type: ignore
 
 
 @lru_cache()
@@ -299,7 +299,7 @@ def gen_python_files(
                 continue
             include_match = include.search(normalized_path) if include else True
             include_match = (
-                include_match
+                include_match  # type: ignore
                 or normalized_path.endswith(".mojo")
                 or normalized_path.endswith(".🔥")
             )
@@ -319,7 +319,7 @@ def wrap_stream_for_windows(
     an `AnsiToWin32` wrapper or the original stream.
     """
     try:
-        from colorama.initialise import wrap_stream
+        from colorama.initialise import wrap_stream  # type: ignore
     except ImportError:
         return f
     else:

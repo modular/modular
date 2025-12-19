@@ -40,7 +40,7 @@ ast3: Any
 _IS_PYPY = platform.python_implementation() == "PyPy"
 
 try:
-    from typed_ast import ast3
+    from typed_ast import ast3  # type: ignore
 except ImportError:
     if sys.version_info < (3, 8) and not _IS_PYPY:
         print(

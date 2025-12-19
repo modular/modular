@@ -696,8 +696,8 @@ class NodePattern(BasePattern):
                 # I don't even think this code is used anywhere, but it does cause
                 # unreachable errors from mypy. This function's signature does look
                 # odd though *shrug*.
-                if isinstance(item, WildcardPattern):  # type: ignore[unreachable]
-                    self.wildcards = True  # type: ignore[unreachable]
+                if isinstance(item, WildcardPattern):
+                    self.wildcards = True
         self.type = type
         self.content = newcontent  # TODO: this is unbound when content is None
         self.name = name

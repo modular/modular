@@ -308,12 +308,12 @@ class CustomSplitMapMixin:
     """
 
     _Key: ClassVar = Tuple[StringID, str]
-    _CUSTOM_SPLIT_MAP: ClassVar[Dict[_Key, Tuple[CustomSplit, ...]]] = defaultdict(
+    _CUSTOM_SPLIT_MAP: ClassVar[Dict[_Key, Tuple[CustomSplit, ...]]] = defaultdict(  # type: ignore
         tuple
     )
 
     @staticmethod
-    def _get_key(string: str) -> "CustomSplitMapMixin._Key":
+    def _get_key(string: str) -> "CustomSplitMapMixin._Key":  # type: ignore
         """
         Returns:
             A unique identifier that is used internally to map @string to a

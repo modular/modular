@@ -640,7 +640,7 @@ def generate_tokens(
                         stashed = None
                     yield (COMMENT, token, spos, epos, line)
                 elif token in triple_quoted:
-                    endprog = endprogs[token]
+                    endprog = endprogs[token]  # type: ignore
                     endmatch = endprog.match(line, pos)
                     if endmatch:  # all on one line
                         pos = endmatch.end(0)
@@ -662,7 +662,7 @@ def generate_tokens(
                     if token[-1] == "\n":  # continued string
                         strstart = (lnum, start)
                         endprog = (
-                            endprogs[initial]
+                            endprogs[initial]  # type: ignore
                             or endprogs[token[1]]
                             or endprogs[token[2]]
                         )
@@ -675,7 +675,7 @@ def generate_tokens(
                             stashed = None
                         yield (STRING, token, spos, epos, line)
                 elif token.startswith("`"):
-                    endprog = endprogs["`"]
+                    endprog = endprogs["`"]  # type: ignore
                     endmatch = endprog.match(line, pos)
                     yield (NAME, token, spos, epos, line)
                 elif initial.isidentifier():  # ordinary name
