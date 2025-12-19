@@ -81,7 +81,7 @@ trait Iterator(Movable):
     iterator, e.g. in a `for` loop.
     """
 
-    comptime Element: Movable
+    comptime Element: Movable & ImplicitlyDestructible
 
     fn __has_next__(self) -> Bool:
         """Checks if there are more elements in the iterator.

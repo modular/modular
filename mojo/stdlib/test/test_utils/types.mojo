@@ -35,7 +35,7 @@ from os import abort
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveOnly[T: Movable](Movable):
+struct MoveOnly[T: Movable & ImplicitlyDestructible](Movable):
     """Utility for testing MoveOnly types.
 
     Parameters:

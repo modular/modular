@@ -14,9 +14,7 @@
 from os import abort
 
 
-struct UnsafeMaybeUninitialized[ElementType: ImplicitlyDestructible](
-    Copyable, Defaultable
-):
+struct UnsafeMaybeUninitialized[ElementType: AnyType](Copyable, Defaultable):
     """A memory location that may or may not be initialized.
 
     Note that the destructor is a no-op. If the memory was initialized, the caller
@@ -219,10 +217,15 @@ struct UnsafeMaybeUninitialized[ElementType: ImplicitlyDestructible](
         return UnsafePointer(to=self._array).bitcast[Self.ElementType]()
 
     @always_inline
-    fn assume_initialized_destroy(mut self):
+    fn assume_initialized_destroy[
+        T: ImplicitlyDestructible
+    ](mut self: UnsafeMaybeUninitialized[T]):
         """Runs the destructor of the internal value.
 
         Calling this method assumes that the memory is initialized.
+
+        Parameters:
+            T: An element type that is implicitly destructible.
 
         """
         self.unsafe_ptr().destroy_pointee()

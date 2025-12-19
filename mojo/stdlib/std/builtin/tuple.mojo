@@ -95,7 +95,16 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         # trivial and won't do anything.
         @parameter
         for i in range(Self.__len__()):
-            UnsafePointer(to=self[i]).destroy_pointee()
+            comptime TUnknown = Self.element_types[i]
+            _constrained_conforms_to[
+                conforms_to(TUnknown, ImplicitlyDestructible),
+                Parent=Self,
+                Element=TUnknown,
+                ParentConformsTo="ImplicitlyDestructible",
+            ]()
+            UnsafePointer(
+                to=trait_downcast[ImplicitlyDestructible](self[i])
+            ).destroy_pointee()
 
     @always_inline("nodebug")
     fn __copyinit__(out self, existing: Self):

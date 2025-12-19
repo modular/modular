@@ -19,9 +19,12 @@ from memory import OwnedPointer
 ```
 """
 
+from builtin.constrained import _constrained_conforms_to
+from builtin.rebind import downcast, trait_downcast
+
 
 @register_passable
-struct OwnedPointer[T: ImplicitlyDestructible]:
+struct OwnedPointer[T: AnyType]:
     """A safe, owning, smart pointer.
 
     This smart pointer is designed for cases where there is clear ownership
@@ -119,9 +122,17 @@ struct OwnedPointer[T: ImplicitlyDestructible]:
             MutOrigin.external
         ]()
 
-    fn __del__(deinit self: OwnedPointer[Self.T]):
+    fn __del__(deinit self):
         """Destroy the OwnedPointer[]."""
-        self._inner.destroy_pointee()
+        _constrained_conforms_to[
+            conforms_to(Self.T, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        comptime TDestructible = downcast[ImplicitlyDestructible, Self.T]
+
+        self._inner.bitcast[TDestructible]().destroy_pointee()
         self._inner.free()
 
     # ===-------------------------------------------------------------------===#

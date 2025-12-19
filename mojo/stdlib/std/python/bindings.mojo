@@ -673,7 +673,7 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     fn def_py_init[
-        T: Movable,
+        T: Movable & ImplicitlyDestructible,
         //,
         init_func: fn (out T, args: PythonObject, kwargs: PythonObject),
     ](mut self) raises -> ref [self] Self:
@@ -699,7 +699,7 @@ struct PythonTypeBuilder(Copyable):
         return self.def_py_init[raising_wrapper[init_func]]()
 
     fn def_py_init[
-        T: Movable,
+        T: Movable & ImplicitlyDestructible,
         //,
         init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
     ](mut self) raises -> ref [self] Self:
@@ -968,7 +968,7 @@ fn _py_new_function_wrapper[
 
 
 fn _py_init_function_wrapper[
-    T: Movable,
+    T: Movable & ImplicitlyDestructible,
     init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
 ](
     py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr

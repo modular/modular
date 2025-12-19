@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
+@explicit_destroy
 trait Movable:
     """The Movable trait denotes a type whose value can be moved.
 
