@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import ReturnLogits
-from max.nn.float8_config import Float8Config, parse_float8_config
+from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 from max.pipelines.lib import (
@@ -30,6 +30,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     RopeType,
 )
+from max.pipelines.lib.float8 import parse_float8_config
 from transformers import AutoConfig
 
 
