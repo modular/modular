@@ -3098,7 +3098,7 @@ struct DeviceFunction[
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(first_word_addr)
                 dense_args_addrs[translated_arg_idx] = first_word_addr
-                dense_args_sizes[i] = UInt64(
+                dense_args_sizes[translated_arg_idx] = UInt64(
                     size_of[actual_arg_type.device_type]()
                 )
                 translated_arg_idx += 1
