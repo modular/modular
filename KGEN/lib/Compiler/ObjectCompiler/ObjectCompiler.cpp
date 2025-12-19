@@ -19,9 +19,9 @@
 #include "LLVMPassesPipeline.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "MLRT/AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
-#include "MLRT/AsyncRT/DeviceContext/CompilationDevice.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/Driver/DeviceContext/CompilationDevice.h"
 
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"

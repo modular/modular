@@ -8,7 +8,7 @@
 #define KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "MLRT/AsyncRT/DeviceContext/DeviceContext.h"
+#include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/Compiler/Sanitizers.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
