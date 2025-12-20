@@ -25,7 +25,6 @@ from gpu.intrinsics import (
     load_acquire,
     store_release,
 )
-from memory import MutOpaquePointer, UnsafePointer
 
 
 # No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
@@ -159,10 +158,8 @@ fn _multi_gpu_barrier[
     is_start: Bool,
     need_fence: Bool = False,
 ](
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
-    self_sg: UnsafePointer[mut=True, Signal, MutAnyOrigin],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    self_sg: UnsafePointer[Signal, MutAnyOrigin],
     my_rank: Int,
 ):
     """Implements a barrier synchronization across multiple GPUs to ensure all

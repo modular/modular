@@ -53,9 +53,7 @@ fn _matmul_allreduce[
     output_buffers: InlineArray[
         NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctxs: List[DeviceContext],
 ) raises:
     """Performs C = matmul(A, B^T) followed with Out = allreduce(C) operation across multiple GPUs.
@@ -109,9 +107,7 @@ fn _matmul_allreduce_split_m[
     output_buffers: InlineArray[
         NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctxs: List[DeviceContext],
     num_partitions: Int,
 ) raises:
@@ -245,9 +241,7 @@ fn _matmul_allreduce_split_n[
     output_buffers: InlineArray[
         NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctxs: List[DeviceContext],
 ) raises:
     """Performs C = matmul(A, B^T) followed with Out = allreduce(C) operation across multiple GPUs.
@@ -379,9 +373,7 @@ fn matmul_allreduce[
     output_buffers: InlineArray[
         NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctxs: List[DeviceContext],
     num_partitions: ValOrDim,
 ) raises:
@@ -464,9 +456,7 @@ fn matmul_allreduce[
     output_buffers: InlineArray[
         NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctxs: List[DeviceContext],
 ) raises:
     """Performs C = matmul(A, B^T) followed with Out = allreduce(C) operation across multiple GPUs.
