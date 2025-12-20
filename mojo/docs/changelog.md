@@ -365,6 +365,10 @@ what we publish.
   On AMD GPUs or for allocations ≤ 48KB, explicit `func_attribute` values
   should be provided when needed.
 
+- `Optional` is now specialized for `Optional[Pointer[T, origin]]` to have
+  `__getitem__`, `.value()`, and `.unsafe_value()` return a reference to the
+  underlying pointee value `T` instead of the `Pointer` type.
+
 - `StringLiteral.format` will now emit a compile-time constraint error if the
   format string is invalid (instead of a runtime error).
 

@@ -190,7 +190,7 @@ def test_optional_unwrap():
     assert_true(a)
     assert_equal(123, a[])
     a = Optional[Int](None)
-    with assert_raises(contains="on empty Optional"):
+    with assert_raises(contains="EmptyOptionalError"):
         _ = a[]
 
 
@@ -244,6 +244,22 @@ def test_optional_of_move_only_type():
     # Test move-only default value
     val = opt2^.or_else(MoveOnly(10))
     assert_equal(val.data, 10)
+
+
+def test_optional_pointer():
+    var x = 42
+    var opt = Optional(Pointer(to=x))
+    assert_equal(opt[], 42)
+    assert_equal(opt.value(), 42)
+    assert_equal(opt.unsafe_value(), 42)
+
+    with assert_raises(contains="EmptyOptionalError"):
+        _ = Optional[Pointer[Int, origin_of(x)]](None)[]
+
+    opt[] += 1
+    opt.value() += 1
+    opt.unsafe_value() += 1
+    assert_equal(x, 45)
 
 
 def main():
