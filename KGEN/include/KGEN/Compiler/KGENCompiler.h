@@ -86,6 +86,8 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> initializeExecutionEngine(
 /// The created elaborator pass uses a default specialization executor that
 /// JITs and executes in-process.
 std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT();
+std::unique_ptr<Pass>
+createElaborateGeneratorsWithDefaultJIT(const std::string &name);
 
 /// Return size of the \p type in bytes.
 int64_t getTypeSizeInBytes(TargetInfoAttr target, Type type);

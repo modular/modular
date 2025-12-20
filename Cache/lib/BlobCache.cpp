@@ -535,7 +535,8 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
            std::filesystem::canonical(base, ec1))) {
         // Extract suffix from directory name
         std::string dirName = dirEntry.path().filename().string();
-        // Remove if prefix matches
+        // Remove if dirName is not the same as current version (outdated
+        // cache) and has the same build type as the current one.
         if (dirName != version && dirName.ends_with(suffix))
           std::filesystem::remove_all(dirEntry, ec);
       }
