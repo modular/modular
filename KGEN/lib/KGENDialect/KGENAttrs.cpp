@@ -784,6 +784,18 @@ LogicalResult CompileAssemblyAttr::verify(
 bool GetTypeNameAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// StructFieldTypesAttr
+//===----------------------------------------------------------------------===//
+
+bool StructFieldTypesAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
+// StructFieldNamesAttr
+//===----------------------------------------------------------------------===//
+
+bool StructFieldNamesAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 

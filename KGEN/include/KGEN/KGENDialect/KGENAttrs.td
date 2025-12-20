@@ -908,6 +908,58 @@ def KGEN_GetTypeNameAttr : KGEN_ExprAttr<"GetTypeName", "get_type_name",
 }
 
 //===----------------------------------------------------------------------===//
+// StructFieldTypesAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructFieldTypesAttr : KGEN_ExprAttr<"StructFieldTypes",
+    "struct_field_types", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the field types of a struct as a variadic.";
+  let description = [{
+    The `#kgen.struct_field_types` attribute returns the types of all fields
+    in a struct type as a variadic sequence.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_types<#MyStruct> : !kgen.variadic<!kgen.type>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    AttributeSelfTypeParameter<"", "VariadicType">:$type
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// StructFieldNamesAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructFieldNamesAttr : KGEN_ExprAttr<"StructFieldNames",
+    "struct_field_names", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the field names of a struct as a variadic of strings.";
+  let description = [{
+    The `#kgen.struct_field_names` attribute returns the names of all fields
+    in a struct type as a variadic sequence of strings.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_names<#MyStruct> : !kgen.variadic<!kgen.string>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    AttributeSelfTypeParameter<"", "VariadicType">:$type
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // BindParams
 //===----------------------------------------------------------------------===//
 

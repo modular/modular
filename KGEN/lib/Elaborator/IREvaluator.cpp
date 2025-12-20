@@ -148,6 +148,10 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateGetSourceNameAttr(getSourceNameAttr);
   if (auto getTypeNameAttr = dyn_cast<GetTypeNameAttr>(attr))
     return evaluateGetTypeNameAttr(getTypeNameAttr);
+  if (auto structFieldTypesAttr = dyn_cast<StructFieldTypesAttr>(attr))
+    return evaluateStructFieldTypesAttr(structFieldTypesAttr);
+  if (auto structFieldNamesAttr = dyn_cast<StructFieldNamesAttr>(attr))
+    return evaluateStructFieldNamesAttr(structFieldNamesAttr);
   if (auto typeConformToTraitAttr = dyn_cast<TypeConformsToTraitAttr>(attr))
     return evaluateTypeConformToTraitAttr(typeConformToTraitAttr);
   if (auto compileOffloadClosureAttr =
@@ -343,6 +347,89 @@ IREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
     return failure();
   }
   return simplified;
+}
+
+//===----------------------------------------------------------------------===//
+// Struct Field Reflection Helpers
+//===----------------------------------------------------------------------===//
+
+FailureOr<StructInstanceType>
+IREvaluator::resolveStructInstanceType(TypedAttr typeRef, StringRef funcName) {
+  // Resolve type reference to TypeInstanceRefAttr
+  if (!isa<TypeInstanceRefAttr>(typeRef)) {
+    if (auto typeParam = dyn_cast<TypeParamAttr>(typeRef))
+      typeRef = cast<TypeValueType>(typeParam.getTypeValue()).getTypeValue();
+    else {
+      emitError(
+          {*errorLoc, Twine(funcName) + " requires a concrete struct type"});
+      return failure();
+    }
+  }
+  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
+
+  // Look up the impl node and get the StructGeneratorOp
+  SymbolRefAttr instanceSymbol = instanceRef.getSymbol();
+  ParamNode *genNode = elaborator->lookupImplNode(instanceSymbol)->parent;
+  if (!isa<StructGeneratorOp>(genNode->gen)) {
+    emitError({*errorLoc, Twine(funcName) + " requires a struct type"});
+    return failure();
+  }
+  StructGeneratorOp structGen = cast<StructGeneratorOp>(genNode->gen);
+
+  auto structType =
+      dyn_cast<StructInstanceType>(structGen.getValueDomainType());
+  if (!structType) {
+    emitError(
+        {*errorLoc, Twine(funcName) + " requires a struct type, got " +
+                        mlir::debugString(structGen.getValueDomainType())});
+    return failure();
+  }
+
+  return structType;
+}
+
+//===----------------------------------------------------------------------===//
+// Struct Field Reflection Evaluators
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateStructFieldTypesAttr(StructFieldTypesAttr attr) {
+  FailureOr<StructInstanceType> structTypeOr =
+      resolveStructInstanceType(attr.getTypeValue(), "struct_field_types");
+  if (failed(structTypeOr))
+    return failure();
+  StructInstanceType structType = *structTypeOr;
+
+  // Build variadic of field types
+  MLIRContext *ctx = attr.getContext();
+  SmallVector<TypedAttr> fieldTypes;
+  for (StructDefFieldAttr field : structType.getFields()) {
+    // Wrap field type as a TypeParamAttr
+    fieldTypes.push_back(TypeParamAttr::get(field.getType(), field.getType(),
+                                            TypeType::get(ctx)));
+  }
+
+  return {cast<TypedAttr>(VariadicAttr::get(fieldTypes, attr.getType()))};
+}
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateStructFieldNamesAttr(StructFieldNamesAttr attr) {
+  FailureOr<StructInstanceType> structTypeOr =
+      resolveStructInstanceType(attr.getTypeValue(), "struct_field_names");
+  if (failed(structTypeOr))
+    return failure();
+  StructInstanceType structType = *structTypeOr;
+
+  // Build variadic of field names as StringAttrs
+  MLIRContext *ctx = attr.getContext();
+  SmallVector<TypedAttr> fieldNames;
+  for (StructDefFieldAttr field : structType.getFields()) {
+    // StringAttr with StringType wrapping
+    fieldNames.push_back(
+        StringAttr::get(field.getName().getValue(), StringType::get(ctx)));
+  }
+
+  return {cast<TypedAttr>(VariadicAttr::get(fieldNames, attr.getType()))};
 }
 
 ParamNodeBase *IREvaluator::lookupParamNodeBase(SymbolRefAttr symbol) {

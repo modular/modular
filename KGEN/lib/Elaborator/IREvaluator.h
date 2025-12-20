@@ -82,6 +82,13 @@ private:
                                          bool withResultSlot);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
+  FailureOr<TypedAttr> evaluateStructFieldTypesAttr(StructFieldTypesAttr attr);
+  FailureOr<TypedAttr> evaluateStructFieldNamesAttr(StructFieldNamesAttr attr);
+
+  /// Helper to resolve a type reference to a StructInstanceType.
+  /// Emits an error with the given function name context on failure.
+  FailureOr<StructInstanceType> resolveStructInstanceType(TypedAttr typeRef,
+                                                          StringRef funcName);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
