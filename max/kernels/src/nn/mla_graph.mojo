@@ -497,19 +497,21 @@ fn quantize_and_bmm_fp8_helper[
 ) raises:
     """
     Helper function to quantize and perform a batched matrix multiplication.
+    This function uses the transposed view of the input tensor `a`.
     """
 
-    comptime B = a.shape[0]()
+    comptime B = a.shape[1]()
     comptime K = a.shape[2]()
     comptime N = b.shape[1]()
 
-    var m = a.dim(1)
+    var m = a.dim(0)
+
+    comptime fp8_a_layout = Layout.row_major(B, UNKNOWN_VALUE, K)
 
     # allocate buffers for quantized a and its scales
     var fp8_a_buf = ctx.enqueue_create_buffer[fp8_dtype](B * m * K)
-    var fp8_a = LayoutTensor[fp8_dtype, a.layout](
-        fp8_a_buf,
-        a.runtime_layout,
+    var fp8_a = LayoutTensor[fp8_dtype, fp8_a_layout](
+        fp8_a_buf, RuntimeLayout[fp8_a_layout].row_major(Index(B, m, K))
     )
 
     # the scales are stored in a transposed, padded format
@@ -536,7 +538,8 @@ fn quantize_and_bmm_fp8_helper[
     fn input_fn[
         width: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
-        return a.load[width=width](IndexList[3](batch, row, col))
+        # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
+        return a.aligned_load[width=width](IndexList[3](row, batch, col))
 
     batched_quantize_dynamic_scaled_fp8[
         input_fn=input_fn,
@@ -720,23 +723,6 @@ fn mla_decode_branch_fp8[
     if seq_len == 0:
         return
 
-    # First transpose the q_nope tensor from [tot_seq_len, num_heads,
-    # qk_nope_head_dim] to [num_heads, tot_seq_len, qk_nope_head_dim].
-    # TODO: This will be fused with the batched_quantize_dynamic_scaled_fp8 kernel in the future.
-    comptime q_nope_t_layout = Layout.row_major(
-        num_heads, UNKNOWN_VALUE, qk_nope_head_dim
-    )
-    var q_nope_t_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * qk_nope_head_dim
-    )
-    var q_nope_t = LayoutTensor[dtype, q_nope_t_layout](
-        q_nope_t_buf,
-        RuntimeLayout[q_nope_t_layout].row_major(
-            Index(num_heads, seq_len, qk_nope_head_dim)
-        ),
-    )
-    transpose_helper[dtype](q_nope_t, q_nope, ctx)
-
     # Proceed with the fp8 batched matmul
     comptime q_nope_proj_layout = Layout.row_major(
         num_heads, UNKNOWN_VALUE, kv_latent_dim
@@ -751,12 +737,13 @@ fn mla_decode_branch_fp8[
         ),
     )
 
+    # This helper function uses the transposed view of the input tensor `q_nope`.
     quantize_and_bmm_fp8_helper[
         m_scale_granularity=m_scale_granularity,
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         target=target,
-    ](q_nope_proj, q_nope_t, w_uk, w_uk_scale, ctx)
+    ](q_nope_proj, q_nope, w_uk, w_uk_scale, ctx)
 
     # concatenate the transposed q_nope_proj and q_rope tensors
     comptime q_full_layout = Layout.row_major(
@@ -838,20 +825,6 @@ fn mla_decode_branch_fp8[
         ctx,
     )
 
-    comptime raw_output_t_layout = Layout.row_major(
-        num_heads, UNKNOWN_VALUE, kv_latent_dim
-    )
-    var raw_output_t_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * kv_latent_dim
-    )
-    var raw_output_t = LayoutTensor[dtype, raw_output_t_layout](
-        raw_output_t_buf,
-        RuntimeLayout[raw_output_t_layout].row_major(
-            Index(num_heads, seq_len, kv_latent_dim)
-        ),
-    )
-    transpose_helper[dtype](raw_output_t, raw_output, ctx)
-
     # Another batched matmul to project the raw output to the original space
     comptime output_t_layout = Layout.row_major(
         num_heads, UNKNOWN_VALUE, v_head_dim
@@ -866,6 +839,7 @@ fn mla_decode_branch_fp8[
         ),
     )
 
+    # This helper function uses the transposed view of the input tensor `raw_output`.
     quantize_and_bmm_fp8_helper[
         dtype=dtype,
         fp8_dtype=fp8_dtype,
@@ -874,7 +848,7 @@ fn mla_decode_branch_fp8[
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         target=target,
-    ](output_t, raw_output_t, w_uv, w_uv_scale, ctx)
+    ](output_t, raw_output, w_uv, w_uv_scale, ctx)
 
     # Transpose the output tensor from [num_heads, tot_seq_len, v_head_dim] to [tot_seq_len, num_heads, v_head_dim].
     transpose_helper[dtype](output, output_t, ctx)
