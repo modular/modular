@@ -168,6 +168,15 @@ def test_interval_floating():
     assert_equal(len(union), 2)
 
 
+def test_interval_sort():
+    var interval_1 = Interval(1, 2)
+    var interval_2 = Interval(3, 4)
+    var list_of_intervals = [interval_2, interval_1]
+    sort(list_of_intervals)
+
+    assert_equal(list_of_intervals, [interval_1, interval_2])
+
+
 def test_interval_tree():
     var tree = IntervalTree[Int, MyType]()
     tree.insert((15, 20), MyType(33.0))
