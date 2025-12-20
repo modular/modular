@@ -49,18 +49,57 @@ dictionary keys. Dict keys must minimally be `Copyable`, `Hashable`,
 and `Equatable`."""
 
 
-@register_passable("trivial")
-@fieldwise_init
-struct DictKeyError(Writable):
-    """A custom error type for Dict lookups that fail."""
+struct DictKeyError[mut: Bool, //, K: KeyElement, origin: Origin[mut]](
+    ImplicitlyCopyable, Movable, Writable
+):
+    """A custom error type for Dict lookups that fail.
+
+    Parameters:
+        mut: The mutability of the key.
+        K: The key type of the elements in the dictionary.
+        origin: The origin of the key.
+    """
+
+    var _key: Pointer[Self.K, Self.origin]
+
+    @doc_private
+    fn __init__(out self, ref [Self.origin]key: Self.K):
+        self._key = Pointer(to=key)
+
+    fn key(self) -> ref [Self.origin] Self.K:
+        """Return the key that caused the error.
+
+        Returns:
+            A reference to the key that caused the error.
+        """
+        return self._key[]
 
     fn write_to(self, mut writer: Some[Writer]):
-        """This always writes "KeyError".
+        """Write the error and the key to the writer.
 
         Args:
             writer: The writer to write to.
         """
-        writer.write("KeyError")
+
+        @parameter
+        if conforms_to(Self.K, Writable):
+            ref writable = trait_downcast[Writable](self._key[])
+            writer.write("DictKeyError(key=", writable, ")")
+        else:
+            "DictKeyError(<unprintable key>)".write_to(writer)
+
+
+@fieldwise_init
+struct EmptyDictError(Writable):
+    """A custom error type for when a `Dict` is empty."""
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """This always writes "EmptyDictError".
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("EmptyDictError")
 
 
 @fieldwise_init
@@ -832,8 +871,10 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
     # ===-------------------------------------------------------------------===#
 
     fn __getitem__(
-        ref self, key: Self.K
-    ) raises DictKeyError -> ref [self._entries[0].value().value] Self.V:
+        ref self, ref key: Self.K
+    ) raises DictKeyError[Self.K, origin_of(key)] -> ref [
+        self._entries[0].value().value
+    ] Self.V:
         """Retrieve a value out of the dictionary.
 
         Args:
@@ -1030,8 +1071,10 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
             return Optional[Self.V](None)
 
     fn _find_ref(
-        ref self, key: Self.K
-    ) raises DictKeyError -> ref [self._entries[0].value().value] Self.V:
+        ref self, ref key: Self.K
+    ) raises DictKeyError[Self.K, origin_of(key)] -> ref [
+        self._entries[0].value().value
+    ] Self.V:
         """Find a value in the dictionary by key.
 
         Args:
@@ -1050,7 +1093,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
             # SAFETY: We just checked that `entry` is present.
             return entry.unsafe_value().value
 
-        raise DictKeyError()
+        raise DictKeyError(key)
 
     fn get(self, key: Self.K) -> Optional[Self.V]:
         """Get a value from the dictionary by key.
@@ -1093,7 +1136,9 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
         except:
             return default^
 
-    fn pop(mut self, key: Self.K) raises DictKeyError -> Self.V:
+    fn pop(
+        mut self, ref key: Self.K
+    ) raises DictKeyError[Self.K, origin_of(key)] -> Self.V:
         """Remove a value from the dictionary by key.
 
         Args:
@@ -1111,24 +1156,24 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
         if found:
             var entry_value = self._unsafe_take_entry(slot, index)
             return entry_value^.reap_value()
-        raise DictKeyError()
+        raise DictKeyError(key)
 
     fn popitem(
         mut self,
-    ) raises DictKeyError -> DictEntry[Self.K, Self.V, Self.H]:
+    ) raises EmptyDictError -> DictEntry[Self.K, Self.V, Self.H]:
         """Remove and return a (key, value) pair from the dictionary.
 
         Returns:
             Last dictionary item
 
         Raises:
-            `DictKeyError` if the dictionary is empty.
+            `EmptyDictError` if the dictionary is empty.
 
         Notes:
             Pairs are returned in LIFO order. popitem() is useful to
             destructively iterate over a dictionary, as often used in set
             algorithms. If the dictionary is empty, calling popitem() raises a
-            DictKeyError.
+            EmptyDictError.
         """
 
         for ref entry in reversed(self._entries):
@@ -1138,7 +1183,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
                 )
                 return self._unsafe_take_entry(slot, index)
 
-        raise DictKeyError()
+        raise EmptyDictError()
 
     fn keys(ref self) -> _DictKeyIter[Self.K, Self.V, Self.H, origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
@@ -1416,8 +1461,10 @@ struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
 
     @always_inline
     fn __getitem__(
-        ref self, key: Self.key_type
-    ) raises DictKeyError -> ref [self._dict[key]] Self.V:
+        ref self, ref key: Self.key_type
+    ) raises DictKeyError[Self.key_type, origin_of(key)] -> ref [
+        self._dict[key]
+    ] Self.V:
         """Retrieve a value out of the keyword dictionary.
 
         Args:
@@ -1500,7 +1547,9 @@ struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
         return self._dict.pop(key, default^)
 
     @always_inline
-    fn pop(mut self, key: self.key_type) raises DictKeyError -> Self.V:
+    fn pop(
+        mut self, ref key: self.key_type
+    ) raises DictKeyError[Self.key_type, origin_of(key)] -> Self.V:
         """Remove a value from the dictionary by key.
 
         Args:

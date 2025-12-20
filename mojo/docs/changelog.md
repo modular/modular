@@ -225,7 +225,17 @@ what we publish.
   no longer allocates memory.
 
 - `Dict` now raises a custom `DictKeyError` type on failure, making lookup
-  failures more efficient to handle.
+  failures more efficient to handle. The error message now includes the missing
+  key when the key type implements `Writable`:
+
+  ```mojo
+  var d = Dict[String, Int]()
+  var key = "missing_key"
+  try:
+      _ = d[key]
+  except e:
+      print(e)  # Prints: DictKeyError(key=missing_key)
+  ```
 
 - Remove `List` variadic initializer.
 
