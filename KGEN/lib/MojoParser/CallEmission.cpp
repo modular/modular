@@ -1251,7 +1251,7 @@ CValue IREmitter::emitIndirectCallInTryBlock(
     CValue callee, CallOperands &&operands, ValueDest &dest, CallSyntax syntax,
     const ExprNode *callExpr,
     std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
-  ValueDest throwDest = std::move(dest);
+  ValueDest throwDest(dest.getContext());
 
   auto calleeSig = sugarCast<FnTypeGeneratorType>(callee.getRValueType());
   auto loc = translateLocation(callExpr->getLoc());
@@ -1259,14 +1259,15 @@ CValue IREmitter::emitIndirectCallInTryBlock(
   // If the ValueDest is a lazy materialized vardecl, we need to materialize
   // it outside the try block. This is safe because it will update the
   // ValueDest in place now that we know the type we're binding to.
+  MLValue destBuf;
   if (!calleeSig.isRefResult()) {
-    MLValue destBuf = throwDest.getMLValueForResult(
-        callExpr->getLoc(), calleeSig.getUserResultType(), *this);
+    destBuf = dest.getMLValueForResult(callExpr->getLoc(),
+                                       calleeSig.getUserResultType(), *this);
     if (!destBuf)
       return {};
-    throwDest = ValueDest(LValue(destBuf), throwDest.getContext());
+    // For the call, assign into the MLValue.
+    throwDest = ValueDest(LValue(destBuf), dest.getContext());
   } else {
-    dest = std::move(throwDest);
     // A ref result will infer the origin of the ref from the arguments.
     // We will do an indirect dance here since the type will be inferred
     // from the result.
@@ -1329,8 +1330,12 @@ CValue IREmitter::emitIndirectCallInTryBlock(
     // will turn this into an MBValue, stripping (parametric) mutability.
     // Restore this.
     result = CValue::getMValueForRef(resultVal);
+  } else {
+    // Otherwise, we have the var temporary.
+    result = MLValue(destBuf);
   }
 
+  // Emit the result into the "dest" ValueDest outside of the try block.
   builder = savedBuilder;
   return emitCResult(result, callExpr, dest);
 }
