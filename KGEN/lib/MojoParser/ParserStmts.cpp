@@ -2064,8 +2064,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   if (targetExpr) {
     // Initialize the target expression with the result of the __enter__ call.
     enterDest = ValueDest(targetExpr, EC_WithContextMgr);
-    // Lexically scope enterDest as a 'bind' pattern like a 'read' arg.
-    enterDest.setPatternDeclKind(PatternDeclKind::kBind);
+    // Bind a mutable target variable.
+    enterDest.setPatternDeclKind(PatternDeclKind::kVar);
   }
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to

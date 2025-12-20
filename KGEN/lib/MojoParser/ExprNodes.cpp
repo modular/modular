@@ -1143,7 +1143,9 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   if (auto var = dyn_cast_or_null<VarDeclOp>(decl->getIfOperation())) {
     // Normal 'var' declarations are MLValues, but 'ref' declarations hold the
     // reference as its value and need to be loaded.
-    if (var.getKind() != VarDeclKind::Ref) {
+    if (var.getKind() == VarDeclKind::Bound) {
+      value = MBValue(var); // Resolved "bind" values are immutable.
+    } else if (var.getKind() != VarDeclKind::Ref) {
       value = MLValue(var);
     } else {
       if (!emitter.builder) {

@@ -418,9 +418,7 @@ fn testExampleCMTuple(cm: ExampleCMTuple):
         # Captures the refs from the tuple.
         # CHECK: [[A:%.*]] = lit.ref.load %a
         # CHECK: [[B:%.*]] = lit.ref.load %b
-        # CHECK: [[A2:%.*]] = lit.ref.load [[A]]
-        # CHECK: [[B2:%.*]] = lit.ref.load [[B]]
-        # CHECK: lit.call {{.*}}@Int::@"__add__{{.*}}([[A2]], [[B2]])
+        # CHECK: lit.call {{.*}}@Int::@"__add__{{.*}}([[A]], [[B]])
         _ = a + b
 
 

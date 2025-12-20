@@ -370,7 +370,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
     if (RLValue rlValue = lValue.getIfRLValue()) {
       VarDeclOp refOp = cast<VarDeclOp>(rlValue.getDefiningOp());
       if (refOp.getKind() == VarDeclKind::Bind) {
-        refOp.setKind(VarDeclKind::Var);
+        refOp.setKind(VarDeclKind::Bound);
         refOp.getResult().setType(refOp.getType().getWithElement(resultType));
         representation = LValue(MLValue(refOp));
         return MLValue(refOp);
@@ -424,8 +424,24 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // If we have an expression node destination, then we need to bind this
   // value to a pattern (aka "target" in Python internals nomenclature).
   if (isa<const ExprNode *>(representation)) {
-    // resolveImpliedType will resolve this for us.
+    // resolveImpliedType will resolve ExprNode destinations into LValues.
     (void)resolveImpliedType(loc, resultType, emitter);
+
+    // If this is a "bind" operation (e.g. in a for stmt) then the callee will
+    // fill in the produced MLValue, but subsequent accesses will need to treat
+    // the value as bound (and therefore immutable).
+    if (LValue lValue = dyn_cast<LValue>(representation)) {
+      if (RLValue rlValue = lValue.getIfRLValue()) {
+        VarDeclOp refOp = cast<VarDeclOp>(rlValue.getDefiningOp());
+        if (refOp.getKind() == VarDeclKind::Bind) {
+          // Switch the vardecl so that uses of it are treated as MBValue
+          // instead of MLValues.
+          refOp.setKind(VarDeclKind::Bound);
+          refOp.getResult().setType(refOp.getType().getWithElement(resultType));
+          representation = MLValue(refOp);
+        }
+      }
+    }
   }
 
   // If we have an lvalue already specified, return it.
@@ -1445,11 +1461,12 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     if (refOp.getKind() == VarDeclKind::Bind) {
       // If the value isn't a reference, we materialize it into a var binding.
       if (!value.ir.isMValue()) {
-        // Switch the vardecl to be a var binding.
-        refOp.setKind(VarDeclKind::Var);
+        // Switch the vardecl so that uses of it are treated as MBValue instead
+        // of MLValues.
+        refOp.setKind(VarDeclKind::Bound);
         refOp.getResult().setType(
             refOp.getType().getWithElement(value.ir.getRValueType()));
-
+        // Now we store the value into the var decl.
         ValueDest bindDest(MLValue(refOp), context);
         emitBValue({value.ir, value.expr}, bindDest);
         return MBValue(refOp);
