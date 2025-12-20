@@ -46,7 +46,10 @@ package(default_visibility = [
             "//:has_gpu",
             "//:has_multi_gpu",
             "//:nvidia_gpu",
-        ] + select({
+        ] + (
+            # FIXME: SERVOPT-867 - test times out in CI
+            ["@platforms//:incompatible"] if src == "test_send_recv_concurrent_gpu.py" else []
+        ) + select({
             "//:a10_gpu": ["@platforms//:incompatible"] if src in [
                 "test_send_recv_multi_process_gpu.py",
                 "test_send_recv_multi_tensor_multi_process_gpu.py",
