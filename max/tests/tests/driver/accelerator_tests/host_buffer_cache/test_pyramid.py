@@ -34,15 +34,15 @@ def test_pyramid(buffer_cache_config: None) -> None:
         bufs = [alloc_pinned(size_per_buffer) for _ in range(num_buffers)]
 
         print("====== Freeing buffers")
-        # Each of the below lines is necessary to force the buffers to be freed
-        # prior to the next iteration...
-
         # Clear the list of buffers to decr ref_cnt of DeviceBuffers.
         # As now ref_cnt==0, this calls enqueueEventHandler() for async free.
         bufs.clear()
 
-        # Calls checkPendingWork() which checks for ready events and runs the
-        # above handlers we enqueued earlier. This actually frees the buffers.
+        # This explicit sync is necessary to ensure that the buffers are returned
+        # to the buffer cache.
+        # Interally, this calls checkPendingWork() which polls for ready events
+        # and runs the above handlers we enqueued earlier. These handlers free
+        # the buffers.
         Accelerator().synchronize()
 
         print("====== Done")

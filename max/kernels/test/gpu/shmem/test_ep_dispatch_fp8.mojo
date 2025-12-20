@@ -28,7 +28,7 @@ from sys.param_env import env_get_string
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import UnsafePointer
 from shmem import *
 from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
@@ -70,7 +70,7 @@ fn welford_update(
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[Int32], n_tokens: Int):
+](topk_ids: UnsafePointer[mut=True, Int32], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -151,8 +151,8 @@ fn test_dispatch[
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
 
-    var host_topk_ids = UnsafePointer[Int32].alloc(n_tokens_per_rank * top_k)
-    var host_input_tokens = UnsafePointer[Scalar[input_type]].alloc(
+    var host_topk_ids = alloc[Int32](n_tokens_per_rank * top_k)
+    var host_input_tokens = alloc[Scalar[input_type]](
         n_tokens_per_rank * hidden_size
     )
 
@@ -168,7 +168,7 @@ fn test_dispatch[
     var device_output_scales_buf = ctx.enqueue_create_buffer[scales_dtype](
         max_recv_tokens * hidden_size // group_size
     )
-    var device_row_offsets_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_row_offsets_buf = ctx.enqueue_create_buffer[DType.uint32](
         n_local_experts + 1
     )
     var device_expert_ids_buf = ctx.enqueue_create_buffer[DType.int32](
@@ -212,7 +212,7 @@ fn test_dispatch[
             IndexList[2](hidden_size // group_size, max_recv_tokens)
         ),
     )
-    var row_offsets_tensor = LayoutTensor[DType.int32, row_offsets_layout](
+    var row_offsets_tensor = LayoutTensor[DType.uint32, row_offsets_layout](
         device_row_offsets_buf,
         RuntimeLayout[row_offsets_layout].row_major(
             IndexList[1](n_local_experts + 1)
@@ -256,7 +256,7 @@ fn test_dispatch[
         token_fmt_type,
     ]
 
-    var func = ctx.compile_function[dispatch]()
+    var func = ctx.compile_function_checked[dispatch, dispatch]()
     shmem_module_init(func)
 
     comptime dispatch_cb = dispatch_cb_kernel[
@@ -273,7 +273,7 @@ fn test_dispatch[
         type_of(format_handler),
     ]
 
-    var func_cb = ctx.compile_function[dispatch_cb]()
+    var func_cb = ctx.compile_function_checked[dispatch_cb, dispatch_cb]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var dispatch_stat_m: Float64 = 0
@@ -287,19 +287,23 @@ fn test_dispatch[
     @parameter
     fn run_dispatch(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8], 1](fill={})
-        var recv_count_ptrs = InlineArray[UnsafePointer[UInt64], 1](fill={})
+        var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], 1](
+            fill={}
+        )
+        var recv_count_ptrs = InlineArray[
+            UnsafePointer[UInt64, MutAnyOrigin], 1
+        ](fill={})
         recv_buf_ptrs[0] = recv_buf
         recv_count_ptrs[0] = recv_count
 
-        ctx.enqueue_function(
+        ctx.enqueue_function_checked(
             func,
             input_tokens_tensor,
             topk_ids_tensor,
             send_buf,
             recv_buf_ptrs,
             recv_count_ptrs,
-            atomic_counter.unsafe_ptr(),
+            atomic_counter,
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -308,7 +312,7 @@ fn test_dispatch[
     @always_inline
     @parameter
     fn run_dispatch_cb(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
+        ctx.enqueue_function_checked(
             func_cb,
             format_handler,
             row_offsets_tensor,
@@ -316,7 +320,7 @@ fn test_dispatch[
             src_token_info_tensor,
             recv_buf,
             recv_count,
-            atomic_counter.unsafe_ptr(),
+            atomic_counter,
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -380,29 +384,25 @@ fn test_dispatch[
         # this time we do the clean up after we verify the results
 
         if not is_benchmark():
-            var host_output = UnsafePointer[Scalar[fp8_dtype]].alloc(
+            var host_output = alloc[Scalar[fp8_dtype]](
                 max_recv_tokens * hidden_size
             )
-            var host_output_scales = UnsafePointer[Scalar[scales_dtype]].alloc(
+            var host_output_scales = alloc[Scalar[scales_dtype]](
                 max_recv_tokens * hidden_size // group_size
             )
             ctx.enqueue_copy(host_output, device_output_buf)
             ctx.enqueue_copy(host_output_scales, device_output_scales_buf)
 
-            var host_row_offsets = UnsafePointer[Int32].alloc(
-                n_local_experts + 1
-            )
+            var host_row_offsets = alloc[UInt32](n_local_experts + 1)
             ctx.enqueue_copy(host_row_offsets, device_row_offsets_buf)
 
-            var host_expert_ids = UnsafePointer[Int32].alloc(n_tokens_per_rank)
+            var host_expert_ids = alloc[Int32](n_tokens_per_rank)
             ctx.enqueue_copy(host_expert_ids, device_expert_ids_buf)
 
-            var host_src_token_info = UnsafePointer[Int32].alloc(
-                max_recv_tokens * 2
-            )
+            var host_src_token_info = alloc[Int32](max_recv_tokens * 2)
             ctx.enqueue_copy(host_src_token_info, device_src_token_info_buf)
 
-            var host_atomic_counter = UnsafePointer[Int32].alloc(2 * n_experts)
+            var host_atomic_counter = alloc[Int32](2 * n_experts)
             ctx.enqueue_copy(host_atomic_counter, atomic_counter)
 
             ctx.synchronize()
@@ -410,10 +410,10 @@ fn test_dispatch[
             # Check the results
 
             # First, reproduce the input tokens and topk ids
-            var all_ranks_input_tokens = UnsafePointer[
-                Scalar[input_type]
-            ].alloc(n_tokens_per_rank * n_ranks * hidden_size)
-            var all_ranks_topk_ids = UnsafePointer[Int32].alloc(
+            var all_ranks_input_tokens = alloc[Scalar[input_type]](
+                n_tokens_per_rank * n_ranks * hidden_size
+            )
+            var all_ranks_topk_ids = alloc[Int32](
                 n_tokens_per_rank * n_ranks * top_k
             )
 
@@ -464,7 +464,7 @@ fn test_dispatch[
                         host_atomic_counter[
                             2 * (curr_local_expert * n_ranks + remote_rank)
                         ]
-                        <= token_idx + EP_DATA_READY_FLAG
+                        <= Int32(token_idx) + EP_DATA_READY_FLAG
                     ):
                         remote_rank += 1
 

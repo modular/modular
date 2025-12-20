@@ -319,7 +319,12 @@ what we publish.
   destroyed.
 
   - `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear types
+    - Added `UnsafePointer.destroy_pointee_with()`, for destroying linear types
+      in-place using a destructor function pointer.
   - `Variant` and `VariadicPack` can now contain linear types
+    - `Variant.take` now takes `deinit self` instead of `mut self`.
+    - Added `Variant.destroy_with` for destroying a linear type in-place with an
+      explicit destructor function.
   - `UnsafeMaybeUninitialized` can now contain linear types
 
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
@@ -370,6 +375,9 @@ what we publish.
   ```
 
 - `Counter` now conforms to `Writable`, `Stringable`, and `Representable`.
+
+- The `iter.peekable` function has been added. This allows users to peek at
+  the next element of an iterator without advancing it.
 
 ### Tooling changes
 
@@ -452,6 +460,10 @@ or removed in future releases.
   - bitwise logical operations, excluding shifts
 
 ### ❌ Removed
+
+- The DeviceContext `enqueue_function` and `compile_function` have been removed.
+  Please migrate the code to use `enqueue_function_checked` and
+  `compile_function_checked`.
 
 ### 🛠️ Fixed
 

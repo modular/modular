@@ -17,6 +17,9 @@ from compile.reflection import (
     get_linkage_name,
     get_type_name,
     get_function_name,
+    get_struct_field_count,
+    get_struct_field_names,
+    get_struct_field_types,
 )
 from testing import assert_equal
 from testing import TestSuite
@@ -187,6 +190,106 @@ def test_get_type_name_alias():
     assert_equal(
         name, "test_reflection.Bar[?, 1.29999995 : SIMD[DType.float32, 1]]"
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# Struct Field Reflection Tests
+# ===----------------------------------------------------------------------=== #
+
+
+# Simple test struct for field reflection
+struct SimpleStruct:
+    var x: Int
+    var y: Float64
+
+
+# Struct with nested struct field
+struct Inner:
+    var a: Int
+    var b: Int
+
+
+struct Outer:
+    var name: String
+    var inner: Inner
+    var count: Int
+
+
+# Empty struct
+struct EmptyStruct:
+    pass
+
+
+# Struct with private-like naming (all fields included)
+struct MixedVisibility:
+    var public_field: Int
+    var _private_field: Float64
+    var __dunder_field: Bool
+
+
+def test_struct_field_count_simple():
+    comptime count = get_struct_field_count[SimpleStruct]()
+    assert_equal(count, 2)
+
+
+def test_struct_field_count_nested():
+    comptime outer_count = get_struct_field_count[Outer]()
+    assert_equal(outer_count, 3)
+
+    comptime inner_count = get_struct_field_count[Inner]()
+    assert_equal(inner_count, 2)
+
+
+def test_struct_field_count_empty():
+    comptime count = get_struct_field_count[EmptyStruct]()
+    assert_equal(count, 0)
+
+
+def test_struct_field_count_mixed_visibility():
+    comptime count = get_struct_field_count[MixedVisibility]()
+    assert_equal(count, 3)
+
+
+def test_struct_field_names():
+    # Test field names via indexing - returns InlineArray[StaticString, N]
+    comptime names = get_struct_field_names[SimpleStruct]()
+    assert_equal(names[0], "x")
+    assert_equal(names[1], "y")
+
+
+def test_struct_field_types():
+    # Test field types via indexing (detailed verification in test_struct_field_types_are_correct)
+    comptime types = get_struct_field_types[SimpleStruct]()
+    _ = types
+
+
+def test_nested_struct_returns_struct_type():
+    # When a struct contains another struct, we get the struct type
+    # not flattened fields. Users can recursively introspect.
+    comptime outer_count = get_struct_field_count[Outer]()
+    assert_equal(outer_count, 3)  # name, inner, count - not flattened
+
+
+def test_struct_field_iteration():
+    # Test iterating over struct fields with @parameter for
+    var count = 0
+
+    @parameter
+    for i in range(get_struct_field_count[SimpleStruct]()):
+        comptime field_type = get_struct_field_types[SimpleStruct]()[i]
+        comptime field_name = get_struct_field_names[SimpleStruct]()[i]
+        _ = field_type
+        _ = field_name
+        count += 1
+    assert_equal(count, 2)
+
+
+def test_struct_field_types_are_correct():
+    # Verify that field types match expected types using type names.
+    # Note: _type_is_eq doesn't work across !kgen.type / Mojo type boundary.
+    comptime types = get_struct_field_types[SimpleStruct]()
+    assert_equal(get_type_name[types[0]](), "Int")
+    assert_equal(get_type_name[types[1]](), "SIMD[DType.float64, 1]")
 
 
 def main():

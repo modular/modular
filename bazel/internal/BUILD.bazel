@@ -85,3 +85,20 @@ modular_cc_binary(
     tags = ["manual"],
     deps = [":debugging_test_lib"],
 )
+
+modular_py_binary(
+    name = "sphinx",
+    srcs = ["sphinx.py"],
+    deps = [
+        # Each invocation has different deps depending on what you are doing.
+        # TODO: Handle this at each call site instead of here.
+        "@breathe",
+        "@sphinx-click",
+        "@sphinx-markdown-builder",
+        requirement("pyyaml"),
+        requirement("sphinx"),
+        requirement("munch"),
+        requirement("torch"),
+        "//max/python/max",
+    ],
+)

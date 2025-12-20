@@ -30,6 +30,7 @@ from .types import (
     Observable,
     ObservableDel,
     ObservableMoveOnly,
+    ExplicitDelOnly,
     TriviallyCopyableMoveCounter,
 )
 from .words import (

@@ -703,7 +703,7 @@ information on grid and thread block dimensions.
 The current implementations of
 [`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
 and
-[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
 don't typecheck the arguments to the compiled kernel function, which can lead
 to obscure run-time errors if the argument ordering, types, or count doesn't
 match the kernel function's definition. Additionally, these methods currently
@@ -716,7 +716,7 @@ also work correctly on Apple silicon GPUs.
 Note that `compile_function_checked()` currently requires the kernel function to
 be provided *twice* as parameters. This requirement will be removed in a future
 API update, when typechecking will become the default behavior for both
-`compile_function()` and `enqueue_function()`.
+`compile_function_checked()` and `enqueue_function_checked()`.
 
 :::
 
