@@ -190,6 +190,23 @@ void ValueDest::dump() const { llvm::errs() << *this; }
   } else {
     os << "UNKNOWN VALUE DEST!";
   }
+
+  os << " patternDeclKind=";
+  switch (value.getPatternDeclKind()) {
+  case PatternDeclKind::kNone:
+    os << "kNone";
+    break;
+  case PatternDeclKind::kVar:
+    os << "kVar";
+    break;
+  case PatternDeclKind::kRef:
+    os << "kRef";
+    break;
+  case PatternDeclKind::kBind:
+    os << "kBind";
+    break;
+  }
+
   os << '\n';
   return os;
 }
@@ -280,7 +297,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
 
     // Emit the target as an LValue to understand what we're assigning into.
     LValue exprLValue = emitter.emitExprLValue(expr, dest);
-    if (!exprLValue) {
+    if (!exprLValue) { // Error already emitted.
       representation = NullRepresentation();
       return {};
     }
@@ -406,14 +423,9 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
   // If we have an expression node destination, then we need to bind this
   // value to a pattern (aka "target" in Python internals nomenclature).
-  if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
-    ValueDest dest(LValueInitializerType{resultType}, getContext());
-    if (LValue lValue = emitter.emitExprLValue(target, dest)) {
-      representation = lValue;
-    } else {
-      dest.resetForError(emitter);
-      representation = NullRepresentation(); // Consumed!
-    }
+  if (isa<const ExprNode *>(representation)) {
+    // resolveImpliedType will resolve this for us.
+    (void)resolveImpliedType(loc, resultType, emitter);
   }
 
   // If we have an lvalue already specified, return it.

@@ -167,8 +167,10 @@ public:
       : representation(type), context(context) {}
 
   ValueDest(ValueDest &&rhs)
-      : representation(std::move(rhs.representation)), context(rhs.context) {
+      : representation(std::move(rhs.representation)), context(rhs.context),
+        patternDeclKind(rhs.patternDeclKind) {
     rhs.representation = NullRepresentation();
+    rhs.patternDeclKind = PatternDeclKind::kNone;
   }
   ValueDest &operator=(ValueDest &&rhs) {
     representation = std::move(rhs.representation);
@@ -187,10 +189,8 @@ public:
   /// This returns the context the expression is getting emitted into (for
   /// diagnostic QoI purposes).
   ExprContext getContext() const { return context; }
-
-  /// This enum value keeps track of whether a "target" is being emitted in a
-  /// var or ref wrapper.  This affects the behavior of a synthesized VarDecl:
-  PatternDeclKind patternDeclKind = PatternDeclKind::kNone;
+  PatternDeclKind getPatternDeclKind() const { return patternDeclKind; }
+  void setPatternDeclKind(PatternDeclKind kind) { patternDeclKind = kind; }
 
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PValue, SRValue, LValue, etc.
@@ -269,6 +269,11 @@ private:
                Operation *, ASTType, LValueInitializerType>
       representation;
   ExprContext context;
+
+  /// This enum value keeps track of whether a "target" is being emitted in a
+  /// var or ref wrapper.  This affects the behavior of a synthesized VarDecl:
+  PatternDeclKind patternDeclKind = PatternDeclKind::kNone;
+
   friend raw_ostream &operator<<(raw_ostream &os, const ValueDest &value);
 };
 

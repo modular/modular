@@ -42,15 +42,18 @@ public:
   /// The MLIR version of the type is conveniently accessible.
   Type mlirType;
 
-  ASTType() {}
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG ASTType() {}
 
   // Implicitly convert to and from MLIR Type.
-  ASTType(Type mlirType) : mlirType(mlirType) {}
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG ASTType(Type mlirType)
+      : mlirType(mlirType) {}
 
   // Initialize an ASTType from a parameter expression of metatype type.
   ASTType(TypedAttr typeParamExpr);
 
-  operator Type() const { return mlirType; }
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG operator Type() const {
+    return mlirType;
+  }
 
   /// ASTType is nullable.
   bool isNull() const { return !mlirType; }

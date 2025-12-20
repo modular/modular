@@ -62,7 +62,7 @@ ExprNode::ELVIITResult
 LValueCapableExprNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
                                                    PatternDeclKind kind) const {
   ValueDest dest(EC_Assignment);
-  dest.patternDeclKind = kind;
+  dest.setPatternDeclKind(kind);
   return emitLCVIR(dest, emitter, true);
 }
 
@@ -810,7 +810,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
 
   // If this decl is part of a pattern that is wrapped in a var or ref, then
   // we need to emit a VarDeclOp for it in this scope.
-  if (dest.patternDeclKind != PatternDeclKind::kNone) {
+  if (dest.getPatternDeclKind() != PatternDeclKind::kNone) {
     // Always return this node back on a speculative lookup, because we don't
     // have the contextual type available yet.
     if (isSpeculative)
@@ -831,10 +831,10 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       return {};
     }
     // This is either a var or ref pattern binding.
-    bool isRefOrBind = dest.patternDeclKind == PatternDeclKind::kRef ||
-                       dest.patternDeclKind == PatternDeclKind::kBind;
+    bool isRefOrBind = dest.getPatternDeclKind() == PatternDeclKind::kRef ||
+                       dest.getPatternDeclKind() == PatternDeclKind::kBind;
     VarDeclKind declKind;
-    switch (dest.patternDeclKind) {
+    switch (dest.getPatternDeclKind()) {
     default:
       assert(0 && "unhandled pattern decl kind");
       [[fallthrough]];
@@ -3157,7 +3157,7 @@ BinOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
   // Handle type patterns like "(xyz) : Type": "xyz" must be an lvalue that has
   // the specified type, so we can direct emit it now.
   ValueDest dest(LValueInitializerType{type}, EC_TypePattern);
-  dest.patternDeclKind = patKind;
+  dest.setPatternDeclKind(patKind);
   if (auto lv = emitter.emitExprLValue(lhs, dest))
     return AnyValue(lv);
   return {}; // Failure emitting the LValue.
@@ -3173,7 +3173,8 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return emitInplace(dest, emitter);
 
   if (kind == kTypePattern) { // "x: Type" not in an LValue position?
-    auto result = emitLValueIfImplicitlyTyped(emitter, dest.patternDeclKind);
+    auto result =
+        emitLValueIfImplicitlyTyped(emitter, dest.getPatternDeclKind());
     if (result.isFailure())
       return {};
     assert(result.getIfValue() && "Failed to resolve value?");
@@ -3531,10 +3532,10 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // var/ref patterns are special unary operators that affect their enclosing
   // lvalue.  They are not valid on the right side of an assignment.
   if (kind == kVarPat || kind == kRefPat) {
-    auto patKind =
-        kind == kVarPat ? PatternDeclKind::kVar : PatternDeclKind::kRef;
-    llvm::SaveAndRestore patKindSaver(dest.patternDeclKind, patKind);
+    dest.setPatternDeclKind(kind == kVarPat ? PatternDeclKind::kVar
+                                            : PatternDeclKind::kRef);
     auto result = subExpr->emitIR(dest, emitter);
+
     if (result && !result.getIfLValue()) {
       emitter.emitError(getLoc())
           << (kind == kVarPat ? "'var'" : "'ref'")
@@ -4455,7 +4456,7 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     bool anyExprChanged = false;
     for (const ExprNode *expr : exprs) {
       auto result =
-          expr->emitLValueIfImplicitlyTyped(emitter, dest.patternDeclKind);
+          expr->emitLValueIfImplicitlyTyped(emitter, dest.getPatternDeclKind());
       if (result.isFailure())
         return {};
       if (auto *newExpr = result.getIfExprNode()) {
@@ -4553,7 +4554,7 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     }
 
     // Propagate var/ref context.
-    eltDest.patternDeclKind = dest.patternDeclKind;
+    eltDest.setPatternDeclKind(dest.getPatternDeclKind());
     auto exprVal = emitter.emitExpr(expr, eltDest);
     if (!exprVal)
       return {};
