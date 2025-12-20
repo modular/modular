@@ -614,5 +614,21 @@ def test_repr_wrap():
     assert_equal(repr(l1), "LinkedList(1, 2, 3)")
 
 
+def test_write_to():
+    """Test Writable trait implementation."""
+    var linked_list = LinkedList[Int](10, 20, 30)
+    var output = String()
+    linked_list.write_to(output)
+
+    assert_equal(output, "[10, 20, 30]")
+
+    # Test with different types
+    var string_list = LinkedList[String]("hello", "world")
+    var string_output = String()
+    string_list.write_to(string_output)
+
+    assert_equal(string_output, "['hello', 'world']")
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
