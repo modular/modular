@@ -528,12 +528,27 @@ fn quantize_and_bmm_fp8_helper[
         ),
     )
 
-    batched_quantize_dynamic_scaled_fp8[k_scale_granularity](
+    var a_ndbuffer = _layout_tensor_to_nd_buffer[3](a)
+
+    @parameter
+    @__copy_capture(a)
+    @always_inline
+    fn input_fn[
+        width: Int
+    ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
+        return a.load[width=width](IndexList[3](batch, row, col))
+
+    batched_quantize_dynamic_scaled_fp8[
+        input_fn=input_fn,
+        group_size_or_per_token=k_scale_granularity,
+        num_cols=K,
+    ](
         _layout_tensor_to_nd_buffer[3](fp8_a),
         _layout_tensor_to_nd_buffer[3](fp8_a_scale),
-        _layout_tensor_to_nd_buffer[3](a),
         1200.0,
         ctx,
+        num_rows=m,
+        batch_size=B,
     )
 
     batched_matmul_dynamic_scaled_fp8[

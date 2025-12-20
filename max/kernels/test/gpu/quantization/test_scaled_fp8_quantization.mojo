@@ -305,9 +305,19 @@ fn test_batched_dynamic_fp8_quant[
         DimList(bs, k // group_size, m),
     )
 
-    batched_quantize_dynamic_scaled_fp8[group_size_or_per_token](
-        out_ndbuffer, scales_ndbuffer, in_ndbuffer, 1200.0, ctx
-    )
+    @parameter
+    @__copy_capture(in_ndbuffer)
+    @always_inline
+    fn input_fn[
+        width: Int
+    ](batch: Int, row: Int, col: Int) capturing -> SIMD[in_dtype, width]:
+        return in_ndbuffer.load[width=width](IndexList[3](batch, row, col))
+
+    batched_quantize_dynamic_scaled_fp8[
+        input_fn=input_fn,
+        group_size_or_per_token=group_size_or_per_token,
+        num_cols = in_ndbuffer.shape.get[2](),
+    ](out_ndbuffer, scales_ndbuffer, 1200.0, ctx, num_rows=m, batch_size=bs)
 
     ctx.enqueue_copy(out_host_ptr, out_device)
     ctx.enqueue_copy(scales_host_ptr, scales_device)
