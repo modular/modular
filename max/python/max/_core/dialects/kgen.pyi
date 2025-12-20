@@ -1147,6 +1147,50 @@ class StructExtractAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class StructFieldNamesAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_names` attribute returns the names of all fields
+    in a struct type as a variadic sequence of strings.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_names<#MyStruct> : !kgen.variadic<!kgen.string>
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        type: VariadicType,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> VariadicType: ...
+
+class StructFieldTypesAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_types` attribute returns the types of all fields
+    in a struct type as a variadic sequence.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_types<#MyStruct> : !kgen.variadic<!kgen.type>
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        type: VariadicType,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> VariadicType: ...
+
 class SugarAttr(max._core.Attribute):
     """
     The `#kgen.sugar` attribute represents a syntax sugar overlaid on some other
