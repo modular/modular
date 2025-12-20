@@ -7,7 +7,6 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     deps = [
         requirement("numpy"),
-        requirement("msgspec"),
         "//max/python/max/_core_mojo",
         "//max/python/max/dtype",
         "//max/python/max/engine",
