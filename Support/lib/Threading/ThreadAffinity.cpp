@@ -8,6 +8,7 @@
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/Support/DebugLog.h"
 #include <cstddef>
 
 #define DEBUG_TYPE "thread-affinity"
@@ -48,10 +49,9 @@ M::Detail::runWithThreadAffinityLinux(size_t cpuID,
   rc = sched_setaffinity(0, sizeof(cpuset), &origset);
   if (rc != 0) {
     // We've run the workFn, so can't report failure.
-    LLVM_DEBUG(llvm::dbgs() << "runWithThreadAffinityLinux: unable to restore "
-                               "thread CPU affinity: " +
-                                   std::to_string(rc)
-                            << "\n");
+    LDBG() << "runWithThreadAffinityLinux: unable to restore "
+              "thread CPU affinity: "
+           << rc;
   }
   return success();
 }

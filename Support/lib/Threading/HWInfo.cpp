@@ -10,7 +10,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Debug.h"
+#include "llvm/Support/DebugLog.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -68,8 +68,7 @@ static inline void native_cpuid(unsigned int *eax, unsigned int *ebx,
 std::unique_ptr<llvm::MemoryBuffer> fileBuffer(StringRef path) {
   auto errOrBuf = llvm::MemoryBuffer::getFileAsStream(path);
   if (std::error_code ec = errOrBuf.getError()) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "getLinuxCPULimits: Could not open " << path << "\n");
+    LDBG() << "getLinuxCPULimits: Could not open " << path;
     return nullptr;
   }
   return std::move(errOrBuf.get());
@@ -188,8 +187,7 @@ Detail::linuxCPULimits Detail::getLinuxCPULimits() {
   if (isV1) {
     const auto errOrCgroup = parseV1CPUCgroupFile(*cgroupBuf);
     if (errOrCgroup.isError()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "getLinuxCPULimits: " << errOrCgroup.getError() << "\n");
+      LDBG() << "getLinuxCPULimits: " << errOrCgroup.getError();
       return {};
     }
     const std::string &cgroup = *errOrCgroup;
@@ -204,8 +202,7 @@ Detail::linuxCPULimits Detail::getLinuxCPULimits() {
       return {};
     const auto errOrLimits = parseV1CPULimits(*quotaBuf, *periodBuf);
     if (errOrLimits.isError()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "getLinuxCPULimits: " << errOrLimits.getError() << "\n");
+      LDBG() << "getLinuxCPULimits: " << errOrLimits.getError();
       return {};
     }
     limits = *errOrLimits;
@@ -215,8 +212,7 @@ Detail::linuxCPULimits Detail::getLinuxCPULimits() {
           return std::filesystem::exists(path.str());
         });
     if (errOrCgroup.isError()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "getLinuxCPULimits: " << errOrCgroup.getError() << "\n");
+      LDBG() << "getLinuxCPULimits: " << errOrCgroup.getError();
       return {};
     }
     const std::string &cgroup = *errOrCgroup;
@@ -227,8 +223,7 @@ Detail::linuxCPULimits Detail::getLinuxCPULimits() {
       return {};
     const auto errOrLimits = parseV2CPULimits(*maxBuf);
     if (errOrLimits.isError()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "getLinuxCPULimits: " << errOrLimits.getError() << "\n");
+      LDBG() << "getLinuxCPULimits: " << errOrLimits.getError();
       return {};
     }
     limits = *errOrLimits;
@@ -236,14 +231,11 @@ Detail::linuxCPULimits Detail::getLinuxCPULimits() {
   // The bounds and explanations for these values can be found at:
   // https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.rst
   if (limits.quota_us != -1 && limits.quota_us < 1000) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "getLinuxCPULimits: Expected cpu quota above 1ms\n");
+    LDBG() << "getLinuxCPULimits: Expected cpu quota above 1ms";
     return {};
   }
   if (limits.period_us < 1000 || limits.period_us > 1000000) {
-    LLVM_DEBUG(
-        llvm::dbgs()
-        << "getLinuxCPULimits: Expected cpu period between 1ms and 1s\n");
+    LDBG() << "getLinuxCPULimits: Expected cpu period between 1ms and 1s";
     return {};
   }
   return limits;
@@ -297,10 +289,9 @@ ErrorOr<CPUSystemInfo> M::Detail::getLinuxX86CPUSystemInfoImpl(
         entries.push_back(currEntry);
         currEntry = Entry();
       } else {
-        LLVM_DEBUG(llvm::dbgs()
-                   << "getLinuxX86CPUSystemInfo: Ignoring processor "
-                   << std::to_string(currEntry.processor)
-                   << " since excluded from main thread's affinity set\n");
+        LDBG() << "getLinuxX86CPUSystemInfo: Ignoring processor "
+               << std::to_string(currEntry.processor)
+               << " since excluded from main thread's affinity set";
       }
     }
   }

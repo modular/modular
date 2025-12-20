@@ -13,7 +13,7 @@
 #include "opentelemetry/sdk/common/exporter_utils.h"
 #include "opentelemetry/sdk/logs/recordable.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/Debug.h"
+#include "llvm/Support/DebugLog.h"
 #include <ios>
 #include <memory>
 
@@ -45,7 +45,7 @@ FileLogExporter::Export(const opentelemetry::nostd::span<
     outputStream.seekp(0, std::ios_base::beg);
   });
   if (err.isError()) {
-    LLVM_DEBUG(llvm::dbgs() << err.getError());
+    LDBG() << err.getError();
     return opentelemetry::sdk::common::ExportResult::kFailure;
   }
 
