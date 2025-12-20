@@ -94,7 +94,7 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
             sample_rate = self.pipeline_model.tts_config.decoder_sample_rate
             for output in outputs.values():
                 METRICS.audio_output_length(
-                    output.audio_data.shape[0] / float(sample_rate) * 1000
+                    int(output.audio_data.shape[0] / float(sample_rate) * 1000)
                 )
 
         return outputs

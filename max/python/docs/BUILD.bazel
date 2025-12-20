@@ -1,0 +1,55 @@
+load("//bazel:api.bzl", "modular_sphinx_docs", "modular_versioned_expand_template")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_sphinx_docs(
+    name = "python-api-docs",
+    srcs = ["//max/python/docs:python-api-rst"],
+    builder = "markdown",
+    config_file = ":python-conf-py",
+    exec_properties = {"dockerNetwork": "bridge"},
+    # Cross-indexes with public docs
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+)
+
+modular_sphinx_docs(
+    name = "cli-docs",
+    srcs = ["//max/python/docs:cli-rst"],
+    builder = "markdown",
+    config_file = ":cli-conf-py",
+    exec_properties = {"dockerNetwork": "bridge"},
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+)
+
+modular_versioned_expand_template(
+    name = "python-conf-py",
+    out = "conf.py",
+    substitutions = {},
+    template = ":conf.py.in",
+)
+
+modular_versioned_expand_template(
+    name = "cli-conf-py",
+    out = "cli/conf.py",
+    substitutions = {},
+    template = ":cli/conf.py.in",
+)
+
+filegroup(
+    name = "python-api-rst",
+    srcs = glob(
+        ["**/*.rst"],
+        exclude = ["cli/**"],
+    ),
+)
+
+filegroup(
+    name = "cli-rst",
+    srcs = glob(["cli/*.rst"]),
+)

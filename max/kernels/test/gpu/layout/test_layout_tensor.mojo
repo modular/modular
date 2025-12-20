@@ -210,8 +210,42 @@ def test_reshape():
     assert_equal(tensor.get_shape()[1], 4)
 
 
+def test_aligned_load():
+    """Tests aligned_load with both index types."""
+    var storage = InlineArray[Float32, 4 * 4](uninitialized=True)
+    var tensor = LayoutTensor[DType.float32, Layout([4, 4]),](
+        storage
+    ).fill(0.0)
+
+    tensor.store[4](0, 0, 1.0)  # First column
+    tensor.store[4](0, 1, 2.0)  # Second column
+    tensor.store[4](0, 2, 3.0)  # Third column
+    tensor.store[4](0, 3, 4.0)  # Fourth column
+
+    # [1.0, 1.0, 1.0, 1.0] in first column
+    var a0 = tensor.aligned_load[4](0, 0)
+    var b0 = tensor.aligned_load[4](IndexList[2](0, 0))
+    assert_equal(a0, b0)
+
+    # [2.0, 2.0, 2.0, 2.0] in second column
+    var a1 = tensor.aligned_load[4](0, 1)
+    var b1 = tensor.aligned_load[4](IndexList[2](0, 1))
+    assert_equal(a1, b1)
+
+    # [3.0, 3.0, 3.0, 3.0] in third column
+    var a2 = tensor.aligned_load[4](0, 2)
+    var b2 = tensor.aligned_load[4](IndexList[2](0, 2))
+    assert_equal(a2, b2)
+
+    # [4.0, 4.0, 4.0, 4.0] in fourth column
+    var a3 = tensor.aligned_load[4](0, 3)
+    var b3 = tensor.aligned_load[4](IndexList[2](0, 3))
+    assert_equal(a3, b3)
+
+
 def main():
     test_runtime_and_compile_time_dim_and_stride(dynamic(120), static[512]())
     test_nested_layout_shape()
     test_transpose_arithmetic()
     test_different_layouts_arithmetic()
+    test_aligned_load()

@@ -9367,18 +9367,37 @@ struct BatchedQuantizeDynamicScaledFloat8:
     ](
         output: OutputTensor[dtype=output_type, rank=3],
         scales: OutputTensor[dtype=scales_type, rank=3],
-        input: InputTensor[dtype=input_type, rank=3],
+        input: FusedInputTensor[dtype=input_type, rank=3],
         scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         __comptime_assert is_gpu[target](), "only valid on GPUs"
 
-        batched_quantize_dynamic_scaled_fp8[group_size_or_per_token](
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+        var batch_size = input.dim_size(0)
+        var num_rows = input.dim_size(1)
+
+        @parameter
+        @__copy_capture(input_ndbuffer)
+        @always_inline
+        fn input_fn[
+            width: Int
+        ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
+            return input_ndbuffer.load[width=width](
+                IndexList[3](batch, row, col)
+            )
+
+        batched_quantize_dynamic_scaled_fp8[
+            input_fn=input_fn,
+            group_size_or_per_token=group_size_or_per_token,
+            num_cols = input_ndbuffer.shape.get[2](),
+        ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
-            managed_tensor_slice_to_ndbuffer(input),
             scale_ub,
             ctx.get_device_context(),
+            num_rows=num_rows,
+            batch_size=batch_size,
         )
 
 
