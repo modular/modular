@@ -1183,7 +1183,6 @@ def test_string_char_slices_iter():
         for v in item.__reversed__():
             concat += v
         assert_equal(rev[item_idx], concat)
-        item_idx += 1
 
 
 def test_format_args():
