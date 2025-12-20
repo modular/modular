@@ -688,7 +688,6 @@ fn idx2crd[
 
     @parameter
     if Shape.IS_TUPLE and Stride.IS_TUPLE and shape_len == stride_len:
-        var shape_t = shape.tuple()
         var stride_t = stride.tuple()
         var remaining_idx = idx
 
