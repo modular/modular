@@ -1451,7 +1451,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // which will be in scope for the body that we will parse.
   ValueDest indvarDest(targetExpr, EC_ForIterator);
   // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
-  indvarDest.patternDeclKind = PatternDeclKind::kBind;
+  indvarDest.setPatternDeclKind(PatternDeclKind::kBind);
 
   // Call __next_ref__ or __next__, with an emitter set to the right body
   // scope.
@@ -2065,7 +2065,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // Initialize the target expression with the result of the __enter__ call.
     enterDest = ValueDest(targetExpr, EC_WithContextMgr);
     // Lexically scope enterDest as a 'bind' pattern like a 'read' arg.
-    enterDest.patternDeclKind = PatternDeclKind::kBind;
+    enterDest.setPatternDeclKind(PatternDeclKind::kBind);
   }
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to

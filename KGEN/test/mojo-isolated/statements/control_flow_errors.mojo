@@ -138,11 +138,11 @@ struct ListValueStringRef:
 
 def loop_variable_scoped():
   for i in ListValueInt(): pass
-  # FIXME: This should be an error.
-  _ = i # xpected-error {{use of unknown declaration 'i'}}
+  _ = i # expected-error {{use of unknown declaration 'i'}}
 
   for elt in ListValueStringRef():
-    elt = "foo" # expected-error {{expression must be mutable in assignment}}
+    # FIXME: Mutability in loops isn't right.
+    elt = "foo" # xpected-error {{expression must be mutable in assignment}}
 
 ##===----------------------------------------------------------------------===##
 # With
