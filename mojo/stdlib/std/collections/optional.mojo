@@ -47,23 +47,6 @@ struct _NoneType(ImplicitlyCopyable):
     pass
 
 
-@fieldwise_init
-struct EmptyOptionalError[T: AnyType](ImplicitlyCopyable, Movable, Writable):
-    """An error type for when an empty `Optional` is accessed.
-
-    Parameters:
-        T: The type of the optional value.
-    """
-
-    fn write_to(self, mut writer: Some[Writer]):
-        """Write the error message to a `Writer`.
-
-        Args:
-            writer: The writer to write to.
-        """
-        writer.write("EmptyOptionalError[", get_type_name[Self.T](), "]")
-
-
 # ===-----------------------------------------------------------------------===#
 # Optional
 # ===-----------------------------------------------------------------------===#
@@ -323,49 +306,17 @@ struct Optional[T: Movable & ImplicitlyDestructible](
         return not self
 
     @always_inline
-    fn __getitem__[
-        U: Movable & ImplicitlyDestructible, __disambiguate: NoneType = None
-    ](
-        ref self: Optional[U],
-    ) raises EmptyOptionalError[U] -> ref [
-        self._value
-    ] U:
+    fn __getitem__(ref self) raises -> ref [self._value] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
-
-        Parameters:
-            U: The type of the value inside the `Optional`.
-            __disambiguate: A dummy parameter to disambiguate the method for `Optional[Pointer]`.
 
         Returns:
             A reference to the value inside the `Optional`.
 
         Raises:
-            `EmptyOptionalError` on empty `Optional`.
+            On empty `Optional`.
         """
         if not self:
-            raise EmptyOptionalError[U]()
-        return self.unsafe_value()
-
-    @always_inline
-    fn __getitem__[
-        U: AnyType, origin: Origin, //
-    ](self: Optional[Pointer[U, origin]]) raises EmptyOptionalError[U] -> ref [
-        origin
-    ] U:
-        """Retrieve a reference to the underlying pointee inside the `Optional[Pointer[U]]`.
-
-        Parameters:
-            U: The type of the underlying pointee value.
-            origin: The origin of the underlying pointee value.
-
-        Returns:
-            A reference to underlying pointee value.
-
-        Raises:
-            `EmptyOptionalError` on empty `Optional`.
-        """
-        if not self:
-            raise EmptyOptionalError[U]()
+            raise Error(".value() on empty Optional")
         return self.unsafe_value()
 
     fn __str__(self: Self) -> String:
@@ -440,15 +391,9 @@ struct Optional[T: Movable & ImplicitlyDestructible](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn value[
-        U: Movable & ImplicitlyDestructible, __disambiguate: NoneType = None
-    ](ref self: Optional[U]) -> ref [self._value] U:
+    fn value(ref self) -> ref [self._value] Self.T:
         """Retrieve a reference to the value of the `Optional`.
 
-        Parameters:
-            U: The type of the value inside the `Optional`.
-            __disambiguate: A dummy parameter to disambiguate the method for `Optional[Pointer]`.
-
         Returns:
             A reference to the contained data of the `Optional` as a reference.
 
@@ -466,70 +411,17 @@ struct Optional[T: Movable & ImplicitlyDestructible](
         return self.unsafe_value()
 
     @always_inline
-    fn value[
-        U: AnyType, origin: Origin, //
-    ](self: Optional[Pointer[U, origin]]) -> ref [origin] U:
-        """Retrieve a reference to underlying pointee value of an `Optional[Pointer[U]]`.
-
-        Parameters:
-            U: The type of the underlying pointee value.
-            origin: The origin of the underlying pointee value.
-
-        Returns:
-            A reference to the underlying pointee value.
-
-        Notes:
-            This will abort on empty `Optional`.
-        """
-
-        if not self.__bool__():
-            abort(
-                "`Optional.value()` called on empty `Optional`. Consider using"
-                " `if optional:` to check whether the `Optional` is empty"
-                " before calling `.value()`, or use `.or_else()` to provide a"
-                " default value."
-            )
-
-        return self.unsafe_value()
-
-    @always_inline
-    fn unsafe_value[
-        U: Movable & ImplicitlyDestructible, __disambiguate: NoneType = None
-    ](ref self: Optional[U]) -> ref [self._value] U:
+    fn unsafe_value(ref self) -> ref [self._value] Self.T:
         """Unsafely retrieve a reference to the value of the `Optional`.
 
-        Parameters:
-            U: The type of the value inside the `Optional`.
-            __disambiguate: A dummy parameter to disambiguate the method for `Optional[Pointer]`.
-
         Returns:
             A reference to the contained data of the `Optional` as a reference.
 
-        Safety:
-            If the `Optional` is empty, this is undefined behavior.
+        Notes:
+            This will **not** abort on empty `Optional`.
         """
         debug_assert(self.__bool__(), "`.value()` on empty `Optional`")
-        return self._value.unsafe_get[U]()
-
-    @always_inline
-    fn unsafe_value[
-        U: AnyType, origin: Origin, //
-    ](self: Optional[Pointer[U, origin]]) -> ref [origin] U:
-        """Unsafely retrieve a reference to the underlying pointee value of the
-        `Optional[Pointer[U]]`.
-
-        Parameters:
-            U: The type of the underlying pointee value.
-            origin: The origin of the underlying pointee value.
-
-        Returns:
-            A reference to the contained data of the `Optional` as a reference.
-
-        Safety:
-            If the `Optional` is empty, this is undefined behavior.
-        """
-        debug_assert(self.__bool__(), "`.unsafe_value()` on empty `Optional`")
-        return self._value.unsafe_get[type_of(self).T]()[]
+        return self._value.unsafe_get[Self.T]()
 
     fn take(mut self) -> Self.T:
         """Move the value out of the `Optional`.
@@ -609,7 +501,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
         if self:
             # SAFETY: We just checked that `self` is populated.
             # Perform an implicit copy
-            return self.unsafe_value().copy()
+            return self.unsafe_value()[].copy()
         else:
             return None
 

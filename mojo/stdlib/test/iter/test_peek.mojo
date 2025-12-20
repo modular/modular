@@ -25,15 +25,15 @@ def test_empty_peek():
 def test_peekable_with_peeking():
     var list = [1, 2, 3]
     var iter = peekable(list)
-    assert_equal(iter.peek()[], 1)
+    assert_equal(iter.peek()[][], 1)
     assert_true(iter.__has_next__())
     assert_equal(next(iter), 1)
 
-    assert_equal(iter.peek()[], 2)
+    assert_equal(iter.peek()[][], 2)
     assert_true(iter.__has_next__())
     assert_equal(next(iter), 2)
 
-    assert_equal(iter.peek()[], 3)
+    assert_equal(iter.peek()[][], 3)
     assert_true(iter.__has_next__())
     assert_equal(next(iter), 3)
 
@@ -60,8 +60,8 @@ def test_peekable_without_peeking():
 def test_peekable_peek_does_not_advance_iterator():
     var list = [1]
     var iter = peekable(list)
-    assert_equal(iter.peek()[], 1)
-    assert_equal(iter.peek()[], 1)
+    assert_equal(iter.peek()[][], 1)
+    assert_equal(iter.peek()[][], 1)
     assert_true(iter.__has_next__())
     assert_equal(next(iter), 1)
 

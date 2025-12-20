@@ -542,7 +542,7 @@ struct Observable[
         self._moves = other._moves.copy()
         self._dels = other._dels.copy()
         if self._copies:
-            self._copies.value() += 1
+            self._copies.value()[] += 1
 
     fn __moveinit__(out self, deinit other: Self):
         """Move initialize the Observable and increment the move count.
@@ -554,9 +554,9 @@ struct Observable[
         self._moves = other._moves^
         self._dels = other._dels^
         if self._moves:
-            self._moves.value() += 1
+            self._moves.value()[] += 1
 
     fn __del__(deinit self):
         """Destroy the Observable and increment the del count."""
         if self._dels:
-            self._dels.value() += 1
+            self._dels.value()[] += 1
