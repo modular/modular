@@ -2229,6 +2229,18 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
         diag.attachNote(builder.getLoc())
             << "value was not consumed when an error is thrown";
       }
+
+      // If the value is a parameter of trait type, then that parameter needs to
+      // add an ImplicitlyDestructible trait conformance.
+      if (auto generic = sugarDynCast<ParamType>(destroyedType)) {
+        if (auto trait =
+                sugarDynCast<TraitType>(generic.getParam().getType())) {
+          // TODO: We should really be able to use ASTPrinter.cpp here, need to
+          // sink it to LIT dialect support though.
+          diag.attachNote(builder.getLoc())
+              << "consider adding trait conformance to ImplicitlyDestructible";
+        }
+      }
     }
 
     // Emit the marker to denote the end of lifetime.
