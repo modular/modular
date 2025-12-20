@@ -166,7 +166,7 @@ fn bench_compile_time[
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
                 with DeviceContext() as ctx:
-                    var func = ctx.compile_function[func]()
+                    var func = ctx.compile_function_unchecked[func]()
                     # Ensure that the compilation step is not optimized away.
                     keep(UnsafePointer(to=func))
                     clobber_memory()

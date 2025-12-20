@@ -27,7 +27,9 @@ def test__dump_sass():
         )
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel_inlined_assembly, _dump_sass=True]()
+        _ = ctx.compile_function_checked[
+            kernel_inlined_assembly, kernel_inlined_assembly, _dump_sass=True
+        ]()
 
 
 def main():

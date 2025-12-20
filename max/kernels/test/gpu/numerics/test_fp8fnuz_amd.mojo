@@ -21,7 +21,8 @@ def test_fp8_constructor(ctx: DeviceContext):
 
     # CHECK: v_mov_b32_e32 {{.*}}, 0x55
     # CHECK: store i8 85, ptr %{{.*}}, align 1
-    _ = ctx.compile_function[
+    _ = ctx.compile_function_checked[
+        kernel,
         kernel,
         dump_llvm=True,
         dump_asm=True,

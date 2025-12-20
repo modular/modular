@@ -460,6 +460,10 @@ or removed in future releases.
 
 ### ❌ Removed
 
+- The DeviceContext `enqueue_function` and `compile_function` have been removed.
+  Please migrate the code to use `enqueue_function_checked` and
+  `compile_function_checked`.
+
 ### 🛠️ Fixed
 
 - [Issue #1850](https://github.com/modular/modular/issues/1850): Mojo assumes
