@@ -689,7 +689,7 @@ int main(int argc, char **argv) {
   }
   registerContext(mlirCtx, *ctxOr);
 
-  KGEN::registerDefaultKGENPasses();
+  KGEN::registerDefaultKGENPasses("kgen-reduce");
 
   if (auto err = reducer.run()) {
     llvm::errs() << "ERROR: " << err.getError() << "\n";

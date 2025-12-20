@@ -668,9 +668,13 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
 /// Returns Mojo transform backend, or an error if the backend could not be
 /// created.
-static ErrorOr<RCRef<Cache::BlobCacheBackend>> getMojoCacheBackend() {
-  return Cache::getLocalDefaultBackendChain(
-      std::filesystem::path(".mojo_cache") / "transform", getVersionString());
+static ErrorOr<RCRef<Cache::BlobCacheBackend>>
+getMojoCacheBackend(const std::string baseExtra) {
+  std::filesystem::path path(".mojo_cache");
+  if (!baseExtra.empty())
+    path = path / baseExtra;
+  path = path / "transform";
+  return Cache::getLocalDefaultBackendChain(path, getVersionString());
 }
 
 //===----------------------------------------------------------------------===//
@@ -684,6 +688,14 @@ std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
   return createElaborateGenerators(TargetInfoAttr(), /*elabOpts=*/{},
                                    /*options=*/{}, compileElaboratorAsm,
                                    compileOffloads);
+}
+
+std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT(
+    const std::string &cacheBaseExtra) {
+  CompilationOptions options;
+  options.cacheBaseExtra = cacheBaseExtra;
+  return createElaborateGenerators(TargetInfoAttr(), /*elabOpts=*/{}, options,
+                                   compileElaboratorAsm, compileOffloads);
 }
 
 //===----------------------------------------------------------------------===//
@@ -727,7 +739,7 @@ KGENCompiler::KGENCompiler(MLIRContext &context, CompilationOptions options,
 
 ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
                                              TargetInfoAttr target) {
-  auto cacheBackend = getMojoCacheBackend();
+  auto cacheBackend = getMojoCacheBackend(options.cacheBaseExtra);
   if (cacheBackend.isError())
     return cacheBackend.takeError();
 
@@ -785,7 +797,7 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
 }
 
 ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
-  auto cacheBackend = getMojoCacheBackend();
+  auto cacheBackend = getMojoCacheBackend(options.cacheBaseExtra);
   if (cacheBackend.isError())
     return cacheBackend.takeError();
   auto transformCache =
@@ -877,7 +889,7 @@ ErrorOrSuccess KGENCompiler::runElaborationPipeline(
     return configPM.takeError();
 
   populateElaborateModulePasses(pm, target, options);
-  auto cacheBackend = getMojoCacheBackend();
+  auto cacheBackend = getMojoCacheBackend(options.cacheBaseExtra);
 
   if (cacheBackend.isError() || !chain) {
     if (failed(pm.run(module)))

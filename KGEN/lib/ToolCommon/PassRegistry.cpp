@@ -15,7 +15,7 @@
 using namespace M;
 using namespace KGEN;
 
-void KGEN::registerDefaultKGENPasses() {
+void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   // Register the standard passes we want.
   mlir::registerCSEPass();
   mlir::registerCanonicalizerPass();
@@ -75,8 +75,9 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::MOGGPreElab::registerDumpKernels();
 
   // Passes that require a runtime.
-  mlir::registerPass(
-      [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(); });
+  mlir::registerPass([cacheBaseExtra] {
+    return KGEN::createElaborateGeneratorsWithDefaultJIT(cacheBaseExtra);
+  });
   KGEN::registerInlineParametric();
   KGEN::registerAutomaticInline();
   KGEN::registerDeadArgumentElimination();

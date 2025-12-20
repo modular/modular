@@ -85,8 +85,13 @@ ErrorOr<std::unique_ptr<ObjectCompiler>>
 ObjectCompiler::create(StringRef basePath, CompilationOptions options,
                        bool isJIT, MLIRContext &context,
                        PassManagerConfigOptions pmOptions) {
-  auto transformCache = Cache::getLocalDefaultBackendChain(
-      std::filesystem::path(basePath.str()) / "transform", getVersionString());
+  std::filesystem::path cachePath(basePath.str());
+  if (!options.cacheBaseExtra.empty())
+    cachePath = cachePath / options.cacheBaseExtra;
+  cachePath = cachePath / "transform";
+
+  auto transformCache =
+      Cache::getLocalDefaultBackendChain(cachePath, getVersionString());
   if (failed(transformCache))
     return transformCache.takeError();
 

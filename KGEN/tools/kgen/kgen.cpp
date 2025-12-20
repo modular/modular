@@ -236,6 +236,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     options.saveTempsPrefix = clOptions.tempsDir;
   options.verboseOutput = (clOptions.cmd == Command::kEmitAssemblyVerbose);
   options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
+  options.cacheBaseExtra = "kgen";
 
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename);
@@ -677,7 +678,7 @@ int main(int argc, char **argv) {
   registerMLIRContextCLOptions();
   registerAsmPrinterCLOptions();
   registerDefaultTimingManagerCLOptions();
-  KGEN::registerDefaultKGENPasses();
+  KGEN::registerDefaultKGENPasses("kgen");
   registerPassManagerCLOptions();
   KGEN::initializeDebugOptions();
   KGEN::KGENPassCLOptions::registerOptions();

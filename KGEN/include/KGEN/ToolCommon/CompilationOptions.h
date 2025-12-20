@@ -154,6 +154,12 @@ public:
   // text.
   bool runMOGGPreElab = true;
 
+  // Extra handle name to separate cache base between mojo, kgen, kgen-opt,
+  // to avoid internal test cache pruning races caused by different binary IDs.
+  // Set default value to be "mojo", will be overwritten with other tool names
+  // if needed.
+  std::string cacheBaseExtra = "mojo";
+
   void setDefaultCPU();
 };
 

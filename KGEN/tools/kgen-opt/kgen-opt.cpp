@@ -95,7 +95,7 @@ int main(int argc, char **argv) {
   registerContext(registry, *ctxOr);
 
   // Register passes.
-  KGEN::registerDefaultKGENPasses();
+  KGEN::registerDefaultKGENPasses("kgen-opt");
   DebugInfo::registerTransformsPasses();
 
   // Register cl options.

@@ -91,7 +91,7 @@ enum class InlinerDebugInfoUpdateTime {
 #include "KGEN/KGENPasses.h.inc"
 
 /// Register all passes with default options.
-void registerDefaultKGENPasses();
+void registerDefaultKGENPasses(const std::string &cacheBaseExtra);
 
 //===----------------------------------------------------------------------===//
 // Elaborator
