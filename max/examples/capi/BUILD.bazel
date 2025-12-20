@@ -1,0 +1,28 @@
+load("//bazel:api.bzl", "modular_cc_binary", "modular_py_test")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_cc_binary(
+    name = "example",
+    testonly = True,
+    srcs = ["example.c"],
+    deps = [
+        "//max:CAPI.headers",
+        "//max/internal:max",
+    ],
+)
+
+modular_py_test(
+    name = "test",
+    srcs = ["test_capi.py"],
+    data = [
+        ":example",
+    ],
+    env = {
+        "GRAPH_EXECUTOR": "$(location :example)",
+    },
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)

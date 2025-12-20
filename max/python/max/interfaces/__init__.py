@@ -66,9 +66,9 @@ from .scheduler import Scheduler, SchedulerResult
 from .status import GenerationStatus
 from .task import PipelineTask
 from .tokenizer import PipelineTokenizer
+from .tokens import TokenBuffer, TokenSlice
 from .utils import (
     SharedMemoryArray,
-    msgpack_eq,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -145,10 +145,11 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
+    "TokenBuffer",
+    "TokenSlice",
     "VLMTextGenerationContext",
     "drain_queue",
     "get_blocking",
-    "msgpack_eq",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
 ]

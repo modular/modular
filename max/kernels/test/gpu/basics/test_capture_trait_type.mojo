@@ -26,7 +26,7 @@ trait BaseT:
 
 @fieldwise_init
 @register_passable("trivial")
-struct ImplT(BaseT, ImplicitlyCopyable, Movable):
+struct ImplT(BaseT, ImplicitlyCopyable):
     var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 
     def __init__(

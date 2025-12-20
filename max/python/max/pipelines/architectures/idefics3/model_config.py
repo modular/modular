@@ -164,7 +164,8 @@ class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -175,7 +176,8 @@ class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
         )
         return Llama3Config.get_kv_params(
             huggingface_config=text_config,
-            n_devices=n_devices,
+            pipeline_config=pipeline_config,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -208,7 +210,7 @@ class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
         huggingface_config: AutoConfig,
         llm_state_dict: dict[str, WeightData],
         dtype: DType,
-        n_devices: int,
+        devices: list[DeviceRef],
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
@@ -221,7 +223,7 @@ class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
             huggingface_config: HuggingFace model configuration.
             llm_state_dict: Model weights dictionary.
             dtype: Data type for model parameters.
-            n_devices: Number of devices.
+            devices: Devices to use for the model.
             cache_dtype: KV cache data type.
             kv_cache_config: KV cache configuration.
             return_logits: Return logits configuration.
@@ -239,7 +241,7 @@ class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
             huggingface_config=hf_text_config,
             state_dict=llm_state_dict,
             dtype=dtype,
-            n_devices=n_devices,
+            n_devices=len(devices),
             cache_dtype=cache_dtype,
             kv_cache_config=kv_cache_config,
             return_logits=return_logits,

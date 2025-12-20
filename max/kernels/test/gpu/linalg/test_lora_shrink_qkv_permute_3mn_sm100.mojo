@@ -11,21 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+import itertools
 
-from buffer.dimlist import Dim, DimList
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig
-from testing import assert_almost_equal
 from gpu.host.info import B200
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._fillers import random
+from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn
+from memory import LegacyUnsafePointer as UnsafePointer
+from testing import assert_almost_equal
 
 from utils import IndexList
 from utils.index import Index
-import itertools
 
 
 fn test[
@@ -70,107 +69,149 @@ fn test[
             max_num_tokens_by_expert, num_tokens_by_expert[i]
         )
 
-    # Create host A C buffers
+    # Define shapes
     comptime static_a_shape = DimList(Dim(), K)
-    var dynamic_a_shape = DimList(total_num_tokens, K)
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
+    var dynamic_a_shape = IndexList[2](total_num_tokens, K)
+    var a_size = total_num_tokens * K
+
     comptime actual_N = 3 * N
-    comptime static_c_shape = DimList(Dim(), actual_N)
-    var dynamic_c_shape = DimList(total_num_tokens, actual_N)
+    comptime static_c_ref_shape = DimList(Dim(), actual_N)
+    var dynamic_c_ref_shape = IndexList[2](total_num_tokens, actual_N)
+    var c_ref_size = total_num_tokens * actual_N
 
     comptime static_lora_c_shape = DimList(3, Dim(), N)
-    var dynamic_lora_c_shape = DimList(3, total_num_tokens, N)
+    var dynamic_lora_c_shape = IndexList[3](3, total_num_tokens, N)
+    var lora_c_size = 3 * total_num_tokens * N
 
-    var c_host = HostNDBuffer[c_type, 3, static_lora_c_shape](
-        dynamic_lora_c_shape
-    )
-    var c_ref_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var a_offsets_host = HostNDBuffer[DType.uint32, 1, DimList(Dim())](
+    comptime static_b_shape = DimList(num_experts, 3 * N, K)
+    var b_size = num_experts * 3 * N * K
+
+    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
+    comptime b_layout = Layout.row_major(num_experts, 3 * N, K)
+    comptime c_layout = Layout.row_major(3, UNKNOWN_VALUE, N)
+    comptime c_ref_layout = Layout.row_major(UNKNOWN_VALUE, actual_N)
+
+    # Host allocations
+    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(lora_c_size)
+    var c_ref_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_ref_size)
+    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
         num_experts + 1
     )
+    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
+        num_experts
+    )
 
-    # Create host B buffers
-    comptime static_b_shape = DimList(num_experts, 3 * N, K)
-    var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
-    var expert_ids_host = HostNDBuffer[DType.int32, 1](num_experts)
+    var a_host = LayoutTensor[a_type, a_layout](
+        a_host_ptr,
+        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
+    )
+    var b_host = LayoutTensor[b_type, b_layout](
+        b_host_ptr,
+        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, 3 * N, K)),
+    )
+    var c_host = LayoutTensor[c_type, c_layout](
+        c_host_ptr,
+        RuntimeLayout[c_layout].row_major(dynamic_lora_c_shape),
+    )
+    var c_ref_host = LayoutTensor[c_type, c_ref_layout](
+        c_ref_host_ptr,
+        RuntimeLayout[c_ref_layout].row_major(dynamic_c_ref_shape),
+    )
 
-    # Setup  offsets and expert ids
-    a_offsets_host.tensor[0] = 0
+    # Setup offsets and expert ids
+    a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host.tensor[i + 1] = (
-            a_offsets_host.tensor[i] + num_tokens_by_expert[i]
+        a_offsets_host_ptr[i + 1] = (
+            a_offsets_host_ptr[i] + num_tokens_by_expert[i]
         )
-        expert_ids_host.tensor[i] = expert_ids[i]
+        expert_ids_host_ptr[i] = expert_ids[i]
 
     # Initialize matmul inputs
-    random(a_host.tensor)
-    random(b_host.tensor)
+    random(a_host)
+    random(b_host)
 
-    # Create device buffers
-    var a_dev = DeviceNDBuffer[a_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+    # Device allocations
+    var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
+    var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
+    var c_dev_buffer = ctx.enqueue_create_buffer[c_type](lora_c_size)
+    var c_ref_dev_buffer = ctx.enqueue_create_buffer[c_type](c_ref_size)
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+        num_experts + 1
     )
-    var c_dev = DeviceNDBuffer[c_type, 3, static_lora_c_shape](
-        dynamic_lora_c_shape, ctx=ctx
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
+        num_experts
     )
-    var c_ref_dev = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+
+    var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
+        a_dev_buffer.unsafe_ptr(),
+        DimList(total_num_tokens, K),
     )
-    var b_dev = DeviceNDBuffer[b_type, 3, static_b_shape](
-        static_b_shape, ctx=ctx
+    var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
+        b_dev_buffer.unsafe_ptr(),
+        static_b_shape,
     )
-    var a_offsets_dev = DeviceNDBuffer[DType.uint32, 1](
-        num_experts + 1, ctx=ctx
+    var c_dev = NDBuffer[c_type, 3, _, static_lora_c_shape](
+        c_dev_buffer.unsafe_ptr(),
+        DimList(3, total_num_tokens, N),
     )
-    var expert_ids_dev = DeviceNDBuffer[DType.int32, 1](num_experts, ctx=ctx)
+    var c_ref_dev = NDBuffer[c_type, 2, _, static_c_ref_shape](
+        c_ref_dev_buffer.unsafe_ptr(),
+        DimList(total_num_tokens, actual_N),
+    )
+    var a_offsets_dev = NDBuffer[DType.uint32, 1](
+        a_offsets_dev_buffer.unsafe_ptr(),
+        num_experts + 1,
+    )
+    var expert_ids_dev = NDBuffer[DType.int32, 1](
+        expert_ids_dev_buffer.unsafe_ptr(),
+        num_experts,
+    )
 
     # Move inputs to device
-    ctx.enqueue_copy(a_dev.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_dev.buffer, b_host.tensor.data)
-    ctx.enqueue_copy(a_offsets_dev.buffer, a_offsets_host.tensor.data)
-    ctx.enqueue_copy(expert_ids_dev.buffer, expert_ids_host.tensor.data)
+    ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
+    ctx.enqueue_copy(b_dev_buffer, b_host_ptr)
+    ctx.enqueue_copy(a_offsets_dev_buffer, a_offsets_host_ptr)
+    ctx.enqueue_copy(expert_ids_dev_buffer, expert_ids_host_ptr)
     ctx.synchronize()
 
     naive_grouped_matmul(
-        c_ref_dev.tensor,
-        a_dev.tensor,
-        b_dev.tensor,
-        a_offsets_dev.tensor,
-        expert_ids_dev.tensor,
+        c_ref_dev,
+        a_dev,
+        b_dev,
+        a_offsets_dev,
+        expert_ids_dev,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
     )
     ctx.synchronize()
-
-    var c_dev_ndbuffer = c_dev.tensor
 
     shrink_qkv_permute_3mn(
-        c_dev.tensor,
-        a_dev.tensor,
-        b_dev.tensor,
-        a_offsets_dev.tensor,
-        expert_ids_dev.tensor,
+        c_dev,
+        a_dev,
+        b_dev,
+        a_offsets_dev,
+        expert_ids_dev,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy(c_ref_host.tensor.data, c_ref_dev.buffer)
-    ctx.enqueue_copy(c_host.tensor.data, c_dev.buffer)
+    ctx.enqueue_copy(c_ref_host_ptr, c_ref_dev_buffer)
+    ctx.enqueue_copy(c_host_ptr, c_dev_buffer)
     ctx.synchronize()
 
     rtol = 1e-2
-    c_ref_host_buffer = c_ref_host.tensor
-    c_host_buffer = c_host.tensor
 
     for qkv_idx, m, n in itertools.product(
         range(3), range(total_num_tokens), range(N)
     ):
-        var expect = c_ref_host_buffer[m, qkv_idx * N + n]
+        var expect = c_ref_host[m, qkv_idx * N + n][0]
 
-        var actual = c_host_buffer[qkv_idx, m, n]
+        var actual = c_host[qkv_idx, m, n][0]
         assert_almost_equal(
             actual,
             expect,
@@ -188,6 +229,20 @@ fn test[
             ),
             rtol=rtol,
         )
+
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_ref_host_ptr.free()
+    a_offsets_host_ptr.free()
+    expert_ids_host_ptr.free()
+    _ = a_dev_buffer^
+    _ = b_dev_buffer^
+    _ = c_dev_buffer^
+    _ = c_ref_dev_buffer^
+    _ = a_offsets_dev_buffer^
+    _ = expert_ids_dev_buffer^
 
 
 def main():

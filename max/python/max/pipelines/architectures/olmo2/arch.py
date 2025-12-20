@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -43,6 +44,7 @@ olmo2_arch = SupportedArchitecture(
     },
     pipeline_model=Olmo2Model,
     tokenizer=TextTokenizer,
+    context_type=TextContext,
     rope_type=RopeType.normal,
     weight_adapters={
         WeightsFormat.safetensors: llama3_weight_adapters.convert_safetensor_state_dict,

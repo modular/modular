@@ -355,10 +355,10 @@ def test_device_chain_copy_does_not_mutate_subgraph_signature() -> None:
         ) as subgraph:
             device = DeviceRef.GPU(0)
             _ = subgraph.device_chains[device]
-            before = len(subgraph._graph_body.arguments)  # type: ignore
+            before = len(subgraph._graph_body.arguments)
 
             copied = subgraph.device_chains.copy()
-            after = len(subgraph._graph_body.arguments)  # type: ignore
+            after = len(subgraph._graph_body.arguments)
 
             assert after == before
             assert copied[device] == subgraph.device_chains[device]

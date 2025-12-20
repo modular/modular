@@ -16,7 +16,7 @@ from enum import Enum
 import msgspec
 from max.interfaces import RequestID
 from max.kv_cache import TransferReqData
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 
 
 class SchedulerProgress(Enum):
@@ -56,7 +56,7 @@ class PrefillRequest(
     """
 
     id: RequestID
-    context: TextContext | TextAndVisionContext
+    context: TextContext
     transfer_engine_name: str
     dst_block_ids: list[int]
     dst_replica_idx: int

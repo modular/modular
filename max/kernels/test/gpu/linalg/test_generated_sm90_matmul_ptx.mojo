@@ -34,7 +34,7 @@ from linalg.utils import (
     elementwise_epilogue_type,
 )
 from linalg.utils_gpu import MatmulConfig
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 from testing import assert_true
 
 from utils.index import Index, IndexList
@@ -44,7 +44,8 @@ from utils.static_tuple import StaticTuple
 fn compile_sm90_matmul_ptx[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     *,
     M: Int,
     N: Int,
@@ -64,54 +65,44 @@ fn compile_sm90_matmul_ptx[
     comptime BN = config.block_tile_shape[1]
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        (a_type == b_type is DType.float8_e4m3fn)
-        or (a_type == b_type and a_type in (DType.bfloat16, DType.float32)),
-        "Unsupported input dtype",
-    ]()
+    __comptime_assert (a_type == b_type is DType.float8_e4m3fn) or (
+        a_type == b_type and a_type in (DType.bfloat16, DType.float32)
+    ), "Unsupported input dtype"
 
-    constrained[
-        a_type != DType.float8_e4m3fn or BK == 128,
-        "BK must be 128 for fp8 data type for numerical accuracy correctness",
-    ]()
+    __comptime_assert (
+        a_type != DType.float8_e4m3fn or BK == 128
+    ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
 
-    constrained[
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None,
-        "Either the epilogue lambda or the compute lambda can be used",
-    ]()
+    __comptime_assert (
+        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
+    ), "Either the epilogue lambda or the compute lambda can be used"
 
-    constrained[
-        BM > 64 or (BM == 64 and config.num_consumer == 1),
-        "Only support 1 consumer for BM=64",
-    ]()
+    __comptime_assert BM > 64 or (
+        BM == 64 and config.num_consumer == 1
+    ), "Only support 1 consumer for BM=64"
 
     @parameter
     if schedule == MatmulSchedule.DS_SCHEDULER:
-        constrained[
-            grid_shape is not None,
-            "Grid shape must be provided for DS scheduler",
-        ]()
+        __comptime_assert (
+            grid_shape is not None
+        ), "Grid shape must be provided for DS scheduler"
         comptime ds_grid_shape = grid_shape.value()
-        constrained[
-            ds_grid_shape[0] <= H100.sm_count and ds_grid_shape[1] == 1,
-            "Deepseek scheduler only accepts grid shape with 1 column",
-        ]()
+        __comptime_assert (
+            ds_grid_shape[0] <= H100.sm_count and ds_grid_shape[1] == 1
+        ), "Deepseek scheduler only accepts grid shape with 1 column"
 
     elif grid_shape:
-        constrained[
-            _is_valid_grid_shape[grid_shape.value(), config.cluster_shape](
-                ceildiv(N, BN)
-            ),
-            String(
-                "grid shape:",
-                grid_shape.value(),
-                "is not compatible with cluster shape:",
-                config.cluster_shape,
-                "and static N:",
-                N,
-                sep=" ",
-            ),
-        ]()
+        __comptime_assert _is_valid_grid_shape[
+            grid_shape.value(), config.cluster_shape
+        ](ceildiv(N, BN)), String(
+            "grid shape:",
+            grid_shape.value(),
+            "is not compatible with cluster shape:",
+            config.cluster_shape,
+            "and static N:",
+            N,
+            sep=" ",
+        )
 
     comptime grid_shape_adjusted = grid_shape.value() if grid_shape else _get_grid_shape[
         config.cluster_shape
@@ -165,10 +156,10 @@ fn compile_sm90_matmul_ptx[
     comptime c_tile_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1])
 
     comptime a_tma_desc_layout = _tma_desc_tile_layout[
-        a_type, 2, a_tile_shape, is_k_major=True, swizzle_mode=a_swizzle
+        a_type, 2, a_tile_shape, swizzle_mode=a_swizzle
     ]()
     comptime b_tma_desc_layout = _tma_desc_tile_layout[
-        b_type, 2, b_tile_shape, is_k_major=True, swizzle_mode=b_swizzle
+        b_type, 2, b_tile_shape, swizzle_mode=b_swizzle
     ]()
     comptime c_tma_desc_layout = Layout.row_major(
         c_smem_tile[0], c_smem_tile[1]
@@ -183,10 +174,9 @@ fn compile_sm90_matmul_ptx[
         + (size_of[Int64]() * 2)
     ) + c_smem_layout.size() * size_of[c_type]()
 
-    constrained[
-        smem_size <= H100.shared_memory_per_multiprocessor - 1024,
-        "requested SMEM size exceeds 227KB limit.",
-    ]()
+    __comptime_assert (
+        smem_size <= H100.shared_memory_per_multiprocessor - 1024
+    ), "requested SMEM size exceeds 227KB limit."
 
     @parameter
     if schedule != MatmulSchedule.NONE:

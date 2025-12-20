@@ -197,7 +197,7 @@ def _unflatten_kv_inputs(
 ) -> list[PagedCacheValues]:
     kv_params = config.kv_params
     n_devices = kv_params.n_devices
-    fetch_types = kv_manager.get_symbolic_inputs()[0]
+    fetch_types = kv_manager.params.get_symbolic_inputs()[0]
     len_of_kv_tuple_per_dev = len(list(fetch_types))
     kv_caches_per_dev: list[PagedCacheValues] = []
     for i in range(n_devices):

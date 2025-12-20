@@ -56,13 +56,13 @@ fn fold[
         ctx: DeviceContextPtr.
     """
 
-    constrained[stride[0] > 0 and stride[1] > 0, "Stride must be positive"]()
-    constrained[
-        dilation[0] > 0 and dilation[1] > 0, "Dilation must be positive"
-    ]()
-    constrained[
-        padding[0] >= 0 and padding[1] >= 0, "Padding must be non-negative"
-    ]()
+    __comptime_assert stride[0] > 0 and stride[1] > 0, "Stride must be positive"
+    __comptime_assert (
+        dilation[0] > 0 and dilation[1] > 0
+    ), "Dilation must be positive"
+    __comptime_assert (
+        padding[0] >= 0 and padding[1] >= 0
+    ), "Padding must be non-negative"
 
     var N = output.dim(0)
     var C = output.dim(1)
@@ -117,7 +117,7 @@ fn fold[
     fn fold_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank_]):
-        constrained[rank_ == 4, "fold_fn: rank must be 4"]()
+        __comptime_assert rank_ == 4, "fold_fn: rank must be 4"
         var idx = rebind[IndexList[4]](idx_arg)
 
         var batch = idx[0]

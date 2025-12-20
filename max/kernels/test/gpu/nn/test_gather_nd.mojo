@@ -11,629 +11,803 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer
+from gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
-from testing import assert_equal, assert_true
+from testing import assert_equal
 
 from utils import IndexList
 
 
 def execute_gather_nd_test[
-    data_type: DType, //,
+    data_type: DType,
+    indices_type: DType,
     batch_dims: Int,
+    data_layout: Layout,
+    indices_layout: Layout,
+    output_layout: Layout,
 ](
-    data_host: HostNDBuffer[data_type, **_],
-    indices_host: HostNDBuffer,
-    expected_output: HostNDBuffer[data_type, **_],
+    data_device: DeviceBuffer[data_type],
+    data_runtime: RuntimeLayout[data_layout],
+    indices_device: DeviceBuffer[indices_type],
+    indices_runtime: RuntimeLayout[indices_layout],
+    expected_output_device: DeviceBuffer[data_type],
+    output_runtime: RuntimeLayout[output_layout],
     ctx: DeviceContext,
 ):
-    # create device-side buffers and copy data to them
-    var data_device = DeviceNDBuffer[
-        data_host.dtype, data_host.rank, data_host.shape
-    ](
-        data_host.tensor.get_shape(),
-        ctx=ctx,
+    # Create output device buffer
+    var actual_output_device = ctx.enqueue_create_buffer[data_type](
+        output_runtime.size()
     )
-    var indices_device = DeviceNDBuffer[
-        indices_host.dtype, indices_host.rank, indices_host.shape
-    ](
-        indices_host.tensor.get_shape(),
-        ctx=ctx,
-    )
-    var actual_output_host = HostNDBuffer[
-        expected_output.dtype, expected_output.rank, expected_output.shape
-    ](
-        expected_output.tensor.get_shape(),
-    )
-    var actual_output_device = DeviceNDBuffer[
-        expected_output.dtype, expected_output.rank, expected_output.shape
-    ](
-        expected_output.tensor.get_shape(),
-        ctx=ctx,
-    )
-    ctx.enqueue_copy(data_device.buffer, data_host.tensor.data)
-    ctx.enqueue_copy(indices_device.buffer, indices_host.tensor.data)
 
-    var data_device_tensor = data_device.to_layout_tensor()
-    var indices_device_tensor = indices_device.to_layout_tensor()
-    var actual_output_device_tensor = actual_output_device.to_layout_tensor()
-
-    comptime data_layout = Layout.row_major[data_device_tensor.rank]()
-    comptime indices_layout = Layout.row_major[indices_device_tensor.rank]()
-    comptime actual_output_layout = Layout.row_major[
-        actual_output_device_tensor.rank
-    ]()
+    # Create layout tensors for GPU operations
+    var data_tensor = LayoutTensor[data_type, data_layout](
+        data_device, data_runtime
+    )
+    var indices_tensor = LayoutTensor[indices_type, indices_layout](
+        indices_device, indices_runtime
+    )
+    var actual_output_tensor = LayoutTensor[data_type, output_layout](
+        actual_output_device, output_runtime
+    )
 
     # execute the kernel
     _gather_nd_impl[batch_dims, target="gpu"](
-        LayoutTensor[data_device_tensor.dtype, data_layout](
-            data_device_tensor.ptr,
-            RuntimeLayout[data_layout].row_major(
-                data_device_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[indices_device_tensor.dtype, indices_layout](
-            indices_device_tensor.ptr,
-            RuntimeLayout[indices_layout].row_major(
-                indices_device_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[actual_output_device_tensor.dtype, actual_output_layout](
-            actual_output_device_tensor.ptr,
-            RuntimeLayout[actual_output_layout].row_major(
-                actual_output_device_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+        data_tensor,
+        indices_tensor,
+        actual_output_tensor,
         ctx,
-    )
-
-    # copy the output back to host
-    ctx.enqueue_copy(
-        actual_output_host.tensor.data, actual_output_device.buffer
     )
     ctx.synchronize()
 
-    # check that our shapes are consistent and that the contents of the output are consistent
-    assert_true(
-        actual_output_host.tensor.dynamic_shape
-        == expected_output.tensor.dynamic_shape
-    )
-    for i in range(actual_output_host.tensor.num_elements()):
-        assert_equal(
-            actual_output_host.tensor.data[i], expected_output.tensor.data[i]
-        )
-
-    _ = data_device^
-    _ = indices_device^
-    _ = actual_output_host^
-    _ = actual_output_device^
+    # check that the contents of the output are consistent
+    with actual_output_device.map_to_host() as actual_host:
+        with expected_output_device.map_to_host() as expected_host:
+            for i in range(output_runtime.size()):
+                assert_equal(actual_host[i], expected_host[i])
 
 
 fn test_gather_nd_eg1(ctx: DeviceContext) raises:
     # Example 1
     comptime batch_dims = 0
-    comptime data_rank = 2
     comptime data_type = DType.int32
-    comptime data_layout = Layout.row_major[data_rank]()
-    var data = HostNDBuffer[data_type, data_rank, DimList(2, 2)](
-        IndexList[data_rank](2, 2)
+    comptime indices_type = DType.int64
+
+    comptime data_layout = Layout.row_major(2, 2)
+    var data_shape = IndexList[2](2, 2)
+    var data_runtime = RuntimeLayout[data_layout].row_major(data_shape)
+
+    comptime indices_layout = Layout.row_major(2, 2)
+    var indices_shape = IndexList[2](2, 2)
+    var indices_runtime = RuntimeLayout[indices_layout].row_major(indices_shape)
+
+    # Create device buffers
+    var data_device = ctx.enqueue_create_buffer[data_type](
+        data_shape.flattened_length()
+    )
+    var indices_device = ctx.enqueue_create_buffer[indices_type](
+        indices_shape.flattened_length()
     )
 
-    var data_tensor = data.to_layout_tensor()
+    # Initialize data on host
+    with data_device.map_to_host() as data_host:
+        var data_tensor = LayoutTensor[data_type, data_layout](
+            data_host, data_runtime
+        )
+        data_tensor[0, 0] = 0
+        data_tensor[0, 1] = 1
+        data_tensor[1, 0] = 2
+        data_tensor[1, 1] = 3
 
-    data_tensor[0, 0] = 0
-    data_tensor[0, 1] = 1
-    data_tensor[1, 0] = 2
-    data_tensor[1, 1] = 3
+    with indices_device.map_to_host() as indices_host:
+        var indices_tensor = LayoutTensor[indices_type, indices_layout](
+            indices_host, indices_runtime
+        )
+        indices_tensor[0, 0] = 0
+        indices_tensor[0, 1] = 0
+        indices_tensor[1, 0] = 1
+        indices_tensor[1, 1] = 1
 
-    comptime indices_rank = 2
-    comptime indices_layout = Layout.row_major[indices_rank]()
-    var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 2)](
-        IndexList[indices_rank](2, 2)
+    # Compute output shape
+    var data_tensor = LayoutTensor[data_type, data_layout](
+        data_device, data_runtime
     )
-    var indices_tensor = indices.to_layout_tensor()
-
-    indices_tensor[0, 0] = 0
-    indices_tensor[0, 1] = 0
-    indices_tensor[1, 0] = 1
-    indices_tensor[1, 1] = 1
+    var indices_tensor = LayoutTensor[indices_type, indices_layout](
+        indices_device, indices_runtime
+    )
 
     comptime output_rank = 1
-    comptime layout_2d = Layout.row_major[2]()
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
-        DType.int64,
+        indices_type,
         batch_dims,
-    ](
-        LayoutTensor[data_tensor.dtype, data_layout](
-            data_tensor.ptr,
-            RuntimeLayout[data_layout].row_major(
-                data_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[indices_tensor.dtype, indices_layout](
-            indices_tensor.ptr,
-            RuntimeLayout[indices_layout].row_major(
-                indices_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-    )
+    ](data_tensor, indices_tensor)
 
-    var expected_output = HostNDBuffer[data_type, output_rank](output_shape)
-    var expected_output_tensor = expected_output.to_layout_tensor()
-    expected_output_tensor[0] = 0
-    expected_output_tensor[1,] = 3
-    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
+    comptime output_layout = Layout.row_major(UNKNOWN_VALUE)
+    var output_runtime = RuntimeLayout[output_layout].row_major(output_shape)
+
+    var expected_output_device = ctx.enqueue_create_buffer[data_type](
+        output_shape.flattened_length()
+    )
+    with expected_output_device.map_to_host() as expected_host:
+        var expected_tensor = LayoutTensor[data_type, output_layout](
+            expected_host, output_runtime
+        )
+        expected_tensor[0] = 0
+        expected_tensor[1] = 3
+
+    execute_gather_nd_test[
+        data_type,
+        indices_type,
+        batch_dims,
+        data_layout,
+        indices_layout,
+        output_layout,
+    ](
+        data_device,
+        data_runtime,
+        indices_device,
+        indices_runtime,
+        expected_output_device,
+        output_runtime,
+        ctx,
+    )
 
 
 fn test_gather_nd_eg2(ctx: DeviceContext) raises:
     # Example 2
     comptime batch_dims = 0
-    comptime data_rank = 2
     comptime data_type = DType.int8
-    comptime data_layout = Layout.row_major[data_rank]()
+    comptime indices_type = DType.int64
 
-    var data = HostNDBuffer[data_type, data_rank, DimList(2, 2)](
-        IndexList[data_rank](2, 2)
+    comptime data_layout = Layout.row_major(2, 2)
+    var data_shape = IndexList[2](2, 2)
+    var data_runtime = RuntimeLayout[data_layout].row_major(data_shape)
+
+    comptime indices_layout = Layout.row_major(2, 1)
+    var indices_shape = IndexList[2](2, 1)
+    var indices_runtime = RuntimeLayout[indices_layout].row_major(indices_shape)
+
+    var data_device = ctx.enqueue_create_buffer[data_type](
+        data_shape.flattened_length()
     )
-    var data_tensor = data.to_layout_tensor()
-    data_tensor[0, 0] = 0
-    data_tensor[0, 1] = 1
-    data_tensor[1, 0] = 2
-    data_tensor[1, 1] = 3
-
-    comptime indices_rank = 2
-    comptime indices_layout = Layout.row_major[indices_rank]()
-    var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1)](
-        IndexList[indices_rank](2, 1)
+    var indices_device = ctx.enqueue_create_buffer[indices_type](
+        indices_shape.flattened_length()
     )
-    var indices_tensor = indices.to_layout_tensor()
 
-    indices_tensor[0, 0] = 1
-    indices_tensor[1, 0] = 0
+    with data_device.map_to_host() as data_host:
+        var data_tensor = LayoutTensor[data_type, data_layout](
+            data_host, data_runtime
+        )
+        data_tensor[0, 0] = 0
+        data_tensor[0, 1] = 1
+        data_tensor[1, 0] = 2
+        data_tensor[1, 1] = 3
+
+    with indices_device.map_to_host() as indices_host:
+        var indices_tensor = LayoutTensor[indices_type, indices_layout](
+            indices_host, indices_runtime
+        )
+        indices_tensor[0, 0] = 1
+        indices_tensor[1, 0] = 0
+
+    var data_tensor = LayoutTensor[data_type, data_layout](
+        data_device, data_runtime
+    )
+    var indices_tensor = LayoutTensor[indices_type, indices_layout](
+        indices_device, indices_runtime
+    )
 
     comptime output_rank = 2
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
-        DType.int64,
+        indices_type,
         batch_dims,
-    ](
-        LayoutTensor[data_tensor.dtype, data_layout](
-            data_tensor.ptr,
-            RuntimeLayout[data_layout].row_major(
-                data_tensor.runtime_layout.shape.value.canonicalize(),
-            ),
-        ),
-        LayoutTensor[indices_tensor.dtype, indices_layout](
-            indices_tensor.ptr,
-            RuntimeLayout[indices_layout].row_major(
-                indices_tensor.runtime_layout.shape.value.canonicalize(),
-            ),
-        ),
-    )
+    ](data_tensor, indices_tensor)
 
-    var expected_output = HostNDBuffer[data_type, output_rank](output_shape)
-    var expected_tensor = expected_output.to_layout_tensor()
-    expected_tensor[0, 0] = 2
-    expected_tensor[0, 1] = 3
-    expected_tensor[1, 0] = 0
-    expected_tensor[1, 1] = 1
-    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
+    comptime output_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var output_runtime = RuntimeLayout[output_layout].row_major(output_shape)
+
+    var expected_output_device = ctx.enqueue_create_buffer[data_type](
+        output_shape.flattened_length()
+    )
+    with expected_output_device.map_to_host() as expected_host:
+        var expected_tensor = LayoutTensor[data_type, output_layout](
+            expected_host, output_runtime
+        )
+        expected_tensor[0, 0] = 2
+        expected_tensor[0, 1] = 3
+        expected_tensor[1, 0] = 0
+        expected_tensor[1, 1] = 1
+
+    execute_gather_nd_test[
+        data_type,
+        indices_type,
+        batch_dims,
+        data_layout,
+        indices_layout,
+        output_layout,
+    ](
+        data_device,
+        data_runtime,
+        indices_device,
+        indices_runtime,
+        expected_output_device,
+        output_runtime,
+        ctx,
+    )
 
 
 fn test_gather_nd_eg3(ctx: DeviceContext) raises:
     # Example 3
     comptime batch_dims = 0
-    comptime data_rank = 3
     comptime data_type = DType.float32
-    comptime data_layout = Layout.row_major[data_rank]()
-    var data = HostNDBuffer[data_type, data_rank, DimList(2, 2, 2)](
-        IndexList[data_rank](2, 2, 2)
+    comptime indices_type = DType.int64
+
+    comptime data_layout = Layout.row_major(2, 2, 2)
+    var data_shape = IndexList[3](2, 2, 2)
+    var data_runtime = RuntimeLayout[data_layout].row_major(data_shape)
+
+    comptime indices_layout = Layout.row_major(2, 2)
+    var indices_shape = IndexList[2](2, 2)
+    var indices_runtime = RuntimeLayout[indices_layout].row_major(indices_shape)
+
+    var data_device = ctx.enqueue_create_buffer[data_type](
+        data_shape.flattened_length()
     )
-    var data_tensor = data.to_layout_tensor()
-
-    data_tensor[0, 0, 0] = 0
-    data_tensor[0, 0, 1] = 1
-    data_tensor[0, 1, 0] = 2
-    data_tensor[0, 1, 1] = 3
-    data_tensor[1, 0, 0] = 4
-    data_tensor[1, 0, 1] = 5
-    data_tensor[1, 1, 0] = 6
-    data_tensor[1, 1, 1] = 7
-
-    comptime indices_rank = 2
-    comptime indices_layout = Layout.row_major[indices_rank]()
-    var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 2)](
-        IndexList[indices_rank](2, 2)
+    var indices_device = ctx.enqueue_create_buffer[indices_type](
+        indices_shape.flattened_length()
     )
-    var indices_tensor = indices.to_layout_tensor()
 
-    indices_tensor[0, 0] = 0
-    indices_tensor[0, 1] = 1
-    indices_tensor[1, 0] = 1
-    indices_tensor[1, 1] = 0
+    with data_device.map_to_host() as data_host:
+        var data_tensor = LayoutTensor[data_type, data_layout](
+            data_host, data_runtime
+        )
+        data_tensor[0, 0, 0] = 0
+        data_tensor[0, 0, 1] = 1
+        data_tensor[0, 1, 0] = 2
+        data_tensor[0, 1, 1] = 3
+        data_tensor[1, 0, 0] = 4
+        data_tensor[1, 0, 1] = 5
+        data_tensor[1, 1, 0] = 6
+        data_tensor[1, 1, 1] = 7
+
+    with indices_device.map_to_host() as indices_host:
+        var indices_tensor = LayoutTensor[indices_type, indices_layout](
+            indices_host, indices_runtime
+        )
+        indices_tensor[0, 0] = 0
+        indices_tensor[0, 1] = 1
+        indices_tensor[1, 0] = 1
+        indices_tensor[1, 1] = 0
+
+    var data_tensor = LayoutTensor[data_type, data_layout](
+        data_device, data_runtime
+    )
+    var indices_tensor = LayoutTensor[indices_type, indices_layout](
+        indices_device, indices_runtime
+    )
 
     comptime output_rank = 2
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
-        DType.int64,
+        indices_type,
         batch_dims,
-    ](
-        LayoutTensor[data_tensor.dtype, data_layout](
-            data_tensor.ptr,
-            RuntimeLayout[data_layout].row_major(
-                data_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[indices_tensor.dtype, indices_layout](
-            indices_tensor.ptr,
-            RuntimeLayout[indices_layout].row_major(
-                indices_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+    ](data_tensor, indices_tensor)
+
+    comptime output_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var output_runtime = RuntimeLayout[output_layout].row_major(output_shape)
+
+    var expected_output_device = ctx.enqueue_create_buffer[data_type](
+        output_shape.flattened_length()
     )
+    with expected_output_device.map_to_host() as expected_host:
+        var expected_tensor = LayoutTensor[data_type, output_layout](
+            expected_host, output_runtime
+        )
+        expected_tensor[0, 0] = 2
+        expected_tensor[0, 1] = 3
+        expected_tensor[1, 0] = 4
+        expected_tensor[1, 1] = 5
 
-    var expected_output = HostNDBuffer[data_type, output_rank](output_shape)
-    var expected_output_tensor = expected_output.to_layout_tensor()
-    expected_output_tensor[0, 0] = 2
-    expected_output_tensor[0, 1] = 3
-    expected_output_tensor[1, 0] = 4
-    expected_output_tensor[1, 1] = 5
-
-    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
+    execute_gather_nd_test[
+        data_type,
+        indices_type,
+        batch_dims,
+        data_layout,
+        indices_layout,
+        output_layout,
+    ](
+        data_device,
+        data_runtime,
+        indices_device,
+        indices_runtime,
+        expected_output_device,
+        output_runtime,
+        ctx,
+    )
 
 
 fn test_gather_nd_eg4(ctx: DeviceContext) raises:
     # Example 4
     comptime batch_dims = 0
-    comptime data_rank = 3
     comptime data_type = DType.int8
-    comptime data_layout = Layout.row_major[data_rank]()
-    var data = HostNDBuffer[data_type, data_rank, DimList(2, 2, 2)](
-        IndexList[data_rank](2, 2, 2)
+    comptime indices_type = DType.int64
+
+    comptime data_layout = Layout.row_major(2, 2, 2)
+    var data_shape = IndexList[3](2, 2, 2)
+    var data_runtime = RuntimeLayout[data_layout].row_major(data_shape)
+
+    comptime indices_layout = Layout.row_major(2, 1, 2)
+    var indices_shape = IndexList[3](2, 1, 2)
+    var indices_runtime = RuntimeLayout[indices_layout].row_major(indices_shape)
+
+    var data_device = ctx.enqueue_create_buffer[data_type](
+        data_shape.flattened_length()
     )
-    var data_tensor = data.to_layout_tensor()
-
-    data_tensor[0, 0, 0] = 0
-    data_tensor[0, 0, 1] = 1
-    data_tensor[0, 1, 0] = 2
-    data_tensor[0, 1, 1] = 3
-    data_tensor[1, 0, 0] = 4
-    data_tensor[1, 0, 1] = 5
-    data_tensor[1, 1, 0] = 6
-    data_tensor[1, 1, 1] = 7
-
-    comptime indices_rank = 3
-    comptime indices_layout = Layout.row_major[indices_rank]()
-    var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1, 2)](
-        IndexList[indices_rank](2, 1, 2)
+    var indices_device = ctx.enqueue_create_buffer[indices_type](
+        indices_shape.flattened_length()
     )
-    var indices_tensor = indices.to_layout_tensor()
 
-    indices_tensor[0, 0, 0] = 0
-    indices_tensor[0, 0, 1] = 1
-    indices_tensor[1, 0, 0] = 1
-    indices_tensor[1, 0, 1] = 0
+    with data_device.map_to_host() as data_host:
+        var data_tensor = LayoutTensor[data_type, data_layout](
+            data_host, data_runtime
+        )
+        data_tensor[0, 0, 0] = 0
+        data_tensor[0, 0, 1] = 1
+        data_tensor[0, 1, 0] = 2
+        data_tensor[0, 1, 1] = 3
+        data_tensor[1, 0, 0] = 4
+        data_tensor[1, 0, 1] = 5
+        data_tensor[1, 1, 0] = 6
+        data_tensor[1, 1, 1] = 7
+
+    with indices_device.map_to_host() as indices_host:
+        var indices_tensor = LayoutTensor[indices_type, indices_layout](
+            indices_host, indices_runtime
+        )
+        indices_tensor[0, 0, 0] = 0
+        indices_tensor[0, 0, 1] = 1
+        indices_tensor[1, 0, 0] = 1
+        indices_tensor[1, 0, 1] = 0
+
+    var data_tensor = LayoutTensor[data_type, data_layout](
+        data_device, data_runtime
+    )
+    var indices_tensor = LayoutTensor[indices_type, indices_layout](
+        indices_device, indices_runtime
+    )
 
     comptime output_rank = 3
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
-        DType.int64,
+        indices_type,
         batch_dims,
-    ](
-        LayoutTensor[data_tensor.dtype, data_layout](
-            data_tensor.ptr,
-            RuntimeLayout[data_layout].row_major(
-                data_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[indices_tensor.dtype, indices_layout](
-            indices_tensor.ptr,
-            RuntimeLayout[indices_layout].row_major(
-                indices_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+    ](data_tensor, indices_tensor)
+
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
+    var output_runtime = RuntimeLayout[output_layout].row_major(output_shape)
 
-    var expected_output = HostNDBuffer[data_type, output_rank](output_shape)
-    var expected_output_tensor = expected_output.to_layout_tensor()
-    expected_output_tensor[0, 0, 0] = 2
-    expected_output_tensor[0, 0, 1] = 3
-    expected_output_tensor[1, 0, 0] = 4
-    expected_output_tensor[1, 0, 1] = 5
+    var expected_output_device = ctx.enqueue_create_buffer[data_type](
+        output_shape.flattened_length()
+    )
+    with expected_output_device.map_to_host() as expected_host:
+        var expected_tensor = LayoutTensor[data_type, output_layout](
+            expected_host, output_runtime
+        )
+        expected_tensor[0, 0, 0] = 2
+        expected_tensor[0, 0, 1] = 3
+        expected_tensor[1, 0, 0] = 4
+        expected_tensor[1, 0, 1] = 5
 
-    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
+    execute_gather_nd_test[
+        data_type,
+        indices_type,
+        batch_dims,
+        data_layout,
+        indices_layout,
+        output_layout,
+    ](
+        data_device,
+        data_runtime,
+        indices_device,
+        indices_runtime,
+        expected_output_device,
+        output_runtime,
+        ctx,
+    )
 
 
 fn test_gather_nd_eg5(ctx: DeviceContext) raises:
     # Example 5
     comptime batch_dims = 1
-    comptime data_rank = 3
     comptime data_type = DType.int32
-    comptime data_layout = Layout.row_major[data_rank]()
-    var data = HostNDBuffer[data_type, data_rank, DimList(2, 2, 2)](
-        IndexList[data_rank](2, 2, 2)
+    comptime indices_type = DType.int64
+
+    comptime data_layout = Layout.row_major(2, 2, 2)
+    var data_shape = IndexList[3](2, 2, 2)
+    var data_runtime = RuntimeLayout[data_layout].row_major(data_shape)
+
+    comptime indices_layout = Layout.row_major(2, 1)
+    var indices_shape = IndexList[2](2, 1)
+    var indices_runtime = RuntimeLayout[indices_layout].row_major(indices_shape)
+
+    var data_device = ctx.enqueue_create_buffer[data_type](
+        data_shape.flattened_length()
     )
-    var data_tensor = data.to_layout_tensor()
-
-    data_tensor[0, 0, 0] = 0
-    data_tensor[0, 0, 1] = 1
-    data_tensor[0, 1, 0] = 2
-    data_tensor[0, 1, 1] = 3
-    data_tensor[1, 0, 0] = 4
-    data_tensor[1, 0, 1] = 5
-    data_tensor[1, 1, 0] = 6
-    data_tensor[1, 1, 1] = 7
-
-    comptime indices_rank = 2
-    comptime indices_layout = Layout.row_major[indices_rank]()
-    var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1)](
-        IndexList[indices_rank](2, 1)
+    var indices_device = ctx.enqueue_create_buffer[indices_type](
+        indices_shape.flattened_length()
     )
-    var indices_tensor = indices.to_layout_tensor()
 
-    indices_tensor[0, 0] = 1
-    indices_tensor[1, 0] = 0
+    with data_device.map_to_host() as data_host:
+        var data_tensor = LayoutTensor[data_type, data_layout](
+            data_host, data_runtime
+        )
+        data_tensor[0, 0, 0] = 0
+        data_tensor[0, 0, 1] = 1
+        data_tensor[0, 1, 0] = 2
+        data_tensor[0, 1, 1] = 3
+        data_tensor[1, 0, 0] = 4
+        data_tensor[1, 0, 1] = 5
+        data_tensor[1, 1, 0] = 6
+        data_tensor[1, 1, 1] = 7
+
+    with indices_device.map_to_host() as indices_host:
+        var indices_tensor = LayoutTensor[indices_type, indices_layout](
+            indices_host, indices_runtime
+        )
+        indices_tensor[0, 0] = 1
+        indices_tensor[1, 0] = 0
+
+    var data_tensor = LayoutTensor[data_type, data_layout](
+        data_device, data_runtime
+    )
+    var indices_tensor = LayoutTensor[indices_type, indices_layout](
+        indices_device, indices_runtime
+    )
 
     comptime output_rank = 2
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
-        DType.int64,
+        indices_type,
         batch_dims,
-    ](
-        LayoutTensor[data_tensor.dtype, data_layout](
-            data_tensor.ptr,
-            RuntimeLayout[data_layout].row_major(
-                data_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[indices_tensor.dtype, indices_layout](
-            indices_tensor.ptr,
-            RuntimeLayout[indices_layout].row_major(
-                indices_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+    ](data_tensor, indices_tensor)
+
+    comptime output_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var output_runtime = RuntimeLayout[output_layout].row_major(output_shape)
+
+    var expected_output_device = ctx.enqueue_create_buffer[data_type](
+        output_shape.flattened_length()
     )
+    with expected_output_device.map_to_host() as expected_host:
+        var expected_tensor = LayoutTensor[data_type, output_layout](
+            expected_host, output_runtime
+        )
+        expected_tensor[0, 0] = 2
+        expected_tensor[0, 1] = 3
+        expected_tensor[1, 0] = 4
+        expected_tensor[1, 1] = 5
 
-    var expected_output = HostNDBuffer[data_type, output_rank](output_shape)
-    var expected_output_tensor = expected_output.to_layout_tensor()
-    expected_output_tensor[0, 0] = 2
-    expected_output_tensor[0, 1] = 3
-    expected_output_tensor[1, 0] = 4
-    expected_output_tensor[1, 1] = 5
-
-    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
+    execute_gather_nd_test[
+        data_type,
+        indices_type,
+        batch_dims,
+        data_layout,
+        indices_layout,
+        output_layout,
+    ](
+        data_device,
+        data_runtime,
+        indices_device,
+        indices_runtime,
+        expected_output_device,
+        output_runtime,
+        ctx,
+    )
 
 
 fn test_gather_nd_eg6(ctx: DeviceContext) raises:
     # Example 6
     comptime batch_dims = 2
-    comptime data_rank = 3
     comptime data_type = DType.int8
-    comptime data_layout = Layout.row_major[data_rank]()
-    var data = HostNDBuffer[data_type, data_rank, DimList(2, 3, 4)](
-        IndexList[data_rank](2, 3, 4)
+    comptime indices_type = DType.int64
+
+    comptime data_layout = Layout.row_major(2, 3, 4)
+    var data_shape = IndexList[3](2, 3, 4)
+    var data_runtime = RuntimeLayout[data_layout].row_major(data_shape)
+
+    comptime indices_layout = Layout.row_major(2, 3, 1, 1)
+    var indices_shape = IndexList[4](2, 3, 1, 1)
+    var indices_runtime = RuntimeLayout[indices_layout].row_major(indices_shape)
+
+    var data_device = ctx.enqueue_create_buffer[data_type](
+        data_shape.flattened_length()
     )
-    var data_tensor = data.to_layout_tensor()
+    var indices_device = ctx.enqueue_create_buffer[indices_type](
+        indices_shape.flattened_length()
+    )
 
-    data_tensor[0, 0, 0] = 1
-    data_tensor[0, 0, 1] = 2
-    data_tensor[0, 0, 2] = 3
-    data_tensor[0, 0, 3] = 4
-
-    data_tensor[0, 1, 0] = 5
-    data_tensor[0, 1, 1] = 6
-    data_tensor[0, 1, 2] = 7
-    data_tensor[0, 1, 3] = 8
-
-    data_tensor[0, 2, 0] = 9
-    data_tensor[0, 2, 1] = 10
-    data_tensor[0, 2, 2] = 11
-    data_tensor[0, 2, 3] = 12
-
-    data_tensor[1, 0, 0] = 13
-    data_tensor[1, 0, 1] = 14
-    data_tensor[1, 0, 2] = 15
-    data_tensor[1, 0, 3] = 16
-
-    data_tensor[1, 1, 0] = 17
-    data_tensor[1, 1, 1] = 18
-    data_tensor[1, 1, 2] = 19
-    data_tensor[1, 1, 3] = 20
-
-    data_tensor[1, 2, 0] = 21
-    data_tensor[1, 2, 1] = 22
-    data_tensor[1, 2, 2] = 23
-    data_tensor[1, 2, 3] = 24
-
-    comptime indices_rank = 4
-    comptime indices_layout = Layout.row_major[indices_rank]()
-    var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 3, 1, 1)](
-        IndexList[indices_rank](
-            2,
-            3,
-            1,
-            1,
+    with data_device.map_to_host() as data_host:
+        var data_tensor = LayoutTensor[data_type, data_layout](
+            data_host, data_runtime
         )
-    )
-    var indices_tensor = indices.to_layout_tensor()
+        data_tensor[0, 0, 0] = 1
+        data_tensor[0, 0, 1] = 2
+        data_tensor[0, 0, 2] = 3
+        data_tensor[0, 0, 3] = 4
+        data_tensor[0, 1, 0] = 5
+        data_tensor[0, 1, 1] = 6
+        data_tensor[0, 1, 2] = 7
+        data_tensor[0, 1, 3] = 8
+        data_tensor[0, 2, 0] = 9
+        data_tensor[0, 2, 1] = 10
+        data_tensor[0, 2, 2] = 11
+        data_tensor[0, 2, 3] = 12
+        data_tensor[1, 0, 0] = 13
+        data_tensor[1, 0, 1] = 14
+        data_tensor[1, 0, 2] = 15
+        data_tensor[1, 0, 3] = 16
+        data_tensor[1, 1, 0] = 17
+        data_tensor[1, 1, 1] = 18
+        data_tensor[1, 1, 2] = 19
+        data_tensor[1, 1, 3] = 20
+        data_tensor[1, 2, 0] = 21
+        data_tensor[1, 2, 1] = 22
+        data_tensor[1, 2, 2] = 23
+        data_tensor[1, 2, 3] = 24
 
-    indices_tensor[0, 0, 0, 0] = 1
-    indices_tensor[0, 1, 0, 0] = 0
-    indices_tensor[0, 2, 0, 0] = 2
-    indices_tensor[1, 0, 0, 0] = 0
-    indices_tensor[1, 1, 0, 0] = 2
-    indices_tensor[1, 2, 0, 0] = 2
+    with indices_device.map_to_host() as indices_host:
+        var indices_tensor = LayoutTensor[indices_type, indices_layout](
+            indices_host, indices_runtime
+        )
+        indices_tensor[0, 0, 0, 0] = 1
+        indices_tensor[0, 1, 0, 0] = 0
+        indices_tensor[0, 2, 0, 0] = 2
+        indices_tensor[1, 0, 0, 0] = 0
+        indices_tensor[1, 1, 0, 0] = 2
+        indices_tensor[1, 2, 0, 0] = 2
+
+    var data_tensor = LayoutTensor[data_type, data_layout](
+        data_device, data_runtime
+    )
+    var indices_tensor = LayoutTensor[indices_type, indices_layout](
+        indices_device, indices_runtime
+    )
 
     comptime output_rank = 3
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
-        DType.int64,
+        indices_type,
         batch_dims,
-    ](
-        LayoutTensor[data_tensor.dtype, data_layout](
-            data_tensor.ptr,
-            RuntimeLayout[data_layout].row_major(
-                data_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[indices_tensor.dtype, indices_layout](
-            indices_tensor.ptr,
-            RuntimeLayout[indices_layout].row_major(
-                indices_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+    ](data_tensor, indices_tensor)
+
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
+    var output_runtime = RuntimeLayout[output_layout].row_major(output_shape)
 
-    var expected_output = HostNDBuffer[data_type, output_rank](output_shape)
-    var expected_output_tensor = expected_output.to_layout_tensor()
-    expected_output_tensor[0, 0, 0] = 2
-    expected_output_tensor[0, 1, 0] = 5
-    expected_output_tensor[0, 2, 0] = 11
-    expected_output_tensor[1, 0, 0] = 13
-    expected_output_tensor[1, 1, 0] = 19
-    expected_output_tensor[1, 2, 0] = 23
+    var expected_output_device = ctx.enqueue_create_buffer[data_type](
+        output_shape.flattened_length()
+    )
+    with expected_output_device.map_to_host() as expected_host:
+        var expected_tensor = LayoutTensor[data_type, output_layout](
+            expected_host, output_runtime
+        )
+        expected_tensor[0, 0, 0] = 2
+        expected_tensor[0, 1, 0] = 5
+        expected_tensor[0, 2, 0] = 11
+        expected_tensor[1, 0, 0] = 13
+        expected_tensor[1, 1, 0] = 19
+        expected_tensor[1, 2, 0] = 23
 
-    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
+    execute_gather_nd_test[
+        data_type,
+        indices_type,
+        batch_dims,
+        data_layout,
+        indices_layout,
+        output_layout,
+    ](
+        data_device,
+        data_runtime,
+        indices_device,
+        indices_runtime,
+        expected_output_device,
+        output_runtime,
+        ctx,
+    )
 
 
 fn test_gather_nd_eg7(ctx: DeviceContext) raises:
     # Example 7
     comptime batch_dims = 0
-    comptime data_rank = 3
     comptime data_type = DType.int8
-    comptime data_layout = Layout.row_major[data_rank]()
-    var data = HostNDBuffer[data_type, data_rank, DimList(2, 2, 2)](
-        IndexList[data_rank](2, 2, 2)
+    comptime indices_type = DType.int64
+
+    comptime data_layout = Layout.row_major(2, 2, 2)
+    var data_shape = IndexList[3](2, 2, 2)
+    var data_runtime = RuntimeLayout[data_layout].row_major(data_shape)
+
+    comptime indices_layout = Layout.row_major(2, 1, 1)
+    var indices_shape = IndexList[3](2, 1, 1)
+    var indices_runtime = RuntimeLayout[indices_layout].row_major(indices_shape)
+
+    var data_device = ctx.enqueue_create_buffer[data_type](
+        data_shape.flattened_length()
     )
-    var data_tensor = data.to_layout_tensor()
+    var indices_device = ctx.enqueue_create_buffer[indices_type](
+        indices_shape.flattened_length()
+    )
 
-    data_tensor[0, 0, 0] = 0
-    data_tensor[0, 0, 1] = 1
-    data_tensor[0, 1, 0] = 2
-    data_tensor[0, 1, 1] = 3
-    data_tensor[1, 0, 0] = 4
-    data_tensor[1, 0, 1] = 5
-    data_tensor[1, 1, 0] = 6
-    data_tensor[1, 1, 1] = 7
-
-    comptime indices_rank = 3
-    comptime indices_layout = Layout.row_major[indices_rank]()
-    var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1, 1)](
-        IndexList[indices_rank](
-            2,
-            1,
-            1,
+    with data_device.map_to_host() as data_host:
+        var data_tensor = LayoutTensor[data_type, data_layout](
+            data_host, data_runtime
         )
-    )
-    var indices_tensor = indices.to_layout_tensor()
+        data_tensor[0, 0, 0] = 0
+        data_tensor[0, 0, 1] = 1
+        data_tensor[0, 1, 0] = 2
+        data_tensor[0, 1, 1] = 3
+        data_tensor[1, 0, 0] = 4
+        data_tensor[1, 0, 1] = 5
+        data_tensor[1, 1, 0] = 6
+        data_tensor[1, 1, 1] = 7
 
-    indices_tensor[0, 0, 0] = 0
-    indices_tensor[1, 0, 0] = 1
+    with indices_device.map_to_host() as indices_host:
+        var indices_tensor = LayoutTensor[indices_type, indices_layout](
+            indices_host, indices_runtime
+        )
+        indices_tensor[0, 0, 0] = 0
+        indices_tensor[1, 0, 0] = 1
+
+    var data_tensor = LayoutTensor[data_type, data_layout](
+        data_device, data_runtime
+    )
+    var indices_tensor = LayoutTensor[indices_type, indices_layout](
+        indices_device, indices_runtime
+    )
 
     comptime output_rank = 4
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
-        DType.int64,
+        indices_type,
         batch_dims,
-    ](
-        LayoutTensor[data_tensor.dtype, data_layout](
-            data_tensor.ptr,
-            RuntimeLayout[data_layout].row_major(
-                data_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[indices_tensor.dtype, indices_layout](
-            indices_tensor.ptr,
-            RuntimeLayout[indices_layout].row_major(
-                indices_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+    ](data_tensor, indices_tensor)
+
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
+    var output_runtime = RuntimeLayout[output_layout].row_major(output_shape)
 
-    var expected_output = HostNDBuffer[data_type, output_rank](output_shape)
-    var expected_output_tensor = expected_output.to_layout_tensor()
-    expected_output_tensor[0, 0, 0, 0] = 0
-    expected_output_tensor[0, 0, 0, 1] = 1
-    expected_output_tensor[0, 0, 1, 0] = 2
-    expected_output_tensor[0, 0, 1, 1] = 3
-    expected_output_tensor[1, 0, 0, 0] = 4
-    expected_output_tensor[1, 0, 0, 1] = 5
-    expected_output_tensor[1, 0, 1, 0] = 6
-    expected_output_tensor[1, 0, 1, 1] = 7
+    var expected_output_device = ctx.enqueue_create_buffer[data_type](
+        output_shape.flattened_length()
+    )
+    with expected_output_device.map_to_host() as expected_host:
+        var expected_tensor = LayoutTensor[data_type, output_layout](
+            expected_host, output_runtime
+        )
+        expected_tensor[0, 0, 0, 0] = 0
+        expected_tensor[0, 0, 0, 1] = 1
+        expected_tensor[0, 0, 1, 0] = 2
+        expected_tensor[0, 0, 1, 1] = 3
+        expected_tensor[1, 0, 0, 0] = 4
+        expected_tensor[1, 0, 0, 1] = 5
+        expected_tensor[1, 0, 1, 0] = 6
+        expected_tensor[1, 0, 1, 1] = 7
 
-    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
+    execute_gather_nd_test[
+        data_type,
+        indices_type,
+        batch_dims,
+        data_layout,
+        indices_layout,
+        output_layout,
+    ](
+        data_device,
+        data_runtime,
+        indices_device,
+        indices_runtime,
+        expected_output_device,
+        output_runtime,
+        ctx,
+    )
 
 
 fn test_gather_nd_eg8(ctx: DeviceContext) raises:
-    # Example 2
+    # Example 8
     comptime batch_dims = 0
-    comptime data_rank = 2
     comptime data_type = DType.int8
-    comptime data_layout = Layout.row_major[data_rank]()
-    var data = HostNDBuffer[data_type, data_rank, DimList(2, 3)](
-        IndexList[data_rank](2, 3)
+    comptime indices_type = DType.int64
+
+    comptime data_layout = Layout.row_major(2, 3)
+    var data_shape = IndexList[2](2, 3)
+    var data_runtime = RuntimeLayout[data_layout].row_major(data_shape)
+
+    comptime indices_layout = Layout.row_major(2, 1)
+    var indices_shape = IndexList[2](2, 1)
+    var indices_runtime = RuntimeLayout[indices_layout].row_major(indices_shape)
+
+    var data_device = ctx.enqueue_create_buffer[data_type](
+        data_shape.flattened_length()
     )
-    var data_tensor = data.to_layout_tensor()
-
-    data_tensor[0, 0] = 0
-    data_tensor[0, 1] = 1
-    data_tensor[0, 2] = 2
-    data_tensor[1, 0] = 3
-    data_tensor[1, 1] = 4
-    data_tensor[1, 2] = 5
-
-    comptime indices_rank = 2
-    comptime indices_layout = Layout.row_major[indices_rank]()
-    var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1)](
-        IndexList[indices_rank](2, 1)
+    var indices_device = ctx.enqueue_create_buffer[indices_type](
+        indices_shape.flattened_length()
     )
-    var indices_tensor = indices.to_layout_tensor()
 
-    indices_tensor[0, 0] = 1
-    indices_tensor[1, 0] = 0
+    with data_device.map_to_host() as data_host:
+        var data_tensor = LayoutTensor[data_type, data_layout](
+            data_host, data_runtime
+        )
+        data_tensor[0, 0] = 0
+        data_tensor[0, 1] = 1
+        data_tensor[0, 2] = 2
+        data_tensor[1, 0] = 3
+        data_tensor[1, 1] = 4
+        data_tensor[1, 2] = 5
+
+    with indices_device.map_to_host() as indices_host:
+        var indices_tensor = LayoutTensor[indices_type, indices_layout](
+            indices_host, indices_runtime
+        )
+        indices_tensor[0, 0] = 1
+        indices_tensor[1, 0] = 0
+
+    var data_tensor = LayoutTensor[data_type, data_layout](
+        data_device, data_runtime
+    )
+    var indices_tensor = LayoutTensor[indices_type, indices_layout](
+        indices_device, indices_runtime
+    )
 
     comptime output_rank = 2
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
-        DType.int64,
+        indices_type,
         batch_dims,
-    ](
-        LayoutTensor[data_tensor.dtype, data_layout](
-            data_tensor.ptr,
-            RuntimeLayout[data_layout].row_major(
-                data_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[indices_tensor.dtype, indices_layout](
-            indices_tensor.ptr,
-            RuntimeLayout[indices_layout].row_major(
-                indices_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+    ](data_tensor, indices_tensor)
+
+    comptime output_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var output_runtime = RuntimeLayout[output_layout].row_major(output_shape)
+
+    var expected_output_device = ctx.enqueue_create_buffer[data_type](
+        output_shape.flattened_length()
     )
+    with expected_output_device.map_to_host() as expected_host:
+        var expected_tensor = LayoutTensor[data_type, output_layout](
+            expected_host, output_runtime
+        )
+        expected_tensor[0, 0] = 3
+        expected_tensor[0, 1] = 4
+        expected_tensor[0, 2] = 5
+        expected_tensor[1, 0] = 0
+        expected_tensor[1, 1] = 1
+        expected_tensor[1, 2] = 2
 
-    var expected_output = HostNDBuffer[data_type, output_rank](output_shape)
-    var expected_output_tensor = expected_output.to_layout_tensor()
-    expected_output_tensor[0, 0] = 3
-    expected_output_tensor[0, 1] = 4
-    expected_output_tensor[0, 2] = 5
-    expected_output_tensor[1, 0] = 0
-    expected_output_tensor[1, 1] = 1
-    expected_output_tensor[1, 2] = 2
-
-    execute_gather_nd_test[batch_dims](data, indices, expected_output, ctx)
+    execute_gather_nd_test[
+        data_type,
+        indices_type,
+        batch_dims,
+        data_layout,
+        indices_layout,
+        output_layout,
+    ](
+        data_device,
+        data_runtime,
+        indices_device,
+        indices_runtime,
+        expected_output_device,
+        output_runtime,
+        ctx,
+    )
 
 
 def main():

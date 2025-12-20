@@ -19,7 +19,8 @@ from builtin.simd import _simd_apply
 @always_inline
 fn libm_call[
     dtype: DType,
-    width: Int, //,
+    width: Int,
+    //,
     fn_fp32: StaticString,
     fn_fp64: StaticString,
 ](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -52,10 +53,10 @@ fn libm_call[
     ](arg: Scalar[input_type]) -> Scalar[result_type]:
         return external_call[fn_fp64, Scalar[result_type]](arg)
 
-    constrained[
-        dtype in [DType.float32, DType.float64],
-        "input dtype must be float32 or float64",
-    ]()
+    __comptime_assert dtype in [
+        DType.float32,
+        DType.float64,
+    ], "input dtype must be float32 or float64"
 
     @parameter
     if dtype is DType.float32:

@@ -25,7 +25,9 @@ class SupportsLoRA(Protocol):
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
         lora_grouped_offsets: TensorValue,
-        lora_input_slice_idx: TensorValue,
+        num_active_loras: TensorValue,
+        lora_end_idx: TensorValue,
+        batch_seq_len: TensorValue,
+        lora_ids_kv: TensorValue,
+        lora_grouped_offsets_kv: TensorValue,
     ) -> None: ...
-
-    def apply_lora(self, x: TensorValue) -> TensorValue: ...

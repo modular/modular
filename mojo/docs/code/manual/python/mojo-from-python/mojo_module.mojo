@@ -25,9 +25,7 @@ fn PyInit_mojo_module() -> PythonObject:
         m.def_function[factorial]("factorial", docstring="Compute n!")
         return m.finalize()
     except e:
-        return abort[PythonObject](
-            String("error creating Python Mojo module:", e)
-        )
+        abort(String("error creating Python Mojo module:", e))
 
 
 fn factorial(py_obj: PythonObject) raises -> PythonObject:

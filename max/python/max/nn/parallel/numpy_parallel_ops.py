@@ -22,6 +22,8 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from max.driver import CPU, Device, Tensor
+from max.dtype import DType
 
 
 class ParallelArrayOps:
@@ -106,7 +108,8 @@ class ParallelArrayOps:
         axis: int = 0,
         default_copy: bool = True,
         min_chunk_size_mb: float = 50.0,
-    ) -> npt.NDArray[Any]:
+        accelerator: Device | None = None,
+    ) -> Tensor:
         """Concatenate arrays in parallel along the specified axis.
 
         Equivalent to np.concatenate but parallelized using thread pool. Automatically
@@ -132,6 +135,9 @@ class ParallelArrayOps:
                 50 MB. Prevents creating too many small work items that would have excessive
                 overhead. Arrays are only split if the resulting chunks would be at least
                 this size.
+            accelerator: If provided, the result may be allocated on a pinned buffer on
+                the specified accelerator. The output will not be pinned if the number
+                of arrays is one and default_copy is False.
 
         Returns:
             Concatenated array with the same dtype as the input arrays.
@@ -144,16 +150,15 @@ class ParallelArrayOps:
         if n == 0:
             raise ValueError("Cannot concatenate empty list of arrays.")
 
-        if n == 1:
-            # This copy is likely not needed, but it mocks the exact behaviour of numpy.concatenate.
-            if default_copy:
-                return arrays[0].copy()
-            else:
-                return arrays[0]
+        if accelerator is not None and accelerator.is_host:
+            raise ValueError(
+                "Unable to allocate pinned memory on CPU. A provided device must be a GPU."
+            )
 
         # Validate shapes and compute output shape
-        first_shape = arrays[0].shape
-        first_dtype = arrays[0].dtype
+        first = arrays[0]
+        first_shape = first.shape
+        first_dtype = first.dtype
 
         # Normalize negative axis and validate
         if axis < 0:
@@ -163,6 +168,23 @@ class ParallelArrayOps:
             raise IndexError(
                 f"axis {axis} is out of bounds for array of dimension {len(first_shape)}"
             )
+
+        if n == 1:
+            # This copy is likely not needed, but it mocks the exact behaviour of numpy.concatenate.
+            if default_copy:
+                if accelerator is None:
+                    return Tensor.from_numpy(first.copy())
+                else:
+                    out_max = Tensor(
+                        shape=first.shape,
+                        dtype=DType.from_numpy(first.dtype),
+                        device=accelerator,
+                        pinned=True,
+                    )
+                    np.copyto(out_max.to_numpy(), first)
+                    return out_max
+            else:
+                return Tensor.from_numpy(first)
 
         # Pre-compute expected shape slices for efficient validation
         # All arrays must match: shape[:axis] and shape[axis+1:]
@@ -209,7 +231,25 @@ class ParallelArrayOps:
         # Create output shape
         out_shape = list(first_shape)
         out_shape[axis] = concat_dim_size
-        out = np.empty(out_shape, dtype=first_dtype, order="C")
+
+        # Allocate output tensor. It will be pinned on an accelerator if one is provided.
+        max_dtype = DType.from_numpy(first_dtype)
+        if accelerator is not None:
+            device = accelerator
+            pinned = True
+        else:
+            device = CPU()
+            pinned = False
+        out_max = Tensor(
+            shape=out_shape,
+            dtype=max_dtype,
+            device=device,
+            pinned=pinned,
+        )
+
+        # This will alias the underlying memory.
+        # It should NOT copy the memory to another buffer.
+        out_np = out_max.to_numpy()
 
         # Pre-compute all slices for parallel copying
         # Strategy: If we have fewer arrays than workers, split large arrays into chunks
@@ -221,7 +261,7 @@ class ParallelArrayOps:
         # - 140 MB arrays with 2 arrays (12 workers/array): Split into 2-3 chunks each
         # - 280 MB arrays with 2 arrays (12 workers/array): Split into 5+ chunks each
         # This ensures each chunk is >= min_chunk_size_mb to avoid excessive overhead.
-        ndim = len(out.shape)
+        ndim = len(out_np.shape)
         min_chunk_bytes = min_chunk_size_mb * 1024 * 1024
 
         # Build work items: (src_array, src_slice, dst_slice)
@@ -297,7 +337,7 @@ class ParallelArrayOps:
         # Submit copy tasks
         futures = [
             self._pool.submit(
-                self._copy_array_slice, out, src_arr, src_slice, dst_slice
+                self._copy_array_slice, out_np, src_arr, src_slice, dst_slice
             )
             for src_arr, src_slice, dst_slice in work_items
         ]
@@ -306,7 +346,7 @@ class ParallelArrayOps:
         for f in as_completed(futures):
             f.result()
 
-        return out
+        return out_max
 
     @staticmethod
     def _copy_array_slice(

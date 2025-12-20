@@ -19,6 +19,7 @@ from gpu import *
 from gpu.host import DeviceContext, get_gpu_target
 from random import NormalRandom, Random
 from testing import *
+from sys import has_apple_gpu_accelerator
 
 from utils.index import Index, IndexList
 
@@ -96,7 +97,9 @@ def main():
     with DeviceContext() as ctx:
         run_elementwise[DType.float16](ctx)
         run_elementwise[DType.float32](ctx)
-        run_elementwise[DType.float64](ctx)
         run_elementwise[DType.float16, "normal"](ctx)
         run_elementwise[DType.float32, "normal"](ctx)
-        run_elementwise[DType.float64, "normal"](ctx)
+        if not has_apple_gpu_accelerator():
+            # Metal does not support DType.float64
+            run_elementwise[DType.float64](ctx)
+            run_elementwise[DType.float64, "normal"](ctx)

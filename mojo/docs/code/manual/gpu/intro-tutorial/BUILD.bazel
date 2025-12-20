@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
+package(default_visibility = ["//docs:__subpackages__"])
+
 MOJO_SRCS = glob(["*.mojo"])
 
 [
@@ -9,7 +11,7 @@ MOJO_SRCS = glob(["*.mojo"])
         target_compatible_with = ["//:has_gpu"],
         deps = [
             "//max:layout",
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in MOJO_SRCS

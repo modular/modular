@@ -27,7 +27,7 @@ from conftest import GraphBuilder, buffer_types, dtypes, shapes, tensor_types
 from hypothesis import given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType, ops
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 
 
 def _custom_ops_path() -> Path:
@@ -299,7 +299,6 @@ class TestInplaceCustomOp:
 
     def test_inplace_custom__per_device_chain_tracking(
         self,
-        graph_builder: GraphBuilder,
     ) -> None:
         """Test that inplace_custom advances only the targeted device chain."""
         custom_ops_path = _custom_ops_path()
@@ -309,7 +308,11 @@ class TestInplaceCustomOp:
         buffer_cpu0 = BufferType(DType.float32, (4,), cpu0)
         buffer_cpu1 = BufferType(DType.float32, (4,), cpu1)
 
-        with graph_builder(
+        # Use a fresh context and kernel_library to avoid pollution from other
+        # tests that may have already initialized the kernel library analysis
+        # without the custom_extensions paths.
+        with Graph(
+            "test_inplace_custom__per_device_chain_tracking",
             input_types=[buffer_cpu0, buffer_cpu1],
             custom_extensions=[custom_ops_path],
         ) as graph:

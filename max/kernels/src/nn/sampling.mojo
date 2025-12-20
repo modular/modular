@@ -27,7 +27,8 @@ from utils import IndexList
 
 fn apply_penalties_to_logits[
     logit_type: DType,
-    penalty_type: DType, //,
+    penalty_type: DType,
+    //,
     target: StaticString,
 ](
     logits: LayoutTensor[mut=True, logit_type, **_],
@@ -53,7 +54,7 @@ fn apply_penalties_to_logits[
     fn apply_penalties_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
-        constrained[rank_ == 1, "apply_penalties_fn: rank must be 1"]()
+        __comptime_assert rank_ == 1, "apply_penalties_fn: rank must be 1"
 
         var batch_id = get_batch_from_row_offsets(frequency_offsets, idx[0])
         var token = Int(compressed_frequency_data[idx[0], 0])
@@ -173,7 +174,8 @@ fn update_frequency_data_kernel[
 
 
 fn update_frequency_data[
-    token_type: DType, //,
+    token_type: DType,
+    //,
     target: StaticString,
 ](
     compressed_frequency_data: LayoutTensor[mut=True, DType.int32, **_],
@@ -215,9 +217,9 @@ fn update_frequency_data[
         fn update_frequency_data_fn[
             width: Int, rank_: Int, alignment: Int = 1
         ](idx: IndexList[rank_]):
-            constrained[
-                rank_ == 1, "update_frequency_data_fn: rank must be 1"
-            ]()
+            __comptime_assert (
+                rank_ == 1
+            ), "update_frequency_data_fn: rank must be 1"
 
             var tok_start = frequency_offsets[idx[0]]
             var tok_end = frequency_offsets[idx[0] + 1]

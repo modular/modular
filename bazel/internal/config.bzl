@@ -20,8 +20,6 @@ RUNTIME_SANITIZER_DATA = select({
 def runtime_sanitizer_env(*, preload = True, location_specifier = "location"):
     env = select({
         "@//:asan": {
-            # TODO: SDLC-2566 Remove need for alloc_dealloc_mismatch=0 once python extensions are fixed
-            "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS),alloc_dealloc_mismatch=0",
             "LSAN_OPTIONS": "suppressions=$({} @//bazel/internal:lsan-suppressions.txt)".format(location_specifier),
         },
         "//conditions:default": {},
@@ -81,14 +79,7 @@ def validate_gpu_tags(tags, target_compatible_with):
         tags: The target's 'tags'
         target_compatible_with: The target's 'target_compatible_with'
     """
-    has_tag = "gpu" in tags
-
-    if type(target_compatible_with) == type([]):
-        normalized_values = set([x.strip("@") for x in target_compatible_with])
-        if normalized_values == set(["//:amd_gpu", "//:nvidia_gpu"]):
-            fail("tests cannot require both 'amd_gpu' and 'nvidia_gpu' constraints")
-
-    if has_tag:
+    if "gpu" in tags:
         return
 
     has_gpu_constraints = any([

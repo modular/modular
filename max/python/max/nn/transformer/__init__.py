@@ -16,11 +16,17 @@ from .distributed_transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
 )
-from .transformer import ReturnLogits, Transformer, TransformerBlock
+from .transformer import (
+    ReturnHiddenStates,
+    ReturnLogits,
+    Transformer,
+    TransformerBlock,
+)
 
 __all__ = [
     "DistributedTransformer",
     "DistributedTransformerBlock",
+    "ReturnHiddenStates",
     "ReturnLogits",
     "Transformer",
     "TransformerBlock",

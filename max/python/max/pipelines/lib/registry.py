@@ -19,15 +19,18 @@ import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
+    EmbeddingsContext,
+    Pipeline,
     PipelineTask,
     PipelineTokenizer,
+    TextGenerationContext,
     TextGenerationRequest,
 )
 from max.nn.kv_cache import KVCacheStrategy
@@ -50,6 +53,7 @@ from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
+    EAGLESpeculativeDecodingPipeline,
     SpeculativeMethod,
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -58,13 +62,7 @@ from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
-PipelineTypes = Union[  # noqa: UP007 (This breaks a mypy check, unsure why)
-    TextGenerationPipeline[TextContext],
-    EmbeddingsPipeline,
-    AudioGeneratorPipeline,
-    StandaloneSpeculativeDecodingPipeline,
-    SpeechTokenGenerationPipeline,
-]
+PipelineTypes: TypeAlias = Pipeline[Any, Any]
 
 
 def get_pipeline_for_task(
@@ -75,6 +73,7 @@ def get_pipeline_for_task(
     | type[AudioGeneratorPipeline]
     | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
+    | type[EAGLESpeculativeDecodingPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
         if pipeline_config._speculative_config is not None:
@@ -87,6 +86,15 @@ def get_pipeline_for_task(
                 == SpeculativeMethod.STANDALONE
             ):
                 return StandaloneSpeculativeDecodingPipeline
+            elif (
+                pipeline_config._speculative_config.speculative_method
+                == SpeculativeMethod.EAGLE
+            ):
+                return EAGLESpeculativeDecodingPipeline
+            else:
+                raise ValueError(
+                    f"Unsupported speculative method: {pipeline_config._speculative_config.speculative_method}"
+                )
         else:
             return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -161,6 +169,13 @@ class SupportedArchitecture:
 
     default_weights_format: WeightsFormat
     """The weights format expected by the `pipeline_model`."""
+
+    context_type: type[TextGenerationContext] | type[EmbeddingsContext]
+    """The context class type that this architecture uses for managing request state and inputs.
+
+    This should be a class (not an instance) that implements either the `TextGenerationContext`
+    or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
+    """
 
     rope_type: RopeType = RopeType.none
     """The type of RoPE (Rotary Position Embedding) used by the model."""
@@ -288,23 +303,17 @@ class PipelineRegistry:
         create a new one using AutoConfig.from_pretrained() with the model's
         settings.
 
+        Note: The cache key (HuggingFaceRepo) includes trust_remote_code in its
+        hash, so configs with different trust settings are cached separately.
+        For multiprocessing, each worker process has its own registry instance
+        with an empty cache, so configs are loaded fresh in each worker.
+
         Args:
             huggingface_repo: The HuggingFaceRepo containing the model.
 
         Returns:
             AutoConfig: The HuggingFace configuration object for the model.
         """
-        # TODO: This is a hack to get around the fact that in serving and the
-        # way we instantiate multiprocess model workers, pickling AutoConfig will
-        # not work and AutoConfig.from_pretrained will need to be called again
-        # when trust_remote_code=True.
-        if huggingface_repo.trust_remote_code:
-            return AutoConfig.from_pretrained(
-                huggingface_repo.repo_id,
-                trust_remote_code=huggingface_repo.trust_remote_code,
-                revision=huggingface_repo.revision,
-            )
-
         if huggingface_repo not in self._cached_huggingface_configs:
             self._cached_huggingface_configs[huggingface_repo] = (
                 AutoConfig.from_pretrained(
@@ -517,6 +526,35 @@ class PipelineRegistry:
             )
 
         return tokenizer, pipeline_factory
+
+    def retrieve_context_type(
+        self, pipeline_config: PipelineConfig
+    ) -> type[TextGenerationContext] | type[EmbeddingsContext]:
+        """Retrieve the context class type associated with the architecture for the given pipeline configuration.
+
+        The context type defines how the pipeline manages request state and inputs during
+        model execution. Different architectures may use different context implementations
+        that adhere to either the TextGenerationContext or EmbeddingsContext protocol.
+
+        Args:
+            pipeline_config: The configuration for the pipeline.
+
+        Returns:
+            The context class type associated with the architecture, which implements
+            either the TextGenerationContext or EmbeddingsContext protocol.
+
+        Raises:
+            ValueError: If no supported architecture is found for the given model repository.
+        """
+        if arch := self.retrieve_architecture(
+            huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+            use_module_v3=pipeline_config.use_module_v3,
+        ):
+            return arch.context_type
+
+        raise ValueError(
+            f"MAX Optimized architecture not supported for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+        )
 
     def retrieve_pipeline_task(
         self, pipeline_config: PipelineConfig

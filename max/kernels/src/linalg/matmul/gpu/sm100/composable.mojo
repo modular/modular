@@ -22,7 +22,7 @@ from sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu import lane_id as get_lane_id
+from gpu import lane_id as get_lane_id, warp_id as get_warp_id
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -32,16 +32,10 @@ from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 
 # Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
-from layout._fillers import arange
+from layout._fillers import arange, random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
@@ -148,7 +142,6 @@ struct TMALoadOp[
             Self.block_tile_shape[0] // Self.cluster_shape[0],
             Self.block_tile_shape[2],
         ),
-        True,
         Self.a_swizzle,
     ]()
     comptime b_tma_desc_layout = _tma_desc_tile_layout[
@@ -158,7 +151,6 @@ struct TMALoadOp[
             Self.block_tile_shape[1] // Self.cluster_shape[1],
             Self.block_tile_shape[2],
         ),
-        True,
         Self.b_swizzle,
     ]()
 
@@ -180,7 +172,7 @@ struct TMALoadOp[
 
     comptime device_type = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -339,7 +331,7 @@ struct R2GOutputOp[
 
     comptime device_type = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -422,7 +414,7 @@ struct R2GOutputOp[
 
         comptime num_warps = Self.num_threads // WARP_SIZE
         # Extract last 2 bits so that warp_id is 0-3.
-        var warp_id = (thread_idx.x // UInt(WARP_SIZE)) & 3
+        var warp_id = (get_warp_id()) & 3
 
         var ctile = self.c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
@@ -474,7 +466,7 @@ struct PipelineArgs[
 ](DevicePassable, OpArgs):
     comptime device_type = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -614,7 +606,7 @@ struct Pipeline[
         var tma_phase: UInt32 = 0
         var mma_phase: UInt32 = 0
 
-        var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+        var elect_one_warp = get_warp_id() == 0
         var elect_one_thread = thread_idx.x == 0
         var elect_one_cta = block_rank_in_cluster() % 2 == 0
         comptime max_tmem_cols = 512

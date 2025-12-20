@@ -38,8 +38,19 @@ def _extract_linker_variables(ctx):
         variables = variables,
     )
 
-    # TODO: Fix -Wl, exclusion
-    system_libs = [x for x in link_arguments if not x.startswith("-Wl,")]
+    system_libs = []
+    for x in link_arguments:
+        if x.startswith("-Wl,"):
+            args = x.split(",")[1:]
+            if args == ["-pie"]:
+                # Skip -pie because some tests link shared libs libs,
+                # assume they will add it anyways
+                continue
+            for y in args:
+                system_libs.append("-Xlinker")
+                system_libs.append(y)
+        else:
+            system_libs.append(x)
 
     return linker_driver, system_libs, env, cc_toolchain.all_files
 
@@ -75,13 +86,7 @@ def _mojo_test_environment_implementation(ctx):
         transitive_runfiles.append(target[DefaultInfo].default_runfiles)
 
     shared_libs = []
-    transitive_files = [depset([mojo_toolchain.lld])]
-
-    # TODO: This also contains runfiles, it probably should not.
-    for tool in mojo_toolchain.all_tools:
-        if type(tool) == type(depset()):
-            transitive_files.append(tool)
-
+    transitive_files = [depset([mojo_toolchain.lld])] + mojo_toolchain.all_tools
     compilerrt = None
     cc_deps = mojo_toolchain.implicit_deps + ([ctx.attr._link_extra_lib] if ctx.attr._link_extra_lib else [])
     for lib in cc_deps:

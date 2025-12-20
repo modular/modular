@@ -28,29 +28,33 @@ from math import recip
 from .fp4_utils import (
     cast_fp32_to_fp4e2m1,
     E2M1_TO_FLOAT32,
-    cast_uint32_to_fp4e2m1,
-    cast_fp_to_fp4e2m1,
     cast_f4e2m1x2_to_fp16x2,
     SF_ATOM_M,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
-    _set_scale_factor,
-    _get_scale_factor,
+    set_scale_factor,
+    get_scale_factor,
 )
 from gpu.host.info import B200
 from utils import StaticTuple
 from collections import OptionalReg
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    elementwise_epilogue_type,
+    elementwise_compute_lambda_type,
+)
 from utils.index import Index, IndexList
+from linalg.matmul.vendor.blas import matmul
+from buffer import Dim, NDBuffer
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from memory import bitcast
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
 ########################################################
 
 comptime logger = Logger()
-comptime BLOCK_SIZE = 512
 
 
 @always_inline
@@ -60,9 +64,11 @@ fn quantize_dynamic_scaled_fp4[
     in_dtype: DType,
     output_layout: Layout,
     scales_layout: Layout,
-    input_layout: Layout, //,
+    input_layout: Layout,
+    //,
     *,
     SF_VECTOR_SIZE: Int = 16,
+    num_max_threads: Int = 512,
 ](
     ctx: DeviceContext,
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
@@ -72,22 +78,18 @@ fn quantize_dynamic_scaled_fp4[
     num_cols_padded: Int,
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
-    constrained[
-        ctx.default_device_info.compute == B200.compute,
-        "This kernel is only supported on SM100",
-    ]()
-    constrained[
-        in_dtype in (DType.bfloat16,),
-        "input dtype should be bfloat16",
-    ]()
-    constrained[
-        out_dtype in (DType.uint32,),
-        "output dtype should be uint32",
-    ]()
-    constrained[
-        scales_dtype in (NVFP4_SF_DTYPE,),
-        "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)",
-    ]()
+    __comptime_assert (
+        ctx.default_device_info.compute == B200.compute
+    ), "This kernel is only supported on SM100"
+    __comptime_assert in_dtype in (
+        DType.bfloat16,
+    ), "input dtype should be bfloat16"
+    __comptime_assert out_dtype in (
+        DType.uint8,
+    ), "output dtype should be uint8 (fp4-e2m1fnX2)"
+    __comptime_assert scales_dtype in (
+        NVFP4_SF_DTYPE,
+    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
 
     comptime ELEMENTS_PER_THREAD = SF_VECTOR_SIZE // 2
     comptime num_SMs = B200.sm_count
@@ -95,7 +97,11 @@ fn quantize_dynamic_scaled_fp4[
     var num_rows = input.dim(0)
     var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
 
-    var block_dim = (min(num_cols // ELEMENTS_PER_THREAD, BLOCK_SIZE), 1, 1)
+    var block_dim = (
+        min(num_cols // ELEMENTS_PER_THREAD, num_max_threads),
+        1,
+        1,
+    )
     var num_blocks_per_SM = max(
         1, B200.threads_per_multiprocessor // block_dim[0]
     )
@@ -110,6 +116,7 @@ fn quantize_dynamic_scaled_fp4[
         input_layout,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
+        num_max_threads=num_max_threads,
     ]
 
     ctx.enqueue_function_checked[kernel, kernel](
@@ -125,7 +132,7 @@ fn quantize_dynamic_scaled_fp4[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_max_threads)
 )
 fn quantize_dynamic_scaled_fp4_kernel[
     out_dtype: DType,
@@ -137,6 +144,7 @@ fn quantize_dynamic_scaled_fp4_kernel[
     *,
     SF_VECTOR_SIZE: Int = 16,
     ELEMENTS_PER_THREAD: Int = 8,
+    num_max_threads: Int = 512,
 ](
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
     scales: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
@@ -145,20 +153,18 @@ fn quantize_dynamic_scaled_fp4_kernel[
     num_cols_padded: Int,
     tensor_sf: Float32,
 ):
-    constrained[
-        SF_VECTOR_SIZE == 16 and ELEMENTS_PER_THREAD == SF_VECTOR_SIZE // 2,
-        (
-            "Currently only supports NVFP4 (SF_VECTOR_SIZE = 16) with 8"
-            " elements per thread"
-        ),
-    ]()
+    __comptime_assert (
+        SF_VECTOR_SIZE == 16 and ELEMENTS_PER_THREAD == SF_VECTOR_SIZE // 2
+    ), (
+        "Currently only supports NVFP4 (SF_VECTOR_SIZE = 16) with 8"
+        " elements per thread"
+    )
 
     comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
 
-    constrained[
-        input.shape[1]() % ELEMENTS_PER_THREAD == 0,
-        "num_cols must be a multiple of ELEMENTS_PER_THREAD (8 for NVFP4)",
-    ]()
+    __comptime_assert (
+        input.shape[1]() % ELEMENTS_PER_THREAD == 0
+    ), "num_cols must be a multiple of ELEMENTS_PER_THREAD (8 for NVFP4)"
 
     var num_rows = input.dim(0)
     var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
@@ -180,7 +186,7 @@ fn quantize_dynamic_scaled_fp4_kernel[
                 # they only exist in the scale factor tensor. Tensor cores expects these scale factors to be 0.
                 # there will be accuracy issues if we don't zero out the scale factors for padding rows.
                 if global_col_idx % SF_VECTOR_SIZE == 0:
-                    _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                    set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         scales,
                         global_row_idx,
                         global_col_idx,
@@ -193,13 +199,15 @@ fn quantize_dynamic_scaled_fp4_kernel[
                     col_idx >= num_col_threads
                     and col_idx < num_padded_col_threads
                 ):
-                    output[global_row_idx, col_idx] = rebind[Scalar[out_dtype]](
-                        Scalar[out_dtype](0)
+                    output.store[width=4](
+                        global_row_idx,
+                        col_idx * (ELEMENTS_PER_THREAD // 2),
+                        SIMD[out_dtype, 4](0),
                     )
 
                 if col_idx >= num_col_threads:
                     if global_col_idx % SF_VECTOR_SIZE == 0:
-                        _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                             scales,
                             global_row_idx,
                             global_col_idx,
@@ -238,7 +246,7 @@ fn quantize_dynamic_scaled_fp4_kernel[
 
                     # write back the scale factor
                     if global_col_idx % SF_VECTOR_SIZE == 0:
-                        _set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                             scales,
                             global_row_idx,
                             global_col_idx,
@@ -249,10 +257,103 @@ fn quantize_dynamic_scaled_fp4_kernel[
                         input_vector.cast[DType.float32]() * output_scale
                     )
                     var e2m1_vector = cast_fp32_to_fp4e2m1(input_f32)
+                    var e2m1_vector_uint8 = bitcast[out_dtype, 4](e2m1_vector)
 
-                    output[global_row_idx, col_idx] = rebind[Scalar[out_dtype]](
-                        e2m1_vector
+                    output.store[width=4](
+                        global_row_idx,
+                        col_idx * (ELEMENTS_PER_THREAD // 2),
+                        e2m1_vector_uint8,
                     )
+
+
+@always_inline
+fn block_scales_interleave_fp4[
+    scales_dtype: DType,
+    input_scales_layout: Layout,
+    output_scales_layout: Layout,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int = 16,
+    num_max_threads: Int = 1024,
+](
+    ctx: DeviceContext,
+    input_scales: LayoutTensor[scales_dtype, input_scales_layout, MutAnyOrigin],
+    output_scales: LayoutTensor[
+        scales_dtype, output_scales_layout, MutAnyOrigin
+    ],
+) raises:
+    __comptime_assert (
+        ctx.default_device_info.compute == B200.compute
+    ), "This kernel is only supported on SM100"
+    __comptime_assert scales_dtype in (
+        NVFP4_SF_DTYPE,
+    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
+
+    comptime num_SMs = B200.sm_count
+
+    var num_rows = input_scales.dim(0)
+    var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
+    var num_cols = input_scales.dim(1)
+    var num_col_padded = align_up(num_cols, SF_ATOM_K)
+
+    # each thread handle just one scale factor for SF_VECTOR_SIZE of elements
+    var block_dim = (min(num_col_padded, num_max_threads), 1, 1)
+    var num_blocks_per_SM = max(
+        1, 2 * B200.threads_per_multiprocessor // block_dim[0]
+    )
+    var grid_dim = (min(num_rows_padded, num_SMs * num_blocks_per_SM), 1, 1)
+
+    comptime kernel = block_scales_interleave_fp4_kernel[
+        scales_dtype,
+        input_scales_layout,
+        output_scales_layout,
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        num_max_threads=num_max_threads,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        input_scales,
+        output_scales,
+        block_dim=block_dim,
+        grid_dim=grid_dim,
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_max_threads)
+)
+fn block_scales_interleave_fp4_kernel[
+    scales_dtype: DType,
+    input_scales_layout: Layout,
+    output_scales_layout: Layout,
+    *,
+    SF_VECTOR_SIZE: Int = 16,
+    num_max_threads: Int = 1024,
+](
+    input_scales: LayoutTensor[scales_dtype, input_scales_layout, MutAnyOrigin],
+    output_scales: LayoutTensor[
+        scales_dtype, output_scales_layout, MutAnyOrigin
+    ],
+):
+    var num_rows = input_scales.dim(0)
+    var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
+    var num_cols = input_scales.dim(1)
+    var num_col_padded = align_up(num_cols, SF_ATOM_K)
+
+    for row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
+        for col_idx in range(thread_idx.x, num_col_padded, block_dim.x):
+            var scale_factor = Scalar[scales_dtype](0.0)
+            if row_idx < num_rows and col_idx < num_cols:
+                scale_factor = rebind[Scalar[scales_dtype]](
+                    input_scales[row_idx, col_idx]
+                )
+
+            set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                output_scales,
+                row_idx,
+                col_idx * SF_VECTOR_SIZE,
+                scale_factor,
+            )
 
 
 fn naive_block_scaled_nvfp4_matmul[
@@ -260,7 +361,8 @@ fn naive_block_scaled_nvfp4_matmul[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    b_scales_type: DType, //,
+    b_scales_type: DType,
+    //,
     *,
     SF_VECTOR_SIZE: Int,
     accum_type: DType = DType.float32,
@@ -279,35 +381,26 @@ fn naive_block_scaled_nvfp4_matmul[
     ],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only transpose_b = True is supported for now",
-    ]()
-    constrained[
-        accum_type in (DType.float32,),
-        "Only float32 is supported for accumulation for scaled matmul",
-    ]()
-    constrained[
-        a_type == b_type == DType.uint8,
-        (
-            "Only Float4-E2M1x2(i.e, uint8) is supported for input dtype for"
-            " block scaled NVFP4 matmul"
-        ),
-    ]()
-    constrained[
-        a_scales_type == b_scales_type and a_scales_type == NVFP4_SF_DTYPE,
-        (
-            "input A and B scales dtype should be same and should be"
-            " NVFP4_SF_DTYPE (float8_e4m3fn)"
-        ),
-    ]()
-    constrained[
-        c_type in (DType.bfloat16,),
-        (
-            "Only float32 is supported for output dtype for block scaled NVFP4"
-            " matmul"
-        ),
-    ]()
+    __comptime_assert (
+        transpose_b
+    ), "Only transpose_b = True is supported for now"
+    __comptime_assert accum_type in (
+        DType.float32,
+    ), "Only float32 is supported for accumulation for scaled matmul"
+    __comptime_assert a_type == b_type == DType.uint8, (
+        "Only Float4-E2M1x2(i.e, uint8) is supported for input dtype for"
+        " block scaled NVFP4 matmul"
+    )
+    __comptime_assert (
+        a_scales_type == b_scales_type and a_scales_type == NVFP4_SF_DTYPE
+    ), (
+        "input A and B scales dtype should be same and should be"
+        " NVFP4_SF_DTYPE (float8_e4m3fn)"
+    )
+    __comptime_assert c_type in (DType.bfloat16,), (
+        "Only float32 is supported for output dtype for block scaled NVFP4"
+        " matmul"
+    )
 
     var M = c.dim(0)
     var N = c.dim(1)
@@ -361,7 +454,7 @@ fn naive_block_scaled_nvfp4_matmul[
         sep="",
     )
 
-    alias kernel = naive_block_scaled_nvfp4_matmul_kernel[
+    comptime kernel = naive_block_scaled_nvfp4_matmul_kernel[
         c_type,
         a_type,
         b_type,
@@ -431,10 +524,10 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
 
     var accum = Scalar[accum_type](0.0)
     for k in range(0, K, 2):
-        var a_scale = _get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+        var a_scale = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             a_scales, Int(row_idx), k
         )
-        var b_scale = _get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+        var b_scale = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             b_scales, Int(col_idx), k
         )
 
@@ -460,9 +553,168 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
 
     @parameter
     if elementwise_lambda_fn:
-        alias elementwise_lambda = elementwise_lambda_fn.value()
+        comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](
             Index(row_idx, col_idx), accum.cast[c_type]()
         )
     else:
         c[row_idx, col_idx] = accum.cast[c_type]()
+
+
+fn quantize_dynamic_block_scaled[
+    out_dtype: DType,
+    scales_dtype: DType,
+    in_dtype: DType,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    target: StaticString = "cpu",
+](
+    output_device: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin, _],
+    scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
+    input_device: NDBuffer[in_dtype, 2, MutAnyOrigin, _],
+    tensor_sf: Float32,  # tensor-wise scale factor
+    ctx: DeviceContext,
+) raises:
+    __comptime_assert (
+        ctx.default_device_info.compute == B200.compute
+    ), "This kernel is only supported on SM100"
+    __comptime_assert in_dtype in (
+        DType.bfloat16,
+    ), "input dtype should be bfloat16"
+    __comptime_assert out_dtype in (
+        DType.uint32,
+    ), "output dtype should be uint32"
+    __comptime_assert scales_dtype in (
+        NVFP4_SF_DTYPE,
+    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
+    __comptime_assert (
+        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
+
+    var output = from_ndbuffer_row_major(output_device)
+    var scales = from_ndbuffer_row_major(scales_device)
+    var input = from_ndbuffer_row_major(input_device)
+
+    comptime input_layout = input.layout
+    comptime output_layout = output.layout
+    __comptime_assert (
+        input_layout.shape[1].value() % (SF_VECTOR_SIZE // 2) == 0
+    ), "input.dim(1) must be a multiple of (SF_VECTOR_SIZE // 2)"
+    __comptime_assert (
+        output_layout.shape[1].value() == input_layout.shape[1].value() // 2
+    ), (
+        "output.dim(1) must be equal to input.dim(1) // 2 (each output"
+        " element (uint8) is 2 fp4-e2m1fn values)"
+    )
+
+    quantize_dynamic_scaled_fp4[
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        num_max_threads=512,
+    ](
+        ctx,
+        output,
+        scales,
+        input,
+        num_cols=input.dim(1),
+        num_cols_padded=input.dim(1),
+        tensor_sf=tensor_sf,
+    )
+
+
+fn block_scales_interleave[
+    scales_dtype: DType,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    target: StaticString = "cpu",
+](
+    output_scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
+    input_scales_device: NDBuffer[scales_dtype, 2, MutAnyOrigin, _],
+    ctx: DeviceContext,
+) raises:
+    __comptime_assert (
+        ctx.default_device_info.compute == B200.compute
+    ), "This kernel is only supported on SM100"
+    __comptime_assert scales_dtype in (
+        NVFP4_SF_DTYPE,
+    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn) for now."
+
+    var output = from_ndbuffer_row_major(output_scales_device)
+    var input = from_ndbuffer_row_major(input_scales_device)
+
+    block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
+        ctx, input, output
+    )
+
+
+fn block_scaled_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool = True,
+    target: StaticString = "cpu",
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
+](
+    c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
+    a_device: NDBuffer[a_type, 2, MutAnyOrigin, _],
+    b_device: NDBuffer[b_type, 2, MutAnyOrigin, _],
+    a_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
+    b_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
+    tensor_sf: Float32,
+    ctx: DeviceContext,
+) raises:
+    __comptime_assert (
+        ctx.default_device_info.compute == B200.compute
+    ), "This kernel is only supported on SM100"
+
+    __comptime_assert transpose_b, "Only support transposed B"
+
+    __comptime_assert (
+        scales_dtype == NVFP4_SF_DTYPE
+    ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
+
+    __comptime_assert (
+        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
+
+    var c = from_ndbuffer_row_major(c_device)
+    var a = from_ndbuffer_row_major(a_device)
+    var b = from_ndbuffer_row_major(b_device)
+    var a_scales = from_ndbuffer_row_major(a_scales_device)
+    var b_scales = from_ndbuffer_row_major(b_scales_device)
+
+    comptime sfa_layout = a_scales.layout
+    comptime sfb_layout = b_scales.layout
+
+    __comptime_assert (
+        sfa_layout.shape[2].value()
+        == sfb_layout.shape[2].value()
+        == SF_ATOM_M[0]
+    ), ""
+    __comptime_assert (
+        sfa_layout.shape[3].value()
+        == sfb_layout.shape[3].value()
+        == SF_ATOM_M[1]
+    ), ""
+    __comptime_assert (
+        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+    ), ""
+
+    matmul[scales_type=scales_dtype](
+        ctx,
+        c,
+        a,
+        b,
+        a_scales=a_scales,
+        b_scales=b_scales,
+        alpha=tensor_sf,
+        transpose_b=True,
+        c_row_major=True,
+    )

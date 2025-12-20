@@ -16,24 +16,21 @@ from os import abort
 from sys.intrinsics import _type_is_eq
 
 from builtin.variadics import (
-    VariadicOf,
+    Variadic,
     VariadicPack,
-    Concatenated,
-    Reversed,
-    MakeVariadic,
-    EmptyVariadic,
     _ReduceVariadicAndIdxToVariadic,
-    variadic_size,
+    _ReduceValueAndIdxToVariadic,
+    _ReduceVariadicAndIdxToValue,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys.intrinsics import _type_is_eq_parse_time
 
 
-trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):
+trait MixedTupleLike(ImplicitlyCopyable, Representable):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
-    comptime VariadicType: VariadicOf[MixedTupleLike]
+    comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike]
     comptime STATIC_VALUE: Int
+    comptime IS_STATIC_VALUE = False
     comptime IS_TUPLE = False
     comptime IS_VALUE = not Self.IS_TUPLE
     comptime DTYPE = DType.invalid
@@ -89,11 +86,12 @@ struct ComptimeInt[val: Int](MixedTupleLike):
         val: The compile-time integer value.
     """
 
-    comptime VariadicType: VariadicOf[MixedTupleLike] = Tuple[
+    comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike] = Tuple[
         Self
     ].element_types
     comptime STATIC_VALUE: Int = Self.val
     comptime DTYPE = DType.int
+    comptime IS_STATIC_VALUE = True
 
     fn __init__(out self):
         """Initialize a compile-time integer with the specified value."""
@@ -133,7 +131,7 @@ struct RuntimeInt[dtype: DType = DType.int](MixedTupleLike):
         dtype: The data type for the runtime integer value. Defaults to `DType.int`.
     """
 
-    comptime VariadicType: VariadicOf[MixedTupleLike] = Tuple[
+    comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike] = Tuple[
         Self
     ].element_types
     comptime STATIC_VALUE: Int = -1
@@ -213,13 +211,23 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         element_types: The variadic pack of element types that implement `MixedTupleLike`.
     """
 
-    comptime VariadicType: VariadicOf[MixedTupleLike] = Self.element_types
+    comptime VariadicType: Variadic.TypesOfTrait[
+        MixedTupleLike
+    ] = Self.element_types
     comptime STATIC_VALUE: Int = -1
     comptime IS_TUPLE = True
     comptime ALL_DIMS_KNOWN = _AllStatic[*Self.element_types]
+    comptime STATIC_PRODUCT = _StaticProduct[*Self.element_types]
+    comptime rank = Variadic.size(Self.element_types)
 
     var _storage: Tuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
+
+    fn __init__(out self) where Self.ALL_DIMS_KNOWN:
+        """
+        Empty initialize a tensor with static dims.
+        """
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @staticmethod
     @always_inline("nodebug")
@@ -246,7 +254,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
             The number of elements in the tuple.
         """
 
-        comptime result = stdlib.builtin.variadic_size(Self.element_types)
+        comptime result = Variadic.size(Self.element_types)
         return result
 
     @always_inline("nodebug")
@@ -293,7 +301,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
                 VariadicPack[
                     type_of(storage).is_owned,
                     type_of(storage).origin,
-                    Copyable & Movable,
+                    Movable,
                     *Self.element_types,
                 ]
             ](storage^)
@@ -345,7 +353,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     @always_inline("nodebug")
     fn value(self) -> Int:
         constrained[False, "MixedTuple is not a value type"]()
-        return abort[Int]()
+        abort()
 
     @always_inline("nodebug")
     fn inner_product(self, t: IntTuple) -> Int:
@@ -407,14 +415,15 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         Returns:
             The inner product of the two values.
         """
-        constrained[
-            Self.__len__() == MixedTuple[*other_types].__len__(),
-            "Length of MixedTuple (",
-            String(Self.__len__()),
-            ") and MixedTuple[*other_types] (",
-            String(MixedTuple[*other_types].__len__()),
-            ") must match",
-        ]()
+        __comptime_assert (
+            Self.__len__() == MixedTuple[*other_types].__len__()
+        ), (
+            "Length of MixedTuple ("
+            + String(Self.__len__())
+            + ") and MixedTuple[*other_types] ("
+            + String(MixedTuple[*other_types].__len__())
+            + ") must match"
+        )
         var result = 0
 
         @parameter
@@ -451,14 +460,15 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         """Check if this tuple's elements are equal to the other tuple's elements.
         """
 
-        constrained[
-            Self.__len__() == MixedTuple[*other_types].__len__(),
-            "Length of MixedTuple (",
-            String(Self.__len__()),
-            ") and MixedTuple[*other_types] (",
-            String(MixedTuple[*other_types].__len__()),
-            ") must match",
-        ]()
+        __comptime_assert (
+            Self.__len__() == MixedTuple[*other_types].__len__()
+        ), (
+            "Length of MixedTuple ("
+            + String(Self.__len__())
+            + ") and MixedTuple[*other_types] ("
+            + String(MixedTuple[*other_types].__len__())
+            + ") must match"
+        )
 
         @parameter
         for i in range(Self.__len__()):
@@ -496,9 +506,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         return rebind[MixedTuple[*Self.VariadicType]](self)
 
     @always_inline("nodebug")
-    fn reverse(var self) -> MixedTuple[*Reversed[*Self.element_types]]:
-        return MixedTuple[*Reversed[*Self.element_types]](
-            rebind[Tuple[*Reversed[*Self.element_types]]](
+    fn reverse(var self) -> MixedTuple[*Variadic.reverse[*Self.element_types]]:
+        return MixedTuple[*Variadic.reverse[*Self.element_types]](
+            rebind[Tuple[*Variadic.reverse[*Self.element_types]]](
                 self._storage.reverse()
             )
         )
@@ -507,13 +517,13 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     fn concat[
         *other_element_types: MixedTupleLike
     ](var self, var other: MixedTuple[*other_element_types]) -> MixedTuple[
-        *Concatenated[Self.element_types, other_element_types]
+        *Variadic.concat[Self.element_types, other_element_types]
     ]:
         return MixedTuple[
-            *Concatenated[Self.element_types, other_element_types]
+            *Variadic.concat[Self.element_types, other_element_types]
         ](
             rebind[
-                Tuple[*Concatenated[Self.element_types, other_element_types]]
+                Tuple[*Variadic.concat[Self.element_types, other_element_types]]
             ](self._storage.concat(other._storage))
         )
 
@@ -527,6 +537,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         Examples:
             ```mojo
+            from layout._mixed_tuple import MixedTuple, Idx
             var nested = MixedTuple(
                 Idx[5](),
                 MixedTuple(Idx[3](), Idx[2]()),
@@ -537,7 +548,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
             ```
         """
         comptime FlatTypes = _Flattened[*Self.element_types]
-        comptime flat_size = variadic_size(FlatTypes)
+        comptime flat_size = Variadic.size(FlatTypes)
 
         var flat_tuple: Tuple[*FlatTypes]
 
@@ -551,13 +562,10 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         # For the test cases in test_mixed_layout (which are all non-nested), this works
         # Deep nesting like MixedTuple(A, MixedTuple(B, MixedTuple(C))) is not yet supported
 
-        constrained[
-            flat_size == Self.__len__(),
-            (
-                "flatten() currently only supports non-nested MixedTuples -"
-                " nested tuple flattening not yet implemented"
-            ),
-        ]()
+        __comptime_assert flat_size == Self.__len__(), (
+            "flatten() currently only supports non-nested MixedTuples -"
+            " nested tuple flattening not yet implemented"
+        )
 
         # For non-nested tuples, just copy elements directly
         @parameter
@@ -600,7 +608,13 @@ fn crd2idx[
 
             return result
         else:  # "int" tuple tuple
-            var crd_int = 0 if crd_len == 0 else crd.value()
+            var crd_int: Int
+
+            @parameter
+            if Index.IS_TUPLE:
+                crd_int = 0 if crd_len == 0 else crd.tuple()[0].value()
+            else:
+                crd_int = 0 if crd_len == 0 else crd.value()
 
             comptime last_elem_idx = shape_len - 1
 
@@ -618,10 +632,92 @@ fn crd2idx[
 
         @parameter
         if crd_len > 1:
-            constrained[False, "crd is a tuple but shape and stride are not"]()
-            return abort[Scalar[out_type]]()
+            abort("crd is a tuple but shape and stride are not")
         else:
             return crd.value() * stride.value()
+
+
+# Implementation based off crd2idx - computes the inverse operation
+fn idx2crd[
+    Shape: MixedTupleLike,
+    Stride: MixedTupleLike,
+    out_dtype: DType = DType.int64,
+](idx: Int, shape: Shape, stride: Stride) -> MixedTuple[
+    *_Splatted[RuntimeInt[out_dtype], Shape.__len__()]
+]:
+    """Calculate the coordinate tuple from a linear index.
+
+    This is the inverse of crd2idx - given a linear index, shape, and stride,
+    it computes the multi-dimensional coordinates.
+
+    Parameters:
+        Shape: The shape type (must be MixedTupleLike).
+        Stride: The stride type (must be MixedTupleLike).
+        out_dtype: The output data type for coordinate values.
+
+    Args:
+        idx: The linear index to convert.
+        shape: The shape of the tensor.
+        stride: The stride of the tensor.
+
+    Returns:
+        A MixedTuple containing the coordinate values for each dimension.
+
+    Examples:
+        For a 2D tensor with shape (3, 4) and row-major strides (4, 1):
+
+        - idx2crd(0, shape, stride) returns (0, 0).
+        - idx2crd(5, shape, stride) returns (1, 1).
+        - idx2crd(11, shape, stride) returns (2, 3).
+    """
+    comptime shape_len = Shape.__len__()
+    comptime stride_len = Stride.__len__()
+
+    debug_assert(
+        shape_len == stride_len,
+        "Shape length (",
+        shape_len,
+        ") must match stride length (",
+        stride_len,
+        ")",
+    )
+
+    comptime Result = MixedTuple[*_Splatted[RuntimeInt[out_dtype], shape_len]]
+    var result: Result
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
+
+    @parameter
+    if Shape.IS_TUPLE and Stride.IS_TUPLE and shape_len == stride_len:
+        var shape_t = shape.tuple()
+        var stride_t = stride.tuple()
+        var remaining_idx = idx
+
+        # Process dimensions in order of decreasing stride
+        # For each dimension, compute coordinate = remaining_idx // stride
+        # then update remaining_idx = remaining_idx % stride
+        @parameter
+        for i in range(shape_len):
+            var stride_val = stride_t[i].value()
+            var coord_val = remaining_idx // stride_val
+            remaining_idx = remaining_idx % stride_val
+            UnsafePointer(to=result[i]).init_pointee_copy(
+                rebind[Result.element_types[i]](
+                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                )
+            )
+    else:
+        # Single dimension case
+        var coord_val = idx // stride.value()
+
+        @parameter
+        for i in range(shape_len):
+            UnsafePointer(to=result[i]).init_pointee_copy(
+                rebind[Result.element_types[i]](
+                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                )
+            )
+
+    return result^
 
 
 fn mixed_int_tuple_to_int_tuple[
@@ -659,48 +755,92 @@ fn mixed_int_tuple_to_int_tuple[
     return result
 
 
-comptime _FlattenMapper[
-    Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[MixedTupleLike],
+fn mixed_tuple[
+    dtype: DType, *element_types: Movable
+](var values: Tuple[*element_types]) -> MixedTuple[
+    *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
+] where _AllEqual[Int, *element_types]:
+    """Helper to create a MixedTuple from a variadic pack of integers.
+    Parameters:
+        dtype: The data type for the runtime integer values.
+        rank: The number of elements in the tuple.
+    Args:
+        values: The run-time integer values.
+    Returns:
+        A `MixedTuple` instance containing `ComptimeInt` elements for each value.
+    Usage: mixed_tuple[5, 3, 2]() creates MixedTuple(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+    """
+    var tuple: MixedTuple[
+        *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
+    ]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(tuple))
+
+    @parameter
+    for i in range(type_of(values).__len__()):
+        UnsafePointer(to=tuple[i]).init_pointee_copy(
+            rebind[type_of(tuple[i])](
+                RuntimeInt[dtype](Scalar[dtype](rebind[Int](values[i])))
+            )
+        )
+    return tuple^
+
+
+fn mixed_tuple[*values: Int]() -> MixedTuple[*_IntToComptimeInt[*values]]:
+    """Helper to create a MixedTuple from a variadic pack of integers.
+    Parameters:
+        values: The compile-time integer values.
+    Returns:
+        A `MixedTuple` instance containing `ComptimeInt` elements for each value.
+    Usage: mixed_tuple[5, 3, 2]() creates MixedTuple(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+    """
+    # values is a ZST since all elements are comptime
+    var tuple: MixedTuple[*_IntToComptimeInt[*values]]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(tuple))
+    return tuple^
+
+
+comptime _FlattenReducer[
+    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
-] = Concatenated[
+] = Variadic.concat[
     Prev,
     From[idx]
     .VariadicType if From[idx]
-    .IS_TUPLE else MakeVariadic[T=MixedTupleLike, From[idx]],
+    .IS_TUPLE else Variadic.types[T=MixedTupleLike, From[idx]],
 ]
 
 
 comptime _Flattened[
     *element_types: MixedTupleLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = EmptyVariadic[MixedTupleLike],
-    Variadic=element_types,
-    Reducer=_FlattenMapper,
+    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    VariadicType=element_types,
+    Reducer=_FlattenReducer,
 ]
 
 comptime _NextOffset[
     prev_offset: Int,
     element_type: MixedTupleLike,
 ] = prev_offset + (
-    1 if element_type.IS_VALUE else variadic_size(
+    1 if element_type.IS_VALUE else Variadic.size(
         _Flattened[*element_type.VariadicType]
     )
 )
 
 
-comptime _FlattenOffsetMapper[
-    Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[MixedTupleLike],
+comptime _FlattenOffsetReducer[
+    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
-] = Concatenated[
+] = Variadic.concat[
     Prev,
-    MakeVariadic[
+    Variadic.types[
         T=MixedTupleLike,
         ComptimeInt[
             0 if idx
             == 0 else _NextOffset[
-                Prev[variadic_size(Prev) - 1].STATIC_VALUE,
+                Prev[Variadic.size(Prev) - 1].STATIC_VALUE,
                 From[idx - 1],
             ]
         ],
@@ -711,9 +851,9 @@ comptime _FlattenOffsetMapper[
 comptime _FlattenedOffsets[
     *element_types: MixedTupleLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = EmptyVariadic[MixedTupleLike],
-    Variadic=element_types,
-    Reducer=_FlattenOffsetMapper,
+    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    VariadicType=element_types,
+    Reducer=_FlattenOffsetReducer,
 ]
 
 
@@ -728,13 +868,13 @@ fn _get_flattened_helper[
     @parameter
     if i >= MixedTuple[*element_types].__len__():
         constrained[False, "flat_idx out of bounds"]()
-        return abort[Int]()
+        abort()
 
     comptime T = element_types[i]
 
     @parameter
     if T.IS_TUPLE:
-        comptime count = variadic_size(_Flattened[*T.VariadicType])
+        comptime count = Variadic.size(_Flattened[*T.VariadicType])
 
         @parameter
         if flat_idx >= current_offset and flat_idx < current_offset + count:
@@ -779,46 +919,80 @@ fn _get_flattened[
     return _get_flattened_helper[flat_idx, 0, 0](tuple)
 
 
-comptime _AllStaticMapper[
-    Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[MixedTupleLike],
+comptime _AllStaticReducer[
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
-] = (
-    MakeVariadic[T=MixedTupleLike, ComptimeInt[1]] if (
-        From[idx].STATIC_VALUE != -1 and Prev[0].STATIC_VALUE == 1
-    ) else MakeVariadic[T=MixedTupleLike, ComptimeInt[0]]
-)
+] = (Variadic.values[From[idx].IS_STATIC_VALUE and Prev[0]])
 
 
 comptime _AllStatic[
     *element_types: MixedTupleLike
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = MakeVariadic[T=MixedTupleLike, ComptimeInt[1]],
-    Variadic = _Flattened[*element_types],
-    Reducer=_AllStaticMapper,
+] = _ReduceVariadicAndIdxToValue[
+    BaseVal = Variadic.values[True],
+    VariadicType=element_types,
+    Reducer=_AllStaticReducer,
 ][
     0
-].STATIC_VALUE == 1
+]
 
-comptime _AllEqualMapper[
-    T: Copyable & Movable,
-    Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[Copyable & Movable],
+comptime _AllEqualReducer[
+    T: AnyType,
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[AnyType],
     idx: Int,
 ] = (
-    MakeVariadic[T=MixedTupleLike, ComptimeInt[1]] if (
-        _type_is_eq_parse_time[From[idx], T]()
-        and (Prev[0].STATIC_VALUE == 1 or idx == 0)
-    ) else MakeVariadic[T=MixedTupleLike, ComptimeInt[0]]
+    Variadic.values[
+        _type_is_eq_parse_time[From[idx], T]() and (Prev[0] or idx == 0)
+    ]
 )
 
 
 comptime _AllEqual[
-    T: Copyable & Movable, *element_types: Copyable & Movable
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = MakeVariadic[T=MixedTupleLike, ComptimeInt[0]],
-    Variadic=element_types,
-    Reducer = _AllEqualMapper[T],
+    T: AnyType, *element_types: AnyType
+] = _ReduceVariadicAndIdxToValue[
+    BaseVal = Variadic.values[False],
+    VariadicType=element_types,
+    Reducer = _AllEqualReducer[T],
 ][
     0
-].STATIC_VALUE == 1
+]
+
+comptime _StaticProductReducer[
+    Prev: Variadic.ValuesOfType[Int],
+    From: Variadic.TypesOfTrait[MixedTupleLike],
+    idx: Int,
+] = (Variadic.values[From[idx].STATIC_VALUE * Prev[0]])
+
+
+comptime _StaticProduct[
+    *element_types: MixedTupleLike
+] = _ReduceVariadicAndIdxToValue[
+    BaseVal = Variadic.values[1],
+    VariadicType=element_types,
+    Reducer=_StaticProductReducer,
+][
+    0
+]
+
+comptime _IntToComptimeIntMapper[
+    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.ValuesOfType[Int],
+    idx: Int,
+] = Variadic.concat[Prev, Variadic.types[ComptimeInt[From[idx]]]]
+
+
+comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
+    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    VariadicType=values,
+    Reducer=_IntToComptimeIntMapper,
+]
+
+comptime _Splatted[T: MixedTupleLike, count: Int] = __mlir_attr[
+    `#kgen.variadic.splat<`,
+    T,
+    `,`,
+    count._mlir_value,
+    `> : `,
+    Variadic.TypesOfTrait[type_of(T)],
+]

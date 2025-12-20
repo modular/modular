@@ -8,6 +8,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+local.bazelrc
 /bazel-*
 /MODULE.bazel.lock
 /external
@@ -158,5 +159,5 @@ cython_debug/
 examples/models/*
 !examples/models/README.md
 
-# Magic cache
-.magic
+# Kgen trace
+kgen.trace.*

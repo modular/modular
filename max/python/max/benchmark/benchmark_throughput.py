@@ -464,7 +464,10 @@ async def run_max_async(
     pipeline_task: PipelineTask,
     top_k: int | None,
 ) -> tuple[float, list[int]]:
-    scheduler_zmq_configs = SchedulerZmqConfigs(pipeline_task)
+    scheduler_zmq_configs = SchedulerZmqConfigs(
+        pipeline_task,
+        context_type=PIPELINE_REGISTRY.retrieve_context_type(config),
+    )
     async with (
         # Start the model worker process.
         start_model_worker(
@@ -480,7 +483,6 @@ async def run_max_async(
             model_name=model_name,
             tokenizer=tokenizer,
             scheduler_zmq_configs=scheduler_zmq_configs,
-            worker_monitor=worker_monitor,
         ) as pipeline,
     ):
         # Start timing and create a progress bar.

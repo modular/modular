@@ -21,13 +21,7 @@ from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code, get_gpu_target
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
@@ -58,10 +52,7 @@ fn test_ptx[
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
 ]() raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    __comptime_assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -72,16 +63,14 @@ fn test_ptx[
     comptime BK = config.block_tile_shape[2]
 
     # constraint for bfloat16 matmul
-    constrained[
-        (a_type != DType.bfloat16) or (MMA_M != 128) or (MMA_N % 32 == 0),
-        "if MMA_M is 128, then MMA_N must be a multiple of 32",
-    ]()
+    __comptime_assert (
+        (a_type != DType.bfloat16) or (MMA_M != 128) or (MMA_N % 32 == 0)
+    ), "if MMA_M is 128, then MMA_N must be a multiple of 32"
 
     # constraint for fp8 matmul
-    constrained[
-        (a_type != DType.float8_e4m3fn) or (MMA_N % 64 == 0),
-        "MMA_N must be a multiple of 64 for fp8 matmul",
-    ]()
+    __comptime_assert (a_type != DType.float8_e4m3fn) or (
+        MMA_N % 64 == 0
+    ), "MMA_N must be a multiple of 64 for fp8 matmul"
 
     comptime a_swizzle = config.a_swizzle
     comptime b_swizzle = config.b_swizzle
@@ -91,7 +80,7 @@ fn test_ptx[
     comptime a_tma_shape = Index(BM // cluster_shape[1], BK)
     comptime a_tma_layout = Layout.row_major(a_tma_shape[0], a_tma_shape[1])
     comptime a_tma_desc_layout = _tma_desc_tile_layout[
-        a_type, 2, a_tma_shape, True, a_swizzle
+        a_type, 2, a_tma_shape, a_swizzle
     ]()
 
     comptime b_tma_shape = Index(
@@ -99,7 +88,7 @@ fn test_ptx[
     )
     comptime b_tma_layout = Layout.row_major(b_tma_shape[0], b_tma_shape[1])
     comptime b_tma_desc_layout = _tma_desc_tile_layout[
-        b_type, 2, b_tma_shape, True, b_swizzle
+        b_type, 2, b_tma_shape, b_swizzle
     ]()
 
     comptime c_tma_tile_shape_mma128 = Index(
@@ -112,7 +101,7 @@ fn test_ptx[
     )
     comptime c_tma_layout = Layout.row_major(c_tma_shape[0], c_tma_shape[1])
     comptime c_tma_desc_layout = _tma_desc_tile_layout[
-        c_type, 2, c_tma_shape, True, config.c_swizzle
+        c_type, 2, c_tma_shape, config.c_swizzle
     ]()
 
     comptime kernel = blackwell_tma_umma_warp_specialized_kernel[

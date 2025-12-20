@@ -389,7 +389,8 @@ struct ConvTransposedPacked[
     output_layout_int_type: DType,
     output_linear_idx_type: DType,
     output_masked: Bool,
-    output_alignment: Int, //,
+    output_alignment: Int,
+    //,
     input_origin: Origin[input_mut],
     filter_origin: Origin[filter_mut],
     output_origin: MutOrigin,
@@ -401,7 +402,7 @@ struct ConvTransposedPacked[
     output_type: DType,
     conv_attr: ConvInfoStatic[input_layout.rank() - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     var output: LayoutTensor[
         mut=True,
         Self.output_type,
@@ -501,10 +502,9 @@ struct ConvTransposedPacked[
 
         @parameter
         if Self.conv_attr.num_groups != UNKNOWN_VALUE:
-            constrained[
-                Self.conv_attr.num_groups == 1,
-                "Don't support grouped transposed conv for now.",
-            ]()
+            __comptime_assert (
+                Self.conv_attr.num_groups == 1
+            ), "Don't support grouped transposed conv for now."
 
         # Number of partitions in n, ho_wo, c, f dimensions.
         var num_threads = parallelism_level()
@@ -871,6 +871,9 @@ struct ConvTransposedPacked[
                 right_pad_impact_start,
                 self.conv_shape.w(),
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = input_base
+            _ = output_base
 
     @always_inline
     fn input_space_loop_3d[
@@ -959,6 +962,9 @@ struct ConvTransposedPacked[
                     right_pad_impact_start,
                     self.conv_shape.w(),
                 )
+                # TODO(MOCO-2074): Suppress false positive unused var warning.
+                _ = input_base
+                _ = output_base
 
     @always_inline
     fn apply_epilogue(self, n: Int, g: Int):
@@ -1067,10 +1073,9 @@ fn update_w_tile_2d[
 
             @parameter
             if effected_by_padding:
-                constrained[
-                    micro_kernel_height == 1,
-                    "The tile must only have 1 point when effected bypadding.",
-                ]()
+                __comptime_assert (
+                    micro_kernel_height == 1
+                ), "The tile must only have 1 point when effected bypadding."
                 var wo_nbr = howo[1] + s * conv_shape.dilation[1]
                 if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
                     continue
@@ -1166,7 +1171,7 @@ fn update_w_tile_3d[
 
                 @parameter
                 if effected_by_padding:
-                    constrained[micro_kernel_height == 1]()
+                    __comptime_assert micro_kernel_height == 1
                     var wo_nbr = howo[2] + s * conv_shape.dilation[2]
                     if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
                         continue
@@ -1455,7 +1460,7 @@ fn conv_transposed_cpu[
         )
         # fmt: on
 
-    constrained[not filter_is_cfrs, "Filter layout CFRS is not supported"]()
+    __comptime_assert not filter_is_cfrs, "Filter layout CFRS is not supported"
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
         "conv_transposed",

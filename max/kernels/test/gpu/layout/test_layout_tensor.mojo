@@ -183,6 +183,33 @@ def test_different_layouts_arithmetic():
     assert_equal(result[1, 1], 0.0)
 
 
+def test_flatten():
+    var stack = InlineArray[Int8, 16]()
+    var tensor = LayoutTensor[DType.int8, Layout.row_major(4, 4)](
+        stack
+    ).flatten()
+    assert_equal(tensor.size(), 16)
+    assert_equal(tensor.rank, 1)
+    assert_equal(tensor.stride[0](), 1)
+
+
+def test_get_shape():
+    var stack = InlineArray[Int8, 16]()
+    var tensor = LayoutTensor[DType.int8, Layout.row_major(4, 4)](stack)
+    assert_equal(4, tensor.get_shape()[0])
+    assert_equal(4, tensor.get_shape()[1])
+
+
+def test_reshape():
+    var stack = InlineArray[Int8, 16]()
+    var tensor = LayoutTensor[DType.int8, Layout(16)](stack).reshape[
+        Layout.row_major[2]()
+    ](RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](4, 4)))
+    assert_equal(tensor.size(), 16)
+    assert_equal(tensor.get_shape()[0], 4)
+    assert_equal(tensor.get_shape()[1], 4)
+
+
 def main():
     test_runtime_and_compile_time_dim_and_stride(dynamic(120), static[512]())
     test_nested_layout_shape()

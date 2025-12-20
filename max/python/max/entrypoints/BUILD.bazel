@@ -1,6 +1,7 @@
+load("@mojo//:mojo.bzl", "PROD_MOJOPKGS")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
     name = "entrypoints",
@@ -12,8 +13,6 @@ modular_py_library(
             "replay_recording.py",
         ],
     ),
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/diagnostics",
         "//max/python/max/pipelines",
@@ -43,7 +42,6 @@ modular_py_library(
     srcs = [
         "pipelines.py",
     ],
-    imports = ["../.."],
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max/interfaces",
@@ -78,6 +76,10 @@ modular_py_binary(
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
+    mojo_deps = select({
+        "//:emit_mojo_enabled": PROD_MOJOPKGS,
+        "//conditions:default": [],
+    }),
     deps = [
         ":_pipelines",
         requirement("click"),
@@ -97,7 +99,5 @@ modular_py_binary(
 modular_py_library(
     name = "gpu-query",
     srcs = ["gpu_query.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = ["@mojo//:python"],
 )

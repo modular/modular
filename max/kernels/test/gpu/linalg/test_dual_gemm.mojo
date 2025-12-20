@@ -48,7 +48,8 @@ fn multistage_gemm_simple[
     a_type: DType,
     a_layout: Layout,
     b_type: DType,
-    b_layout: Layout, //,
+    b_layout: Layout,
+    //,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type,
@@ -100,7 +101,8 @@ fn naive_dual_gemm[
     a_type: DType,
     a_layout: Layout,
     b_type: DType,
-    b_layout: Layout, //,
+    b_layout: Layout,
+    //,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type,
@@ -405,7 +407,10 @@ def main():
         test_dual_matmul[transpose_b=False](ctx, do_benchmark=do_benchmark)
         test_dual_matmul[transpose_b=True](ctx, do_benchmark=do_benchmark)
         comptime Ms = StaticTuple[Int, 3](128, 256, 1024)
-        comptime Ms_transpose = StaticTuple[Int, 4](1, 128, 256, 1024)
+        # Note: M=1 is not included because multistage_dual_gemm doesn't support
+        # M < BM (block tile M dimension). The general dual_gemm() function
+        # redirects M=1 cases to dual_gemv instead.
+        comptime Ms_transpose = StaticTuple[Int, 3](128, 256, 1024)
         comptime N = 14336
         comptime K = 4096
         for m_idx in range(len(Ms)):

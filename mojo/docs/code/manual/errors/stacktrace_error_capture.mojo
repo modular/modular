@@ -24,4 +24,8 @@ def main():
     except e:
         print(e)
         print("-" * 20)
-        print(String(e.get_stack_trace()))
+        var stack_trace = e.get_stack_trace()
+        if stack_trace:
+            print(stack_trace.value())
+        else:
+            print("No stack trace available")

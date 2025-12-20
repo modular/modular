@@ -17,8 +17,10 @@ from sys.info import align_of, simd_width_of
 
 from algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from buffer.dimlist import DimList
-from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
+from layout import Layout, LayoutTensor
+from memory import alloc, memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
 from utils.index import Index, IndexList
@@ -60,14 +62,15 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
         simd_size: Int,
     ](
         self,
-        c: NDBuffer,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        c: LayoutTensor[mut=True, **_],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
+        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
         ...
 
 
@@ -163,7 +166,8 @@ fn tiled_matmul_run[
 @fieldwise_init
 struct TiledMatmul[
     a_mut: Bool,
-    b_mut: Bool, //,
+    b_mut: Bool,
+    //,
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
@@ -179,7 +183,7 @@ struct TiledMatmul[
     c_shape: DimList,
     c_origin: MutOrigin,
     algorithm: InnerMatmulKernel,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
 
@@ -259,14 +263,19 @@ struct TiledMatmul[
         @always_inline
         fn row_iteration[tile_kernel_rows: Int](row_offset: Int):
             var skip_boundary_check = knm_bounds[1] > sub_tile_n
+            # TODO(jtodd): bubble up from here
+            # Convert NDBuffers to LayoutTensors for the inner matmul call
+            var c_tensor = from_ndbuffer_row_major(self.c)
+            var a_tensor = from_ndbuffer_row_major(self.a)
+            var b_tensor = from_ndbuffer_row_major(b_packed_tile)
             self.alg.__inner_matmul__[
                 tile_kernel_rows,
                 tile_kernel_cols,
                 Self.config.simd_size,
             ](
-                self.c,
-                self.a,
-                b_packed_tile,
+                c_tensor,
+                a_tensor,
+                b_tensor,
                 global_offset + GemmShape(row_offset, 0, 0),
                 self.global_tile_offset + self.global_tile_shape,
                 sub_tile_n_k,
@@ -379,7 +388,7 @@ struct TiledMatmul[
     #  need to remap every time K and kernel_cols changes.
     fn _view_buffer_as(
         self,
-        b_packed_ptr: UnsafePointer[Scalar[Self.b_type]],
+        b_packed_ptr: UnsafePointer[Scalar[Self.b_type], **_],
         tile_n: Int,
         tile_k: Int,
         n_inner_size: Int,
@@ -586,11 +595,9 @@ fn _matmul_cpu_impl[
         comptime alignment = align_of[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr = UnsafePointer[Scalar[a.type]]()
+        var a_packed_ptr = UnsafePointer[Scalar[a.type], MutOrigin.external]()
         if use_i8mm:
-            a_packed_ptr = UnsafePointer[Scalar[a.type]].alloc(
-                mh * kh, alignment=alignment
-            )
+            a_packed_ptr = alloc[Scalar[a.type]](mh * kh, alignment=alignment)
         var a_packed = NDBuffer[a.type, 2, _, a.shape](
             a_packed_ptr, DimList(mh, kh)
         )
@@ -640,15 +647,17 @@ fn _matmul_cpu_impl[
             ](
                 alg,
                 c,
-                a_packed if use_i8mm else type_of(a).OriginCastType[
-                    True, MutAnyOrigin
-                ](
-                    # TODO: This is VERY unsafe. `a` may not be mutable which could
-                    # result in undefined behavior. `a` and all dependents of this
-                    # function should have their mutability explicitly specified.
-                    a.data.unsafe_mut_cast[True]().as_any_origin(),
-                    a.dynamic_shape,
-                    a.dynamic_stride,
+                (
+                    a_packed.as_any_origin() if use_i8mm else type_of(
+                        a
+                    ).OriginCastType[MutAnyOrigin](
+                        # TODO: This is VERY unsafe. `a` may not be mutable which could
+                        # result in undefined behavior. `a` and all dependents of this
+                        # function should have their mutability explicitly specified.
+                        a.data.unsafe_mut_cast[True]().as_any_origin(),
+                        a.dynamic_shape,
+                        a.dynamic_stride,
+                    )
                 ),
                 b,
                 GemmShape(sub_matmul_config.shape),

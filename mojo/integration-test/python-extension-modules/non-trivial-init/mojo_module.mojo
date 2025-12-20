@@ -36,13 +36,11 @@ fn PyInit_mojo_module() -> PythonObject:
 
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 @fieldwise_init
-struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
+struct MojoPair(Defaultable, ImplicitlyCopyable, Representable):
     """A pair of integers that can be initialized with custom values."""
 
     var first: Int
@@ -109,11 +107,11 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
             try:
                 # Check for 'first' keyword argument
                 if "first" in kwargs:
-                    first_val = Int(kwargs["first"])
+                    first_val = Int(kwargs[PythonObject("first")])
 
                 # Check for 'second' keyword argument
                 if "second" in kwargs:
-                    second_val = Int(kwargs["second"])
+                    second_val = Int(kwargs[PythonObject("second")])
             except e:
                 raise Error("Failed to process keyword arguments: ", e)
 
@@ -157,7 +155,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
             return py_self.downcast_value_ptr[Self]()
         except e:
             comptime m = "Python method receiver object did not have the"
-            return abort[UnsafePointer[Self]](String(m, " expected type: ", e))
+            abort(String(m, " expected type: ", e))
 
     @staticmethod
     fn get_first(py_self: PythonObject) -> PythonObject:

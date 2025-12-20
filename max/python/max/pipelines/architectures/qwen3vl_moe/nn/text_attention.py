@@ -32,9 +32,8 @@ from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
-from max.pipelines.architectures.qwen3vl_moe.nn.decoder import (
-    Qwen3VLTextRotaryEmbedding,
-)
+
+from .text_rotary import Qwen3VLTextRotaryEmbedding
 
 
 class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
@@ -198,6 +197,10 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
 
         # Apply RoPE to Q and (read) K; positions are derived inside the fused
         # kernel as cache_length + token_idx for each token.
+        position_ids = ops.unsqueeze(
+            ops.range(0, xq.shape[0], 1, device=xq.device, dtype=DType.uint32),
+            0,
+        )
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
@@ -207,6 +210,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             layer_idx=layer_idx,
             interleaved=self.rope.interleaved,
             mrope_section=None,
+            position_ids=position_ids,
         )
 
         # Flash attention over Q and normalized/rotated K/V.

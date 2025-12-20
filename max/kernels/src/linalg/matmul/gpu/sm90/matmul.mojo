@@ -25,7 +25,7 @@ from layout import Layout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tma_async import create_tma_tile, create_tma_tile_template
 from logger import Logger
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple

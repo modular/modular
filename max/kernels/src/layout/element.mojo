@@ -32,7 +32,6 @@ from layout.layout import coalesce, is_contiguous_dim
 
 from . import Layout, RuntimeLayout
 from .int_tuple import UNKNOWN_VALUE, _get_index_type
-from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @always_inline
@@ -187,7 +186,7 @@ struct Element[
             A new `Element` containing the loaded data.
         """
         comptime flat_layout = coalesce(Self.layout)
-        constrained[flat_layout.rank() <= 2, "Only supports rank <= 2"]()
+        __comptime_assert flat_layout.rank() <= 2, "Only supports rank <= 2"
 
         var element_data = Self.element_data_type()
 
@@ -280,7 +279,7 @@ struct Element[
             beyond the runtime dimensions.
         """
         # TODO: Use partial_simd_load after closing KERN-729.
-        constrained[Self.layout.rank() <= 2, "Only supports rank <= 2"]()
+        __comptime_assert Self.layout.rank() <= 2, "Only supports rank <= 2"
         var element_data = Self.element_data_type()
 
         @parameter
@@ -400,7 +399,7 @@ struct Element[
         return Element(element_data, runtime_layout)
 
     @always_inline("nodebug")
-    fn store(self, ptr: UnsafePointer[Scalar[Self.dtype], mut=True, **_]):
+    fn store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], **_]):
         """Stores element data to memory according to the specified layout.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -422,7 +421,7 @@ struct Element[
             This method is constrained to layouts with rank <= 2. For higher-rank
             tensors, consider decomposing the operation.
         """
-        constrained[Self.layout.rank() <= 2, "Only supports rank <= 2"]()
+        __comptime_assert Self.layout.rank() <= 2, "Only supports rank <= 2"
 
         @parameter
         if Self.layout.rank() == 1:
@@ -481,9 +480,7 @@ struct Element[
                 )
 
     @always_inline("nodebug")
-    fn masked_store(
-        self, ptr: UnsafePointer[Scalar[Self.dtype], mut=True, **_]
-    ):
+    fn masked_store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], **_]):
         """Stores element data to memory with masking for partial stores.
 
         This method performs a layout-aware store operation with boundary checking.
@@ -503,7 +500,7 @@ struct Element[
             This method is constrained to layouts with rank <= 2. For higher-rank
             tensors, consider decomposing the operation.
         """
-        constrained[Self.layout.rank() <= 2, "Only supports rank <= 2"]()
+        __comptime_assert Self.layout.rank() <= 2, "Only supports rank <= 2"
 
         @parameter
         if Self.layout.rank() == 1:
@@ -638,7 +635,8 @@ struct Element[
 
 
 struct MemoryElement[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     dtype: DType,
     layout: Layout,
     origin: Origin[mut],
@@ -671,7 +669,6 @@ struct MemoryElement[
     comptime _AsMut[
         mut_origin: MutOrigin,
     ] = MemoryElement[
-        mut=True,
         Self.dtype,
         Self.layout,
         mut_origin,
@@ -681,8 +678,7 @@ struct MemoryElement[
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype],
-        mut = Self.mut,
-        origin = Self.origin,
+        Self.origin,
         address_space = Self.address_space,
     ]
     """Pointer to the memory location where the data is stored.
@@ -708,8 +704,7 @@ struct MemoryElement[
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
-            mut = Self.mut,
-            origin = Self.origin,
+            Self.origin,
             address_space = Self.address_space,
         ],
         runtime_layout: RuntimeLayout[

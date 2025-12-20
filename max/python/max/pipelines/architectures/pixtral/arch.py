@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.core.context_validators import (
     validate_only_one_image,
     validate_requires_vision_context,
@@ -37,6 +38,7 @@ pixtral_arch = SupportedArchitecture(
     },
     pipeline_model=PixtralModel,
     tokenizer=TextAndVisionTokenizer,
+    context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

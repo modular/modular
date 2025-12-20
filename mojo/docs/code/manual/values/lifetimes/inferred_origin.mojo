@@ -16,7 +16,8 @@ from memory import Span
 
 
 def to_byte_span[
-    is_mutable: Bool, //,
+    is_mutable: Bool,
+    //,
     origin: Origin[is_mutable],
 ](ref [origin]list: List[Byte]) -> Span[Byte, origin]:
     return Span(list)

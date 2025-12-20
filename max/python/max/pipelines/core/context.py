@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import llguidance
-import msgspec
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
@@ -31,13 +33,15 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationContext,
     TextGenerationOutput,
+    TokenSlice,
     VLMTextGenerationContext,
 )
 
 CHUNK_SIZE = 128
 
 
-class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
+@dataclass(kw_only=True)
+class TextContext:
     """A base class for model context, specifically for Text model variants.
 
     This class manages the state and processing of text generation, including token management,
@@ -70,35 +74,33 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     """
 
     max_length: int
-    tokens: npt.NDArray[np.integer[Any]]
-    request_id: RequestID = msgspec.field(default_factory=RequestID)
-    eos_token_ids: set[int] = msgspec.field(default_factory=set)
-    eos_sequences: list[list[int]] = msgspec.field(default_factory=list)
-    log_probabilities: int = msgspec.field(default=0)
-    log_probabilities_echo: bool = msgspec.field(default=False)
-    ignore_eos: bool = msgspec.field(default=False)
-    json_schema: str | None = msgspec.field(default=None)
-    sampling_params: SamplingParams = msgspec.field(
-        default_factory=SamplingParams
-    )
-    model_name: str = msgspec.field(default="")
-    _matcher: Any | None = msgspec.field(default=None)
-    status: GenerationStatus = msgspec.field(default=GenerationStatus.ACTIVE)
-    _size: int = msgspec.field(default=-1)
-    _start_idx: int = msgspec.field(default=0)
-    _active_idx: int = msgspec.field(default=-1)
-    _end_idx: int = msgspec.field(default=-1)
-    _completion_start_idx: int = msgspec.field(default=-1)
-    _completion_end_idx: int = msgspec.field(default=-1)
-    _prompt_len: int = msgspec.field(default=-1)
-    _log_probabilities_data: dict[int, LogProbabilities] = msgspec.field(
+    tokens: TokenSlice
+    request_id: RequestID = field(default_factory=RequestID)
+    eos_token_ids: set[int] = field(default_factory=set)
+    eos_sequences: list[list[int]] = field(default_factory=list)
+    log_probabilities: int = field(default=0)
+    log_probabilities_echo: bool = field(default=False)
+    ignore_eos: bool = field(default=False)
+    json_schema: str | None = field(default=None)
+    sampling_params: SamplingParams = field(default_factory=SamplingParams)
+    model_name: str = field(default="")
+    _matcher: Any | None = field(default=None)
+    status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
+    _size: int = field(default=-1)
+    _start_idx: int = field(default=0)
+    _active_idx: int = field(default=-1)
+    _end_idx: int = field(default=-1)
+    _completion_start_idx: int = field(default=-1)
+    _completion_end_idx: int = field(default=-1)
+    _prompt_len: int = field(default=-1)
+    _log_probabilities_data: dict[int, LogProbabilities] = field(
         default_factory=dict
     )
 
-    _is_initial_prompt: bool = msgspec.field(default=True)
-    _draft_offset: int = msgspec.field(default=0)
+    _is_initial_prompt: bool = field(default=True)
+    _draft_offset: int = field(default=0)
 
-    target_endpoint: str | None = msgspec.field(default=None)
+    target_endpoint: str | None = field(default=None)
 
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
@@ -171,19 +173,19 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             self.tokens = np.resize(self.tokens, self._size)
 
     @property
-    def all_tokens(self) -> npt.NDArray[np.integer[Any]]:
-        return self.tokens[: self.end_idx]
+    def all_tokens(self) -> TokenSlice:
+        return self.tokens[: self._end_idx]
 
     @property
     def is_done(self) -> bool:
         return self.status.is_done
 
     @property
-    def start_idx(self) -> int:
-        return self._start_idx
+    def processed_length(self) -> int:
+        return self._start_idx + self._draft_offset
 
     @property
-    def active_idx(self) -> int:
+    def current_position(self) -> int:
         return self._active_idx
 
     def skip_processing(self, n: int) -> None:
@@ -194,9 +196,18 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         Args:
             n (int): The number of tokens to skip.
         """
-        self.bump_token_indices(start_idx=n)
+        self._bump_token_indices(start_idx=n)
 
-    def maybe_chunk(self, chunk_size: int) -> int:
+    def rewind_processing(self, n: int) -> None:
+        """Rewind the processing window start by n.
+
+        Use after rejecting a draft so future steps reprocess those tokens.
+        Args:
+            n (int): The number of tokens to rewind.
+        """
+        self._bump_token_indices(start_idx=-n)
+
+    def chunk(self, chunk_size: int) -> None:
         """Optionally chunk the active token window to enforce a maximum size.
 
         This is used by the text-generation scheduler when performing chunked
@@ -208,33 +219,31 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             chunk_size: The desired maximum number of active tokens to keep
                 in this context.
 
-        Returns:
-            The actual number of tokens kept active after chunking. This value
-            will never exceed ``self.active_length``.
+        Raises:
+            ValueError: If `chunk_size` is negative or equal to/greater than the
+                current number of active tokens (``active_length``).
+
         """
 
-        if chunk_size < 0:
+        if chunk_size < 0 or chunk_size >= self.active_length:
             raise ValueError(
-                f"chunk size must be non-negative: got {chunk_size}"
+                f"chunk size must be non-negative and less than active_length: got {chunk_size}"
             )
 
-        if chunk_size > self.active_length:
-            return self.active_length
-
         # Calculate how much to bump the token indices by
-        # If chunk_size = 10, and available_active_tokens = 30, we have to move back the active_idx
+        # If chunk_size = 10, and available_active_tokens = 30, we have to move back the current_position
         # by 20.
-        self.bump_token_indices(active_idx=chunk_size - self.active_length)
-        return chunk_size
+        self._bump_token_indices(
+            current_position=chunk_size - self.active_length
+        )
 
     @property
     def min_tokens(self) -> int:
         """The minimum number of new tokens to generate."""
         return self.sampling_params.min_new_tokens
 
-    @property
-    def end_idx(self) -> int:
-        return self._end_idx
+    def apply_processing_offset(self, offset: int) -> None:
+        self._draft_offset = offset
 
     def get_min_token_logit_mask(
         self, num_steps: int
@@ -321,46 +330,48 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             final_status=self.status,
         )
 
-    def bump_token_indices(
+    def _bump_token_indices(
         self,
         start_idx: int = 0,
-        active_idx: int = 0,
+        current_position: int = 0,
         end_idx: int = 0,
     ) -> None:
-        """Update the start_idx, active_idx and end_idx without manipulating the token array."""
+        """Update the start_idx, current_position and end_idx without manipulating the token array."""
         new_start_idx = start_idx + self._start_idx
-        new_active_idx = active_idx + self._active_idx
+        new_active_idx = current_position + self._active_idx
         new_end_idx = end_idx + self._end_idx
 
-        self.set_token_indices(
+        self._set_token_indices(
             start_idx=new_start_idx,
-            active_idx=new_active_idx,
+            current_position=new_active_idx,
             end_idx=new_end_idx,
         )
 
-    def set_token_indices(
+    def _set_token_indices(
         self,
         start_idx: int | None = None,
-        active_idx: int | None = None,
+        current_position: int | None = None,
         end_idx: int | None = None,
     ) -> None:
         """Set the token indices without manipulating the token array."""
         new_start_idx = start_idx if start_idx is not None else self._start_idx
         new_active_idx = (
-            active_idx if active_idx is not None else self._active_idx
+            current_position
+            if current_position is not None
+            else self._active_idx
         )
         new_end_idx = end_idx if end_idx is not None else self._end_idx
 
         if new_start_idx >= new_active_idx:
             raise ValueError(f"""
-            active_idx must always be greater than start_idx, unable to bump token indices
-            as new start_idx ({new_start_idx}) is greater than new active_idx ({new_active_idx}).
+            current_position must always be greater than start_idx, unable to bump token indices
+            as new start_idx ({new_start_idx}) is greater than new current_position ({new_active_idx}).
             """)
 
         if new_active_idx > new_end_idx:
             raise ValueError(f"""
-            end_idx must always be greater than active_idx, unable to bump token indices
-            as new active_idx ({new_active_idx}) is greater than new end_idx ({new_end_idx}).
+            end_idx must always be greater than current_position, unable to bump token indices
+            as new current_position ({new_active_idx}) is greater than new end_idx ({new_end_idx}).
             """)
 
         self._start_idx = new_start_idx
@@ -368,8 +379,8 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._end_idx = new_end_idx
 
     @property
-    def next_tokens(self) -> npt.NDArray[np.integer[Any]]:
-        """Returns the tokens between start_idx and active_idx.
+    def next_tokens(self) -> TokenSlice:
+        """Returns the tokens between start_idx and current_position.
 
         Returns:
             np.ndarray: Array of tokens that have been generated but not yet processed.
@@ -377,7 +388,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return self.tokens[self._start_idx : self._active_idx]
 
     @property
-    def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def prompt_tokens(self) -> TokenSlice:
         """Returns the original prompt tokens.
 
         Returns:
@@ -386,7 +397,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return self.tokens[: self._prompt_len]
 
     @property
-    def generated_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def generated_tokens(self) -> TokenSlice:
         """Returns all tokens that have been generated after the prompt.
 
         Returns:
@@ -450,9 +461,9 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         # This is required for chunked prefill.
-        # The scheduler will update the active_idx via bump_token_indices and pass through the model
-        # To accommodate this, if we identify that the active_idx is not at the end of the completed
-        # token array, we only update the start_idx and active_idx, leaving the token array alone.
+        # The scheduler will update the current_position via _bump_token_indices and pass through the model
+        # To accommodate this, if we identify that the current_position is not at the end of the completed
+        # token array, we only update the start_idx and current_position, leaving the token array alone.
         if self._active_idx < self._end_idx:
             self._start_idx = self._active_idx
             self._active_idx = self._end_idx
@@ -471,7 +482,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
         if self._is_eos(new_token):
             self.status = GenerationStatus.END_OF_SEQUENCE
-        elif self.active_idx >= self.max_length:
+        elif self.current_position >= self.max_length:
             self.status = GenerationStatus.MAXIMUM_LENGTH
             # We must return the last token that fits in max length.
             self._completion_end_idx += 1
@@ -539,20 +550,9 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         """Returns true if the context has not been updated with tokens."""
         return self._is_initial_prompt
 
-    def __repr__(self):
-        return (
-            f"{self.__class__.__name__}("
-            f"request_id={self.request_id}, "
-            f"start_idx={self._start_idx}, "
-            f"active_idx={self._active_idx}, "
-            f"end_idx={self._end_idx}"
-            ")"
-        )
 
-
-class TextAndVisionContext(
-    TextContext, tag=True, kw_only=True, omit_defaults=True
-):
+@dataclass(kw_only=True)
+class TextAndVisionContext(TextContext):
     """A base class for model context, specifically for Vision model variants.
 
     For example::
@@ -579,9 +579,9 @@ class TextAndVisionContext(
     the first image that is not yet encoded. For example in the above diagram
     when start_idx=11, this implies that image_idx=1.
 
-    Currently we restrict start_idx and active_idx from being in the middle of an image!
+    Currently we restrict start_idx and current_position from being in the middle of an image!
     This is verified in `_validate_state` methods that are called before and after
-    mutating methods like `bump_token_indices`.
+    mutating methods like `_bump_token_indices`.
 
     Note that for Llama Vision, the number of token ids for the image is 1 due to
     that models specific implementation.
@@ -591,12 +591,10 @@ class TextAndVisionContext(
     """The value of the <vision_token_id> special token. The reason this is a list
     is primarily due to Pixtral which also has a image_break_token_id."""
 
-    images: list[ImageMetadata] = msgspec.field(default_factory=list)
+    images: list[ImageMetadata] = field(default_factory=list)
     """Metadata about each image in the prompt. """
 
-    extra_model_args: dict[str, npt.NDArray[Any]] = msgspec.field(
-        default_factory=dict
-    )
+    extra_model_args: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
     """Extra model arguments for the vision model. These are model specific arguments."""
 
     def __post_init__(self) -> None:
@@ -612,7 +610,7 @@ class TextAndVisionContext(
                     raise ValueError("Images must be non-overlapping")
 
         for img in self.images:
-            if self.end_idx < img.end_idx:
+            if self._end_idx < img.end_idx:
                 raise ValueError(
                     "Images must be before the end of the token array"
                 )
@@ -633,7 +631,7 @@ class TextAndVisionContext(
     def image_idx(self) -> int:
         """Index of the next unencoded image in the prompt."""
         for i, img in enumerate(self.images):
-            if self.start_idx < img.end_idx:
+            if self.processed_length < img.end_idx:
                 return i
         return len(self.images)
 
@@ -671,37 +669,45 @@ class TextAndVisionContext(
 
     def _validate_state(self) -> None:
         """Validates the state of the context."""
-        if img := self._find_bisected_image(self.active_idx):
+        if img := self._find_bisected_image(self.current_position):
             raise ValueError(
-                f"It is invalid for the active_idx ({self.active_idx}) to bisect an image ({img})."
+                f"It is invalid for the current_position ({self.current_position}) to bisect an image ({img})."
             )
-        if self.active_idx != self.end_idx:
+        if self.current_position != self._end_idx:
             raise ValueError(
-                f"It is invalid for the active_idx ({self.active_idx}) to not be equal to the end_idx ({self._end_idx}) for VLM as chunked prefill is not supported."
+                f"It is invalid for the current_position ({self.current_position}) to not be equal to the end_idx ({self._end_idx}) for VLM as chunked prefill is not supported."
             )
 
-    def bump_token_indices(
+    def _bump_token_indices(
         self,
         start_idx: int = 0,
-        active_idx: int = 0,
+        current_position: int = 0,
         end_idx: int = 0,
     ) -> None:
         self._validate_state()
-        super().bump_token_indices(
-            start_idx=start_idx, active_idx=active_idx, end_idx=end_idx
+        super()._bump_token_indices(
+            start_idx=start_idx,
+            current_position=current_position,
+            end_idx=end_idx,
         )
         self._validate_state()
 
-    def set_token_indices(
+    def _set_token_indices(
         self,
         start_idx: int | None = None,
-        active_idx: int | None = None,
+        current_position: int | None = None,
         end_idx: int | None = None,
     ) -> None:
         self._validate_state()
-        super().set_token_indices(
-            start_idx=start_idx, active_idx=active_idx, end_idx=end_idx
+        super()._set_token_indices(
+            start_idx=start_idx,
+            current_position=current_position,
+            end_idx=end_idx,
         )
+        self._validate_state()
+
+    def chunk(self, chunk_size: int) -> None:
+        super().chunk(chunk_size)
         self._validate_state()
 
     def update(
@@ -717,9 +723,8 @@ class TextAndVisionContext(
         return (
             f"{self.__class__.__name__}("
             f"request_id={self.request_id}, "
-            f"start_idx={self.start_idx}, "
-            f"active_idx={self.active_idx}, "
-            f"end_idx={self.end_idx}, "
+            f"processed_length={self.processed_length}, "
+            f"current_position={self.current_position}, "
             f"images={self.images}"
             ")"
         )
@@ -728,6 +733,7 @@ class TextAndVisionContext(
 SPEECH_TOKEN_audio_chunk_size = 128
 
 
+@dataclass(kw_only=True)
 class TTSContext(TextContext):
     """A context for Text-to-Speech (TTS) model inference.
 
@@ -745,37 +751,33 @@ class TTSContext(TextContext):
         _block_counter: Counter tracking number of speech token blocks generated
     """
 
-    audio_prompt_tokens: npt.NDArray[np.integer[Any]] = msgspec.field(
+    audio_prompt_tokens: npt.NDArray[np.integer[Any]] = field(
         default_factory=lambda: np.array([], dtype=np.int32)
     )
 
-    buffer_speech_tokens: npt.NDArray[np.integer[Any]] | None = msgspec.field(
+    buffer_speech_tokens: npt.NDArray[np.integer[Any]] | None = field(
         default=None
     )
 
     # For silence detection.
-    audio_buffer: npt.NDArray[np.floating[Any]] | None = msgspec.field(
-        default=None
-    )
-    prev_samples_beyond_offset: int = msgspec.field(default=0)
+    audio_buffer: npt.NDArray[np.floating[Any]] | None = field(default=None)
+    prev_samples_beyond_offset: int = field(default=0)
 
-    streaming: bool = msgspec.field(default=False)
+    streaming: bool = field(default=False)
 
     # Fields for tracking the state of speech token or audio generation.
-    _speech_token_size: int = msgspec.field(
-        default=SPEECH_TOKEN_audio_chunk_size
-    )
-    _speech_token_end_idx: int = msgspec.field(default=0)
-    _speech_tokens: npt.NDArray[np.integer[Any]] = msgspec.field(
+    _speech_token_size: int = field(default=SPEECH_TOKEN_audio_chunk_size)
+    _speech_token_end_idx: int = field(default=0)
+    _speech_tokens: npt.NDArray[np.integer[Any]] = field(
         default_factory=lambda: np.zeros(
             SPEECH_TOKEN_audio_chunk_size, dtype=np.int32
         )
     )
-    decoded_index: int = msgspec.field(default=0)
-    _block_counter: int = msgspec.field(default=0)
-    _arrival_time: float = msgspec.field(default_factory=lambda: time.time())
+    decoded_index: int = field(default=0)
+    _block_counter: int = field(default=0)
+    _arrival_time: float = field(default_factory=lambda: time.time())
 
-    audio_generation_status: GenerationStatus = msgspec.field(
+    audio_generation_status: GenerationStatus = field(
         default=GenerationStatus.ACTIVE
     )
 
@@ -878,3 +880,33 @@ if TYPE_CHECKING:
             vision_token_ids=[],
             images=[],
         )
+
+
+@contextmanager
+def reserve_token_space_for_batch(
+    batch: list[TextContext],
+    num_tokens: int,
+) -> Iterator[None]:
+    """
+    Temporarily reserves token space for each context in a batch by incrementing
+    the `_active_idx` and `_end_idx` attributes by `num_tokens` for the duration
+    of the context. These indices are restored to their original values upon exit.
+    Args:
+        batch: List of TextContext objects to reserve space for.
+        num_tokens: Number of tokens to reserve for each context.
+    Yields:
+        None
+    """
+    saved_indices: dict[RequestID, tuple[int, int]] = {
+        ctx.request_id: (ctx._active_idx, ctx._end_idx) for ctx in batch
+    }
+    try:
+        for ctx in batch:
+            ctx._active_idx += num_tokens
+            ctx._end_idx += num_tokens
+        yield
+
+    finally:
+        for ctx in batch:
+            ctx._active_idx = saved_indices[ctx.request_id][0]
+            ctx._end_idx = saved_indices[ctx.request_id][1]

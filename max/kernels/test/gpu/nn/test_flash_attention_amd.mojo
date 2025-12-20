@@ -15,7 +15,8 @@ from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
 from math import isclose
 from random import rand
-from sys import argv
+from sys import argv, env_get_bool
+
 
 from gpu import *
 from gpu.host import DeviceContext
@@ -77,11 +78,10 @@ fn test[
         depth,
     )
 
-    constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()
-    constrained[
-        against_gpu_naive or mask_rank == 3,
-        "Testing against cpu requires mask of rank 3.",
-    ]()
+    __comptime_assert mask_rank in (3, 4), "mha only support rank 3 or 4."
+    __comptime_assert (
+        against_gpu_naive or mask_rank == 3
+    ), "Testing against cpu requires mask of rank 3."
 
     # Query, key, value dimensions.
     comptime scale = Float32(0.25)  # rsqrt[type, 1](Float32(depth))
@@ -168,9 +168,9 @@ fn test[
 
     @parameter
     if not against_gpu_naive:
-        constrained[
-            qkv_type == mask_type, "expect qkv and mask have same type for CPU."
-        ]()
+        __comptime_assert (
+            qkv_type == mask_type
+        ), "expect qkv and mask have same type for CPU."
         _naive_attention_with_transpose[qkv_type](
             output,
             q,
@@ -579,7 +579,11 @@ fn test_decoding[
 
 def main():
     with DeviceContext() as ctx:
-        comptime depths = (64, 128, 256)
+        # experimental kernel only supports depth == 128
+        comptime experimental_kernel = env_get_bool[
+            "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
+        ]()
+        comptime depths = [64, 128, 256] if not experimental_kernel else [128]
 
         @parameter
         for i in range(len(depths)):

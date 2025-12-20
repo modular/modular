@@ -1,9 +1,10 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "scheduler",
     srcs = glob(["**/*.py"]),
-    imports = ["../../.."],
     deps = [
         "//max/python/max:_core",
         "//max/python/max/kv_cache",

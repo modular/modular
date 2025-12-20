@@ -51,7 +51,7 @@ There are several ways to start a debug session in VS Code.
 
 To start debugging, you'll need to have a Mojo project to debug. There are a
 number of examples ranging from simple to complex in [our GitHub
-repo](https://github.com/modular/modular/tree/main/examples/mojo).
+repo](https://github.com/modular/modular/tree/main/mojo/examples).
 
 :::note VS Code veteran?
 
@@ -510,7 +510,7 @@ to the debugger, but which can help you debug your programs. These include:
 ### Set a programmatic breakpoint
 
 To break at a specific point in your code, you can use the built-in
-[`breakpoint()`](/mojo/stdlib/builtin/breakpoint/breakpoint) function:
+[`breakpoint()`](/mojo/std/builtin/breakpoint/breakpoint) function:
 
 ```mojo
 if some_value.is_valid():
@@ -526,7 +526,7 @@ triggers the debugger.
 
 :::note Assertions
 
-The [`testing`](/mojo/stdlib/testing/testing/) module includes a number of
+The [`testing`](/mojo/std/testing/testing/) module includes a number of
 ways to specify assertions. Assertions also trigger an error, so can open the
 debugger in the same way that a `breakpoint()` call will.
 
@@ -534,7 +534,7 @@ debugger in the same way that a `breakpoint()` call will.
 
 ### Set parameters from the Mojo command line
 
-You can use the [`sys`](/mojo/stdlib/sys/) module to retrieve
+You can use the [`sys`](/mojo/std/sys/) module to retrieve
 parameter values specified on the Mojo command line. Among other things, this
 is an easy way to switch debugging logic on and off. For example:
 

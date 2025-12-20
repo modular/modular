@@ -26,7 +26,6 @@ from typing import (
     runtime_checkable,
 )
 
-import msgspec
 import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext, SamplingParams
@@ -34,6 +33,7 @@ from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
+from max.interfaces.tokens import TokenSlice
 
 
 class TextGenerationRequestFunction(TypedDict):
@@ -203,7 +203,8 @@ def _check_text_generation_output_implements_pipeline_output(
     return x
 
 
-class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
+@dataclass(kw_only=True)
+class TextGenerationOutput:
     """
     Represents the output of a text generation operation, combining token IDs,
     final generation status, request ID, and optional log probabilities for each token.
@@ -244,10 +245,10 @@ class TextGenerationContext(BaseContext, Protocol):
     The context maintains a token array with the following layout::
 
         .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
-        . +--------------------+---------------+-----------------+----------------+
-        . |     completed      |  next_tokens  |                 |  preallocated  |
-        . +--------------------+---------------+-----------------+----------------+
-        .            start_idx ^    active_idx ^         end_idx ^
+        . +--------------------+------------------+-----------------+----------------+
+        . |     completed      |     next_tokens  |                 |  preallocated  |
+        . +--------------------+------------------+-----------------+----------------+
+        .     processed_length ^ current_position ^         end_idx ^
 
     Token Array Regions:
         - completed: Tokens that have already been processed and encoded.
@@ -257,8 +258,8 @@ class TextGenerationContext(BaseContext, Protocol):
           resizes to multiples of ``CHUNK_SIZE`` to accommodate new tokens.
 
     Key Indices:
-        - ``start_idx``: Marks the beginning of uncompleted tokens
-        - ``active_idx``: Marks the start of next_tokens within the array
+        - ``processed_length``: Marks the beginning of uncompleted tokens
+        - ``current_position``: Marks the end of next_tokens within the array
         - ``end_idx``: Marks the end of all active tokens (one past the last token)
     """
 
@@ -273,8 +274,8 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def active_idx(self) -> int:
-        """The index marking the start of ``next_tokens`` within the token array.
+    def current_position(self) -> int:
+        """The index marking the end of ``next_tokens`` within the token array.
 
         This index separates completed tokens from tokens that will be processed
         in the next iteration during chunked prefill or generation.
@@ -285,7 +286,7 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def start_idx(self) -> int:
+    def processed_length(self) -> int:
         """The index marking the start of completed tokens in the token array.
 
         Completed tokens are those that have already been processed and encoded
@@ -293,18 +294,6 @@ class TextGenerationContext(BaseContext, Protocol):
 
         Returns:
             The zero-based index where completed tokens begin in the token array.
-        """
-        ...
-
-    @property
-    def end_idx(self) -> int:
-        """The index marking the end of all active tokens in the token array.
-
-        This is an exclusive end index (one past the last active token), following
-        Python's standard slicing conventions.
-
-        Returns:
-            The zero-based index one position past the last active token.
         """
         ...
 
@@ -346,7 +335,7 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def next_tokens(self) -> npt.NDArray[Any]:
+    def next_tokens(self) -> TokenSlice:
         """The tokens to be processed in the next model iteration.
 
         This array contains the tokens that will be fed to the model in the
@@ -358,7 +347,7 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def tokens(self) -> npt.NDArray[Any]:
+    def tokens(self) -> TokenSlice:
         """The complete token array including preallocated slots.
 
         This includes all tokens (completed, active, and preallocated empty slots).
@@ -366,42 +355,6 @@ class TextGenerationContext(BaseContext, Protocol):
 
         Returns:
             A 1D NumPy array of int32 values containing all tokens including padding.
-        """
-        ...
-
-    def bump_token_indices(
-        self,
-        start_idx: int = 0,
-        active_idx: int = 0,
-        end_idx: int = 0,
-    ) -> None:
-        """Increment token indices by the specified amounts.
-
-        This method provides fine-grained control over token index management,
-        allowing incremental updates to track token processing progress.
-
-        Args:
-            start_idx: Amount to increment the ``start_idx`` by.
-            active_idx: Amount to increment the ``active_idx`` by.
-            end_idx: Amount to increment the ``end_idx`` by.
-        """
-        ...
-
-    def set_token_indices(
-        self,
-        start_idx: int | None = None,
-        active_idx: int | None = None,
-        end_idx: int | None = None,
-    ) -> None:
-        """Set token indices to specific absolute values.
-
-        This method provides direct control over token index positioning,
-        allowing precise management of the token array state.
-
-        Args:
-            start_idx: New absolute value for ``start_idx``, if provided.
-            active_idx: New absolute value for ``active_idx``, if provided.
-            end_idx: New absolute value for ``end_idx``, if provided.
         """
         ...
 
@@ -468,7 +421,7 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def all_tokens(self) -> npt.NDArray[Any]:
+    def all_tokens(self) -> TokenSlice:
         """All active tokens in the context (prompt and generated).
 
         This property returns only the meaningful tokens, excluding any
@@ -477,10 +430,10 @@ class TextGenerationContext(BaseContext, Protocol):
         Returns:
             A 1D NumPy array of int32 values containing all prompt and generated tokens.
         """
-        return self.tokens[: self.end_idx]
+        ...
 
     @property
-    def prompt_tokens(self) -> npt.NDArray[Any]:
+    def prompt_tokens(self) -> TokenSlice:
         """The original prompt tokens for this context.
 
         These are the input tokens that were provided to start the generation
@@ -492,7 +445,7 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def generated_tokens(self) -> npt.NDArray[Any]:
+    def generated_tokens(self) -> TokenSlice:
         """All tokens generated by the model for this context.
 
         This excludes the original prompt tokens and includes only tokens
@@ -612,6 +565,15 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def rewind_processing(self, n: int) -> None:
+        """Rewind the processing window start by n.
+
+        Use after rejecting a draft so future steps reprocess those tokens.
+        Args:
+            n (int): The number of tokens to rewind.
+        """
+        ...
+
     def skip_processing(self, n: int) -> None:
         """Advance the processing window start by n.
 
@@ -623,17 +585,23 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
-    def maybe_chunk(self, chunk_size: int) -> int:
-        """Optionally chunks the next `chunk_size` tokens for processing.
+    def chunk(self, chunk_size: int) -> None:
+        """Optionally chunk the active token window to enforce a maximum size.
 
-        This method determines the appropriate chunk size (up to `chunk_size`) based on
-        available tokens and context, returning the number of tokens that can be processed.
+        This method is typically used by the scheduler when performing chunked
+        prefill. If the number of active prompt tokens exceeds the per-batch
+        target, the context may be "chunked" by advancing indices so that only
+        a bounded number of active tokens remain.
 
         Args:
-            chunk_size (int): The maximum number of tokens to chunk.
+            chunk_size (int): The desired maximum number of active tokens to keep
+                in this context.
 
-        Returns:
-            int: The number of tokens that will actually be processed in this chunk.
+        Raises:
+            ValueError: If ``chunk_size`` is negative or larger than the current
+                number of active tokens, indicating that the context cannot be
+                chunked appropriately.
+
         """
         ...
 
@@ -739,6 +707,9 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         self.input_tokens = sum(
             ctx.active_length for ctx in self.batch.values()
         )
+        self.context_tokens = sum(
+            ctx.processed_length for ctx in self.batch.values()
+        )
         self.batch_type = BatchType.TG
         for req in self.batch.values():
             if req.needs_ce:
@@ -777,16 +748,8 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return [ctx.log_probabilities_echo for ctx in self.batch.values()]
 
 
-def hash_image(pixel_values: npt.NDArray[Any]) -> int:
-    """Compute the hash of an image.
-
-    Supports any numpy array dtype (float32, uint16 for bfloat16 bits, etc.)
-    since vision models may use different storage formats on CPU.
-    """
-    return hash(pixel_values.data.tobytes())
-
-
-class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
+@dataclass(kw_only=True)
+class ImageMetadata:
     """Metadata about an image in the prompt.
 
     Each image corresponds to a range in the text token array [start_idx, end_idx).
@@ -808,7 +771,7 @@ class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
       native bfloat16 support). Reinterpreted as bfloat16 on GPU.
     """
 
-    image_hash: int = -1
+    image_hash: int | None = None
     """Hash of the image, for use in prefix caching"""
 
     def __post_init__(self) -> None:
@@ -818,11 +781,6 @@ class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             raise ValueError(
                 "Images must have a valid start and end index containing at least one <vision_token_id>"
             )
-
-        # Compute the hash of the image in post init, overriding the default value of -1
-        # This should serialize once, and not recompute, as the serialized hash differs from the default.
-        if self.image_hash == -1:
-            self.image_hash = hash_image(self.pixel_values)
 
     def __repr__(self):
         return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"

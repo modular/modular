@@ -27,7 +27,7 @@ from layout.swizzle import Swizzle, make_ldmatrix_swizzle
 from layout.tensor_core_async import st_matrix_n_layout
 from layout.tma_async import TMATensorTile
 from memory import bitcast
-from stdlib.bit import log2_floor
+from std.bit import log2_floor
 
 from utils.index import IndexList
 
@@ -57,7 +57,8 @@ struct MatmulTileWriter[
     linear_idx_type: DType,
     masked: Bool,
     alignment: Int,
-    smem_tile_layout: Layout, //,
+    smem_tile_layout: Layout,
+    //,
     /,
     *,
     BM: Int,
@@ -191,7 +192,8 @@ struct MatmulTileWriter[
     @always_inline
     fn _write_tile_to_gmem[
         accum_type: DType,
-        reg_tile_layout: Layout, //,
+        reg_tile_layout: Layout,
+        //,
         check_runtime_bounds: Bool = False,
     ](self, reg_tile: RegTileType[accum_type, reg_tile_layout]):
         """Write from registers to global memory."""
@@ -245,7 +247,8 @@ struct MatmulTileWriter[
         tma_layout: Layout,
         desc_layout: Layout,
         accum_type: DType,
-        reg_tile_layout: Layout, //,
+        reg_tile_layout: Layout,
+        //,
     ](
         self,
         tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],
@@ -397,7 +400,8 @@ struct MatmulTileWriter[
         tma_layout: Layout,
         desc_layout: Layout,
         accum_type: DType,
-        reg_tile_layout: Layout, //,
+        reg_tile_layout: Layout,
+        //,
     ](
         self,
         tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],

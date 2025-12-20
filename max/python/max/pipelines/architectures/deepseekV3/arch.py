@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
@@ -37,6 +38,7 @@ deepseekV3_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,
     tokenizer=TextTokenizer,
+    context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

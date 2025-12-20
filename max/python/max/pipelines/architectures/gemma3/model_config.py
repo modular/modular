@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import LinearScalingParams, ReturnLogits
-from max.nn.float8_config import Float8Config, parse_float8_config
+from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -140,7 +140,8 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -165,7 +166,8 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            n_devices=n_devices,
+            devices=devices,
+            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
         )
 
     @staticmethod
@@ -214,6 +216,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] = "rms_norm",
         attention_bias: bool = False,  # Gemma3 attention bias is False in HF.
+        float8_config: Float8Config | None = None,
     ) -> Gemma3Config:
         """Generates a Gemma3Config instance from various configuration sources.
 
@@ -278,16 +281,6 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             huggingface_config.hidden_activation,
         )
 
-        # Parse the float8 config from compressed-tensors
-        layer_name_prefix = "language_model."
-        float8_config = parse_float8_config(
-            huggingface_config,
-            state_dict,
-            dtype,
-            state_dict_name_prefix=layer_name_prefix,
-            ignored_modules_prefix=layer_name_prefix,
-        )
-
         return Gemma3Config(
             vocab_size=huggingface_config.vocab_size,
             hidden_size=huggingface_config.hidden_size,
@@ -315,7 +308,8 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             return_logits=return_logits,
             kv_params=Gemma3Config.get_kv_params(
                 huggingface_config=huggingface_config,
-                n_devices=n_devices,
+                pipeline_config=pipeline_config,
+                devices=device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),

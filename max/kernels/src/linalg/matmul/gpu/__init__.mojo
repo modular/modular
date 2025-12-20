@@ -365,7 +365,8 @@ fn _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
 fn _matmul_gpu[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -700,7 +701,7 @@ fn _matmul_gpu[
                                     key, a_type, b_type, c_type, transpose_b
                                 ]()
                                 if curr_config.num_pipeline_stages == 0:
-                                    raise "no match for the triple"
+                                    raise Error("no match for the triple")
                                 return _multistage_gemm[curr_config]()
                         raise "no match for the triple"
                     except:
@@ -842,7 +843,8 @@ fn multistage_gemm[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
-    b_shape: DimList, //,
+    b_shape: DimList,
+    //,
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -930,7 +932,8 @@ fn multistage_gemm[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
-    b_shape: DimList, //,
+    b_shape: DimList,
+    //,
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -1011,7 +1014,7 @@ fn multistage_gemm[
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    config.shared_mem_usage()
+                    runtime_config.shared_mem_usage()
                 ),
             )
 

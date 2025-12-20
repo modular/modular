@@ -76,7 +76,7 @@ def test_list():
     assert_equal(7, list[-1])
 
 
-struct WeirdList[T: AnyType]:
+struct WeirdList[T: ImplicitlyDestructible]:
     fn __init__(out self, var *values: Self.T, __list_literal__: ()):
         pass
 
@@ -951,7 +951,7 @@ def test_list_contains():
     assert_true(1 in x)
     assert_false(4 in x)
 
-    # TODO: implement List.__eq__ for Self[Copyable & Movable & Comparable]
+    # TODO: implement List.__eq__ for Self[Copyable & Comparable]
     # var y = List[List[Int]]()
     # y.append([1, 2])
     # assert_equal([1, 2] in y,True)
@@ -979,6 +979,19 @@ def test_list_eq_ne():
     assert_true(l6 == l7)
     assert_false(l6 != l7)
     assert_false(l6 == l8)
+
+
+struct NonEquatable(Copyable):
+    pass
+
+
+def test_list_conditional_conformances():
+    assert_true(conforms_to(List[Int], Equatable))
+    # TODO(MSTDL-2077):
+    #   This should pass, but does not due to Unconditional Conformances
+    # assert_false(conforms_to(List[NonEquatable], Equatable))
+
+    assert_true(conforms_to(List[Int], Writable))
 
 
 def test_list_init_span():

@@ -1,9 +1,10 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = ["../.."],
     deps = [
         requirement("pydantic"),
         requirement("pydantic-settings"),
@@ -16,13 +17,14 @@ modular_py_library(
 modular_py_library(
     name = "process_control",
     srcs = ["process_control.py"],
-    imports = ["../.."],
+    deps = [
+        requirement("taskgroup"),  # only for python < 3.11
+    ],
 )
 
 modular_py_library(
     name = "exceptions",
     srcs = ["exceptions.py"],
-    imports = ["../.."],
 )
 
 modular_py_library(
@@ -36,7 +38,6 @@ modular_py_library(
             "exceptions.py",
         ],
     ),
-    imports = ["../.."],
     deps = [
         ":config",
         ":debug",
@@ -66,7 +67,6 @@ modular_py_library(
 modular_py_library(
     name = "debug",
     srcs = ["debug.py"],
-    imports = ["../.."],
     deps = [
         requirement("fastapi"),
         requirement("pydantic"),

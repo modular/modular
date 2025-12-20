@@ -1,0 +1,48 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+name: bench_grouped_gemm
+file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_blackwell_grouped_gemm.py
+
+commons: &commons
+  model: deepseek-v2
+  $layout: contiguous
+  $dtype: [fp8, bf16]
+
+decode: &decode
+  <<: *commons
+  $M: [16, 24, 32]
+
+prefill: &prefill
+  <<: *commons
+  $M: [3500, 7000, 8192]
+
+# Varied M per group for 32-group routed experts (decode)
+decode_varied: &decode_varied
+  <<: *commons
+  $M:
+    - 8,8,8,8,16,16,16,16,24,24,24,24,32,32,32,32,48,48,48,48,64,64,64,64,96,96,96,96,128,128,128,128
+    - 4,8,12,16,20,24,28,32,36,40,44,48,52,56,60,64,68,72,76,80,84,88,92,96,100,104,108,112,116,120,124,128
+    - 17,42,8,91,33,64,12,55,28,76,19,48,87,6,39,103,24,61,14,72,45,96,31,58,11,84,22,67,37,99,16,53
+
+prefill_varied: &prefill_varied
+  <<: *commons
+  $M:
+    - 1024,1024,1024,1024,2048,2048,2048,2048,3072,3072,3072,3072,4096,4096,4096,4096,5120,5120,5120,5120,6144,6144,6144,6144,7168,7168,7168,7168,8192,8192,8192,8192
+    - 256,512,768,1024,1280,1536,1792,2048,2304,2560,2816,3072,3328,3584,3840,4096,4352,4608,4864,5120,5376,5632,5888,6144,6400,6656,6912,7168,7424,7680,7936,8192
+    - 2048,5632,1024,7168,3584,512,6144,2560,4608,768,5120,1536,7680,3072,256,6656,4096,1792,5888,2304,7424,3328,640,6400,4352,1280,5376,2816,7936,3840,896,6912
+
+params:
+- <<: *decode
+  $num-groups: 1
+  $N: 2112
+  $K: 7168

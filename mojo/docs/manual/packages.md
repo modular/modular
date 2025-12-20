@@ -224,7 +224,7 @@ from mypackage import MyPair
 This feature explains why some members in the Mojo standard library can be
 imported from their package name, while others required the
 `<package_name>.<module_name>` notation. For example, the
-[`functional`](/mojo/stdlib/algorithm/functional/) module resides in the
+[`functional`](/mojo/std/algorithm/functional/) module resides in the
 `algorithm` package, so you can import members of that module (such as the
 `map()` function) like this:
 

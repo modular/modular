@@ -30,7 +30,8 @@ from .blas import matmul as vendor_matmul
 fn matmul[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     config: OptionalReg[
@@ -101,10 +102,13 @@ fn matmul[
             c.num_elements()
         )
 
-        # We do not want to mark c as `mut` in the function signature, so we
-        # create a new shallow copy of c as a temporary buffer.
-        var c_tmp = c
-        c_tmp.data = tmp_device_buffer.unsafe_ptr()
+        # Construct a new buffer with external origin pointing to the temporary storage.
+        var c_tmp = NDBuffer[c.type, 2, MutOrigin.external](
+            rebind[UnsafePointer[Scalar[c.type], MutOrigin.external]](
+                tmp_device_buffer.unsafe_ptr()
+            ),
+            IndexList[2](c.dim[0](), c.dim[1]()),
+        )
 
         matmul[
             transpose_b=transpose_b,

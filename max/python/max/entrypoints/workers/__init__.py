@@ -102,12 +102,15 @@ def start_workers(
                 # Start Model Worker
                 _ = await exit_stack.enter_async_context(
                     start_model_worker(
-                        pipeline_factory,  # type: ignore
+                        pipeline_factory,
                         pipeline_config,
                         settings,
                         metric_client,
                         scheduler_zmq_configs=SchedulerZmqConfigs(
-                            pipeline_task
+                            pipeline_task,
+                            context_type=PIPELINE_REGISTRY.retrieve_context_type(
+                                pipeline_config
+                            ),
                         ),
                     )
                 )

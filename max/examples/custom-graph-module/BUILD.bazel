@@ -1,0 +1,22 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_py_binary(
+    name = "main",
+    srcs = [
+        "main.py",
+        "mlp.py",
+    ],
+    imports = ["."],
+    deps = [
+        "//max/python/max/entrypoints",
+        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/nn",
+    ],
+)
+
+modular_run_binary_test(
+    name = "main_test",
+    binary = "main",
+)

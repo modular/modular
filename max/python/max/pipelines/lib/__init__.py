@@ -21,9 +21,11 @@ from max.config import (
     resolve_max_config_inheritance,
 )
 
+from .bfloat16_utils import float32_to_bfloat16_as_uint16
 from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
+from .float8 import parse_float8_config
 from .hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
@@ -56,6 +58,7 @@ from .sampling import (
 )
 from .speculative_config import SpeculativeConfig
 from .speculative_decoding import (
+    EAGLESpeculativeDecodingPipeline,
     SpeculativeDecodingPipelineBase,
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -74,6 +77,7 @@ __all__ = [
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
     "AudioGenerationConfig",
+    "EAGLESpeculativeDecodingPipeline",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "HuggingFaceRepo",
@@ -110,10 +114,12 @@ __all__ = [
     "convert_max_config_value",
     "deep_merge_max_configs",
     "download_weight_files",
+    "float32_to_bfloat16_as_uint16",
     "generate_local_model_path",
     "get_default_max_config_file_section_name",
     "get_paged_manager",
     "max_tokens_to_generate",
+    "parse_float8_config",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
     "resolve_max_config_inheritance",

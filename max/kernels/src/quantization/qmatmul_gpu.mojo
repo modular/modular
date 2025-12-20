@@ -492,10 +492,9 @@ fn multistage_qgemm_kernel[
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
     b_packed: LayoutTensor[b_packed_type, b_layout, MutAnyOrigin],
 ):
-    constrained[
-        is_nvidia_gpu(),
-        "Quantized gemm only supports NVIDIA hardwares for now.",
-    ]()
+    __comptime_assert (
+        is_nvidia_gpu()
+    ), "Quantized gemm only supports NVIDIA hardwares for now."
     comptime simd_size = simd_width_of[c_type]()
 
     comptime repack_tile = Index(64, 16)
@@ -699,10 +698,9 @@ fn multistage_qgemm_kernel[
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication
-        constrained[
-            elementwise_lambda_fn is not None,
-            "elementwise_lambda_fn is not valid",
-        ]()
+        __comptime_assert (
+            elementwise_lambda_fn is not None
+        ), "elementwise_lambda_fn is not valid"
         comptime thread_layout = Layout.row_major(
             8, 4
         ) if is_nvidia_gpu() else Layout.row_major(4, 16)
@@ -1420,7 +1418,8 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
 fn multistage_gemm_q[
     c_type: DType,
     a_type: DType,
-    b_type: DType, //,
+    b_type: DType,
+    //,
     *,
     group_size: Int,
     pack_factor: Int,
@@ -1433,9 +1432,9 @@ fn multistage_gemm_q[
     runtime_config: MatmulConfig[a_type, b_type, c_type, True],
     ctx: DeviceContext,
 ) raises:
-    constrained[c.rank == 2]()
-    constrained[a.rank == 2]()
-    constrained[b.rank == 2]()
+    __comptime_assert c.rank == 2
+    __comptime_assert a.rank == 2
+    __comptime_assert b.rank == 2
     var M = c.dim[0]()
     var N = c.dim[1]()
 
@@ -1534,7 +1533,8 @@ fn multistage_gemm_q[
 @always_inline
 fn matmul_gpu_qint4[
     c_type: DType,
-    a_type: DType, //,
+    a_type: DType,
+    //,
     group_size: Int,
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -1544,10 +1544,10 @@ fn matmul_gpu_qint4[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    constrained[c.rank == 2]()
-    constrained[a.rank == 2]()
-    constrained[b.rank == 2]()
-    constrained[is_gpu[target](), "unsupported target"]()
+    __comptime_assert c.rank == 2
+    __comptime_assert a.rank == 2
+    __comptime_assert b.rank == 2
+    __comptime_assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.get_device_context()
 
     matmul_gpu_qint4_impl[group_size, target, elementwise_lambda_fn](
@@ -1558,7 +1558,8 @@ fn matmul_gpu_qint4[
 @always_inline
 fn matmul_gpu_qint4_impl[
     c_type: DType,
-    a_type: DType, //,
+    a_type: DType,
+    //,
     group_size: Int,
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -1568,10 +1569,10 @@ fn matmul_gpu_qint4_impl[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
     ctx: Optional[DeviceContext],
 ) raises:
-    constrained[c.rank == 2]()
-    constrained[a.rank == 2]()
-    constrained[b.rank == 2]()
-    # constrained[is_gpu[target](), "unsupported target"]()
+    __comptime_assert c.rank == 2
+    __comptime_assert a.rank == 2
+    __comptime_assert b.rank == 2
+    # __comptime_assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.value()
 
     comptime pack_factor = 8
@@ -2058,7 +2059,8 @@ fn matmul_gpu_qint4_impl[
 
 @always_inline
 fn gpu_qint4_repack_Q4_0[
-    b_shape: DimList, //,
+    b_shape: DimList,
+    //,
     target: StaticString,
 ](
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
@@ -2067,9 +2069,9 @@ fn gpu_qint4_repack_Q4_0[
     ],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    constrained[b.rank == 2]()
-    constrained[b_packed.rank == 2]()
-    constrained[is_gpu[target](), "unsupported target"]()
+    __comptime_assert b.rank == 2
+    __comptime_assert b_packed.rank == 2
+    __comptime_assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.get_device_context()
 
     comptime pack_factor = 8
@@ -2109,9 +2111,9 @@ fn gpu_qint4_repack_GPTQ[
     ] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    constrained[b.rank == 2]()
-    constrained[b_packed.rank == 2]()
-    constrained[is_gpu[target](), "unsupported target"]()
+    __comptime_assert b.rank == 2
+    __comptime_assert b_packed.rank == 2
+    __comptime_assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.get_device_context()
 
     comptime pack_factor = 8
@@ -2122,14 +2124,12 @@ fn gpu_qint4_repack_GPTQ[
     comptime N = Int(b.layout.shape[1])
     comptime K = Int(b.layout.shape[0]) // group_bytes * group_size
 
-    constrained[
-        N == Int(b_packed.layout.shape[0]),
-        "qmatmul: Mismatched input/output dimension.",
-    ]()
-    constrained[
-        K == (Int(b_packed.layout.shape[1]) // group_bytes * group_size),
-        "qmatmul: Mismatched input/output dimension.",
-    ]()
+    __comptime_assert N == Int(
+        b_packed.layout.shape[0]
+    ), "qmatmul: Mismatched input/output dimension."
+    __comptime_assert K == (
+        Int(b_packed.layout.shape[1]) // group_bytes * group_size
+    ), "qmatmul: Mismatched input/output dimension."
 
     var smem_usage: Int = BN * 2 * group_bytes
 

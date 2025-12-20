@@ -22,16 +22,6 @@ fn print_params2[t: DType, s: Int, //](vec: SIMD[t, s]):
     print(vec.size)
 
 
-fn on_type():
-    print(SIMD[DType.float32, 2].size)  # prints 2
-
-
-fn on_instance():
-    var x = SIMD[DType.int32, 2](4, 8)
-    print(x.dtype)  # prints int32
-    _ = x
-
-
 fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size * 2]:
     var result = SIMD[v1.dtype, v1.size * 2]()
 
@@ -51,10 +41,6 @@ def main():
     print_params(v)
 
     print_params2(v)
-
-    on_type()
-
-    on_instance()
 
     var a = SIMD[DType.int16, 4](1, 2, 3, 4)
     var b = SIMD[DType.int16, 4](0, 0, 0, 0)

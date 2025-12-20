@@ -24,18 +24,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.nn import ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -168,7 +158,8 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -179,7 +170,8 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         Args:
             huggingface_config: The HuggingFace model configuration object
                 (:obj:`transformers.AutoConfig`).
-            n_devices: The number of devices the model will run on.
+            pipeline_config: The MAX Engine pipeline configuration.
+            devices: The list of devices the model will run on.
             kv_cache_config: The MAX Engine KV cache configuration settings
                 (:obj:`max.pipelines.max_config.KVCacheConfig`).
             cache_dtype: The desired data type for the KV cache
@@ -189,7 +181,11 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
         return GptOssConfig.get_kv_params(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
 
     @classmethod
@@ -206,47 +202,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             The number of hidden layers.
         """
         return GptOssConfig.get_num_layers(huggingface_config)
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the KV cache required for the GPT OSS model in bytes.
-
-        Args:
-            pipeline_config: The configuration for the pipeline.
-            available_cache_memory: The total memory available for the KV cache
-                in bytes.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) the
-                model will run on.
-            kv_cache_config: Configuration settings for the KV cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The estimated size of the KV cache in bytes.
-        """
-        return estimate_kv_cache_size(
-            params=GptOssConfig.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=len(devices),
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-        )
 
     def load_model(self) -> Callable[..., Any]:
         """Loads the compiled GPT OSS model into the MAX Engine session.
@@ -306,13 +261,9 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             return_logits=self.return_logits,
         )
         nn_model = GptOss(model_config, self.kv_manager)
-
-        nn_model.load_state_dict(
-            state_dict,
-            strict=True,
-        )
         nn_model.to(self.devices[0])
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
+
+        kv_inputs = self.kv_params.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
@@ -322,6 +273,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             return_n_logits_type,
             input_row_offsets_type,
             *flattened_kv_types,
+            weights=state_dict,
         )
         after = time.perf_counter()
 
@@ -373,20 +325,24 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],
+        replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the GPT OSS model.
 
         Args:
-            context_batch: A sequence of :obj:`TextContext` objects representing
-                the input prompts.
+            replica_batches: A sequence of sequences of :obj:`TextContext` objects representing
+                the input prompts for each replica.
             kv_cache_inputs: Optional inputs required by the KV cache manager.
 
         Returns:
             The prepared :obj:`ModelInputs` object for the initial execution step.
         """
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
         assert kv_cache_inputs is not None
         kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
 
@@ -438,35 +394,4 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             input_row_offsets=next_row_offsets,
             return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
-    def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        """Loads and initializes the KVCacheManager for the GPT OSS model.
-
-        Configures the KV cache manager based on model parameters, pipeline settings,
-        and available memory.
-
-        Args:
-            session: The MAX Engine inference session.
-            available_cache_memory: The amount of memory available for the KV cache in bytes.
-
-        Returns:
-            An initialized :obj:`KVCacheManager` instance.
-        """
-        return load_kv_manager(
-            params=GptOssConfig.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
         )

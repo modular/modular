@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 # All SM100 tests require B200 GPU
 [
     mojo_test(
@@ -18,7 +20,7 @@ load("//bazel:api.bzl", "mojo_test")
         deps = [
             "//max:internal_utils",
             "//max:linalg",
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )

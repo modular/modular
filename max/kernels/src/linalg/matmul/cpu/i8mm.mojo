@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
+from buffer.buffer import partial_simd_load, partial_simd_store
+from layout import Layout, LayoutTensor, RuntimeTuple
 
 from utils.index import Index, IndexList
 
@@ -54,7 +54,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _load_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype], **_],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -101,7 +101,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _store_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -161,8 +161,8 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -180,20 +180,25 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
+        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
 
         var n_outer_idx = tile_n_k_idx[0] // (kernel_cols // 2)
         var kl = tile_n_k_idx[1]
-        var b_ptr = b_packed._offset(Index(n_outer_idx, kl // 8, 0))
+
+        var b_offset = b_packed.runtime_layout(
+            RuntimeTuple[b_packed.layout.shape](Index(n_outer_idx, kl // 8, 0))
+        )
+        var b_ptr = b_packed.ptr.offset(b_offset)
 
         # This inner kernels works with non-transposed A.
         var K = a.dim(1)
-        var a_ptr = a.data.offset(
+        var a_ptr = a.ptr.offset(
             global_offset.M * K + 2 * global_offset.K + 2 * kl
         )
 
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
-        constrained[simd_size == 4]()
+        __comptime_assert simd_size == 4
 
         @parameter
         if prefetch_distance > 0:
@@ -227,9 +232,9 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         simd_size: Int,
     ](
         self,
-        c: NDBuffer,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        c: LayoutTensor[mut=True, **_],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
@@ -238,20 +243,21 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows2, TileN, TileK) tile.
         """
+        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
 
         comptime kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
         comptime single_row = (kernel_rows == 1)
 
         var c_stride = c.dim[1]()
 
-        var c_ptr = c.data.offset(global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr.offset(global_offset.M * c_stride + global_offset.N)
 
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )
 
         var acc = LoadStore_i8mm[
-            c.type,
+            c.dtype,
             simd_size,
             single_row,
             kernel_rows2,
@@ -263,7 +269,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                 acc._initialize_c_tile()
             else:
                 acc._load_c_tile(
-                    rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                    c_ptr,
                     c_stride,
                     idx_n,
                     c_bound,
@@ -278,7 +284,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                     Index(idx_n, idx_k),
                 )
             acc._store_c_tile(
-                rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                c_ptr,
                 c_stride,
                 idx_n,
                 c_bound,

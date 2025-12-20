@@ -1,0 +1,141 @@
+---
+title: '@deprecated'
+description: Mojo's `@deprecated` decorator marks outdated APIs and schedules them for removal. When used with the `use` parameter, it also provides migration suggestions.
+codeTitle: true
+---
+
+The `@deprecated` [decorator](https://docs.modular.com/mojo/manual/decorators/)
+marks a declaration as obsolete and scheduled for removal.
+It actively signals to callers that an API still works today but won’t
+stick around forever.
+
+Deprecation lets you safely reshape your codebase.
+With it, you can refine designs, replace older patterns, and introduce
+better tooling without forcing sudden changes.
+
+When you mark something as deprecated, you give
+your users the time and information they need to move to newer APIs or
+refactor their code for the upcoming feature loss before the old API
+disappears.
+
+## Deprecation information
+
+Deprecation doesn't prevent using symbols.
+Instead, it surfaces guidance in the form of compiler warnings.
+
+Mojo offers the `@deprecated` decorator with two styles:
+
+- **`@deprecated(use=symbol)`**:
+
+  _Use this style when there’s a clear successor to the previous symbol._
+
+  The compiler warns callers when they use the deprecated item and
+  points them toward the symbol you recommend.
+  This is a gentle nudge that says, "This call still works, but you
+  should really start using the other thing instead."
+    - The argument for `use` is the actual symbol. Don't quote it.
+    - The symbol must be valid or the compiler will error.
+
+- **`@deprecated("message")`**:
+
+  _Use this version when you want to explain the change in your own words._
+
+  If there's no direct replacement in play, the message style lets you
+  explain the impact of your deprecation. The compiler displays the
+  supplied string in its warning where the deprecated item is used.
+  A message makes it easy to steer callers, give context, or note
+  that the feature is going away entirely.
+
+
+:::note Deprecation practices
+When deprecating an API, consider:
+
+- **Clarity**: Explain the reason for deprecation when it provides actionable context for the user.
+- **Actionability**: When possible, point to a concrete replacement (`use`) or next step (message).
+- **Consistency**: Use the same phrasing across related APIs
+- **Precision**: When possible, deprecate individual functions or methods rather than entire types.
+
+Deprecation is most effective when it fits into clear, predictable upgrade paths.
+:::
+
+## How to deprecate
+
+The following sample demonstrates how to apply deprecation using
+both built-in styles:
+
+```mojo
+# Mark function `a` as deprecated with a custom message
+@deprecated("Sunsetting a")
+fn a():
+    pass
+
+# Mark function `b` as deprecated with alternative
+@deprecated(use=c)
+fn b():
+    pass
+
+# `c` is `b`'s recommended replacement after deprecation
+fn c():
+    pass
+
+fn main():
+    a() # custom warning
+    b() # warning with recommended replacement
+    c() # no warning
+
+    # Demonstrate that only warnings are issued
+    print("This is a functioning app")
+```
+
+Output:
+
+```
+deprecation.mojo:16:6: warning: Sunsetting a
+    a() # custom warning
+    ~^~
+deprecation.mojo:3:4: note: 'a' declared here
+fn a():
+   ^
+deprecation.mojo:17:6: warning: 'b' is deprecated, use 'c' instead
+    b() # warning with recommended replacement
+    ~^~
+deprecation.mojo:8:4: note: 'b' declared here
+fn b():
+   ^
+This is a functioning app
+```
+
+### Items you can deprecate
+
+In Mojo, you can deprecate any of the following items:
+
+- **Structs**:
+
+  ```mojo
+  @deprecated(use=PerformantStruct)
+  struct LegacyStruct:
+      # ...
+  ```
+
+- **Functions**:
+
+  ```mojo
+  @deprecated("This function is being phased out")
+  fn legacy_function(self):
+      pass
+  ```
+
+- **Traits**:
+
+  ```mojo
+  @deprecated(use=Honkable)
+  trait Quackable:
+      fn quack(self):
+          ...
+  ```
+- **`comptime` values**:
+
+  ```mojo
+  @deprecated("Use tau instead")
+  comptime pi = 3.141592
+  ```

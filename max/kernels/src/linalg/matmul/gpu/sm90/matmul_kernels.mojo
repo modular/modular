@@ -543,7 +543,8 @@ struct HopperMatmulSM90Kernel[
         a_tile_layout: Layout,
         b_tile_layout: Layout,
         a_desc_layout: Layout,
-        b_desc_layout: Layout, //,
+        b_desc_layout: Layout,
+        //,
     ](
         a_tma_op: TMATensorTile[Self.a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[Self.b_type, b_tile_layout, b_desc_layout],
@@ -637,7 +638,8 @@ struct HopperMatmulSM90Kernel[
     @always_inline
     fn producer_main_loop[
         a_loader_type: TileLoader,
-        b_loader_type: TileLoader, //,
+        b_loader_type: TileLoader,
+        //,
         num_k_iters: Int,
     ](
         m_coord: UInt,
@@ -1187,7 +1189,8 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn consumer_main_loop[
-        ring_buffer_origin: Origin[True], //,
+        ring_buffer_origin: Origin[True],
+        //,
         num_k_iters: Int,
     ](
         wgmma_op: Self.WgmmaOp,

@@ -43,9 +43,9 @@ from max.serve.scheduler.base import (
 )
 
 from .base import SchedulerProgress
+from .batch_constructor import TextBatchConstructor
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServerV2
-from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger
 
 logger = logging.getLogger("max.serve")
@@ -205,7 +205,7 @@ class PrefillScheduler(Scheduler):
         assert not context.needs_ce, (
             f"Invalid Context: Expected needs_ce to be False. Found: {context}"
         )
-        assert context.start_idx > 0, (
+        assert context.processed_length > 0, (
             f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
         )
         self.dispatcher.send_reply_nowait(
@@ -228,10 +228,13 @@ class PrefillScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        self.batch_constructor.move_completed_ce_requests_to_tg(
-            inputs.batches,
-            responses,
+        pruned_ids = (
+            self.batch_constructor.advance_requests_and_collect_invalid_ids(
+                inputs.batches
+            )
         )
+        for request_id in pruned_ids:
+            del responses[request_id]
 
         # Send fully encoded requests to decode queue.
         for replica_idx, replica in enumerate(self.batch_constructor.replicas):

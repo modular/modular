@@ -64,7 +64,7 @@ struct KernelConfig:
 
 
 @register_passable("trivial")
-struct MicroKernelShape(ImplicitlyCopyable, Movable):
+struct MicroKernelShape(ImplicitlyCopyable):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
@@ -78,7 +78,7 @@ struct MicroKernelShape(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct GemmShape(ImplicitlyCopyable, Movable):
+struct GemmShape(ImplicitlyCopyable):
     """Helper class to unpack gemm dimension and layout."""
 
     var M: Int
@@ -131,9 +131,9 @@ struct GemmShape(ImplicitlyCopyable, Movable):
         """
 
         # We only want a 2D tensor for now
-        constrained[c.rank == 2]()
-        constrained[a.rank == 2]()
-        constrained[b.rank == 2]()
+        __comptime_assert c.rank == 2
+        __comptime_assert a.rank == 2
+        __comptime_assert b.rank == 2
 
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
@@ -285,7 +285,7 @@ fn _get_tile_n_k[
     transpose_b: Bool,
     layout: Layout,
 ](b: LayoutTensor[b_type, layout, _, **_]) -> IndexList[2]:
-    constrained[b.rank == 2]()
+    __comptime_assert b.rank == 2
     var tile_n_k: IndexList[2]
 
     @parameter
@@ -422,7 +422,7 @@ fn get_matmul_num_tasks[
 
 
 @fieldwise_init
-struct SubMatmulConfig(ImplicitlyCopyable, Movable):
+struct SubMatmulConfig(ImplicitlyCopyable):
     """Static configuration of sub-matrices in parallel matmul."""
 
     # Starting Indices of sub-matrices.
@@ -729,7 +729,7 @@ fn packA_i8mm[
 
 @fieldwise_init
 @register_passable("trivial")
-struct InnerKernelID(ImplicitlyCopyable, Movable):
+struct InnerKernelID(ImplicitlyCopyable):
     comptime DEFAULT = InnerKernelID(0)
     comptime VNNI = InnerKernelID(1)
     comptime NEON = InnerKernelID(2)
@@ -806,7 +806,7 @@ fn apply_epilogue[
     # Scalar case
     # TODO: 1D vector is included, should handle it in a separate branch.
     else:
-        constrained[dst_element_layout.rank() == 1]()
+        __comptime_assert dst_element_layout.rank() == 1
 
         @parameter
         for i in range(src.layout.size() * src.element_size):

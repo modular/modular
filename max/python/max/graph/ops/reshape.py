@@ -18,13 +18,13 @@ from functools import reduce
 
 from max.mlir.dialects import rmo
 
-from ..dim import Dim, StaticDim
+from ..dim import Dim
 from ..graph import Graph
 from ..type import Shape, ShapeLike
 from ..value import TensorValue, TensorValueLike
 
 
-def _dim_prod(dims: Iterable[Dim]) -> Dim:
+def _product(dims: Iterable[Dim]) -> Dim:
     # 1 is the multiplicative identity.
     return reduce(operator.mul, dims, Dim(1))
 
@@ -54,42 +54,25 @@ def reshape(x: TensorValueLike, shape: ShapeLike) -> TensorValue:
     Raises:
         ValueError: if input and target shapes' number of elements mismatch.
     """
-    v = TensorValue(x)
+    x = TensorValue(x)
     shape = Shape(shape)
 
     # Find the single -1 dimension (if any).
-    neg_indices = [
-        i
-        for i, d in enumerate(shape)
-        if isinstance(d, StaticDim) and int(d) == -1
-    ]
-    if len(neg_indices) > 1:
+    if (has_negative := shape.count(Dim(-1))) > 1:
         raise ValueError("reshape(): at most one -1 dimension is allowed")
 
-    neg_idx: int | None = neg_indices[0] if neg_indices else None
-
-    if neg_idx is not None:
+    if has_negative:
         # Disallow inferring -1 if another requested dim is 0.
-        has_zero_elsewhere = any(
-            i != neg_idx and isinstance(d, StaticDim) and int(d) == 0
-            for i, d in enumerate(shape)
-        )
-        if has_zero_elsewhere:
+        if 0 in shape:
             raise ValueError(
                 "reshape(): cannot infer -1 dimension when another dimension is 0"
             )
 
-        # total = product(input dims)
-        total = _dim_prod(v.shape)
-
-        # known = product(all requested dims except the -1)
-        known = _dim_prod(d for i, d in enumerate(shape) if i != neg_idx)
-
+        total = _product(x.shape)
+        known = _product(d for d in shape if d != -1)
         # missing = total // known  (symbolic; folds when possible)
-        shape[neg_idx] = total // known
+        shape[shape.index(Dim(-1))] = total // known
 
-    return Graph.current._add_op(
-        rmo.reshape,
-        v,
-        new_shape=shape.to_mlir(),
-    )[0].tensor
+    return Graph.current._add_op(rmo.reshape, x, new_shape=shape.to_mlir())[
+        0
+    ].tensor

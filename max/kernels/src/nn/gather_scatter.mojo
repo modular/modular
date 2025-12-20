@@ -67,10 +67,9 @@ fn normalize_neg_index[
 
     Returns val + dim if val < 0 else val
     """
-    constrained[
-        dtype.is_integral(),
-        "normalize_neg_index expects index to be an integral dtype",
-    ]()
+    __comptime_assert (
+        dtype.is_integral()
+    ), "normalize_neg_index expects index to be an integral dtype"
 
     var indices = idx.cast[out_type]()
     var bounds = SIMD[out_type, width](dim_size)
@@ -129,10 +128,10 @@ fn gather_reduce[
     context, i is the batch dimension, j is the multi-hot dimension, and k is
     the embedding dimension.
     """
-    constrained[input.rank == 2]()
-    constrained[indices.rank == 2]()
-    constrained[gather_axis == 0]()
-    constrained[reduce_axis == 1]()
+    __comptime_assert input.rank == 2
+    __comptime_assert indices.rank == 2
+    __comptime_assert gather_axis == 0
+    __comptime_assert reduce_axis == 1
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     if input.size() == 0 or indices.size() == 0:
@@ -266,6 +265,8 @@ fn gather_reduce[
                 gather_k_tile,
                 k_tile_sizes,
             ](0, row_size)
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = i
 
     sync_parallelize[task_func](num_tasks)
 
@@ -273,7 +274,8 @@ fn gather_reduce[
 # TODO: Delete / for testing purposes (test_gather.mojo)
 fn gather[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     *,
     axis: Int,
     target: StaticString = "cpu",
@@ -370,7 +372,8 @@ fn gather[
 
 fn gather[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     *,
     axis: Int,
     target: StaticString = "cpu",
@@ -1248,10 +1251,9 @@ fn scatter_elements[
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
     """
-    constrained[
-        indices_type is DType.int32 or indices_type is DType.int64,
-        "indices in scatter_elements must be int32 or int64",
-    ]()
+    __comptime_assert (
+        indices_type is DType.int32 or indices_type is DType.int64
+    ), "indices in scatter_elements must be int32 or int64"
 
     if input.shape() != output.shape():
         raise Error(
@@ -1300,7 +1302,8 @@ fn scatter_elements[
 @always_inline
 fn scatter_elements_shape[
     input_type: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     *,
     single_thread_blocking_override: Bool,
 ](
@@ -1371,10 +1374,9 @@ fn gather_elements[
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
     """
-    constrained[
-        indices_type is DType.int32 or indices_type is DType.int64,
-        "indices in gather_elements must be int32 or int64",
-    ]()
+    __comptime_assert (
+        indices_type is DType.int32 or indices_type is DType.int64
+    ), "indices in gather_elements must be int32 or int64"
 
     if rebind[IndexList[input.rank]](
         indices.runtime_layout.shape.value.canonicalize()
@@ -1541,7 +1543,8 @@ fn gather_nd[
 
 fn _gather_nd_impl[
     dtype: DType,
-    indices_type: DType, //,
+    indices_type: DType,
+    //,
     batch_dims: Int,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -1551,10 +1554,9 @@ fn _gather_nd_impl[
     output: LayoutTensor[mut=True, dtype, **_],
     ctx: Optional[DeviceContext] = None,
 ) raises:
-    constrained[
-        data.rank >= 1 and indices.rank >= 1,
-        "Constraint: data_rank >= 1 and indices_rank >= 1",
-    ]()
+    __comptime_assert (
+        data.rank >= 1 and indices.rank >= 1
+    ), "Constraint: data_rank >= 1 and indices_rank >= 1"
 
     var indices_shape = indices.runtime_layout.shape.value.canonicalize()
     debug_assert(
@@ -1625,6 +1627,7 @@ fn _gather_nd_impl[
     var slice_rank = data.rank - batch_dims - indices.dim[indices.rank - 1]()
     var slice_last_dim = output.dim[output.rank - 1]() if slice_rank > 0 else 1
 
+    __comptime_assert data.rank - 1 != UNKNOWN_VALUE
     var use_simd = (
         data.stride[data.rank - 1]() == 1
         and (slice_last_dim % target_simd_width) == 0
@@ -1674,7 +1677,8 @@ fn _gather_nd_impl[
 
 fn scatter_set_constant[
     data_type: DType,
-    index_type: DType, //,
+    index_type: DType,
+    //,
     target: StaticString,
     single_thread_blocking_override: Bool = False,
 ](
@@ -1710,18 +1714,15 @@ fn scatter_set_constant[
         fill_value: The value to fill the data with.
         ctx: The device context.
     """
-    constrained[
-        index_type.is_integral(),
-        "index_type must be an integer dtype",
-    ]()
-    constrained[
-        data.layout.rank() == 2,
-        "scatter_set: data must have rank 2",
-    ]()
-    constrained[
-        indices.layout.rank() == 2,
-        "scatter_set: indices must have rank 2",
-    ]()
+    __comptime_assert (
+        index_type.is_integral()
+    ), "index_type must be an integer dtype"
+    __comptime_assert (
+        data.layout.rank() == 2
+    ), "scatter_set: data must have rank 2"
+    __comptime_assert (
+        indices.layout.rank() == 2
+    ), "scatter_set: indices must have rank 2"
     debug_assert(
         indices.dim[1]() == 2,
         "scatter_set: indices must have shape [total_seq_len, 2]",
@@ -1732,7 +1733,7 @@ fn scatter_set_constant[
     fn scatter_set_constant_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
-        constrained[rank_ == 1, "scatter_set_constant_fn: rank must be 1"]()
+        __comptime_assert rank_ == 1, "scatter_set_constant_fn: rank must be 1"
 
         data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
 

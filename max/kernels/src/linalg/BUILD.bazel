@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 mojo_library(
     name = "linalg",
@@ -14,6 +14,6 @@ mojo_library(
         "//max:internal_utils",
         "//max:layout",
         "//max:register",
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )

@@ -47,7 +47,7 @@ struct ParamStruct[param_value: Int]:
 
 
 def main():
-    alias still_param_struct = ParamStruct[1]() + ParamStruct[2]()
+    comptime still_param_struct = ParamStruct[1]() + ParamStruct[2]()
     print(still_param_struct.param_value)
     # When materializing to a run-time variable, it is automatically converted,
     # even without a type annotation.

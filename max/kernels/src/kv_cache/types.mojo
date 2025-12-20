@@ -26,7 +26,7 @@ from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, IntTuple
 from layout.runtime_layout import RuntimeLayout
-from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
+from layout.tma_async import SplitLastDimTMATensorTile, create_split_tma
 from memory import (
     LegacyOpaquePointer as OpaquePointer,
     LegacyUnsafePointer as UnsafePointer,
@@ -65,7 +65,7 @@ fn _compute_kv_cache_dynamic_shape_strides[
 
 
 @register_passable("trivial")
-struct KVCacheStaticParams(Equatable, ImplicitlyCopyable, Movable):
+struct KVCacheStaticParams(Equatable, ImplicitlyCopyable):
     var num_heads: UInt
     var head_size: UInt
     var is_mla: Bool
@@ -100,7 +100,7 @@ struct KVCacheStaticParams(Equatable, ImplicitlyCopyable, Movable):
 
 
 @register_passable("trivial")
-trait KVCacheT(DevicePassable, ImplicitlyCopyable, Movable):
+trait KVCacheT(DevicePassable, ImplicitlyCopyable):
     """Trait for different KVCache types and implementations.
 
     Represents a single (key or value) cache.
@@ -183,23 +183,12 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable, Movable):
         ...
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        ...
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+        BN: Int, swizzle_mode: TensorMapSwizzle
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        tile_m,
-        tile_n,
+        IndexList[3](BN, 1, Int(Self.kv_params.head_size)),
         swizzle_mode,
-        is_k_major=is_k_major,
     ]:
         """Creates a TMA tile for this KV cache."""
         ...
@@ -258,7 +247,7 @@ struct ContinuousBatchingKVCache[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -400,23 +389,13 @@ struct ContinuousBatchingKVCache[
         return block_idx * self._stride() + tok_idx
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        return head_idx * Self.kv_params.head_size
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
+        BN: Int,
         swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        tile_m,
-        tile_n,
+        IndexList[3](BN, 1, Int(Self.kv_params.head_size)),
         swizzle_mode,
-        is_k_major=is_k_major,
     ]:
         """Creates a TMA tile for this KV cache."""
         # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
@@ -430,21 +409,16 @@ struct ContinuousBatchingKVCache[
         # yields number of rows:
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
-        comptime cols = Self.kv_params.num_heads * Self.kv_params.head_size
 
-        comptime layout = Layout.row_major(UNKNOWN_VALUE, Int(cols))
-        rt_layout = RuntimeLayout[layout].row_major(
-            IndexList[2](Int(rows), Int(cols))
+        comptime smem_dim = IndexList[3](BN, 1, Int(Self.kv_params.head_size))
+        comptime gmem_dim = IndexList[3](
+            UNKNOWN_VALUE,
+            Int(Self.kv_params.num_heads),
+            Int(Self.kv_params.head_size),
         )
-
-        # Create a LayoutTensor view with compile-time shape
-        var tensor = LayoutTensor[Self.dtype, layout, MutAnyOrigin](
-            self.blocks.ptr, rt_layout
+        return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
+            ctx, self.blocks.ptr, Int(rows)
         )
-
-        return create_nested_tma_tile[
-            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
-        ](ctx, tensor)
 
     @always_inline
     fn block_paged_ptr[
@@ -514,7 +488,7 @@ struct PagedKVCache[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -601,23 +575,13 @@ struct PagedKVCache[
         return block_idx * self._stride() + tok_in_block_idx
 
     @always_inline
-    fn col_idx(self, head_idx: UInt32) -> UInt32:
-        """Returns the col idx when viewing the memory as a matrix."""
-        return head_idx * Self.kv_params.head_size
-
-    @always_inline
     fn create_tma_tile[
-        tile_m: Int,
-        tile_n: Int,
+        BN: Int,
         swizzle_mode: TensorMapSwizzle,
-        *,
-        is_k_major: Bool,
-    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        tile_m,
-        tile_n,
+        IndexList[3](BN, 1, Int(Self.kv_params.head_size)),
         swizzle_mode,
-        is_k_major=is_k_major,
     ]:
         """Creates a TMA tile for this KV cache."""
         # Paged cache collection is (where `$idx` means subsetting that idx):
@@ -634,21 +598,15 @@ struct PagedKVCache[
         # Create a view that accounts for the paged layout
         var total_blocks = self.blocks.dim[0]()
         var rows = (total_blocks - 1) * self._stride() + Self.page_size
-        comptime cols = Int(Self.kv_params.num_heads * Self.kv_params.head_size)
-        comptime layout = Layout.row_major(UNKNOWN_VALUE, cols)
-        rt_layout = RuntimeLayout[layout].row_major(
-            IndexList[2](Int(rows), cols)
+        comptime smem_dim = IndexList[3](BN, 1, Int(Self.kv_params.head_size))
+        comptime gmem_dim = IndexList[3](
+            UNKNOWN_VALUE,
+            Int(Self.kv_params.num_heads),
+            Int(Self.kv_params.head_size),
         )
-
-        var tensor = LayoutTensor[
-            Self.dtype,
-            layout,
-            MutAnyOrigin,
-        ](self.blocks.ptr, rt_layout)
-
-        return create_nested_tma_tile[
-            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
-        ](ctx, tensor)
+        return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
+            ctx, self.blocks.ptr, Int(rows)
+        )
 
     @always_inline
     fn _get_idx(
@@ -731,13 +689,12 @@ struct PagedKVCache[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.dtype]]:
-        constrained[
-            tile_size <= Self.page_size and Self.page_size % tile_size == 0,
-            (
-                "Invalid tile size for PagedKVCache. tile_size must be less"
-                " than or equal to the page size and divisible by the page size"
-            ),
-        ]()
+        __comptime_assert (
+            tile_size <= Self.page_size and Self.page_size % tile_size == 0
+        ), (
+            "Invalid tile size for PagedKVCache. tile_size must be less"
+            " than or equal to the page size and divisible by the page size"
+        )
 
         var full_block_idx = self._get_idx(
             batch_idx, head_idx, start_tok_idx, head_dim_idx
@@ -747,7 +704,7 @@ struct PagedKVCache[
         return ptr
 
 
-trait KVCollectionT(ImplicitlyCopyable, Movable):
+trait KVCollectionT(ImplicitlyCopyable):
     """Trait for a pair of caches (keys and values)."""
 
     comptime CacheType: KVCacheT
@@ -824,7 +781,7 @@ struct ContinuousBatchingKVCacheCollection[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        constrained[blocks.rank == 6]()
+        __comptime_assert blocks.rank == 6
         self.blocks = rebind[self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
@@ -923,7 +880,7 @@ struct PagedKVCacheCollection[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        constrained[blocks.rank == 6]()
+        __comptime_assert blocks.rank == 6
         self.blocks = rebind[Self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
@@ -939,18 +896,16 @@ struct PagedKVCacheCollection[
 
     @always_inline
     fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
-        constrained[
-            not Self.kv_params.is_mla,
-            "Cannot call get_value_cache for MLA cache",
-        ]()
+        __comptime_assert (
+            not Self.kv_params.is_mla
+        ), "Cannot call get_value_cache for MLA cache"
         return self._get_cache[1](layer_idx)
 
     @always_inline
     fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
-        constrained[
-            kv_idx >= 0 and kv_idx < 2,
-            "Invalid kv_idx for KV cache",
-        ]()
+        __comptime_assert (
+            kv_idx >= 0 and kv_idx < 2
+        ), "Invalid kv_idx for KV cache"
         return self.CacheType(
             Self.CacheType.blocks_type(
                 self.blocks.ptr

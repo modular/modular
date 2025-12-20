@@ -32,7 +32,9 @@ def test_rope_ragged_gpu[
 ](ctx: DeviceContext) -> None:
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
-    constrained[dtype is DType.float32, "goldens only for float32, currently"]()
+    __comptime_assert (
+        dtype is DType.float32
+    ), "goldens only for float32, currently"
 
     # Set up test hyperparameters - same as CPU test
     comptime batch_size = 2

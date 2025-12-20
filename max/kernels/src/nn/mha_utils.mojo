@@ -13,7 +13,7 @@
 
 
 from collections import OptionalReg
-from math import align_up, ceildiv, align_up
+from math import align_up, ceildiv
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     CompilationTarget,
@@ -63,7 +63,7 @@ comptime is_sm90or100 = is_sm90 or is_sm100
 
 @register_passable("trivial")
 struct FlashAttentionAlgorithm(
-    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
+    Defaultable, ImplicitlyCopyable, Stringable, Writable
 ):
     var _value: Int32
 
@@ -122,7 +122,7 @@ struct FlashAttentionAlgorithm(
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
+struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -243,8 +243,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
         if sm_90_fa3:
             comptime i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (
-                4 * i64_size + 2 * size_of[DType.uint32]() if persistent
-                != 0 else 0
+                4 * i64_size + 2 * size_of[DType.uint32]() if persistent else 0
             )
         return UInt(num_smem_bytes)
 
@@ -336,7 +335,9 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
                 UInt(
                     32 if Self.dtype
                     is DType.float32 else (
-                        128 if has_amd_gpu_accelerator() else 64
+                        (
+                            256 if use_experimental_cdna4_kernel else 128
+                        ) if has_amd_gpu_accelerator() else 64
                     )
                 )
             )
@@ -597,7 +598,7 @@ fn _copy_frag_to_smem[
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="_copy_frag_to_smem",
+            operation = __get_current_function_name()
         ]()
 
 
@@ -664,24 +665,21 @@ fn dispatch_mask_and_score_mod[
     if MaskName.CAUSAL == mask_type:
         return outer_wrapper(CausalMask())
     elif MaskName.CHUNKED == mask_type:
-        constrained[
-            local_window_size > 0,
-            "You must specify local_window_size for ChunkedMask",
-        ]()
+        __comptime_assert (
+            local_window_size > 0
+        ), "You must specify local_window_size for ChunkedMask"
         return outer_wrapper(ChunkedMask[local_window_size]())
     elif MaskName.NULL == mask_type:
         return outer_wrapper(NullMask())
     elif MaskName.SLIDING_WINDOW_CAUSAL == mask_type:
-        constrained[
-            local_window_size > 0,
-            "You must specify local_window_size for SlidingWindowCausalMask",
-        ]()
+        __comptime_assert (
+            local_window_size > 0
+        ), "You must specify local_window_size for SlidingWindowCausalMask"
         return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
     elif MaskName.CHUNKED_CAUSAL == mask_type:
-        constrained[
-            local_window_size > 0,
-            "You must specify local_window_size for ChunkedCausalMask",
-        ]()
+        __comptime_assert (
+            local_window_size > 0
+        ), "You must specify local_window_size for ChunkedCausalMask"
         return outer_wrapper(ChunkedCausalMask[local_window_size]())
     else:
         constrained[False, "Unsupported mask type: " + mask_type]()
@@ -690,7 +688,8 @@ fn dispatch_mask_and_score_mod[
 @always_inline
 fn dispatch_materialized_mask_and_score_mod[
     dtype: DType,
-    layout: Layout, //,
+    layout: Layout,
+    //,
     score_mod_type: String,
     callback_fn: callback_fn_type,
     num_heads: Int = -1,
@@ -728,9 +727,9 @@ fn _dispatch_score_mod[
 
     @parameter
     if score_mod_type == AlibiScoreMod.name_str:
-        constrained[
-            num_heads > 0, "You must specify num_heads for AlibiScoreMod"
-        ]()
+        __comptime_assert (
+            num_heads > 0
+        ), "You must specify num_heads for AlibiScoreMod"
         return wrapper(AlibiScoreMod[num_heads]())
     elif score_mod_type == IdentityScoreMod.name_str:
         return wrapper(IdentityScoreMod())
@@ -811,7 +810,7 @@ trait MHAPartitionScheme(Copyable):
 
 @register_passable("trivial")
 struct NoPartition[dtype: DType](
-    Defaultable, ImplicitlyCopyable, MHAPartitionScheme, Movable
+    Defaultable, ImplicitlyCopyable, MHAPartitionScheme
 ):
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
@@ -832,9 +831,7 @@ struct NoPartition[dtype: DType](
 
 
 @register_passable("trivial")
-struct SplitKPartition[dtype: DType](
-    ImplicitlyCopyable, MHAPartitionScheme, Movable
-):
+struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype]]

@@ -38,10 +38,6 @@ from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
 from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
-
-# TODO(GEX-1846): Get rid of this include.
-from max.driver import CPU
-from max.engine import InferenceSession  # type: ignore
 from max.mlir.dialects import mo
 from mojo.paths import (
     _build_mojo_source_package,
@@ -154,6 +150,9 @@ class KernelLibrary:
     def __init__(self, context: mlir.Context, paths: list[Path] = []) -> None:  # noqa: B006
         # TODO(GEX-1846): This is a terrible workaround to initialize M::Context on the Graph API.
         # Get rid of this and properly setup the context instead.
+        from max.driver import CPU
+        from max.engine import InferenceSession  # type: ignore
+
         mock_session = InferenceSession(devices=[CPU()])
         mock_session._impl.register_runtime_context(context)
 
@@ -456,7 +455,7 @@ class Graph:
 
         if self._graph_body.arguments:
             mlir_maybe_chain_value = _Value._from_cmlir(
-                self._graph_body.arguments[-1]  # type: ignore
+                self._graph_body.arguments[-1]
             )
             if _is_chain_value(mlir_maybe_chain_value):
                 self._has_chain_input = True
@@ -511,8 +510,7 @@ class Graph:
             body_args = body_args[:-chain_count]  # type: ignore
 
         return tuple(
-            Value.from_mlir(_Value._from_cmlir(arg))
-            for arg in body_args  # type: ignore
+            Value.from_mlir(_Value._from_cmlir(arg)) for arg in body_args
         )
 
     @property
@@ -603,7 +601,7 @@ class Graph:
         with self._context, _location() as loc:
             block = Block._from_cmlir(self._graph_body)
             block.add_argument(_ChainType().to_mlir(), loc)
-        mlir_value = _Value._from_cmlir(self._graph_body.arguments[-1])  # type: ignore
+        mlir_value = _Value._from_cmlir(self._graph_body.arguments[-1])
         assert _is_chain_value(mlir_value)
 
         return _ChainValue.from_mlir(mlir_value)

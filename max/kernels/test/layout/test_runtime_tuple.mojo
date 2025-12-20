@@ -89,16 +89,15 @@ def test_crd2idx():
 
     for i in range(4):
         for j in range(4):
-            assert_equal(
-                String(
-                    crd2idx(
-                        RuntimeTuple[unk_r2_t](i, j),
-                        RuntimeTuple[unk_r2_t](4, 4),
-                        RuntimeTuple[unk_r2_t](4, 1),
-                    )
-                ),
-                String(crd2idx_int_tuple(IntTuple(i, j), shape_t, stride_t)),
+            # Test RuntimeTuple version
+            var rt_result = crd2idx(
+                RuntimeTuple[unk_r2_t](i, j),
+                RuntimeTuple[unk_r2_t](4, 4),
+                RuntimeTuple[unk_r2_t](4, 1),
             )
+            # Compute expected result: i * stride[0] + j * stride[1] = i * 4 + j * 1
+            var expected = i * 4 + j
+            assert_equal(rt_result, expected)
 
 
 def test_shape_div():

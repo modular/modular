@@ -46,6 +46,12 @@ struct TuningConfigSM100(TuningConfig):
         cluster_shape: IndexList[3],
         block_swizzle_size: UInt,
         rasterize_order: RasterOrder,
+        cta_group: Int = 2,
+        swapAB: Bool = False,
+        k_group_size: UInt = 1,
+        num_accum_pipeline_stages: UInt = 2,
+        num_clc_pipeline_stages: UInt = 2,
+        num_split_k: Int = 1,
     ):
         self.M = M
         self.M_end = M + 1
@@ -56,12 +62,12 @@ struct TuningConfigSM100(TuningConfig):
         self.cluster_shape = cluster_shape
         self.block_swizzle_size = block_swizzle_size
         self.rasterize_order = rasterize_order
-        self.cta_group = 2
-        self.swapAB = False
-        self.k_group_size = 1
-        self.num_accum_pipeline_stages = 2
-        self.num_clc_pipeline_stages = 2
-        self.num_split_k = 1
+        self.cta_group = cta_group
+        self.swapAB = swapAB
+        self.k_group_size = k_group_size
+        self.num_accum_pipeline_stages = num_accum_pipeline_stages
+        self.num_clc_pipeline_stages = num_clc_pipeline_stages
+        self.num_split_k = num_split_k
 
     fn __str__(self) -> String:
         return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)

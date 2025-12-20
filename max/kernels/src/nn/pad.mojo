@@ -294,7 +294,7 @@ fn pad_shape[
     Returns:
         The output shape.
     """
-    constrained[paddings_buf.rank == 1, "paddings_buf must be of rank 1"]()
+    __comptime_assert paddings_buf.rank == 1, "paddings_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.
@@ -371,7 +371,7 @@ fn _do_pad[
 
 @register_passable("trivial")
 struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
-    ImplicitlyCopyable & Movable
+    ImplicitlyCopyable
 ):
     var pre_pad: Int
     var post_pad: Int
@@ -612,7 +612,7 @@ fn _memcpy_regions_fast[
 
 @register_passable("trivial")
 struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
-    ImplicitlyCopyable & Movable
+    ImplicitlyCopyable
 ):
     var pre_pad: Int
     var post_pad: Int

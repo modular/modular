@@ -119,7 +119,7 @@ Raises:
 ### Constraints
 
 Mojo functions can have compile-time *constraints,* defined using the
-[`constrained()`](https://docs.modular.com/mojo/stdlib/builtin/constrained#constrained)
+[`constrained()`](https://docs.modular.com/mojo/std/builtin/constrained#constrained)
 function. If the constraint isn’t met, compilation fails. Constraints can be
 based on anything known at compile time, like a parameter value. You can't
 create a constraint on an *argument*, because argument values are only known at

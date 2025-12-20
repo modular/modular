@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 [
     mojo_test(
         name = src + ".test",
@@ -9,7 +11,7 @@ load("//bazel:api.bzl", "mojo_test")
             "full",
         ],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -31,7 +33,7 @@ mojo_test(
         "//conditions:default": [],
     }),
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
         "@mojo//:test_utils",
     ],
 )

@@ -98,7 +98,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
-    var nstime = 0.0
+    var nstime: Float64
     var kernelType: StaticString
     if N == 1:
         run_func_gemv(ctx)
@@ -216,7 +216,7 @@ fn run_matvec_with_epilogue_fn(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var const_val = 4.0
+    var const_val: Float32 = 4.0
 
     @parameter
     @always_inline

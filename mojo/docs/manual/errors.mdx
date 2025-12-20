@@ -12,7 +12,7 @@ your own custom resources.
 ## Raise an error
 
 The `raise` statement raises an error condition in your program. You provide the
-`raise` statement with an [`Error`](/mojo/stdlib/builtin/error/Error) instance
+`raise` statement with an [`Error`](/mojo/std/builtin/error/Error) instance
 to indicate the type of error that occurred. For example:
 
 ```mojo
@@ -20,8 +20,8 @@ raise Error("integer overflow")
 ```
 
 As a convenience, you can instead provide an error message in the form of a
-[`String`](/mojo/stdlib/collections/string/string/String) or
-[`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral) value, and
+[`String`](/mojo/std/collections/string/string/String) or
+[`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral) value, and
 `raise` automatically uses that to create an `Error` instance. So you can raise
 the same error condition as shown above by executing:
 
@@ -46,7 +46,6 @@ code and prints a stack trace, if enabled, followed by the error message. For
 example:
 
 ```output
-stack trace was not collected. Enable stack trace collection with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
 Unhandled exception caught during execution: integer overflow
 ```
 
@@ -88,6 +87,7 @@ environment variable set, you'll see a stack trace without symbols:
 ```sh
 mojo build stacktrace_error.mojo
 ```
+
 ```sh
 MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 stacktrace_error
 ```
@@ -106,6 +106,7 @@ To generate a more useful stack trace, you need to compile the program with
 ```sh
 mojo build --debug-level full stacktrace_error.mojo
 ```
+
 ```sh
 MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
 ```
@@ -113,12 +114,12 @@ MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
 ```output
 #0 0x0000000102bf4ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
 #1 0x0000000102b339e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
-#2 0x000000010266468c stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:159:38
+#2 0x000000010266468c std::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/std/builtin/error.mojo:159:38
 #3 0x000000010266468c stacktrace_error::func2()_REMOVED_ARG /Users/ken/tmp/stack/stacktrace_error.mojo:14:16
 #4 0x000000010266468c stacktrace_error::func1() /Users/ken/tmp/stack/stacktrace_error.mojo:18:10
 #5 0x000000010266468c stacktrace_error::main() /Users/ken/tmp/stack/stacktrace_error.mojo:22:10
-#6 0x000000010266468c stdlib::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error::main()" open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:88:18
-#7 0x000000010266468c main open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:103:4
+#6 0x000000010266468c std::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error::main()" open-source/max/mojo/stdlib/std/builtin/_startup.mojo:88:18
+#7 0x000000010266468c main open-source/max/mojo/stdlib/std/builtin/_startup.mojo:103:4
 
 Unhandled exception caught during execution: Intentional error
 ```
@@ -151,11 +152,9 @@ mojo: error: execution exited with a non-zero result: 1
 
 As described in [Handle an error](#handle-an-error), you can bind the `Error`
 instance to a variable in the `except` clause. If you do, you can invoke its
-[`get_stack_trace()`](/mojo/stdlib/builtin/error/Error#get_stack_trace) method
-to get a [`StackTrace`](/mojo/stdlib/builtin/error/StackTrace) instance.
-`StackTrace` implements the [`Stringable`](/mojo/stdlib/builtin/str/Stringable)
-trait, so you can construct a `String` with `String(stack_trace)` if you want to
-extract the stack trace as a `String` for further processing. For example:
+[`get_stack_trace()`](/mojo/std/builtin/error/Error#get_stack_trace) method
+to get the stack trace as an `Optional[String]`. The method returns `None` if
+stack trace collection was disabled or unavailable. For example:
 
 ```mojo
 def func2() -> None:
@@ -172,7 +171,11 @@ def main():
     except e:
         print(e)
         print("-" * 20)
-        print(String(e.get_stack_trace()))
+        var stack_trace = e.get_stack_trace()
+        if stack_trace:
+            print(stack_trace.value())
+        else:
+            print("No stack trace available")
 ```
 
 When you compile this program with symbols and run it with stack trace
@@ -181,6 +184,7 @@ generation enabled, you'll see the following output:
 ```sh
 mojo build --debug-level full stacktrace_error_capture.mojo
 ```
+
 ```sh
 MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error_capture
 ```
@@ -190,12 +194,12 @@ Intentional error
 --------------------
 #0 0x0000000102d24ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
 #1 0x0000000102c639e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
-#2 0x00000001026d4694 stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:159:38
+#2 0x00000001026d4694 std::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/std/builtin/error.mojo:159:38
 #3 0x00000001026d4694 stacktrace_error_capture::func2()_REMOVED_ARG /Users/ken/tmp/stack/stacktrace_error_capture.mojo:14:16
 #4 0x00000001026d4694 stacktrace_error_capture::func1() /Users/ken/tmp/stack/stacktrace_error_capture.mojo:18:10
 #5 0x00000001026d4694 stacktrace_error_capture::main() /Users/ken/tmp/stack/stacktrace_error_capture.mojo:23:14
-#6 0x00000001026d4694 stdlib::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error_capture::main()" open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:88:18
-#7 0x00000001026d4694 main open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:103:4
+#6 0x00000001026d4694 std::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error_capture::main()" open-source/max/mojo/stdlib/std/builtin/_startup.mojo:88:18
+#7 0x00000001026d4694 main open-source/max/mojo/stdlib/std/builtin/_startup.mojo:103:4
 ```
 
 Without enabling stack trace generation, the output is:
@@ -203,7 +207,7 @@ Without enabling stack trace generation, the output is:
 ```output
 Intentional error
 --------------------
-stack trace was not collected. Enable stack trace collection with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
+No stack trace available
 ```
 
 ## Declare a raising function
@@ -281,10 +285,10 @@ recovery that's appropriate for your application.
 
 If you provide the name of a variable after the `except` keyword, then the
 `Error` instance is bound to the variable if an error occurs. The `Error` type
-implements the [`Writable`](/mojo/stdlib/utils/write/Writable) trait, so you can
-pass it as an argument to the [`print()`](/mojo/stdlib/builtin/io/print)
+implements the [`Writable`](/mojo/std/io/write/Writable) trait, so you can
+pass it as an argument to the [`print()`](/mojo/std/builtin/io/print)
 function if you'd like to print its error message to the console. It also
-implements the [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait, so you
+implements the [`Stringable`](/mojo/std/builtin/str/Stringable) trait, so you
 can construct a `String` with `String(error)` if you want to extract the error
 message as a `String` for further processing.
 
@@ -372,7 +376,7 @@ content = f.read()
 f.close()
 ```
 
-Calling [`close()`](/mojo/stdlib/builtin/file/FileHandle#close) releases the
+Calling [`close()`](/mojo/std/builtin/file/FileHandle#close) releases the
 memory and other operating system resources associated with the opened file. If
 your program were to open many files without closing them, you could exhaust the
 resources available to your program and cause errors. The problem is even worse
@@ -382,7 +386,7 @@ program were to crash instead of exiting normally, that buffered data could be
 lost instead of being written to storage.
 
 The example above actually includes the call to `close()`, but it ignores the
-possibility that [`read()`](/mojo/stdlib/builtin/file/FileHandle#read) could
+possibility that [`read()`](/mojo/std/builtin/file/FileHandle#read) could
 raise an error, which would prevent the `close()` from executing.
 To handle this scenario, you could rewrite the code to use `try` like this:
 
@@ -398,8 +402,8 @@ finally:
     f.close()
 ```
 
-However, the [`FileHandle`](/mojo/stdlib/builtin/file/FileHandle) struct
-returned by [`open()`](/mojo/stdlib/builtin/file/open) is a context manager.
+However, the [`FileHandle`](/mojo/std/builtin/file/FileHandle) struct
+returned by [`open()`](/mojo/std/builtin/file/open) is a context manager.
 When used with Mojo's `with` statement, a context manager ensures that the
 resources it manages are properly released at the end of the block, even if an
 error occurs. In the case of a `FileHandle`, that means the call to `close()`
@@ -427,10 +431,10 @@ with open(input_file, "r") as f_in, open(output_file, "w") as f_out:
 
 `FileHandle` is perhaps the most commonly used context manager. Other examples
 of context managers in the Mojo standard library are
-[`NamedTemporaryFile`](/mojo/stdlib/tempfile/tempfile/NamedTemporaryFile),
-[`TemporaryDirectory`](/mojo/stdlib/tempfile/tempfile/TemporaryDirectory),
-[`BlockingScopedLock`](/mojo/stdlib/utils/lock/BlockingScopedLock), and
-[`assert_raises`](/mojo/stdlib/testing/testing/assert_raises). You can also
+[`NamedTemporaryFile`](/mojo/std/tempfile/tempfile/NamedTemporaryFile),
+[`TemporaryDirectory`](/mojo/std/tempfile/tempfile/TemporaryDirectory),
+[`BlockingScopedLock`](/mojo/std/utils/lock/BlockingScopedLock), and
+[`assert_raises`](/mojo/std/testing/testing/assert_raises). You can also
 create your own custom context managers, as described in [Write a custom context
 manager](#write-a-custom-context-manager) below.
 
@@ -471,7 +475,7 @@ import sys
 import time
 
 @fieldwise_init
-struct Timer(ImplicitlyCopyable, Movable):
+struct Timer(ImplicitlyCopyable):
     var start_time: Int
 
     fn __init__(out self):
@@ -483,7 +487,9 @@ struct Timer(ImplicitlyCopyable, Movable):
 
     fn __exit__(mut self):
         end_time = time.perf_counter_ns()
-        elapsed_time_ms = round(((end_time - UInt(self.start_time)) / 1e6), 3)
+        elapsed_time_ms = round(
+            Float64(end_time - UInt(self.start_time)) / 1e6, 3
+        )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
 def main():
@@ -544,7 +550,7 @@ type of error condition and propagates all others:
 import time
 
 @fieldwise_init
-struct ConditionalTimer(ImplicitlyCopyable, Movable):
+struct ConditionalTimer(ImplicitlyCopyable):
     var start_time: Int
 
     fn __init__(out self):
@@ -556,7 +562,9 @@ struct ConditionalTimer(ImplicitlyCopyable, Movable):
 
     fn __exit__(mut self):
         end_time = time.perf_counter_ns()
-        elapsed_time_ms = round(((end_time - UInt(self.start_time)) / 1e6), 3)
+        elapsed_time_ms = round(
+            Float64(end_time - UInt(self.start_time)) / 1e6, 3
+        )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
     fn __exit__(mut self, e: Error) raises -> Bool:

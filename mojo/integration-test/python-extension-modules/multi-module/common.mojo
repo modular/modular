@@ -54,7 +54,7 @@ struct TestStruct(Defaultable, Movable, Representable):
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
-            return abort[UnsafePointer[Self]](
+            abort(
                 String(
                     (
                         "Python method receiver object did not have the"

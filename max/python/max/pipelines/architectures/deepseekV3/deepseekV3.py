@@ -30,7 +30,6 @@ from max.graph import (
     ops,
 )
 from max.graph.ops.allreduce import matmul_allreduce
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import (
     MLP,
     ColumnParallelLinear,
@@ -50,7 +49,7 @@ from max.nn.attention.multi_latent_attention_fp8 import (
 from max.nn.comm.allreduce import Allreduce
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.moe import MoE, MoEFp8
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -93,6 +92,8 @@ class DeepseekV3DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
+            graph_mode=config.graph_mode,
+            buffer_size=config.max_batch_context_length,
         )
 
         mla_cls: (
@@ -101,12 +102,9 @@ class DeepseekV3DecoderLayer(Module):
         )
         if config.float8_config is not None:
             mla_kwargs["float8_config"] = config.float8_config
-            # Decode is not yet supported for FP8.
-            mla_kwargs["graph_mode"] = "prefill"
             mla_cls = DataParallelLatentAttentionWithRopeFp8
         else:
             mla_kwargs["dtype"] = config.dtype
-            mla_kwargs["graph_mode"] = config.graph_mode
             mla_cls = DataParallelLatentAttentionWithRope
 
         self.self_attn = mla_cls(**mla_kwargs)
@@ -637,7 +635,7 @@ class DeepseekV3(Module):
             return (last_logits,)
 
     def input_types(
-        self, kv_manager: PagedKVCacheManager | NullKVCacheManager
+        self, kv_params: KVCacheParams
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
@@ -662,7 +660,7 @@ class DeepseekV3(Module):
             device=DeviceRef.CPU(),
         )
 
-        kv_inputs = kv_manager.get_symbolic_inputs()
+        kv_inputs = kv_params.get_symbolic_inputs()
 
         # Flatten kv types for each device
         flattened_kv_types: list[TensorType] = [

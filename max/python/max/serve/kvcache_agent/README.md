@@ -14,5 +14,5 @@ KV cache entries as they are added or removed across different memory tiers
 
 ```bash
 # integration tests
-bazelw test //SDK/integration-test/serve/kvcache_agent:tests --test_output=streamed --test_arg="-svv"
+bazelw test //max/tests/integration/serve/kvcache_agent:tests --test_output=streamed --test_arg="-svv"
 ```

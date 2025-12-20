@@ -30,7 +30,6 @@ from .float8_config import (
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
-    parse_float8_config,
 )
 from .identity import Identity
 from .layer import Layer, LayerList, Module, Shardable
@@ -67,6 +66,7 @@ from .sequential import Sequential
 from .transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
+    ReturnHiddenStates,
     ReturnLogits,
     Transformer,
     TransformerBlock,
@@ -118,6 +118,7 @@ __all__ = [
     "RMSNorm",
     "RMSNormV1",
     "RaggedAttention",
+    "ReturnHiddenStates",
     "ReturnLogits",
     "RotaryEmbedding",
     "Sequential",
@@ -132,5 +133,4 @@ __all__ = [
     "YarnRotaryEmbedding",
     "YarnScalingParams",
     "clamp",
-    "parse_float8_config",
 ]

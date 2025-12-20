@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "copy_files", "modular_generate_stubfiles", "modular_nanobind_extension")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 copy_files(
     name = "py_srcs",
@@ -35,7 +35,7 @@ modular_nanobind_extension(
     # Don't lint these files, they're from LLVM.
     tags = ["no-clang-tidy"],
     deps = [
-        "//SDK:max",
+        "//max/internal:max",
         "@llvm-project//mlir:MLIRBindingsPythonNanobindHeaders",
     ],
 )
@@ -55,7 +55,6 @@ This is likely to occur when bumping LLVM, you can run
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 """,
-    imports = ["../../.."],
     pyi_srcs = glob(["**/*.pyi"]),
     tags = ["no-mypy"],
 )

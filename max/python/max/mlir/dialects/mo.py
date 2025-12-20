@@ -23,7 +23,7 @@ from .. import Attribute, Block, FunctionType, Type, TypeAttr
 
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)
-class GraphOp(GraphOp):  # type: ignore[no-redef, operator]
+class GraphOp(GraphOp):  # type: ignore[no-redef]
     """Extends mo.graph op with simpler builders."""
 
     def __init__(
@@ -44,7 +44,7 @@ class GraphOp(GraphOp):  # type: ignore[no-redef, operator]
 
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)
-class IfOp(IfOp):  # type: ignore[no-redef, operator]
+class IfOp(IfOp):  # type: ignore[no-redef]
     """Extends mo.if op with simpler builders."""
 
     def __init__(
@@ -74,7 +74,7 @@ def if_(  # type: ignore[no-redef]
 
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)
-class WhileOp(WhileOp):  # type: ignore[no-redef, operator]
+class WhileOp(WhileOp):  # type: ignore[no-redef]
     """Extends mo.while op with simpler builders."""
 
     def __init__(self, results_, inputs, *, loc=None, ip=None) -> None:  # noqa: ANN001

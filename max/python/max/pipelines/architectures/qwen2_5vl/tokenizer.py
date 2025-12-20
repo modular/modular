@@ -29,63 +29,37 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    get_rope_index,
     get_seqlens,
     get_window_index,
+    mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     fetch_image,
     process_vision_info,
 )
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib import (
+    TextAndVisionTokenizer,
+    float32_to_bfloat16_as_uint16,
+    max_tokens_to_generate,
+)
 from max.pipelines.lib.config import PipelineConfig
-from max.support.image import find_contiguous_ranges
+from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
 
 from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
-from .nn.data_processing import get_rope_index, mrope_pos_ids_3d
 
 logger = logging.getLogger("max.pipelines")
 
 
-# TODO: Make this a utility for vision models
-# Borrowed from internval/tokenizer.py
-def float32_to_bfloat16_as_uint16(
-    arr: npt.NDArray[np.float32],
-) -> npt.NDArray[np.uint16]:
-    """Convert float32 array to bfloat16 representation stored as uint16.
-
-    BFloat16 is the upper 16 bits of float32 with proper rounding.
-    This allows us to halve memory usage while maintaining the exponent range.
-
-    Args:
-        arr: Float32 numpy array
-
-    Returns:
-        Uint16 array containing bfloat16 bit representation with same shape
-    """
-    assert arr.dtype == np.float32, f"Expected float32, got {arr.dtype}"
-
-    # Flatten for processing.
-    original_shape = arr.shape
-    flat = arr.ravel()
-
-    # View as uint32 for bit manipulation.
-    uint32_view = flat.view(np.uint32)
-
-    # Round to nearest even.
-    round_bit = (uint32_view >> 16) & 1
-    lower_half = uint32_view & 0xFFFF
-    round_up = (lower_half > 0x8000) | (
-        (lower_half == 0x8000) & (round_bit == 1)
-    )
-    uint32_rounded = uint32_view + (round_up.astype(np.uint32) * 0x8000)
-
-    # Extract upper 16 bits as bfloat16.
-    bfloat16_bits = (uint32_rounded >> 16).astype(np.uint16)
-
-    # Restore original shape.
-    return bfloat16_bits.reshape(original_shape)
+# Pre-computed normalization constants for ImageNet
+# These are computed as: scale = 1 / (255 * std), offset = -mean / std
+# This allows simplified normalization: normalized = pixel * scale + offset
+_IMAGENET_MEAN = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
+_IMAGENET_STD = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)
+_NORM_SCALE = (1.0 / (255.0 * _IMAGENET_STD)).astype(np.float32)
+_NORM_OFFSET = (-_IMAGENET_MEAN / _IMAGENET_STD).astype(np.float32)
 
 
 def qwen2_5vl_image_preprocessing(
@@ -115,80 +89,75 @@ def qwen2_5vl_image_preprocessing(
     if image.mode != "RGB":
         image = image.convert("RGB")
 
-    # Image is already correctly sized by fetch_image, no need to resize
     # Get actual dimensions
     width, height = image.size
 
-    # Convert to numpy array and rescale to [0, 1]
-    img_array = np.array(image, dtype=np.float32) / 255.0
-
-    # Apply Standard ImageNet normalization (best match from testing)
-    mean = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
-    std = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)
-    img_array = (img_array - mean) / std
-
     # Calculate grid dimensions based on actual image dimensions
-    height_patches = height // patch_size
-    width_patches = width // patch_size
+    grid_h = height // patch_size
+    grid_w = width // patch_size
 
-    # Convert to numpy array
-    patches = np.array([img_array])  # Shape: (n_images, height, width, 3)
-
-    # Transpose to channel-first format
-    patches = patches.transpose(
-        0, 3, 1, 2
-    )  # Shape: (n_images, 3, height, width)
-
-    # Calculate dimensions
-    channel = patches.shape[1]
-    grid_h, grid_w = height_patches, width_patches
-
-    # Handle temporal dimension
-    if patches.shape[0] % temporal_patch_size != 0:
-        repeats = np.repeat(
-            patches[-1][np.newaxis],
-            temporal_patch_size - (patches.shape[0] % temporal_patch_size),
-            axis=0,
-        )
-        patches = np.concatenate([patches, repeats], axis=0)
-
-    # For images, grid_t should be 1 (single temporal group)
-    grid_t = 1
-
-    # Check if spatial merging is possible
+    # Check if spatial merging is possible early
     if grid_h % merge_size != 0 or grid_w % merge_size != 0:
         raise ValueError(
             f"Spatial merging is not possible because grid_h {grid_h} % merge_size {merge_size} != 0 or grid_w {grid_w} % merge_size {merge_size} != 0"
         )
-    else:
-        # Now reshape with spatial merging
-        patches = patches.reshape(
-            grid_t,  # Temporal groups (1 for images)
-            temporal_patch_size,  # Patches per temporal group (2)
-            channel,  # RGB channels (3)
-            grid_h // merge_size,  # Spatial groups in height (49)
-            merge_size,  # Patches per spatial group (2)
-            patch_size,  # Patch height (14)
-            grid_w // merge_size,  # Spatial groups in width (73)
-            merge_size,  # Patches per spatial group (2)
-            patch_size,  # Patch width (14)
-        )
 
-        # Transpose following transformers library logic
-        # This reorders dimensions to get the correct patch ordering
-        patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
+    # Convert to numpy array (float32) with simplified normalization
+    # This combines: (pixel / 255.0 - mean) / std = pixel * scale + offset
+    # Using in-place operations to reduce memory allocations
+    img_array = np.array(image, dtype=np.float32)
+    np.multiply(img_array, _NORM_SCALE, out=img_array)
+    np.add(img_array, _NORM_OFFSET, out=img_array)
 
-        # Flatten patches
-        # This preserves the patch ordering from the transpose
-        flatten_patches = patches.reshape(
-            grid_t * grid_h * grid_w,
-            channel * temporal_patch_size * patch_size * patch_size,
-        )
+    # For single images, temporal dimension is always 1 and we need to repeat
+    # for temporal_patch_size.
+    channel = 3
+    grid_t = 1
+
+    # Transpose to channel-first: (H, W, 3) -> (3, H, W)
+    img_chw = img_array.transpose(2, 0, 1)
+
+    # Add temporal dimension (single frame for images, will tile to temporal_patch_size at the end)
+    patches = img_chw[np.newaxis]  # (1, 3, H, W)
+
+    # Reshape with spatial merging
+    # Input shape: (1, channel, height, width) - single temporal frame
+    patches = patches.reshape(
+        grid_t,  # Temporal groups (1 for images)
+        1,  # Single frame, will tile at the end
+        channel,  # RGB channels (3)
+        grid_h // merge_size,  # Spatial groups in height
+        merge_size,  # Patches per spatial group (2)
+        patch_size,  # Patch height (14)
+        grid_w // merge_size,  # Spatial groups in width
+        merge_size,  # Patches per spatial group (2)
+        patch_size,  # Patch width (14)
+    )
+
+    # Transpose following transformers library logic
+    # This reorders dimensions to get the correct patch ordering
+    # Output shape: (grid_t, gh//m, gw//m, m, m, channel, 1, ps, ps)
+    patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
+
+    # Tile for temporal dimension: images have 1 frame but model expects
+    # temporal_patch_size frames, so we replicate the single frame.
+    num_patches = grid_t * grid_h * grid_w
+    # Reshape to expose temporal dimension: (num_patches, channel, 1, patch_size^2)
+    patches_4d = patches.reshape(
+        num_patches, channel, 1, patch_size * patch_size
+    )
+    # Tile to (num_patches, channel, temporal_patch_size, patch_size^2)
+    patches_tiled = np.tile(patches_4d, (1, 1, temporal_patch_size, 1))
+    # Flatten to final shape: (num_patches, channel * temporal_patch_size * patch_size^2)
+    flatten_patches = patches_tiled.reshape(
+        num_patches,
+        channel * temporal_patch_size * patch_size * patch_size,
+    )
+
+    flatten_patches_uint16 = float32_to_bfloat16_as_uint16(flatten_patches)
 
     # Create grid dimensions (temporal, height, width)
     image_grid_thw = (grid_t, grid_h, grid_w)
-
-    flatten_patches_uint16 = float32_to_bfloat16_as_uint16(flatten_patches)
 
     return flatten_patches_uint16, image_grid_thw
 
@@ -360,7 +329,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 self.image_token_id = image_token_id
             else:
                 raise ValueError(
-                    "image_token_id not found in model_config config"
+                    "image_token_id not found in HuggingFace config"
                 )
 
             if video_token_id := getattr(
@@ -370,19 +339,27 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             ):
                 self.video_token_id = video_token_id
 
+            self.enable_prefix_caching = (
+                pipeline_config.model_config.kv_cache_config.enable_prefix_caching
+                if pipeline_config
+                else False
+            )
+
             if vision_start_token_id := getattr(
                 pipeline_config.model_config.huggingface_config,
                 "vision_start_token_id",
                 None,
             ):
                 self.vision_start_token_id = vision_start_token_id
+
+            # Extract the vision config from the HuggingFace config.
             if vision_config := getattr(
                 huggingface_config, "vision_config", None
             ):
                 self.tokens_per_second = vision_config.tokens_per_second
             else:
                 raise ValueError(
-                    "vision_config must be provided in HuggingFace Config"
+                    "vision_config must be provided in HuggingFace config"
                 )
         self.executor: ThreadPoolExecutor | None = None
 
@@ -694,6 +671,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
+                    image_hash=hash_image(pixel_values)
+                    if self.enable_prefix_caching
+                    else None,
                 )
                 for (start_idx, end_idx), pixel_values in zip(
                     start_and_end_idxs, pixel_values_list, strict=True

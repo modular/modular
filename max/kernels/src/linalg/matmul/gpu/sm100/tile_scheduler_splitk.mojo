@@ -24,12 +24,12 @@ from gpu.globals import WARPGROUP_SIZE
 from gpu.tcgen05 import *
 from gpu.sync import named_barrier
 from memory import LegacyUnsafePointer as UnsafePointer
-from stdlib.bit import prev_power_of_two
+from std.bit import prev_power_of_two
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32

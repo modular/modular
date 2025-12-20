@@ -35,7 +35,9 @@ from utils import IndexList
 
 def test_fused_qk_rope[dtype: DType]() -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    constrained[dtype is DType.float32, "goldens only for float32, currently"]()
+    __comptime_assert (
+        dtype is DType.float32
+    ), "goldens only for float32, currently"
 
     # Set up test hyperparameters.
     comptime batch_size = 2
@@ -46,7 +48,7 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     var lookup_table: List[UInt32] = [0, 1]
 
     fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
-        constrained[len(items) > 0, "empty list in _max"]()
+        __comptime_assert len(items) > 0, "empty list in _max"
         items_dyn = materialize[items]()
         max_item = items_dyn[0]
         for i in range(1, len(items_dyn)):
@@ -54,11 +56,9 @@ def test_fused_qk_rope[dtype: DType]() -> None:
                 max_item = items_dyn[i]
         return max_item
 
-    constrained[
-        max_seq_len
-        > (seq_len + Int(_max[DType.uint32, items=start_positions]())),
-        "KV cache size smaller than sum of sequence length and start pos",
-    ]()
+    __comptime_assert max_seq_len > (
+        seq_len + Int(_max[DType.uint32, items=start_positions]())
+    ), "KV cache size smaller than sum of sequence length and start pos"
     comptime num_heads = 2
     comptime dim = 16
     comptime head_dim = dim // num_heads
@@ -166,14 +166,29 @@ def test_fused_qk_rope[dtype: DType]() -> None:
             q.runtime_layout.shape.value.canonicalize()
         ),
     )
+
+    # Create valid_lengths buffer - all sequences have full seq_len valid
+    var valid_lengths_buffer = List[UInt32](
+        length=batch_size, fill=UInt32(seq_len)
+    )
+    var valid_lengths = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ](
+        valid_lengths_buffer.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](batch_size)
+        ),
+    )
+
     fused_qk_rope[
         kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
     ](
         q_proj=q,
         kv_collection=kv_collection,
         freqs_cis=freqs_cis_table,
-        output=q_out,
         layer_idx=UInt32(0),
+        valid_lengths=valid_lengths,
+        output=q_out,
         context=Optional[DeviceContext](),
     )
 
@@ -200,6 +215,7 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     _ = q_buffer^
     _ = k_cache_input_buffer^
     _ = kv_cache_block_buffer^
+    _ = valid_lengths_buffer^
 
 
 def main() -> None:

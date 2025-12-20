@@ -48,8 +48,8 @@ from max.serve.scheduler.base import (
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
 
 from .base import SchedulerProgress
+from .batch_constructor import TextBatchConstructor
 from .config import TokenGenerationSchedulerConfig
-from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -117,7 +117,7 @@ class DecodeScheduler(Scheduler):
                 TextContext | TextAndVisionContext
             ](
                 self.request_queue,
-                max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,
+                max_items_per_drain=self.scheduler_config.max_batch_size * 2,
             )
 
     @traced
@@ -180,7 +180,7 @@ class DecodeScheduler(Scheduler):
 
         # Set dst_idx to -1 to denote pages which the decode already has due to
         # prefix caching.
-        for i in range(data.start_idx // self.paged_manager.page_size):
+        for i in range(data.processed_length // self.paged_manager.page_size):
             dst_idxs[i] = -1
 
         self.dispatcher.send_request_nowait(
@@ -202,7 +202,7 @@ class DecodeScheduler(Scheduler):
         else:
             items = drain_queue(
                 self.request_queue,
-                max_items=self.scheduler_config.max_batch_size_tg * 2,
+                max_items=self.scheduler_config.max_batch_size * 2,
             )
 
         for context in items:
@@ -213,7 +213,7 @@ class DecodeScheduler(Scheduler):
             and (
                 len(self.batch_constructor.all_tg_reqs) + len(self.prefill_reqs)
             )
-            < self.scheduler_config.max_batch_size_tg
+            < self.scheduler_config.max_batch_size
             and (
                 self.paged_manager is None
                 or self.paged_manager.free_blocks_pct > 0.1
@@ -251,8 +251,9 @@ class DecodeScheduler(Scheduler):
 
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
-            # Remove it from the active batch.
-            if self.batch_constructor.cancel_request(req_id):
+            if self.batch_constructor.contains(req_id):
+                # Remove it from the active batch.
+                self.batch_constructor.release_request(req_id)
                 # Send the cancelled result back to the response q
                 self.response_queue.put_nowait(
                     {req_id: SchedulerResult.cancelled()}
@@ -331,17 +332,20 @@ class DecodeScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        self.batch_constructor.move_completed_ce_requests_to_tg(
-            inputs.batches,
-            responses,
-        )
-
-        # remove terminated requests from the batch
-        num_terminated_reqs = (
-            self.batch_constructor.release_terminated_requests(
-                responses,
+        pruned_ids = (
+            self.batch_constructor.advance_requests_and_collect_invalid_ids(
+                inputs.batches
             )
         )
+        for request_id in pruned_ids:
+            del responses[request_id]
+
+        # Release terminated requests
+        num_terminated_requests = 0
+        for request_id, response in responses.items():
+            if response.is_done:
+                self.batch_constructor.release_request(request_id)
+                num_terminated_requests += 1
 
         # send the responses to the API process
         self.response_queue.put_nowait(
@@ -351,7 +355,7 @@ class DecodeScheduler(Scheduler):
             }
         )
 
-        return num_terminated_reqs
+        return num_terminated_requests
 
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes decode requests.

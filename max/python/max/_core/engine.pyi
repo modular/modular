@@ -16,16 +16,17 @@
 import enum
 import inspect
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
+import typing_extensions
 from max import mlir
 from max._core.driver import Tensor
 from max._core_types.driver import DLPackArray
 
-InputType = DLPackArray | Tensor | MojoValue | int | float | bool
+InputType = DLPackArray | Tensor | int | float | bool
 
 class TensorSpec:
     """
@@ -54,9 +55,6 @@ class TensorSpec:
 
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
-
-class MojoValue:
-    pass
 
 class Model:
     """
@@ -114,7 +112,7 @@ class Model:
     def signature(self) -> inspect.Signature:
         """Get input signature for model."""
 
-    def execute(self, *args: InputType) -> list[Tensor | MojoValue]:
+    def execute(self, *args: InputType) -> list[Tensor]:
         """
         Executes the model with the provided input and returns the outputs.
 
@@ -154,9 +152,7 @@ class Model:
               :obj:`max.driver.Tensor`.
         """
 
-    def __call__(
-        self, *args: InputType, **kwargs: InputType
-    ) -> list[Tensor | MojoValue]:
+    def __call__(self, *args: InputType, **kwargs: InputType) -> list[Tensor]:
         """
         Executes the model with the provided input and returns the outputs.
 
@@ -187,7 +183,6 @@ class Model:
               * Max Driver tensors, i.e. :obj:`max.driver.Tensor`
               * Scalar inputs, i.e. :obj:`bool`, :obj:`float`, :obj:`int`,
                 :obj:`np.generic`
-              * Mojo value inputs, i.e. :obj:`MojoValue` (internal use)
 
             kwargs: Named inputs. We can support the same types supported
               in :obj:`args`.
@@ -218,8 +213,8 @@ class Model:
 
     def __repr__(self) -> str: ...
     def _execute_device_tensors(
-        self, *tensors: list[max._core.driver.Tensor | MojoValue]
-    ) -> list[max._core.driver.Tensor | MojoValue]: ...
+        self, tensors: Sequence[max._core.driver.Tensor]
+    ) -> list[max._core.driver.Tensor]: ...
     def _export_mef(self, path: str) -> None:
         """
         Exports the compiled model as a mef to a file.
@@ -231,12 +226,22 @@ class Model:
     def _load(self, weights_registry: Mapping[str, Any]) -> None: ...
 
 class InferenceSession:
-    def __init__(self, config: dict = {}) -> None: ...
+    def __init__(
+        self,
+        devices: Sequence[max._core.driver.Device],
+        custom_extensions: Sequence[str | os.PathLike],
+        num_threads: int = 0,
+    ) -> None: ...
     def compile_from_path(
-        self, model_path: str | os.PathLike, config: dict = {}
+        self,
+        model_path: str | os.PathLike,
+        custom_extension_paths: Sequence[str | os.PathLike],
     ) -> Model: ...
     def compile_from_object(
-        self, model: object, config: dict = {}
+        self,
+        model: typing_extensions.CapsuleType,
+        custom_extensions: Sequence[str | os.PathLike],
+        pipeline_name: str,
     ) -> Model: ...
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str
@@ -258,6 +263,6 @@ class PrintStyle(enum.Enum):
 
     BINARY = 2
 
-    BINARY_MAX_CHECKPOINT = 3
+    BINARY_MAX_CHECKPOINT = 4
 
-    NONE = 4
+    NONE = 3

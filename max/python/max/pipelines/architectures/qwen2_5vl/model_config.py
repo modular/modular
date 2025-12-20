@@ -21,10 +21,11 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn import ReturnLogits
-from max.nn.float8_config import Float8Config, parse_float8_config
+from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.float8 import parse_float8_config
 from transformers.models.auto.configuration_auto import AutoConfig
 
 
@@ -178,7 +179,8 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
@@ -188,7 +190,8 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
         )
         return Llama3Config.get_kv_params(
             huggingface_config=llm_config,
-            n_devices=n_devices,
+            pipeline_config=pipeline_config,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -236,7 +239,7 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
             llm_state_dict: Model weights dictionary.
             vision_state_dict: Vision model weights dictionary.
             dtype: Data type for model parameters.
-            n_devices: Number of devices.
+            n_devices: Number of devices for distributed inference.
             cache_dtype: KV cache data type.
             kv_cache_config: KV cache configuration.
             return_logits: Return logits configuration.

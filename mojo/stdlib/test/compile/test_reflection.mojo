@@ -53,7 +53,7 @@ def test_get_linkage_name_parameterized():
 
 def test_get_linkage_name_on_itself():
     var name = get_linkage_name[_current_target]()
-    assert_equal(name, "stdlib::sys::info::_current_target()")
+    assert_equal(name, "std::sys::info::_current_target()")
 
 
 def test_get_function_name():
@@ -82,7 +82,7 @@ def test_get_type_name():
     assert_equal(name, "Int")
 
     name = get_type_name[Int, qualified_builtins=True]()
-    assert_equal(name, "stdlib.builtin.int.Int")
+    assert_equal(name, "std.builtin.int.Int")
 
 
 def test_get_type_name_nested():
@@ -99,7 +99,7 @@ def test_get_type_name_simd():
 
     name = get_type_name[SIMD[DType.uint16, 4], qualified_builtins=True]()
     assert_equal(
-        name, "stdlib.builtin.simd.SIMD[stdlib.builtin.dtype.DType.uint16, 4]"
+        name, "std.builtin.simd.SIMD[std.builtin.dtype.DType.uint16, 4]"
     )
 
 
@@ -171,7 +171,7 @@ def test_get_type_name_partially_bound_type():
 
 def test_get_type_name_unprintable():
     var name = get_type_name[CompilationTarget[_current_target()]]()
-    assert_equal(name, "stdlib.sys.info.CompilationTarget[<unprintable>]")
+    assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
 
 
 def test_get_type_name_alias():

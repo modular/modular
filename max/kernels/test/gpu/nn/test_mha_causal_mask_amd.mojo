@@ -14,13 +14,14 @@
 from memory import LegacyUnsafePointer as UnsafePointer
 from math import isclose
 from random import rand
-from sys import argv
+from sys import argv, env_get_bool
+
 
 from gpu import *
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, MaterializedMask
+from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
@@ -235,14 +236,19 @@ fn test[
         ),
     )
 
-    flash_attention(
-        output_device_ref,
+    mha_gpu_naive(
         q_device,
         k_device,
         v_device,
-        MaterializedMask(mask4d),
-        IdentityScoreMod(),
+        mask4d,
+        output_device_ref,
         scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
         ctx,
     )
 
@@ -397,6 +403,14 @@ fn test_helper[depth: Int](ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
-        test_helper[64](ctx)
-        test_helper[128](ctx)
-        test_helper[256](ctx)
+        # experimental kernel only supports depth == 128
+        comptime experimental_kernel = env_get_bool[
+            "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
+        ]()
+        comptime depths = [64, 128, 256] if not experimental_kernel else [
+            128,
+        ]
+
+        @parameter
+        for depth in depths:
+            test_helper[depth](ctx)

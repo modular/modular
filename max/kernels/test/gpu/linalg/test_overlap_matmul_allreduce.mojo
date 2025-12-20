@@ -15,7 +15,8 @@ from sys import size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from comm.allreduce import MAX_GPUS, Signal, allreduce
+from comm.allreduce import allreduce
+from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
@@ -50,7 +51,7 @@ fn overlap_matmul_allreduce_test[
     # Other than allreduce i depending on matmul i, there is no dependence. The best
     # performance is obtained by letting allreduce i wait on matmul i but launch
     # matmul i+1 asap. Matmul doesn't need to wait for any kernel.
-    constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
+    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
 
     print(
         "num_gpus",
@@ -230,7 +231,7 @@ fn overlap_matmul_allreduce_test[
                 print("Verification failed at GPU", i, "index", j)
                 print("Value:", C_reduced_host_list[i][j])
                 print("Expected:", expected_sum)
-                raise e
+                raise e^
     print("Verification passed")
 
     # Cleanup

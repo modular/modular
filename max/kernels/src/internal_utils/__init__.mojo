@@ -14,11 +14,8 @@
 from ._measure import correlation, cosine, kl_div
 from ._testing import assert_almost_equal, assert_equal, assert_with_measure
 from ._utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
     InitializationType,
     Mode,
-    TestTensor,
     Timer,
     arange,
     arg_parse,

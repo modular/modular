@@ -13,7 +13,8 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from comm.allreduce import MAX_GPUS, Signal, allreduce
+from comm.allreduce import allreduce
+from comm import MAX_GPUS, Signal, group_start, group_end
 from gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
 from gpu.host import DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -66,6 +67,8 @@ fn _matmul_allreduce[
         )
 
     # Call allreduce for each GPU
+    group_start()
+
     @parameter
     for i in range(ngpus):
         allreduce[ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]](
@@ -76,6 +79,7 @@ fn _matmul_allreduce[
             rank_sigs,
             ctxs[i],
         )
+    group_end()
 
 
 @parameter
@@ -192,6 +196,8 @@ fn _matmul_allreduce_split_m[
             )
 
         # Call allreduce for each GPU
+        group_start()
+
         @parameter
         for i in range(ngpus):
             allreduce[
@@ -206,6 +212,7 @@ fn _matmul_allreduce_split_m[
                 rank_sigs,
                 ctxs[i],
             )
+        group_end()
 
 
 @parameter
@@ -242,13 +249,13 @@ fn _matmul_allreduce_split_n[
     This way we can perform `num_partitions` independent matmul + allreduce kernels, and overlap some of the computation.
     """
 
-    constrained[
-        not b_static_shape.at[0]().is_dynamic(), "N dimension must be static"
-    ]()
+    __comptime_assert not b_static_shape.at[
+        0
+    ]().is_dynamic(), "N dimension must be static"
     comptime n = b_static_shape.get[0]()
-    constrained[
-        n % num_partitions == 0, "num_partitions doesn't split evenly N"
-    ]()
+    __comptime_assert (
+        n % num_partitions == 0
+    ), "num_partitions doesn't split evenly N"
     comptime n_part = n // num_partitions
     var m = c_temp_buffers[0].dim[0]()
     var k = b_buffers[0].dim[1]()
@@ -321,6 +328,8 @@ fn _matmul_allreduce_split_n[
             )
 
         # Call allreduce for each GPU
+        group_start()
+
         @parameter
         for i in range(ngpus):
             allreduce[
@@ -335,6 +344,7 @@ fn _matmul_allreduce_split_n[
                 rank_sigs,
                 ctxs[i],
             )
+        group_end()
 
 
 @parameter
@@ -372,7 +382,7 @@ fn matmul_allreduce[
     This way we can perform `num_partitions` independent matmul + allreduce kernels, and overlap some of the computation.
     """
 
-    constrained[partition_dim == 0 or partition_dim == 1]()
+    __comptime_assert partition_dim == 0 or partition_dim == 1
 
     @parameter
     if not num_partitions.dim.is_dynamic() and num_partitions.dim.get() == 1:
@@ -411,10 +421,9 @@ fn matmul_allreduce[
             )
 
     else:
-        constrained[
-            not num_partitions.dim.is_dynamic(),
-            "for split_n num_partitions must be a constant",
-        ]()
+        __comptime_assert (
+            not num_partitions.dim.is_dynamic()
+        ), "for split_n num_partitions must be a constant"
         _matmul_allreduce_split_n[
             ngpus=ngpus,
             num_partitions = num_partitions.dim.get(),

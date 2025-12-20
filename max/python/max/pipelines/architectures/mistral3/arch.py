@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from . import weight_adapters
@@ -32,6 +33,7 @@ mistral3_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     pipeline_model=Mistral3Model,
     tokenizer=Mistral3Tokenizer,
+    context_type=TextContext,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
