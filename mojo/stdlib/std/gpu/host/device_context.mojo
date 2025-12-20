@@ -3112,6 +3112,36 @@ struct DeviceExternalFunction:
     fn __init__(
         out self,
         ctx: DeviceContext,
+        info: CompiledFunctionInfo,
+        *,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Initializes a new device function from CompileInfo object.
+
+        Args:
+            ctx: The device context to associate this function with.
+            info: The result from the compile command (must be compiled to object).
+            func_attribute: Optional function attributes like shared memory size.
+
+        Raises:
+            If function loading fails or if an unsupported attribute is provided.
+        """
+        if info.emission_kind != "object":
+            raise Error(
+                "the function is not compiled to object code",
+            )
+        return {
+            ctx,
+            function_name = info.function_name,
+            asm = info.asm,
+            func_attribute = func_attribute,
+        }
+
+    @doc_private
+    @always_inline
+    fn __init__(
+        out self,
+        ctx: DeviceContext,
         *,
         function_name: StringSlice,
         asm: StringSlice,
@@ -3122,7 +3152,7 @@ struct DeviceExternalFunction:
         Args:
             ctx: The device context to associate this function with.
             function_name: The name of the function in the assembly code.
-            asm: The assembly code (PTX/SASS) containing the function.
+            asm: The assembly code containing the function.
             func_attribute: Optional function attributes like shared memory size.
 
         Raises:
