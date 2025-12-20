@@ -25,7 +25,6 @@ from gpu.intrinsics import (
     load_acquire,
     store_release,
 )
-from memory import MutOpaquePointer
 
 
 # No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
@@ -159,9 +158,7 @@ fn _multi_gpu_barrier[
     is_start: Bool,
     need_fence: Bool = False,
 ](
-    rank_sigs: InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     self_sg: UnsafePointer[Signal, MutAnyOrigin],
     my_rank: Int,
 ):

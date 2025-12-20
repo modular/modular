@@ -8793,7 +8793,7 @@ struct DistributedAllReduceSum:
 
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
-            RealUnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
+            RealUnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
         @parameter
@@ -8879,7 +8879,7 @@ struct DistributedAllGather:
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
         var rank_sigs = InlineArray[
-            RealUnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
+            RealUnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
         @parameter
@@ -8982,7 +8982,7 @@ struct DistributedMatmulAllReduce:
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
 
         var rank_sigs = InlineArray[
-            RealUnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
+            RealUnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
         @parameter

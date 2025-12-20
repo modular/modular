@@ -102,15 +102,9 @@ fn _allgather_p2p_kernel[
     *,
     BLOCK_SIZE: Int,
 ](
-    outputs: StaticTuple[
-        UnsafePointer[mut=True, Scalar[dtype], MutAnyOrigin], ngpus
-    ],
-    src_ptrs: StaticTuple[
-        UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin], ngpus
-    ],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     lengths: StaticTuple[Int, ngpus],
     max_num_blocks: Int,
     my_rank: Int,
@@ -168,9 +162,7 @@ fn _allgather_p2p[
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctxs: List[DeviceContext],
 ) raises:
@@ -178,7 +170,7 @@ fn _allgather_p2p[
 
     # Prepare input pointers
     var list_of_in_ptrs = StaticTuple[
-        UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin], ngpus
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus
     ]()
     var lengths = StaticTuple[Int, ngpus]()
 
@@ -195,7 +187,7 @@ fn _allgather_p2p[
 
         # Prepare output pointers for this GPU.
         var output_ptrs = StaticTuple[
-            UnsafePointer[mut=True, Scalar[dtype], MutAnyOrigin], ngpus
+            UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
         ]()
 
         @parameter
@@ -246,9 +238,7 @@ fn allgather[
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctxs: List[DeviceContext],
     _max_num_blocks: Optional[Int] = None,
 ) raises:

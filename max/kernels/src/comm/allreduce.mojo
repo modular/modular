@@ -151,8 +151,8 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 fn _naive_reduce_kernel[
     dtype: DType
 ](
-    dst_buf: UnsafePointer[mut=True, Scalar[dtype], MutAnyOrigin],
-    src_buf: UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin],
+    dst_buf: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_buf: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int,
 ):
     """
@@ -185,7 +185,7 @@ fn _naive_reduce_kernel_with_lambda[
     output_lambda: elementwise_epilogue_type,
 ](
     dst_buf: NDBuffer[dtype, rank, MutAnyOrigin],
-    src_buf: UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin],
+    src_buf: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int,
 ):
     """Naive reduction kernel with elementwise lambda support."""
@@ -347,7 +347,7 @@ fn _load_reduce[
 ](
     elem_idx: Int,
     ptrs: InlineArray[
-        UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin], num_buffers
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ],
 ) -> SIMD[dtype, simd_width]:
     @parameter
@@ -402,10 +402,10 @@ fn _allreduce_2stage_kernel[
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[
-        UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin], num_buffers
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ],
     rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
+        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
     ],
     num_elements: Int,
     my_rank: Int,
@@ -469,11 +469,11 @@ fn _allreduce_2stage_kernel[
     # --- Memory Pointer Configuration ---
     # Round-robin access pattern to balance NVLink traffic across GPUs.
     var ptrs = InlineArray[
-        UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin], num_buffers
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
-    var tmps = InlineArray[
-        UnsafePointer[mut=True, Scalar[dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var tmps = InlineArray[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
 
     @parameter
     for i in range(ngpus):
@@ -566,10 +566,10 @@ fn _allreduce_1stage_kernel[
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[
-        UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin], num_buffers
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ],
     rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
+        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
     ],
     num_elements: Int,
     my_rank: Int,
@@ -606,7 +606,7 @@ fn _allreduce_1stage_kernel[
 
     # Round-robin access pattern to balance NVLink traffic across GPUs.
     var ptrs = InlineArray[
-        UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin], num_buffers
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
     @parameter
@@ -652,9 +652,7 @@ fn _allreduce_p2p[
         NDBuffer[dtype, rank, MutAnyOrigin], num_buffers
     ],
     out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
     iteration: Int,
@@ -699,7 +697,7 @@ fn _allreduce_p2p[
     # Pass a stack-allocated array of pointers to the device kernel, which
     # doesn't need dynamic tensor spec info from NDBuffer.
     var list_of_in_ptrs = InlineArray[
-        UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin], num_buffers
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
     @parameter
@@ -971,9 +969,7 @@ fn allreduce[
         NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
     iteration: Int = 0,
@@ -1110,14 +1106,11 @@ fn allreduce_2stage_quickreduce_tile[
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
     local_src: UnsafePointer[
-        mut=False,
         Scalar[dtype],
-        MutAnyOrigin,
+        ImmutAnyOrigin,
         address_space=_target_address_space,
     ],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
     tile: Int,
@@ -1156,7 +1149,6 @@ fn allreduce_2stage_quickreduce_tile[
     # Build typed views from rank_sigs once
     var flag_buf = InlineArray[
         UnsafePointer[
-            mut=True,
             Scalar[flag_t],
             MutAnyOrigin,
             address_space=_target_address_space,
@@ -1166,7 +1158,6 @@ fn allreduce_2stage_quickreduce_tile[
 
     var data_buf = InlineArray[
         UnsafePointer[
-            mut=True,
             Scalar[dtype],
             MutAnyOrigin,
             address_space=_target_address_space,
@@ -1187,7 +1178,6 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     fn wait_for_flag(
         ptr: UnsafePointer[
-            mut=True,
             Scalar[flag_t],
             MutAnyOrigin,
             address_space=_target_address_space,
@@ -1388,10 +1378,8 @@ fn allreduce_2stage_quickreduce[
     atom_size: Int,
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
-    local_src: UnsafePointer[mut=False, Scalar[dtype], MutAnyOrigin],
-    rank_sigs: InlineArray[
-        UnsafePointer[mut=True, Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    local_src: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
     iteration: Int,
