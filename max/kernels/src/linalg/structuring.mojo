@@ -243,7 +243,7 @@ struct SMemTileArrayType[
         alignment = Self.alignment,
     ]
 
-    comptime storage_size = eval[Self.layout.size()] * size_of[
+    comptime storage_size = Self.layout.size() * size_of[
         Self.dtype
     ]() * Self.num_tiles
 
@@ -284,6 +284,17 @@ struct SMemTileArrayType[
             Tile at index.
         """
         return Self.Tile(self.ptr + eval[Self.layout.size()] * Int(index))
+
+    fn slice[
+        length: Int
+    ](
+        self,
+        start: Int,
+        out result: SMemTileArrayType[
+            Self.dtype, Self.layout, length, Self.alignment
+        ],
+    ):
+        return type_of(result)(self.ptr + eval[Self.layout.size()] * Int(start))
 
     @always_inline
     @staticmethod

@@ -63,6 +63,7 @@ from ....structuring import (
     SMemTileType,
     RegTileType,
     PipelineBarrier,
+    eval,
 )
 from .ring_buffer import RingBuffer, RingBufferConsumer, RingBufferProducer
 from .tile_loader import (
@@ -83,6 +84,7 @@ struct HopperMatmulSM90Kernel_SMem[
     c_type: DType,
     c_layout: Layout,
     num_pipeline_stages: Int,
+    k_group_size: Int,
 ]:
     """Shared memory layout for Hopper SM90 matrix multiplication kernel.
 
@@ -107,7 +109,9 @@ struct HopperMatmulSM90Kernel_SMem[
     comptime CTile = Self.SMM.Tile[Self.c_type, Self.c_layout]
 
     # Pipeline barrier types - for producer/consumer synchronization
-    comptime PipelineBarrier = PipelineBarrier[Self.num_pipeline_stages]
+    comptime PipelineBarrier = PipelineBarrier[
+        Self.num_pipeline_stages // Self.k_group_size
+    ]
 
     # Tile iterators - cycle through pipeline stages
     var a_tiles: Self.ATileArray
@@ -184,6 +188,7 @@ struct HopperMatmulSM90Kernel[
         elementwise_compute_lambda_type
     ] = None,
     hilbert_swizzle: Bool = False,
+    k_group_size: Int = 1,
 ]:
     """Hopper SM90 Matrix Multiplication kernel optimized for NVIDIA H100 GPUs.
 
@@ -234,6 +239,8 @@ struct HopperMatmulSM90Kernel[
         Self.b_type, Self.BN, Self.BK, Self.b_swizzle
     ]()
 
+    comptime adjusted_num_pipeline_stages = Self.num_pipeline_stages // Self.k_group_size
+
     comptime AccumRegTileType = RegTileType[
         Self.accum_type,
         Layout.row_major(Self.num_m_mmas * Self.num_n_mmas, Self.c_frag_size),
@@ -251,6 +258,7 @@ struct HopperMatmulSM90Kernel[
         Self.c_type,
         Self.c_smem_layout,
         Self.num_pipeline_stages,
+        Self.k_group_size,
     ]
 
     comptime RingBuffer[tma_transfer: Bool = True] = RingBuffer[
@@ -262,6 +270,7 @@ struct HopperMatmulSM90Kernel[
         Self.num_consumer,
         Self.cluster_size,
         tma_transfer,
+        Self.k_group_size,
     ]
 
     comptime RingBufferConsumer[
@@ -282,28 +291,36 @@ struct HopperMatmulSM90Kernel[
     @always_inline
     fn validate_constraints():
         """Validate common constraints for all kernel variants."""
-        constrained[
-            Self.a_type == Self.b_type, "A and B must have the same type"
-        ]()
+        __comptime_assert (
+            Self.a_type == Self.b_type
+        ), "A and B must have the same type"
 
-        constrained[Self.transpose_b, "Only support transposed B in layout"]()
+        __comptime_assert (
+            Self.transpose_b
+        ), "Only support transposed B in layout"
 
-        constrained[
+        __comptime_assert (
             not Self.partitioned_multicast
-            or Self.a_swizzle.bytes() // size_of[Self.a_type]() == Self.BK,
-            (
-                "Currently partitioned multi-casting is only supported when BK"
-                " == (a_swizzle.bytes // size_of[a_type])"
-            ),
-        ]()
-        constrained[
+            or Self.a_swizzle.bytes() // size_of[Self.a_type]() == Self.BK
+        ), (
+            "Currently partitioned multi-casting is only supported when BK"
+            " == (a_swizzle.bytes // size_of[a_type])"
+        )
+        __comptime_assert (
             not Self.partitioned_multicast
-            or Self.b_swizzle.bytes() // size_of[Self.b_type]() == Self.BK,
-            (
-                "Currently partitioned multi-casting is only supported when BK"
-                " == (b_swizzle.bytes // size_of[b_type])"
-            ),
-        ]()
+            or Self.b_swizzle.bytes() // size_of[Self.b_type]() == Self.BK
+        ), (
+            "Currently partitioned multi-casting is only supported when BK"
+            " == (b_swizzle.bytes // size_of[b_type])"
+        )
+
+        __comptime_assert (
+            Self.num_pipeline_stages % Self.k_group_size == 0
+        ), "num_pipeline_stages must be a multiple of k_group_size"
+        comptime K = Self.b_layout.shape[1].value()
+        __comptime_assert (
+            K % Self.k_group_size == 0
+        ), "K must be a multiple of k_group_size"
 
     @always_inline
     @staticmethod
@@ -656,6 +673,7 @@ struct HopperMatmulSM90Kernel[
             _,
             _,
             _,
+            Self.k_group_size,
         ],
     ):
         """Polymorphic A and B Tile Loader, works with both TMA and CPAsync."""
@@ -668,23 +686,34 @@ struct HopperMatmulSM90Kernel[
             @parameter
             for j in range(num_pipeline_stages_to_unroll):
                 var k_offset = UInt(
-                    k_coord + UInt(k_iter * Self.num_pipeline_stages + j)
+                    k_coord
+                    + UInt(
+                        k_iter * Self.num_pipeline_stages
+                        + (j * Self.k_group_size)
+                    )
                 )
 
                 # Get the next available tile slot from the ring buffer.
                 # The context manager ensures proper barrier synchronization.
                 with ring_buffer.producer() as producer:
                     with producer.get_tiles() as tiles:
-                        a_loader.load_tile(
-                            tiles.a_tile,
-                            tiles.barrier,
-                            (m_coord, k_offset),
-                        )
-                        b_loader.load_tile(
-                            tiles.b_tile,
-                            tiles.barrier,
-                            (n_coord, k_offset),
-                        )
+                        var a_tile_array = tiles.a_tile_array
+                        var b_tile_array = tiles.b_tile_array
+
+                        @parameter
+                        for k in range(a_tile_array.num_tiles):
+                            a_loader.load_tile(
+                                a_tile_array[k],
+                                tiles.barrier,
+                                (m_coord, k_offset),
+                            )
+                            b_loader.load_tile(
+                                b_tile_array[k],
+                                tiles.barrier,
+                                (n_coord, k_offset),
+                            )
+
+                            k_offset += UInt(1)
 
         # Calculate how many full pipeline iterations we need
         comptime num_full_k_iters = ceildiv(
@@ -696,11 +725,13 @@ struct HopperMatmulSM90Kernel[
         @parameter
         if num_remaining_k_iters == 0:
             for k_iter in range(num_full_k_iters):
-                producer_loop[Self.num_pipeline_stages](k_iter)
+                producer_loop[Self.adjusted_num_pipeline_stages](k_iter)
         else:
             for k_iter in range(num_full_k_iters - 1):
-                producer_loop[Self.num_pipeline_stages](k_iter)
-            producer_loop[num_remaining_k_iters](num_full_k_iters - 1)
+                producer_loop[Self.adjusted_num_pipeline_stages](k_iter)
+            producer_loop[num_remaining_k_iters // Self.k_group_size](
+                num_full_k_iters - 1
+            )
 
     @staticmethod
     @__llvm_metadata(
@@ -1235,19 +1266,27 @@ struct HopperMatmulSM90Kernel[
         @parameter
         fn consumer_loop[
             num_pipeline_stages_to_unroll: Int,
-        ](k_iter: Int):
+        ]():
             @parameter
-            for j in range(num_pipeline_stages_to_unroll):
+            for _ in range(num_pipeline_stages_to_unroll):
                 # Get the next available tile slot from the ring buffer.
                 # The context manager ensures proper barrier synchronization.
                 with ring_buffer.get_tiles() as tiles:
-                    Self.wgmma(
-                        wgmma_op,
-                        local_warp_group_idx,
-                        tiles.a_tile,
-                        tiles.b_tile,
-                        c_reg_tile,
-                    )
+                    var a_tile_array = tiles.a_tile_array
+                    var b_tile_array = tiles.b_tile_array
+
+                    @parameter
+                    for k in range(a_tile_array.num_tiles):
+                        var a_tile = a_tile_array[k]
+                        var b_tile = b_tile_array[k]
+
+                        Self.wgmma(
+                            wgmma_op,
+                            local_warp_group_idx,
+                            a_tile,
+                            b_tile,
+                            c_reg_tile,
+                        )
 
                 @parameter
                 if Self.a_type is DType.float8_e4m3fn:
@@ -1259,11 +1298,11 @@ struct HopperMatmulSM90Kernel[
         @parameter
         if num_remaining_k_iters == 0:
             for k_iter in range(num_full_k_iters):
-                consumer_loop[Self.num_pipeline_stages](k_iter)
+                consumer_loop[Self.adjusted_num_pipeline_stages]()
         else:
             for k_iter in range(num_full_k_iters - 1):
-                consumer_loop[Self.num_pipeline_stages](k_iter)
-            consumer_loop[num_remaining_k_iters](num_full_k_iters - 1)
+                consumer_loop[Self.adjusted_num_pipeline_stages]()
+            consumer_loop[num_remaining_k_iters // Self.k_group_size]()
 
         # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
         @parameter

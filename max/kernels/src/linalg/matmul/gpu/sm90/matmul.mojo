@@ -199,6 +199,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     comptime BN = config.block_tile_shape[1]
     comptime BK = config.block_tile_shape[2]
 
+    comptime k_group_size = Int(config.k_group_size)
+
     constrained[
         (a_type == b_type is DType.float8_e4m3fn)
         or (a_type == b_type and a_type in (DType.bfloat16, DType.float32)),
@@ -281,6 +283,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         b_type,
         c_type,
         Int(config.num_pipeline_stages),
+        k_group_size,
     ]()
     comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
@@ -348,6 +351,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         hilbert_swizzle=hilbert_swizzle,
+        k_group_size=k_group_size,
     ]
 
     comptime smem_size = matmul_kernel[].SMem.storage_size()
@@ -463,6 +467,7 @@ fn _get_c_smem_layout[
     b_type: DType,
     c_type: DType,
     num_pipeline_stages: Int,
+    k_group_size: Int,
 ]() -> Layout:
     comptime BM = Int(block_tile_shape[0])
     comptime BN = Int(block_tile_shape[1])
@@ -474,14 +479,14 @@ fn _get_c_smem_layout[
     comptime available_smem_size = Int(
         H100.shared_memory_per_multiprocessor - 1024
     )
-    comptime pipeline_smem_size = Int(
-        num_pipeline_stages
-        * (
-            BM * BK * size_of[a_type]()
-            + BN * BK * size_of[b_type]()
-            + (size_of[Int64]() * 2)
-        )
+
+    comptime groups = num_pipeline_stages // k_group_size
+    comptime barrier_size = size_of[Int64]() * 2 * groups
+    comptime total_smem_tile_size = num_pipeline_stages * (
+        BM * BK * size_of[a_type]() + BN * BK * size_of[b_type]()
     )
+
+    comptime pipeline_smem_size = Int(total_smem_tile_size + barrier_size)
 
     comptime available_c_smem_size = Int(
         available_smem_size - pipeline_smem_size
@@ -556,27 +561,27 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
     comptime BK = config.block_tile_shape[2]
+    comptime k_group_size = config.k_group_size
 
-    constrained[
-        (a_type == b_type is DType.float8_e4m3fn)
-        or (a_type == b_type and a_type in (DType.bfloat16, DType.float32)),
-        "Unsupported input dtype",
-    ]()
+    __comptime_assert (
+        k_group_size == 1
+    ), "Only support k_group_size == 1 for now"
 
-    constrained[
-        a_type != DType.float8_e4m3fn or BK == 128,
-        "BK must be 128 for fp8 data type for numerical accuracy correctness",
-    ]()
+    __comptime_assert (a_type == b_type is DType.float8_e4m3fn) or (
+        a_type == b_type and a_type in (DType.bfloat16, DType.float32)
+    ), "Unsupported input dtype"
 
-    constrained[
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None,
-        "Either the epilogue lambda or the compute lambda can be used",
-    ]()
+    __comptime_assert (
+        a_type != DType.float8_e4m3fn or BK == 128
+    ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
 
-    constrained[
-        BM > 64 or (BM == 64 and config.num_consumer == 1),
-        "Only support 1 consumer for BM=64",
-    ]()
+    __comptime_assert (
+        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
+    ), "Either the epilogue lambda or the compute lambda can be used"
+
+    __comptime_assert BM > 64 or (
+        BM == 64 and config.num_consumer == 1
+    ), "Only support 1 consumer for BM=64"
 
     logger.info("Executing Split-K Warp Specialized GEMM with Multicasting")
     logger.info("block_tile_shape:", config.block_tile_shape)
@@ -598,6 +603,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         b_type,
         c_type,
         Int(config.num_pipeline_stages),
+        Int(k_group_size),
     ]()
     comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(),

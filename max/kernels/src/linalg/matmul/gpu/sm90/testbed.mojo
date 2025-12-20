@@ -53,6 +53,7 @@ fn test_matmul_sm90[
     ] = None,
     measure_threshold: OptionalReg[Float64] = None,
     backend: Backend = Backend.CUBLAS,
+    k_group_size: Int = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
     var M = m.value
     var N = n.value
@@ -209,6 +210,7 @@ fn test_matmul_sm90[
         num_pipeline_stages=UInt(num_pipeline_stages),
         num_consumer=UInt(num_consumer),
         partitioned_multicast=partitioned_multicast,
+        k_group_size=UInt(k_group_size),
     )
 
     warp_specialize_gemm_with_multicasting[

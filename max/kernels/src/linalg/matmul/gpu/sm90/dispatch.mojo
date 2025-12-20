@@ -2868,6 +2868,26 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         else:
+
+            @parameter
+            fn get_k_groups[N: Int]() -> OptionalReg[UInt]:
+                @parameter
+                if N == 1536:
+                    return None
+                else:
+                    return UInt(1)
+
+            @parameter
+            fn get_consumer_groups[N: Int]() -> OptionalReg[Int]:
+                @parameter
+                if N == 1536:
+                    return 1
+                else:
+                    return None
+
+            comptime k_groups = get_k_groups[static_N]()
+            comptime consumer_groups = get_consumer_groups[static_N]()
+
             var runtime_config = MatmulConfigSM90[
                 a_type, b_type, c_type, transpose_b
             ](
@@ -2877,6 +2897,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 num_k_partitions=1,
                 partitioned_multicast=False,
                 pdl_level=pdl_level,
+                k_groups=k_groups,
+                consumer_groups=consumer_groups,
             )
 
             # Build compile-time configs (using same parameters)
@@ -2890,6 +2912,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 1,
                 False,
                 pdl_level,
+                k_groups=k_groups,
+                consumer_groups=consumer_groups,
             ]()
 
             @parameter

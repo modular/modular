@@ -112,12 +112,15 @@ fn grouped_matmul_sm90[
     comptime CLUSTER_N = UInt(cluster_shape[0])
     comptime CLUSTER_M = UInt(cluster_shape[1])
 
+    comptime k_group_size = config.k_group_size
+
     comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
         a_type,
         b_type,
         c_type,
         Int(config.num_pipeline_stages),
+        Int(k_group_size),
     ]()
     comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
