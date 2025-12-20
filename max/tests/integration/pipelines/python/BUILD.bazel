@@ -42,6 +42,18 @@ modular_py_test(
     deps = [
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:debug_model",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_hf_config_overrides",
+    size = "small",
+    srcs = ["test_hf_config_overrides.py"],
+    deps = [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/tools:hf_config_overrides",
         requirement("pytest-mock"),
         requirement("transformers"),
     ],

@@ -1001,7 +1001,7 @@ class Qwen3VLModel(
                 ):
                     decoder_position_ids_list.append(
                         ctx_decoder_position_ids[
-                            :, ctx.start_idx : ctx.active_idx
+                            :, ctx.processed_length : ctx.current_position
                         ]
                     )
                 else:
@@ -1019,7 +1019,7 @@ class Qwen3VLModel(
                             1,
                         ),
                     )
-                    delta = ctx.start_idx + ctx.rope_delta
+                    delta = ctx.processed_length + ctx.rope_delta
                     temp_position_ids = (temp_pos_ids + delta).squeeze(1)
                     decoder_position_ids_list.append(temp_position_ids)
 
@@ -1068,15 +1068,19 @@ class Qwen3VLModel(
         ).to(self.devices)
 
         # Prepare bilinear interpolation weights and indices
+        # Each vision_data.weights has shape (4, N_patches, 1) and
+        # vision_data.indices has shape (4, N_patches).
+        # The 4 represents the 4 bilinear interpolation neighbors.
+        # Concatenate along axis=1 to merge patches while preserving the 4-neighbor structure.
         weights = Tensor.from_numpy(
             np.concatenate(
-                [vision_data.weights for vision_data in vision_datas]
+                [vision_data.weights for vision_data in vision_datas], axis=1
             ).astype(np.float32)
         ).to(self.devices)
 
         indices = Tensor.from_numpy(
             np.concatenate(
-                [vision_data.indices for vision_data in vision_datas]
+                [vision_data.indices for vision_data in vision_datas], axis=1
             )
         ).to(self.devices)
 

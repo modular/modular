@@ -330,7 +330,7 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     input_tokens = inputs.input_tokens
     num_steps = inputs.num_steps
     batch_context_length = sum(
-        context.start_idx for context in inputs.batch.values()
+        context.processed_length for context in inputs.batch.values()
     )
 
     if batch_size == 0:

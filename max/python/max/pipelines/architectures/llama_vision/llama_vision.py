@@ -400,7 +400,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     A note on multi-step and vision inputs:
 
-    - During CE, start_idx=0 so ctx.next_images returns all images we still need
+    - During CE, processed_length=0 so ctx.next_images returns all images we still need
     to encode. For Llama Vision, we do not support chunked prefill at the moment
     and we assert that there is exactly one image per request (not 0 or > 1).
     - This ensures that during `prepare_initial_token_inputs`, we set
@@ -700,7 +700,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         device = self.vision_kv_manager.devices[0]
         for i, ctx in enumerate(batch):
-            cache_len = self.vision_max_seq_len if ctx.start_idx > 0 else 0
+            cache_len = (
+                self.vision_max_seq_len if ctx.processed_length > 0 else 0
+            )
             if cache_len == 0:
                 max_seq_length = self.vision_max_seq_len
             cache_lengths_np[i] = cache_len

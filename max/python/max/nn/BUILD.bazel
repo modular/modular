@@ -8,7 +8,6 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         requirement("msgspec"),
-        requirement("transformers"),
         "//max/python/max/_core_mojo",
         "//max/python/max/dtype",
         "//max/python/max/engine",

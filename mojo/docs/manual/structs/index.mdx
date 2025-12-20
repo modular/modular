@@ -3,29 +3,45 @@ title: Mojo structs
 sidebar_position: 1
 description: Introduction to Mojo structures (structs).
 ---
+A struct is Mojo’s primary way to define your own type. When you want to model
+both data and behavior—whether that’s a small value type, a numeric
+abstraction, or the foundation of a larger system—you’ll use a struct.
 
-A Mojo struct is a data structure that allows you to encapsulate fields and
-methods that operate on an abstraction, such as a data type or an object.
-**Fields** are variables that hold data relevant to the struct, and **methods**
-are functions inside a struct that generally act upon the field data.
+At a high level, a Mojo struct lets you bundle data together with the
+operations that act on that data. This makes structs a natural way to represent
+concepts in your program, rather than passing loosely related values through
+functions.
+
+Each Mojo `struct` is a data structure that lets you encapsulate _fields_ and
+_methods_ to store and operate on data. Structs can define the following
+members:
+
+- **Fields** are variables that store data relevant to the struct.
+- **Methods** are functions defined in a struct that normally act upon the field data.
+- **Static methods** are functions provided by the type to perform behaviors,
+  provide constants, or create specialized instances.
+- **Dunder methods** are named for their _d_ouble _under_scored form, with
+  `__` on both sides. Also called "special methods", [they help define
+  behaviors](/mojo/manual/structs/#special-methods) such as initialization
+  and allow structs to conform to [traits](/mojo/manual/traits/).
+- **`comptime` members** enable compile-time references that can be used for
+  optimization.
 
 For example, if you're building a graphics program, you can use a struct to
-define an `Image` that has fields to store information about each image
-(such as the pixels) and methods that perform actions on it (such as rotate
-it).
+define an `Image` that has fields to store information about each image (such
+as its component pixels) and methods that perform actions on it (such as
+rotating the image).
 
-For the most part, Mojo's struct format is designed to provide a static,
-memory-safe data structure for high-level data types used in programs. For
-example, all the data types in Mojo's standard library (such as `Int`,
-`Bool`, `String`, and `Tuple`) are defined as structs.
+Mojo’s struct format is designed to provide a static, memory-safe data
+structure that’s both powerful and performant. Unlike dynamic objects
+(such as Python classes) that can be modified freely at runtime,
+structs are defined at compile time, which allows Mojo to generate
+highly optimized code.
 
-If you understand how [functions](/mojo/manual/functions) and
-[variables](/mojo/manual/variables) work in Mojo, you probably
-noticed that Mojo is designed to provide dynamic programming features in a
-`def` function while enforcing stronger code safety in `fn` functions. When it
-comes to structs, Mojo leans toward the safe side: You can still choose whether
-to use either `def` or `fn` declarations for methods, but all fields must be
-declared with `var`.
+You can choose whether a struct method is declared with `def` or `fn`,
+but all struct fields must be declared using `var` and include a type
+annotation. This requirement is part of Mojo’s compile-time guarantees,
+helping ensure both performance and memory safety.
 
 ## Struct definition
 
@@ -141,13 +157,13 @@ Mojo knows the variable's type. For example:
 
 ```mojo title="Reassignment with initializer lists"
 # Construct a new instance
-myCustomType = CustomType(0.5, fish="swordfish")
+my_instance = CustomType(0.5, fish="swordfish")
 
 # Use the instance
 ...
 
 # Update the instance before further use
-myCustomType = {0.7, fish="salmon"}
+my_instance = {0.7, fish="salmon"}
 ```
 
 ## Mutating a struct
@@ -260,6 +276,119 @@ copyable if copying the type is inexpensive and has no side effects. Unnecessary
 copies can be a big drain on memory and performance, so use this trait with
 caution.
 
+## Fields
+
+Fields store a struct’s data. When you declare a field, it becomes part of the
+struct’s memory layout. Because the compiler knows every field's type at
+compile time, it can:
+
+- Calculate the struct’s exact memory footprint
+- Ensure all fields are initialized before use
+- Generate fast, direct access to field data
+- Prevent changes to the struct’s layout at runtime
+
+Fields share the lifetime of their struct instance. They are created when the
+struct is created and destroyed when the struct is destroyed. This model avoids
+dangling references and partially constructed objects.
+
+Outside of your struct implementation, you access fields with dot notation
+(`my_struct.field_name`). Within the struct, your methods access fields using
+`self` (`self.field_name`). Mojo knows each field’s location at compile time,
+making field access direct and efficient.
+
+### Field requirements
+
+**You must** declare field members with `var` in structs:
+
+```mojo
+struct MyStruct:
+    value: Int # Error. Missing `var` keyword
+    var count: Int # Yes
+```
+
+Unlike local variables in functions, this requirement lets Mojo reason about a
+struct’s layout and guarantees that its memory is safe and predictable.
+
+**You must** use unique symbols for fields, methods, or `comptime` members.
+These all exist in the same namespace:
+
+```mojo
+struct MyStruct:
+    var count: Int
+    var count: String # Error. Invalid redeclaration of `count`
+```
+
+**You can** re-use a struct member's name for an argument or method variable.
+
+```mojo
+struct MyStruct:
+    var foo: Int
+
+    fn use_argument(self, foo: Int):  # Argument shadows field
+        print(foo)  # Prints argument value
+
+    fn use_local(self, value: Int):
+        var foo = value  # Local variable shadows field
+        print(foo, self.foo)  # Prints local, then field
+```
+
+**You must** mark `self` as mutable if updating a field value.
+
+```mojo
+struct MyStruct:
+    var foo: Int
+
+    fn update_foo(mut self, new_value: Int):
+        self.foo = new_value
+```
+
+**You must** initialize fields within constructors, and not
+at the point of declaration.
+
+```mojo
+struct MyStruct:
+    var foo: Int = 10 # Error: Unknown tokens
+    comptime bar = 10 # Yes
+```
+
+[`comptime` members](/mojo/manual/parameters/#comptime-named-parameter-expressions)
+are compile-time constants (not fields) and don't occupy instance
+storage, so they can be initialized at the point of declaration.
+
+### Field conventions
+
+Like other Mojo elements, fields normally adhere to
+(certain conventions)[https://github.com/modular/modular/blob/main/mojo/stdlib/docs/style-guide.md#code-conventions]:
+
+You should use conventional naming for field members:
+
+- Prefer lowercase snake_case for field names (for example, `user_count`,
+  `max_capacity`).
+- Use descriptive names that indicate purpose, and not their type (for example,
+  `error_msg` not `msg_string`).
+- For members meant for internal use or to maintain invariants, add an
+  underscore prefix (for example, `_private_field`).
+- For boolean fields, use `is_` or `has_` prefixes (for example, `is_valid`,
+  `has_data`).
+- Avoid single-letter names except for common mathematical conventions (such as
+  `x`, `y`, `z` for coordinates).
+
+### `fn` versus `def` in struct methods
+
+Struct methods can be declared with either the `def` or `fn` keywords. One
+important difference is that an `fn` function without the `raises` keyword can't
+raise an error. When you call a function that *can* raise an error from inside a
+method that *can't* raise an error, Mojo requires you to handle any errors, as
+described in
+[Errors, error handling, and context managers](/mojo/manual/errors).
+
+If you're writing code that you expect to use widely or distribute as a package,
+you may want to use `fn` functions for APIs that can't raise an error to limit
+the number of places users need to add error handling code.
+
+A struct's `__del__()` method, or destructor, **must** be a non-raising method,
+so it's always declared with `fn` (and without the `raises` keyword).
+
 ## Methods
 
 In addition to special methods like `__init__()`, you can add any other method
@@ -300,25 +429,9 @@ you can elide it because Mojo already knows its type (`MyPair` in this case).
 
 :::
 
-### `fn` versus `def` in struct methods
-
-Struct methods can be declared with either the `def` or `fn` keywords. One
-important difference is that an `fn` function without the `raises` keyword can't
-raise an error. When you call a function that *can* raise an error from inside a
-method that *can't* raise an error, Mojo requires you to handle any errors, as
-described in
-[Errors, error handling, and context managers](/mojo/manual/errors).
-
-If you're writing code that you expect to use widely or distribute as a package,
-you may want to use `fn` functions for APIs that can't raise an error to limit
-the number of places users need to add error handling code.
-
-A struct's `__del__()` method, or destructor, **must** be a non-raising method,
-so it's always declared with `fn` (and without the `raises` keyword).
-
 ### Static methods
 
-A struct can also have *static methods*. A static method can be called without
+A struct can have *static methods*. A static method can be called without
 creating an instance of the struct. Unlike instance methods, a static method
 doesn't receive the implicit `self` argument, so it can't access any fields on
 the struct.

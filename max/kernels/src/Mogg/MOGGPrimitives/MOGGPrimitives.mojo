@@ -1490,7 +1490,9 @@ struct MoggAsyncPackHelper:
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
     fn __init__(
-        out self, var data: Some[Movable], async_ptr: AnyAsyncValueRefPtr
+        out self,
+        var data: Some[Movable & ImplicitlyDestructible],
+        async_ptr: AnyAsyncValueRefPtr,
     ):
         """
         Packs a generic Movable value into the asynchronous context.

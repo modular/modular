@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Weight generation utilities for Qwen2.5VL tests."""
+"""Weight generation utilities for Qwen3VL tests."""
 
 import torch
 
@@ -39,7 +39,7 @@ LAYER_NORM_STD = 0.02
 
 
 class WeightGenerator:
-    """Generates test weights for Qwen2.5VL components."""
+    """Generates test weights for Qwen3VL components."""
 
     def __init__(self, config_name: ConfigNames):
         """Initialize with config name."""
@@ -106,6 +106,48 @@ class WeightGenerator:
             out_hidden_size
         ).to(torch.bfloat16)
 
+        return weights
+
+    def generate_moe_weights(self) -> dict[str, torch.Tensor]:
+        """Generate MoE weights for Qwen3VL-MoE."""
+        text_config = self.config["text_config"]
+        hidden_size = text_config["hidden_size"]
+        num_experts = text_config["num_experts"]
+        moe_intermediate_size = text_config["moe_intermediate_size"]
+
+        # Standard deviation for weight initialization
+        GATE_UP_STD = 0.02
+        DOWN_STD = 0.02
+        ROUTER_STD = 0.02
+
+        weights = {
+            # Router weights: [num_experts, hidden_size]
+            "gate.gate_score.weight": (
+                torch.randn(num_experts, hidden_size, dtype=torch.bfloat16)
+                * ROUTER_STD
+            ),
+            # Expert weights: [num_experts, hidden_size, 2 * moe_intermediate_size]
+            # Format: gate and up projections concatenated
+            "experts.gate_up_proj": (
+                torch.randn(
+                    num_experts,
+                    hidden_size,
+                    2 * moe_intermediate_size,
+                    dtype=torch.bfloat16,
+                )
+                * GATE_UP_STD
+            ),
+            # Down projection: [num_experts, moe_intermediate_size, hidden_size]
+            "experts.down_proj": (
+                torch.randn(
+                    num_experts,
+                    moe_intermediate_size,
+                    hidden_size,
+                    dtype=torch.bfloat16,
+                )
+                * DOWN_STD
+            ),
+        }
         return weights
 
 

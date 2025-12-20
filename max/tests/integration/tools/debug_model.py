@@ -34,8 +34,12 @@ from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.nn.hooks import PrintHook
 from max.nn.layer import Module
-from max.nn.module_v3.module import Module as ModuleV3
-from max.pipelines.lib.model_config import MAXModelConfig
+from max.tests.integration.tools.hf_config_overrides import (
+    apply_hf_config_override,
+    apply_non_strict_load,
+    create_layer_overrides,
+    set_config_overrides,
+)
 from run_models import (
     Flake,
     _detect_hf_flakes,
@@ -59,95 +63,6 @@ from test_common.test_data import MockTextGenerationRequest
 # to retry".  debug_model will emit this if it detects a failure is
 # likely caused by a network flake and could be resolved by a retry.
 EX_TEMPFAIL = 75
-
-
-def _apply_config_overrides(
-    config: Any, overrides: dict[str, Any], config_type: str = "config"
-) -> None:
-    """Apply overrides to a HuggingFace config object with validation.
-
-    Args:
-        config: The HuggingFace config object to modify.
-        overrides: Dictionary of key-value pairs to override in the config.
-        config_type: Description of config type for error messages (e.g., "AutoConfig").
-
-    Raises:
-        ValueError: If any override keys are not valid config attributes.
-    """
-    try:
-        config_dict = config.to_dict()
-    except Exception:
-        config_dict = dict(getattr(config, "__dict__", {}))
-
-    valid_keys = set(config_dict.keys())
-    invalid_keys = [k for k in overrides if k not in valid_keys]
-
-    if invalid_keys:
-        valid_lines = "\n  - ".join(sorted(valid_keys))
-        invalid_lines = "\n  - ".join(sorted(invalid_keys))
-        raise ValueError(
-            f"Invalid override key(s):"
-            f"{invalid_lines}\n\nAllowed {config_type} keys that can be overridden:"
-            f"{valid_lines}"
-        )
-
-    for key, value in overrides.items():
-        setattr(config, key, value)
-
-
-@contextmanager
-def apply_hf_config_override(
-    hf_config_overrides: dict[str, Any],
-) -> Iterator[None]:
-    """Apply overrides to HuggingFace config property.
-
-    TODO (MODELS-792): This patch is a temporary workaround to allow overriding
-    the HuggingFace config. In a future version of the MAXModelConfig class,
-    we should be able to edit the object directly.
-    """
-    orig_hf_prop = MAXModelConfig.huggingface_config
-    if not isinstance(orig_hf_prop, property) or orig_hf_prop.fget is None:
-        raise RuntimeError(
-            "Expected MAXModelConfig.huggingface_config to be a @property."
-        )
-    original_getter = orig_hf_prop.fget
-
-    def _patched_getter(self: Any) -> Any:
-        cfg = original_getter(self)
-        _apply_config_overrides(cfg, hf_config_overrides, "AutoConfig")
-        return cfg
-
-    MAXModelConfig.huggingface_config = property(_patched_getter)
-    try:
-        yield
-    finally:
-        MAXModelConfig.huggingface_config = orig_hf_prop
-
-
-@contextmanager
-def apply_non_strict_load() -> Iterator[None]:
-    """Wrap load_state_dict methods to use strict=False."""
-
-    def _wrap_non_strict(original_fn: Any) -> Any:
-        def _wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:
-            kwargs["strict"] = False
-            return original_fn(self, *args, **kwargs)
-
-        return _wrapped
-
-    orig_max_load = Module.load_state_dict
-    cast(Any, Module).load_state_dict = _wrap_non_strict(orig_max_load)
-
-    orig_max_v3_load = getattr(ModuleV3, "load_state_dict", None)
-    if orig_max_v3_load is not None:
-        cast(Any, ModuleV3).load_state_dict = _wrap_non_strict(orig_max_v3_load)
-
-    try:
-        yield
-    finally:
-        cast(Any, Module).load_state_dict = orig_max_load
-        if orig_max_v3_load is not None:
-            cast(Any, ModuleV3).load_state_dict = orig_max_v3_load
 
 
 @contextmanager
@@ -299,6 +214,13 @@ def debug_context(
     default=None,
     help="JSON dict of overrides applied to HuggingFace AutoConfig fields.",
 )
+@click.option(
+    "--num-hidden-layers",
+    "num_hidden_layers",
+    type=str,
+    default="1",
+    help="Number of hidden layers to use (default: 1). Pass 'all' to use all layers.",
+)
 def main(
     device_type: str | list[int],
     framework_name: str,
@@ -311,13 +233,24 @@ def main(
     prompt: str | None,
     images: tuple[str, ...] | None,
     hf_config_overrides: str | None,
+    num_hidden_layers: str,
 ) -> None:
     if "gemma3" in pipeline_name:
         # Running into dynamo error:
         # https://huggingface.co/google/gemma-3-4b-it/discussions/51
         torch._dynamo.config.disable = True
 
-    parsed_overrides: dict[str, Any] | None
+    # Validate num_hidden_layers input
+    if num_hidden_layers != "all":
+        try:
+            int(num_hidden_layers)
+        except ValueError as e:
+            raise click.UsageError(
+                f"--num-hidden-layers must be a positive integer or 'all', got: {num_hidden_layers}"
+            ) from e
+
+    # Parse user-provided config overrides
+    parsed_overrides: dict[str, Any] = {}
     if hf_config_overrides:
         try:
             parsed = json.loads(hf_config_overrides)
@@ -328,8 +261,10 @@ def main(
             raise click.UsageError(
                 f"Invalid --hf-config-overrides JSON: {e}"
             ) from e
-    else:
-        parsed_overrides = None
+
+    # Create layer overrides and merge with user overrides (user overrides take precedence)
+    layer_overrides = create_layer_overrides(num_hidden_layers, pipeline_name)
+    final_overrides = {**layer_overrides, **parsed_overrides} or None
 
     try:
         debug_model(
@@ -343,7 +278,7 @@ def main(
             num_steps=num_steps,
             prompt=prompt,
             images=images,
-            hf_config_overrides=parsed_overrides,
+            hf_config_overrides=final_overrides,
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)
@@ -457,7 +392,7 @@ def debug_model(
 
             # Apply HuggingFace config overrides directly to the model config
             if hf_config_overrides:
-                _apply_config_overrides(
+                set_config_overrides(
                     torch_pipeline_and_tokenizer.model.config,
                     hf_config_overrides,
                     "config",

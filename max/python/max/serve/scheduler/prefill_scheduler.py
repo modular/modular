@@ -205,7 +205,7 @@ class PrefillScheduler(Scheduler):
         assert not context.needs_ce, (
             f"Invalid Context: Expected needs_ce to be False. Found: {context}"
         )
-        assert context.start_idx > 0, (
+        assert context.processed_length > 0, (
             f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
         )
         self.dispatcher.send_reply_nowait(

@@ -7,6 +7,20 @@ package(default_visibility = [
 ])
 
 modular_py_library(
+    name = "hf_config_overrides",
+    testonly = True,
+    srcs = [
+        "hf_config_overrides.py",
+    ],
+    deps = [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
     name = "debugging_utils",
     testonly = True,
     srcs = [
@@ -127,6 +141,7 @@ modular_py_binary(
     main = "debug_model.py",
     deps = [
         ":create_pipelines",
+        ":hf_config_overrides",
         ":run_models",
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",

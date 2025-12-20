@@ -302,6 +302,30 @@ struct Report(Copyable, Defaultable):
                 result = self.runs[i].mean(unit)
         return result
 
+    fn as_string(self, unit: String = Unit.s) -> String:
+        """Converts the Report to a String.
+
+        Args:
+            unit: The time unit to display for example: ns, ms, s (default `s`).
+
+        Returns:
+            The string representation of the Report.
+        """
+        var lines: List[String] = [
+            "-" * 80,
+            "Benchmark Report (" + unit + ")",
+            "-" * 80,
+            "Mean: " + String(self.mean(unit)),
+            "Total: " + String(self.duration(unit)),
+            "Iters: " + String(self.iters()),
+            "Warmup Total: "
+            + String(self.warmup_duration / Unit._divisor(unit)),
+            "Fastest Mean: " + String(self.min(unit)),
+            "Slowest Mean: " + String(self.max(unit)),
+            "",
+        ]
+        return "\n".join(lines)
+
     fn print(self, unit: String = Unit.s):
         """
         Prints out the shortened version of the report.
@@ -309,19 +333,7 @@ struct Report(Copyable, Defaultable):
         Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
-        var divisor = Unit._divisor(unit)
-        print("-" * 80)
-        print("Benchmark Report (", end="")
-        print(unit, end="")
-        print(")")
-        print("-" * 80)
-        print("Mean:", self.mean(unit))
-        print("Total:", self.duration(unit))
-        print("Iters:", self.iters())
-        print("Warmup Total:", self.warmup_duration / divisor)
-        print("Fastest Mean:", self.min(unit))
-        print("Slowest Mean:", self.max(unit))
-        print()
+        print(self.as_string(unit))
 
     fn print_full(self, unit: String = Unit.s):
         """

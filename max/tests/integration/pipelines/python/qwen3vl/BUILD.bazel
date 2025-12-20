@@ -14,6 +14,52 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "moe",
+    size = "enormous",
+    srcs = [
+        "tests/test_moe.py",
+    ],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        ":utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/entrypoints",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/serve",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("pytest-asyncio"),
+        requirement("pytest-mock"),
+        requirement("requests"),
+        requirement("timm"),
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("transformers"),
+        requirement("opencv-python"),
+    ],
+)
+
+modular_py_test(
     name = "decoder",
     size = "enormous",
     srcs = [
