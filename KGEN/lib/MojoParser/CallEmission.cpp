@@ -1272,7 +1272,7 @@ CValue IREmitter::emitIndirectCallInTryBlock(
     // from the result.
     auto varDecl =
         emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
-                    loc, VarDeclKind::Synthesized);
+                    loc, VarDeclKind::Bind);
     throwDest = ValueDest(varDecl, dest.getContext());
   }
 

@@ -174,8 +174,10 @@ public:
   }
   ValueDest &operator=(ValueDest &&rhs) {
     representation = std::move(rhs.representation);
+    patternDeclKind = rhs.patternDeclKind;
     context = rhs.context;
     rhs.representation = NullRepresentation();
+    rhs.patternDeclKind = PatternDeclKind::kNone;
     return *this;
   }
 
