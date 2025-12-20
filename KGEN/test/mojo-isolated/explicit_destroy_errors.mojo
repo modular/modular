@@ -45,6 +45,7 @@ struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
 
 # CHECK-LABEL: @"foo
 # expected-error @below {{Unhandled explicit_destroy type UnknownDestructibility}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
 fn foo[T: UnknownDestructibility](var x: T):
     pass
 
