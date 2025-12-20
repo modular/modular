@@ -668,7 +668,7 @@ fn test_imp_copyable_linear(var x: ImpCopyableLinear, var y: ImpCopyableLinear):
 # ===----------------------------------------------------------------------=== #
 
 
-struct Pair[T: Movable](Movable):
+struct Pair[T: Movable & ImplicitlyDestructible](Movable):
     var first: Self.T
     var second: Self.T
 
