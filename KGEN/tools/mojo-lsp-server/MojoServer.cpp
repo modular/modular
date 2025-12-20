@@ -2307,6 +2307,7 @@ struct MojoServer::Impl {
       std::lock_guard<std::mutex> lock(filesMutex);
       files.clear();
       notebookCellToFile.clear();
+      pendingDocContents.clear();
     }
   }
 
@@ -2375,6 +2376,9 @@ struct MojoServer::Impl {
         MojoTextDocumentRef::create(uri, std::move(contents), version,
                                     sendDiagnosticsFn, runtime, includeDirs);
 
+    // Clear pending contents since they're now being parsed.
+    pendingDocContents.erase(uri.file());
+
     it->second->startDocumentParse(std::move(chain), telemetryCtx, progressMgr);
   }
 
@@ -2406,8 +2410,8 @@ struct MojoServer::Impl {
 
   /// The files held by the server, mapped by their URI file name.
   llvm::StringMap<MojoDocumentRef> files;
-  std::mutex filesMutex; // Guards access to files, notebookCellToFile, and
-                         // documentGenerations.
+  std::mutex filesMutex; // Guards access to files, notebookCellToFile,
+                         // documentGenerations, and pendingDocContents.
 
   /// Generation counter for detecting stale debounced updates. Each time a
   /// document is opened, it gets a new generation. The debouncer callback
@@ -2415,6 +2419,12 @@ struct MojoServer::Impl {
   /// a document is closed/reopened while a debounced update is in flight.
   std::atomic<uint64_t> nextDocumentGeneration{0};
   llvm::StringMap<uint64_t> documentGenerations;
+
+  /// Current (unparsed) contents for documents with pending debounced updates.
+  /// When debouncing, we don't update the actual document until the delay
+  /// expires, but we need to track the current contents so that subsequent
+  /// incremental edits are applied to the right base.
+  llvm::StringMap<std::string> pendingDocContents;
 
   /// A mapping from individual notebook cells to their documents.
   llvm::StringMap<MojoDocumentRef> notebookCellToFile;
@@ -2566,29 +2576,36 @@ static StringRef getLine(llvm::SourceMgr &mgr, int lineNum) {
 void MojoServer::updateDocument(
     const lsp::URIForFile &uri,
     ArrayRef<lsp::TextDocumentContentChangeEvent> changes, int64_t version) {
-  MojoDocumentRef docRef;
+  std::string contents;
   uint64_t generation = 0;
   {
     std::lock_guard<std::mutex> lock(impl->filesMutex);
     auto it = impl->files.find(uri.file());
     if (it == impl->files.end())
       return;
-    docRef = it->second.copy();
+
     // Get the current generation for this document to pass to the debouncer.
     auto genIt = impl->documentGenerations.find(uri.file());
     if (genIt != impl->documentGenerations.end())
       generation = genIt->second;
+
+    // Get the base contents for applying incremental changes. If there are
+    // pending (not yet parsed) contents from previous debounced updates, use
+    // those. Otherwise, use the document's last parsed contents.
+    auto pendingIt = impl->pendingDocContents.find(uri.file());
+    if (pendingIt != impl->pendingDocContents.end()) {
+      contents = pendingIt->second;
+    } else {
+      MojoTextDocument *textDoc = dyn_cast<MojoTextDocument>(&*it->second);
+      if (!textDoc) {
+        lsp::Logger::error("Updating a non-text document: {0}", uri.file());
+        return;
+      }
+      contents = textDoc->getContents().str();
+    }
   }
 
-  MojoTextDocument *textDoc = dyn_cast<MojoTextDocument>(&*docRef);
-  if (!textDoc) {
-    lsp::Logger::error("Updating a non-text document: {0}", uri.file());
-    return;
-  }
-
-  // Try to update the document. If we fail, erase the file from the server. A
-  // failed updated generally means we've fallen out of sync somewhere.
-  std::string contents = textDoc->getContents().str();
+  // Apply incremental changes to get the new contents.
   for (const auto &change : changes) {
     if (!change.range) {
       contents = change.text;
@@ -2623,6 +2640,12 @@ void MojoServer::updateDocument(
   // Schedule the document update with debouncing. This avoids parsing on every
   // keystroke, instead waiting for a short delay after the user stops typing.
   if (impl->debouncer) {
+    // Store the updated contents so subsequent incremental edits have the
+    // correct base. This is cleared when the debouncer callback fires.
+    {
+      std::lock_guard<std::mutex> lock(impl->filesMutex);
+      impl->pendingDocContents[uri.file()] = contents;
+    }
     impl->debouncer->scheduleUpdate(uri, std::move(contents), version,
                                     generation);
   } else {
@@ -2647,6 +2670,8 @@ void MojoServer::removeDocument(const lsp::URIForFile &uri) {
     impl->files.erase(it);
     // Erase the generation so any in-flight debounced updates are rejected.
     impl->documentGenerations.erase(uri.file());
+    // Clear any pending contents for this file.
+    impl->pendingDocContents.erase(uri.file());
   }
 
   { // Clear out the semantic token state for the file.
