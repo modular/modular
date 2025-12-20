@@ -61,7 +61,7 @@ struct S1[X: Int](Movable, R1, R1Child, R2):
     # CHECK: kgen.conformance @{{.*}}Movable
     # CHECK-NEXT: kgen.witness "__moveinit__{{.*}}" : {{.*}} = {{.*}}@S1::@"__moveinit__{{.*}}"<:!Int X>
     # CHECK-NEXT: kgen.witness "__moveinit__is_trivial" : !Bool = {:i1 1}
-    # CHECK-NEXT: immediateParents = #M<symbols[[[ANYTYPE_NAME]]]>
+    # CHECK-NEXT: traitRef = @std::@builtin::@stubs::@Movable
 
     # CHECK: kgen.conformance @{{.*}}R1
     # CHECK-NEXT: kgen.witness "N" : !Int = X

@@ -1427,7 +1427,8 @@ struct SomeValue[T: ImplicitlyCopyable]:
 # This triggered a bug handling parameterized types with substitutions, reported
 # on discord.
 # CHECK-LABEL: ParametricTask
-struct ParametricTask[T1: Movable, T2: Movable](Movable):
+struct ParametricTask[T1: Movable & ImplicitlyDestructible,
+                      T2: Movable & ImplicitlyDestructible](Movable):
     var t1: Self.T1
     var t2: Self.T2
     fn __init__(out self, var t1: Self.T1, var t2: Self.T2):

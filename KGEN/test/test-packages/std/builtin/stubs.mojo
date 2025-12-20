@@ -731,12 +731,6 @@ trait AnyType:
     pass
 
 
-@explicit_destroy
-trait ExplicitlyDestroyedCopyable:
-    fn __copyinit__(out self, existing: Self, /):
-        ...
-
-
 trait Copyable(Movable):
     fn __copyinit__(out self, existing: Self, /):
         ...
@@ -764,6 +758,7 @@ trait ExplicitlyDestroyedMovable:
         ...
 
 
+@explicit_destroy
 trait Movable:
     fn __moveinit__(out self, deinit existing: Self, /):
         ...
