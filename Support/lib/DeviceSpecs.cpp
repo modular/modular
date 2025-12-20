@@ -12,7 +12,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/Support/Debug.h"
+#include "llvm/Support/DebugLog.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
@@ -162,8 +162,8 @@ static llvm::Triple::OSType canonOSType(llvm::Triple::OSType type) {
 /// heuristics to account for version numbers, vendor names, etc.
 static ErrorOrSuccess satisfiesTriple(const llvm::Triple &provided,
                                       const llvm::Triple &required) {
-  LLVM_DEBUG(llvm::dbgs() << "provided: " << provided.str() << "\n");
-  LLVM_DEBUG(llvm::dbgs() << "required: " << required.str() << "\n");
+  LDBG() << "provided: " << provided.str() << "\n"
+         << "required: " << required.str();
 
   if (required.str().empty()) {
     // No constraint.
@@ -263,9 +263,10 @@ satisfiesFeatures(const std::vector<std::string> &provided,
 
 ErrorOrSuccess
 TargetInfo::checkSatisfiesRequirements(const TargetInfo &required) const {
-  LLVM_DEBUG(llvm::dbgs() << "provided:\n" << serializeToJSON() << "\n\n");
-  LLVM_DEBUG(llvm::dbgs() << "required:\n"
-                          << required.serializeToJSON() << "\n\n");
+  LDBG_OS([&](raw_ostream &os) {
+    os << "provided:\n" << serializeToJSON() << "\n";
+    os << "required:\n" << required.serializeToJSON();
+  });
   if (auto errOr = satisfiesTriple(triple, required.triple))
     return errOr.takeError();
   if (auto errOr = satisfiesArch(arch, required.arch))

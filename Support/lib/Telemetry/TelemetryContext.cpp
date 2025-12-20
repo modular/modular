@@ -26,7 +26,7 @@
 #include "opentelemetry/sdk/metrics/view/view.h"
 #include "opentelemetry/sdk/metrics/view/view_registry.h"
 #include "llvm/Support/BLAKE3.h"
-#include "llvm/Support/Debug.h"
+#include "llvm/Support/DebugLog.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
@@ -120,9 +120,8 @@ static void configureInternalLogging(StringRef internalLogConfig) {
     } else if (internalLogConfig == "debug") {
       logLevel = opentelemetry::sdk::common::internal_log::LogLevel::Debug;
     } else {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "Unrecognized log level for telemetry.internal_log: "
-                 << internalLogConfig);
+      LDBG() << "Unrecognized log level for telemetry.internal_log: "
+             << internalLogConfig;
       internalLogsOff = true;
     }
   }

@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/TypeID.h"
-#include "llvm/Support/Debug.h"
+#include "llvm/Support/DebugLog.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <cstddef>
@@ -25,8 +25,7 @@ Detail::RawTypeID Detail::TypeInfoTable::getSlow(std::string_view typeName,
 
   size_t id = entries.emplace_back(typeName, destructor);
   assert(id != Detail::kInvalidRawTypeID && "too many type ids registered");
-  LLVM_DEBUG(llvm::dbgs() << "Registering type " << typeName << " with " << id
-                          << "\n");
+  LDBG() << "Registering type " << typeName << " with " << id;
   [[maybe_unused]] auto pair = ids.try_emplace(typeName, id);
   assert(pair.second && "already registered type");
   return id;

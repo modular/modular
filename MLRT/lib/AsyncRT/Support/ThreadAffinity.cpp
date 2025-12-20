@@ -13,7 +13,7 @@
 #include "Support/MArchTarget/Host.h"
 #include "Support/Threading/ThreadAffinity.h"
 
-#include "llvm/Support/Debug.h"
+#include "llvm/Support/DebugLog.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -61,9 +61,9 @@ M::AsyncRT::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
     } else {
       numThreads = M::getNumLogicalCores();
     }
-    LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Defaulting number of "
-                            << "threads to physical cores across all "
-                            << "sockets " << numThreads << "\n");
+    LDBG() << "getThreadAffinityCpuIds: Defaulting number of "
+           << "threads to physical cores across all "
+           << "sockets " << numThreads;
   }
   if (usingLimits &&
       numThreads > std::max(1UL, (*limitsOr->millicores) / 1000)) {
@@ -72,15 +72,13 @@ M::AsyncRT::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
     // be affected here, meaning that it will be unbounded, but we don't need
     // to set that explicitly.
     size_t limit = std::max(1UL, (*limitsOr->millicores) / 1000);
-    LLVM_DEBUG(llvm::dbgs()
-               << "getThreadAffinityCpuIds: Reducing number of threads from "
-               << numThreads << " to " << limit << ".\n");
+    LDBG() << "getThreadAffinityCpuIds: Reducing number of threads from "
+           << numThreads << " to " << limit << ".";
     numThreads = limit;
   }
   if (numThreads > maxThreads) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "getThreadAffinityCpuIds: Reducing number of threads from "
-               << numThreads << " to " << maxThreads << ".\n");
+    LDBG() << "getThreadAffinityCpuIds: Reducing number of threads from "
+           << numThreads << " to " << maxThreads << ".";
     numThreads = maxThreads;
   }
 
@@ -89,19 +87,18 @@ M::AsyncRT::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
     ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
     if ([[maybe_unused]] const char *err = errOrSystemInfo.getError()) {
       // We will be using the defaults, already set above.
-      LLVM_DEBUG(
-          llvm::dbgs()
-          << "getThreadAffinityCpuIds: Unable to determine CPUSystemInfo: "
-          << err << "\n");
+      LDBG() << "getThreadAffinityCpuIds: Unable to determine CPUSystemInfo: "
+             << err;
     } else {
       // We will be using the preferred CPU IDs, set below.
-      LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: System info is "
-                              << *errOrSystemInfo << "\n");
+      LDBG() << "getThreadAffinityCpuIds: System info is " << *errOrSystemInfo;
       cpuIDs = errOrSystemInfo->getPreferredCpuIDs(numThreads);
-      LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Using thread "
-                                 "affinity for CPUs {";
-                 llvm::interleave(cpuIDs, llvm::dbgs(), ", ");
-                 llvm::dbgs() << "}\n";);
+      LDBG_OS([&](raw_ostream &os) {
+        os << "getThreadAffinityCpuIds: Using thread "
+              "affinity for CPUs {";
+        llvm::interleave(cpuIDs, os, ", ");
+        os << "}";
+      });
     }
   }
   return cpuIDs;
@@ -114,8 +111,7 @@ void M::AsyncRT::runWithThreadAffinity(size_t cpuID,
   } else {
     ErrorOrSuccess errOr = M::runWithThreadAffinity(cpuID, workFn);
     if ([[maybe_unused]] const char *err = errOr.getError()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "unable to run with thread affinity: " << err << "\n");
+      LDBG() << "unable to run with thread affinity: " << err;
       workFn();
     }
   }
@@ -124,9 +120,7 @@ void M::AsyncRT::runWithThreadAffinity(size_t cpuID,
 void M::AsyncRT::setThreadAffinity(size_t cpuID) {
   if (cpuID != kNoAffinity) {
     ErrorOrSuccess errOr = M::setThreadAffinity(cpuID);
-    if ([[maybe_unused]] const char *err = errOr.getError()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "unable to set thread affinity: " << err << "\n");
-    }
+    if ([[maybe_unused]] const char *err = errOr.getError())
+      LDBG() << "unable to set thread affinity: " << err;
   }
 }
