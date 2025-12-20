@@ -352,13 +352,10 @@ struct IntPairRange:
     fn __init__(out self):
         pass
 
-    fn __has_next__(self) -> Bool:
-        pass
-
     fn __len__(self) -> Int:
         pass
 
-    fn __next__(mut self) -> Tuple[Int, Int]:
+    fn __next__(mut self) raises StopIteration -> Tuple[Int, Int]:
         pass
 
     fn __iter__(self) -> Self:
