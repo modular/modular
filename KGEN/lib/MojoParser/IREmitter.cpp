@@ -1450,12 +1450,6 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
            (refOp.getKind() == VarDeclKind::Ref ||
             refOp.getKind() == VarDeclKind::Bind) &&
            "not a ref or bind to initialize!");
-    // There must be an ASTDecl for it with the same name, in scope.
-    ArrayRef<ASTDecl *> decls =
-        declScope.lookupInCurrentScope(refOp.getNameAttr());
-    assert(decls.size() == 1 &&
-           cast_or_null<VarDeclOp>(decls[0]->getIfOperation()) == refOp &&
-           "lookup failure");
 
     // Handle 'bind' by determining if this is a 'var' or immutable 'ref'.
     if (refOp.getKind() == VarDeclKind::Bind) {
@@ -1485,10 +1479,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
     // If this is a 'ref', then we want non-MValues to be an error.
     Value mValue = emitRefValue(value, EC_RefBinding);
-    if (!mValue) {
-      decls[0]->setErroneous();
+    if (!mValue)
       return {};
-    }
 
     // Now that we have the origin of the input, we can replace the placeholder
     // with the actual type so that uses of it will have the correct origin.
