@@ -1346,8 +1346,8 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   //
   // into:
   //   var $ITER = iterable.__iter__()
-  //   ref e / var e
   //   while True:
+  //       ref e / var e
   //       try:
   //           e = $ITER.__next_ref__()
   //           # or: e = $ITER.__next__()
@@ -1357,77 +1357,47 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   //
   // or:
   //   var $ITER = iterable.__iter__()
-  //   ref e / var e
   //   while $ITER.__has_next__():
-  //       e = $ITER.__next_ref__()
-  //       # or: e = $ITER.__next__()
+  //       ref e = $ITER.__next_ref__()
+  //       # or: var e = $ITER.__next__()
   //       <BODY>
-  // TODO: remove the __has_next__ form of this.
-  auto earlyEmitter = getEmitter();
+  // TODO(26.2): remove the __has_next__ form of this.
+  auto emitter = getEmitter();
 
   // Emit the expression for the iterable.
-  ASTExprAnd<AnyValue> loadedSeq = {
-      earlyEmitter.emitExpr(seqExpr, EC_ForIterator), seqExpr};
+  ASTExprAnd<AnyValue> loadedSeq = {emitter.emitExpr(seqExpr, EC_ForIterator),
+                                    seqExpr};
   if (!loadedSeq.ir)
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
   // Get an iterator into the iterable by emitting a call to `__iter__`.
   VarDeclOp iterVar =
-      earlyEmitter.emitVarDecl("$ITER", UnresolvedType::get(getContext()),
-                               forLocation, VarDeclKind::Synthesized);
+      emitter.emitVarDecl("$ITER", UnresolvedType::get(getContext()),
+                          forLocation, VarDeclKind::Synthesized);
   ValueDest rangeDest(iterVar, EC_ForIterator);
-  if (!earlyEmitter.emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
-                                        CallSyntax::kMethodCall, seqExpr))
+  if (!emitter.emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
+                                   CallSyntax::kMethodCall, seqExpr))
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
   // Now that we have the iterator (and its type), see if we're calling
   // __next_ref__ or __next__ to know what we're dealing with.
   CallOperands nextOperands({{MLValue(iterVar), seqExpr}});
   ASTType iterType = iterVar.getType().getElementType();
-  PValue nextFn = OverloadSet::lookupAndResolve(
-      iterType, "__next_ref__", nextOperands, seqExpr, CallSyntax::kMethodCall,
-      earlyEmitter);
+  PValue nextFn =
+      OverloadSet::lookupAndResolve(iterType, "__next_ref__", nextOperands,
+                                    seqExpr, CallSyntax::kMethodCall, emitter);
   if (!nextFn) {
     nextFn = OverloadSet::lookupAndResolve(iterType, "__next__", nextOperands,
                                            seqExpr, CallSyntax::kMethodCall,
-                                           earlyEmitter);
+                                           emitter);
     if (!nextFn) {
-      earlyEmitter.emitError(seqExpr->getLoc())
+      emitter.emitError(seqExpr->getLoc())
           << iterType
           << " does not implement the '__next__' or '__next_ref__' method "
              "required for iteration"
           << seqExpr->getRange();
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     }
-  }
-
-  // If we have a throwing __next__ method, we need to emit the indvar target
-  // before the loop, so it is live in both the condition and loop body.  The
-  // ultimate target needs to be in the target expression (which could involve
-  // destructuring a tuple etc) but the destructuring only needs to happen in
-  // the loop body if so.
-  ValueDest nextValueDest(EC_ForIterator);
-
-  // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
-  ValueDest indVarTargetDest(targetExpr, EC_ForIterator);
-  indVarTargetDest.setPatternDeclKind(PatternDeclKind::kBind);
-
-  auto nextFnType = sugarCast<FnTypeGeneratorType>(nextFn.getType());
-  MLValue nextDestBuf;
-
-  // Push a new local variable scope for the subsequent body.
-  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-  pushChildScope(scopeGuard, keepDecl);
-
-  auto emitter = getEmitter();
-  if (!nextFnType.isRefResult()) {
-    nextDestBuf = indVarTargetDest.getMLValueForResult(
-        forLoc, nextFnType.getUserResultType(), emitter);
-    if (!nextDestBuf)
-      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-    // For the call, assign into the MLValue.
-    nextValueDest = ValueDest(LValue(nextDestBuf), EC_ForIterator);
   }
 
   // Determine if we're modern or legacy structure.
@@ -1454,57 +1424,54 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     CValue hasNextBool = emitter.emitNamedMethodCall(
         "__has_next__", CallOperands({{MLValue(iterVar), seqExpr}}), lengthDest,
         CallSyntax::kMethodCall, seqExpr);
-    if (!hasNextBool) {
-      nextValueDest.resetForError(emitter);
-      indVarTargetDest.resetForError(emitter);
+    if (!hasNextBool)
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-    }
     CValue hasNext = emitter.emitI1({hasNextBool, seqExpr}, EC_ForIterator);
+    if (!hasNext)
+      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     SRValue shouldContinue =
         emitter.emitSRValue({hasNext, seqExpr}, EC_ForIterator);
-    if (!shouldContinue) {
-      nextValueDest.resetForError(emitter);
-      indVarTargetDest.resetForError(emitter);
+    if (!shouldContinue)
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-    }
     LIT::LoopConditionOp::create(*emitter.builder, forLocation, shouldContinue);
   }
 
   // Create the body. Add Target element to the continue block by calling next
   // method. Emit the result into an implicitly declared variable at the current
   // scope.
+
+  // Push a new local variable scope for the subsequent body.
   builder.setInsertionPointToStart(bodyBlock);
+  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+  pushChildScope(scopeGuard, keepDecl);
 
   // Emit the call to __next__ with the target as the destination to assign
   // into.  This will synthesize the VarDeclOp from the inferred result type,
   // which will be in scope for the body that we will parse.
-  CValue nextResultVal;
+  ValueDest indvarDest(targetExpr, EC_ForIterator);
+  // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
+  indvarDest.setPatternDeclKind(PatternDeclKind::kBind);
+
+  // Call __next_ref__ or __next__, with an emitter set to the right body
+  // scope.
   if (isThrowsCase) {
     auto emitter = getEmitter();
-    nextResultVal = emitter.emitIndirectCallInTryBlock(
-        nextFn, std::move(nextOperands), nextValueDest, CallSyntax::kMethodCall,
-        seqExpr, [&](VarDeclOp errDecl) {
-          // Just break on error.  We ignore the actual error value.
-          BreakOp::create(*emitter.builder, loopOp.getLoc());
-        });
+    if (!emitter.emitIndirectCallInTryBlock(
+            nextFn, std::move(nextOperands), indvarDest,
+            CallSyntax::kMethodCall, seqExpr, [&](VarDeclOp errDecl) {
+              // Just break on error.  We ignore the actual error value.
+              BreakOp::create(*emitter.builder, loopOp.getLoc());
+            }))
+      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
   } else {
-    nextResultVal = getEmitter().emitIndirectCall(
-        nextFn, std::move(nextOperands), nextValueDest, CallSyntax::kMethodCall,
-        seqExpr);
-  }
-  if (!nextResultVal) {
-    indVarTargetDest.resetForError(emitter);
-    return LoopResult(LoopResult::ErrorKind::inLoopStmt);
+    if (!getEmitter().emitIndirectCall(nextFn, std::move(nextOperands),
+                                       indvarDest, CallSyntax::kMethodCall,
+                                       seqExpr))
+      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
   }
 
-  // Now that we got the next value, complete any destructuring into the target
-  // expression that might be necessary.
-  if (nextFnType.isRefResult()) {
-    assert(nextResultVal.isMValue() && "ref result must be a MValue");
-  } else {
-    nextResultVal = MLValue(nextDestBuf);
-  }
-  (void)getEmitter().emitCResult(nextResultVal, seqExpr, indVarTargetDest);
+  builder.setInsertionPointToEnd(&loopOp.getBodyRegion().front());
 
   // We're parsing the body at this point, no need to worry about that.
   skipBodyOnFailure.release();
