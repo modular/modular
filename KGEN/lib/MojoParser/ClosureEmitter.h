@@ -198,12 +198,13 @@ private:
                                       ParamDeclAttr originSet);
   void addConformanceToExtern(ASTDecl &moduleDecl, ASTDecl &structDecl,
                               FuncTypeGeneratorType originalSignature);
-  /// UnknownDestructibility is the base metatype for all types.
-  ClosureParent unknownDestructibility;
+  /// AnyType is the base metatype for all types.
+  ClosureParent anyParent;
   /// Movable trait is a parent of all closures. Cache its defining op.
   ClosureParent moveParent;
-  /// Anytype trait is a parent of all closures. Cache its defining op.
-  ClosureParent anyParent;
+  /// ImplicitlyDestructible trait is a parent of all closures. Cache its
+  /// defining op.
+  ClosureParent implicitlyDestructibleParent;
   /// Copy trait is a parent of some closures. Cache its defining op.
   ClosureParent copyParent;
   /// ImplicitlyCopyable trait is a parent of some closures. It has no defining

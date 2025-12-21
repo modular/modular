@@ -89,7 +89,7 @@ fn foo1[T: Movable](var x: T) -> T:
     return x^
 
 
-fn foo2[T: UnknownDestructibility](x: T):
+fn foo2[T: AnyType](x: T):
     # Is fine, since x is a borrow
     pass
 
@@ -108,7 +108,8 @@ struct I(Iterator):
 
 
 struct _MapIterator[
-    InnerIteratorType: Iterator, //,
+    InnerIteratorType: Iterator,
+    //,
     Function: fn (InnerIteratorType.Element) -> Int,
 ]():
     var _inner: Self.InnerIteratorType

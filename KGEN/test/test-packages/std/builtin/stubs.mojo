@@ -773,9 +773,6 @@ trait ImplicitlyDestructible:
     comptime __del__is_trivial: Bool
 
 
-comptime UnknownDestructibility = AnyType
-
-
 @register_passable("trivial")
 trait AnyRPTrivialType:
     pass
@@ -900,16 +897,13 @@ struct VariadicListMem[
         return type_of(result)(0, Pointer(to=self))
 
 
-comptime _AnyTypeMetaType = type_of(AnyType)
-
-
 @register_passable
 struct VariadicPack[
     elt_is_mutable: Bool,
     //,
     is_owned: Bool,
     origin: Origin[elt_is_mutable],
-    element_trait: _AnyTypeMetaType,
+    element_trait: type_of(AnyType),
     *element_types: element_trait,
 ]:
     comptime _mlir_pack_type = __mlir_type[
