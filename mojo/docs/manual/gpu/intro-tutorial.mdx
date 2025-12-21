@@ -320,9 +320,9 @@ compile-time parameters and metaprogramming.)
 :::note
 
 `DeviceContext` also includes
-[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
 and
-[`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
+[`compile_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function_checked)
 methods. However, these methods currently don't typecheck the arguments to the
 compiled kernel function, which can lead to obscure run-time errors if the
 argument ordering, types, or count doesn't match the kernel function's
@@ -336,8 +336,8 @@ also work correctly on Apple silicon GPUs.
 Note that `enqueue_function_checked()` and `compile_function_checked()`
 currently require the kernel function to be provided *twice* as parameters. This
 requirement will be removed in a future API update, when typechecking will
-become the default behavior for both `enqueue_function()` and
-`compile_function()`.
+become the default behavior for both `enqueue_function_checked()` and
+`compile_function_checked()`.
 
 :::
 

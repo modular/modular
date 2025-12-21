@@ -2138,18 +2138,19 @@ struct LayoutTensor[
     fn load[
         width: Int
     ](self, coords: IndexList[**_]) -> SIMD[Self.dtype, width]:
-        """Load a SIMD vector from the tensor at the specified 2D coordinates.
+        """Load a SIMD vector from the tensor at the specified coordinates.
 
         Performs a vectorized load operation from the tensor's memory,
-        retrieving `width` consecutive elements starting at position (m, n).
-        This method enables efficient SIMD operations on tensor data.
+        retrieving `width` consecutive elements starting at the position specified
+        by `coords`. This method enables efficient SIMD operations on tensor data
+        and works with tensors of any rank.
 
         Parameters:
             width: The number of elements to load into the SIMD vector. Should match
                     the target hardware's vector width for optimal performance.
 
         Args:
-            coords: The coordinates to index.
+            coords: The coordinates to index. Must have the same size as the tensor's rank.
 
         Returns:
             A SIMD vector containing 'width' consecutive elements from the tensor.
@@ -2285,6 +2286,55 @@ struct LayoutTensor[
         return self.ptr.load[width=width, alignment=_alignment](
             self._offset(m, n)
         )
+
+    @always_inline("nodebug")
+    fn aligned_load[
+        width: Int
+    ](self, coords: IndexList[**_]) -> SIMD[Self.dtype, width]:
+        """Load a SIMD vector with alignment guarantees from the tensor.
+
+        Performs an aligned vectorized load operation from the tensor's memory,
+        retrieving `width` consecutive elements starting at the position specified
+        by `coords`. The alignment is automatically calculated based on the SIMD width
+        and dtype. This method enables efficient SIMD operations on tensor data and
+        works with tensors of any rank.
+
+        Parameters:
+            width: The number of elements to load into the SIMD vector. Should
+                match the target hardware's vector width for optimal performance.
+
+        Args:
+            coords: The coordinates to index. Must have the same size as the tensor's rank.
+
+        Returns:
+            A SIMD vector containing 'width' consecutive elements from the tensor.
+
+        Performance (copied from 'aligned_load[width](m,n)'):
+
+        - Uses aligned memory access which is faster than unaligned access on
+            most architectures.
+        - The alignment is automatically calculated based on the SIMD width and
+            dtype.
+        - Can be up to 2x faster than unaligned loads on architectures that
+            require alignment.
+
+        Notes:
+
+        - The caller must ensure that the memory at the specified coordinates is
+            properly aligned. Misaligned access with this method may cause hardware
+            exceptions on some architectures.
+        - No bounds checking is performed. Accessing out-of-bounds indices will
+            result in undefined behavior.
+        - The elements are loaded according to the tensor's stride configuration.
+        - The last dimension must have unit stride (stride == 1) for this operation
+            to be valid.
+        """
+        __comptime_assert self.rank == coords.size
+        var idx = self.runtime_layout(
+            RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
+        )
+        comptime _alignment = align_of[SIMD[Self.dtype, width]]()
+        return self.ptr.load[width=width, alignment=_alignment](idx)
 
     @always_inline("nodebug")
     fn store[

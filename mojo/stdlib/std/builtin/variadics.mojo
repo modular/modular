@@ -179,6 +179,58 @@ struct Variadic:
         element_types: The variadic sequence of types to search.
     """
 
+    comptime map_types_to_types[
+        From: type_of(AnyType),
+        To: type_of(AnyType),
+        //,
+        element_types: Variadic.TypesOfTrait[From],
+        Mapper: _TypeToTypeGenerator[From, To],
+    ] = _ReduceVariadicAndIdxToVariadic[
+        BaseVal = Variadic.empty_of_trait[To],
+        VariadicType=element_types,
+        Reducer = _MapTypeToTypeReducer[From, To, Mapper],
+    ]
+    """Map a variadic of types to a new variadic of types using a mapper.
+    
+    Returns a new variadic of types resulting from applying `Mapper[T]` to each
+    type in the input variadic.
+
+    Parameters:
+        From: The trait that the input types conform to.
+        To: The trait that the output types conform to.
+        element_types: The input variadic of types to map.
+        Mapper: A generator that maps a type to another type. The generator type is `[T: From] -> To`.
+
+    Examples:
+    
+    ```mojo
+    from std.builtin.variadics import Variadic
+    from testing import *
+
+    trait MyError:
+        comptime ErrorType: AnyType
+
+    struct Foo(MyError):
+        comptime ErrorType = Int
+
+    struct Baz(MyError):
+        comptime ErrorType = String
+
+    # Given a variadic of types [Foo, Baz]
+    comptime input_types = Variadic.types[T=MyError, Foo, Baz]
+
+    # And a mapper that maps the type to it's MyError `ErrorType` type
+    comptime mapper[T: MyError] = T.ErrorType
+
+    # The resulting variadic of types is [Int, String]
+    comptime output = Variadic.map_types_to_types[input_types, mapper]
+
+    assert_equal(Variadic.size(output), 2)
+    assert_true(_type_is_eq[output[0], Int]())
+    assert_true(_type_is_eq[output[1], String]())
+    ```
+    """
+
     comptime slice_types[
         T: type_of(AnyType),
         //,
@@ -1018,6 +1070,10 @@ Parameters:
 # VariadicMap
 # ===-----------------------------------------------------------------------===#
 
+comptime _TypeToTypeGenerator[
+    From: type_of(AnyType), To: type_of(AnyType)
+] = __mlir_type[`!lit.generator<<"From":`, From, `>`, To, `>`]
+"""A generator of type [T: From] -> To, which maps a type to another type."""
 
 comptime _VariadicIdxToTypeGeneratorTypeGenerator[
     From: type_of(AnyType), To: type_of(AnyType)
@@ -1138,6 +1194,14 @@ comptime _ContainsReducer[
     idx: Int,
 ] = Variadic.values[_type_is_eq_parse_time[From[idx], Type]() or Prev[0]]
 
+comptime _MapTypeToTypeReducer[
+    FromTrait: type_of(AnyType),
+    ToTrait: type_of(AnyType),
+    Mapper: _TypeToTypeGenerator[FromTrait, ToTrait],
+    Prev: Variadic.TypesOfTrait[ToTrait],
+    From: Variadic.TypesOfTrait[FromTrait],
+    idx: Int,
+] = Variadic.concat[Prev, Variadic.types[T=ToTrait, Mapper[From[idx]]]]
 
 comptime _SliceReducer[
     Trait: type_of(AnyType),
