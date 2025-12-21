@@ -42,7 +42,7 @@ fn _default_invariant[mut: Bool]() -> Bool:
 
 @register_passable("trivial")
 struct LegacyUnsafePointer[
-    type: UnknownDestructibility,
+    type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
@@ -1139,7 +1139,7 @@ struct LegacyUnsafePointer[
 
     @always_inline("builtin")
     fn bitcast[
-        T: UnknownDestructibility = Self.type,
+        T: AnyType = Self.type
     ](self) -> LegacyUnsafePointer[
         T,
         address_space = Self.address_space,

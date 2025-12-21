@@ -45,9 +45,9 @@ fn rebind[
 
 @always_inline("nodebug")
 fn rebind[
-    src_type: UnknownDestructibility,
+    src_type: AnyType,
     //,
-    dest_type: UnknownDestructibility,
+    dest_type: AnyType,
 ](ref src: src_type) -> ref [src] dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
     same type as a parameter result type `dest_type` after function
@@ -107,8 +107,8 @@ fn rebind_var[
 
 
 comptime downcast[
-    _Trait: type_of(UnknownDestructibility),
-    T: UnknownDestructibility,
+    _Trait: type_of(AnyType),
+    T: AnyType,
 ] = __mlir_attr[`#kgen.downcast<`, T, `> : `, _Trait]
 """Type alias for downcasting a type to conform to a trait.
 
@@ -142,7 +142,7 @@ fn trait_downcast[
 
 @always_inline
 fn trait_downcast[
-    T: UnknownDestructibility, //, Trait: type_of(UnknownDestructibility)
+    T: AnyType, //, Trait: type_of(AnyType)
 ](ref src: T) -> ref [src] downcast[Trait, T]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving

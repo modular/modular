@@ -82,8 +82,8 @@ fn constrained[cond: Bool]():
 fn _constrained_conforms_to[
     cond: Bool,
     *,
-    Parent: UnknownDestructibility,
-    Element: UnknownDestructibility,
+    Parent: AnyType,
+    Element: AnyType,
     ParentConformsTo: StaticString,
     ElementConformsTo: StaticString = ParentConformsTo,
 ]():

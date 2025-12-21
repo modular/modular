@@ -22,7 +22,7 @@ from sys.intrinsics import _type_is_eq
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
+struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
 
@@ -229,7 +229,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__[T: UnknownDestructibility](ref self) -> ref [self] T:
+    fn __getitem__[T: AnyType](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -255,9 +255,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn _get_ptr[
-        T: UnknownDestructibility
-    ](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
+    fn _get_ptr[T: AnyType](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
         comptime idx = Self._check[T]()
         __comptime_assert idx != Self._sentinel, "not a union element type"
         var ptr = UnsafePointer(to=self._impl).address
@@ -389,7 +387,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         """
         self = Self(value^)
 
-    fn isa[T: UnknownDestructibility](self) -> Bool:
+    fn isa[T: AnyType](self) -> Bool:
         """Check if the variant contains the required type.
 
         Parameters:
@@ -401,7 +399,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         comptime idx = Self._check[T]()
         return self._get_discr() == idx
 
-    fn unsafe_get[T: UnknownDestructibility](ref self) -> ref [self] T:
+    fn unsafe_get[T: AnyType](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This doesn't explicitly check that your value is of that type!
@@ -422,7 +420,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         return self._get_ptr[T]()[]
 
     @staticmethod
-    fn _check[T: UnknownDestructibility]() -> Int:
+    fn _check[T: AnyType]() -> Int:
         @parameter
         for i in range(len(VariadicList(Self.Ts))):
             if _type_is_eq[Self.Ts[i], T]():
@@ -430,7 +428,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         return Self._sentinel
 
     @staticmethod
-    fn is_type_supported[T: UnknownDestructibility]() -> Bool:
+    fn is_type_supported[T: AnyType]() -> Bool:
         """Check if a type can be used by the `Variant`.
 
         Parameters:

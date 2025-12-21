@@ -324,7 +324,7 @@ what we publish.
   method taking `deinit self` that the programmer will be required to call
   explicitly whenever an owned instance is no longer used.
 
-  The `UnknownDestructibility` trait can be used in parameters to denote
+  The updated `AnyType` trait can be used in parameters to denote
   generic code that supports object instances that cannot be implicitly
   destroyed.
 

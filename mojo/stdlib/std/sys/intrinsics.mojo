@@ -765,9 +765,7 @@ fn _mlirtype_is_eq[t1: AnyTrivialRegType, t2: AnyTrivialRegType]() -> Bool:
     ]
 
 
-fn _type_is_eq[
-    t1: UnknownDestructibility, t2: UnknownDestructibility
-]() -> Bool:
+fn _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
     """Compares the two type for equality.
 
     Parameters:
@@ -791,9 +789,7 @@ fn _type_is_eq[
 
 
 @always_inline("builtin")
-fn _type_is_eq_parse_time[
-    t1: UnknownDestructibility, t2: UnknownDestructibility
-]() -> Bool:
+fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
     """Compares the two type for equality at parse-time.
 
     Parameters:
