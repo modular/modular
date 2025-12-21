@@ -457,8 +457,7 @@ fn for_range_loop():
 struct RefIter[list_mutability: Bool, //,
                list_origin: Origin[list_mutability]._mlir_type]:
     fn __init__(out self): pass
-    fn __next_ref__(mut self) -> ref [Self.list_origin] Int: pass
-    fn __has_next__(self) -> Bool: return False
+    fn __next_ref__(mut self) raises StopIteration -> ref [Self.list_origin] Int: pass
 
 struct ListWithRefIter:
     fn __init__(out self): pass
@@ -473,13 +472,9 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$ITER)
     for ref item in mut_list_ref_iter:
         # CHECK: lit.loop cond {
-        # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$ITER
-        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
-        # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
-        # CHECK:   lit.loop.condition [[COND]]
         # CHECK: } body {
-        # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next_ref__{{.*}}(%$ITER)
-        # CHECK:   %item = lit.var.decl "item" ref
+        # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next_ref__{{.*}}(%$ITER, %__call_error_tmp__, %__ref_result_tmp__)
+        # CHECK: %item = lit.var.decl "item" ref
 
         # The Index value from this element is captured into item, not the reference.
         # CHECK: [[ELTREF:%.*]] = lit.ref.load %item
@@ -517,41 +512,41 @@ struct IterRange(Iterator, ImplicitlyCopyable):
 
 # CHECK-LABEL: @"induction_var_scope()"
 fn induction_var_scope():
+    # CHECK: %item = lit.var.decl "item"
     # CHECK: lit.loop
     # CHECK: } body {
     for item in IterRange(0):
         # CHECK-NEXT: __next__
-        # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store %{{.*}}, %g
         var g = item
 
+    # CHECK: [[ITEM:%.*]] = lit.var.decl "item"
     # CHECK: lit.loop
     # CHECK: } body {
     for (var item) in IterRange(0):
         # CHECK-NEXT: __next__
-        # CHECK-NEXT: %item = lit.var.decl "item"
-        # CHECK: lit.ref.load %item
+        # CHECK: lit.ref.load [[ITEM]]
         var g = item
 
 # CHECK-LABEL: @"induction_var_scope_def()"
 def induction_var_scope_def():
+    # CHECK: %item = lit.var.decl "item"
     # CHECK: lit.loop
     # CHECK: } body {
     for item in IterRange(0):
         # CHECK-NEXT: __next__
-        # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.store {{.*}}, %item
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store {{.*}}, %g
         var g = item
 
+    # CHECK: [[ITEM:%.*]] = lit.var.decl "item"
     # CHECK: lit.loop
     # CHECK: } body {
     for item in IterRange(0):
         # CHECK-NEXT: __next__
-        # CHECK-NEXT: %item = lit.var.decl "item"
-        # CHECK: lit.ref.load %item
+        # CHECK: lit.ref.load [[ITEM]]
         var g = item
 
 struct MyType:
