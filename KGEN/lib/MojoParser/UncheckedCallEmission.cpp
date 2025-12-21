@@ -1780,7 +1780,9 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
             // slot, performing the implicit conversion.
             ValueDest moveDest(errSlot, EC_RaiseValue);
             (void)emitResult(MRValue(errDecl), callExpr, moveDest);
-            RaiseOp::create(*builder, translateLocation(callExpr->getLoc()));
+            auto loc = translateLocation(callExpr->getLoc());
+            RaiseOp::create(*builder, loc);
+            TryYieldOp::create(*builder, loc);
           });
     }
   }

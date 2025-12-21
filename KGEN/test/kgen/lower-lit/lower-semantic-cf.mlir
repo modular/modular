@@ -79,9 +79,13 @@ lit.file_module @FileModule {
     // CHECK-NEXT: } else {
     // CHECK-NEXT:   hlcf.break
     // CHECK-NEXT: }
-    lit.loop cond {
-      lit.loop.condition %c: i1
-    } body {
+    lit.loop {
+      hlcf.if %c {
+        hlcf.yield
+      } else {
+        lit.loop.break.else
+      }
+
       // CHECK-NEXT: hlcf.if %c {
       hlcf.if %c {
         // CHECK-NEXT: hlcf.break
@@ -134,9 +138,13 @@ lit.fn @if_true_return() -> index {
 
 lit.fn @while_true() -> index {
   %true = index.bool.constant true
-  lit.loop cond {
-    lit.loop.condition %true: i1
-  } body {
+  lit.loop {
+    hlcf.if %true {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
+
     hlcf.if %true {
       lit.continue
       hlcf.yield
@@ -168,10 +176,13 @@ lit.fn @if_false_raise() throws -> i1 {
 
 // CHECK-LABEL: lit.fn @for_else_raise
 lit.fn @for_else_raise() throws -> i1 {
-  lit.loop cond {
+  lit.loop {
     %cond = "foo"() : () -> i1
-    lit.loop.condition %cond : i1
-  } body {
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
     lit.loop.continue
   // CHECK: else
   } else {
@@ -374,9 +385,13 @@ lit.fn @coroutine2() async -> index {
   %0 = index.constant 0
   %true = index.bool.constant true
 
-  lit.loop cond {
-    lit.loop.condition %true: i1
-  } body {
+  lit.loop  {
+    hlcf.if %true {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
+
     lit.return %0 : index
     lit.break  // expected-warning {{unreachable code after return statement}}
     lit.loop.continue
@@ -525,9 +540,13 @@ lit.fn @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
   // CHECK-NEXT:       } else {
   // CHECK-NEXT:         kgen.unreachable
   // CHECK-NEXT:       }
-  lit.loop cond {
-    lit.loop.condition %true: i1
-  } body {
+  lit.loop {
+    hlcf.if %true {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
+
     // CHECK-NEXT: lit.try
     lit.try {
       // CHECK-NEXT: hlcf.if %arg0
@@ -577,9 +596,13 @@ lit.fn @try_finally_return(%arg0: index, %arg1: index, %arg2: i1) -> index {
   // CHECK-NEXT:         kgen.unreachable
   // CHECK-NEXT:       }
 
-  lit.loop cond {
-    lit.loop.condition %true: i1
-  } body {
+  lit.loop {
+    hlcf.if %true {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
+
     // CHECK-NEXT: lit.try
     lit.try {
       // CHECK-NEXT: hlcf.if %arg2
@@ -645,9 +668,13 @@ lit.fn @nested_try_finally() {
 
 // CHECK-LABEL: lit.fn @try_in_loop
 lit.fn @try_in_loop(%arg0: i1) {
-  lit.loop cond {
-    lit.loop.condition %arg0: i1
-  } body {
+  lit.loop {
+    hlcf.if %arg0 {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
+
     lit.try {
       lit.try.yield
     // CHECK: except
@@ -701,12 +728,20 @@ lit.fn @coroutine_await(%arg0: i1) {
 // CHECK-LABEL: lit.fn @loop_with_else
 lit.fn @loop_with_else(%arg0: i1) {
   // CHECK: hlcf.loop "_loop_0"
-  lit.loop cond {
-    lit.loop.condition %arg0: i1
-  } body {
-    lit.loop cond {
-      lit.loop.condition %arg0: i1
-    } body {
+  lit.loop {
+    hlcf.if %arg0 {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
+
+    lit.loop {
+      hlcf.if %arg0 {
+        hlcf.yield
+      } else {
+        lit.loop.break.else
+      }
+
       // CHECK: hlcf.if %arg0 {
       // CHECK-NEXT:   hlcf.yield
       // CHECK-NEXT: } else {
@@ -756,9 +791,13 @@ lit.fn @loop_with_cond_raise(%cond: i1) {
       hlcf.yield
     }
 
-    lit.loop cond {
-      lit.loop.condition %cond: i1
-    } body {
+    lit.loop {
+      hlcf.if %cond {
+        hlcf.yield
+      } else {
+        hlcf.break
+      }
+
       hlcf.if %cond {
         hlcf.yield
       } else {
@@ -1155,9 +1194,12 @@ lit.fn @param_if_call_throws<paramb: i1>() throws -> i1 {
 
 // Derived from MOCO-1475
 lit.fn @crashing_try_warning(%cond: i1) -> !kgen.none {
-  lit.loop cond {
-    lit.loop.condition %cond : i1
-  } body {
+  lit.loop {
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
     lit.loop.continue
   } else {
     lit.try { // expected-warning {{try body doesn't raise an exception}}

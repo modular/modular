@@ -1202,12 +1202,17 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
 
   // Create the LoopOp
   auto loopOp = LIT::LoopOp::create(builder, whileLoc);
-  Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
   Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
   Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
 
-  // Create the condition region.
-  builder = OpBuilder::atBlockEnd(condBlock);
+  // Create the body region.
+  builder.setInsertionPointToStart(bodyBlock);
+
+  // Emit the condition expression into an if/break pattern:
+  // if <cond>:
+  //   hlcf.yield
+  // else:
+  //   lit.loop.break.else  // Jump to the 'else' block.
   RValue condRVal = getEmitter().emitExprI1(condExp, EC_BoolCondition);
   Value condVal =
       getEmitter().emitSRValue({AnyValue(condRVal), condExp}, EC_BoolCondition);
@@ -1217,10 +1222,13 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
     return failure();
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
-  LIT::LoopConditionOp::create(builder, whileLoc, condVal);
 
-  // Create the body region.
-  builder.setInsertionPointToStart(bodyBlock);
+  auto ifOp = HLCF::IfOp::create(builder, whileLoc, ValueRange{}, condVal);
+  builder.createBlock(&ifOp.getThenRegion());
+  HLCF::YieldOp::create(builder, whileLoc);
+  builder.createBlock(&ifOp.getElseRegion());
+  LoopBreakElseOp::create(builder, whileLoc);
+  builder.setInsertionPointAfter(ifOp);
 
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
@@ -1236,7 +1244,6 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
       return failure();
   }
   LIT::LoopYieldOp::create(builder, whileLoc);
-
   return success();
 }
 
@@ -1361,37 +1368,36 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   //       ref e = $ITER.__next_ref__()
   //       # or: var e = $ITER.__next__()
   //       <BODY>
-  // TODO(26.2): remove the __has_next__ form of this.
-  auto emitter = getEmitter();
+  auto prefixEmitter = getEmitter();
 
   // Emit the expression for the iterable.
-  ASTExprAnd<AnyValue> loadedSeq = {emitter.emitExpr(seqExpr, EC_ForIterator),
-                                    seqExpr};
+  ASTExprAnd<AnyValue> loadedSeq = {
+      prefixEmitter.emitExpr(seqExpr, EC_ForIterator), seqExpr};
   if (!loadedSeq.ir)
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
   // Get an iterator into the iterable by emitting a call to `__iter__`.
   VarDeclOp iterVar =
-      emitter.emitVarDecl("$ITER", UnresolvedType::get(getContext()),
-                          forLocation, VarDeclKind::Synthesized);
+      prefixEmitter.emitVarDecl("$ITER", UnresolvedType::get(getContext()),
+                                forLocation, VarDeclKind::Synthesized);
   ValueDest rangeDest(iterVar, EC_ForIterator);
-  if (!emitter.emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
-                                   CallSyntax::kMethodCall, seqExpr))
+  if (!prefixEmitter.emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
+                                         CallSyntax::kMethodCall, seqExpr))
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
   // Now that we have the iterator (and its type), see if we're calling
   // __next_ref__ or __next__ to know what we're dealing with.
   CallOperands nextOperands({{MLValue(iterVar), seqExpr}});
   ASTType iterType = iterVar.getType().getElementType();
-  PValue nextFn =
-      OverloadSet::lookupAndResolve(iterType, "__next_ref__", nextOperands,
-                                    seqExpr, CallSyntax::kMethodCall, emitter);
+  PValue nextFn = OverloadSet::lookupAndResolve(
+      iterType, "__next_ref__", nextOperands, seqExpr, CallSyntax::kMethodCall,
+      prefixEmitter);
   if (!nextFn) {
     nextFn = OverloadSet::lookupAndResolve(iterType, "__next__", nextOperands,
                                            seqExpr, CallSyntax::kMethodCall,
-                                           emitter);
+                                           prefixEmitter);
     if (!nextFn) {
-      emitter.emitError(seqExpr->getLoc())
+      emitError(seqExpr->getLoc())
           << iterType
           << " does not implement the '__next__' or '__next_ref__' method "
              "required for iteration"
@@ -1406,45 +1412,22 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
 
   // Create the LoopOp
   auto loopOp = LIT::LoopOp::create(builder, forLocation);
-  Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
-  Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
-  // Fill in the noop 'else' region.
+  // Start with a noop 'else' region.
   (void)builder.createBlock(&loopOp.getElseRegion());
   LIT::LoopYieldOp::create(builder, forLocation);
 
-  // Create the condition region.
-  emitter.builder = OpBuilder::atBlockEnd(condBlock);
-  if (isThrowsCase) {
-    // Create the condition region with "while True".
-    PValue trueVal = BoolAttr::get(emitter.getContext(), true);
-    Value trueSRVal = emitter.emitSRValue({trueVal, seqExpr}, EC_ForIterator);
-    LIT::LoopConditionOp::create(*emitter.builder, forLocation, trueSRVal);
-  } else {
-    ValueDest lengthDest(EC_ForIterator);
-    CValue hasNextBool = emitter.emitNamedMethodCall(
-        "__has_next__", CallOperands({{MLValue(iterVar), seqExpr}}), lengthDest,
-        CallSyntax::kMethodCall, seqExpr);
-    if (!hasNextBool)
-      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-    CValue hasNext = emitter.emitI1({hasNextBool, seqExpr}, EC_ForIterator);
-    if (!hasNext)
-      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-    SRValue shouldContinue =
-        emitter.emitSRValue({hasNext, seqExpr}, EC_ForIterator);
-    if (!shouldContinue)
-      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-    LIT::LoopConditionOp::create(*emitter.builder, forLocation, shouldContinue);
-  }
+  // Create the body.
+  builder.createBlock(&loopOp.getBodyRegion());
 
   // Create the body. Add Target element to the continue block by calling next
   // method. Emit the result into an implicitly declared variable at the current
   // scope.
 
   // Push a new local variable scope for the subsequent body.
-  builder.setInsertionPointToStart(bodyBlock);
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
   pushChildScope(scopeGuard, keepDecl);
+  auto emitter = getEmitter();
 
   // Emit the call to __next__ with the target as the destination to assign
   // into.  This will synthesize the VarDeclOp from the inferred result type,
@@ -1453,27 +1436,49 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
   indvarDest.setPatternDeclKind(PatternDeclKind::kBind);
 
-  // Call __next_ref__ or __next__, with an emitter set to the right body
-  // scope.
   if (isThrowsCase) {
-    auto emitter = getEmitter();
+    // Call __next__.  If it throws then break to the else block.
     if (!emitter.emitIndirectCallInTryBlock(
             nextFn, std::move(nextOperands), indvarDest,
             CallSyntax::kMethodCall, seqExpr, [&](VarDeclOp errDecl) {
               // Just break on error.  We ignore the actual error value.
-              BreakOp::create(*emitter.builder, loopOp.getLoc());
-            }))
+              LoopBreakElseOp::create(*emitter.builder, loopOp.getLoc());
+            })) {
+      indvarDest.resetForError(emitter);
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
+    }
   } else {
-    if (!getEmitter().emitIndirectCall(nextFn, std::move(nextOperands),
-                                       indvarDest, CallSyntax::kMethodCall,
-                                       seqExpr))
+    ValueDest lengthDest(EC_ForIterator);
+    CValue hasNextBool = emitter.emitNamedMethodCall(
+        "__has_next__", CallOperands({{MLValue(iterVar), seqExpr}}), lengthDest,
+        CallSyntax::kMethodCall, seqExpr);
+    CValue hasNext = emitter.emitI1({hasNextBool, seqExpr}, EC_ForIterator);
+    SRValue shouldContinue =
+        emitter.emitSRValue({hasNext, seqExpr}, EC_ForIterator);
+    if (!shouldContinue) {
+      indvarDest.resetForError(emitter);
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
+    }
+
+    // Emit an if statement, if the condition is true then yield other break to
+    // the else block.
+    auto ifOp = HLCF::IfOp::create(builder, forLocation, shouldContinue);
+    builder.createBlock(&ifOp.getThenRegion());
+    HLCF::YieldOp::create(builder, forLocation);
+    builder.createBlock(&ifOp.getElseRegion());
+    LoopBreakElseOp::create(builder, forLocation);
+    builder.setInsertionPointAfter(ifOp);
+    emitter.builder = builder;
+
+    // Emit the call to __next__ now that we know there is an element.
+    if (!emitter.emitIndirectCall(nextFn, std::move(nextOperands), indvarDest,
+                                  CallSyntax::kMethodCall, seqExpr)) {
+      indvarDest.resetForError(emitter);
+      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
+    }
   }
 
-  builder.setInsertionPointToEnd(&loopOp.getBodyRegion().front());
-
-  // We're parsing the body at this point, no need to worry about that.
+  // We're parsing the body at this point, tell the caller not to skip it.
   skipBodyOnFailure.release();
 
   // Parse the body of the for loop, using the callback.

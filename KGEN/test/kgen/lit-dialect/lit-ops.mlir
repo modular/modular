@@ -254,9 +254,13 @@ lit.fn @try_op(%err: !lit.struct<@Error>, %int: !lit.struct<@Int>) -> !lit.struc
 // CHECK-LABEL: @try_in_loop
 lit.fn @try_in_loop(%cond: i1) {
   // CHECK-NEXT: lit.loop
-  lit.loop cond {
-    lit.loop.condition %cond : i1
-  } body {
+  lit.loop {
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
+
     // CHECK: lit.try
     lit.try {
       // CHECK-NEXT: hlcf.if
@@ -323,9 +327,7 @@ lit.struct.decl @Error {}
 // CHECK-LABEL: @lexical_terminators
 lit.fn @lexical_terminators(%cond: i1) throws -> !kgen.variant<i32, i64> {
   // CHECK: lit.loop
-  lit.loop cond {
-    lit.loop.condition %cond : i1
-  } body {
+  lit.loop {
     // CHECK: hlcf.if
     hlcf.if %cond {
       // CHECK-NEXT: lit.break
@@ -447,11 +449,14 @@ lit.struct.decl @StructHasTraits(trait<@Trait1, @Trait2, @Trait3>) {}
 
 // CHECK-LABEL: lit.fn @lit_loop
 lit.fn @lit_loop() {
-  lit.loop cond {
+  lit.loop {
     %0 = index.bool.constant true
-    // CHECK: lit.loop.condition %{{.*}}: i1
-    lit.loop.condition %0: i1
-  } body {
+    hlcf.if %0 {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
+
     // CHECK: lit.loop.continue
     lit.loop.continue
   } else {

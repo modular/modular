@@ -246,10 +246,13 @@ fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
 # CHECK:       %inside_a = lit.var.decl "inside_a" var
 # CHECK:       %inside_b = lit.var.decl "inside_b" var
 # CHECK:       %inside_else = lit.var.decl "inside_else" var
-# CHECK:       lit.loop cond {
+# CHECK:       lit.loop {
 # CHECK:         [[V0:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
-# CHECK:         lit.loop.condition [[V0]] : i1
-# CHECK:       } body {
+# CHECK:         hlcf.if [[V0]] {
+# CHECK-NEXT:        hlcf.yield
+# CHECK-NEXT:    } else {
+# CHECK-NEXT:        lit.loop.break.else
+# CHECK-NEXT:    }
 # CHECK-NEXT:    kgen.param.constant: {{.*}} = <{0}>
 # CHECK-NEXT:    lit.ref.store {{.+}}, %inside_a
 # CHECK-NEXT:    hlcf.elif {
@@ -286,10 +289,8 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
     # CHECK:   hlcf.elif.yield
     # CHECK: } then {
     if b:
-        # CHECK: lit.loop cond {
+        # CHECK: lit.loop {
         # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
-        # CHECK:   lit.loop.condition [[V1]] : i1
-        # CHECK: } body {
         while a:
             # CHECK: lit.ref.store {{.+}}, %inside_a
             inside_a = 0
@@ -308,10 +309,8 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
 
 # CHECK-LABEL: lit.fn @"test_break_continue_inside_while
 def test_break_continue_inside_while(a: Bool) -> Bool:
-    # CHECK: lit.loop cond {
+    # CHECK: lit.loop {
     # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
-    # CHECK:   lit.loop.condition [[V1]] : i1
-    # CHECK: } body {
     while a:
         # CHECK:      hlcf.elif {
         # CHECK-NEXT:   lit.call {{.*}}__mlir_i1__
@@ -397,11 +396,9 @@ fn return_impl_convert_raises() raises -> Int:
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"test_simple
-# CHECK:       lit.loop cond {
+# CHECK:       lit.loop {
 # CHECK:         [[V0:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
-# CHECK:         lit.loop.condition [[V0]] : i1
-# CHECK:       } body {
-# CHECK-NEXT:     lit.loop.continue
+# CHECK:         lit.loop.continue
 # CHECK-NEXT:  } else {
 # CHECK-NEXT:    lit.loop.yield
 # CHECK-NEXT:  }
@@ -439,12 +436,10 @@ fn for_range_loop():
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %value_iter_list
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %$ITER)
     for item in value_iter_list:
-        # CHECK: lit.loop cond {
+        # CHECK: lit.loop {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$ITER
         # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
         # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
-        # CHECK:   lit.loop.condition [[COND]]
-        # CHECK: } body {
         # CHECK:   lit.loop.continue
         # CHECK: } else {
         # CHECK-NEXT: lit.loop.yield
@@ -472,12 +467,10 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
     # CHECK-NEXT: %$ITER = lit.var.decl "$ITER" synth
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$ITER)
     for ref item in mut_list_ref_iter:
-        # CHECK: lit.loop cond {
+        # CHECK: lit.loop {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$ITER
         # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
         # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
-        # CHECK:   lit.loop.condition [[COND]]
-        # CHECK: } body {
         # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next_ref__{{.*}}(%$ITER)
         # CHECK:   %item = lit.var.decl "item" ref
 
@@ -517,39 +510,35 @@ struct IterRange(Iterator, ImplicitlyCopyable):
 
 # CHECK-LABEL: @"induction_var_scope()"
 fn induction_var_scope():
-    # CHECK: lit.loop
-    # CHECK: } body {
+    # CHECK: lit.loop {
     for item in IterRange(0):
-        # CHECK-NEXT: __next__
+        # CHECK: __next__
         # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store %{{.*}}, %g
         var g = item
 
-    # CHECK: lit.loop
-    # CHECK: } body {
+    # CHECK: lit.loop {
     for (var item) in IterRange(0):
-        # CHECK-NEXT: __next__
+        # CHECK: __next__
         # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         var g = item
 
 # CHECK-LABEL: @"induction_var_scope_def()"
 def induction_var_scope_def():
-    # CHECK: lit.loop
-    # CHECK: } body {
+    # CHECK: lit.loop {
     for item in IterRange(0):
-        # CHECK-NEXT: __next__
+        # CHECK: __next__
         # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.store {{.*}}, %item
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store {{.*}}, %g
         var g = item
 
-    # CHECK: lit.loop
-    # CHECK: } body {
+    # CHECK: lit.loop {
     for item in IterRange(0):
-        # CHECK-NEXT: __next__
+        # CHECK: __next__
         # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         var g = item
