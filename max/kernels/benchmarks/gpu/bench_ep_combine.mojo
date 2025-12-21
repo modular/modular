@@ -28,7 +28,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import UnsafePointer
 from shmem import *
 from shmem.ep_comm import (
     BF16TokenFormat,
@@ -47,7 +47,7 @@ from utils import IndexList
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[Int32], n_tokens: Int):
+](topk_ids: UnsafePointer[mut=True, Int32], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -97,8 +97,8 @@ fn bench_dispatch[
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
 
-    var host_topk_ids = UnsafePointer[Int32].alloc(n_tokens_per_rank * top_k)
-    var host_input_tokens = UnsafePointer[Scalar[input_type]].alloc(
+    var host_topk_ids = alloc[Int32](n_tokens_per_rank * top_k)
+    var host_input_tokens = alloc[Scalar[input_type]](
         n_tokens_per_rank * hidden_size
     )
     var device_topk_buf = ctx.enqueue_create_buffer[DType.int32](
@@ -113,7 +113,7 @@ fn bench_dispatch[
     var device_output_scales_buf = ctx.enqueue_create_buffer[scales_dtype](
         max_recv_tokens * hidden_size // group_size
     )
-    var device_row_offsets_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_row_offsets_buf = ctx.enqueue_create_buffer[DType.uint32](
         n_local_experts + 1
     )
     var device_expert_ids_buf = ctx.enqueue_create_buffer[DType.int32](
@@ -173,7 +173,7 @@ fn bench_dispatch[
         ),
     )
 
-    var row_offsets_tensor = LayoutTensor[DType.int32, row_offsets_layout](
+    var row_offsets_tensor = LayoutTensor[DType.uint32, row_offsets_layout](
         device_row_offsets_buf,
         RuntimeLayout[row_offsets_layout].row_major(
             IndexList[1](n_local_experts + 1)
@@ -259,7 +259,7 @@ fn bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function[dispatch]()
+        var func = ctx.compile_function_checked[dispatch, dispatch]()
         shmem_module_init(func)
 
         comptime dispatch_cb = dispatch_cb_kernel[
@@ -276,7 +276,7 @@ fn bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_cb = ctx.compile_function[dispatch_cb]()
+        var func_cb = ctx.compile_function_checked[dispatch_cb, dispatch_cb]()
 
         comptime combine = combine_kernel[
             input_type,
@@ -290,7 +290,7 @@ fn bench_dispatch[
             combine_msg_bytes,
             n_tokens_per_rank,
         ]
-        var func_combine = ctx.compile_function[combine]()
+        var func_combine = ctx.compile_function_checked[combine, combine]()
         shmem_module_init(func_combine)
 
         comptime combine_cb = combine_cb_kernel[
@@ -305,25 +305,31 @@ fn bench_dispatch[
             combine_msg_bytes,
             n_tokens_per_rank,
         ]
-        var func_combine_cb = ctx.compile_function[combine_cb]()
+        var func_combine_cb = ctx.compile_function_checked[
+            combine_cb, combine_cb
+        ]()
 
         @always_inline
         @parameter
         fn run_dispatch(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-            var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8], 1](fill={})
-            var recv_count_ptrs = InlineArray[UnsafePointer[UInt64], 1](fill={})
+            var recv_buf_ptrs = InlineArray[
+                UnsafePointer[UInt8, MutAnyOrigin], 1
+            ](fill={})
+            var recv_count_ptrs = InlineArray[
+                UnsafePointer[UInt64, MutAnyOrigin], 1
+            ](fill={})
             recv_buf_ptrs[0] = recv_buf
             recv_count_ptrs[0] = recv_count
 
-            ctx.enqueue_function(
+            ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
                 send_buf,
                 recv_buf_ptrs,
                 recv_count_ptrs,
-                atomic_counter.unsafe_ptr(),
+                atomic_counter,
                 Int32(my_rank),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -332,7 +338,7 @@ fn bench_dispatch[
         @always_inline
         @parameter
         fn run_dispatch_cb(ctx: DeviceContext) raises:
-            ctx.enqueue_function(
+            ctx.enqueue_function_checked(
                 func_cb,
                 format_handler,
                 row_offsets_tensor,
@@ -340,7 +346,7 @@ fn bench_dispatch[
                 src_token_info_tensor,
                 recv_buf,
                 recv_count,
-                atomic_counter.unsafe_ptr(),
+                atomic_counter,
                 Int32(my_rank),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -355,7 +361,7 @@ fn bench_dispatch[
         @always_inline
         @parameter
         fn run_combine(ctx: DeviceContext) raises:
-            ctx.enqueue_function(
+            ctx.enqueue_function_checked(
                 func_combine,
                 output_tensor,
                 src_token_info_tensor,
@@ -371,12 +377,12 @@ fn bench_dispatch[
         @always_inline
         @parameter
         fn run_combine_cb(ctx: DeviceContext) raises:
-            ctx.enqueue_function(
+            ctx.enqueue_function_checked(
                 func_combine_cb,
                 output_2_tensor,
                 send_buf,
                 recv_count,
-                atomic_counter.unsafe_ptr(),
+                atomic_counter,
                 Int32(my_rank),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,

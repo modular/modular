@@ -165,7 +165,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="requests",
         description="Number of KV cache misses in a batch by the scheduler.",
     ),  # type: ignore
-    "maxserve.tts.audio_output_length": _meter.create_histogram(
+    "maxserve.tts.audio_output_length": _meter.create_counter(
         "maxserve.tts.audio_output_length",
         unit="ms",
         description="Audio output length in milliseconds",
@@ -306,95 +306,132 @@ class _AsyncMetrics:
 
     def __init__(self) -> None:
         self.client: MetricClient = NoopClient()
+        self.extra_attributes: dict[str, str] = {}
 
-    def configure(self, client: MetricClient) -> None:
+    def configure(
+        self,
+        client: MetricClient,
+        extra_attributes: dict[str, str] | None = None,
+    ) -> None:
         self.client = client
+        self.extra_attributes = extra_attributes or {}
 
     def request_count(self, responseCode: int, urlPath: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.request_count",
                 1,
-                {"code": f"{responseCode:d}", "path": urlPath},
+                {
+                    **self.extra_attributes,
+                    "code": f"{responseCode:d}",
+                    "path": urlPath,
+                },
             ),
             MetricLevel.BASIC,
         )
 
     def request_time(self, value: float, urlPath: str) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.request_time", value, {"path": urlPath}),
+            MaxMeasurement(
+                "maxserve.request_time",
+                value,
+                {**self.extra_attributes, "path": urlPath},
+            ),
             MetricLevel.BASIC,
         )
 
     def input_time(self, value: float) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.input_processing_time", value),
+            MaxMeasurement(
+                "maxserve.input_processing_time", value, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
     def output_time(self, value: float) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.output_processing_time", value),
+            MaxMeasurement(
+                "maxserve.output_processing_time", value, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
     def ttft(self, value: float) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.time_to_first_token", value),
+            MaxMeasurement(
+                "maxserve.time_to_first_token", value, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
     def input_tokens(self, value: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.num_input_tokens", value),
+            MaxMeasurement(
+                "maxserve.num_input_tokens", value, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
     def input_characters(self, value: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.num_input_characters", value),
+            MaxMeasurement(
+                "maxserve.num_input_characters", value, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
     def output_tokens(self, value: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.num_output_tokens", value),
+            MaxMeasurement(
+                "maxserve.num_output_tokens", value, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
     def reqs_queued(self, value: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.num_requests_queued", value),
+            MaxMeasurement(
+                "maxserve.num_requests_queued", value, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
     def reqs_running(self, value: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.num_requests_running", value),
+            MaxMeasurement(
+                "maxserve.num_requests_running", value, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
     def model_load_time(self, ms: float) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.model_load_time", ms), MetricLevel.BASIC
+            MaxMeasurement(
+                "maxserve.model_load_time", ms, self.extra_attributes
+            ),
+            MetricLevel.BASIC,
         )
 
     def itl(self, ms: float) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.itl", ms), MetricLevel.DETAILED
+            MaxMeasurement("maxserve.itl", ms, self.extra_attributes),
+            MetricLevel.DETAILED,
         )
 
     def pipeline_load(self, name: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.pipeline_load", 1, attributes={"model": name}
+                "maxserve.pipeline_load",
+                1,
+                {**self.extra_attributes, "model": name},
             ),
             MetricLevel.BASIC,
         )
 
     def batch_size(self, size: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.batch_size", size), MetricLevel.DETAILED
+            MaxMeasurement("maxserve.batch_size", size, self.extra_attributes),
+            MetricLevel.DETAILED,
         )
 
     def batch_execution_time(
@@ -404,61 +441,88 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.batch_execution_time",
                 execution_time,
-                attributes={"batch_type": batch_type},
+                {**self.extra_attributes, "batch_type": batch_type},
             ),
             MetricLevel.DETAILED,
         )
 
     def cache_num_used_blocks(self, num_used_blocks: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.cache.num_used_blocks", num_used_blocks),
+            MaxMeasurement(
+                "maxserve.cache.num_used_blocks",
+                num_used_blocks,
+                self.extra_attributes,
+            ),
             MetricLevel.DETAILED,
         )
 
     def cache_num_total_blocks(self, total_blocks: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.cache.num_total_blocks", total_blocks),
+            MaxMeasurement(
+                "maxserve.cache.num_total_blocks",
+                total_blocks,
+                self.extra_attributes,
+            ),
             MetricLevel.DETAILED,
         )
 
     def cache_hit_rate(self, hit_rate: float) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.cache.hit_rate", hit_rate),
+            MaxMeasurement(
+                "maxserve.cache.hit_rate", hit_rate, self.extra_attributes
+            ),
             MetricLevel.DETAILED,
         )
 
     def cache_hits(self, hits: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.cache.hits", hits), MetricLevel.DETAILED
+            MaxMeasurement("maxserve.cache.hits", hits, self.extra_attributes),
+            MetricLevel.DETAILED,
         )
 
     def cache_misses(self, cache_misses: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.cache.misses", cache_misses),
+            MaxMeasurement(
+                "maxserve.cache.misses", cache_misses, self.extra_attributes
+            ),
             MetricLevel.DETAILED,
         )
 
     def preemption(self) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.cache.preemption_count", 1),
+            MaxMeasurement(
+                "maxserve.cache.preemption_count", 1, self.extra_attributes
+            ),
             MetricLevel.DETAILED,
         )
 
-    def audio_output_length(self, length_ms: float) -> None:
+    def audio_output_length(self, length_ms: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.tts.audio_output_length", length_ms),
+            MaxMeasurement(
+                "maxserve.tts.audio_output_length",
+                length_ms,
+                self.extra_attributes,
+            ),
             MetricLevel.DETAILED,
         )
 
     def input_tokens_per_request(self, value: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.input_tokens_per_request", value),
+            MaxMeasurement(
+                "maxserve.input_tokens_per_request",
+                value,
+                self.extra_attributes,
+            ),
             MetricLevel.BASIC,
         )
 
     def output_tokens_per_request(self, value: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.output_tokens_per_request", value),
+            MaxMeasurement(
+                "maxserve.output_tokens_per_request",
+                value,
+                self.extra_attributes,
+            ),
             MetricLevel.BASIC,
         )
 

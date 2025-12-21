@@ -274,5 +274,35 @@ def test_slice_types():
     assert_true(_type_is_eq[variadic[1], String]())
 
 
+def test_map_types_to_types_empty():
+    comptime mapper[T: AnyType] = Int
+    comptime variadic = Variadic.map_types_to_types[
+        Variadic.empty_of_trait[AnyType], mapper
+    ]
+    assert_equal(Variadic.size(variadic), 0)
+
+
+trait TestErrable:
+    comptime ErrorType: AnyType
+
+
+struct Foo(TestErrable):
+    comptime ErrorType = Int
+
+
+struct Baz(TestErrable):
+    comptime ErrorType = String
+
+
+def test_map_types_to_types():
+    comptime Mapper[T: TestErrable] = T.ErrorType
+    comptime variadic = Variadic.map_types_to_types[
+        Variadic.types[T=TestErrable, Foo, Baz], Mapper
+    ]
+    assert_equal(Variadic.size(variadic), 2)
+    assert_true(_type_is_eq[variadic[0], Int]())
+    assert_true(_type_is_eq[variadic[1], String]())
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

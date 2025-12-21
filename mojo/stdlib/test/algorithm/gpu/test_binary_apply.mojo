@@ -62,10 +62,14 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     )
     print(
         "number of captures:",
-        ctx.compile_function[vec_func[add]]()._func_impl.num_captures,
+        ctx.compile_function_checked[
+            vec_func[add], vec_func[add]
+        ]()._func_impl.num_captures,
     )
     assert_equal(
-        ctx.compile_function[vec_func[add]]()._func_impl.num_captures,
+        ctx.compile_function_checked[
+            vec_func[add], vec_func[add]
+        ]()._func_impl.num_captures,
         1,
     )
     ctx.synchronize()
