@@ -27,9 +27,12 @@ lit.fn @bad_continue() {
 // break in an 'else' is an error unless in a nested loop.
 lit.fn @bad_break_2(%arg0: i1) {
   // CHECK: hlcf.loop "_loop_0"
-  lit.loop cond {
-    lit.loop.condition %arg0: i1
-  } body {
+  lit.loop {
+    hlcf.if %arg0 {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
     lit.loop.continue
   } else {
     lit.break // expected-error {{'break' is not inside a loop}}
@@ -47,4 +50,3 @@ lit.fn @unresolved_fn() {
 lit.fn @resolved_fn() {
   lit.end_fn // expected-error {{return expected at end of function with results}}
 }
-

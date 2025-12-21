@@ -1305,7 +1305,6 @@ CValue IREmitter::emitIndirectCallInTryBlock(
   // Emit the except block now that we're good to go.
   builder->createBlock(&tryOp.getExceptRegion());
   emitCatchLogic(errDecl);
-  TryYieldOp::create(*builder, tryOp.getLoc());
 
   // If we had a ref result, we would have emitted a call into our
   // __ref_result_tmp__ temporary above, and then call emission would have

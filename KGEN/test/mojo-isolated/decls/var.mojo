@@ -116,11 +116,11 @@ def walrus_control_flow(a: Int):
     # CHECK: %curr = lit.var.decl "curr"
     curr = a
 
-    # CHECK: lit.loop cond {
+    # CHECK: lit.loop {
     # CHECK-NEXT: lit.ref.load %curr
     while b := curr + 1:
-        # CHECK: } body {
-        # CHECK-NEXT: lit.ref.load %b
+        # lit.loop.break.else
+        # CHECK: lit.ref.load %b
         use_int(b)
         curr = b
 

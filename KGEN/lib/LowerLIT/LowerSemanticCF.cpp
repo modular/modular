@@ -42,8 +42,15 @@ struct LowerSemanticCF {
   LIT::FnOp theFunc;
   SymbolRefAttr theFuncSymbol;
 
-  // This is the current loop that a break or continue should exit from.
+  // This is the current loop that a break or continue should exit from. This is
+  // either an HLCF::LoopOp (for a LIT::LoopOp getting rewritten) or a
+  // ParamForOp being lowering in place.
   Operation *currentLoop = nullptr;
+
+  // This is the current loop that a lit.loop.break.else should exit from. This
+  // is the lit.loop with the pre-lowered code in the else block.  Lowering a
+  // lit.loop.break.else will take this IR.
+  LIT::LoopOp currentBreakElseLoop = nullptr;
 
   // Each lowered hlcf.loop gets its own unique ID so we can break out of it if
   // needed.
@@ -271,7 +278,6 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
                                    bool &enclosingBlockDoesRaise,
                                    bool &enclosingBlockDoesBreak) {
   // Lower loop conditions.
-  Block &condBlock = loopOp.getCondRegion().front();
   Block &bodyBlock = loopOp.getBodyRegion().front();
   Block &elseBlock = loopOp.getElseRegion().front();
 
@@ -282,34 +288,16 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   // Each loop gets a unique label.
   newLoop.setLabelAttr(builder.getStringAttr("_loop_" + Twine(loopCounter++)));
 
-  Block *newBody = builder.createBlock(&newLoop.getBody());
-
-  // Move the loop condition logic to the beginning of the HLCF::LoopOp's body.
-  newBody->getOperations().splice(newBody->begin(), condBlock.getOperations());
-
-  // Create the loop condition check, replacing the LoopConditionOp.
-  auto loopCondition =
-      cast<LIT::LoopConditionOp>(newBody->getTerminator()).getOperand();
-  newBody->getTerminator()->erase();
-
-  // Create loop condition check: it continues when the condition is true and
-  // does the the exit logic when false.
-  builder.setInsertionPointToEnd(newBody);
-  auto condOp = HLCF::IfOp::create(builder, loopCondition);
-  builder.createBlock(&condOp.getThenRegion());
-  HLCF::YieldOp::create(builder);
-
   // Move the loop's body to the HLCF::LoopOp's body.
+  Block *newBody = builder.createBlock(&newLoop.getBody());
   newBody->getOperations().splice(newBody->end(), bodyBlock.getOperations());
-
-  Block *newExitBlock = builder.createBlock(&condOp.getElseRegion());
 
   // Lower the body of the 'else' block before we move it over.  It is logically
   // NOT inside the loop even though it is nested under it in the HLCF AST. The
   // 'currentLoop' loop is set to the parent loop so any break or continue from
   // the 'else' logic will go to the right place.
-  bool blockRaises = false, blockBreaks = false, blockFallThroughs = false;
-  lowerBlock(elseBlock, blockRaises, blockBreaks, blockFallThroughs);
+  bool blockRaises = false, blockBreaks = false, elseBlockFallThroughs = false;
+  lowerBlock(elseBlock, blockRaises, blockBreaks, elseBlockFallThroughs);
   enclosingBlockDoesRaise |= blockRaises;
   enclosingBlockDoesBreak |= blockBreaks;
 
@@ -317,33 +305,27 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   // If it fell through, it will end with lit.loop.yield: we replace it
   // with a break from this loop.  Other exits like return/break/continue in the
   // else block will already be rewritten if they are present.
-  //
-  // Regardless we move the terminator over to the new exit block: we need the
-  // IR to be structured correctly when processing the whole loop, but cannot
-  // reprocess the general code that might have been in the exit region.  We'll
-  // move the rest of the code over later.
-  if (blockFallThroughs) {
+  if (elseBlockFallThroughs) {
     assert(isa<LIT::LoopYieldOp>(elseBlock.getTerminator()));
     elseBlock.getTerminator()->erase();
-    builder.setInsertionPointToEnd(newExitBlock);
+    builder.setInsertionPointToEnd(&elseBlock);
     HLCF::BreakOp::create(builder, ValueRange{}, newLoop.getLabelAttr());
-  } else {
-    // Move the other general terminator over so things are structured right.
-    elseBlock.getTerminator()->moveBefore(newExitBlock, newExitBlock->end());
   }
 
   // Now that the else logic is set, lower the entire loop body to handle the
   // control flow in the body.  This is done with the loop set to the nested
   // loop so that breaks and continues get wired up to it.
   llvm::SaveAndRestore<Operation *> currentLoopSaver(currentLoop, newLoop);
+  llvm::SaveAndRestore currentBreakElseLoopSaver(currentBreakElseLoop, loopOp);
+  blockRaises = blockBreaks = false;
+  bool blockFallThroughs = false;
   lowerBlock(*newBody, blockRaises, blockBreaks, blockFallThroughs);
   enclosingBlockDoesRaise |= blockRaises;
 
-  // Now that the whole loop contents are lowered, we can move over the
-  // rest of the pre-lowered 'else' contents.
-  newExitBlock->getOperations().splice(
-      Block::iterator(newExitBlock->getTerminator()),
-      elseBlock.getOperations());
+  // If the else block fell through, and if something actually used it (i.e. the
+  // lit.loop.break.else was reachable) then the loop will exit with its break.
+  if (elseBlockFallThroughs && elseBlock.empty())
+    blockBreaks = true;
 
   // If the loop body never breaks, then the code after it is unreachable.
   if (!blockBreaks) {
@@ -544,9 +526,34 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       return;
     }
 
+    // A lit.loop.continue is a terminator that continues the lit.loop.
     if (isa<LIT::LoopContinueOp>(op)) {
       OpBuilder b(&op);
-      HLCF::ContinueOp::create(b, op.getLoc());
+      HLCF::ContinueOp::create(b, op.getLoc(), ValueRange{},
+                               cast<HLCF::LoopOp>(currentLoop).getLabelAttr());
+      op.erase();
+      return;
+    }
+
+    // A lit.loop.break.else is a terminator that breaks out of a lit.loop to
+    // its 'else' block.
+    if (isa<LIT::LoopBreakElseOp>(op)) {
+      // This operation is only created by the parser, there is no user error
+      // that can trigger this.
+      assert(currentBreakElseLoop &&
+             "INTERNAL ERROR: malformed lit.loop.break.else "
+             "not inside a lit.loop");
+      // We currently assume there is only a single one of these per loop so
+      // we can move the 'else' block over.  Allowing multiple would require us
+      // to copy the IR.
+      Block &elseBlock = currentBreakElseLoop.getElseRegion().front();
+      assert(!elseBlock.empty() &&
+             "ERROR: multiple lit.loop.break.else operations in one lit.loop?");
+      // Lowering will already have lowered all the operations in the else block
+      // of the loop.  We can just move them over now, including the terminator,
+      // which will replace this one.
+      op.getBlock()->getOperations().splice(Block::iterator(op),
+                                            elseBlock.getOperations());
       op.erase();
       return;
     }
@@ -819,8 +826,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
   // If we fell off the bottom, then we have a fall-through terminator.
   assert((isa<HLCF::YieldOp, HLCF::ElifYieldOp, LIT::TryYieldOp, ParamYieldOp,
-              LIT::EndFnOp, CO::SuspendEndOp, LIT::LoopConditionOp,
-              LIT::LoopYieldOp>(block.back())));
+              LIT::EndFnOp, CO::SuspendEndOp, LIT::LoopYieldOp>(block.back())));
   doesFallThrough = true;
 }
 

@@ -1138,29 +1138,6 @@ def LIT_RaiseOp : LITOp<"raise"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LoopConditionOp
-//===----------------------------------------------------------------------===//
-
-def LIT_LoopConditionOp : LITOp<"loop.condition", [
-    HasParent<"LoopOp">, Terminator]> {
-  let summary = "Condition for the loop.";
-  let description = [{
-    The `lit.loop.condition` operation is a terminator. It yields the condition
-    of a loop.
-
-    Example:
-
-    ```mlir
-    lit.loop.condition %cond
-    ```
-  }];
-
-  let arguments = (ins I1:$operand);
-
-  let assemblyFormat = "attr-dict $operand `:` type($operand)";
-}
-
-//===----------------------------------------------------------------------===//
 // LoopContinueOp
 //===----------------------------------------------------------------------===//
 
@@ -1200,6 +1177,24 @@ def LIT_LoopYieldOp : LITOp<"loop.yield", [
     ```mlir
     lit.loop.yield
     ```
+  }];
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// LoopBreakElseOp
+//===----------------------------------------------------------------------===//
+
+def LIT_LoopBreakElseOp : LITOp<"loop.break.else", [Terminator]> {
+  let summary = "Loop break to the else block.";
+  let description = [{
+    The `lit.loop.break.else` operation is a terminator. The operation indicates
+    that control-flow should branch to the else block of the enclosing loop,
+    which is used for a "while" with a condition that is false or a for-each
+    where the sequence is empty.
+
+    In contrast, a lit.break will exit the loop without executing the 'else'.
   }];
 
   let assemblyFormat = "attr-dict";
@@ -1696,36 +1691,33 @@ def LIT_LoopOp: LITOp<"loop"> {
   let summary = "loop operation";
   let description = [{
     The `lit.loop` operation defines a lexical single scoped control-flow
-    region. The operation has three regions:
-      - condition region
+    region. The operation has two regions:
       - body region
       - else region
 
-    Control-flow transfers from the operation to the beginning of the body
-    region when the condition is true. The loop operation is the target of the
-    `lit.continue` and `lit.break` terminators.
+    By itself, the loop has "infinite loop" semantics - when entered, it will
+    continuously execute the body region (assuming it ends with lit.continue).
+    However, typically the loop will contain control flow that causes execution
+    to exit with a return, break, or continue.
 
+    Like Python for-each/while loops, this loop may have an "else" block. When
+    the normal iteration sequence ends, control transfers to the else block
+    through a lit.loop.break.else terminator.
 
     ```mlir
-    lit.loop cond {
-      lit.loop.condition %0: i1
-    } body {
-      lit.loop.continue
+    lit.loop { // Noop loop.
+      lit.loop.break.else
     } else {
       lit.loop.yield
     }
-    ```
   }];
 
-  let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$condRegion,
-                        SizedRegion<1>:$bodyRegion,
+  let results = (outs);
+  let regions = (region SizedRegion<1>:$bodyRegion,
                         SizedRegion<1>:$elseRegion);
 
   let assemblyFormat = [{
-    (`->` type($results)^)?
-    `cond` $condRegion
-    `body` $bodyRegion
+    $bodyRegion
     `else` $elseRegion attr-dict
   }];
 

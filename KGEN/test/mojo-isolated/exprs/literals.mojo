@@ -122,10 +122,9 @@ fn test_list_literal():
 # CHECK-LABEL: lit.fn @"test_list_comprehension
 fn test_list_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!AnyType !Int>
-    # CHECK: lit.loop cond {
+    # CHECK: lit.loop {
     # CHECK:   SimpleIntRange::@"__has_next__
-    # CHECK: } body {
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i1
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
@@ -137,10 +136,10 @@ fn test_list_comprehension():
     var a_collection = [i1 * 2 for i1 in SimpleIntRange()]
 
     # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!AnyType !Int>
-    # CHECK: } body {
+    # CHECK: lit.loop {
     # CHECK: %i2 = lit.var.decl "i2"
-    # CHECK:   } body {
-    # CHECK-NEXT:  [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK:   lit.loop {
+    # CHECK:  [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: %i3 = lit.var.decl "i3"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i3
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i2
@@ -153,10 +152,9 @@ fn test_list_comprehension():
 
     # Inferred to type IntList and using an "if" clause.
     # CHECK: %c_collection = lit.var.decl{{.*}}!lit.ref<!IntList,
-    # CHECK: lit.loop cond {
+    # CHECK: lit.loop {
     # CHECK:   SimpleIntRange::@"__has_next__
-    # CHECK: } body {
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: %i4 = lit.var.decl "i4"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i4
     # CHECK-NEXT: hlcf.elif {
@@ -213,10 +211,9 @@ fn test_dict_literal(aBool: Bool):
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
 fn test_dict_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType !Int, :!ImplicitlyCopyable !String>
-    # CHECK: lit.loop cond {
+    # CHECK: lit.loop {
     # CHECK:   SimpleIntRange::@"__has_next__
-    # CHECK: } body {
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: %i = lit.var.decl "i"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i
     # CHECK:       lit.call {{.*}}String::@"__init__()
@@ -264,10 +261,9 @@ fn test_set_literal():
 # CHECK-LABEL: lit.fn @"test_set_comprehension
 fn test_set_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Set <:!AnyType !Int>
-    # CHECK: lit.loop cond {
+    # CHECK: lit.loop {
     # CHECK:   SimpleIntRange::@"__has_next__
-    # CHECK: } body {
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i1
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
@@ -392,11 +388,9 @@ fn useIt(expr: List[Int]):
 
 # CHECK-LABEL: lit.fn @"comprehensionInForLoop
 def comprehensionInForLoop(data: List[List[Int]], rows: Int, cols: Int):
-    # CHECK: lit.loop cond
-    # CHECK: } body {
+    # CHECK: lit.loop {
     # CHECK: lit.call {{.*}}::@List::@"__init__
-    # CHECK: lit.loop cond
-    # CHECK: } body {
+    # CHECK: lit.loop {
     # CHECK: lit.call {{.*}}::@List::@"append
     for row in IterRange(rows):
         var my_list = [
