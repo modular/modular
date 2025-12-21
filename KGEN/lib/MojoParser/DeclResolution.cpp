@@ -2619,7 +2619,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     for (auto [symbol, _] : *inheritedFrom)
       parentTraits.push_back(symbol);
 
-  // Make every nominal struct type inherit from `UnknownDestructibility`.
+  // Make every nominal struct type inherit from `AnyType`.
   if (ASTDecl *traitDecl = shared.lookupBuiltinTrait(
           "AnyType", decl.getParentDecl(), decl.getLoc()))
     parentTraits.push_back(traitDecl->getSymbolRef());
@@ -3364,19 +3364,19 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
     return failure();
 
   // TODO(MOCO-1468): Remove this, put an @explicit_destroy on
-  // UnknownDestructibility's definition.
+  // AnyType's definition.
   if (traitOp.getSymName() == "AnyType") {
     // TODO(MOCO-1468): Remove this, specify it in the code.
-    traitOp.setLinearTypeErrorMsg(std::make_optional(llvm::StringRef(
-        "Unhandled explicit_destroy type UnknownDestructibility")));
+    traitOp.setLinearTypeErrorMsg(std::make_optional(
+        llvm::StringRef("Unhandled explicit_destroy type AnyType")));
   }
 
-  // Make every trait inherit from `UnknownDestructibility`, except itself.
+  // Make every trait inherit from `AnyType`, except itself.
   if (parentTraits.empty() && traitOp.getSymName() != "AnyType") {
-    if (ASTDecl *unknownDestructibilityDecl = shared.lookupBuiltinTrait(
+    if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
             "AnyType", decl.getParentDecl(), decl.getLoc())) {
-      parentTraits.push_back(unknownDestructibilityDecl->getSymbolRef());
-      // No need to add UnknownDestructibility to immediateParents, since it
+      parentTraits.push_back(anyTypeDecl->getSymbolRef());
+      // No need to add AnyType to immediateParents, since it
       // has an empty requirements table.
     }
   }
@@ -3416,16 +3416,16 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
         std::make_optional(llvm::StringRef(linearTypeErrorMsg)));
   } else {
     // Make every trait inherit from `AnyType`, except itself and
-    // UnknownDestructibility.
+    // AnyType.
     if (traitOp.getSymName() != "ImplicitlyDestructible" &&
         traitOp.getSymName() != "AnyType") {
-      if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
+      if (ASTDecl *implicitlyDestructibleDecl = shared.lookupBuiltinTrait(
               "ImplicitlyDestructible", decl.getParentDecl(), decl.getLoc())) {
-        parentTraits.push_back(anyTypeDecl->getSymbolRef());
+        parentTraits.push_back(implicitlyDestructibleDecl->getSymbolRef());
         // Update immediateParents only if it is empty, otherwise some other
         // parent trait will have already added it.
         if (immediateParents.empty())
-          immediateParents.insert(anyTypeDecl->getSymbolRef());
+          immediateParents.insert(implicitlyDestructibleDecl->getSymbolRef());
       }
     }
   }

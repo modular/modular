@@ -44,9 +44,9 @@ struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
 
 
 # CHECK-LABEL: @"foo
-# expected-error @below {{Unhandled explicit_destroy type UnknownDestructibility}}
+# expected-error @below {{Unhandled explicit_destroy type AnyType}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-fn foo[T: UnknownDestructibility](var x: T):
+fn foo[T: AnyType](var x: T):
     pass
 
 
@@ -81,12 +81,14 @@ fn callsWith():
     _ = testAsyncVoid()
     # CHECK-NOT: lit.call {{.*}}__del__
 
+
 # CHECK-LABEL: lit.fn @"testAsyncVoid
 async fn testAsyncVoid():
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @ExplicitWithDel
+
 
 # MOCO-2787 - Linear types do not error if they contain an explicit del
 @explicit_destroy("must use __del__() explicitly")
@@ -98,15 +100,17 @@ struct ExplicitWithDel:
     fn __del__(deinit self):
         pass
 
-    fn method(self): pass
+    fn method(self):
+        pass
+
 
 fn testExplicitWithDel():
     a = ExplicitWithDel()
     a.method()
-    a^.__del__() # ok
+    a^.__del__()  # ok
 
     b = ExplicitWithDel()
-    b.method() # expected-error {{'b' abandoned without being explicitly destroyed: must use __del__() explicitly}}
+    b.method()  # expected-error {{'b' abandoned without being explicitly destroyed: must use __del__() explicitly}}
 
 
 # This comes from stubs library.

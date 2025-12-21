@@ -90,9 +90,10 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
       callFieldAttr(StringAttr::get(ctx, "call")),
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
       opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
-      unknownDestructibility("AnyType", "", ClosureMethod::NONE),
+      anyParent("AnyType", "", ClosureMethod::NONE),
       moveParent("Movable", "__moveinit__", ClosureMethod::MOVE),
-      anyParent("ImplicitlyDestructible", "__del__", ClosureMethod::DEL),
+      implicitlyDestructibleParent("ImplicitlyDestructible", "__del__",
+                                   ClosureMethod::DEL),
       copyParent("Copyable", "__copyinit__", ClosureMethod::COPY),
       implicitlyCopyableParent("ImplicitlyCopyable", "", ClosureMethod::NONE) {}
 
@@ -624,7 +625,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   SmallVector<ClosureParent> closureParents{
       ClosureParent(trait, getFnOpNamed(trait, "__call__"),
                     ClosureMethod::CALL),
-      moveParent, anyParent, unknownDestructibility};
+      moveParent, implicitlyDestructibleParent, anyParent};
   if (isCopyable) {
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
@@ -846,7 +847,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     WitnessOp::create(b, StringAttr::get(ctx, name), valueAttr);
   };
 
-  generateIsTrivialSpecialAlias("__del__is_trivial", anyParent);
+  generateIsTrivialSpecialAlias("__del__is_trivial",
+                                implicitlyDestructibleParent);
   generateIsTrivialSpecialAlias("__moveinit__is_trivial", moveParent);
   if (isCopyable)
     generateIsTrivialSpecialAlias("__copyinit__is_trivial", copyParent);
@@ -874,7 +876,7 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
                                    InlineLevel inlineLevel) {
   // Generate the movable, destructable closure trait, populating the trait
   // definition with the single characteristic "__call__" method.
-  SmallVector<ClosureParent> parents{moveParent, anyParent};
+  SmallVector<ClosureParent> parents{moveParent, implicitlyDestructibleParent};
   auto populate = [&](ASTDecl &decl,
                       DenseSet<std::pair<StringAttr, StringAttr>> &functions) {
     TraitDeclOp closureTrait = cast<TraitDeclOp>(decl.getIfOperation());
@@ -2009,7 +2011,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   SmallVector<ClosureParent> closureParents{
       ClosureParent(trait, getFnOpNamed(trait, "__call__"),
                     ClosureMethod::CALL),
-      moveParent, anyParent, unknownDestructibility};
+      moveParent, implicitlyDestructibleParent, anyParent};
   if (isCopyable) {
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
@@ -2596,7 +2598,7 @@ TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
   SmallVector<SymbolRefAttr> symbols;
   symbols.push_back(traitDecl.getSymbolRef());
   symbols.push_back(moveParent.getSymbolRef(moduleDecl));
-  symbols.push_back(anyParent.getSymbolRef(moduleDecl));
+  symbols.push_back(implicitlyDestructibleParent.getSymbolRef(moduleDecl));
   if (isCopyable) {
     symbols.push_back(copyParent.getSymbolRef(moduleDecl));
     symbols.push_back(implicitlyCopyableParent.getSymbolRef(moduleDecl));
