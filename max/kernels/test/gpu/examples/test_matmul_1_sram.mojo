@@ -17,6 +17,7 @@ from algorithm.functional import tile_and_unswitch
 from buffer import DimList, NDBuffer
 from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
+from itertools import product
 from memory import stack_allocation
 from testing import assert_false
 
@@ -131,14 +132,12 @@ fn matmul_sram(
         c[Index(row, col)] = result
 
 
-fn run_matmul(ctx: DeviceContext) raises:
+fn run_matmul[
+    M: Int,
+    N: Int,
+    K: Int,
+](ctx: DeviceContext) raises:
     print("== run_matmul_sram")
-
-    # Should be able to handle non-divisible values.
-    comptime M = 513
-    comptime N = 502
-    comptime K = 511
-
     var a_host_ptr = alloc[Float32](M * K)
     var a_host = NDBuffer[DType.float32, 2, _, DimList(M, K)](a_host_ptr)
     var b_host_ptr = alloc[Float32](K * N)
@@ -209,5 +208,9 @@ fn run_matmul(ctx: DeviceContext) raises:
 
 
 def main():
+    # Should be able to handle non-divisible values.
+    comptime size_list = [513, 502, 511]
     with DeviceContext() as ctx:
-        run_matmul(ctx)
+        @parameter
+        for N, M, K in product(size_list, size_list, size_list):
+            run_matmul[N, M, K](ctx)
