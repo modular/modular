@@ -19,6 +19,10 @@ build --disk_cache=~/.cache/bazel-disk-cache
 build --compilation_mode=dbg
 build --//:modular_config=default
 
+# Set test timeouts to match internal CI
+# (copied manually since the the relevant CI config is not present here)
+build --test_timeout=-1,-1,600,600
+
 build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
 build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
 build:public-cache --build_metadata=VISIBILITY=PUBLIC

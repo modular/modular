@@ -205,6 +205,20 @@ def test_key_error():
         _ = dict.pop("a")
 
 
+def test_key_error_hold_key():
+    var dict: Dict[String, Int] = {}
+    var error_raised = False
+
+    var key = "a"
+    try:
+        _ = dict[key]
+    except e:
+        assert_equal(e.key(), key)
+        error_raised = True
+
+    assert_true(error_raised)
+
+
 def _test_iter_bounds[
     I: Iterator, //
 ](var dict_iter: I, dict_len: Int,):
@@ -517,7 +531,7 @@ def test_mojo_issue_1729():
         d[DummyKey(key)] = i
     assert_equal(len(d), len(keys))
     for i, key in enumerate(keys):
-        assert_equal(i, d[key])
+        assert_equal(i, d[DummyKey(key)])
 
 
 def _test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
@@ -592,7 +606,7 @@ def test_dict_popitem():
     assert_equal(item.key, "a")
     assert_equal(item.value, 1)
     assert_equal(len(dict), 0)
-    with assert_raises(contains="KeyError"):
+    with assert_raises(contains="EmptyDictError"):
         _ = dict.popitem()
 
 
@@ -726,7 +740,7 @@ def test_popitem_no_copies():
     assert_equal(item.key, "a")
     assert_equal(item.value.copy_count, 0)
     assert_equal(len(dict), 0)
-    with assert_raises(contains="KeyError"):
+    with assert_raises(contains="EmptyDictError"):
         _ = dict.popitem()
 
 

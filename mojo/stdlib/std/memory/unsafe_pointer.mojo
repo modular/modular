@@ -1437,7 +1437,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn bitcast[
-        T: UnknownDestructibility
+        T: AnyType
     ](self) -> UnsafePointer[
         T,
         Self.origin,
