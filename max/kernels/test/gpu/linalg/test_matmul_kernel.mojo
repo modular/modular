@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv
+from math import ceildiv
 
-from algorithm.functional import tile_and_unswitch
 from buffer import DimList, NDBuffer
-from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
 from itertools import product
 from linalg.matmul.gpu import matmul_kernel
-from memory import stack_allocation
 from testing import assert_false
 
 from utils.index import Index
