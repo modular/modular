@@ -1,3 +1,16 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 # Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,11 +25,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import max.nn.module_v3 as nn
 import max.experimental.functional as F
+import max.nn.module_v3 as nn
 from max.experimental.tensor import Tensor
 
-from .layers import RMSNorm, Conv2d
+from .layers import Conv2d, RMSNorm
 from .upsampling import upfirdn2d_native
 
 
@@ -49,7 +62,6 @@ class Downsample2D(nn.Module):
         elementwise_affine: bool | None = None,
         bias: bool = True,
     ):
-        super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
@@ -68,7 +80,12 @@ class Downsample2D(nn.Module):
 
         if use_conv:
             conv = Conv2d(
-                self.channels, self.out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
+                self.channels,
+                self.out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                bias=bias,
             )
         else:
             assert self.channels == self.out_channels
@@ -86,7 +103,9 @@ class Downsample2D(nn.Module):
         assert hidden_states.shape[1] == self.channels
 
         if self.norm is not None:
-            hidden_states = self.norm(hidden_states.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+            hidden_states = self.norm(
+                hidden_states.permute(0, 2, 3, 1)
+            ).permute(0, 3, 1, 2)
 
         if self.use_conv and self.padding == 0:
             pad = (0, 1, 0, 1)

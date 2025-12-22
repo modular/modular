@@ -1,3 +1,16 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 # Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,15 +27,18 @@
 
 from __future__ import annotations
 
-from typing import Tuple
-
-import max.nn.module_v3 as nn
-from .vae import AutoencoderMixin, Decoder, DecoderOutput, DiagonalGaussianDistribution, Encoder
-
-
-from .layers import Conv2d, AutoencoderKLOutput
-from max.experimental.tensor import Tensor
 import max.experimental.functional as F
+import max.nn.module_v3 as nn
+from max.experimental.tensor import Tensor
+
+from .layers import AutoencoderKLOutput, Conv2d
+from .vae import (
+    AutoencoderMixin,
+    Decoder,
+    DecoderOutput,
+    DiagonalGaussianDistribution,
+    Encoder,
+)
 
 
 class AutoencoderKL(nn.Module, AutoencoderMixin):
@@ -64,9 +80,9 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
         self,
         in_channels: int = 3,
         out_channels: int = 3,
-        down_block_types: Tuple[str, ...] = ("DownEncoderBlock2D",),
-        up_block_types: Tuple[str, ...] = ("UpDecoderBlock2D",),
-        block_out_channels: Tuple[int, ...] = (64,),
+        down_block_types: tuple[str, ...] = ("DownEncoderBlock2D",),
+        up_block_types: tuple[str, ...] = ("UpDecoderBlock2D",),
+        block_out_channels: tuple[int, ...] = (64,),
         layers_per_block: int = 1,
         act_fn: str = "silu",
         latent_channels: int = 4,
@@ -74,15 +90,13 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
         sample_size: int = 32,
         scaling_factor: float = 0.18215,
         shift_factor: float | None = None,
-        latents_mean: Tuple[float] | None = None,
-        latents_std: Tuple[float] | None = None,
+        latents_mean: tuple[float] | None = None,
+        latents_std: tuple[float] | None = None,
         force_upcast: bool = True,
         use_quant_conv: bool = True,
         use_post_quant_conv: bool = True,
         mid_block_add_attention: bool = True,
     ):
-        super().__init__()
-
         # pass init params to Encoder
         self.encoder = Encoder(
             in_channels=in_channels,
@@ -108,8 +122,16 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
             mid_block_add_attention=mid_block_add_attention,
         )
 
-        self.quant_conv = Conv2d(2 * latent_channels, 2 * latent_channels, 1) if use_quant_conv else None
-        self.post_quant_conv = Conv2d(latent_channels, latent_channels, 1) if use_post_quant_conv else None
+        self.quant_conv = (
+            Conv2d(2 * latent_channels, 2 * latent_channels, 1)
+            if use_quant_conv
+            else None
+        )
+        self.post_quant_conv = (
+            Conv2d(latent_channels, latent_channels, 1)
+            if use_post_quant_conv
+            else None
+        )
 
         self.use_slicing = False
         self.use_tiling = False
@@ -121,13 +143,18 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
             if isinstance(sample_size, (list, tuple))
             else sample_size
         )
-        self.tile_latent_min_size = int(sample_size / (2 ** (len(block_out_channels) - 1)))
+        self.tile_latent_min_size = int(
+            sample_size / (2 ** (len(block_out_channels) - 1))
+        )
         self.tile_overlap_factor = 0.25
 
     def _encode(self, x: Tensor) -> Tensor:
-        batch_size, num_channels, height, width = x.shape
+        _, _, height, width = x.shape
 
-        if self.use_tiling and (width > self.tile_sample_min_size or height > self.tile_sample_min_size):
+        if self.use_tiling and (
+            width > self.tile_sample_min_size
+            or height > self.tile_sample_min_size
+        ):
             return self._tiled_encode(x)
 
         enc = self.encoder(x)
@@ -138,7 +165,7 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
 
     def encode(
         self, x: Tensor, return_dict: bool = True
-    ) -> AutoencoderKLOutput | Tuple[DiagonalGaussianDistribution]:
+    ) -> AutoencoderKLOutput | tuple[DiagonalGaussianDistribution]:
         """
         Encode a batch of images into latents.
 
@@ -164,8 +191,13 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
 
         return AutoencoderKLOutput(latent_dist=posterior)
 
-    def _decode(self, z: Tensor, return_dict: bool = True) -> DecoderOutput | Tensor:
-        if self.use_tiling and (z.shape[-1] > self.tile_latent_min_size or z.shape[-2] > self.tile_latent_min_size):
+    def _decode(
+        self, z: Tensor, return_dict: bool = True
+    ) -> DecoderOutput | Tensor:
+        if self.use_tiling and (
+            z.shape[-1] > self.tile_latent_min_size
+            or z.shape[-2] > self.tile_latent_min_size
+        ):
             return self.tiled_decode(z, return_dict=return_dict)
 
         if self.post_quant_conv is not None:
@@ -179,7 +211,10 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
         return DecoderOutput(sample=dec)
 
     def decode(
-        self, z: Tensor, return_dict: bool = True, generator=None
+        self,
+        z: Tensor,
+        return_dict: bool = True,
+        # generator=None
     ) -> DecoderOutput | Tensor:
         """
         Decode a batch of images.
@@ -196,7 +231,9 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
 
         """
         if self.use_slicing and z.shape[0] > 1:
-            decoded_slices = [self._decode(z_slice).sample for z_slice in z.split(1)]
+            decoded_slices = [
+                self._decode(z_slice).sample for z_slice in z.split(1)
+            ]
             decoded = F.concat(decoded_slices)
         else:
             decoded = self._decode(z).sample
@@ -271,7 +308,9 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
                 The latent representation of the encoded videos.
         """
 
-        overlap_size = int(self.tile_sample_min_size * (1 - self.tile_overlap_factor))
+        overlap_size = int(
+            self.tile_sample_min_size * (1 - self.tile_overlap_factor)
+        )
         blend_extent = int(self.tile_latent_min_size * self.tile_overlap_factor)
         row_limit = self.tile_latent_min_size - blend_extent
 
@@ -282,7 +321,7 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
             for j in range(0, int(x.shape[3]), overlap_size):
                 end_i = min(i + self.tile_sample_min_size, int(x.shape[2]))
                 end_j = min(j + self.tile_sample_min_size, int(x.shape[3]))
-                tile = x[:, :, i : end_i, j : end_j]
+                tile = x[:, :, i:end_i, j:end_j]
                 tile = self.encoder(tile)
                 if self.quant_conv is not None:
                     tile = self.quant_conv(tile)
@@ -307,7 +346,9 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
         enc = F.concat(result_rows, axis=2)
         return enc
 
-    def tiled_encode(self, x: Tensor, return_dict: bool = True) -> AutoencoderKLOutput:
+    def tiled_encode(
+        self, x: Tensor, return_dict: bool = True
+    ) -> AutoencoderKLOutput:
         r"""Encode a batch of images using a tiled encoder.
 
         When this option is enabled, the VAE will split the input tensor into tiles to compute encoding in several
@@ -327,7 +368,9 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
                 `tuple` is returned.
         """
 
-        overlap_size = int(self.tile_sample_min_size * (1 - self.tile_overlap_factor))
+        overlap_size = int(
+            self.tile_sample_min_size * (1 - self.tile_overlap_factor)
+        )
         blend_extent = int(self.tile_latent_min_size * self.tile_overlap_factor)
         row_limit = self.tile_latent_min_size - blend_extent
 
@@ -338,7 +381,7 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
             for j in range(0, int(x.shape[3]), overlap_size):
                 end_i = min(i + self.tile_sample_min_size, int(x.shape[2]))
                 end_j = min(j + self.tile_sample_min_size, int(x.shape[3]))
-                tile = x[:, :, i : end_i, j : end_j]
+                tile = x[:, :, i:end_i, j:end_j]
                 tile = self.encoder(tile)
                 if self.quant_conv is not None:
                     tile = self.quant_conv(tile)
@@ -368,7 +411,9 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
 
         return AutoencoderKLOutput(latent_dist=posterior)
 
-    def tiled_decode(self, z: Tensor, return_dict: bool = True) -> DecoderOutput | Tensor:
+    def tiled_decode(
+        self, z: Tensor, return_dict: bool = True
+    ) -> DecoderOutput | Tensor:
         r"""
         Decode a batch of images using a tiled decoder.
 
@@ -382,7 +427,9 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
                 If return_dict is True, a [`~models.vae.DecoderOutput`] is returned, otherwise a plain `tuple` is
                 returned.
         """
-        overlap_size = int(self.tile_latent_min_size * (1 - self.tile_overlap_factor))
+        overlap_size = int(
+            self.tile_latent_min_size * (1 - self.tile_overlap_factor)
+        )
         blend_extent = int(self.tile_sample_min_size * self.tile_overlap_factor)
         row_limit = self.tile_sample_min_size - blend_extent
 
@@ -394,7 +441,7 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
             for j in range(0, int(z.shape[3]), overlap_size):
                 end_i = min(i + self.tile_latent_min_size, int(z.shape[2]))
                 end_j = min(j + self.tile_latent_min_size, int(z.shape[3]))
-                tile = z[:, :, i : end_i, j : end_j]
+                tile = z[:, :, i:end_i, j:end_j]
                 if self.post_quant_conv is not None:
                     tile = self.post_quant_conv(tile)
                 decoded = self.decoder(tile)
@@ -427,7 +474,7 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
         sample: Tensor,
         sample_posterior: bool = False,
         return_dict: bool = True,
-        generator: Generator | None = None,
+        # generator: Generator | None = None,
     ) -> DecoderOutput | Tensor:
         r"""
         Args:
@@ -440,7 +487,9 @@ class AutoencoderKL(nn.Module, AutoencoderMixin):
         x = sample
         posterior = self.encode(x).latent_dist
         if sample_posterior:
-            z = posterior.sample(generator=generator)
+            z = posterior.sample(
+                # generator=generator
+            )
         else:
             z = posterior.mode()
         dec = self.decode(z).sample

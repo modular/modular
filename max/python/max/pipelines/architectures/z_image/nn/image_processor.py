@@ -1,8 +1,21 @@
-from typing import List
-from PIL import Image
-from max.experimental.tensor import Tensor
-from max.driver import CPU
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+
 import numpy as np
+from max.driver import CPU
+from max.experimental.tensor import Tensor
+from PIL import Image
 
 
 class VaeImageProcessor:
@@ -24,7 +37,7 @@ class VaeImageProcessor:
         """
         return (images * 0.5 + 0.5).clip(min=0.0, max=1.0)
 
-    def tensor_to_pil(self, images: Tensor) -> List[Image.Image]:
+    def tensor_to_pil(self, images: Tensor) -> list[Image.Image]:
         """
         Convert a batch of tensors to a list of PIL Images.
 
@@ -58,7 +71,7 @@ class VaeImageProcessor:
         self,
         image: Tensor,
         output_type: str = "pil",
-    ) -> List[Image.Image] | Tensor:
+    ) -> list[Image.Image] | Tensor:
         """
         Postprocess the image output from tensor to `output_type`.
 

@@ -1,3 +1,16 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 # Copyright 2025 The HuggingFace Team. All rights reserved.
 # `TemporalConvLayer` Copyright 2025 Alibaba DAMO-VILAB, The ModelScope Team and The HuggingFace Team. All rights reserved.
 #
@@ -16,15 +29,13 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Tuple
 
-import max.nn.module_v3 as nn
 import max.experimental.functional as F
+import max.nn.module_v3 as nn
 from max.experimental.tensor import Tensor
 
-from .layers import GroupNorm, SpatialNorm, get_activation, Conv2d, Dropout
-
 from .downsampling import Downsample2D, downsample_2d
+from .layers import Conv2d, Dropout, GroupNorm, SpatialNorm, get_activation
 from .upsampling import Upsample2D, upsample_2d
 
 
@@ -78,7 +89,6 @@ class ResnetBlockCondNorm2D(nn.Module):
         conv_shortcut_bias: bool = True,
         conv_2d_out_channels: int | None = None,
     ):
-        super().__init__()
         self.in_channels = in_channels
         out_channels = in_channels if out_channels is None else out_channels
         self.out_channels = out_channels
@@ -94,19 +104,31 @@ class ResnetBlockCondNorm2D(nn.Module):
         if self.time_embedding_norm == "spatial":
             self.norm1 = SpatialNorm(in_channels, temb_channels)
         else:
-            raise ValueError(f" unsupported time_embedding_norm: {self.time_embedding_norm}")
+            raise ValueError(
+                f" unsupported time_embedding_norm: {self.time_embedding_norm}"
+            )
 
-        self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+        self.conv1 = Conv2d(
+            in_channels, out_channels, kernel_size=3, stride=1, padding=1
+        )
 
         if self.time_embedding_norm == "spatial":  # spatial
             self.norm2 = SpatialNorm(out_channels, temb_channels)
         else:
-            raise ValueError(f" unsupported time_embedding_norm: {self.time_embedding_norm}")
+            raise ValueError(
+                f" unsupported time_embedding_norm: {self.time_embedding_norm}"
+            )
 
         self.dropout = Dropout(dropout)
 
         conv_2d_out_channels = conv_2d_out_channels or out_channels
-        self.conv2 = Conv2d(out_channels, conv_2d_out_channels, kernel_size=3, stride=1, padding=1)
+        self.conv2 = Conv2d(
+            out_channels,
+            conv_2d_out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
 
         self.nonlinearity = get_activation(non_linearity)
 
@@ -114,9 +136,15 @@ class ResnetBlockCondNorm2D(nn.Module):
         if self.up:
             self.upsample = Upsample2D(in_channels, use_conv=False)
         elif self.down:
-            self.downsample = Downsample2D(in_channels, use_conv=False, padding=1, name="op")
+            self.downsample = Downsample2D(
+                in_channels, use_conv=False, padding=1, name="op"
+            )
 
-        self.use_in_shortcut = self.in_channels != conv_2d_out_channels if use_in_shortcut is None else use_in_shortcut
+        self.use_in_shortcut = (
+            self.in_channels != conv_2d_out_channels
+            if use_in_shortcut is None
+            else use_in_shortcut
+        )
 
         self.conv_shortcut = None
         if self.use_in_shortcut:
@@ -129,7 +157,9 @@ class ResnetBlockCondNorm2D(nn.Module):
                 bias=conv_shortcut_bias,
             )
 
-    def __call__(self, input_tensor: Tensor, temb: Tensor, *args, **kwargs) -> Tensor:
+    def __call__(
+        self, input_tensor: Tensor, temb: Tensor, *args, **kwargs
+    ) -> Tensor:
         hidden_states = input_tensor
 
         hidden_states = self.norm1(hidden_states, temb)
@@ -160,7 +190,9 @@ class ResnetBlockCondNorm2D(nn.Module):
         if self.conv_shortcut is not None:
             input_tensor = self.conv_shortcut(input_tensor)
 
-        output_tensor = (input_tensor + hidden_states) / self.output_scale_factor
+        output_tensor = (
+            input_tensor + hidden_states
+        ) / self.output_scale_factor
 
         return output_tensor
 
@@ -219,7 +251,6 @@ class ResnetBlock2D(nn.Module):
         conv_shortcut_bias: bool = True,
         conv_2d_out_channels: int | None = None,
     ):
-        super().__init__()
         if time_embedding_norm == "ada_group":
             raise ValueError(
                 "This class cannot be used with `time_embedding_norm==ada_group`, please use `ResnetBlockCondNorm2D` instead",
@@ -243,9 +274,13 @@ class ResnetBlock2D(nn.Module):
         if groups_out is None:
             groups_out = groups
 
-        self.norm1 = GroupNorm(num_groups=groups, num_channels=in_channels, eps=eps, affine=True)
+        self.norm1 = GroupNorm(
+            num_groups=groups, num_channels=in_channels, eps=eps, affine=True
+        )
 
-        self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+        self.conv1 = Conv2d(
+            in_channels, out_channels, kernel_size=3, stride=1, padding=1
+        )
 
         if temb_channels is not None:
             if self.time_embedding_norm == "default":
@@ -253,15 +288,28 @@ class ResnetBlock2D(nn.Module):
             elif self.time_embedding_norm == "scale_shift":
                 self.time_emb_proj = nn.Linear(temb_channels, 2 * out_channels)
             else:
-                raise ValueError(f"unknown time_embedding_norm : {self.time_embedding_norm} ")
+                raise ValueError(
+                    f"unknown time_embedding_norm : {self.time_embedding_norm} "
+                )
         else:
             self.time_emb_proj = None
 
-        self.norm2 = GroupNorm(num_groups=groups_out, num_channels=out_channels, eps=eps, affine=True)
+        self.norm2 = GroupNorm(
+            num_groups=groups_out,
+            num_channels=out_channels,
+            eps=eps,
+            affine=True,
+        )
 
         self.dropout = Dropout(dropout)
         conv_2d_out_channels = conv_2d_out_channels or out_channels
-        self.conv2 = Conv2d(out_channels, conv_2d_out_channels, kernel_size=3, stride=1, padding=1)
+        self.conv2 = Conv2d(
+            out_channels,
+            conv_2d_out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
 
         self.nonlinearity = get_activation(non_linearity)
 
@@ -271,7 +319,9 @@ class ResnetBlock2D(nn.Module):
                 fir_kernel = (1, 3, 3, 1)
                 self.upsample = lambda x: upsample_2d(x, kernel=fir_kernel)
             elif kernel == "sde_vp":
-                self.upsample = partial(F.interpolate, scale_factor=2.0, mode="nearest")
+                self.upsample = partial(
+                    F.interpolate, scale_factor=2.0, mode="nearest"
+                )
             else:
                 self.upsample = Upsample2D(in_channels, use_conv=False)
         elif self.down:
@@ -281,9 +331,15 @@ class ResnetBlock2D(nn.Module):
             elif kernel == "sde_vp":
                 self.downsample = partial(F.avg_pool2d, kernel_size=2, stride=2)
             else:
-                self.downsample = Downsample2D(in_channels, use_conv=False, padding=1, name="op")
+                self.downsample = Downsample2D(
+                    in_channels, use_conv=False, padding=1, name="op"
+                )
 
-        self.use_in_shortcut = self.in_channels != conv_2d_out_channels if use_in_shortcut is None else use_in_shortcut
+        self.use_in_shortcut = (
+            self.in_channels != conv_2d_out_channels
+            if use_in_shortcut is None
+            else use_in_shortcut
+        )
 
         self.conv_shortcut = None
         if self.use_in_shortcut:
@@ -296,7 +352,9 @@ class ResnetBlock2D(nn.Module):
                 bias=conv_shortcut_bias,
             )
 
-    def __call__(self, input_tensor: Tensor, temb: Tensor, *args, **kwargs) -> Tensor:
+    def __call__(
+        self, input_tensor: Tensor, temb: Tensor, *args, **kwargs
+    ) -> Tensor:
         hidden_states = input_tensor
 
         hidden_states = self.norm1(hidden_states)
@@ -343,6 +401,8 @@ class ResnetBlock2D(nn.Module):
         if self.conv_shortcut is not None:
             input_tensor = self.conv_shortcut(input_tensor)
 
-        output_tensor = (input_tensor + hidden_states) / self.output_scale_factor
+        output_tensor = (
+            input_tensor + hidden_states
+        ) / self.output_scale_factor
 
         return output_tensor

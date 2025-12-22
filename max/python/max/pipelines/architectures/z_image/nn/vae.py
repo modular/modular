@@ -1,3 +1,16 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 # Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,15 +28,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
 
-import max.nn.module_v3 as nn
-from max.nn.module_v3.sequential import ModuleList
-from max.experimental.tensor import Tensor
 import max.experimental.functional as F
+import max.nn.module_v3 as nn
 from max.experimental import random
+from max.experimental.tensor import Tensor
+from max.nn.module_v3.sequential import ModuleList
 
-from .layers import SpatialNorm, Conv2d, GroupNorm, SiLU
+from .layers import Conv2d, GroupNorm, SiLU, SpatialNorm
 from .unet_2d_blocks import UNetMidBlock2D, get_down_block, get_up_block
 
 
@@ -82,15 +94,14 @@ class Encoder(nn.Module):
         self,
         in_channels: int = 3,
         out_channels: int = 3,
-        down_block_types: Tuple[str, ...] = ("DownEncoderBlock2D",),
-        block_out_channels: Tuple[int, ...] = (64,),
+        down_block_types: tuple[str, ...] = ("DownEncoderBlock2D",),
+        block_out_channels: tuple[int, ...] = (64,),
         layers_per_block: int = 2,
         norm_num_groups: int = 32,
         act_fn: str = "silu",
         double_z: bool = True,
         mid_block_add_attention: bool = True,
     ):
-        super().__init__()
         self.layers_per_block = layers_per_block
 
         self.conv_in = Conv2d(
@@ -139,11 +150,17 @@ class Encoder(nn.Module):
         )
 
         # out
-        self.conv_norm_out = GroupNorm(num_channels=block_out_channels[-1], num_groups=norm_num_groups, eps=1e-6)
+        self.conv_norm_out = GroupNorm(
+            num_channels=block_out_channels[-1],
+            num_groups=norm_num_groups,
+            eps=1e-6,
+        )
         self.conv_act = SiLU()
 
         conv_out_channels = 2 * out_channels if double_z else out_channels
-        self.conv_out = Conv2d(block_out_channels[-1], conv_out_channels, 3, padding=1)
+        self.conv_out = Conv2d(
+            block_out_channels[-1], conv_out_channels, 3, padding=1
+        )
 
         self.gradient_checkpointing = False
 
@@ -194,15 +211,14 @@ class Decoder(nn.Module):
         self,
         in_channels: int = 3,
         out_channels: int = 3,
-        up_block_types: Tuple[str, ...] = ("UpDecoderBlock2D",),
-        block_out_channels: Tuple[int, ...] = (64,),
+        up_block_types: tuple[str, ...] = ("UpDecoderBlock2D",),
+        block_out_channels: tuple[int, ...] = (64,),
         layers_per_block: int = 2,
         norm_num_groups: int = 32,
         act_fn: str = "silu",
         norm_type: str = "group",  # group, spatial
         mid_block_add_attention: bool = True,
     ):
-        super().__init__()
         self.layers_per_block = layers_per_block
 
         self.conv_in = Conv2d(
@@ -223,7 +239,9 @@ class Decoder(nn.Module):
             resnet_eps=1e-6,
             resnet_act_fn=act_fn,
             output_scale_factor=1,
-            resnet_time_scale_shift="default" if norm_type == "group" else norm_type,
+            resnet_time_scale_shift="default"
+            if norm_type == "group"
+            else norm_type,
             attention_head_dim=block_out_channels[-1],
             resnet_groups=norm_num_groups,
             temb_channels=temb_channels,
@@ -262,7 +280,9 @@ class Decoder(nn.Module):
         else:
             self.conv_norm_out = GroupNorm(num_channels=block_out_channels[0], num_groups=norm_num_groups, eps=1e-6)
         self.conv_act = SiLU()
-        self.conv_out = Conv2d(block_out_channels[0], out_channels, 3, padding=1)
+        self.conv_out = Conv2d(
+            block_out_channels[0], out_channels, 3, padding=1
+        )
 
         self.gradient_checkpointing = False
 
@@ -285,15 +305,15 @@ class Decoder(nn.Module):
         # post-process
         if latent_embeds is None:
             sample = self.conv_norm_out(sample)
-        else:
-            sample = self.conv_norm_out(sample, latent_embeds)
+        # else:
+        # sample = self.conv_norm_out(sample, latent_embeds)
         sample = self.conv_act(sample)
         sample = self.conv_out(sample)
 
         return sample
 
 
-class DiagonalGaussianDistribution(object):
+class DiagonalGaussianDistribution:
     def __init__(self, parameters: Tensor, deterministic: bool = False):
         self.parameters = parameters
         self.mean, self.logvar = F.chunk(parameters, 2, axis=1)
@@ -301,7 +321,11 @@ class DiagonalGaussianDistribution(object):
         min_val = -30.0
         max_val = 20.0
 
-        is_too_small = F.less(self.logvar, min_val) if hasattr(F, 'less') else (self.logvar < min_val)
+        is_too_small = (
+            F.less(self.logvar, min_val)
+            if hasattr(F, "less")
+            else (self.logvar < min_val)
+        )
         self.logvar = F.where(is_too_small, min_val, self.logvar)
 
         is_too_large = F.greater(self.logvar, max_val)
@@ -311,14 +335,19 @@ class DiagonalGaussianDistribution(object):
         self.var = F.exp(self.logvar)
         if self.deterministic:
             self.var = self.std = Tensor.zeros(
-                self.mean.shape, device=self.parameters.device, dtype=self.parameters.dtype
+                self.mean.shape,
+                device=self.parameters.device,
+                dtype=self.parameters.dtype,
             )
 
-    def sample(self, generator: "Generator" | None = None) -> Tensor:
+    def sample(
+        self,
+        #    generator: "Generator" | None = None
+    ) -> Tensor:
         # make sure sample is on the same device as the parameters and has same dtype
         sample = random.normal(
             self.mean.shape,
-            #generator=generator,  # TODO: implement generator
+            # generator=generator,  # TODO: implement generator
             device=self.parameters.device,
             mean=0.0,
             std=1.0,
@@ -327,7 +356,7 @@ class DiagonalGaussianDistribution(object):
         x = self.mean + self.std * sample
         return x
 
-    def kl(self, other: "DiagonalGaussianDistribution" = None) -> Tensor:
+    def kl(self, other: DiagonalGaussianDistribution = None) -> Tensor:
         if self.deterministic:
             return Tensor.constant([0.0])
         else:
@@ -346,7 +375,7 @@ class DiagonalGaussianDistribution(object):
                     dim=[1, 2, 3],
                 )
 
-    def nll(self, sample: Tensor, dims: Tuple[int, ...] = [1, 2, 3]) -> Tensor:
+    def nll(self, sample: Tensor, dims: tuple[int, ...] = [1, 2, 3]) -> Tensor:
         if self.deterministic:
             return Tensor.constant([0.0])
         logtwopi = F.log(2.0 * 3.14159265359)
@@ -360,33 +389,37 @@ class DiagonalGaussianDistribution(object):
 
 
 class AutoencoderMixin:
-    def enable_tiling(self):
+    def enable_tiling(self) -> None:
         r"""
         Enable tiled VAE decoding. When this option is enabled, the VAE will split the input tensor into tiles to
         compute decoding and encoding in several steps. This is useful for saving a large amount of memory and to allow
         processing larger images.
         """
         if not hasattr(self, "use_tiling"):
-            raise NotImplementedError(f"Tiling doesn't seem to be implemented for {self.__class__.__name__}.")
+            raise NotImplementedError(
+                f"Tiling doesn't seem to be implemented for {self.__class__.__name__}."
+            )
         self.use_tiling = True
 
-    def disable_tiling(self):
+    def disable_tiling(self) -> None:
         r"""
         Disable tiled VAE decoding. If `enable_tiling` was previously enabled, this method will go back to computing
         decoding in one step.
         """
         self.use_tiling = False
 
-    def enable_slicing(self):
+    def enable_slicing(self) -> None:
         r"""
         Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
         compute decoding in several steps. This is useful to save some memory and allow larger batch sizes.
         """
         if not hasattr(self, "use_slicing"):
-            raise NotImplementedError(f"Slicing doesn't seem to be implemented for {self.__class__.__name__}.")
+            raise NotImplementedError(
+                f"Slicing doesn't seem to be implemented for {self.__class__.__name__}."
+            )
         self.use_slicing = True
 
-    def disable_slicing(self):
+    def disable_slicing(self) -> None:
         r"""
         Disable sliced VAE decoding. If `enable_slicing` was previously enabled, this method will go back to computing
         decoding in one step.

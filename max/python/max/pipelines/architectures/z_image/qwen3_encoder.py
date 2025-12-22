@@ -14,12 +14,12 @@
 
 from __future__ import annotations
 
+from max.dtype import DType
 from max.graph import DeviceRef, TensorValueLike, ops
 from max.nn.kv_cache import PagedCacheValues
-from max.dtype import DType
-
-from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
+from max.pipelines.architectures.qwen3.qwen3 import Qwen3
+
 
 class Qwen3Encoder(Qwen3):
     """

@@ -1,3 +1,16 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 # Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,13 +25,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
 
-import max.nn.module_v3 as nn
 import max.experimental.functional as F
+import max.nn.module_v3 as nn
 from max.experimental.tensor import Tensor
 
-from .layers import RMSNorm, Conv2d
+from .layers import Conv2d, RMSNorm
 
 
 class Upsample2D(nn.Module):
@@ -52,7 +64,6 @@ class Upsample2D(nn.Module):
         bias: bool = True,
         interpolate: bool = True,
     ):
-        super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
@@ -74,31 +85,50 @@ class Upsample2D(nn.Module):
             if kernel_size is None:
                 kernel_size = 4
             conv = nn.ConvTranspose2d(
-                channels, self.out_channels, kernel_size=kernel_size, stride=2, padding=padding, bias=bias
+                channels,
+                self.out_channels,
+                kernel_size=kernel_size,
+                stride=2,
+                padding=padding,
+                bias=bias,
             )
         elif use_conv:
             if kernel_size is None:
                 kernel_size = 3
-            conv = Conv2d(self.channels, self.out_channels, kernel_size=kernel_size, padding=padding, bias=bias)
+            conv = Conv2d(
+                self.channels,
+                self.out_channels,
+                kernel_size=kernel_size,
+                padding=padding,
+                bias=bias,
+            )
 
         if name == "conv":
             self.conv = conv
         else:
             self.Conv2d_0 = conv
 
-    def __call__(self, hidden_states: Tensor, output_size: int | None = None, *args, **kwargs) -> Tensor:
+    def __call__(
+        self,
+        hidden_states: Tensor,
+        output_size: int | None = None,
+        *args,
+        **kwargs,
+    ) -> Tensor:
         assert hidden_states.shape[1] == self.channels
 
         if self.norm is not None:
-            hidden_states = self.norm(hidden_states.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+            hidden_states = self.norm(
+                hidden_states.permute(0, 2, 3, 1)
+            ).permute(0, 3, 1, 2)
 
         if self.use_conv_transpose:
             return self.conv(hidden_states)
 
         # Cast to float32 to as 'upsample_nearest2d_out_frame' op does not support bfloat16 until PyTorch 2.1
         # https://github.com/pytorch/pytorch/issues/86679#issuecomment-1783978767
-        #dtype = hidden_states.dtype
-        #if dtype == torch.bfloat16 and is_torch_version("<", "2.1"):
+        # dtype = hidden_states.dtype
+        # if dtype == torch.bfloat16 and is_torch_version("<", "2.1"):
         #    hidden_states = hidden_states.cast(DType.float32)
 
         # upsample_nearest_nhwc fails with large batch sizes. see https://github.com/huggingface/diffusers/issues/984
@@ -112,7 +142,16 @@ class Upsample2D(nn.Module):
             # upsample_nearest_nhwc also fails when the number of output elements is large
             # https://github.com/pytorch/pytorch/issues/141831
             scale_factor = (
-                2 if output_size is None else max([f / s for f, s in zip(output_size, hidden_states.shape[-2:])])
+                2
+                if output_size is None
+                else max(
+                    [
+                        f / s
+                        for f, s in zip(
+                            output_size, hidden_states.shape[-2:], strict=False
+                        )
+                    ]
+                )
             )
             if hidden_states.num_elements() * scale_factor > pow(2, 31):
                 # .contiguous() not needed in MAX
@@ -121,7 +160,12 @@ class Upsample2D(nn.Module):
             if output_size is None:
                 # hidden_states = F.interpolate(hidden_states, scale_factor=2.0, mode="nearest")
                 # Manual nearest neighbor 2x upsampling using broadcast_to
-                N, C, H, W = int(hidden_states.shape[0]), int(hidden_states.shape[1]), int(hidden_states.shape[2]), int(hidden_states.shape[3])
+                N, C, H, W = (
+                    int(hidden_states.shape[0]),
+                    int(hidden_states.shape[1]),
+                    int(hidden_states.shape[2]),
+                    int(hidden_states.shape[3]),
+                )
 
                 # Expand H: (N, C, H, W) -> (N, C, H, 1, W) -> (N, C, H, 2, W) -> (N, C, 2*H, W)
                 hs = F.unsqueeze(hidden_states, 3)
@@ -138,12 +182,15 @@ class Upsample2D(nn.Module):
                 # For now, just identity to avoid complex logic issues if not needed by test
                 target_h, target_w = output_size
                 # Just resize if needed (simplification)
-                if target_h != hidden_states.shape[2] or target_w != hidden_states.shape[3]:
-                     # This path is not used in minimal test (output_size is None)
-                     pass
+                if (
+                    target_h != hidden_states.shape[2]
+                    or target_w != hidden_states.shape[3]
+                ):
+                    # This path is not used in minimal test (output_size is None)
+                    pass
 
         # Cast back to original dtype
-        #if dtype == torch.bfloat16 and is_torch_version("<", "2.1"):
+        # if dtype == torch.bfloat16 and is_torch_version("<", "2.1"):
         #    hidden_states = hidden_states.to(dtype)
 
         if self.use_conv:
@@ -160,7 +207,7 @@ def upfirdn2d_native(
     kernel: Tensor,
     up: int = 1,
     down: int = 1,
-    pad: Tuple[int, int] = (0, 0),
+    pad: tuple[int, int] = (0, 0),
 ) -> Tensor:
     up_x = up_y = up
     down_x = down_y = down
@@ -177,7 +224,10 @@ def upfirdn2d_native(
     out = F.pad(out, [0, 0, 0, up_x - 1, 0, 0, 0, up_y - 1])
     out = out.view(-1, in_h * up_y, in_w * up_x, minor)
 
-    out = F.pad(out, [0, 0, max(pad_x0, 0), max(pad_x1, 0), max(pad_y0, 0), max(pad_y1, 0)])
+    out = F.pad(
+        out,
+        [0, 0, max(pad_x0, 0), max(pad_x1, 0), max(pad_y0, 0), max(pad_y1, 0)],
+    )
     out = out.to(tensor.device)  # Move back to mps if necessary
     out = out[
         :,
@@ -187,7 +237,9 @@ def upfirdn2d_native(
     ]
 
     out = out.permute(0, 3, 1, 2)
-    out = out.reshape([-1, 1, in_h * up_y + pad_y0 + pad_y1, in_w * up_x + pad_x0 + pad_x1])
+    out = out.reshape(
+        [-1, 1, in_h * up_y + pad_y0 + pad_y1, in_w * up_x + pad_x0 + pad_x1]
+    )
     w = F.flip(kernel, [0, 1]).view(1, 1, kernel_h, kernel_w)
     out = F.conv2d(out, w)
     out = out.reshape(

@@ -1,16 +1,27 @@
-from typing import Any, Dict, Tuple
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
 
-import max.experimental.functional as F
+
+import logging
+
 import max.nn.module_v3 as nn
 from max.experimental.tensor import Tensor
 from max.nn.module_v3.sequential import ModuleList
 
-import logging
-from .layers import get_activation, Attention
-from .resnet import ResnetBlock2D, ResnetBlockCondNorm2D
 from .downsampling import Downsample2D
+from .layers import Attention
+from .resnet import ResnetBlock2D
 from .upsampling import Upsample2D
-
 
 logger = logging.getLogger("max.pipelines")
 
@@ -41,7 +52,7 @@ def get_down_block(
     attention_head_dim: int | None = None,
     downsample_type: str | None = None,
     dropout: float = 0.0,
-):
+) -> nn.Module:
     # If attn head dim is not defined, we default it to the number of heads
     if attention_head_dim is None:
         logger.warning(
@@ -49,7 +60,7 @@ def get_down_block(
         )
         attention_head_dim = num_attention_heads
 
-    down_block_type = down_block_type[7:] if down_block_type.startswith("UNetRes") else down_block_type
+    down_block_type = down_block_type.removeprefix("UNetRes")
     if down_block_type == "DownEncoderBlock2D":
         return DownEncoderBlock2D(
             num_layers=num_layers,
@@ -101,7 +112,7 @@ def get_up_block(
         )
         attention_head_dim = num_attention_heads
 
-    up_block_type = up_block_type[7:] if up_block_type.startswith("UNetRes") else up_block_type
+    up_block_type = up_block_type.removeprefix("UNetRes")
     if up_block_type == "UpDecoderBlock2D":
         return UpDecoderBlock2D(
             num_layers=num_layers,
@@ -166,12 +177,17 @@ class UNetMidBlock2D(nn.Module):
         attention_head_dim: int = 1,
         output_scale_factor: float = 1.0,
     ):
-        super().__init__()
-        resnet_groups = resnet_groups if resnet_groups is not None else min(in_channels // 4, 32)
+        resnet_groups = (
+            resnet_groups
+            if resnet_groups is not None
+            else min(in_channels // 4, 32)
+        )
         self.add_attention = add_attention
 
         if attn_groups is None:
-            attn_groups = resnet_groups if resnet_time_scale_shift == "default" else None
+            attn_groups = (
+                resnet_groups if resnet_time_scale_shift == "default" else None
+            )
 
         # there is always at least one resnet
         if resnet_time_scale_shift == "default":
@@ -207,7 +223,9 @@ class UNetMidBlock2D(nn.Module):
                         rescale_output_factor=output_scale_factor,
                         eps=resnet_eps,
                         norm_num_groups=attn_groups,
-                        spatial_norm_dim=temb_channels if resnet_time_scale_shift == "spatial" else None,
+                        spatial_norm_dim=temb_channels
+                        if resnet_time_scale_shift == "spatial"
+                        else None,
                         residual_connection=True,
                         bias=True,
                         upcast_softmax=True,
@@ -237,14 +255,19 @@ class UNetMidBlock2D(nn.Module):
 
         self.gradient_checkpointing = False
 
-    def __call__(self, hidden_states: Tensor, temb: Tensor | None = None) -> Tensor:
+    def __call__(
+        self, hidden_states: Tensor, temb: Tensor | None = None
+    ) -> Tensor:
         hidden_states = self.resnets[0](hidden_states, temb)
-        for attn, resnet in zip(self.attentions, self.resnets[1:]):
+        for attn, resnet in zip(
+            self.attentions, self.resnets[1:], strict=False
+        ):
             if attn is not None:
                 hidden_states = attn(hidden_states, temb=temb)
             hidden_states = resnet(hidden_states, temb)
 
         return hidden_states
+
 
 class DownEncoderBlock2D(nn.Module):
     def __init__(
@@ -262,7 +285,6 @@ class DownEncoderBlock2D(nn.Module):
         add_downsample: bool = True,
         downsample_padding: int = 1,
     ):
-        super().__init__()
         resnets = []
 
         for i in range(num_layers):
@@ -288,14 +310,20 @@ class DownEncoderBlock2D(nn.Module):
             self.downsamplers = ModuleList(
                 [
                     Downsample2D(
-                        out_channels, use_conv=True, out_channels=out_channels, padding=downsample_padding, name="op"
+                        out_channels,
+                        use_conv=True,
+                        out_channels=out_channels,
+                        padding=downsample_padding,
+                        name="op",
                     )
                 ]
             )
         else:
             self.downsamplers = None
 
-    def __call__(self, hidden_states: Tensor, temb: Tensor | None = None) -> Tensor:
+    def __call__(
+        self, hidden_states: Tensor, temb: Tensor | None = None
+    ) -> Tensor:
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, temb=temb)
 
@@ -323,7 +351,6 @@ class UpDecoderBlock2D(nn.Module):
         add_upsample: bool = True,
         temb_channels: int | None = None,
     ):
-        super().__init__()
         resnets = []
 
         for i in range(num_layers):
@@ -346,13 +373,21 @@ class UpDecoderBlock2D(nn.Module):
         self.resnets = ModuleList(resnets)
 
         if add_upsample:
-            self.upsamplers = ModuleList([Upsample2D(out_channels, use_conv=True, out_channels=out_channels)])
+            self.upsamplers = ModuleList(
+                [
+                    Upsample2D(
+                        out_channels, use_conv=True, out_channels=out_channels
+                    )
+                ]
+            )
         else:
             self.upsamplers = None
 
         self.resolution_idx = resolution_idx
 
-    def __call__(self, hidden_states: Tensor, temb: Tensor | None = None) -> Tensor:
+    def __call__(
+        self, hidden_states: Tensor, temb: Tensor | None = None
+    ) -> Tensor:
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, temb=temb)
 
