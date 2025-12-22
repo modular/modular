@@ -1,4 +1,3 @@
-
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
@@ -26,6 +25,7 @@ class Qwen3Encoder(Qwen3):
     Qwen3 Encoder wrapper for Z-Image pipeline.
     Accesses the last hidden state of the Qwen3 model to use as text embeddings.
     """
+
     def __init__(self, config: Qwen3Config) -> None:
         super().__init__(config)
 

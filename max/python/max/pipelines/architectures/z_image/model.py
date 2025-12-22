@@ -23,23 +23,20 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+import PIL.Image
 from max._core.engine import Model
 from max.driver import Device
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.experimental import functional as F
-from max.experimental import random, tensor
+from max.experimental import random
+from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
     Weights,
     WeightsAdapter,
-)
-from max.interfaces import GenerationStatus, RequestID
-from max.interfaces.pipeline_variants.image_generation import (
-    ImageGenerationMetadata,
-    ImageGenerationOutput,
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, PagedCacheValues
@@ -187,7 +184,7 @@ def retrieve_timesteps(
     timesteps: list[int] | None = None,
     sigmas: list[float] | None = None,
     **kwargs,
-) -> Tuple[Tensor, int]:
+) -> tuple[Tensor, int]:
     r"""
     Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
     custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.

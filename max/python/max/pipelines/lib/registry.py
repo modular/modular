@@ -55,7 +55,7 @@ from .config_enums import RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
-from .pipeline_variants.text_generation import TextGenerationPipeline, ImageGenerationPipeline
+from .pipeline_variants import ImageGenerationPipeline, TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
     SpeculativeMethod,

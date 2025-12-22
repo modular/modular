@@ -45,13 +45,6 @@ from .text_generation import (
     TextGenerationResponseFormat,
     VLMTextGenerationContext,
 )
-from .image_generation import (
-    ImageGenerationContextType,
-    ImageGenerationInputs,
-    ImageGenerationMetadata,
-    ImageGenerationOutput,
-    ImageGenerationRequest,
-)
 
 __all__ = [
     "AudioGenerationContextType",
@@ -65,9 +58,14 @@ __all__ = [
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
     "ImageGenerationContextType",
+    "ImageGenerationContextType",
+    "ImageGenerationInputs",
     "ImageGenerationInputs",
     "ImageGenerationMetadata",
+    "ImageGenerationMetadata",
     "ImageGenerationOutput",
+    "ImageGenerationOutput",
+    "ImageGenerationRequest",
     "ImageGenerationRequest",
     "ImageMetadata",
     "TextGenerationContext",
@@ -80,9 +78,4 @@ __all__ = [
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
     "VLMTextGenerationContext",
-    "ImageGenerationContextType",
-    "ImageGenerationInputs",
-    "ImageGenerationMetadata",
-    "ImageGenerationOutput",
-    "ImageGenerationRequest",
 ]

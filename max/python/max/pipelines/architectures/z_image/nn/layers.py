@@ -16,12 +16,12 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import max.experimental.functional as F
-from max.nn.module_v3.sequential import ModuleList
 import max.nn.module_v3 as nn
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import random
 from max.experimental.tensor import Tensor
+from max.nn.module_v3.sequential import ModuleList
 from typing_extensions import TypeVar
 
 # ===----------------------------------------------------------------------=== #
@@ -244,9 +244,7 @@ class Conv2d(nn.Module):
 
         # Weight shape: (out_channels, in_channels // groups, *kernel_size)
         weight_shape = [out_channels, in_channels // groups, *kernel_size]
-        self.weight = random.normal(
-            weight_shape, dtype=weight_dtype
-        )
+        self.weight = random.normal(weight_shape, dtype=weight_dtype)
 
         if bias:
             self.bias = Tensor.zeros([out_channels], dtype=weight_dtype)
@@ -521,10 +519,12 @@ class Attention(nn.Module):
         self.to_v = nn.Linear(query_dim, self.inner_dim, bias=bias)
         # Use ModuleList to match checkpoint's indexing (from nn.Sequential in Diffusers)
         # Parameter names will be to_out.0.weight, to_out.0.bias, etc.
-        self.to_out = ModuleList([
-            nn.Linear(self.inner_dim, query_dim, bias=bias),
-            Dropout(p=0.0),  # Dropout is typically 0 for inference
-        ])
+        self.to_out = ModuleList(
+            [
+                nn.Linear(self.inner_dim, query_dim, bias=bias),
+                Dropout(p=0.0),  # Dropout is typically 0 for inference
+            ]
+        )
 
     def __call__(
         self,
