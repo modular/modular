@@ -13,6 +13,9 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
+from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.architectures.llama3 import weight_adapters
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -21,37 +24,29 @@ from max.pipelines.lib import (
 )
 
 from .model import ZImageModel
-from max.pipelines.architectures.qwen3 import qwen3_arch
-from .nn.transformer_z_image import ZImageTransformer2DModel
 from .nn.autoencoder_kl import AutoencoderKL
-from .scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
-from .weight_adapters import convert_z_image_model_state_dict
+from .nn.transformer_z_image import ZImageTransformer2DModel
+from .qwen3_encoder import Qwen3Encoder
+from .scheduling_flow_match_euler_discrete import (
+    FlowMatchEulerDiscreteScheduler,
+)
 
 z_image_arch = SupportedArchitecture(
     name="ZImagePipeline",
     task=PipelineTask.IMAGE_GENERATION,
-    example_repo_ids=[
-        "Tongyi-MAI/Z-Image-Base",
-        "Tongyi-MAI/Z-Image-Turbo",
-    ],
+    example_repo_ids=["Tongyi-MAI/Z-Image-Turbo"],
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=True,
     default_encoding=SupportedEncoding.bfloat16,
-    supported_encodings={
-        SupportedEncoding.float32: None,
-        SupportedEncoding.bfloat16: None,
-    },
-    weight_adapters={
-        WeightsFormat.safetensors: convert_z_image_model_state_dict,
-    },
+    supported_encodings={SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED]},
     pipeline_model=ZImageModel,
     scheduler=FlowMatchEulerDiscreteScheduler,
     vae=AutoencoderKL,
-    text_encoder=qwen3_arch,
+    text_encoder=Qwen3Encoder,
     tokenizer=TextTokenizer,
     transformer=ZImageTransformer2DModel,
+    context_type=TextContext,
     rope_type=RopeType.normal,
-    required_arguments={
-        "enable_chunked_prefill": False,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict
     },
 )
