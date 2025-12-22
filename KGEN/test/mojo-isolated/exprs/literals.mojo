@@ -12,13 +12,10 @@ struct SimpleIntRange:
     fn __init__(out self):
         pass
 
-    fn __has_next__(self) -> Bool:
-        pass
-
     fn __len__(self) -> Int:
         pass
 
-    fn __next__(mut self) -> Int:
+    fn __next__(mut self) raises StopIteration -> Int:
         pass
 
     fn __iter__(self) -> Self:
@@ -123,11 +120,9 @@ fn test_list_literal():
 fn test_list_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!AnyType !Int>
     # CHECK: lit.loop {
-    # CHECK:   SimpleIntRange::@"__has_next__
-    # CHECK: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: %i1 = lit.var.decl "i1"
-    # CHECK-NEXT: lit.ref.store [[TMP]], %i1
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
+    # CHECK:      lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__call_error_tmp__, %i1)
+    # CHECK: [[TMP:%.*]] = lit.ref.load %i1
     # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
     # CHECK:      lit.call {{.*}}@List::@"append
@@ -139,10 +134,9 @@ fn test_list_comprehension():
     # CHECK: lit.loop {
     # CHECK: %i2 = lit.var.decl "i2"
     # CHECK:   lit.loop {
+    # CHECK: %i3 = lit.var.decl "i3"
     # CHECK:  [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
-    # CHECK-NEXT: %i3 = lit.var.decl "i3"
-    # CHECK-NEXT: lit.ref.store [[TMP]], %i3
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i2
+    # CHECK: [[TMP:%.*]] = lit.ref.load %i2
     # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %i3
     # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
     # CHECK:      lit.call {{.*}}@List::@"append
@@ -153,11 +147,9 @@ fn test_list_comprehension():
     # Inferred to type IntList and using an "if" clause.
     # CHECK: %c_collection = lit.var.decl{{.*}}!lit.ref<!IntList,
     # CHECK: lit.loop {
-    # CHECK:   SimpleIntRange::@"__has_next__
-    # CHECK: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
-    # CHECK-NEXT: %i4 = lit.var.decl "i4"
-    # CHECK-NEXT: lit.ref.store [[TMP]], %i4
-    # CHECK-NEXT: hlcf.elif {
+    # CHECK: %i4 = lit.var.decl "i4"
+    # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK: hlcf.elif {
     # CHECK-NEXT:    [[TMP:%.*]] = lit.ref.load %i4
     # CHECK-NEXT:    @Int::@"__bool__
     # CHECK-NEXT:    @Bool::@"__mlir_i1__
@@ -212,10 +204,8 @@ fn test_dict_literal(aBool: Bool):
 fn test_dict_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType !Int, :!ImplicitlyCopyable !String>
     # CHECK: lit.loop {
-    # CHECK:   SimpleIntRange::@"__has_next__
-    # CHECK: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
-    # CHECK-NEXT: %i = lit.var.decl "i"
-    # CHECK-NEXT: lit.ref.store [[TMP]], %i
+    # CHECK: %i = lit.var.decl "i"
+    # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK:       lit.call {{.*}}String::@"__init__()
     # CHECK:      [[TMP:%.*]] = lit.ref.immut %i
     # CHECK:      lit.call {{.*}}@Dict::@"__setitem__{{.*}}(%a_collection, [[TMP]],
@@ -262,11 +252,9 @@ fn test_set_literal():
 fn test_set_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Set <:!AnyType !Int>
     # CHECK: lit.loop {
-    # CHECK:   SimpleIntRange::@"__has_next__
-    # CHECK: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
-    # CHECK-NEXT: %i1 = lit.var.decl "i1"
-    # CHECK-NEXT: lit.ref.store [[TMP]], %i1
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
+    # CHECK: %i1 = lit.var.decl "i1"
+    # CHECK:   lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK: [[TMP:%.*]] = lit.ref.load %i1
     # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
     # CHECK:      lit.call {{.*}}@Set::@"add
@@ -375,10 +363,9 @@ struct IterRange(ImplicitlyCopyable, Iterator):
     fn __iter__(self) -> Self:
         return self
 
-    fn __has_next__(self) -> Bool:
-        return self.value > 0
-
-    fn __next__(mut self) -> Int:
+    fn __next__(mut self) raises StopIteration -> Int:
+        if self.value < 0:
+            raise StopIteration()
         return self.value
 
 

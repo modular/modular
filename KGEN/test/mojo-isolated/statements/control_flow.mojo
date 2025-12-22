@@ -418,8 +418,7 @@ fn test_simple(a: Bool):
 # This iterator returns elements by value.
 struct ValueIter:
     fn __init__(out self): pass
-    fn __next__(mut self) -> Int: return 0
-    fn __has_next__(self) -> Bool: return False
+    fn __next__(mut self) raises StopIteration -> Int: return 0
 
 struct ListValueIter:
     fn __init__(out self): pass
@@ -437,14 +436,23 @@ fn for_range_loop():
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %$ITER)
     for item in value_iter_list:
         # CHECK: lit.loop {
-        # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$ITER
-        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
-        # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
-        # CHECK:   lit.loop.continue
-        # CHECK: } else {
-        # CHECK-NEXT: lit.loop.yield
-        # CHECK: }
+        # CHECK-NEXT:   %item = lit.var.decl
+        # CHECK-NEXT:   %__call_error_tmp__ = lit.var.decl
+        # CHECK-NEXT:   lit.try %__call_error_tmp__
+        # CHECK-NEXT:    lit.call {{.*}}__next__{{.*}}(%$ITER, %__call_error_tmp__, %item)
+        # CHECK-NEXT:    lit.try.yield
+        # CHECK-NEXT:        } except {
+        # CHECK-NEXT:  lit.loop.break.else
+        # CHECK: } {suppressWarnings = true}
+        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %item
+        # CHECK-NEXT: lit.call{{.*}}use{{.*}}([[TMP]])
+        # CHECK-NEXT: lit.loop.continue
         use(item)
+    else:
+        pass
+        # CHECK: } else {
+        # CHECK:   lit.loop.yield
+        # CHECK: }
 
 
 # This iterator returns elements by reference, using the mutability and origin
@@ -452,8 +460,7 @@ fn for_range_loop():
 struct RefIter[list_mutability: Bool, //,
                list_origin: Origin[list_mutability]._mlir_type]:
     fn __init__(out self): pass
-    fn __next_ref__(mut self) -> ref [Self.list_origin] Int: pass
-    fn __has_next__(self) -> Bool: return False
+    fn __next_ref__(mut self) raises StopIteration -> ref [Self.list_origin] Int: pass
 
 struct ListWithRefIter:
     fn __init__(out self): pass
@@ -468,10 +475,10 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$ITER)
     for ref item in mut_list_ref_iter:
         # CHECK: lit.loop {
-        # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$ITER
-        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
-        # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
-        # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next_ref__{{.*}}(%$ITER)
+        # CHECK-NEXT: %__ref_result_tmp__ = lit.var.decl
+        # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl
+        # CHECK:   lit.call {{.*}}RefIter::@"__next_ref__{{.*}}(%$ITER, %__call_error_tmp__, %__ref_result_tmp__)
+
         # CHECK:   %item = lit.var.decl "item" ref
 
         # The Index value from this element is captured into item, not the reference.
@@ -501,10 +508,9 @@ struct IterRange(Iterator, ImplicitlyCopyable):
     fn __iter__(self) -> Self:
         return self
 
-    fn __has_next__(self) -> Bool:
-        return self.value > 0
-
-    fn __next__(mut self) -> Int:
+    fn __next__(mut self) raises StopIteration -> Int:
+        if self.value <= 0:
+            raise StopIteration()
         return self.value
 
 
@@ -512,16 +518,16 @@ struct IterRange(Iterator, ImplicitlyCopyable):
 fn induction_var_scope():
     # CHECK: lit.loop {
     for item in IterRange(0):
+        # CHECK: %item = lit.var.decl "item"
         # CHECK: __next__
-        # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store %{{.*}}, %g
         var g = item
 
     # CHECK: lit.loop {
     for (var item) in IterRange(0):
+        # CHECK: %item = lit.var.decl "item"
         # CHECK: __next__
-        # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         var g = item
 
@@ -529,17 +535,16 @@ fn induction_var_scope():
 def induction_var_scope_def():
     # CHECK: lit.loop {
     for item in IterRange(0):
+        # CHECK: %item = lit.var.decl "item"
         # CHECK: __next__
-        # CHECK-NEXT: %item = lit.var.decl "item"
-        # CHECK: lit.ref.store {{.*}}, %item
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store {{.*}}, %g
         var g = item
 
     # CHECK: lit.loop {
     for item in IterRange(0):
+        # CHECK: %item = lit.var.decl "item"
         # CHECK: __next__
-        # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         var g = item
 
@@ -553,8 +558,8 @@ fn use(value: MyType):
 # CHECK-SAME: <a: !Int>[mut [[LT:.*]]](%value: !lit.ref<!MyType, mut [[LT]]>
 fn parameter_for[a: Int](var value: MyType):
     # CHECK-NEXT: kgen.param.for [[iter:.*]]:  !IterRange in :!IterRange apply
-    # CHECK-NEXT: has_next
-    # CHECK-NEXT: get_next_iter :{{.*}}paramfor_next_iter{{.*}}<:!Iterator_ImplicitlyCopyable !IterRange>
+    # CHECK-NEXT: has_next {{.*}}paramfor_has_next
+    # CHECK-NEXT: get_next_iter :{{.*}}paramfor_next_iter{{.*}}<:!Iterator_Copyable !IterRange>
     @parameter
     for i in IterRange(a):
         # CHECK: [[IMM:%.*]] = lit.ref.immut %value

@@ -1107,7 +1107,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
     HANDLE_EVALUATOR_CONC(resultTypes.emplace_back(), parent, op.getLoc(),
                           type);
 
-  //// Concretize the __has_next__ generator function.
+  //// Concretize the paramfor_has_next generator function.
   auto hasNextSymbol = cast<SymbolConstantAttr>(hasNext);
   StringAttr hasNextName =
       cast<FlatSymbolRefAttr>(hasNextSymbol.getSymbol()).getAttr();
@@ -1132,7 +1132,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
                            .hasMemoryOnlyResult())) {
       parent->setToError(ErrorTree(
           op.getLoc(),
-          "INTERNAL ERROR: __has_next__ should have memory-only result"));
+          "INTERNAL ERROR: paramfor_has_next should have register result"));
       return failure();
     }
     hasNextFunc = *funcOr;
@@ -1143,7 +1143,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
 
   if (hasNextType.hasMemoryOnlyResult()) {
     parent->setToError(ErrorTree(
-        op.getLoc(), "INTERNAL ERROR: __has_next__ should return a bool"));
+        op.getLoc(), "INTERNAL ERROR: paramfor_has_next should return a bool"));
     return failure();
   }
 
