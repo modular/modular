@@ -146,17 +146,16 @@ struct _DictEntryIter[
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.seen < len(self.src[])
-
-    @always_inline
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return self.__next_ref__().copy()
 
     @always_inline
     fn __next_ref__(
         mut self,
-    ) -> ref [self.src[]._entries[0].value()] Self.Element:
+    ) raises StopIteration -> ref [self.src[]._entries[0].value()] Self.Element:
+        if self.seen >= len(self.src[]):
+            raise StopIteration()
+
         while True:
             ref opt_entry_ref = self.src[]._entries[self.index]
 
@@ -206,13 +205,12 @@ struct _TakeDictEntryIter[
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return len(self.src[]) > 0
-
-    @always_inline
     fn __next__(
         mut self,
-    ) -> Self.Element:
+    ) raises StopIteration -> Self.Element:
+        if len(self.src[]) <= 0:
+            raise StopIteration()
+
         while True:
             ref opt_entry_ref = self.src[]._entries[self.index]
             self.index += 1
@@ -264,17 +262,13 @@ struct _DictKeyIter[
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.iter.__has_next__()
-
-    @always_inline
     fn __next_ref__(
         mut self,
-    ) -> ref [self.iter.__next_ref__().key] Self.Element:
+    ) raises StopIteration -> ref [self.iter.__next_ref__().key] Self.Element:
         return self.iter.__next_ref__().key
 
     @always_inline
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return self.__next_ref__().copy()
 
     @always_inline
@@ -323,11 +317,9 @@ struct _DictValueIter[
             )
         )
 
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.iter.__has_next__()
-
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
+    fn __next_ref__(
+        mut self,
+    ) raises StopIteration -> ref [Self.origin] Self.Element:
         ref entry_ref = self.iter.__next_ref__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
@@ -336,7 +328,7 @@ struct _DictValueIter[
         ]()[]
 
     @always_inline
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return self.__next_ref__().copy()
 
     @always_inline

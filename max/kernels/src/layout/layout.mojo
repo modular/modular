@@ -268,7 +268,7 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
     var index: Int
     var layout: Pointer[Layout, Self.origin]
 
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         """Returns the next sub-layout in the iteration.
 
         Advances the iterator and returns a Layout containing the shape and stride
@@ -277,21 +277,16 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
         Returns:
             A Layout representing the next dimension.
         """
+
+        if self.__len__() <= 0:
+            raise StopIteration()
+
         var idx = self.index
         self.index += 1
         return Layout(
             self.layout[].shape[idx],
             self.layout[].stride[idx],
         )
-
-    @always_inline("nodebug")
-    fn __has_next__(self) -> Bool:
-        """Checks if there are more dimensions to iterate.
-
-        Returns:
-            True if there are remaining dimensions, False otherwise.
-        """
-        return self.__len__() > 0
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:

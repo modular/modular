@@ -34,14 +34,10 @@ struct _CountIterator(Iterable, Iterator):
         return self
 
     @always_inline
-    fn __next__(mut self) -> Int:
+    fn __next__(mut self) raises StopIteration -> Int:
         var result = self.start
         self.start += self.step
         return result
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return True
 
 
 @always_inline
@@ -107,21 +103,9 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __has_next__(self) -> Bool:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        # Take the first element from 'a' if we haven't got it yet.
         if not self._inner_a_elem:
-            return self._inner_a.__has_next__()
-        if self._inner_b.__has_next__():
-            return True
-        # If _inner_b is exhausted, but _inner_a has more elements, we can reset _inner_b and continue
-        return self._inner_a.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
-        if not self._inner_a_elem:
-            self._inner_a_elem = next(self._inner_a)
-        if not self._inner_b.__has_next__():
-            # reset if we reach the end of the B iterator and grab the next
-            # item from the A iterator.
-            self._inner_b = self._initial_inner_b.copy()
             self._inner_a_elem = next(self._inner_a)
 
         _constrained_conforms_to[
@@ -132,12 +116,25 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
             ElementConformsTo="Copyable",
         ]()
 
-        var elem = trait_downcast[Copyable](
-            self._inner_a_elem.unsafe_value()
-        ).copy()
-        return rebind_var[Self.IteratorTypeA.Element](elem^), next(
-            self._inner_b
-        )
+        try:
+            # Get the next element from 'b' if it exists.
+            var b_val = next(self._inner_b)
+
+            var elem = trait_downcast[Copyable](
+                self._inner_a_elem.unsafe_value()
+            ).copy()
+            return rebind_var[Self.IteratorTypeA.Element](elem^), b_val^
+        except:
+            # reset if we reach the end of the B iterator and grab the next
+            # item from the A iterator.
+            self._inner_b = self._initial_inner_b.copy()
+            self._inner_a_elem = next(self._inner_a)
+            var b_val = next(self._inner_b)
+            # If a and b iterators had more elements, return this one.
+            var elem = trait_downcast[Copyable](
+                self._inner_a_elem.unsafe_value()
+            ).copy()
+            return rebind_var[Self.IteratorTypeA.Element](elem^), b_val^
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         # compute a * initial_b + b for lower and upper
@@ -240,10 +237,7 @@ struct _Product3[
     fn copy(self) -> Self:
         return Self(_inner=self._inner.copy())
 
-    fn __has_next__(self) -> Bool:
-        return self._inner.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA.Element, Copyable),
             Parent=Self,
@@ -378,10 +372,7 @@ struct _Product4[
     fn copy(self) -> Self:
         return Self(_inner=self._inner.copy())
 
-    fn __has_next__(self) -> Bool:
-        return self._inner.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA.Element, Copyable),
             Parent=Self,
@@ -523,13 +514,11 @@ struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
         return Self(self.element.copy(), self.remaining)
 
     @always_inline
-    fn __next__(mut self) -> Self.ElementType:
+    fn __next__(mut self) raises StopIteration -> Self.ElementType:
+        if self.remaining <= 0:
+            raise StopIteration()
         self.remaining -= 1
         return self.element.copy()
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.remaining > 0
 
 
 @always_inline

@@ -13,7 +13,13 @@
 
 from itertools import product
 from itertools.itertools import _Product2, _Product3, _Product4
-from testing import TestSuite, assert_equal, assert_false, assert_true
+from testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_true,
+    assert_raises,
+)
 from test_utils import Observable
 
 
@@ -53,7 +59,8 @@ def test_product2():
     assert_equal(elem[0], "hello")
     assert_equal(elem[1], 30)
 
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_product2_param():
@@ -115,7 +122,8 @@ def test_product2_unequal():
     assert_equal(elem[0], "holla")
     assert_equal(elem[1], 30)
 
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_product3():
@@ -168,7 +176,8 @@ def test_product3():
     assert_equal(elem[1], 20)
     assert_equal(elem[2], 200)
 
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_product3_param():
@@ -253,7 +262,10 @@ def test_product_bounds():
     for i in range(6, -1, -1):
         assert_equal(it.bounds()[0], i)
         assert_equal(it.bounds()[1].value(), i)
-        var _ = next(it)
+        try:
+            _ = next(it)
+        except:
+            pass
 
 
 struct TestCopyIterator[
@@ -266,11 +278,8 @@ struct TestCopyIterator[
     fn __init__(out self, ref [Self.CopyOrigin]copies: Int):
         self.counter = Observable(copies=Pointer(to=copies))
 
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return None
-
-    fn __has_next__(self) -> Bool:
-        return False
 
 
 def test_product2_copies():

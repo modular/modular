@@ -1003,25 +1003,24 @@ struct _DequeIter[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
-    fn __has_next__(self) -> Bool:
+    fn __next_ref__(
+        mut self,
+    ) raises StopIteration -> ref [Self.origin] Self.Element:
         @parameter
         if Self.forward:
-            return self.index < len(self.src[])
-        else:
-            return self.index > 0
+            if self.index >= len(self.src[]):
+                raise StopIteration()
 
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
             var idx = self.index
             self.index += 1
             return self.src[][idx]
         else:
+            if self.index <= 0:
+                raise StopIteration()
             self.index -= 1
             return self.src[][self.index]
 
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return self.__next_ref__().copy()
 
     @always_inline

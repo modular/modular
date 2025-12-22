@@ -262,21 +262,14 @@ struct Optional[T: Movable & ImplicitlyDestructible](
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        """Return true if the Optional has a value.
-
-        Returns:
-            True if the Optional contains a value, False otherwise.
-        """
-        return self.__bool__()
-
-    @always_inline
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         """Return the contained value of the Optional.
 
         Returns:
             The value contained in the Optional.
         """
+        if not self.__bool__():
+            raise StopIteration()
         return self.take()
 
     @always_inline
@@ -289,6 +282,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
         var len = 1 if self else 0
         return (len, {len})
 
+    @always_inline
     fn __bool__(self) -> Bool:
         """Return true if the Optional has a value.
 
@@ -297,6 +291,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
         """
         return not self._value.isa[_NoneType]()
 
+    @always_inline
     fn __invert__(self) -> Bool:
         """Return False if the `Optional` has a value.
 

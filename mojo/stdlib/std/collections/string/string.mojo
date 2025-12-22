@@ -1092,7 +1092,8 @@ struct String(
         assert_equal(iter.__next__(), Codepoint.ord("a"))
         assert_equal(iter.__next__(), Codepoint.ord("b"))
         assert_equal(iter.__next__(), Codepoint.ord("c"))
-        assert_equal(iter.__has_next__(), False)
+        with assert_raises():
+            _ = iter.__next__() # raises StopIteration
         ```
 
         `codepoints()` iterates over Unicode codepoints, and supports multibyte
@@ -1109,7 +1110,8 @@ struct String(
         assert_equal(iter.__next__(), Codepoint.ord("a"))
          # U+0301 Combining Acute Accent
         assert_equal(iter.__next__().to_u32(), 0x0301)
-        assert_equal(iter.__has_next__(), False)
+        with assert_raises():
+            _ = iter.__next__() # raises StopIteration
         ```
         """
         return self.as_string_slice().codepoints()
@@ -1135,7 +1137,8 @@ struct String(
         assert_true(iter.__next__() == "a")
         assert_true(iter.__next__() == "b")
         assert_true(iter.__next__() == "c")
-        assert_equal(iter.__has_next__(), False)
+        with assert_raises():
+            _ = iter.__next__() # raises StopIteration
         ```
         """
         return self.as_string_slice().codepoint_slices()

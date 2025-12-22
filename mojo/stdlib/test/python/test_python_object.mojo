@@ -295,7 +295,8 @@ fn test_iter() raises:
     val = next(it)
     assert_equal_pyobj(val[0], 2)
     assert_equal_pyobj(val[1], "banana")
-    assert_equal(it.__has_next__(), False)
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 fn test_setitem() raises:

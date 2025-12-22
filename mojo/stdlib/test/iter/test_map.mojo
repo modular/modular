@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import CopyCounter
-from testing import TestSuite, assert_equal
+from testing import TestSuite, assert_equal, assert_raises
 
 
 def test_map():
@@ -25,7 +25,8 @@ def test_map():
     assert_equal(next(m), 2)
     assert_equal(next(m), 3)
     assert_equal(next(m), 4)
-    assert_equal(m.__has_next__(), False)
+    with assert_raises():
+        _ = m.__next__()  # raises StopIteration
 
     fn to_str(x: Int) -> String:
         return String(x)
@@ -34,7 +35,8 @@ def test_map():
     assert_equal(next(m2), "1")
     assert_equal(next(m2), "2")
     assert_equal(next(m2), "3")
-    assert_equal(m2.__has_next__(), False)
+    with assert_raises():
+        _ = m2.__next__()  # raises StopIteration
 
 
 def test_map_function_can_take_owned_value():
