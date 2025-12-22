@@ -451,12 +451,8 @@ struct TrivialRange(ImplicitlyCopyable, Iterator):
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) -> Int:
+    fn __next__(mut self) raises StopIteration -> Int:
         return 1
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
 
     fn __len__(self) -> Int:
         return 1
