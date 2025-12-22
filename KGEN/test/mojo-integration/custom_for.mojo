@@ -25,12 +25,14 @@ struct my_iter:
         self.end = list.size
         self.list = list
 
-    fn __next__(mut self: my_iter) raises StopIteration -> Int:
-        if self.__len__() <= 0:
-            raise StopIteration()
+    fn __next__(mut self: my_iter) -> Int:
         var result: Int = self.start
         self.start += 1
         return self.list[result]
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.__len__() > 0
 
     fn __len__(self: my_iter) -> Int:
         if self.start < self.end:

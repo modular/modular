@@ -1153,6 +1153,10 @@ struct _StridedRangeIterator(Iterator):
     var step: Int
 
     @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.__len__() > 0
+
+    @always_inline
     fn __len__(self) -> Int:
         if self.step > 0 and self.start < self.end:
             return self.end - self.start
@@ -1162,9 +1166,7 @@ struct _StridedRangeIterator(Iterator):
             return 0
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Int:
-        if self.__len__() <= 0:
-            raise StopIteration()
+    fn __next__(mut self) -> Int:
         var result = self.start
         self.start += self.step
         return result
@@ -1191,51 +1193,27 @@ trait Iterator(Movable):
         ...
 
 
-trait ParamForIterator(Movable):
-    comptime Element: ImplicitlyDestructible
-
-    fn __next2__(mut self) raises StopIteration -> Self.Element:
-        ...
-
-
-fn paramfor_has_next[
-    IteratorType: ParamForIterator & Copyable
-](it: IteratorType) -> Bool:
-    var result = it.copy()
-    try:
-        _ = result.__next2__()
-        return True
-    except:
-        return False
-
-
 fn paramfor_next_iter[
-    IteratorType: ParamForIterator & Copyable
+    IteratorType: Iterator & ImplicitlyCopyable
 ](it: IteratorType) -> IteratorType:
     # NOTE: This function is called by the compiler's elaborator only when
-    # paramfor_has_next will return true. This is needed because the interpreter
+    # __has_next__ will return true.  This is needed because the interpreter
     # memory model isn't smart enough to handle mut arguments cleanly.
-    var result = it.copy()
+    var result = it
     # This intentionally discards the value, but this only happens at comptime,
     # so recomputing it in the body of the loop is fine.
-    try:
-        _ = result.__next2__()
-    except:
-        abort()
-    return result^
+    _ = result.__next__()
+    return result
 
 
 fn paramfor_next_value[
-    IteratorType: ParamForIterator & Copyable
+    IteratorType: Iterator & ImplicitlyCopyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when
-    # paramfor_has_next will return true. This is needed because the interpreter
+    # __has_next__ will return true.  This is needed because the interpreter
     # memory model isn't smart enough to handle mut arguments cleanly.
-    var result = it.copy()
-    try:
-        return result.__next2__()
-    except:
-        abort()
+    var result = it
+    return result.__next__()
 
 
 struct Optional[T: ImplicitlyCopyable]:
