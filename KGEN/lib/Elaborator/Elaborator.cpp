@@ -1159,7 +1159,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     HANDLE_EVALUATOR_CONC(resultTypes.emplace_back(), parent, op.getLoc(),
                           type);
 
-  // Concretize the __has_next__ generator function.
+  // Concretize the paramfor_has_next generator function.
   ErrorTreeOr<FuncOp> hasNextFunc = getConcreteFunction(
       parent, op.getLoc(), cast<SymbolConstantAttr>(hasNext));
   if (hasNextFunc.isError()) {
@@ -1183,7 +1183,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   FuncType hasNextType = FuncOp(*hasNextFunc).getFuncTypeGenerator().getBody();
   if (hasNextType.hasMemoryOnlyResult()) {
     parent->setToError(ErrorTree(
-        op.getLoc(), "INTERNAL ERROR: __has_next__ should return a bool"));
+        op.getLoc(), "INTERNAL ERROR: paramfor_has_next should return a bool"));
     return failure();
   }
   // The generator should return a well-known struct.

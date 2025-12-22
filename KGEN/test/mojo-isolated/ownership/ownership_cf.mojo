@@ -428,7 +428,7 @@ fn testInfiniteloop():
 
 @fieldwise_init
 @register_passable("trivial")
-struct TrivialRange(Iterator):
+struct TrivialRange(Iterator, ParamForIterator):
     comptime Element = Int
 
     fn __iter__(self) -> Self:
@@ -440,6 +440,12 @@ struct TrivialRange(Iterator):
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
+
+    fn __next2__(mut self) raises StopIteration -> Int:
+        if self.__len__() > 0:
+            return 1
+        else:
+            raise StopIteration()
 
     fn __len__(self) -> Int:
         return 1
@@ -500,7 +506,7 @@ fn test_param_for1(cond: Bool, cond2: Bool):
     # CHECK-SAME: {
     @parameter
     for x in TrivialRange():
-        # CHECK-NEXT: kgen.param.if {{.*}}__has_next__
+        # CHECK-NEXT: kgen.param.if {{.*}}paramfor_has_next
 
         # Make sure nothing sneaks in here.
         # CHECK-NEXT: lit.call {{.*}}marker()
@@ -566,7 +572,7 @@ fn test_param_for2():
     # CHECK-SAME: {
     @parameter
     for x in TrivialRange():
-        # CHECK-NEXT: kgen.param.if {{.*}}__has_next__
+        # CHECK-NEXT: kgen.param.if {{.*}}paramfor_has_next
 
         # Make sure nothing sneaks in here.
         # CHECK-NEXT: lit.call {{.*}}marker()

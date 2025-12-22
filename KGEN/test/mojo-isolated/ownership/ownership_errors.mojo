@@ -445,7 +445,7 @@ struct WrapperNestedInt:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TrivialRange(ImplicitlyCopyable, Iterator):
+struct TrivialRange(ImplicitlyCopyable, Iterator, ParamForIterator):
     comptime Element = Int
 
     fn __iter__(self) -> Self:
@@ -457,6 +457,9 @@ struct TrivialRange(ImplicitlyCopyable, Iterator):
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
+
+    fn __next2__(mut self) raises StopIteration -> Int:
+        return 1
 
     fn __len__(self) -> Int:
         return 1
