@@ -395,7 +395,7 @@ fn stack_allocation[
 @always_inline
 fn stack_allocation[
     count: Int,
-    type: UnknownDestructibility,
+    type: AnyType,
     /,
     name: Optional[StaticString] = None,
     alignment: Int = align_of[type](),
@@ -477,7 +477,7 @@ fn stack_allocation[
 
 @always_inline
 fn _malloc[
-    type: UnknownDestructibility,
+    type: AnyType,
     /,
 ](
     size: Int,
