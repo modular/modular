@@ -76,6 +76,39 @@ trait Iterable:
 # ===-----------------------------------------------------------------------===#
 
 
+@fieldwise_init
+@register_passable("trivial")
+struct StopIteration(Writable):
+    """A custom error type for Iterator's that run out of elements."""
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """This always writes "StopIteration".
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("StopIteration")
+
+
+# FIXME: Merge with Iterator.
+trait ParamForIterator(Movable):
+    """Temporary trait that will be merged with Iterator."""
+
+    comptime Element: ImplicitlyDestructible
+    """Temporary"""
+
+    fn __next2__(mut self) raises StopIteration -> Self.Element:
+        """Returns the next element from the iterator or raises if empty.
+
+        Returns:
+            The next element.
+
+        Raises:
+            StopIteration: If there are no more elements.
+        """
+        ...
+
+
 trait Iterator(Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
@@ -170,7 +203,9 @@ fn next[
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
+struct _Enumerate[InnerIteratorType: Iterator](
+    Copyable, Iterable, Iterator, ParamForIterator
+):
     """An iterator that yields tuples of the index and the element of the
     original iterator.
     """
@@ -210,6 +245,13 @@ struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
         var count = self._count
         self._count += 1
         return count, next(self._inner)
+
+    fn __next2__(mut self) raises StopIteration -> Self.Element:
+        # This raises on error.
+        var elt = next(self._inner)
+        var count = self._count
+        self._count += 1
+        return count, elt^
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
@@ -252,7 +294,7 @@ fn enumerate[
 
 @fieldwise_init
 struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
-    Copyable, Iterable, Iterator
+    Copyable, Iterable, Iterator, ParamForIterator
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
@@ -293,6 +335,11 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     fn __next__(mut self) -> Self.Element:
         return next(self._inner_a), next(self._inner_b)
 
+    fn __next2__(mut self) raises StopIteration -> Self.Element:
+        if not self.__has_next__():
+            raise StopIteration()
+        return next(self._inner_a), next(self._inner_b)
+
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return _min_bounds(self._inner_a.bounds(), self._inner_b.bounds())
 
@@ -300,7 +347,7 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
 @fieldwise_init
 struct _Zip3[
     IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
-](Copyable, Iterable, Iterator):
+](Copyable, Iterable, Iterator, ParamForIterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -354,6 +401,11 @@ struct _Zip3[
         )
 
     fn __next__(mut self) -> Self.Element:
+        return next(self._inner_a), next(self._inner_b), next(self._inner_c)
+
+    fn __next2__(mut self) raises StopIteration -> Self.Element:
+        if not self.__has_next__():
+            raise StopIteration()
         return next(self._inner_a), next(self._inner_b), next(self._inner_c)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
