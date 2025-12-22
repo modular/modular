@@ -170,7 +170,7 @@ trait TraitWithPAlias:
 
 
 # CHECK-LABEL: lit.struct.decl @MyStruct
-# CHECK-SAME: <[{{.*}}]*"[[P2:.*]]": !Int, [{{.*}}]*"[[P1:.*]]": !Int, +, p: !Int,
+# CHECK-SAME: <[{{.*}}]*"[[P1:.*]]": !Int, [{{.*}}]*"[[P2:.*]]": !Int, +, p: !Int,
 # CHECK-SAME: m1: !lit.struct<#MyParam <:!Int *"[[P1]]">>, m2: !lit.struct<#MyParam <:!Int *"[[P2]]">>
 struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
     # CHECK: lit.fn @"__init__()"[

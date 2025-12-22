@@ -277,7 +277,7 @@ fn autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
     return x.a + y.b
 
 # CHECK-LABEL: lit.fn @"autoparam_param_alias_params
-# CHECK-SAME: <["a`"][[A0:.*]]: !Int, x: !Int, +, y: {{.*}}TwoParams <:!Int [[A0]], :!Int {2}>
+# CHECK-SAME: <x: !Int, ["a`"][[A0:.*]]: !Int, +, y: {{.*}}TwoParams <:!Int [[A0]], :!Int {2}>
 fn autoparam_param_alias_params[x: Int, //, y: TwoParamsSwap[2, _]]():
     pass
 
@@ -289,7 +289,7 @@ struct IndexParam[x: Int]:
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_params
-# CHECK-SAME: <["x`"]*"x`": !Int, a: !Int, +, b: {{.*}}IndexParam <:!Int *"x`">>, c: {{.*}}IndexParam <:!Int a>
+# CHECK-SAME: <a: !Int, ["x`"]*"x`": !Int, +, b: {{.*}}IndexParam <:!Int *"x`">>, c: {{.*}}IndexParam <:!Int a>
 fn autoparam_of_params[a: Int, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
@@ -311,7 +311,7 @@ fn autoparam_of_dependent_params[dp: DependentParams]():
 
 
 # CHECK-LABEL: lit.fn @"function_autoparam
-# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<["__origins__`1"][[G_LT:.*]]: origin.set, ["__origins__`"][[F_LT:.*]]: origin.set, +
+# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<["__origins__`"][[F_LT:.*]]: origin.set, ["__origins__`1"][[G_LT:.*]]: origin.set, +
 # CHECK-SAME: f: !lit.generator<:[[F_LT]]:() capturing -> !kgen.none>
 # CHECK-SAME: g: !lit.generator<:[[G_LT]]:() capturing -> !kgen.none>
 fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> None]():
@@ -1691,3 +1691,12 @@ fn myDriver():
     # We should be able to infer From -> Copyable, To -> mt_Int
     # CHECK: %0 = lit.call {{.*}}@"takeGenerator{{.*}}"<:!lit.anytrait<!AnyType> !Copyable, :!lit.anytrait<!AnyType> !mt_Int, :!lit.generator<<"From": !Copyable>!mt_Int>
     takeGenerator[Generator]()
+
+# This should not crash, even though TakesXOrigin has an inferred parameter
+# that depends on MUT.
+struct TakesBool[B: Bool]:
+    pass
+struct XOrigin[mut: Bool, *, value: TakesBool[mut]]:
+    pass
+struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT]]:
+    pass

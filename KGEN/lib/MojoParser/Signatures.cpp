@@ -774,19 +774,34 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
 
   // Functor to insert the pending vectors into paramList, either at the front
   // or back.
-  auto insertFn = [append](auto &dst, auto &src) {
-    dst.insert(append ? dst.end() : dst.begin(), src.begin(), src.end());
+  auto insertFn = [](size_t insertPt, auto &dst, auto &src) {
+    dst.insert(dst.begin() + insertPt, src.begin(), src.end());
   };
+
   auto commitChanges = llvm::make_scope_exit([&]() {
     // All lists guaranteed to have the same length.
     if (paramDeclAttrs.empty())
       return;
-    insertFn(paramList.paramDeclAttrs, paramDeclAttrs);
-    insertFn(paramList.names, names);
-    insertFn(paramList.passingKinds, passingKinds);
-    insertFn(paramList.variadicKinds, variadicKinds);
-    insertFn(paramList.locations, locations);
-    insertFn(paramList.allParamConstraints, constraints);
+
+    // Figure out where to insert the new parameters.  If append, we put them at
+    // the end of the list.  If prepend, we put them after any infer-only
+    // parameters.
+    size_t insertPt;
+    if (append)
+      insertPt = paramList.paramDeclAttrs.size();
+    else {
+      insertPt = 0;
+      while (insertPt < paramList.paramDeclAttrs.size() &&
+             paramList.passingKinds[insertPt] == PassingKind::Inferred)
+        ++insertPt;
+    }
+
+    insertFn(insertPt, paramList.paramDeclAttrs, paramDeclAttrs);
+    insertFn(insertPt, paramList.names, names);
+    insertFn(insertPt, paramList.passingKinds, passingKinds);
+    insertFn(insertPt, paramList.variadicKinds, variadicKinds);
+    insertFn(insertPt, paramList.locations, locations);
+    insertFn(insertPt, paramList.allParamConstraints, constraints);
   });
 
   // The parameter decl references that will be used to fully bind the type,
