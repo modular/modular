@@ -132,6 +132,7 @@ def test_non_capturing():
 def test_change_units():
     var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     assert_true(report.mean("ms") > 1.0)
+    assert_true(report.mean("us") > 1_000)
     assert_true(report.mean("ns") > 1_000_000.0)
 
 
