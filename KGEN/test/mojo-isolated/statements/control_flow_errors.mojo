@@ -51,8 +51,19 @@ fn test_if_decorator(a: Bool):
 # For
 ##===----------------------------------------------------------------------===##
 
+struct my_iter_no_len:
+    fn __init__(out self): pass
+    fn __next__(mut self) -> Int: return 0
+
+
+struct MyList_range_no_len:
+    fn __init__(out self): pass
+    fn __iter__(self) -> my_iter_no_len: return my_iter_no_len()
+
+
 struct my_iter_no_next:
     fn __init__(out self): pass
+    fn __has_next__(self) -> Bool: return False
 
 
 struct MyList_range_no_next:
@@ -67,10 +78,26 @@ struct MyList_no_iter:
 struct MyFloat:
     pass
 
+struct my_iter_wrong_int:
+    fn __init__(out self): pass
+    fn __next__(mut self) -> Int: return 0
+    fn __has_next__(self: my_iter_wrong_int) -> MyFloat: return MyFloat()
+
+
+struct MyList_invalid_boxed_type:
+    fn __init__(out self): pass
+    fn __iter__(self) -> my_iter_wrong_int: return my_iter_wrong_int()
+
+
 fn test():
+    var my_list_no_len = MyList_range_no_len()
     var my_list_no_next = MyList_range_no_next()
     var my_list_no_iter = MyList_no_iter()
+    var my_list_invalid_int = MyList_invalid_boxed_type()
 
+    # expected-error @+1 {{'my_iter_no_len' does not implement the '__has_next__' method}}
+    for item in my_list_no_len:
+        pass
 
     # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' or '__next_ref__' method required for iteration}}
     for item in my_list_no_next:
@@ -78,6 +105,10 @@ fn test():
 
     # expected-error @+1 {{'MyList_no_iter' does not implement the '__iter__' method}}
     for item in my_list_no_iter:
+        pass
+
+    # expected-error @+1 {{'MyFloat' does not implement the '__bool__' method}}
+    for item in my_list_invalid_int:
         pass
 
     # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' or '__next_ref__' method required for iteration}}
