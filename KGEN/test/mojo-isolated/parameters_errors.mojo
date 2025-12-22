@@ -444,6 +444,17 @@ fn test_implicitly_parametric_static_methods_fails():
 
 
 ##===----------------------------------------------------------------------===##
+# Auto parameterization errors
+##===----------------------------------------------------------------------===##
+
+struct XOrigin[mut: Int, value: ParametricOnInt[mut]]:
+    pass
+# expected-error @+1 {{inferred parameter of type 'ParametricOnInt[MUT]' cannot depend on non-inferred parameter 'MUT'}}
+struct TakesXOrigin[MUT: Int, O: XOrigin[MUT, _]]:
+    pass
+
+
+##===----------------------------------------------------------------------===##
 # Parameter inference
 ##===----------------------------------------------------------------------===##
 

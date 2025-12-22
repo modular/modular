@@ -764,7 +764,7 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
 /// passing-kind parameters (this is used for unbound parameters).
 static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
                                      TypeCheckedParamList &paramList,
-                                     bool append) {
+                                     bool append, SMLoc loc) {
   SmallVector<ParamDeclAttr> paramDeclAttrs;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
@@ -804,6 +804,9 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
     insertFn(insertPt, paramList.allParamConstraints, constraints);
   });
 
+  ParameterCollector::Analysis collectorCache;
+  ParameterCollector collector(collectorCache);
+
   // The parameter decl references that will be used to fully bind the type,
   // plus a parameter evaluator we use to progressively refine the type.
   SmallVector<TypedAttr> paramValues;
@@ -812,15 +815,55 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name,
                                 ArrayRef<ConstraintAttr> paramConstraints) {
+    auto boundParamType = evaluator.getReboundType(type);
+    // If we are perpending this as an implicit parameter, make sure its type
+    // doesn't depend on any parameters before it.  Consider something like:
+    //   struct T1[mut: Bool, value: TakesBool[mut]]: ...
+    //   struct T2[m: Bool, n: T1[m, _]]:
+    // it would be incorrect to transform this into:
+    //   struct T2[IMP: TakesBool[m], //, m: Bool, n: T1[m, _]]:
+    // because IMP would use m before it is declared.
+    if (!append) {
+      bool unused = false;
+      SmallVector<ParamDeclRefAttr> paramUses;
+      collector.collectUsesFromType(boundParamType, paramUses, unused);
+      // This is O(n^2) but the N's are small.
+      for (ParamDeclRefAttr paramUse : paramUses) {
+        // Check to see if it is an earlier part of the type for this argument.
+        std::optional<PassingKind> passingKind;
+        for (auto [idx, name] : llvm::enumerate(names)) {
+          if (paramUse.getName() == name) {
+            passingKind = passingKinds[idx];
+            break;
+          }
+        }
+        // Otherwise, it must be something part of the enclosing param list.
+        if (!passingKind.has_value()) {
+          for (auto [idx, name] : llvm::enumerate(paramList.names)) {
+            if (paramUse.getName() == name) {
+              passingKind = paramList.passingKinds[idx];
+              break;
+            }
+          }
+        }
+        assert(passingKind.has_value() && "didn't find param reference");
+        if (*passingKind != PassingKind::Inferred) {
+          shared.emitError(loc, "inferred parameter of type ")
+              << boundParamType << " cannot depend on non-inferred parameter "
+              << paramUse.getName();
+          boundParamType = TypeCheckErrorType::get(shared.getContext());
+        }
+      }
+    }
+
     auto mangledName = paramList.declScope.mangleParamName(name);
-    auto funcDecl =
-        ParamDeclAttr::get(mangledName, evaluator.getReboundType(type));
+    auto paramDecl = ParamDeclAttr::get(mangledName, boundParamType);
     names.push_back(mangledName);
     passingKinds.push_back(append ? PassingKind::Implicit
                                   : PassingKind::Inferred);
-    paramDeclAttrs.push_back(funcDecl);
+    paramDeclAttrs.push_back(paramDecl);
     locations.push_back(SMLoc());
-    paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
+    paramValues.push_back(ParamDeclRefAttr::get(paramDecl));
 
     // FIXME: Autoparam of variadics looks broken?
     variadicKinds.push_back(VariadicKind::None);
@@ -901,8 +944,8 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         type = TraitType::get(getFullyResolvedSymbolRef(
             cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
       }
-      type =
-          addImplicitTypeParams(result.shared, type, result, /*append=*/false);
+      type = addImplicitTypeParams(result.shared, type, result,
+                                   /*append=*/false, arg.loc);
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
@@ -1529,7 +1572,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
           VariadicKind::None; // Don't break invariants on errors.
     }
     type = addImplicitTypeParams(shared, type, tcSignature.paramList,
-                                 /*append=*/true);
+                                 /*append=*/true, arg.loc);
   } else if (idx == 0 && tcSignature.selfType &&
              // FIXME: This is incorrect, the @static_method decorators haven't
              // been applied yet.
