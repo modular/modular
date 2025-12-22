@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import List, Optional
-from os import Process
+from os import Process, Pipe
 from sys._libc import SignalCodes
 from time import sleep
+from memory import Span
+from testing import assert_equal
 
 
-fn test_long_running_process_wait() raises:
+fn long_running_process_wait() raises:
     print("== Test: Wait for a long-running process ==")
 
     var command = "sleep"
@@ -36,7 +38,7 @@ fn test_long_running_process_wait() raises:
         print("Process terminated by signal:", status.term_signal.value())
 
 
-fn test_long_running_process_poll() raises:
+fn long_running_process_poll() raises:
     print("== Test: Poll a long-running process ==")
 
     var command = "sleep"
@@ -59,7 +61,7 @@ fn test_long_running_process_poll() raises:
         print("Process terminated by signal:", status.term_signal.value())
 
 
-fn test_interrupt_process() raises:
+fn interrupt_process() raises:
     print("== Test: Interrupt a process (SIGINT) ==")
 
     var command = "sleep"
@@ -87,7 +89,7 @@ fn test_interrupt_process() raises:
         print("Process finished with exit code:", status.exit_code.value())
 
 
-fn test_kill_process() raises:
+fn kill_process() raises:
     print("== Test: Kill a process (SIGKILL) ==")
 
     var command = "sleep"
@@ -115,11 +117,42 @@ fn test_kill_process() raises:
         print("Process finished with exit code:", status.exit_code.value())
 
 
+fn example_pipe_io_redirect() raises:
+    print("== Example: Pipe I/O Redirection ==")
+    var p_in = Pipe()
+    var p_out = Pipe()
+
+    var input_string = "Hello from parent!\n"
+    print("Parent writing to child's stdin:", input_string.strip())
+    p_in.write_bytes(input_string.as_bytes())
+    p_in.set_input_only()  # Close the write end of p_in in parent
+
+    print("Running 'cat' with redirected stdin/stdout...")
+    var process = Process.run("cat", [], stdin=p_in.fd_in, stdout=p_out.fd_out)
+
+    var status = process.wait()
+    print("Child process finished with exit code:", status.exit_code.value())
+
+    var buf_size = 32  # Buffer for reading child's stdout
+    var buf_ptr = alloc[UInt8](buf_size)
+    var buf_span = Span[mut=True, UInt8](ptr=buf_ptr, length=buf_size)
+    var bytes_read = p_out.read_bytes(buf_span)
+    var result_span = buf_span.unsafe_subspan(offset=0, length=Int(bytes_read))
+    var result = String(bytes=result_span)
+    buf_ptr.free()
+
+    print("Parent read from child's stdout:", result.strip())
+    assert_equal(result, input_string)
+    print("I/O Redirection example complete.")
+
+
 fn main() raises:
-    test_long_running_process_wait()
+    long_running_process_wait()
     print("\n--------------------\n")
-    test_long_running_process_poll()
+    long_running_process_poll()
     print("\n--------------------\n")
-    test_interrupt_process()
+    interrupt_process()
     print("\n--------------------\n")
-    test_kill_process()
+    kill_process()
+    print("\n--------------------\n")
+    example_pipe_io_redirect()  # Added call here

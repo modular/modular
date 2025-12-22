@@ -20,7 +20,7 @@ from collections import List
 _ = Process.run("echo", ["== TEST_ECHO"])
 ```
 """
-from collections import List, Optional
+from collections import Dict, List, Optional
 from collections.string import StringSlice
 
 from memory import LegacyUnsafePointer
@@ -29,6 +29,11 @@ from sys import CompilationTarget
 from sys._libc import (
     waitpid,
     posix_spawnp,
+    posix_spawn_file_actions_t,
+    posix_spawn_file_actions_t_ptr,
+    posix_spawn_file_actions_init,
+    posix_spawn_file_actions_destroy,
+    posix_spawn_file_actions_adddup2,
     kill,
     SignalCodes,
     pipe,
@@ -40,6 +45,7 @@ from sys._libc import (
 )
 from sys.ffi import c_char, c_int, c_pid_t, get_errno
 from sys.os import abort, sep
+from io import FileDescriptor
 
 
 # ===----------------------------------------------------------------------=== #
@@ -209,31 +215,41 @@ struct Pipe:
 # Process execution
 # ===----------------------------------------------------------------------=== #
 struct Process:
-    """Create and manage child processes from file executables.
+    """Create and manage sub processes from file executables.
+
+    The sub process will be automatically "closed out" with `Process.wait` when the Process
+    instance is destroyed and `Process.__del__` is called.
+
+    User can manually check status in non-blocking way using `Process.poll` or block the
+    caller process with `Process.wait` manually at their chosen code point.
+
+    Note that sub process status is cached on the Process object as such it is NOT thread-safe
+    and interacting with a Process instance across multiple threads can lead to race conditions and
+    undefined behaviors.
 
     Example usage:
     ```
-    child_process = Process.run("ls", List[String]("-lha"))
-    if child_process.interrupt():
+    sub_process = Process.run("ls", ["-lha"])
+    if sub_process.interrupt():
         print("Successfully interrupted.")
     ```
     """
 
-    var child_pid: c_pid_t
-    """Child process id."""
+    var sub_pid: c_pid_t
+    """Sub process id."""
 
     var status: Optional[ProcessStatus]
     """Cached status of the process. `None` if the process has not been waited on yet."""
 
-    fn __init__(out self, child_pid: c_pid_t):
-        """Struct to manage metadata about child process.
+    fn __init__(out self, sub_pid: c_pid_t):
+        """Struct to manage metadata about sub_process.
         Use the `run` static method to create new process.
 
         Args:
-          child_pid: The pid of child processed returned by `posix_spawnp` that the struct will manage.
+          sub_pid: The pid of sub processed returned by `posix_spawnp` that the struct will manage.
         """
 
-        self.child_pid = child_pid
+        self.sub_pid = sub_pid
         self.status = None
 
     fn __del__(deinit self):
@@ -256,7 +272,7 @@ struct Process:
             pass
 
         # `kill` returns 0 on success and -1 on failure
-        return kill(self.child_pid, signal) > -1
+        return kill(self.sub_pid, signal) > -1
 
     fn _check_status(self, pid: c_pid_t, status: c_int) raises -> ProcessStatus:
         """Helper to decode the result of a waitpid call.
@@ -279,7 +295,7 @@ struct Process:
         performed on this integer's numerical value, not its byte representation
         in memory. The result is therefore consistent across architectures.
         """
-        if pid == self.child_pid:
+        if pid == self.sub_pid:
             # Process has terminated. Decode the status.
             if (status & 0x7F) == 0:
                 # Process exited normally. Extract the exit code.
@@ -298,7 +314,7 @@ struct Process:
             raise Error("waitpid failed with errno " + String(err))
 
     fn hangup(mut self) -> Bool:
-        """Send the Hang up signal to the managed child process.
+        """Send the Hang up signal to the managed sub process.
 
         Returns:
           Upon successful completion, True is returned else False.
@@ -306,7 +322,7 @@ struct Process:
         return self._kill(SignalCodes.HUP)
 
     fn interrupt(mut self) -> Bool:
-        """Send the Interrupt signal to the managed child process.
+        """Send the Interrupt signal to the managed sub process.
 
         Returns:
           Upon successful completion, True is returned else False.
@@ -314,7 +330,7 @@ struct Process:
         return self._kill(SignalCodes.INT)
 
     fn kill(mut self) -> Bool:
-        """Send the Kill signal to the managed child process.
+        """Send the Kill signal to the managed sub process.
 
         Returns:
           Upon successful completion, True is returned else False.
@@ -322,13 +338,17 @@ struct Process:
         return self._kill(SignalCodes.KILL)
 
     fn poll(mut self) raises -> ProcessStatus:
-        """Check if the child process has terminated in a non-blocking way.
+        """Check if the sub process has terminated in a non-blocking way.
 
         This method updates the internal state of the `Process` object.
         If the process has terminated, the status is cached.
 
+
         Returns:
             A `ProcessStatus` indicating the status of the process.
+
+            If called multiple times the return value will be the cached status,
+            as status should only be retrieved once from the OS.
 
         Raises:
             Error: If `waitpid` fails.
@@ -338,7 +358,7 @@ struct Process:
 
         var status: c_int = 0
         var pid = waitpid(
-            self.child_pid, UnsafePointer(to=status), WaitFlags.WNOHANG
+            self.sub_pid, UnsafePointer(to=status), WaitFlags.WNOHANG
         )
         var result = self._check_status(pid, status)
         if result.has_exited():
@@ -346,13 +366,16 @@ struct Process:
         return result
 
     fn wait(mut self) raises -> ProcessStatus:
-        """Wait for the child process to terminate (blocking).
+        """Wait for the sub process to terminate (blocking).
 
         This method updates the internal state of the `Process` object.
         If the process has terminated, the status is cached.
 
         Returns:
           A `ProcessStatus` indicating the process has exited and its status.
+
+          If called multiple times the return value will be the cached status,
+          as status should only be retrieved once from the OS.
 
         Raises:
             Error: If `waitpid` fails or the process does not exit.
@@ -361,7 +384,7 @@ struct Process:
             return self.status.value()
 
         var status: c_int = 0
-        var pid = waitpid(self.child_pid, UnsafePointer(to=status), 0)
+        var pid = waitpid(self.sub_pid, UnsafePointer(to=status), 0)
         var result = self._check_status(pid, status)
         if result.has_exited():
             self.status = result
@@ -371,12 +394,24 @@ struct Process:
         return result
 
     @staticmethod
-    fn run(var path: String, argv: List[String]) raises -> Process:
+    fn run(
+        var path: String,
+        argv: List[String],
+        env: Optional[Dict[String, String]] = None,
+        stdin: Optional[FileDescriptor] = None,
+        stdout: Optional[FileDescriptor] = None,
+        stderr: Optional[FileDescriptor] = None,
+    ) raises -> Process:
         """Spawn new process from file executable.
 
         Args:
           path: The path to the file.
           argv: A list of string arguments to be passed to executable.
+          env: An optional dictionary of environment variables to be passed to the subprocess.
+               If None, the child process inherits the environment of the calling process.
+          stdin: An optional file descriptor to be used as the subprocess's standard input.
+          stdout: An optional file descriptor to be used as the subprocess's standard output.
+          stderr: An optional file descriptor to be used as the subprocess's standard error.
 
         Returns:
           An instance of `Process` struct.
@@ -384,6 +419,7 @@ struct Process:
         Raises:
             Error: If the process fails to spawn.
         """
+        # TODO: Add support for StringSlice, StringLiteral run args
 
         @parameter
         if CompilationTarget.is_linux() or CompilationTarget.is_macos():
@@ -409,29 +445,92 @@ struct Process:
             var path_cptr = path.unsafe_cstr_ptr()
 
             var pid: c_pid_t = 0
+            var envp_ptr = UnsafePointer[
+                UnsafePointer[mut=False, c_char, ImmutAnyOrigin], MutAnyOrigin
+            ]()
+            var env_strs = List[String]()
 
-            var has_error_code = posix_spawnp(
-                UnsafePointer(to=pid),
-                path_cptr,
-                argv_array_ptr_cstr_ptr,
-                UnsafePointer[
-                    mut=False,
-                    UnsafePointer[mut=False, Int8, ImmutAnyOrigin],
-                    ImmutAnyOrigin,
-                ](),
-            )
+            if env:
+                ref env_dict = env.value()
+                var env_count = len(env_dict)
+                envp_ptr = alloc[
+                    UnsafePointer[mut=False, c_char, ImmutAnyOrigin]
+                ](env_count + 1)
 
-            if has_error_code > 0:
-                raise Error(
-                    "Failed to execute "
-                    + path
-                    + ", EINT error code: "
-                    + String(has_error_code)
+                for item in env_dict.items():
+                    env_strs.append(item.key + "=" + item.value)
+
+                offset = 0
+                for ref env_str in env_strs:
+                    envp_ptr[offset] = env_str.unsafe_cstr_ptr()
+                    offset += 1
+
+                envp_ptr[env_count] = UnsafePointer[
+                    mut=False, c_char, ImmutAnyOrigin
+                ]()
+
+            var file_actions = posix_spawn_file_actions_t()
+            var file_actions_ptr = UnsafePointer(to=file_actions)
+            var use_file_actions = stdin or stdout or stderr
+
+            if use_file_actions:
+                if posix_spawn_file_actions_init(file_actions_ptr) != 0:
+                    raise Error("Failed to initialize file actions")
+
+            try:
+                if use_file_actions:
+                    if stdin:
+                        if (
+                            posix_spawn_file_actions_adddup2(
+                                file_actions_ptr, stdin.value().value, 0
+                            )
+                            != 0
+                        ):
+                            raise Error("Failed to dup stdin")
+                    if stdout:
+                        if (
+                            posix_spawn_file_actions_adddup2(
+                                file_actions_ptr, stdout.value().value, 1
+                            )
+                            != 0
+                        ):
+                            raise Error("Failed to dup stdout")
+                    if stderr:
+                        if (
+                            posix_spawn_file_actions_adddup2(
+                                file_actions_ptr, stderr.value().value, 2
+                            )
+                            != 0
+                        ):
+                            raise Error("Failed to dup stderr")
+
+                var has_error_code = posix_spawnp(
+                    UnsafePointer(to=pid),
+                    path_cptr,
+                    file_actions_ptr if use_file_actions else posix_spawn_file_actions_t_ptr[
+                        mut=False, origin=ImmutAnyOrigin
+                    ](),
+                    argv_array_ptr_cstr_ptr,
+                    envp_ptr,
                 )
 
-            argv_array_ptr_cstr_ptr.free()
+                if has_error_code > 0:
+                    raise Error(
+                        "Failed to execute "
+                        + path
+                        + ", EINT error code: "
+                        + String(has_error_code)
+                    )
+            finally:
+                if use_file_actions:
+                    if posix_spawn_file_actions_destroy(file_actions_ptr) != 0:
+                        print("Warning: Failed to destroy file actions.")
 
-            return Process(child_pid=pid)
+            argv_array_ptr_cstr_ptr.free()
+            if env:
+                envp_ptr.free()
+
+            return Process(sub_pid=pid)
         else:
             constrained[
                 False, "Unknown platform process execution not implemented"

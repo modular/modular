@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from collections import List
+from collections import Dict, List
 from os.path import exists
 from os import Process
 
@@ -25,6 +25,17 @@ def test_process_run():
     # CHECK-NEXT: == TEST_ECHO
     var command = "echo"
     _ = Process.run(command, ["== TEST_ECHO"])
+
+
+def test_process_run_with_env():
+    print("== test_process_run_with_env")
+    # CHECK-LABEL: == test_process_run_with_env
+    # CHECK-NEXT: HELLO_ENV
+    var command = "sh"
+    var args = List[String](["-c", "echo $MY_VAR"])
+    var env = Dict[String, String]()
+    env["MY_VAR"] = "HELLO_ENV"
+    _ = Process.run(command, args^, env^)
 
 
 def test_process_run_missing():
@@ -50,4 +61,5 @@ def test_process_run_missing():
 
 def main():
     test_process_run()
+    test_process_run_with_env()
     test_process_run_missing()
