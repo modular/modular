@@ -24,6 +24,13 @@ from .embeddings_generation import (
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
 )
+from .image_generation import (
+    ImageGenerationContextType,
+    ImageGenerationInputs,
+    ImageGenerationMetadata,
+    ImageGenerationOutput,
+    ImageGenerationRequest,
+)
 from .text_generation import (
     BatchType,
     ImageMetadata,
@@ -57,6 +64,11 @@ __all__ = [
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
+    "ImageGenerationContextType",
+    "ImageGenerationInputs",
+    "ImageGenerationMetadata",
+    "ImageGenerationOutput",
+    "ImageGenerationRequest",
     "ImageMetadata",
     "TextGenerationContext",
     "TextGenerationContextType",

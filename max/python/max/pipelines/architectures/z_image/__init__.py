@@ -14,4 +14,6 @@
 from .arch import z_image_arch
 from .model_config import ZImageConfig
 
-__all__ = ["ZImageConfig", "z_image_arch"]
+ARCHITECTURES = [z_image_arch]
+
+__all__ = ["ARCHITECTURES", "ZImageConfig", "z_image_arch"]

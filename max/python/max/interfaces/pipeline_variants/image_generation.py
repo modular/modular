@@ -19,7 +19,7 @@ responses, including status tracking and image data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic
+from typing import Generic
 
 import msgspec
 import numpy as np
