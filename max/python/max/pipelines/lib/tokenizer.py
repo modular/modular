@@ -233,6 +233,7 @@ class TextTokenizer(
         pipeline_config: PipelineConfig | None = None,
         chat_template: str | None = None,
         context_validators: list[Callable[[TextContext], None]] | None = None,
+        subfolder: str | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -245,6 +246,7 @@ class TextTokenizer(
                 # If `max_length` is None, the max length will be taken
                 # from the HuggingFace tokenizer_config.
                 model_max_length=max_length,
+                subfolder=subfolder,
             )
         except Exception as e:
             raise ValueError(
