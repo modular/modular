@@ -15,16 +15,12 @@
 This module provides the foundational traits that define how objects are created,
 managed and destroyed in Mojo:
 
-- `UnknownDestructibility`: The most basic trait that all types extend by default.
+- `AnyType`: The most basic trait that all types extend by default.
    Types with this trait have no destructor and no lifetime management.
 
-- `AnyType`: The base trait for types that require lifetime management through
-   destructors. Any type that needs cleanup when it goes out of scope should
-   implement this trait.
-
-- `ImplicitlyDestructible`: An alias for `AnyType` to help with the transition
-   to linear types. Use this when you want to be explicit about a type having
-   a destructor.
+- `ImplicitlyDestructible`: The base trait for types that require lifetime
+   management through destructors. Any type that needs cleanup when it goes out
+   of scope should implement this trait.
 
 These traits are built into Mojo and do not need to be imported.
 """
@@ -203,6 +199,7 @@ trait ImplicitlyDestructible:
 
 # A temporary alias to help with the linear types transition, see
 # https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
+@deprecated(use=AnyType)
 comptime UnknownDestructibility = AnyType
 """Temporary alias for types that can be implicitly destroyed."""
 

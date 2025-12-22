@@ -457,6 +457,7 @@ own types. These standard library traits include:
 * [`Copyable`](/mojo/std/builtin/value/Copyable)
 * [`Defaultable`](/mojo/std/builtin/value/Defaultable)
 * [`Hashable`](/mojo/std/hashlib/hash/Hashable)
+* [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible)
 * [`Indexer`](/mojo/std/builtin/int/Indexer)
 * [`Intable`](/mojo/std/builtin/int/Intable)
 * [`IntableRaising`](/mojo/std/builtin/int/IntableRaising)
@@ -609,7 +610,7 @@ String: Dog(Rex, 5)
 Representation: Dog(name='Rex', age=5)
 ```
 
-### The `AnyType` trait
+### The `ImplicitlyDestructible` trait
 
 When building a generic container type, one challenge is knowing how to dispose
 of the contained items when the container is destroyed. Any type that
@@ -618,24 +619,25 @@ dynamically allocates memory needs to supply a
 that must be called to free the allocated memory. But not all types have a
 destructor.
 
-The [`AnyType`](/mojo/std/builtin/anytype/AnyType) trait (also provided as
-the
-[`ImplicitlyDestructible`](/mojo/std/builtin/anytype/#implicitlydestructible)
-alias) represents a type with a destructor. Almost all traits inherit from
-`AnyType`, and all structs conform to `AnyType` by default. For any type that
-conforms to `AnyType` and doesn't define a destructor, Mojo generates a no-op
-destructor. This means you can call the destructor on any type that inherits
-from `AnyType`/`ImplicitlyDestructible`.
+The [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible)
+trait represents a type with a destructor. Almost all traits inherit from
+`ImplicitlyDestructible`, and all structs conform to `ImplicitlyDestructible` by
+default. For any type that conforms to `ImplicitlyDestructible` and doesn't
+define a destructor, Mojo generates a no-op destructor. This means you can call
+the destructor on any type that inherits from `ImplicitlyDestructible`.
 
 :::note TODO
 
 In the Mojo standard library docs you will also see a trait called
-[`UnknownDestructability`](/mojo/std/builtin/anytype/UnknownDestructibility),
+[`AnyType`](/mojo/std/builtin/anytype/AnyType),
 which represents a type that may or may not have a destructor. All structs
 implicitly conform to this trait.
 
-This trait exists to support a planned future feature called *linear* or
-*explicitly-destroyed* types.
+This trait exists to support a feature called *linear* or *explicitly-destroyed*
+types. A linear type may not be destroyed by the compiler implicitly, and
+instead may only be destroyed when the programmer explicitly calls a named
+destructor method. The compiler will issue an error if a linear type becomes
+unused without being explicitly destroyed.
 
 :::
 
