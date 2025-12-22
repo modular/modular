@@ -19,6 +19,7 @@ from complex import ComplexSIMD
 ```
 """
 
+from builtin.simd import FastMathFlag
 import math
 from math.math import _Expable
 from sys import llvm_intrinsic
@@ -333,11 +334,16 @@ struct ComplexSIMD[dtype: DType, size: Int](
 
     # fma(self, b, c)
     @always_inline
-    fn fma(self, b: Self, c: Self) -> Self:
+    fn fma[
+        flag: FastMathFlag = FastMathFlag.CONTRACT
+    ](self, b: Self, c: Self) -> Self:
         """Computes FMA operation.
 
         Compute fused multiple-add with two other complex values:
         `result = self * b + c`
+
+        Parameters:
+            flag: Fast-math optimization flags to apply (default: CONTRACT).
 
         Args:
             b: Multiplier complex value.
@@ -347,8 +353,8 @@ struct ComplexSIMD[dtype: DType, size: Int](
             Computed `Self * B + C` complex value.
         """
         return Self(
-            self.re.fma(b.re, -(self.im.fma(b.im, -c.re))),
-            self.re.fma(b.im, self.im.fma(b.re, c.im)),
+            self.re.fma[flag](b.re, -(self.im.fma[flag](b.im, -c.re))),
+            self.re.fma[flag](b.im, self.im.fma[flag](b.re, c.im)),
         )
 
     # fma(self, self, c)
