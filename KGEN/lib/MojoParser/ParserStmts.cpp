@@ -1506,7 +1506,6 @@ static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
 
 ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
                                       ExprNode *targetExpr, ExprNode *seqExpr) {
-  SMLoc seqLoc = seqExpr->getLoc();
   Location forLocation = translateLocation(forLoc);
   ASTDecl &scope = getParentDecl();
 
@@ -1519,13 +1518,18 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
   // For loops generally desugar into:
   //   var it = iterable.__iter__()
-  //   while it.__has_next__():
-  //       var e = it.__next__()
+  //   while True:
+  //       var e =
+  //          try:
+  //              yield it.__next__()  # Throws StopIteration if no more
+  //              elements.
+  //          except StopIteration:
+  //              lit.loop.break.else
   //       <BODY>
-  // We capture the "it" expression as a PValue and then the "__has_next__" and
-  // "__next__" callees so we can iterate the value in the elaborator.  The
-  // elaborator struggles with 'mut' arguments, so we use the paramfor_next_iter
-  // and paramfor_next_value functions to make it 'functional'.
+  // We capture the "it" expression as a PValue and the "__next__" callees so we
+  // can iterate the value in the elaborator.  However, the elaborator struggles
+  // with 'mut' arguments and exceptions, so we use paramfor_has_next,
+  // paramfor_next_iter, and paramfor_next_value functions to 'functional'ize.
   //
   // Parameter for loops are desugared into:
   //   kgen.param.for 'it', initial=iterable.__iter__(),
@@ -1572,11 +1576,14 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     bindings.add(seqExpr, PValue(iterType));
     // We use paramfor_next_iter as a wrapper because the elaborator doesn't
     // have a strong enough memory model to handle "mut" arguments to next.
-    OverloadSet call("paramfor_next_iter", paramForImpl, std::move(bindings),
-                     seqExpr, CallSyntax::kDirectCall);
+    OverloadSet call(name, paramForImpl, std::move(bindings), seqExpr,
+                     CallSyntax::kDirectCall);
     return call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
   };
 
+  PValue hasNext = getMutFnWrapper("paramfor_has_next");
+  if (!hasNext)
+    return failure();
   PValue getNextIter = getMutFnWrapper("paramfor_next_iter");
   if (!getNextIter)
     return failure();
@@ -1586,22 +1593,6 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
   // Build the iterator value parameter.
   auto iterDecl = ParamDeclAttr::get(scope.mangleParamName("iter"), iterType);
-
-  // Look up __has_next__ without calling it so elaborator can call it when
-  // the kgen.param.for is instantiated.
-  auto handleLookupFailure = [&]() {
-    emitter.emitError(seqLoc) << "expected sequence of type " << iterType
-                              << " to have a '__has_next__' method";
-  };
-
-  ASTExprAnd<AnyValue> selfValue = {UnknownAttr::get(iterType), seqExpr};
-  CallOperands emptyOperands(selfValue);
-  PValue hasNext = OverloadSet::lookupAndResolve(
-      iterType, "__has_next__", emptyOperands, seqExpr, CallSyntax::kMethodCall,
-      handleLookupFailure,
-      /*shouldPrintOverloadErrors*/ true, emitter);
-  if (!hasNext)
-    return failure();
 
   // Create the loop and parse the body into it.
   auto paramFor = ParamForOp::create(builder, forLocation, initialIterVal,
@@ -1613,10 +1604,11 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   //  @parameter if !iter.has_next(). Emit the condition as a parameter
   // expression.
   auto iterValue = PValue(ParamDeclRefAttr::get(iterDecl));
-  SyntheticNode iterUse(seqLoc, PValue(iterValue));
-  AttributeRefNode iterHasNext(&iterUse, seqLoc, "__has_next__");
-  CallNode hasNextCall(&iterHasNext, seqLoc, /*operands*/ {}, seqLoc);
-  auto hasNextI1 = emitter.emitExprI1(&hasNextCall, EC_ForIterator);
+  ValueDest hasNextDest(EC_ForIterator);
+  CValue hasNextRes =
+      emitter.emitIndirectCall(hasNext, CallOperands({{iterValue, seqExpr}}),
+                               hasNextDest, CallSyntax::kMethodCall, seqExpr);
+  auto hasNextI1 = emitter.emitI1({hasNextRes, seqExpr}, EC_ForIterator);
   if (!hasNextI1)
     return failure();
   assert(hasNextI1.getIfPValue() && "expected PValue in param context");
