@@ -237,7 +237,7 @@ struct _DictKeyIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, ParamForIterator):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -276,12 +276,6 @@ struct _DictKeyIter[
     @always_inline
     fn __next__(mut self) -> Self.Element:
         return self.__next_ref__().copy()
-
-    @always_inline
-    fn __next2__(mut self) raises StopIteration -> Self.Element:
-        if not self.__has_next__():
-            raise StopIteration()
-        return self.__next__()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:

@@ -43,9 +43,7 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(
-    Iterable, Iterator, Movable, ParamForIterator, ReversibleRange, Sized
-):
+struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
@@ -73,12 +71,6 @@ struct _ZeroStartingRange(
         return self.__len__() > 0
 
     @always_inline
-    fn __next2__(mut self) raises StopIteration -> Int:
-        if self.__len__() == 0:
-            raise StopIteration()
-        return self.__next__()
-
-    @always_inline
     fn __len__(self) -> Int:
         return self.curr
 
@@ -100,9 +92,7 @@ struct _ZeroStartingRange(
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialRange(
-    Iterable, Iterator, ParamForIterator, ReversibleRange, Sized
-):
+struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
@@ -125,12 +115,6 @@ struct _SequentialRange(
         return self.__len__() > 0
 
     @always_inline
-    fn __next2__(mut self) raises StopIteration -> Int:
-        if self.__len__() <= 0:
-            raise StopIteration()
-        return self.__next__()
-
-    @always_inline
     fn __len__(self) -> Int:
         return max(0, self.end - self.start)
 
@@ -151,7 +135,7 @@ struct _SequentialRange(
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRangeIterator(Iterable, Iterator, ParamForIterator, Sized):
+struct _StridedRangeIterator(Iterable, Iterator, Sized):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
@@ -182,12 +166,6 @@ struct _StridedRangeIterator(Iterable, Iterator, ParamForIterator, Sized):
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
-
-    @always_inline
-    fn __next2__(mut self) raises StopIteration -> Int:
-        if self.__len__() <= 0:
-            raise StopIteration()
-        return self.__next__()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -453,7 +431,7 @@ fn _uint_range_bounds(len: UInt) -> Tuple[Int, Optional[Int]]:
 
 
 @register_passable("trivial")
-struct _UIntZeroStartingRange(Iterable, Iterator, ParamForIterator, UIntSized):
+struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
@@ -481,12 +459,6 @@ struct _UIntZeroStartingRange(Iterable, Iterator, ParamForIterator, UIntSized):
         return self.__len__() > 0
 
     @always_inline
-    fn __next2__(mut self) raises StopIteration -> UInt:
-        if self.__len__() <= 0:
-            raise StopIteration()
-        return self.__next__()
-
-    @always_inline
     fn __len__(self) -> UInt:
         return self.curr
 
@@ -502,9 +474,7 @@ struct _UIntZeroStartingRange(Iterable, Iterator, ParamForIterator, UIntSized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _UIntStridedRangeIterator(
-    Iterable, Iterator, ParamForIterator, UIntSized
-):
+struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
@@ -532,18 +502,12 @@ struct _UIntStridedRangeIterator(
         return self.__len__() > 0
 
     @always_inline
-    fn __next2__(mut self) raises StopIteration -> UInt:
-        if not self.__has_next__():
-            raise StopIteration()
-        return self.__next__()
-
-    @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return _uint_range_bounds(self.__len__())
 
 
 @register_passable("trivial")
-struct _UIntStridedRange(Iterable, Iterator, ParamForIterator, UIntSized):
+struct _UIntStridedRange(Iterable, Iterator, UIntSized):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _UIntStridedRangeIterator
@@ -583,12 +547,6 @@ struct _UIntStridedRange(Iterable, Iterator, ParamForIterator, UIntSized):
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
-
-    @always_inline
-    fn __next2__(mut self) raises StopIteration -> UInt:
-        if not self.__has_next__():
-            raise StopIteration()
-        return self.__next__()
 
     @always_inline
     fn __len__(self) -> UInt:
@@ -652,7 +610,7 @@ fn _scalar_range_bounds[
 
 @register_passable("trivial")
 struct _ZeroStartingScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, ParamForIterator
+    Iterable, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
@@ -679,12 +637,6 @@ struct _ZeroStartingScalarRange[dtype: DType](
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
-
-    @always_inline
-    fn __next2__(mut self) raises StopIteration -> Scalar[Self.dtype]:
-        if not self.__has_next__():
-            raise StopIteration()
-        return self.__next__()
 
     @always_inline
     fn __len__(self) -> Scalar[Self.dtype]:

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 
 # ===-----------------------------------------------------------------------===#
 # __MLIRType
@@ -31,41 +30,24 @@ struct __MLIRType[T: AnyTrivialRegType](ImplicitlyCopyable):
 # ===-----------------------------------------------------------------------===#
 
 
-fn paramfor_has_next[
-    IteratorType: ParamForIterator & Copyable
-](it: IteratorType) -> Bool:
-    var result = it.copy()
-    try:
-        _ = result.__next2__()
-        return True
-    except:
-        return False
-
-
 fn paramfor_next_iter[
-    IteratorType: ParamForIterator & Copyable
+    IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType:
     # NOTE: This function is called by the compiler's elaborator only when
-    # paramfor_has_next will return true. This is needed because the interpreter
+    # __has_next__ will return true.  This is needed because the interpreter
     # memory model isn't smart enough to handle mut arguments cleanly.
     var result = it.copy()
     # This intentionally discards the value, but this only happens at comptime,
     # so recomputing it in the body of the loop is fine.
-    try:
-        _ = result.__next2__()
-        return result.copy()
-    except:
-        abort()
+    _ = result.__next__()
+    return result.copy()
 
 
 fn paramfor_next_value[
-    IteratorType: ParamForIterator & Copyable
+    IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when
-    # paramfor_has_next will return true. This is needed because the interpreter
+    # __has_next__ will return true.  This is needed because the interpreter
     # memory model isn't smart enough to handle mut arguments cleanly.
-    try:
-        var result = it.copy()
-        return result.__next2__()
-    except:
-        abort()
+    var result = it.copy()
+    return result.__next__()

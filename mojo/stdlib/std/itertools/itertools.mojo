@@ -66,7 +66,7 @@ fn count(start: Int = 0, step: Int = 1) -> _CountIterator:
 
 @fieldwise_init
 struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
-    Copyable, Iterable, Iterator, ParamForIterator
+    Copyable, Iterable, Iterator
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
@@ -139,11 +139,6 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
             self._inner_b
         )
 
-    fn __next2__(mut self) raises StopIteration -> Self.Element:
-        if not self.__has_next__():
-            raise StopIteration()
-        return self.__next__()
-
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         # compute a * initial_b + b for lower and upper
 
@@ -213,7 +208,7 @@ struct _Product3[
     IteratorTypeA: Iterator,
     IteratorTypeB: Copyable & Iterator,
     IteratorTypeC: Copyable & Iterator,
-](Copyable, Iterable, Iterator, ParamForIterator):
+](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -284,11 +279,6 @@ struct _Product3[
         # Flatten to (a, b, c)
         return (a^, b^, c^)
 
-    fn __next2__(mut self) raises StopIteration -> Self.Element:
-        if not self.__has_next__():
-            raise StopIteration()
-        return self.__next__()
-
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
 
@@ -354,7 +344,7 @@ struct _Product4[
     IteratorTypeB: Copyable & Iterator,
     IteratorTypeC: Copyable & Iterator,
     IteratorTypeD: Copyable & Iterator,
-](Copyable, Iterable, Iterator, ParamForIterator):
+](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -438,11 +428,6 @@ struct _Product4[
         )
         return (a^, b^, c^, d^)
 
-    fn __next2__(mut self) raises StopIteration -> Self.Element:
-        if not self.__has_next__():
-            raise StopIteration()
-        return self.__next__()
-
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
 
@@ -514,9 +499,7 @@ fn product[
 
 
 @fieldwise_init
-struct _RepeatIterator[ElementType: Copyable](
-    Copyable, Iterable, Iterator, ParamForIterator
-):
+struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
     """Iterator that repeats an element a specified number of times.
 
     Parameters:
@@ -547,12 +530,6 @@ struct _RepeatIterator[ElementType: Copyable](
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.remaining > 0
-
-    @always_inline
-    fn __next2__(mut self) raises StopIteration -> Self.ElementType:
-        if not self.__has_next__():
-            raise StopIteration()
-        return self.__next__()
 
 
 @always_inline

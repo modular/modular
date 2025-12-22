@@ -89,7 +89,7 @@ struct CodepointSliceIter[
     //,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, ParamForIterator, Sized):
+](ImplicitlyCopyable, Iterable, Iterator, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
     Unicode codepoint.
 
@@ -165,34 +165,6 @@ struct CodepointSliceIter[
         Returns:
             The next character in the string.
         """
-
-        @parameter
-        if Self.forward:
-            return self.next().value()
-        else:
-            return self.next_back().value()
-
-    @always_inline
-    fn __next2__(mut self) raises StopIteration -> StringSlice[Self.origin]:
-        """Get the next codepoint in the underlying string slice.
-
-        This returns the next single-codepoint substring slice encoded in the
-        underlying string, and advances the iterator state.
-
-        If `forward` is set to `False`, this will return the next codepoint
-        from the end of the string.
-
-        This function will abort if this iterator has been exhausted.
-
-        Returns:
-            The next character in the string.
-        """
-
-        # NOTE: This intentionally check if the length *in bytes* is greater
-        # than zero, because checking the codepoint length requires a linear
-        # scan of the string, which is needlessly expensive for this purpose.
-        if len(self._slice) <= 0:
-            raise StopIteration()
 
         @parameter
         if Self.forward:
@@ -354,7 +326,7 @@ struct CodepointSliceIter[
 
 
 struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
-    ImplicitlyCopyable, Iterable, Iterator, ParamForIterator, Sized
+    ImplicitlyCopyable, Iterable, Iterator, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
@@ -421,24 +393,6 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
             The next character in the string.
         """
 
-        return self.next().value()
-
-    fn __next2__(mut self) raises StopIteration -> Codepoint:
-        """Get the next codepoint in the underlying string slice.
-
-        This returns the next `Codepoint` encoded in the underlying string, and
-        advances the iterator state.
-
-        This function will abort if this iterator has been exhausted.
-
-        Returns:
-            The next character in the string.
-
-        Raises:
-            StopIteration: If there are no more elements.
-        """
-        if len(self._slice) <= 0:
-            raise StopIteration()
         return self.next().value()
 
     @always_inline
@@ -1493,8 +1447,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         assert_equal(iter.__next__(), Codepoint.ord("a"))
         assert_equal(iter.__next__(), Codepoint.ord("b"))
         assert_equal(iter.__next__(), Codepoint.ord("c"))
-        with assert_raises():
-            _ = iter.__next__() # raises StopIteration
+        assert_equal(iter.__has_next__(), False)
         ```
 
         `codepoints()` iterates over Unicode codepoints, and supports multibyte
@@ -1512,8 +1465,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         assert_equal(iter.__next__(), Codepoint.ord("a"))
          # U+0301 Combining Acute Accent
         assert_equal(iter.__next__().to_u32(), 0x0301)
-        with assert_raises():
-            _ = iter.__next__() # raises StopIteration
+        assert_equal(iter.__has_next__(), False)
         ```
         """
         return CodepointsIter(self)

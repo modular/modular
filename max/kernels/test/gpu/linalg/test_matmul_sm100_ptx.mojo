@@ -128,11 +128,6 @@ fn test_ptx[
     comptime M = c_layout.shape[0].value()
     comptime N = c_layout.shape[1].value()
     comptime K = a_layout.shape[1].value()
-
-    # This can be used to get an actual PTX file to compare against.
-    # with open("/tmp/actual_ptx.txt", "w") as f:
-    #    f.write_all(ptx.as_bytes())
-
     var expected_ptx = reference_ptx[M, N, K]()
     assert_equal(ptx, expected_ptx)
 
