@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
 
 
 struct MemExample:
@@ -162,3 +162,9 @@ fn addrSpaces[lt1: MutOrigin, lt2: ImmutOrigin, as1: AddressSpace]():
     var ref2: __mlir_type[
         `!lit.ref<`, MemExample, `, `, lt2._mlir_origin, `, `, +as2._value._mlir_value, `>`
     ]
+
+# https://github.com/modular/modular/issues/4765
+fn redundant_var_ref():
+  var n = 1
+  # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
+  var ref a = n
