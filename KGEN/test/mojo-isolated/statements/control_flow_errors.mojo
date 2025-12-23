@@ -72,7 +72,7 @@ fn test():
     var my_list_no_iter = MyList_no_iter()
 
 
-    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' or '__next_ref__' method required for iteration}}
+    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method required for iteration}}
     for item in my_list_no_next:
         pass
 
@@ -80,7 +80,7 @@ fn test():
     for item in my_list_no_iter:
         pass
 
-    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' or '__next_ref__' method required for iteration}}
+    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method required for iteration}}
     for key, item in my_list_no_next:
         pass
 
@@ -102,7 +102,7 @@ struct ListValueInt:
 struct ListValueStringRef:
     fn __init__(out self): pass
     fn __iter__(self) -> ListValueStringRef: return ListValueStringRef()
-    fn __next_ref__(mut self) raises StopIteration -> ref [self] String: pass
+    fn __next__(mut self) raises StopIteration -> ref [self] String: pass
 
 
 def loop_variable_scoped():

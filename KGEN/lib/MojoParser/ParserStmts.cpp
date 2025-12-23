@@ -1356,8 +1356,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   //   while True:
   //       ref e / var e
   //       try:
-  //           e = $ITER.__next_ref__()
-  //           # or: e = $ITER.__next__()
+  //           e = $ITER.__next__()
   //       except:
   //           break
   //       <BODY>
@@ -1365,8 +1364,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // or:
   //   var $ITER = iterable.__iter__()
   //   while $ITER.__has_next__():
-  //       ref e = $ITER.__next_ref__()
-  //       # or: var e = $ITER.__next__()
+  //       ref e = $ITER.__next__()
   //       <BODY>
   auto prefixEmitter = getEmitter();
 
@@ -1385,8 +1383,8 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
                                          CallSyntax::kMethodCall, seqExpr))
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
-  // Now that we have the iterator (and its type), see if we're calling
-  // __next_ref__ or __next__ to know what we're dealing with.
+  // Now that we have the iterator (and its type), find the  __next__ method to
+  // know what we're dealing with.
   CallOperands nextOperands({{MLValue(iterVar), seqExpr}});
   ASTType iterType = iterVar.getType().getElementType();
 
@@ -1397,10 +1395,6 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
       iterType, "__next_old__", nextOperands, seqExpr, CallSyntax::kMethodCall,
       prefixEmitter);
 
-  if (!nextFn)
-    nextFn = OverloadSet::lookupAndResolve(
-        iterType, "__next_ref__", nextOperands, seqExpr,
-        CallSyntax::kMethodCall, prefixEmitter);
   if (!nextFn) {
     nextFn = OverloadSet::lookupAndResolve(iterType, "__next__", nextOperands,
                                            seqExpr, CallSyntax::kMethodCall,
@@ -1408,8 +1402,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     if (!nextFn) {
       emitError(seqExpr->getLoc())
           << iterType
-          << " does not implement the '__next__' or '__next_ref__' method "
-             "required for iteration"
+          << " does not implement the '__next__' method required for iteration"
           << seqExpr->getRange();
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     }
