@@ -117,7 +117,7 @@ fn kill_process() raises:
         print("Process finished with exit code:", status.exit_code.value())
 
 
-fn example_pipe_io_redirect() raises:
+fn pipe_io_redirect() raises:
     print("== Example: Pipe I/O Redirection ==")
     var p_in = Pipe()
     var p_out = Pipe()
@@ -155,4 +155,4 @@ fn main() raises:
     print("\n--------------------\n")
     kill_process()
     print("\n--------------------\n")
-    example_pipe_io_redirect()  # Added call here
+    pipe_io_redirect()  # Added call here
