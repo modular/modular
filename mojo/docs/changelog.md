@@ -214,6 +214,12 @@ what we publish.
   Relatedly, the `UnknownDestructibility` trait is now no longer required, as it
   is equivalent to the new `AnyType` behavior.
 
+- The `__next_ref__` method in for-each loops has been removed.  Now you can
+  implement the `__next__` method of your iterator to return either a value or a
+  reference.  When directly using the collection, Mojo will use the
+  ref-returning variant, but will allow it to conform to `Iterator` for use with
+  generic algorithms (which use a copied value).
+
 ### Library changes
 
 - The `Iterator` trait and and for-each loop have removed the `__has_next__`

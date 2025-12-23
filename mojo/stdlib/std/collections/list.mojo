@@ -65,7 +65,7 @@ struct _ListIter[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __next_ref__(
+    fn __next__(
         mut self,
     ) raises StopIteration -> ref [Self.origin] Self.Element:
         @parameter
@@ -79,10 +79,6 @@ struct _ListIter[
                 raise StopIteration()
             self.index -= 1
             return self.src[][self.index]
-
-    @always_inline
-    fn __next__(mut self) raises StopIteration -> Self.Element:
-        return self.__next_ref__().copy()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:

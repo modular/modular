@@ -499,7 +499,7 @@ struct _VariadicListMemIter[
         self.src = Pointer(to=list)
 
     @always_inline
-    fn __next_ref__(
+    fn __next__(
         mut self,
     ) raises StopIteration -> ref [Self.elt_origin._mlir_origin] Self.elt_type:
         var index = self.index

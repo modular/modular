@@ -1003,7 +1003,7 @@ struct _DequeIter[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __next_ref__(
+    fn __next__(
         mut self,
     ) raises StopIteration -> ref [Self.origin] Self.Element:
         @parameter
@@ -1019,9 +1019,6 @@ struct _DequeIter[
                 raise StopIteration()
             self.index -= 1
             return self.src[][self.index]
-
-    fn __next__(mut self) raises StopIteration -> Self.Element:
-        return self.__next_ref__().copy()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
