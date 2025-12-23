@@ -13,14 +13,15 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
 # Standard library
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # 3rd-party
 import click
@@ -33,6 +34,12 @@ from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.nn.hooks import PrintHook
 from max.nn.layer import Module
+from max.tests.integration.tools.hf_config_overrides import (
+    apply_hf_config_override,
+    apply_non_strict_load,
+    create_layer_overrides,
+    set_config_overrides,
+)
 from run_models import (
     Flake,
     _detect_hf_flakes,
@@ -59,56 +66,72 @@ EX_TEMPFAIL = 75
 
 
 @contextmanager
-def add_max_hooks(
-    output_directory: Path | None = None,
-) -> Generator[None, None, None]:
-    """Context manager that adds tensor printing hooks by patching the model class."""
-
-    # Save original InferenceSession initializer.
-    original_inference_init = InferenceSession.__init__
+def apply_max_hooks(output_directory: Path | None) -> Iterator[PrintHook]:
+    """Create and manage MAX print hooks."""
     hook = PrintHook()
-    original_inference_init = InferenceSession.__init__
+    orig_infer_init: Any = None
 
-    def get_wrapped_load_state_dict(
-        original_load_state_dict: Callable[..., Any],
-    ) -> Callable[..., Any]:
-        def wrapped_load_state_dict(
-            self: Any, *args: Any, **kwargs: Any
-        ) -> Any:
-            result = original_load_state_dict(self, *args, **kwargs)
-            hook.name_layers(self)
-            return result
-
-        return wrapped_load_state_dict
-
-    # If an output directory is provided, patch InferenceSession to enable debug prints.
     if output_directory is not None:
+        orig_infer_init = InferenceSession.__init__
 
         def _patched_inference_init(
             session_self: InferenceSession, *args: Any, **kwargs: Any
         ) -> None:
-            original_inference_init(session_self, *args, **kwargs)
-            # Enable debug printing to file-style output when an output directory is specified.
-            # If additional parameters (like output path) are supported, they can be added here.
+            orig_infer_init(session_self, *args, **kwargs)
             session_self.set_debug_print_options(
                 style=PrintStyle.BINARY_MAX_CHECKPOINT,
                 output_directory=output_directory,
             )
 
-        InferenceSession.__init__ = _patched_inference_init  # type: ignore[assignment]
+        InferenceSession.__init__ = _patched_inference_init  # type: ignore[method-assign,assignment]
 
-    original_load_state_dict = Module.load_state_dict
-    Module.load_state_dict = get_wrapped_load_state_dict(  # type: ignore[method-assign]
-        original_load_state_dict
-    )
+    try:
+        yield hook
+    finally:
+        hook.remove()
+        if orig_infer_init is not None:
+            InferenceSession.__init__ = orig_infer_init  # type: ignore[method-assign]
 
+
+@contextmanager
+def apply_name_layers_after_state_load(hook: PrintHook) -> Iterator[None]:
+    """Wrap Module.load_state_dict to name layers after loading."""
+    orig_load = Module.load_state_dict
+
+    def _name_layers_after_load(
+        module_self: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        result = orig_load(module_self, *args, **kwargs)
+        hook.name_layers(module_self)
+        return result
+
+    cast(Any, Module).load_state_dict = _name_layers_after_load
     try:
         yield
     finally:
-        hook.remove()
-        Module.load_state_dict = original_load_state_dict  # type: ignore[method-assign]
-        # Restore original InferenceSession initializer if we patched it.
-        InferenceSession.__init__ = original_inference_init  # type: ignore[method-assign]
+        cast(Any, Module).load_state_dict = orig_load
+
+
+@contextmanager
+def debug_context(
+    *,
+    output_directory: Path | None,
+    hf_config_overrides: dict[str, Any] | None,
+) -> Iterator[None]:
+    """Context manager to manage model execution when debugging.
+
+    This context manages:
+    1. HuggingFace config overrides to modify the model configuration
+    2. Places print hooks for both MAX and Torch models to inspect intermediate tensors
+    3. Names layers after state dict loading
+    """
+    with ExitStack() as stack:
+        if hf_config_overrides is not None:
+            stack.enter_context(apply_hf_config_override(hf_config_overrides))
+            stack.enter_context(apply_non_strict_load())
+        hook = stack.enter_context(apply_max_hooks(output_directory))
+        stack.enter_context(apply_name_layers_after_state_load(hook))
+        yield
 
 
 @click.command()
@@ -184,6 +207,20 @@ def add_max_hooks(
     required=False,
     help="Image URL or path for multimodal pipelines. Can be passed multiple times.",
 )
+@click.option(
+    "--hf-config-overrides",
+    "hf_config_overrides",
+    type=str,
+    default=None,
+    help="JSON dict of overrides applied to HuggingFace AutoConfig fields.",
+)
+@click.option(
+    "--num-hidden-layers",
+    "num_hidden_layers",
+    type=str,
+    default="1",
+    help="Number of hidden layers to use (default: 1). Pass 'all' to use all layers.",
+)
 def main(
     device_type: str | list[int],
     framework_name: str,
@@ -195,11 +232,39 @@ def main(
     num_steps: int,
     prompt: str | None,
     images: tuple[str, ...] | None,
+    hf_config_overrides: str | None,
+    num_hidden_layers: str,
 ) -> None:
     if "gemma3" in pipeline_name:
         # Running into dynamo error:
         # https://huggingface.co/google/gemma-3-4b-it/discussions/51
         torch._dynamo.config.disable = True
+
+    # Validate num_hidden_layers input
+    if num_hidden_layers != "all":
+        try:
+            int(num_hidden_layers)
+        except ValueError as e:
+            raise click.UsageError(
+                f"--num-hidden-layers must be a positive integer or 'all', got: {num_hidden_layers}"
+            ) from e
+
+    # Parse user-provided config overrides
+    parsed_overrides: dict[str, Any] = {}
+    if hf_config_overrides:
+        try:
+            parsed = json.loads(hf_config_overrides)
+            if not isinstance(parsed, dict):
+                raise ValueError("hf_config_overrides must be a JSON object.")
+            parsed_overrides = cast(dict[str, Any], parsed)
+        except Exception as e:
+            raise click.UsageError(
+                f"Invalid --hf-config-overrides JSON: {e}"
+            ) from e
+
+    # Create layer overrides and merge with user overrides (user overrides take precedence)
+    layer_overrides = create_layer_overrides(num_hidden_layers, pipeline_name)
+    final_overrides = {**layer_overrides, **parsed_overrides} or None
 
     try:
         debug_model(
@@ -213,6 +278,7 @@ def main(
             num_steps=num_steps,
             prompt=prompt,
             images=images,
+            hf_config_overrides=final_overrides,
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)
@@ -230,8 +296,13 @@ def debug_model(
     num_steps: int = 1,
     prompt: str | None = None,
     images: tuple[str, ...] | None = None,
+    hf_config_overrides: dict[str, Any] | None = None,
 ) -> None:
-    """Run a model with print hooks enabled and write intermediate tensors. Intermediate tensors are written to the output directory if specified."""
+    """Run a model with print hooks enabled and write intermediate tensors.
+
+    Intermediate tensors are written to the output directory if specified.
+    Config overrides can be applied to both MAX and Torch models via hf_config_overrides.
+    """
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
     configure_cli_logging(level="INFO")
@@ -274,7 +345,13 @@ def debug_model(
         evaluation_batch_size = max_batch_size
 
     title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name or 'Default Encoding'}"
-    with github_log_group(title):
+    with (
+        debug_context(
+            output_directory=output_path,
+            hf_config_overrides=hf_config_overrides,
+        ),
+        github_log_group(title),
+    ):
         if framework_name == "max":
             if encoding_name is None:
                 max_encoding_name = get_max_default_encoding(
@@ -283,10 +360,7 @@ def debug_model(
             else:
                 max_encoding_name = encoding_name
 
-            with (
-                maybe_log_hf_downloads(log_hf_downloads),
-                add_max_hooks(output_directory=output_path),
-            ):
+            with maybe_log_hf_downloads(log_hf_downloads):
                 max_pipeline_and_tokenizer = (
                     pipeline_oracle.create_max_pipeline(
                         encoding=max_encoding_name,
@@ -295,7 +369,7 @@ def debug_model(
                 )
 
             print(f"Running {pipeline_name} model on MAX")
-            results = run_max_model(
+            run_max_model(
                 task=pipeline_oracle.task,
                 max_pipeline_and_tokenizer=max_pipeline_and_tokenizer,
                 inputs=inputs,
@@ -315,12 +389,21 @@ def debug_model(
                         device=device,
                     )
                 )
+
+            # Apply HuggingFace config overrides directly to the model config
+            if hf_config_overrides:
+                set_config_overrides(
+                    torch_pipeline_and_tokenizer.model.config,
+                    hf_config_overrides,
+                    "config",
+                )
+
             export_path = str(output_path) if output_path is not None else None
             hook = torch_print_hook.TorchPrintHook(export_path=export_path)
             hook.name_layers(torch_pipeline_and_tokenizer.model)
 
             print(f"Running {pipeline_name} model on Torch")
-            results = run_torch_model(
+            run_torch_model(
                 pipeline_oracle=pipeline_oracle,
                 torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
                 device=torch_device,

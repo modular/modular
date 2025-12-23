@@ -56,7 +56,7 @@ def main():
         report = suite.generate_report()
     except e:
         suite^.abandon()
-        raise e
+        raise e^
 
     # Make sure running the suite fails, since we have a failing test.
     with assert_raises():

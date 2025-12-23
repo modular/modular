@@ -22,7 +22,7 @@ from sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu import lane_id as get_lane_id
+from gpu import lane_id as get_lane_id, warp_id as get_warp_id
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -414,7 +414,7 @@ struct R2GOutputOp[
 
         comptime num_warps = Self.num_threads // WARP_SIZE
         # Extract last 2 bits so that warp_id is 0-3.
-        var warp_id = (thread_idx.x // UInt(WARP_SIZE)) & 3
+        var warp_id = (get_warp_id()) & 3
 
         var ctile = self.c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
@@ -606,7 +606,7 @@ struct Pipeline[
         var tma_phase: UInt32 = 0
         var mma_phase: UInt32 = 0
 
-        var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+        var elect_one_warp = get_warp_id() == 0
         var elect_one_thread = thread_idx.x == 0
         var elect_one_cta = block_rank_in_cluster() % 2 == 0
         comptime max_tmem_cols = 512

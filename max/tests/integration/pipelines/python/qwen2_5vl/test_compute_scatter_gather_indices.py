@@ -88,7 +88,7 @@ def test_compute_scatter_gather_indices() -> None:
     # ctx0 (start_idx=0), ctx1 (start_idx=8)
     ctx0 = copy.deepcopy(ctx)
     ctx1 = copy.deepcopy(ctx)
-    ctx0.rewind_processing(ctx0.start_idx)
+    ctx0.rewind_processing(ctx0.processed_length)
     scatter_indices, gather_indices = compute_scatter_gather_indices(
         [ctx0, ctx1]
     )

@@ -1426,6 +1426,9 @@ fn _hipblasLt_matmul[
     if returnedResults == 0:
         raise Error("No algorithm was found!")
 
+    var workspace_size = heuristicResult.workspaceSize
+    var workspace = ctx.enqueue_create_buffer[DType.uint8](workspace_size)
+
     _check_hipblas_error(
         hipblasLtMatmul(
             handle,
@@ -1441,8 +1444,8 @@ fn _hipblasLt_matmul[
             _ddata,
             _ddesc,
             UnsafePointer(to=heuristicResult.algo),
-            OpaquePointer(),
-            0,
+            workspace.unsafe_ptr().bitcast[NoneType](),
+            workspace_size,
             HIP(ctx.stream()),
         )
     )

@@ -233,7 +233,7 @@ fn mla_prefill_branch_fp8[
         seq_len * num_heads * (qk_nope_head_dim + qk_rope_head_dim)
     )
     var q = LayoutTensor[dtype, q_layout](
-        q_buf.unsafe_ptr(),
+        q_buf,
         RuntimeLayout[q_layout].row_major(
             Index(seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim)
         ),
@@ -281,7 +281,7 @@ fn mla_prefill_branch_fp8[
         buffer_length * kv_latent_dim
     )
     var k_latent = LayoutTensor[dtype, k_latent_layout](
-        k_latent_buf.unsafe_ptr(),
+        k_latent_buf,
         RuntimeLayout[k_latent_layout].row_major(
             Index(buffer_length, kv_latent_dim)
         ),
@@ -305,7 +305,7 @@ fn mla_prefill_branch_fp8[
         buffer_length * kv_latent_dim
     )
     var fp8_k_latent = LayoutTensor[fp8_dtype, k_latent_layout](
-        fp8_k_latent_buf.unsafe_ptr(),
+        fp8_k_latent_buf,
         RuntimeLayout[k_latent_layout].row_major(
             Index(buffer_length, kv_latent_dim)
         ),
@@ -323,20 +323,27 @@ fn mla_prefill_branch_fp8[
     var fp8_k_latent_scale = LayoutTensor[
         fp8_scale_dtype, fp8_k_latent_scale_layout
     ](
-        fp8_k_latent_scale_buf.unsafe_ptr(),
+        fp8_k_latent_scale_buf,
         RuntimeLayout[fp8_k_latent_scale_layout].row_major(
             Index(kv_latent_dim // k_scale_granularity, scales_padded_m)
         ),
     )
 
-    quantize_dynamic_scaled_fp8[k_scale_granularity](
+    @__copy_capture(k_latent)
+    @always_inline
+    @parameter
+    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[k_latent.dtype, width]:
+        return k_latent.load[width=width](row, col)
+
+    quantize_dynamic_scaled_fp8[
+        input_fn, k_scale_granularity, k_latent.shape[1]()
+    ](
         _layout_tensor_to_nd_buffer(fp8_k_latent),
         _layout_tensor_to_nd_buffer(fp8_k_latent_scale),
-        _layout_tensor_to_nd_buffer(k_latent),
         1200.0,
         ctx,
+        k_latent.dim[0](),
     )
-    _ = k_latent_buf^
 
     # allocate buffers for concatenated KV
     comptime kv_layout = Layout.row_major(
@@ -346,7 +353,7 @@ fn mla_prefill_branch_fp8[
         buffer_length * num_heads * (qk_nope_head_dim + v_head_dim)
     )
     var kv = LayoutTensor[dtype, kv_layout](
-        kv_buf.unsafe_ptr(),
+        kv_buf,
         RuntimeLayout[kv_layout].row_major(
             Index(
                 buffer_length,
@@ -372,8 +379,6 @@ fn mla_prefill_branch_fp8[
         _layout_tensor_to_nd_buffer(kv_b_proj_scale),
         ctx,
     )
-    _ = fp8_k_latent_buf^
-    _ = fp8_k_latent_scale_buf^
 
     # allocate buffers for full K and V
     comptime k_layout = Layout.row_major(
@@ -387,13 +392,13 @@ fn mla_prefill_branch_fp8[
         buffer_length * num_heads * v_head_dim
     )
     var k = LayoutTensor[dtype, k_layout](
-        k_buf.unsafe_ptr(),
+        k_buf,
         RuntimeLayout[k_layout].row_major(
             Index(buffer_length, num_heads, qk_nope_head_dim)
         ),
     )
     var v = LayoutTensor[dtype, v_layout](
-        v_buf.unsafe_ptr(),
+        v_buf,
         RuntimeLayout[v_layout].row_major(
             Index(buffer_length, num_heads, v_head_dim)
         ),
@@ -442,7 +447,6 @@ fn mla_prefill_branch_fp8[
     _elementwise_impl_gpu[
         func=split_kv_fn, simd_width = UInt(target_simd_width)
     ](launch_shape, ctx)
-    _ = kv_buf^
 
     generic_flare_mla_prefill_kv_cache_ragged[
         write_softmax_info=False,
@@ -466,10 +470,6 @@ fn mla_prefill_branch_fp8[
         ),
         ctx,
     )
-
-    _ = q_buf^
-    _ = k_buf^
-    _ = v_buf^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -497,19 +497,21 @@ fn quantize_and_bmm_fp8_helper[
 ) raises:
     """
     Helper function to quantize and perform a batched matrix multiplication.
+    This function uses the transposed view of the input tensor `a`.
     """
 
-    comptime B = a.shape[0]()
+    comptime B = a.shape[1]()
     comptime K = a.shape[2]()
     comptime N = b.shape[1]()
 
-    var m = a.dim(1)
+    var m = a.dim(0)
+
+    comptime fp8_a_layout = Layout.row_major(B, UNKNOWN_VALUE, K)
 
     # allocate buffers for quantized a and its scales
     var fp8_a_buf = ctx.enqueue_create_buffer[fp8_dtype](B * m * K)
-    var fp8_a = LayoutTensor[fp8_dtype, a.layout](
-        fp8_a_buf.unsafe_ptr(),
-        a.runtime_layout,
+    var fp8_a = LayoutTensor[fp8_dtype, fp8_a_layout](
+        fp8_a_buf, RuntimeLayout[fp8_a_layout].row_major(Index(B, m, K))
     )
 
     # the scales are stored in a transposed, padded format
@@ -522,18 +524,34 @@ fn quantize_and_bmm_fp8_helper[
         B * (K // k_scale_granularity) * scales_padded_m
     )
     var fp8_a_scale = LayoutTensor[fp8_scale_dtype, fp8_a_scale_layout](
-        fp8_a_scale_buf.unsafe_ptr(),
+        fp8_a_scale_buf,
         RuntimeLayout[fp8_a_scale_layout].row_major(
             Index(B, K // k_scale_granularity, scales_padded_m)
         ),
     )
 
-    batched_quantize_dynamic_scaled_fp8[k_scale_granularity](
+    var a_ndbuffer = _layout_tensor_to_nd_buffer[3](a)
+
+    @parameter
+    @__copy_capture(a)
+    @always_inline
+    fn input_fn[
+        width: Int
+    ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
+        # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
+        return a.aligned_load[width=width](IndexList[3](row, batch, col))
+
+    batched_quantize_dynamic_scaled_fp8[
+        input_fn=input_fn,
+        group_size_or_per_token=k_scale_granularity,
+        num_cols=K,
+    ](
         _layout_tensor_to_nd_buffer[3](fp8_a),
         _layout_tensor_to_nd_buffer[3](fp8_a_scale),
-        _layout_tensor_to_nd_buffer[3](a),
         1200.0,
         ctx,
+        num_rows=m,
+        batch_size=B,
     )
 
     batched_matmul_dynamic_scaled_fp8[
@@ -552,9 +570,6 @@ fn quantize_and_bmm_fp8_helper[
         _layout_tensor_to_nd_buffer[3](b_scales),
         ctx,
     )
-
-    _ = fp8_a_buf^
-    _ = fp8_a_scale_buf^
 
 
 @always_inline
@@ -708,23 +723,6 @@ fn mla_decode_branch_fp8[
     if seq_len == 0:
         return
 
-    # First transpose the q_nope tensor from [tot_seq_len, num_heads,
-    # qk_nope_head_dim] to [num_heads, tot_seq_len, qk_nope_head_dim].
-    # TODO: This will be fused with the batched_quantize_dynamic_scaled_fp8 kernel in the future.
-    comptime q_nope_t_layout = Layout.row_major(
-        num_heads, UNKNOWN_VALUE, qk_nope_head_dim
-    )
-    var q_nope_t_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * qk_nope_head_dim
-    )
-    var q_nope_t = LayoutTensor[dtype, q_nope_t_layout](
-        q_nope_t_buf.unsafe_ptr(),
-        RuntimeLayout[q_nope_t_layout].row_major(
-            Index(num_heads, seq_len, qk_nope_head_dim)
-        ),
-    )
-    transpose_helper[dtype](q_nope_t, q_nope, ctx)
-
     # Proceed with the fp8 batched matmul
     comptime q_nope_proj_layout = Layout.row_major(
         num_heads, UNKNOWN_VALUE, kv_latent_dim
@@ -733,19 +731,19 @@ fn mla_decode_branch_fp8[
         num_heads * seq_len * kv_latent_dim
     )
     var q_nope_proj = LayoutTensor[dtype, q_nope_proj_layout](
-        q_nope_proj_buf.unsafe_ptr(),
+        q_nope_proj_buf,
         RuntimeLayout[q_nope_proj_layout].row_major(
             Index(num_heads, seq_len, kv_latent_dim)
         ),
     )
 
+    # This helper function uses the transposed view of the input tensor `q_nope`.
     quantize_and_bmm_fp8_helper[
         m_scale_granularity=m_scale_granularity,
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         target=target,
-    ](q_nope_proj, q_nope_t, w_uk, w_uk_scale, ctx)
-    _ = q_nope_t_buf^
+    ](q_nope_proj, q_nope, w_uk, w_uk_scale, ctx)
 
     # concatenate the transposed q_nope_proj and q_rope tensors
     comptime q_full_layout = Layout.row_major(
@@ -755,7 +753,7 @@ fn mla_decode_branch_fp8[
         seq_len * num_heads * (kv_latent_dim + qk_rope_head_dim)
     )
     var q_full = LayoutTensor[dtype, q_full_layout](
-        q_full_buf.unsafe_ptr(),
+        q_full_buf,
         RuntimeLayout[q_full_layout].row_major(
             Index(seq_len, num_heads, kv_latent_dim + qk_rope_head_dim)
         ),
@@ -798,7 +796,6 @@ fn mla_decode_branch_fp8[
     _elementwise_impl_gpu[func=concat_fn, simd_width = UInt(concat_simd_width)](
         concat_launch_shape, ctx
     )
-    _ = q_nope_proj_buf^
 
     # Perform MLA decode
     comptime raw_output_layout = Layout.row_major(
@@ -808,7 +805,7 @@ fn mla_decode_branch_fp8[
         seq_len * num_heads * kv_latent_dim
     )
     var raw_output = LayoutTensor[dtype, raw_output_layout](
-        raw_output_buf.unsafe_ptr(),
+        raw_output_buf,
         RuntimeLayout[raw_output_layout].row_major(
             Index(seq_len, num_heads, kv_latent_dim)
         ),
@@ -827,22 +824,6 @@ fn mla_decode_branch_fp8[
         raw_output,
         ctx,
     )
-    _ = q_full_buf^
-
-    comptime raw_output_t_layout = Layout.row_major(
-        num_heads, UNKNOWN_VALUE, kv_latent_dim
-    )
-    var raw_output_t_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * kv_latent_dim
-    )
-    var raw_output_t = LayoutTensor[dtype, raw_output_t_layout](
-        raw_output_t_buf.unsafe_ptr(),
-        RuntimeLayout[raw_output_t_layout].row_major(
-            Index(num_heads, seq_len, kv_latent_dim)
-        ),
-    )
-    transpose_helper[dtype](raw_output_t, raw_output, ctx)
-    _ = raw_output_buf^
 
     # Another batched matmul to project the raw output to the original space
     comptime output_t_layout = Layout.row_major(
@@ -852,12 +833,13 @@ fn mla_decode_branch_fp8[
         num_heads * seq_len * v_head_dim
     )
     var output_t = LayoutTensor[dtype, output_t_layout](
-        output_t_buf.unsafe_ptr(),
+        output_t_buf,
         RuntimeLayout[output_t_layout].row_major(
             Index(num_heads, seq_len, v_head_dim)
         ),
     )
 
+    # This helper function uses the transposed view of the input tensor `raw_output`.
     quantize_and_bmm_fp8_helper[
         dtype=dtype,
         fp8_dtype=fp8_dtype,
@@ -866,12 +848,10 @@ fn mla_decode_branch_fp8[
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         target=target,
-    ](output_t, raw_output_t, w_uv, w_uv_scale, ctx)
-    _ = raw_output_t_buf^
+    ](output_t, raw_output, w_uv, w_uv_scale, ctx)
 
     # Transpose the output tensor from [num_heads, tot_seq_len, v_head_dim] to [tot_seq_len, num_heads, v_head_dim].
     transpose_helper[dtype](output, output_t, ctx)
-    _ = output_t_buf^
 
 
 # ===-----------------------------------------------------------------------===#

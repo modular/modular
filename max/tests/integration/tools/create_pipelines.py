@@ -163,6 +163,7 @@ class PipelineOracle(ABC):
         torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
         device: torch.device,
         num_steps: int,
+        inputs: list[Any],
     ) -> list[dict[str, Any]]:
         """Run text generation using the standard torch_utils implementation.
 
@@ -172,7 +173,7 @@ class PipelineOracle(ABC):
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            textgen_requests=self.inputs,
+            textgen_requests=inputs,
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
@@ -256,13 +257,14 @@ class InternVLPipelineOracle(PipelineOracle):
         torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
         device: torch.device,
         num_steps: int,
+        inputs: list[Any],
     ) -> list[dict[str, Any]]:
         """Run text generation using InternVL-specific preprocessing logic."""
         return internvl_torch_utils.run_text_generation(
             model=torch_pipeline_and_tokenizer.model,
             processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            textgen_requests=self.inputs,
+            textgen_requests=inputs,
             num_steps=num_steps,
             print_outputs=True,
             # Omit `use_cache` since the InternVL code hardcodes it.
@@ -343,6 +345,7 @@ class Idefics3PipelineOracle(PipelineOracle):
         torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
         device: torch.device,
         num_steps: int,
+        inputs: list[Any],
     ) -> list[dict[str, Any]]:
         """Run text generation using Idefics3-specific preprocessing logic."""
 
@@ -350,7 +353,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            textgen_requests=self.inputs,
+            textgen_requests=inputs,
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
@@ -448,6 +451,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
         device: torch.device,
         num_steps: int,
+        inputs: list[Any],
     ) -> list[dict[str, Any]]:
         """Run text generation using Qwen2.5VL-specific preprocessing logic."""
 
@@ -455,7 +459,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            textgen_requests=self.inputs,
+            textgen_requests=inputs,
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
@@ -553,6 +557,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
         device: torch.device,
         num_steps: int,
+        inputs: list[Any],
     ) -> list[dict[str, Any]]:
         """Run text generation using Qwen3VL-specific preprocessing logic."""
 
@@ -560,7 +565,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            textgen_requests=self.inputs,
+            textgen_requests=inputs,
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,

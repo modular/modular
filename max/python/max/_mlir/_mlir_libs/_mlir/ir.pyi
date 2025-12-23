@@ -506,6 +506,11 @@ class Operation(_OperationBase):
     def successors(self) -> OpSuccessors:
         """Returns the list of Operation successors."""
 
+    def replace_uses_of_with(self, of: Value, with_: Value) -> None:
+        """
+        Replaces uses of the 'of' value with the 'with' value inside the operation.
+        """
+
 class OpView(_OperationBase):
     @overload
     def __init__(self, operation: Operation) -> None: ...
@@ -898,7 +903,7 @@ class Value(Generic[_T]):
         """Dumps a debug representation of the object to stderr."""
 
     @property
-    def owner(self) -> object:
+    def owner(self) -> OpView:
         """
         Returns the owner of the value (`Operation` for results, `Block` for arguments).
         """
@@ -1014,7 +1019,7 @@ class OpResult(Value[_T]):
     def isinstance(other_value: Value) -> bool: ...
     def maybe_downcast(self) -> OpResult: ...
     @property
-    def owner(self) -> Operation:
+    def owner(self) -> OpView:
         """Returns the operation that produces this result."""
 
     @property
@@ -1142,7 +1147,7 @@ class SymbolTable:
         Walks symbol tables starting from an operation with a callback function.
         """
 
-class BlockArgumentList:
+class BlockArgumentList(Sequence[BlockArgument]):
     def __add__(self, arg: BlockArgumentList, /) -> list[BlockArgument]: ...
     @property
     def types(self) -> list[Type]:
@@ -1173,10 +1178,10 @@ class BlockList:
           The created block.
         """
 
-class BlockSuccessors:
+class BlockSuccessors(Sequence[Block]):
     def __add__(self, arg: BlockSuccessors, /) -> list[Block]: ...
 
-class BlockPredecessors:
+class BlockPredecessors(Sequence[Block]):
     def __add__(self, arg: BlockPredecessors, /) -> list[Block]: ...
 
 class OperationIterator:
@@ -1236,12 +1241,12 @@ class OpOperandIterator:
     def __next__(self) -> OpOperand:
         """Returns the next operand in the iteration."""
 
-class OpOperandList:
+class OpOperandList(Sequence[Value]):
     def __add__(self, arg: OpOperandList, /) -> list[Value]: ...
     def __setitem__(self, index: int, value: Value) -> None:
         """Sets the operand at the specified index to a new value."""
 
-class OpResultList:
+class OpResultList(Sequence[OpResult]):
     def __add__(self, arg: OpResultList, /) -> list[OpResult]: ...
     @property
     def types(self) -> list[Type]:
@@ -1251,7 +1256,7 @@ class OpResultList:
     def owner(self) -> OpView:
         """Returns the operation that owns this result list."""
 
-class OpSuccessors:
+class OpSuccessors(Sequence[Block]):
     def __add__(self, arg: OpSuccessors, /) -> list[Block]: ...
     def __setitem__(self, index: int, block: Block) -> None:
         """Sets the successor block at the specified index."""
@@ -1263,7 +1268,7 @@ class RegionIterator:
     def __next__(self) -> Region:
         """Returns the next region in the iteration."""
 
-class RegionSequence:
+class RegionSequence(Sequence[Region]):
     def __add__(self, arg: RegionSequence, /) -> list[Region]: ...
     def __iter__(self) -> RegionIterator:
         """Returns an iterator over the regions in the sequence."""
@@ -1608,7 +1613,7 @@ class AffineMap:
     @property
     def results(self) -> AffineExprList: ...
 
-class AffineExprList:
+class AffineExprList(Sequence[AffineExpr]):
     def __add__(self, arg: AffineExprList, /) -> list[AffineExpr]: ...
 
 class IntegerSet:
@@ -1664,7 +1669,7 @@ class IntegerSetConstraint:
     @property
     def is_eq(self) -> bool: ...
 
-class IntegerSetConstraintList:
+class IntegerSetConstraintList(Sequence[IntegerSetConstraint]):
     def __add__(
         self, arg: IntegerSetConstraintList, /
     ) -> list[IntegerSetConstraint]: ...

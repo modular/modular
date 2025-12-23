@@ -796,7 +796,7 @@ def generic_assert_output_equals[
                     )
                 except e:
                     print("Q", bs, s, q_dim)
-                    raise e
+                    raise e^
 
             for k_dim in range(kv_hidden_size):
                 head_idx = k_dim // kv_params.head_size
@@ -817,7 +817,7 @@ def generic_assert_output_equals[
                     )
                 except e:
                     print("K", bs, s, k_dim)
-                    raise e
+                    raise e^
 
             for v_dim in range(kv_hidden_size):
                 head_idx = v_dim // kv_params.head_size
@@ -838,7 +838,7 @@ def generic_assert_output_equals[
                     )
                 except e:
                     print("V", bs, s, v_dim)
-                    raise e
+                    raise e^
 
         ragged_offset += prompt_len
 

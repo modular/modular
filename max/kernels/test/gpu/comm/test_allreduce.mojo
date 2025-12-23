@@ -335,7 +335,7 @@ fn allreduce_test[
                 print("Verification failed at GPU", i, "index", j)
                 print("Value:", host_buffers[i][j])
                 print("Expected:", mocl_expected_sum)
-                raise e
+                raise e^
 
     # (RCCL verification is performed above within the benchmark block.)
 
@@ -520,7 +520,7 @@ fn run_allreduce_sweep[
                     " compilation target"
                 )
             else:
-                raise e
+                raise e^
 
 
 def main():

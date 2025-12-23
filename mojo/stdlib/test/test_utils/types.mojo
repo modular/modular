@@ -35,7 +35,7 @@ from os import abort
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveOnly[T: Movable](Movable):
+struct MoveOnly[T: Movable & ImplicitlyDestructible](Movable):
     """Utility for testing MoveOnly types.
 
     Parameters:
@@ -370,6 +370,25 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
     fn __del__(deinit self):
         """Sets the target flag to True when destroyed."""
         self.target.init_pointee_move(True)
+
+
+# ===----------------------------------------------------------------------=== #
+# ExplicitDelOnly
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy
+@fieldwise_init
+struct ExplicitDelOnly(Movable):
+    """Utility for testing container support for linear types."""
+
+    var data: Int
+    """Test data payload."""
+
+    fn destroy(deinit self):
+        """Explicitly destroy this linear type."""
+
+        pass
 
 
 # ===----------------------------------------------------------------------=== #

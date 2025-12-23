@@ -409,7 +409,7 @@ def execute_ragged_flash_attention[
                                         ref_val,
                                         test_val,
                                     )
-                                    raise e
+                                    raise e^
 
     # Explicitly free device buffers to return memory to the buffer cache
     _ = input_row_offsets_device^

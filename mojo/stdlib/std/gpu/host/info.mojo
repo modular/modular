@@ -866,7 +866,7 @@ comptime NoGPU = GPUInfo(
 
 
 # ===-----------------------------------------------------------------------===#
-# Apple M1
+# Apple Silicon
 # ===-----------------------------------------------------------------------===#
 fn _get_metal_m1_target() -> _TargetType:
     """Creates an MLIR target configuration for M1 Metal GPU.
@@ -932,6 +932,22 @@ fn _get_metal_m4_target() -> _TargetType:
     ]
 
 
+fn _get_metal_m5_target() -> _TargetType:
+    """Creates an MLIR target configuration for M5 Metal GPU.
+
+    Returns:
+        MLIR target configuration for M5 Metal.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m5", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
 comptime MetalM1 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M1",
@@ -980,6 +996,17 @@ comptime MetalM4 = GPUInfo.from_family(
 )
 """Apple M4 GPU configuration."""
 
+comptime MetalM5 = GPUInfo.from_family(
+    family=AppleMetalFamily,
+    name="M5",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m5",
+    compute=4.0,  # Metal version 4.0 for M5
+    version="metal_4",
+    sm_count=10,  # M5 has 10 GPU cores
+)
+"""Apple M5 GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # A100
@@ -2096,6 +2123,8 @@ struct GPUInfo(Equatable, Identifiable, Stringable, Writable):
             return _get_metal_m3_target()
         if self.name == "M4":
             return _get_metal_m4_target()
+        if self.name == "M5":
+            return _get_metal_m5_target()
 
         if self.name == "":
             return _get_empty_target()
@@ -2355,6 +2384,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         StaticString("apple-m2"),
         StaticString("apple-m3"),
         StaticString("apple-m4"),
+        StaticString("apple-m5"),
     ), _build_unsupported_arch_error[target_arch0]()
 
     @parameter
@@ -2418,6 +2448,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return materialize[MetalM3]()
     elif target_arch == "apple-m4":
         return materialize[MetalM4]()
+    elif target_arch == "apple-m5":
+        return materialize[MetalM5]()
     elif _accelerator_arch() == "":
         return materialize[NoGPU]()
     else:

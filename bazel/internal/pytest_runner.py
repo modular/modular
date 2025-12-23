@@ -157,7 +157,6 @@ fi
     namespace, unknown_args = __build_parser().parse_known_args(args)
     pytest_args = [
         f"--junitxml={os.environ['XML_OUTPUT_FILE']}",
-        "--runxfail",  # Use pytest.mark.skip instead
         "-o",
         "xfail_strict=true",
         "-o",

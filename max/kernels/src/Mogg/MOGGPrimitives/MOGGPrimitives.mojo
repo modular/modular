@@ -1490,7 +1490,9 @@ struct MoggAsyncPackHelper:
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
     fn __init__(
-        out self, var data: Some[Movable], async_ptr: AnyAsyncValueRefPtr
+        out self,
+        var data: Some[Movable & ImplicitlyDestructible],
+        async_ptr: AnyAsyncValueRefPtr,
     ):
         """
         Packs a generic Movable value into the asynchronous context.
@@ -1595,7 +1597,7 @@ fn mogg_async_pack_borrow_v2[
 
 
 @register_internal("mogg.tensor.__init__")
-@no_inline
+@always_inline
 fn mogg_tensor_init[
     dtype: DType,
     rank: Int,

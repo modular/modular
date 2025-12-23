@@ -80,7 +80,7 @@ def create_text_context(
     prompt_len: int,
     output_len: int | None = None,
 ) -> TextContext:
-    tokens = np.ones(prompt_len, dtype=np.int32)
+    tokens = np.ones(prompt_len, dtype=np.int64)
     if output_len is not None:
         max_length = prompt_len + output_len
     else:
@@ -196,7 +196,7 @@ def test_decode_sends_request_to_prefill() -> None:
     assert isinstance(prefill_request, PrefillRequest)
     ctx2 = prefill_request.context
     assert client_identity2 == client_identity
-    assert ctx2.start_idx == 0
+    assert ctx2.processed_length == 0
     assert ctx2.active_length == 100
 
 

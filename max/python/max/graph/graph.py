@@ -455,7 +455,7 @@ class Graph:
 
         if self._graph_body.arguments:
             mlir_maybe_chain_value = _Value._from_cmlir(
-                self._graph_body.arguments[-1]  # type: ignore
+                self._graph_body.arguments[-1]
             )
             if _is_chain_value(mlir_maybe_chain_value):
                 self._has_chain_input = True
@@ -510,8 +510,7 @@ class Graph:
             body_args = body_args[:-chain_count]  # type: ignore
 
         return tuple(
-            Value.from_mlir(_Value._from_cmlir(arg))
-            for arg in body_args  # type: ignore
+            Value.from_mlir(_Value._from_cmlir(arg)) for arg in body_args
         )
 
     @property
@@ -602,7 +601,7 @@ class Graph:
         with self._context, _location() as loc:
             block = Block._from_cmlir(self._graph_body)
             block.add_argument(_ChainType().to_mlir(), loc)
-        mlir_value = _Value._from_cmlir(self._graph_body.arguments[-1])  # type: ignore
+        mlir_value = _Value._from_cmlir(self._graph_body.arguments[-1])
         assert _is_chain_value(mlir_value)
 
         return _ChainValue.from_mlir(mlir_value)

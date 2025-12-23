@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct Container[ElementType: Movable]:
+struct Container[ElementType: Movable & ImplicitlyDestructible]:
     var element: Self.ElementType
 
     def __str__[

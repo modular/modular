@@ -1437,7 +1437,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn bitcast[
-        T: UnknownDestructibility
+        T: AnyType
     ](self) -> UnsafePointer[
         T,
         Self.origin,
@@ -1641,6 +1641,26 @@ struct UnsafePointer[
 
         """
         _ = __get_address_as_owned_value(self.address)
+
+    # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
+    @always_inline
+    fn destroy_pointee_with(
+        self: UnsafePointer[
+            Self.type,
+            address_space = AddressSpace.GENERIC,
+        ],
+        destroy_func: fn (var Self.type),
+    ) where type_of(self).mut:
+        """Destroy the pointed-to value using a user-provided destructor function.
+
+        This can be used to destroy non-`ImplicitlyDestructible` values in-place
+        without moving.
+
+        Args:
+            destroy_func: A function that takes ownership of the pointee value
+                for the purpose of deinitializing it.
+        """
+        destroy_func(__get_address_as_owned_value(self.address))
 
     @always_inline
     fn take_pointee[

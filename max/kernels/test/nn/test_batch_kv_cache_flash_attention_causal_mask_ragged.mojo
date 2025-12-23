@@ -275,7 +275,7 @@ def execute_ragged_flash_attention[
                             ref_out[bs, s, h, Int(hd)][0],
                             test_out[ragged_offset + s, h, Int(hd)][0],
                         )
-                        raise e
+                        raise e^
 
     input_row_offsets.ptr.free()
     cache_lengths.ptr.free()

@@ -18,6 +18,7 @@ from gpu.grid_controls import PDLLevel
 from gpu.host.info import H100
 from utils.index import Index, IndexList
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
+from collections import OptionalReg
 
 
 @register_passable("trivial")
@@ -38,6 +39,7 @@ struct MatmulConfig[
     var num_consumer: UInt
     var partitioned_multicast: Bool
     var _pdl_level: PDLLevel
+    var k_group_size: UInt
 
     fn __init__(
         out self,
@@ -47,6 +49,8 @@ struct MatmulConfig[
         num_k_partitions: UInt = 1,
         partitioned_multicast: Bool = False,
         pdl_level: PDLLevel = PDLLevel.OFF,
+        k_groups: OptionalReg[UInt] = None,
+        consumer_groups: OptionalReg[Int] = None,
     ):
         """Initialize MatmulConfig by computing optimal values from M, N, K.
 
@@ -57,6 +61,8 @@ struct MatmulConfig[
             num_k_partitions: Number of K partitions.
             partitioned_multicast: Whether to use partitioned multicast.
             pdl_level: PDL level for grid controls.
+            k_groups: How many pipeline (loads and stores) are grouped together.
+            consumer_groups: The number of consumer groups.
         """
         constrained[
             Self.a_type == Self.b_type, "a_type and b_type must be the same"
@@ -64,7 +70,12 @@ struct MatmulConfig[
 
         # Heuristic: Use 1 consumer group for small M, 2 otherwise
         # TODO: Once SwapAB is added, this should probably always be 2
-        var num_consumer_groups = 1 if M <= 64 else 2
+
+        var num_consumer_groups: Int
+        if consumer_groups:
+            num_consumer_groups = consumer_groups.value()
+        else:
+            num_consumer_groups = 1 if M <= 64 else 2
 
         comptime num_SMs = H100.sm_count
         # Nvidia mma instruction process 32B in K.
@@ -111,7 +122,25 @@ struct MatmulConfig[
 
         # Compute max pipeline stages.
         self.num_pipeline_stages = 4  # Default for compilation
+        self.k_group_size = 1
+
+        if k_groups:
+            self.k_group_size = k_groups.value()
+        else:
+            var output_block_size = mma_mn[0] * mma_mn[1]
+
+            if output_block_size <= 64 * 64 and ceildiv(K, BK) % 2 == 0:
+                self.k_group_size = 2
+
+            # For very small mmas we can group more aggressively.
+            if output_block_size <= 64 * 48 and ceildiv(K, BK) % 4 == 0:
+                self.k_group_size = 4
+
         self._maximize_pipeline_stages_by_default()
+
+        self.num_pipeline_stages = align_down(
+            self.num_pipeline_stages, self.k_group_size
+        )
 
     fn _maximize_pipeline_stages_by_default(mut self):
         var BM = Int(self.block_tile_shape[0])
@@ -161,6 +190,7 @@ struct MatmulConfig[
             num_consumer=self.num_consumer,
             partitioned_multicast=self.partitioned_multicast,
             pdl_level=self._pdl_level,
+            k_group_size=self.k_group_size,
         )
 
     fn __eq__(self, other: Self) -> Bool:
@@ -172,6 +202,7 @@ struct MatmulConfig[
             and self.num_k_partitions == other.num_k_partitions
             and self.num_consumer == other.num_consumer
             and self.partitioned_multicast == other.partitioned_multicast
+            and self.k_group_size == other.k_group_size
         )
 
     fn __str__(self) -> String:
@@ -250,6 +281,8 @@ fn build_configs[
     num_k_partitions: UInt = 1,
     partitioned_multicast: Bool = False,
     pdl_level: PDLLevel = PDLLevel.OFF,
+    k_groups: OptionalReg[UInt] = None,
+    consumer_groups: OptionalReg[Int] = None,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
 
@@ -261,6 +294,8 @@ fn build_configs[
             num_k_partitions=num_k_partitions,
             partitioned_multicast=partitioned_multicast,
             pdl_level=pdl_level,
+            k_groups=k_groups,
+            consumer_groups=consumer_groups,
         )
         if config not in set:
             set.add(config)
@@ -273,6 +308,8 @@ fn build_configs[
             num_k_partitions=num_k_partitions,
             partitioned_multicast=partitioned_multicast,
             pdl_level=pdl_level,
+            k_groups=k_groups,
+            consumer_groups=consumer_groups,
         )
         if config not in set:
             set.add(config)

@@ -158,5 +158,151 @@ def test_variadic_contains_empty():
     assert_false(ContainsWritable[Bool, variadic])
 
 
+def test_zip_types_empty():
+    comptime v1 = Variadic.empty_of_trait[Writable]
+    comptime v2 = Variadic.empty_of_trait[Writable]
+    comptime v_zip = Variadic.zip_types[v1, v2]
+    assert_equal(Variadic.size(v_zip), 1)
+    assert_equal(Variadic.size(v_zip[0]), 0)
+    assert_equal(Variadic.size(v_zip[1]), 0)
+
+
+def test_zip_types_uneven():
+    comptime v1 = Variadic.types[T=Writable, String, Float32, Bool]
+    comptime v2 = Variadic.types[T=Writable, StaticString, Int]
+    comptime v_zip = Variadic.zip_types[v1, v2]
+    assert_equal(Variadic.size(v_zip), 2)
+    assert_true(_type_is_eq[v_zip[0][0], String]())
+    assert_true(_type_is_eq[v_zip[0][1], StaticString]())
+    assert_true(_type_is_eq[v_zip[1][0], Float32]())
+    assert_true(_type_is_eq[v_zip[1][1], Int]())
+
+
+def test_zip_types():
+    comptime v1 = Variadic.types[T=Writable, String, Float32, Bool]
+    comptime v2 = Variadic.types[T=Writable, StaticString, Int, Float64]
+    comptime v_zip = Variadic.zip_types[v1, v2]
+    assert_equal(Variadic.size(v_zip), 3)
+    assert_true(_type_is_eq[v_zip[0][0], String]())
+    assert_true(_type_is_eq[v_zip[0][1], StaticString]())
+    assert_true(_type_is_eq[v_zip[1][0], Float32]())
+    assert_true(_type_is_eq[v_zip[1][1], Int]())
+    assert_true(_type_is_eq[v_zip[2][0], Bool]())
+    assert_true(_type_is_eq[v_zip[2][1], Float64]())
+
+
+def test_zip_types_triple():
+    comptime v1 = Variadic.types[T=Writable, String, Float32, Bool]
+    comptime v2 = Variadic.types[T=Writable, StaticString, Int, Float64]
+    comptime v3 = Variadic.types[T=Writable, UInt8, UInt32, UInt64]
+    comptime v_zip = Variadic.zip_types[v1, v2, v3]
+    assert_equal(Variadic.size(v_zip), 3)
+    assert_true(_type_is_eq[v_zip[0][0], String]())
+    assert_true(_type_is_eq[v_zip[0][1], StaticString]())
+    assert_true(_type_is_eq[v_zip[0][2], UInt8]())
+    assert_true(_type_is_eq[v_zip[1][0], Float32]())
+    assert_true(_type_is_eq[v_zip[1][1], Int]())
+    assert_true(_type_is_eq[v_zip[1][2], UInt32]())
+    assert_true(_type_is_eq[v_zip[2][0], Bool]())
+    assert_true(_type_is_eq[v_zip[2][1], Float64]())
+    assert_true(_type_is_eq[v_zip[2][2], UInt64]())
+
+
+def test_zip_values_empty():
+    comptime v1 = Variadic.empty_of_type[Int]
+    comptime v2 = Variadic.empty_of_type[Int]
+    comptime v_zip = Variadic.zip_values[v1, v2]
+    assert_equal(Variadic.size(v_zip), 1)
+    assert_equal(Variadic.size(v_zip[0]), 0)
+    assert_equal(Variadic.size(v_zip[1]), 0)
+
+
+def test_zip_values_uneven():
+    comptime v1 = Variadic.values[1, 2, 3]
+    comptime v2 = Variadic.values[4, 5]
+    comptime v_zip = Variadic.zip_values[v1, v2]
+    assert_equal(Variadic.size(v_zip), 2)
+    assert_equal(v_zip[0][0], 1)
+    assert_equal(v_zip[0][1], 4)
+    assert_equal(v_zip[1][0], 2)
+    assert_equal(v_zip[1][1], 5)
+
+
+def test_zip_values():
+    comptime v1 = Variadic.values[1, 2, 3]
+    comptime v2 = Variadic.values[4, 5, 6]
+    comptime v_zip = Variadic.zip_values[v1, v2]
+    assert_equal(Variadic.size(v_zip), 3)
+    assert_equal(v_zip[0][0], 1)
+    assert_equal(v_zip[0][1], 4)
+    assert_equal(v_zip[1][0], 2)
+    assert_equal(v_zip[1][1], 5)
+    assert_equal(v_zip[2][0], 3)
+    assert_equal(v_zip[2][1], 6)
+
+
+def test_zip_values_triple():
+    comptime v1 = Variadic.values[1, 2, 3]
+    comptime v2 = Variadic.values[4, 5, 6]
+    comptime v3 = Variadic.values[7, 8, 9]
+    comptime v_zip = Variadic.zip_values[v1, v2, v3]
+    assert_equal(Variadic.size(v_zip), 3)
+    assert_equal(v_zip[0][0], 1)
+    assert_equal(v_zip[0][1], 4)
+    assert_equal(v_zip[0][2], 7)
+    assert_equal(v_zip[1][0], 2)
+    assert_equal(v_zip[1][1], 5)
+    assert_equal(v_zip[1][2], 8)
+    assert_equal(v_zip[2][0], 3)
+    assert_equal(v_zip[2][1], 6)
+    assert_equal(v_zip[2][2], 9)
+
+
+def test_slice_types_empty():
+    comptime variadic = Variadic.slice_types[
+        Variadic.empty_of_trait[Writable], start=0, end=0
+    ]
+    assert_equal(Variadic.size(variadic), 0)
+
+
+def test_slice_types():
+    comptime variadic = Variadic.slice_types[
+        Variadic.types[T=AnyType, Int, String, Float32], start=0, end=2
+    ]
+    assert_equal(Variadic.size(variadic), 2)
+    assert_true(_type_is_eq[variadic[0], Int]())
+    assert_true(_type_is_eq[variadic[1], String]())
+
+
+def test_map_types_to_types_empty():
+    comptime mapper[T: AnyType] = Int
+    comptime variadic = Variadic.map_types_to_types[
+        Variadic.empty_of_trait[AnyType], mapper
+    ]
+    assert_equal(Variadic.size(variadic), 0)
+
+
+trait TestErrable:
+    comptime ErrorType: AnyType
+
+
+struct Foo(TestErrable):
+    comptime ErrorType = Int
+
+
+struct Baz(TestErrable):
+    comptime ErrorType = String
+
+
+def test_map_types_to_types():
+    comptime Mapper[T: TestErrable] = T.ErrorType
+    comptime variadic = Variadic.map_types_to_types[
+        Variadic.types[T=TestErrable, Foo, Baz], Mapper
+    ]
+    assert_equal(Variadic.size(variadic), 2)
+    assert_true(_type_is_eq[variadic[0], Int]())
+    assert_true(_type_is_eq[variadic[1], String]())
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

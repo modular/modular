@@ -23,7 +23,7 @@ from os.atomic import Atomic, Consistency, fence
 from sys.info import size_of
 
 
-struct _ArcPointerInner[T: Movable]:
+struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
     var refcount: Atomic[DType.uint64]
     var payload: Self.T
 
@@ -64,7 +64,9 @@ struct _ArcPointerInner[T: Movable]:
 
 
 @register_passable
-struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable):
+struct ArcPointer[T: Movable & ImplicitlyDestructible](
+    Identifiable, ImplicitlyCopyable
+):
     """Atomic reference-counted pointer.
 
     This smart pointer owns an instance of `T` indirectly managed on the heap.

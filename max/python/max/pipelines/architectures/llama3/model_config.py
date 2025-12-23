@@ -32,7 +32,7 @@ from max.nn import (
     ReturnLogits,
     RotaryEmbedding,
 )
-from max.nn.float8_config import Float8Config, parse_float8_config
+from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -43,6 +43,7 @@ from max.pipelines.lib import (
     RopeType,
     upper_bounded_default,
 )
+from max.pipelines.lib.float8 import parse_float8_config
 from transformers import AutoConfig
 
 

@@ -20,7 +20,7 @@ import torch
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.idefics3.vision_model.encoder import (
     Idefics3VisionEncoderLayer as MAXIdefics3VisionEncoderLayer,
 )
@@ -187,7 +187,13 @@ def generate_max_outputs(
     max_encoder.load_state_dict(cpu_weights)
 
     # Get input dimensions
-    input_dims = input_tensor.shape
+    input_dims = list(input_tensor.shape)
+
+    # The following two lines can be removed but it will increase compilation
+    # time because we will need to compile one graph per unique sequence length
+    # dimension.
+    sequence_length_dim = Dim("seq_len")
+    input_dims[1] = sequence_length_dim
 
     def build_encoder_model() -> Graph:
         with Graph(

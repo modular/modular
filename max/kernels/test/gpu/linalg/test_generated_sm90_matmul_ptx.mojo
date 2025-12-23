@@ -125,6 +125,7 @@ fn compile_sm90_matmul_ptx[
         b_type,
         c_type,
         Int(config.num_pipeline_stages),
+        Int(config.k_group_size),
     ]()
     comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(),

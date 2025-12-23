@@ -259,7 +259,7 @@ fn _write_int[
         writer, value, radix, digit_chars=digit_chars, prefix=prefix
     )
     if err:
-        raise err.value()
+        raise err.take()
 
 
 fn _try_write_int[

@@ -1,0 +1,73 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""This test showcases how one can launch a precompile device binary from Mojo."""
+
+from gpu import *
+from gpu.host import DeviceContext
+from gpu.host.device_context import DeviceExternalFunction
+from memory import LegacyUnsafePointer as UnsafePointer
+from gpu.host.compile import _compile_code
+from testing import assert_equal
+
+
+fn vec_func(
+    in0: UnsafePointer[Float32],
+    in1: UnsafePointer[Float32],
+    output: UnsafePointer[Float32],
+    len: Int,
+):
+    var tid = global_idx.x
+    output[tid] = in0[tid] + in1[tid]
+
+
+def test_vec_add(ctx: DeviceContext):
+    comptime length = 1024
+
+    var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
+
+    with in0_device.map_to_host() as in0_host, in1_device.map_to_host() as in1_host, out_device.map_to_host() as out_host:
+        for i in range(length):
+            in0_host[i] = i
+            in1_host[i] = 2
+
+    var block_dim = 32
+
+    var info = DeviceExternalFunction(
+        ctx, _compile_code[vec_func, emission_kind="object"]()
+    )
+    ctx.enqueue_function_checked(
+        info,
+        in0_device,
+        in1_device,
+        out_device,
+        length,
+        grid_dim=(length // block_dim),
+        block_dim=(block_dim),
+    )
+
+    ctx.synchronize()
+
+    with out_device.map_to_host() as out_host:
+        for i in range(length):
+            assert_equal(
+                out_host[i],
+                i + 2,
+                msg=String("at index", i, "the value is", out_host[i]),
+            )
+
+
+def main():
+    with DeviceContext() as ctx:
+        test_vec_add(ctx)

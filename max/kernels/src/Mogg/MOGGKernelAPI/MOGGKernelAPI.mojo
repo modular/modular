@@ -366,7 +366,7 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
             result = result * 10 + (ord(sub_string[pos]) - ord("0"))
         int_tuple.append(result)
 
-    return int_tuple
+    return int_tuple^
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
@@ -6531,8 +6531,8 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     fn execute[
         dtype: DType,
         freq_dtype: DType,
-        mrope_section: StaticString,
         //,
+        mrope_section: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -9309,6 +9309,7 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
 
 @compiler.register("mo.quantize_dynamic_scaled_float8")
 struct QuantizeDynamicScaledFloat8:
+    @parameter
     @always_inline
     @staticmethod
     fn execute[
@@ -9321,17 +9322,34 @@ struct QuantizeDynamicScaledFloat8:
     ](
         output: OutputTensor[dtype=output_type, rank=2],
         scales: OutputTensor[dtype=scales_type, rank=2],
-        input: InputTensor[dtype=input_type, rank=2],
+        input: FusedInputTensor[dtype=input_type, rank=2],
         scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         __comptime_assert is_gpu[target](), "only valid on GPUs"
-        quantize_dynamic_scaled_fp8[group_size_or_per_token](
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int
+        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+            return input._lambda_load[width=width](IndexList[2](row, col))
+
+        comptime hidden_dim = input.static_spec.shape.get[1]()
+
+        quantize_dynamic_scaled_fp8[
+            out_dtype=output_type,
+            in_dtype=input_type,
+            scales_dtype=scales_type,
+            input_fn,
+            group_size_or_per_token,
+            hidden_dim,
+        ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
-            managed_tensor_slice_to_ndbuffer(input),
             scale_ub,
             ctx.get_device_context(),
+            input.dim_size(0),
         )
 
 
@@ -9349,18 +9367,37 @@ struct BatchedQuantizeDynamicScaledFloat8:
     ](
         output: OutputTensor[dtype=output_type, rank=3],
         scales: OutputTensor[dtype=scales_type, rank=3],
-        input: InputTensor[dtype=input_type, rank=3],
+        input: FusedInputTensor[dtype=input_type, rank=3],
         scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         __comptime_assert is_gpu[target](), "only valid on GPUs"
 
-        batched_quantize_dynamic_scaled_fp8[group_size_or_per_token](
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+        var batch_size = input.dim_size(0)
+        var num_rows = input.dim_size(1)
+
+        @parameter
+        @__copy_capture(input_ndbuffer)
+        @always_inline
+        fn input_fn[
+            width: Int
+        ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
+            return input_ndbuffer.load[width=width](
+                IndexList[3](batch, row, col)
+            )
+
+        batched_quantize_dynamic_scaled_fp8[
+            input_fn=input_fn,
+            group_size_or_per_token=group_size_or_per_token,
+            num_cols = input_ndbuffer.shape.get[2](),
+        ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
-            managed_tensor_slice_to_ndbuffer(input),
             scale_ub,
             ctx.get_device_context(),
+            num_rows=num_rows,
+            batch_size=batch_size,
         )
 
 
