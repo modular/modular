@@ -460,7 +460,7 @@ fn for_range_loop():
 struct RefIter[list_mutability: Bool, //,
                list_origin: Origin[list_mutability]._mlir_type]:
     fn __init__(out self): pass
-    fn __next_ref__(mut self) raises StopIteration -> ref [Self.list_origin] Int: pass
+    fn __next__(mut self) raises StopIteration -> ref [Self.list_origin] Int: pass
 
 struct ListWithRefIter:
     fn __init__(out self): pass
@@ -477,7 +477,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
         # CHECK: lit.loop {
         # CHECK-NEXT: %__ref_result_tmp__ = lit.var.decl
         # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl
-        # CHECK:   lit.call {{.*}}RefIter::@"__next_ref__{{.*}}(%$ITER, %__call_error_tmp__, %__ref_result_tmp__)
+        # CHECK:   lit.call {{.*}}RefIter::@"__next__{{.*}}(%$ITER, %__call_error_tmp__, %__ref_result_tmp__)
 
         # CHECK:   %item = lit.var.decl "item" ref
 

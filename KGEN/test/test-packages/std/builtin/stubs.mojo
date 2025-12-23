@@ -846,7 +846,7 @@ struct _VariadicListMemIter[
     var index: Int
     var src: Pointer[Self.variadic_list_type, Self.list_origin]
 
-    fn __next_ref__(
+    fn __next__(
         mut self,
     ) raises StopIteration -> ref [Self.elt_origin] Self.elt_type:
         raise StopIteration()

@@ -354,7 +354,7 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
 
   # CHECK-NEXT: %x = lit.var.decl
   # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl {{.*}} : !lit.ref<!lit.ref<
-  # CHECK: lit.call {{.*}}__next_ref__{{.*}}(%iter, {{.*}}, %__call_result_tmp__)
+  # CHECK: lit.call {{.*}}__next__{{.*}}(%iter, {{.*}}, %__call_result_tmp__)
 
   # Iterator is destroyed as soon as we're done with it.
   # CHECK-NEXT: lifetime.end %iter
@@ -366,12 +366,12 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
   # CHECK: [[ELTREF:%.*]] = lit.load.consume %__call_result_tmp__
   # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
 
-  # Copy the result of __next_ref__ into !lit.ref
+  # Copy the result of __next__ into !lit.ref
   # CHECK-NEXT: [[ELTREFIMM:%.*]] = lit.ref.immut [[ELTREF]]
   # CHECK-NEXT: lifetime.start %x
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ELTREFIMM]], %x)
   try:
-    var x : MemExample = iter.__next_ref__()
+    var x : MemExample = iter.__next__()
 
     # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
     x.mutate()
