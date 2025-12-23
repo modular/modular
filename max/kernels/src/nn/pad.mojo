@@ -105,9 +105,11 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
-    fn __next__(mut self) -> Self.Element:
-        var cur = self.cur
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        if self.__len__() <= 0:
+            raise StopIteration()
 
+        var cur = self.cur
         self.cur[len(self.cur) - 1] += 1
 
         for i in range(Self.n_loops - 1, 0, -1):
@@ -118,9 +120,6 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
         return cur
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
     fn __len__(self) -> Int:
         if self.cur[0] >= self._ub_loop(0) or self.early_stop:
             return 0

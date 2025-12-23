@@ -65,25 +65,23 @@ struct _ListIter[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
-    fn __has_next__(self) -> Bool:
+    fn __next_ref__(
+        mut self,
+    ) raises StopIteration -> ref [Self.origin] Self.Element:
         @parameter
         if Self.forward:
-            return self.index < len(self.src[])
-        else:
-            return self.index > 0
-
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
+            if self.index >= len(self.src[]):
+                raise StopIteration()
             self.index += 1
             return self.src[][self.index - 1]
         else:
+            if self.index <= 0:
+                raise StopIteration()
             self.index -= 1
             return self.src[][self.index]
 
     @always_inline
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return self.__next_ref__().copy()
 
     @always_inline

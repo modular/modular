@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
 
 # ===-----------------------------------------------------------------------===#
 # __MLIRType
@@ -30,24 +31,41 @@ struct __MLIRType[T: AnyTrivialRegType](ImplicitlyCopyable):
 # ===-----------------------------------------------------------------------===#
 
 
+fn paramfor_has_next[
+    IteratorType: Iterator & Copyable
+](it: IteratorType) -> Bool:
+    var result = it.copy()
+    try:
+        _ = result.__next__()
+        return True
+    except:
+        return False
+
+
 fn paramfor_next_iter[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType:
     # NOTE: This function is called by the compiler's elaborator only when
-    # __has_next__ will return true.  This is needed because the interpreter
+    # paramfor_has_next will return true. This is needed because the interpreter
     # memory model isn't smart enough to handle mut arguments cleanly.
     var result = it.copy()
     # This intentionally discards the value, but this only happens at comptime,
     # so recomputing it in the body of the loop is fine.
-    _ = result.__next__()
-    return result.copy()
+    try:
+        _ = result.__next__()
+        return result.copy()
+    except:
+        abort()
 
 
 fn paramfor_next_value[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when
-    # __has_next__ will return true.  This is needed because the interpreter
+    # paramfor_has_next will return true. This is needed because the interpreter
     # memory model isn't smart enough to handle mut arguments cleanly.
-    var result = it.copy()
-    return result.__next__()
+    try:
+        var result = it.copy()
+        return result.__next__()
+    except:
+        abort()

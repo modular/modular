@@ -116,10 +116,11 @@ struct _LinkedListIter[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __has_next__(self) -> Bool:
-        return Bool(self.curr)
-
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
+    fn __next_ref__(
+        mut self,
+    ) raises StopIteration -> ref [Self.origin] Self.Element:
+        if not self.curr:
+            raise StopIteration()
         var old = self.curr
 
         @parameter
@@ -131,7 +132,7 @@ struct _LinkedListIter[
         return old[].value
 
     @always_inline
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return self.__next_ref__().copy()
 
 

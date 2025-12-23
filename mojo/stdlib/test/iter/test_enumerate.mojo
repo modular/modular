@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal, assert_true
+from testing import TestSuite, assert_equal, assert_true, assert_raises
 
 
 fn test_enumerate() raises:
@@ -26,7 +26,8 @@ fn test_enumerate() raises:
     elem = next(it)
     assert_equal(elem[0], 2)
     assert_equal(elem[1], "hello")
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
 
 
 fn test_enumerate_with_start() raises:
@@ -41,7 +42,9 @@ fn test_enumerate_with_start() raises:
     elem = next(it)
     assert_equal(elem[0], 3)
     assert_equal(elem[1], "hello")
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
+
     # Check negative start
     it = enumerate(l, start=-1)
     elem = next(it)

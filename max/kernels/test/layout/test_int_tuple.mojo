@@ -13,7 +13,7 @@
 
 from layout.int_tuple import *
 from layout.int_tuple import abs  # override builtin abs and min
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, assert_raises
 
 
 def test_tuple_basic():
@@ -440,7 +440,8 @@ def test_iter():
     assert_equal(it.bounds()[0], 0)
     assert_equal(it.bounds()[1].value(), 0)
 
-    assert_equal(it.__has_next__(), False)
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
     var b = IntTuple(4, 5, 6)
     var it2 = zip(a, b)
     var elem = next(it2)
@@ -450,9 +451,12 @@ def test_iter():
     assert_equal(Int(elem[0]), 3)
     assert_equal(Int(elem[1]), 5)
     # zipping shortest
-    assert_equal(it.__has_next__(), False)
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
     var c = IntTuple()
-    assert_equal(iter(c).__has_next__(), False)
+    with assert_raises():
+        var it = iter(c)
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_value_nested_tuple():

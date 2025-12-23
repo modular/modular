@@ -11,7 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal, assert_false, assert_true
+from testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_true,
+    assert_raises,
+)
 
 
 fn test_zip2() raises:
@@ -27,7 +33,8 @@ fn test_zip2() raises:
     elem = next(it)
     assert_equal(elem[0], "hello")
     assert_equal(elem[1], 30)
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 fn test_zip_destructure() raises:
@@ -57,7 +64,8 @@ fn test_zip3() raises:
     assert_equal(elem[0], "hello")
     assert_equal(elem[1], 30)
     assert_equal(elem[2], 300)
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 fn test_zip4() raises:
@@ -80,7 +88,8 @@ fn test_zip4() raises:
     assert_equal(elem[0], "hello")
     assert_equal(elem[1], 30)
     assert_equal(elem[2], 300)
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 fn test_zip_unequal_lengths() raises:
@@ -93,7 +102,8 @@ fn test_zip_unequal_lengths() raises:
     elem = next(it)
     assert_equal(elem[0], "hi")
     assert_equal(elem[1], 20)
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 @fieldwise_init
@@ -109,10 +119,7 @@ struct TestIter(ImplicitlyCopyable, Iterable, Iterator):
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __has_next__(self) -> Bool:
-        return True
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return 42
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:

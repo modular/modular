@@ -76,6 +76,20 @@ trait Iterable:
 # ===-----------------------------------------------------------------------===#
 
 
+@fieldwise_init
+@register_passable("trivial")
+struct StopIteration(Writable):
+    """A custom error type for Iterator's that run out of elements."""
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """This always writes "StopIteration".
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("StopIteration")
+
+
 trait Iterator(Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
@@ -83,16 +97,11 @@ trait Iterator(Movable):
 
     comptime Element: Movable & ImplicitlyDestructible
 
-    fn __has_next__(self) -> Bool:
-        """Checks if there are more elements in the iterator.
-
-        Returns:
-            True if there are more elements, False otherwise.
-        """
-        ...
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         """Returns the next element from the iterator.
+
+        Raises:
+            StopIteration if there are no more elements.
 
         Returns:
             The next element.
@@ -150,7 +159,7 @@ fn iter[
 @always_inline
 fn next[
     IteratorType: Iterator
-](mut iterator: IteratorType) -> IteratorType.Element:
+](mut iterator: IteratorType) raises StopIteration -> IteratorType.Element:
     """Advances the iterator and returns the next element.
 
     Parameters:
@@ -203,13 +212,12 @@ struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __has_next__(self) -> Bool:
-        return self._inner.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        # This raises on error.
+        var elt = next(self._inner)
         var count = self._count
         self._count += 1
-        return count, next(self._inner)
+        return count, elt^
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
@@ -287,10 +295,7 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
             trait_downcast[Copyable](existing._inner_b).copy()
         )
 
-    fn __has_next__(self) -> Bool:
-        return self._inner_a.__has_next__() and self._inner_b.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return next(self._inner_a), next(self._inner_b)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -346,14 +351,7 @@ struct _Zip3[
             trait_downcast[Copyable](existing._inner_c).copy()
         )
 
-    fn __has_next__(self) -> Bool:
-        return (
-            self._inner_a.__has_next__()
-            and self._inner_b.__has_next__()
-            and self._inner_c.__has_next__()
-        )
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return next(self._inner_a), next(self._inner_b), next(self._inner_c)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -427,15 +425,7 @@ struct _Zip4[
             trait_downcast[Copyable](existing._inner_d).copy()
         )
 
-    fn __has_next__(self) -> Bool:
-        return (
-            self._inner_a.__has_next__()
-            and self._inner_b.__has_next__()
-            and self._inner_c.__has_next__()
-            and self._inner_d.__has_next__()
-        )
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return (
             next(self._inner_a),
             next(self._inner_b),
@@ -610,10 +600,7 @@ struct _MapIterator[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __has_next__(self) -> Bool:
-        return self._inner.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return Self.function(next(self._inner))
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -706,10 +693,7 @@ struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __has_next__(self) -> Bool:
-        return self._next or self._inner.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         if self._next:
             return self._next.unsafe_take()
         return next(self._inner)
@@ -727,12 +711,12 @@ struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
     ) -> Optional[
         Pointer[Self.Element, ImmutOrigin.cast_from[origin_of(self._next[])]]
     ]:
-        if not self._next and self._inner.__has_next__():
-            self._next = next(self._inner)
-
-        if self._next:
-            return Pointer(to=self._next.unsafe_value()).get_immutable()
-        return None
+        if not self._next:
+            try:
+                self._next = next(self._inner)
+            except:
+                return None
+        return Pointer(to=self._next.unsafe_value()).get_immutable()
 
 
 fn peekable(

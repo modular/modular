@@ -18,7 +18,8 @@ from testing import *
 def test_empty_peek():
     var list = List[Int]()
     var iter = peekable(list)
-    assert_false(iter.__has_next__())
+    with assert_raises():
+        _ = next(iter)  # raises StopIteration
     assert_false(iter.peek())
 
 
@@ -26,34 +27,27 @@ def test_peekable_with_peeking():
     var list = [1, 2, 3]
     var iter = peekable(list)
     assert_equal(iter.peek()[][], 1)
-    assert_true(iter.__has_next__())
     assert_equal(next(iter), 1)
 
     assert_equal(iter.peek()[][], 2)
-    assert_true(iter.__has_next__())
     assert_equal(next(iter), 2)
 
     assert_equal(iter.peek()[][], 3)
-    assert_true(iter.__has_next__())
     assert_equal(next(iter), 3)
 
-    assert_false(iter.__has_next__())
+    with assert_raises():
+        _ = next(iter)  # raises StopIteration
     assert_false(iter.peek())
 
 
 def test_peekable_without_peeking():
     var list = [1, 2, 3]
     var iter = peekable(list)
-    assert_true(iter.__has_next__())
     assert_equal(next(iter), 1)
-
-    assert_true(iter.__has_next__())
     assert_equal(next(iter), 2)
-
-    assert_true(iter.__has_next__())
     assert_equal(next(iter), 3)
-
-    assert_false(iter.__has_next__())
+    with assert_raises():
+        _ = next(iter)  # raises StopIteration
     assert_false(iter.peek())
 
 
@@ -62,7 +56,6 @@ def test_peekable_peek_does_not_advance_iterator():
     var iter = peekable(list)
     assert_equal(iter.peek()[][], 1)
     assert_equal(iter.peek()[][], 1)
-    assert_true(iter.__has_next__())
     assert_equal(next(iter), 1)
 
 

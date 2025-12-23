@@ -231,7 +231,8 @@ def test_iter():
     elem = next(it)
     assert_equal(elem[0], 2)
     assert_equal(elem[1], 6)
-    assert_equal(it.__has_next__(), False)
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_add():
