@@ -3491,6 +3491,13 @@ UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
   if (kind != kVarPat && kind != kRefPat)
     return this;
 
+  // Warn if this is a recursively nested specifier like "var ref x".
+  if (parentKind != PatternDeclKind::kNone) {
+    emitter.emitWarning(getLoc()) << "nested 'var' or 'ref' patterns are "
+                                     "redundant, remove the outer pattern";
+    return this;
+  }
+
   // This should never be possible to resolve because the 'var' or 'ref' should
   // only influence the type of implicitly declared variables which cannot be
   // speculatively resolved.  If we did speculatively resolve it, then this is
