@@ -331,7 +331,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         _constrained_conforms_to[
             conforms_to(Self.T, Representable),
             Parent=Self,
-            Element=Self.T,
+            Element = Self.T,
             ParentConformsTo="Stringable",
             ElementConformsTo="Representable",
         ]()
