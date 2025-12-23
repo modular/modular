@@ -165,6 +165,18 @@ struct _StridedRangeIterator(Iterable, Iterator, Sized):
         self.start += self.step
         return result
 
+    # FIXME(GENAI-359): Opt'ing into old-style foreach code generation is
+    # necessary to get an AMD355 test working.
+    @always_inline
+    fn __next_old__(mut self) -> Self.Element:
+        var result = self.start
+        self.start += self.step
+        return result
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.__len__() > 0
+
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self)
