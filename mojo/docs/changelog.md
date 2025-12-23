@@ -167,6 +167,19 @@ what we publish.
   methods, i.e. `fn __exit__(var self)` which can be useful for linear context
   managers. This also works with `deinit`.
 
+- Mojo now allows functions that return references to convert to functions that
+  return values if the type is implicitly copyable or implicitly convertible to
+  the destination type:
+
+  ```mojo
+  fn fn_returns_ref(x: SomeType) -> ref [x.field] Int: ...
+  fn examples():
+      # OK, Int result from fn_returns_ref can be implicitly copied.
+      var f1 : fn (x: SomeType) -> Int = fn_returns_ref
+      # OK, Int result from fn_returns_ref implicitly converts to Float64.
+      var f2 : fn (x: SomeType) -> Float64 = fn_returns_ref
+  ```
+
 ### Language changes
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
