@@ -67,16 +67,15 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return Bool(self.next_item)
-
-    fn __next__(mut self) -> PythonObject:
+    fn __next__(mut self) raises StopIteration -> PythonObject:
         """Return the next item and update to point to subsequent item.
 
         Returns:
             The next item in the traversable object that this iterator
             points to.
         """
+        if not self.next_item:
+            raise StopIteration()
         ref cpy = Python().cpython()
         var curr_item = self.next_item
         self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
