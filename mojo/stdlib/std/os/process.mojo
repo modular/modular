@@ -127,24 +127,20 @@ struct Pipe:
         Raises:
             Error: If the pipe could not be created or configured.
         """
-        var pipe_fds = alloc[c_int](2)
-        if pipe(pipe_fds) < 0:
-            pipe_fds.free()
+        var pipe_fds = InlineArray[c_int, 2](fill=0)
+        if pipe(pipe_fds.unsafe_ptr()) < 0:
             raise Error("Failed to create pipe")
 
         if in_close_on_exec:
             if not self._set_close_on_exec(pipe_fds[0]):
-                pipe_fds.free()
                 raise Error("Failed to configure input pipe close on exec")
 
         if out_close_on_exec:
             if not self._set_close_on_exec(pipe_fds[1]):
-                pipe_fds.free()
                 raise Error("Failed to configure output pipe close on exec")
 
         self.fd_in = FileDescriptor(Int(pipe_fds[0]))
         self.fd_out = FileDescriptor(Int(pipe_fds[1]))
-        pipe_fds.free()
 
     fn __del__(deinit self):
         """Ensures pipes input and output file descriptors are closed, when the object is destroyed.
@@ -211,6 +207,127 @@ struct Pipe:
         raise Error("Can not read from write only side of pipe")
 
 
+struct _Arguments:
+    """RAII wrapper for process arguments pointer array."""
+
+    var _ptr: UnsafePointer[
+        UnsafePointer[mut=False, c_char, ImmutAnyOrigin], MutAnyOrigin
+    ]
+    var _file_name: String
+
+    fn __init__(out self, path: String, argv: List[String]):
+        self._file_name = String(path.split(sep)[-1])
+        var arg_count = len(argv)
+        self._ptr = alloc[UnsafePointer[mut=False, c_char, ImmutAnyOrigin]](
+            arg_count + 2
+        )
+        self._ptr[0] = self._file_name.unsafe_cstr_ptr()
+        var idx = 1
+        for var arg in argv:
+            self._ptr[idx] = arg.unsafe_cstr_ptr()
+            idx += 1
+
+        self._ptr[arg_count + 1] = UnsafePointer[
+            mut=False, c_char, ImmutAnyOrigin
+        ]()
+
+    fn __del__(deinit self):
+        self._ptr.free()
+
+    fn unsafe_ptr(
+        self,
+    ) -> UnsafePointer[
+        UnsafePointer[mut=False, c_char, ImmutAnyOrigin], MutAnyOrigin
+    ]:
+        return self._ptr
+
+
+struct _Environment:
+    """RAII wrapper for process environment array."""
+
+    var _ptr: UnsafePointer[
+        UnsafePointer[mut=False, c_char, ImmutAnyOrigin], MutAnyOrigin
+    ]
+    var _env_strs: List[String]
+
+    fn __init__(out self):
+        self._ptr = UnsafePointer[
+            UnsafePointer[mut=False, c_char, ImmutAnyOrigin], MutAnyOrigin
+        ]()
+        self._env_strs = List[String]()
+
+    fn __init__(out self, env: Dict[String, String]):
+        var env_count = len(env)
+        self._ptr = alloc[UnsafePointer[mut=False, c_char, ImmutAnyOrigin]](
+            env_count + 1
+        )
+        self._env_strs = List[String]()
+        for item in env.items():
+            self._env_strs.append(item.key + "=" + item.value)
+
+        var idx = 0
+        for ref env_var_str in self._env_strs:
+            self._ptr[idx] = env_var_str.unsafe_cstr_ptr()
+            idx += 1
+
+        self._ptr[env_count] = UnsafePointer[
+            mut=False, c_char, ImmutAnyOrigin
+        ]()
+
+    fn __del__(deinit self):
+        if self._ptr:
+            self._ptr.free()
+
+    fn unsafe_ptr(
+        self,
+    ) -> UnsafePointer[
+        UnsafePointer[mut=False, c_char, ImmutAnyOrigin], MutAnyOrigin
+    ]:
+        return self._ptr
+
+
+struct _FileActions:
+    """RAII wrapper for posix_spawn_file_actions_t."""
+
+    var _actions: posix_spawn_file_actions_t
+    var _initialized: Bool
+
+    fn __init__(out self, use_file_actions: Bool) raises:
+        self._actions = posix_spawn_file_actions_t()
+        self._initialized = False
+        if use_file_actions:
+            var fa_ptr = UnsafePointer(to=self._actions)
+            if posix_spawn_file_actions_init(fa_ptr) != 0:
+                raise Error("Failed to initialize file actions")
+            self._initialized = True
+
+    fn __del__(deinit self):
+        if self._initialized:
+            var fa_ptr = UnsafePointer(to=self._actions)
+            if posix_spawn_file_actions_destroy(fa_ptr) != 0:
+                print("Warning: Failed to destroy file actions.")
+
+    fn unsafe_ptr(
+        mut self,
+    ) -> posix_spawn_file_actions_t_ptr[mut=True, origin=MutAnyOrigin]:
+        if not self._initialized:
+            return posix_spawn_file_actions_t_ptr[
+                mut=True, origin=MutAnyOrigin
+            ]()
+        return UnsafePointer(to=self._actions)
+
+    fn add_dup2(mut self, oldfd: Int, newfd: Int) raises:
+        if not self._initialized:
+            raise Error("Attempted to add action to uninitialized file actions")
+        if (
+            posix_spawn_file_actions_adddup2(
+                UnsafePointer(to=self._actions), oldfd, newfd
+            )
+            != 0
+        ):
+            raise Error("Failed to add dup2 action")
+
+
 # ===----------------------------------------------------------------------=== #
 # Process execution
 # ===----------------------------------------------------------------------=== #
@@ -219,9 +336,6 @@ struct Process:
 
     The sub process will be automatically "closed out" with `Process.wait` when the Process
     instance is destroyed and `Process.__del__` is called.
-
-    User can manually check status in non-blocking way using `Process.poll` or block the
-    caller process with `Process.wait` manually at their chosen code point.
 
     Note that sub process status is cached on the Process object as such it is NOT thread-safe
     and interacting with a Process instance across multiple threads can lead to race conditions and
@@ -423,112 +537,40 @@ struct Process:
 
         @parameter
         if CompilationTarget.is_linux() or CompilationTarget.is_macos():
-            var file_name = String(path.split(sep)[-1])
-
-            var arg_count = len(argv)
-            var argv_array_ptr_cstr_ptr = alloc[
-                UnsafePointer[mut=False, c_char, ImmutAnyOrigin]
-            ](arg_count + 2)
-            var offset = 0
-            # Arg 0 in `argv` ptr array should be the file name
-            argv_array_ptr_cstr_ptr[offset] = file_name.unsafe_cstr_ptr()
-            offset += 1
-
-            for var arg in argv:
-                argv_array_ptr_cstr_ptr[offset] = arg.unsafe_cstr_ptr()
-                offset += 1
-
-            # `argv` ptr array terminates with NULL PTR
-            argv_array_ptr_cstr_ptr[offset] = UnsafePointer[
-                mut=False, c_char, ImmutAnyOrigin
-            ]()
-            var path_cptr = path.unsafe_cstr_ptr()
-
-            var pid: c_pid_t = 0
-            var envp_ptr = UnsafePointer[
-                UnsafePointer[mut=False, c_char, ImmutAnyOrigin], MutAnyOrigin
-            ]()
-            var env_strs = List[String]()
-
+            var arguments_data = _Arguments(path, argv)
+            var environment_data = _Environment()
             if env:
                 ref env_dict = env.value()
-                var env_count = len(env_dict)
-                envp_ptr = alloc[
-                    UnsafePointer[mut=False, c_char, ImmutAnyOrigin]
-                ](env_count + 1)
+                environment_data = _Environment(env_dict)
 
-                for item in env_dict.items():
-                    env_strs.append(item.key + "=" + item.value)
-
-                offset = 0
-                for ref env_str in env_strs:
-                    envp_ptr[offset] = env_str.unsafe_cstr_ptr()
-                    offset += 1
-
-                envp_ptr[env_count] = UnsafePointer[
-                    mut=False, c_char, ImmutAnyOrigin
-                ]()
-
-            var file_actions = posix_spawn_file_actions_t()
-            var file_actions_ptr = UnsafePointer(to=file_actions)
-            var use_file_actions = stdin or stdout or stderr
-
+            var use_file_actions = Bool(stdin or stdout or stderr)
+            var file_actions = _FileActions(use_file_actions)
             if use_file_actions:
-                if posix_spawn_file_actions_init(file_actions_ptr) != 0:
-                    raise Error("Failed to initialize file actions")
+                if stdin:
+                    file_actions.add_dup2(stdin.value().value, 0)
+                if stdout:
+                    file_actions.add_dup2(stdout.value().value, 1)
+                if stderr:
+                    file_actions.add_dup2(stderr.value().value, 2)
 
-            try:
-                if use_file_actions:
-                    if stdin:
-                        if (
-                            posix_spawn_file_actions_adddup2(
-                                file_actions_ptr, stdin.value().value, 0
-                            )
-                            != 0
-                        ):
-                            raise Error("Failed to dup stdin")
-                    if stdout:
-                        if (
-                            posix_spawn_file_actions_adddup2(
-                                file_actions_ptr, stdout.value().value, 1
-                            )
-                            != 0
-                        ):
-                            raise Error("Failed to dup stdout")
-                    if stderr:
-                        if (
-                            posix_spawn_file_actions_adddup2(
-                                file_actions_ptr, stderr.value().value, 2
-                            )
-                            != 0
-                        ):
-                            raise Error("Failed to dup stderr")
+            var pid: c_pid_t = 0
+            var path_cptr = path.unsafe_cstr_ptr()
 
-                var has_error_code = posix_spawnp(
-                    UnsafePointer(to=pid),
-                    path_cptr,
-                    file_actions_ptr if use_file_actions else posix_spawn_file_actions_t_ptr[
-                        mut=False, origin=ImmutAnyOrigin
-                    ](),
-                    argv_array_ptr_cstr_ptr,
-                    envp_ptr,
+            var has_error_code = posix_spawnp(
+                UnsafePointer(to=pid),
+                path_cptr,
+                file_actions.unsafe_ptr(),
+                arguments_data.unsafe_ptr(),
+                environment_data.unsafe_ptr(),
+            )
+
+            if has_error_code > 0:
+                raise Error(
+                    "Failed to execute "
+                    + path
+                    + ", EINT error code: "
+                    + String(has_error_code)
                 )
-
-                if has_error_code > 0:
-                    raise Error(
-                        "Failed to execute "
-                        + path
-                        + ", EINT error code: "
-                        + String(has_error_code)
-                    )
-            finally:
-                if use_file_actions:
-                    if posix_spawn_file_actions_destroy(file_actions_ptr) != 0:
-                        print("Warning: Failed to destroy file actions.")
-
-            argv_array_ptr_cstr_ptr.free()
-            if env:
-                envp_ptr.free()
 
             return Process(sub_pid=pid)
         else:
