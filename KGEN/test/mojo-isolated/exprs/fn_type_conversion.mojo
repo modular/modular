@@ -37,6 +37,7 @@ fn test_passing_funcs():
 
 
 fn fn_doesnt_raise() -> Int: pass
+fn fn_returns_ref(x: String) -> ref [x] String: pass
 
 # CHECK-LABEL: lit.fn @"test_more_conversions
 fn test_more_conversions():
@@ -50,5 +51,12 @@ fn test_more_conversions():
   # CHECK-NEXT: lit.ref.store [[TMP]], %test_result_convert
   var test_result_convert : fn () raises -> Float32 = fn_doesnt_raise
 
+  # CHECK: %test_error_convert = lit.var.decl
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
+  # CHECK-NEXT: lit.ref.store [[TMP]], %test_error_convert
+  var test_error_convert : fn () raises Float32 -> Float32 = fn_doesnt_raise
 
-  #var test_error_convert : fn () raises Float32 -> Float32 = fn_doesnt_raise
+  # CHECK: %test_ref_result_convert = lit.var.decl
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
+  # CHECK-NEXT: lit.ref.store [[TMP]], %test_ref_result_convert
+  var test_ref_result_convert : fn (x: String) -> String = fn_returns_ref

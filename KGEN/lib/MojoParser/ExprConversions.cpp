@@ -105,8 +105,29 @@ static bool canConvertFunctionTypes(FnType actual, FnType expected,
   SharedState &shared = declScope.getShared();
 
   // The function result types must be the same or implicitly convertible.
-  auto actualResultType = actual.getUserResultType();
-  auto expectedResultType = expected.getUserResultType();
+  ASTType actualResultType = actual.getUserResultType();
+  ASTType expectedResultType = expected.getUserResultType();
+
+  // If the actual result type returns a ref result and the expected returns a
+  // value, then we can copy the value to the ref result.  Otherwise, the
+  // ref-result-ness needs to line up.
+  auto actualEffects = actual.getFnEffects();
+  if (actual.isRefResult() != expected.isRefResult()) {
+    // A function returning a value can't promote to a ref result.
+    if (expected.isRefResult())
+      return false;
+    // We can look through the reference to implicitly copy.
+    actualResultType = actualResultType.getReferenceElementType();
+    actualEffects.setRefResult(false); // Allow compat check below to succeed.
+
+    // If the result types mismatch then we need to do an implicit conversion to
+    // succeed, that is checked below.  If they match, we have to do an implicit
+    // copy.
+    if (isEqualCanon(actualResultType, expectedResultType) &&
+        !actualResultType.isImplicitlyCopyable(expr->getLoc(), shared))
+      return false;
+  }
+
   if (!isEqualCanon(actualResultType, expectedResultType)) {
     if (!IREmitter::canImplicitlyConvertToType(
             {UnknownAttr::get(actualResultType), expr}, expectedResultType,
@@ -123,7 +144,6 @@ static bool canConvertFunctionTypes(FnType actual, FnType expected,
   // We allow implicitly converting a function that doesn't throw to one that
   // does throw an error.
   // TODO: Allow implicit conversions between thrown error types.
-  auto actualEffects = actual.getFnEffects();
   if (!actual.isThrows() && expected.isThrows()) {
     actualEffects = actualEffects.setThrows(true);
     assert(expected.getArgConvention(expectedArgTypes.size() - 1) ==
