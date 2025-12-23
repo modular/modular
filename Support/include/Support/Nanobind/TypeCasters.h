@@ -725,23 +725,30 @@ struct type_caster<::llvm::LogicalResult> {
 
 template <>
 struct type_caster<::M::ErrorOrSuccess> {
-  using Caster = make_caster<bool>;
+  // void is a capsule, void_type is actual void which translates to None
+  using Caster = make_caster<void_type>;
   NB_TYPE_CASTER(::M::ErrorOrSuccess, Caster::Name)
   static handle from_cpp(::M::ErrorOrSuccess &&t, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
-    return Caster::from_cpp(!t.isError(), policy, cleanup);
+    if (t.isError()) {
+      PyErr_SetString(PyExc_RuntimeError, t.getError());
+      return nullptr;
+    }
+    return nb::none().release();
   }
 };
 
 template <typename T>
 struct type_caster<::M::ErrorOr<T>> {
-  using Caster = make_caster<std::optional<T>>;
-  NB_TYPE_CASTER(std::optional<T>, Caster::Name)
+  using Caster = make_caster<T>;
+  NB_TYPE_CASTER(T, Caster::Name)
   static handle from_cpp(::M::ErrorOr<T> &&result, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
-    // TODO: raise instead
-    if (result.isError())
-      return make_caster<void>::from_cpp(nullptr, policy, cleanup);
+    if (result.isError()) {
+      PyErr_SetString(PyExc_RuntimeError, result.getError());
+      return nullptr;
+    }
+
     return make_caster<T>::from_cpp(result.takeValue(), policy, cleanup);
   }
 };
