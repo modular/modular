@@ -10,11 +10,6 @@ package(default_visibility = [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
-        # FIXME: SDLC-2743
-        external_noop = src in [
-            "test_notification_latency.py",
-            "test_send_recv.py",
-        ],
         imports = ["."],
         # UCX currently only supports x86_64 linux machines
         target_compatible_with = [

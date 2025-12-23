@@ -144,6 +144,9 @@ modular_py_test(
         "//max:register",
         "@mojo//:std",
     ],
+    tags = [
+        "resources:cpu:10",  # 10 CPU cores, rough estimate
+    ],
     target_compatible_with = select({
         # FIXME
         "@platforms//os:macos": ["@platforms//:incompatible"],

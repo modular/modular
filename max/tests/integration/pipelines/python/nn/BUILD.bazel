@@ -33,46 +33,54 @@ modular_py_library(
     ],
 )
 
-modular_py_test(
-    name = "nn_tests",
-    size = "large",
-    srcs = glob(
+[
+    modular_py_test(
+        name = src.split(".")[0],
+        size = "large",
+        srcs = [
+            src,
+            "conftest.py",
+        ],
+        args = [
+            "-n",
+            "auto",
+        ],
+        imports = ["."],
+        tags = ["resources:memory:40000"] if src == "test_mlp.py" else [],  # 40 GB
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+            "//:asan": ["@platforms//:incompatible"],  # Too slow with ASAN
+            "//conditions:default": [],
+        }),
+        deps = [
+            ":shared_conv_impl",
+            ":shared_mlp_impl",
+            "//max/python/max/engine",
+            "//max/python/max/nn",
+            "//max/python/max/nn/hooks",
+            "//max/python/max/pipelines",
+            "//max/python/max/serve",
+            "//max/tests/integration/API/python/graph:modular_graph_test",
+            "//max/tests/integration/pipelines/python/test_common",
+            requirement("torch"),
+            requirement("transformers"),
+            requirement("hypothesis"),
+            requirement("gguf"),
+            requirement("pytest-mock"),
+            requirement("pytest-asyncio"),
+            requirement("pytest-xdist"),
+        ],
+    )
+    for src in glob(
         ["*.py"],
         exclude = [
+            "conftest.py",
             "*_gpu.py",
             "shared_conv_impl.py",
             "shared_mlp_impl.py",
         ],
-    ),
-    args = [
-        "-n",
-        "auto",
-    ],
-    imports = ["."],
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
-        "//:asan": ["@platforms//:incompatible"],  # Too slow with ASAN
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":shared_conv_impl",
-        ":shared_mlp_impl",
-        "//max/python/max/engine",
-        "//max/python/max/nn",
-        "//max/python/max/nn/hooks",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
-        "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("torch"),
-        requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-mock"),
-        requirement("pytest-asyncio"),
-        requirement("pytest-xdist"),
-    ],
-)
+    )
+]
 
 modular_py_test(
     name = "nn_gpu_tests",
