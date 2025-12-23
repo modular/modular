@@ -629,6 +629,13 @@ def test_write_to():
 
     assert_equal(string_output, "['hello', 'world']")
 
+    # Test empty list
+    var empty_list = LinkedList[Int]()
+    var empty_output = String()
+    empty_list.write_to(empty_output)
+
+    assert_equal(empty_output, "[]")
+
 
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
