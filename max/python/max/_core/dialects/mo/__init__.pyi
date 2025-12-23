@@ -949,7 +949,7 @@ class Staticization(Protocol):
         arg0: Sequence[max._core.dialects.builtin.TypedAttr],
         arg1: ParamExprBuilder,
         /,
-    ) -> max._core.dialects.builtin.TypedAttr | None: ...
+    ) -> max._core.dialects.builtin.TypedAttr: ...
 
 class MOTensorOpInterface(Protocol):
     """
