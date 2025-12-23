@@ -37,7 +37,7 @@ struct ReadOnly[T: Movable & ImplicitlyDestructible]:
 
     ```mojo
     def main():
-        comptime  magic_number = 42
+        comptime magic_number = 42
         # value is known at compilation time
         # ... any code here is guaranteed to not modify magic_number ...
         print("Magic Number: ", magic_number)
