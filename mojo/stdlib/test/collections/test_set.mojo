@@ -550,6 +550,13 @@ def test_write_to():
 
     assert_equal(string_output, "{'hello', 'world'}")
 
+    # Test empty set
+    var empty_set = Set[Int]()
+    var empty_output = String()
+    empty_set.write_to(empty_output)
+
+    assert_equal(empty_output, "{}")
+
 
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
