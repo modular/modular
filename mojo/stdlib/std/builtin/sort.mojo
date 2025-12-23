@@ -66,7 +66,7 @@ fn _quicksort_partition_right[
 
     var left = 1
     var right = size - 1
-    var ref pivot_value = span.unsafe_get(0)
+    ref pivot_value = span.unsafe_get(0)
 
     while True:
         # no need for left < right since quick sort pick median of 3 as pivot
@@ -95,7 +95,7 @@ fn _quicksort_partition_left[
 
     var left = 1
     var right = size - 1
-    var ref pivot_value = span.unsafe_get(0)
+    ref pivot_value = span.unsafe_get(0)
 
     while True:
         while left < right and not cmp_fn(pivot_value, span.unsafe_get(left)):
