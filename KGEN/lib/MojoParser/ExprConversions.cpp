@@ -124,7 +124,12 @@ static bool canConvertFunctionTypes(FnType actual, FnType expected,
     // succeed, that is checked below.  If they match, we have to do an implicit
     // copy.
     if (isEqualCanon(actualResultType, expectedResultType) &&
-        !actualResultType.isImplicitlyCopyable(expr->getLoc(), shared))
+        // EXPLICIT-COPY-REF-RETURN: Allow /explicit-only/ copyability here as a
+        // hack to support __next__ in iterators to work where we want them to
+        // be able to return ref but still conform to Iterator.  Remove this
+        // when we have more strong origin support in traits.
+        !actualResultType.isCopyable(expr->getLoc(), shared,
+                                     /*isImplicit=*/false))
       return false;
   }
 
@@ -591,11 +596,30 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
              .getInputParamTypes()
              .size() == 0);
 
+  // EXPLICIT-COPY-REF-RETURN: If the callee has a ref result and we expect a
+  // value result, then we need to copy out of the ref into the value result. As
+  // a (very sad) hack, we need to allow explicitly copyable types (not just
+  // implicitly) for __next__ in iterators to work.
+  // TODO: Eliminate this when __next__ can return references and we have
+  // stronger ref result and corresponding iterator traits.  This isn't
+  // something we want to support in general.
+  bool needsExplicitCopyOut = false;
+  ValueDest explicitCopyOutDest(dest.getContext());
+  if (actualSignature.isRefResult() && !thunkSignature.isRefResult()) {
+    explicitCopyOutDest = std::move(dest);
+    needsExplicitCopyOut = true;
+  }
+
   CValue callResult =
       emitter.emitIndirectCall(PValue(calleeParam), std::move(operands), dest,
                                CallSyntax::kMethodCall, node);
-  if (!callResult)
-    return {};
+  // If we need an explicit copy out, emit a call to .copy() on the result into
+  // the ultimate dest.
+  if (needsExplicitCopyOut) {
+    callResult = emitter.emitNamedMethodCall(
+        "copy", CallOperands({{callResult, node}}), explicitCopyOutDest,
+        CallSyntax::kMethodCall, node);
+  }
 
   // If the callee is async, we got a coroutine. Now await it into the result.
   if (thunkSignature.isAsync()) {
@@ -611,6 +635,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   Value retVal;
   if (hasRegisterResult)
     retVal = emitter.emitSRValue({callResult, node}, EC_Trait);
+
   emitter.emitNormalReturn(mlirLoc, retVal);
   return thunk;
 }

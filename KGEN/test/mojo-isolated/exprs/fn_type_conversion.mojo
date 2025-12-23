@@ -60,3 +60,17 @@ fn test_more_conversions():
   # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
   # CHECK-NEXT: lit.ref.store [[TMP]], %test_ref_result_convert
   var test_ref_result_convert : fn (x: String) -> String = fn_returns_ref
+
+
+# Check that we can take /explicitly copyable/ return values as ref returns.
+# This is a hack (see EXPLICIT-COPY-REF-RETURN) to support __next__ promoting
+# its result type.  We should remove this when we have more powerful Iterator
+# traits and origins that can support that.
+trait TraitExpectingValueReturn:
+    comptime Element: ImplicitlyDestructible
+    fn return_value(self) -> Self.Element:
+        ...
+struct StructProvidingRefReturn[T: Copyable](TraitExpectingValueReturn):
+    comptime Element = Self.T
+    fn return_value(self) -> ref [self] Self.T:
+        pass
