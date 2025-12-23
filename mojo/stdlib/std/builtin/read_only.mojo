@@ -27,7 +27,7 @@ struct ReadOnly[T: Movable & ImplicitlyDestructible]:
     def main():
         ref start_time = ReadOnly(current_time_ns())[]
         # value is known at runtime but must stay immutable thereafter
-        # ... any code here is garanteed to not modify start_time ...
+        # ... any code here is guaranteed to not modify start_time ...
         # start_time = 0  # compile-time error
         var duration = current_time_ns() - start_time
         print("Duration (ns): ", duration)
@@ -39,9 +39,11 @@ struct ReadOnly[T: Movable & ImplicitlyDestructible]:
     def main():
         comptime  magic_number = 42
         # value is known at compilation time
-        # ... any code here is garanteed to not modify magic_number ...
+        # ... any code here is guaranteed to not modify magic_number ...
         print("Magic Number: ", magic_number)
     ```
+    If the value is provided through a default (`read`) argument convention
+    `RuntimeConst` might not be needed either.
 
     """
 
