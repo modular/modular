@@ -1928,21 +1928,22 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
         continue;
       }
 
-      // 'ref' results can have origins derived from implicit origins of
-      // earlier arguments, and can be passed ByRefResult in throwing functions.
-      // Make sure to remap the implicit origins into place.  This works
-      // because ByRefResult is at the end of the list.
-      if (convention == ArgConvention::ByRefResult) {
-        implicitOrigins.push_back(
-            AnyOriginAttr::get(getContext(), /*isMutable=*/true));
-        FunctionType remappedCalleeType =
-            calleeSig.substituteImplicitOriginsIntoValues(
-                implicitOrigins, [&]() -> InFlightDiagnostic {
-                  llvm_unreachable("substitution should always succeed");
-                });
-        implicitOrigins.pop_back();
-        declaredArgType = remappedCalleeType.getInput(argIdx);
-      }
+      // 'ref' results and typed errors can have origins derived from implicit
+      // origins of earlier arguments.  Make sure to remap the implicit origins
+      // into place.  This works because both result slots are at the end of the
+      // list.
+      // Add implicit origins for the error+result or just result slot.
+      size_t numImpOrigins =
+          calleeSig.getNumImplicitOriginDecls() - implicitOrigins.size();
+      implicitOrigins.append(
+          numImpOrigins, AnyOriginAttr::get(getContext(), /*isMutable=*/true));
+      FunctionType remappedCalleeType =
+          calleeSig.substituteImplicitOriginsIntoValues(
+              implicitOrigins, [&]() -> InFlightDiagnostic {
+                llvm_unreachable("substitution should always succeed");
+              });
+      implicitOrigins.resize(implicitOrigins.size() - numImpOrigins);
+      declaredArgType = remappedCalleeType.getInput(argIdx);
     }
 
     bool isDefaultArgVal = isDefaultMask.test(argIdx);

@@ -731,6 +731,13 @@ def test_cut_down_dict():
     ptr = Pointer(to=dict[])
     ptr[] = 17 # should be mutable.
 
+# MOCO-2997: Remapping of implicit origins into typed errors.
+fn callee(a: String) raises Pointer[String, origin_of(a)]:
+    raise Pointer(to=a)
+
+fn caller(a: String) raises Pointer[String, origin_of(a)]:
+    callee(a)
+
 ##===----------------------------------------------------------------------===##
 # Constraint Overloading
 ##===----------------------------------------------------------------------===##
