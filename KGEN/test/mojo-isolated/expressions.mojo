@@ -1181,7 +1181,7 @@ fn variadic_attr_callee[key_type: ImplicitlyCopyable](
 fn thing_taking_ref[
   type: AnyType,
   //,
-  origin: Origin[_]
+  origin: Origin
 ](ref [origin] arg: type): pass
 
 fn thing_taking_ref2[type: AnyType](ref arg: type): pass
@@ -1212,7 +1212,7 @@ fn infer_through_alias():
 # CHECK-LABEL: lit.fn @"infer_address_space
 fn infer_address_space[
     mut: __mlir_type.i1,
-    origin: Origin[mut]._mlir_type
+    origin: Origin[mut=mut]._mlir_type
 ](a: Pointer[Int, origin, AddressSpace(4)]._mlir_type):
   # Show that we can infer the address space parameter of Pointer from a
   # !lit.ref.

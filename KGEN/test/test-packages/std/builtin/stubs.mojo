@@ -11,8 +11,8 @@ comptime string = __mlir_type.`!kgen.string`
 comptime float = __mlir_type.`!pop.scalar<f64>`
 
 comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
-comptime ImmutOrigin = Origin[False]
-comptime MutOrigin = Origin[True]
+comptime ImmutOrigin = Origin[mut=False]
+comptime MutOrigin = Origin[mut=True]
 comptime ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
 comptime MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 comptime OriginSet = __mlir_type.`!lit.origin.set`
@@ -20,7 +20,7 @@ comptime Never = __mlir_type.`!kgen.never`
 
 
 @register_passable("trivial")
-struct Origin[mut: Bool]:
+struct Origin[*, mut: Bool]:
     comptime _mlir_type = __mlir_type[
         `!lit.origin<`,
         Self.mut._mlir_value,
@@ -48,7 +48,7 @@ struct Origin[mut: Bool]:
 
     @implicit
     @always_inline("builtin")
-    fn __init__(out self: Origin[False], other: Origin[True]):
+    fn __init__(out self: Origin[mut=False], other: Origin[mut=True]):
         """Allow converting an mutable origin to an immutable one.
 
         Args:
@@ -65,7 +65,7 @@ comptime StaticConstantOrigin = __mlir_attr[
 ]
 
 
-struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]]:
+struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]]:
     comptime result = __mlir_attr[
         `#lit.indirect.origin<`,
         Self.base._mlir_origin,
@@ -516,7 +516,7 @@ struct Span[
     mut: Bool,
     //,
     T: ImplicitlyCopyable,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
 ]:
     # Field
     var _data: UnsafePointer[Self.T, Self.origin]
@@ -553,7 +553,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
 
 
 @register_passable("trivial")
-struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
+struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]]:
     var _slice: Span[Byte, Self.origin]
 
     @implicit
@@ -817,8 +817,8 @@ struct VariadicList[type: AnyTrivialRegType]:
 struct _lit_origin_union[
     mut: Bool,
     //,
-    a: Origin[mut].type,
-    b: Origin[mut].type,
+    a: Origin[mut=mut].type,
+    b: Origin[mut=mut].type,
 ]:
     comptime result = __mlir_attr[
         `#lit.origin.union<`,
@@ -836,7 +836,7 @@ struct _VariadicListMemIter[
     elt_is_mutable: Bool,
     //,
     elt_type: AnyType,
-    elt_origin: Origin[elt_is_mutable],
+    elt_origin: Origin[mut=elt_is_mutable],
     list_origin: ImmutOrigin,
     is_owned: Bool,
 ]:
@@ -866,7 +866,7 @@ struct VariadicListMem[
     elt_is_mutable: Bool,
     //,
     element_type: AnyType,
-    origin: Origin[elt_is_mutable],
+    origin: Origin[mut=elt_is_mutable],
     is_owned: Bool,
 ]:
     comptime reference_type = Pointer[Self.element_type, Self.origin]
@@ -888,7 +888,9 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[Self.elt_is_mutable].cast_from[origin_of(Self.origin, self)]
+        Origin[mut = Self.elt_is_mutable].cast_from[
+            origin_of(Self.origin, self)
+        ]
     ] Self.element_type:
         while True:
             pass
@@ -912,7 +914,7 @@ struct VariadicPack[
     elt_is_mutable: Bool,
     //,
     is_owned: Bool,
-    origin: Origin[elt_is_mutable],
+    origin: Origin[mut=elt_is_mutable],
     element_trait: type_of(AnyType),
     *element_types: element_trait,
 ]:
@@ -1004,7 +1006,7 @@ struct Pointer[
     mut: Bool,
     //,
     type: AnyType,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
     comptime _mlir_type = __mlir_type[
@@ -1088,7 +1090,7 @@ struct UnsafePointer[
     mut: Bool,
     //,
     type: AnyType,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
@@ -1142,7 +1144,7 @@ struct UnsafePointer[
     fn get_unique_item_ref[
         self_origin: ImmutOrigin
     ](ref [self_origin]self, offset: Int = 0) -> ref [
-        Origin[True].cast_from[_lit_indirect_origin[self_origin].result],
+        MutOrigin.cast_from[_lit_indirect_origin[self_origin].result],
         Self.address_space,
     ] Self.type:
         while __mlir_attr.true:

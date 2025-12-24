@@ -1548,7 +1548,7 @@ fn testOverloadKwArgs():
 
 
 # Can't generate the constructors for a type wrapping !lit.ref
-struct MOCO1320[mut: Bool, //, origin: Origin[mut]]:
+struct MOCO1320[mut: Bool, //, origin: Origin[mut=mut]]:
     comptime _mlir_type = __mlir_type[
         `!lit.ref<`,
         Int,

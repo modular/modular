@@ -46,7 +46,7 @@ fn useToType(s: ToTypeMut):
 # If the implicit conversion cache does not take into account the RefType, the
 # second call to useToType will emit an error.
 fn test[
-    O: Origin[True], O2: Origin[False]
+    O: Origin[mut=True], O2: Origin[mut=False]
 ](ref [O]fImm: FromType, ref [O2]fMut: FromType):
     # CHECK: lit.call {{.*}}@ToTypeMut::@"__init__
     useToType(fImm)

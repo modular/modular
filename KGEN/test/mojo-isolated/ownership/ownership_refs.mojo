@@ -49,7 +49,7 @@ fn implicit_owned(var a: MemExample):
 # CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, life>) ->
 # CHECK-SAME: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, life>
 fn parametricMut[isMut: Bool,
-                 life: Origin[isMut]._mlir_type](a: Pointer[MemExample, life]._mlir_type)
+                 life: Origin[mut=isMut]._mlir_type](a: Pointer[MemExample, life]._mlir_type)
    -> Pointer[MemExample, life]._mlir_type:
   return a
 
@@ -319,7 +319,7 @@ struct ThingWithFields:
 # CHECK-LABEL: lit.fn @"parametric_mut_mbvalue
 fn parametric_mut_mbvalue[
     mut: __mlir_type.i1,
-    origin: Origin[mut]._mlir_type,
+    origin: Origin[mut=mut]._mlir_type,
  ](a: Pointer[ThingWithFields, origin])
    -> Pointer[Int, origin_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
@@ -481,11 +481,11 @@ fn test_higher_order_capture(var x: MemExample, var y: MemExample):
 
 # CHECK-LABEL: lit.fn @"test_origin_ref_spec
 # CHECK-SAME: !lit.ref<!Int, mut #lit.struct.extract<{{.*}}#Origin <:!Bool {:i1 1}>> our_origin, "_mlir_origin">> mutref)
-fn test_origin_ref_spec[our_origin: Origin[True]](ref[our_origin] a: Int):
+fn test_origin_ref_spec[our_origin: MutOrigin](ref[our_origin] a: Int):
     pass
 
 # CHECK-LABEL: lit.fn @"another_min
-fn another_min[mut: Bool, //, ao: Origin[mut], bo: Origin[mut]](ref [ao]a: Int, ref [bo]b: Int) -> ref [a, b] Int:
+fn another_min[mut: Bool, //, ao: Origin[mut=mut], bo: Origin[mut=mut]](ref [ao]a: Int, ref [bo]b: Int) -> ref [a, b] Int:
     if a < b:
         return a
     else: # This failed due to union canonicalization problems.
@@ -524,7 +524,7 @@ fn test_getitem_setitem(mut d: TestDict[Int, Int]):
 
 
 fn check_mutability[
-    is_mutable: Bool, //, origin: Origin[is_mutable], T: AnyType
+    is_mutable: Bool, //, origin: Origin[mut=is_mutable], T: AnyType
 ](ref [origin]s: T):
     pass
 
