@@ -360,7 +360,7 @@ struct Layout(
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _LayoutIter[ImmutOrigin.cast_from[iterable_origin]]
+    ]: Iterator = _LayoutIter[ImmutOrigin(iterable_origin)]
     """The iterator type for Layout iteration.
 
     Parameters:

@@ -1055,7 +1055,7 @@ struct LayoutTensor[
     @always_inline
     fn get_immutable(
         self,
-    ) -> Self.OriginCastType[False, ImmutOrigin.cast_from[Self.origin]]:
+    ) -> Self.OriginCastType[False, ImmutOrigin(Self.origin)]:
         """
         Return an immutable version of this tensor.
 

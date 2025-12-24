@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn rebind[
     src_type: AnyTrivialRegType,
     //,

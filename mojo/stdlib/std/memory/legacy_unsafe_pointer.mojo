@@ -46,7 +46,7 @@ struct LegacyUnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
-    origin: Origin[mut=mut] = Origin[mut=mut].cast_from[MutAnyOrigin],
+    origin: Origin[mut=mut] = Origin[mut=mut](unsafe_cast=MutAnyOrigin),
 ](
     Boolable,
     Comparable,
@@ -1175,7 +1175,7 @@ struct LegacyUnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1199,7 +1199,7 @@ struct LegacyUnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1224,7 +1224,7 @@ struct LegacyUnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = Self._OriginCastType[
-                target_mut, Origin[mut=target_mut].cast_from[Self.origin]
+                target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
             ]._mlir_type,
         ](self.address)
 
@@ -1257,7 +1257,7 @@ struct LegacyUnsafePointer[
     @always_inline("builtin")
     fn as_immutable(
         self,
-    ) -> Self._OriginCastType[False, ImmutOrigin.cast_from[Self.origin]]:
+    ) -> Self._OriginCastType[False, ImmutOrigin(Self.origin)]:
         """Changes the mutability of a pointer to immutable.
 
         Unlike `unsafe_mut_cast`, this function is always safe to use as casting

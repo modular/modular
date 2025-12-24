@@ -104,9 +104,9 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut]](
     """
 
     # Aliases
-    comptime Mutable = Span[Self.T, MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = Span[Self.T, MutOrigin(unsafe_cast=Self.origin)]
     """The mutable version of the `Span`."""
-    comptime Immutable = Span[Self.T, ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = Span[Self.T, ImmutOrigin(Self.origin)]
     """The immutable version of the `Span`."""
     comptime UnsafePointerType = UnsafePointer[
         Self.T,
@@ -174,7 +174,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut]](
     @always_inline("nodebug")
     fn __init__(
         other: Span[Self.T, _],
-        out self: Span[Self.T, ImmutOrigin.cast_from[other.origin]],
+        out self: Span[Self.T, ImmutOrigin(other.origin)],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 

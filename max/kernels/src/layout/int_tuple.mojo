@@ -357,7 +357,7 @@ struct IntTuple(
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _IntTupleIter[ImmutOrigin.cast_from[iterable_origin]]
+    ]: Iterator = _IntTupleIter[ImmutOrigin(iterable_origin)]
     """The iterator type for IntTuple iteration.
 
     Parameters:

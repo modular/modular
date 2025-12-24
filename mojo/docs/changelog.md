@@ -221,7 +221,12 @@ what we publish.
   generic algorithms (which use a copied value).
 
 - The `origin_of(x)` operator now returns a value of type `Origin` instead of an
-  internal MLIR type.
+  internal MLIR type, and aliases like `ImmutOrigin` are now `Origin` type as
+  well.
+
+- The `Origin.cast_from[x]` syntax has been replaced with a safe implicit
+  conversion from any origin to an immutable origin (`ImmutOrigin(x)`) and an
+  explicit unsafe conversion (`SomeOrigin(unsafe_cast=x)`).
 
 ### Library changes
 

@@ -504,9 +504,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     """
 
     # Aliases
-    comptime Mutable = StringSlice[MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = StringSlice[MutOrigin(unsafe_cast=Self.origin)]
     """The mutable version of the `StringSlice`."""
-    comptime Immutable = StringSlice[ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = StringSlice[ImmutOrigin(Self.origin)]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, Self.origin]
@@ -525,7 +525,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     @always_inline("nodebug")
     fn __init__(
         other: StringSlice,
-        out self: StringSlice[ImmutOrigin.cast_from[other.origin]],
+        out self: StringSlice[ImmutOrigin(other.origin)],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 

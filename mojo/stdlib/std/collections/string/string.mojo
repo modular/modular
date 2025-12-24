@@ -1192,7 +1192,7 @@ struct String(
     @always_inline
     fn as_c_string_slice(
         mut self,
-    ) -> CStringSlice[ImmutOrigin.cast_from[origin_of(self)]]:
+    ) -> CStringSlice[ImmutOrigin(origin_of(self))]:
         """Return a `CStringSlice` to the underlying memory of the string.
 
         Returns:
@@ -1211,7 +1211,7 @@ struct String(
     @deprecated("Use `String.as_c_string_slice()` instead.")
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, ImmutOrigin.cast_from[origin_of(self)]]:
+    ) -> UnsafePointer[c_char, ImmutOrigin(origin_of(self))]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.

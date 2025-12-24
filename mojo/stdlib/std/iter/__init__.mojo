@@ -708,9 +708,7 @@ struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
 
     fn peek(
         mut self,
-    ) -> Optional[
-        Pointer[Self.Element, ImmutOrigin.cast_from[origin_of(self._next[])]]
-    ]:
+    ) -> Optional[Pointer[Self.Element, ImmutOrigin(origin_of(self._next[]))]]:
         if not self._next:
             try:
                 self._next = next(self._inner)

@@ -373,7 +373,7 @@ struct UnsafePointer[
         other: UnsafePointer[mut=True, **_],
         out self: UnsafePointer[
             other.type,
-            ImmutOrigin.cast_from[other.origin],
+            ImmutOrigin(other.origin),
             address_space = other.address_space,
         ],
     ):
@@ -428,7 +428,7 @@ struct UnsafePointer[
     @implicit
     fn __init__(
         other: UnsafePointer[mut=False, Self.type, **_]
-    ) -> UnsafePointer[other.type, MutOrigin.cast_from[MutAnyOrigin], **_]:
+    ) -> UnsafePointer[other.type, MutAnyOrigin, **_]:
         constrained[
             False, "Invalid UnsafePointer conversion from immutable to mutable"
         ]()
@@ -496,7 +496,7 @@ struct UnsafePointer[
         out self: UnsafePointer[
             mut = Self.mut,
             Self.type,
-            Origin[mut = Self.mut].cast_from[MutAnyOrigin],
+            Origin[mut = Self.mut](unsafe_cast=MutAnyOrigin),
             address_space = Self.address_space,
         ],
     ):
@@ -1466,7 +1466,7 @@ struct UnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1487,7 +1487,7 @@ struct UnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1539,7 +1539,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn as_immutable(
         self,
-    ) -> Self._OriginCastType[False, ImmutOrigin.cast_from[Self.origin]]:
+    ) -> Self._OriginCastType[False, ImmutOrigin(Self.origin)]:
         """Changes the mutability of a pointer to immutable.
 
         Unlike `unsafe_mut_cast`, this function is always safe to use as casting

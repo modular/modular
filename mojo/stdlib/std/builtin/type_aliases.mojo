@@ -62,42 +62,7 @@ struct Origin[*, mut: Bool]:
         `>`,
     ]
 
-    comptime cast_from[o: Origin] = Origin(
-        __mlir_attr[
-            `#lit.origin.mutcast<`,
-            o._mlir_origin,
-            `> : !lit.origin<`,
-            Self.mut._mlir_value,
-            `>`,
-        ]
-    )
-    """Cast an existing Origin to be of the specified mutability.
-
-    This is a low-level way to coerce Origin mutability. This should be used
-    rarely, typically when building low-level fundamental abstractions. Strongly
-    consider alternatives before reaching for this "escape hatch".
-
-    Parameters:
-        o: The origin to cast.
-
-    Safety:
-        This is an UNSAFE operation if used to cast an immutable origin to
-        a mutable origin.
-
-    Examples:
-
-    Cast a mutable origin to be immutable:
-
-    ```mojo
-    struct Container[mut: Bool, //, origin: Origin[mut=mut]]:
-        var data: Int
-
-        fn imm_borrow(self) -> Container[ImmutOrigin.cast_from[origin]]:
-            pass
-    ```
-    """
-
-    comptime external = Self.cast_from[origin_of()]
+    comptime external = Self(unsafe_cast=origin_of())
     """An external origin of the given mutability. The external origin is
     guaranteed not to alias any existing origins.
 
@@ -137,3 +102,13 @@ struct Origin[*, mut: Bool]:
             other: The mutable origin to convert.
         """
         self._mlir_origin = other._mlir_origin
+
+    @always_inline("builtin")
+    fn __init__(out self, *, unsafe_cast: Origin):
+        """Allow converting an mutable origin to an immutable one.
+
+        Args:
+            unsafe_cast: The mutable origin to convert.
+        """
+        # TODO: Should use lit.origin.mutcast in the param domain.
+        self._mlir_origin = rebind[Self._mlir_type](unsafe_cast._mlir_origin)

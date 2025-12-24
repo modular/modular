@@ -208,9 +208,9 @@ struct Pointer[
     ]
     comptime _with_origin = Pointer[Self.type, _, Self.address_space]
 
-    comptime Mutable = Self._with_origin[MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = Self._with_origin[MutOrigin(unsafe_cast=Self.origin)]
     """The mutable version of the `Pointer`."""
-    comptime Immutable = Self._with_origin[ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = Self._with_origin[ImmutOrigin(Self.origin)]
     """The immutable version of the `Pointer`."""
     # Fields
     var _value: Self._mlir_type
@@ -225,7 +225,7 @@ struct Pointer[
     @always_inline("nodebug")
     fn __init__(
         other: Self._with_origin[_],
-        out self: Self._with_origin[ImmutOrigin.cast_from[other.origin]],
+        out self: Self._with_origin[ImmutOrigin(other.origin)],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
