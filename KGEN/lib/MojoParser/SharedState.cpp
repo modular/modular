@@ -2751,9 +2751,13 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   }
 
   if (auto rebind = dyn_cast<RebindOp>(op)) {
-    if (auto src = findValue(rebind.getInput()))
-      return ParamOperatorAttr::getRebind(
-          src, evaluator.getReboundType(rebind.getType()));
+    if (auto src = findValue(rebind.getInput())) {
+      auto destTy = evaluator.getReboundType(rebind.getType());
+      // FIXME(OriginDepType) Origins shouldn't be dynamic values.
+      if (isa<OriginType>(destTy))
+        return OriginMutCastAttr::get(src, destTy);
+      return ParamOperatorAttr::getRebind(src, destTy);
+    }
   }
 
   // FIXME(StringLiteral): Remove this operation.

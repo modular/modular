@@ -943,7 +943,7 @@ struct StructWithDefault[a: Int = 1]:
 # CHECK:      "name": "S"
 # CHECK:      "path": "/std/builtin/anytype/AnyType"
 # CHECK:      "type": "AnyType"
-# CHECK: "signature": "struct StructWithFnParam[__origins__: OriginSet, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
+# CHECK: "signature": "struct StructWithFnParam[__origins__: LITOriginSet, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
 
 
 struct StructWithFnParam[

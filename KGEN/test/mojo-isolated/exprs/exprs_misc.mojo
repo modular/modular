@@ -244,16 +244,26 @@ fn typeof_dynval_in_param(x: _index):
 
 # CHECK-LABEL: lit.fn @"lifetime_of
 fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
-    # CHECK-NEXT: origin<0> = <{}>
+    # CHECK-NEXT: = <{_mlir_origin: origin<0> = {}}>
     comptime lt0 = origin_of()
-    # CHECK-NEXT: origin<0> = <*"x`">
+    # CHECK-NEXT: = <{_mlir_origin: origin<0> = *"x`"}>
     comptime lt1 = origin_of(x)
-    # CHECK-NEXT: origin<0> = <{*"x`", *"y`1"}>
+    # CHECK-NEXT: = <{_mlir_origin: origin<0> = {*"x`", *"y`1"}}>
     comptime lt2 = origin_of(x, y)
-    # CHECK-NEXT: origin<1> = <*"z`2">
+    # CHECK-NEXT: = <{_mlir_origin: origin<1> = *"z`2"}>
     comptime lt3 = origin_of(z)
-    # CHECK-NEXT: origin<0> = <{*"x`", (mutcast mut *"z`2")}>
+    # CHECK-NEXT: = <{_mlir_origin: origin<0> = {*"x`", (mutcast mut *"z`2")}}>
     comptime lt4 = origin_of(x, z)
+
+def take_string_var(var x: String, y: String):
+    # Check mutable to immutable origin conversions + inference.
+    imm_ref_to[origin_of(x)](x)
+    imm_ref_to(x)
+    imm_ref_to[origin_of(y)](y)
+    imm_ref_to(y)
+
+fn imm_ref_to[origin: ImmutOrigin](ref [origin]to: String):
+    pass
 
 
 ##===----------------------------------------------------------------------===##

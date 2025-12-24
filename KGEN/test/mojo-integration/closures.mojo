@@ -17,7 +17,7 @@ fn takeClosure(var writer: Coroutine[Int]) -> Int:
 
 
 @no_inline
-fn makeClosure(x: Int) -> Coroutine[Int, origin_of()]:
+fn makeClosure(x: Int) -> Coroutine[Int, origin_of()._mlir_origin]:
     var z = x * x
 
     @__copy_capture(z)

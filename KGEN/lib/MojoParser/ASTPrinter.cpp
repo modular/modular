@@ -1380,17 +1380,17 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     os << ')';
   } else if (auto originType = dyn_cast<OriginType>(type)) {
     if (originType.isMutableKnown(true))
-      os << "MutOrigin";
+      os << "LITMutOrigin";
     else if (originType.isMutableKnown(false))
-      os << "ImmutOrigin";
+      os << "LITImmutOrigin";
     else {
-      os << "Origin[";
+      os << "LITOrigin[";
       printParam(os, originType.isMutable(), diagShared);
       os << ']';
     }
   } else if (isa<OriginSetType>(type)) {
     // Use "OriginSet" type name instead of the internal "origin.set"
-    os << "OriginSet";
+    os << "LITOriginSet";
   } else if (auto module = dyn_cast<ModuleType>(type)) {
     // Only print the leaf reference when pretty printing types.
     printSymbol(os, module.getSymbol(), diagShared, /*isFunc=*/false);
