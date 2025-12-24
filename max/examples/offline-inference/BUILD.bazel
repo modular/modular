@@ -17,8 +17,10 @@ modular_run_binary_test(
     name = "basic_test",
     timeout = "long",
     binary = "basic",
-    external_noop = True,
-    tags = ["requires-network"],
+    tags = [
+        "requires-network",
+        "resources:memory:55000",  # 55 GB
+    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
