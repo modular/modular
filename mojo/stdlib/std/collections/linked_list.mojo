@@ -136,9 +136,16 @@ struct _LinkedListIter[
         return self.__next_ref__().copy()
 
 
-struct LinkedList[
-    ElementType: Copyable,
-](Boolable, Copyable, Defaultable, Iterable, Representable, Sized, Stringable, Writable):
+struct LinkedList[ElementType: Copyable,](
+    Boolable,
+    Copyable,
+    Defaultable,
+    Iterable,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
+):
     """A doubly-linked list implementation.
 
     Parameters:
@@ -793,7 +800,7 @@ struct LinkedList[
         _constrained_conforms_to[
             conforms_to(Self.ElementType, Representable),
             Parent=Self,
-            Element=Self.ElementType,
+            Element = Self.ElementType,
             ParentConformsTo="Stringable",
             ElementConformsTo="Representable",
         ]()
@@ -813,7 +820,7 @@ struct LinkedList[
         _constrained_conforms_to[
             conforms_to(Self.ElementType, Representable),
             Parent=Self,
-            Element=Self.ElementType,
+            Element = Self.ElementType,
             ParentConformsTo="Stringable",
             ElementConformsTo="Representable",
         ]()
@@ -826,7 +833,9 @@ struct LinkedList[
         for i in range(len(self)):
             if i:
                 writer.write(", ")
-            ref representable_element = trait_downcast[Representable](curr[].value)
+            ref representable_element = trait_downcast[Representable](
+                curr[].value
+            )
             writer.write(repr(representable_element))
             curr = curr[].next
         writer.write(suffix)
