@@ -23,7 +23,7 @@ from builtin.variadics import Variadic
 @register_passable("trivial")
 struct _CountIterator(Iterable, Iterator):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Int
     var start: Int
@@ -68,7 +68,7 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
@@ -212,7 +212,7 @@ struct _Product3[
         Self.IteratorTypeC.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     comptime _Product2Type = _Product2[Self.IteratorTypeB, Self.IteratorTypeC]
@@ -346,7 +346,7 @@ struct _Product4[
         Self.IteratorTypeD.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     comptime _Product3Type = _Product3[
@@ -499,7 +499,7 @@ struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
 
     comptime Element = Self.ElementType
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var element: Self.ElementType

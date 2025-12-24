@@ -181,7 +181,7 @@ struct Pointer[
     mut: Bool,
     //,
     type: AnyType,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](ImplicitlyCopyable, Stringable):
     """Defines a non-nullable safe pointer.

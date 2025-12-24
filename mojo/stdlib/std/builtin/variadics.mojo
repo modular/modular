@@ -322,7 +322,7 @@ struct _VariadicListIter[type: AnyTrivialRegType](
 
     comptime Element = Self.type
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var index: Int
@@ -392,7 +392,7 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
     """The underlying storage for the variadic list."""
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _VariadicListIter[Self.type]
     """The iterator type for this variadic list.
 
@@ -463,7 +463,7 @@ struct _VariadicListMemIter[
     elt_is_mutable: Bool,
     //,
     elt_type: ImplicitlyDestructible,
-    elt_origin: Origin[elt_is_mutable],
+    elt_origin: Origin[mut=elt_is_mutable],
     list_origin: ImmutOrigin,
     is_owned: Bool,
 ]:
@@ -515,7 +515,7 @@ struct VariadicListMem[
     elt_is_mutable: Bool,
     //,
     element_type: ImplicitlyDestructible,
-    origin: Origin[elt_is_mutable],
+    origin: Origin[mut=elt_is_mutable],
     is_owned: Bool,
 ](Sized):
     """A utility class to access variadic function arguments of memory-only
@@ -628,7 +628,9 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[Self.elt_is_mutable].cast_from[origin_of(Self.origin, self)]
+        Origin[mut = Self.elt_is_mutable].cast_from[
+            origin_of(Self.origin, self)
+        ]
     ] Self.element_type:
         """Gets a single element on the variadic list.
 
@@ -666,7 +668,7 @@ struct VariadicPack[
     elt_is_mutable: Bool,
     //,
     is_owned: Bool,
-    origin: Origin[elt_is_mutable],
+    origin: Origin[mut=elt_is_mutable],
     element_trait: type_of(AnyType),
     *element_types: element_trait,
 ](Sized):

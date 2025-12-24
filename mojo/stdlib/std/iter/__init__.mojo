@@ -59,7 +59,7 @@ trait Iterable:
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -186,7 +186,7 @@ struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
 
     comptime Element = Tuple[Int, Self.InnerIteratorType.Element]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     var _inner: Self.InnerIteratorType
     var _count: Int
@@ -266,7 +266,7 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
@@ -312,7 +312,7 @@ struct _Zip3[
         Self.IteratorTypeC.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
@@ -376,7 +376,7 @@ struct _Zip4[
         Self.IteratorTypeD.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
@@ -581,7 +581,7 @@ struct _MapIterator[
 ](Copyable, Iterable, Iterator):
     comptime Element = Self.OutputType
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner: Self.InnerIteratorType
@@ -661,7 +661,7 @@ fn map[
 struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
     comptime Element = Self.InnerIterator.Element
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner: Self.InnerIterator

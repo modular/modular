@@ -255,7 +255,7 @@ fn welford_block_all_reduce[
 
 fn layer_norm_gpu_warp_tiling[
     mut: Bool,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     layout: Layout,
     dtype: DType,
     //,
@@ -334,7 +334,7 @@ fn layer_norm_gpu_warp_tiling[
 
 fn layer_norm_gpu_block[
     mut: Bool,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     layout: Layout,
     dtype: DType,
     //,
@@ -882,7 +882,7 @@ fn _rms_norm_warp_tiling_subkernel[
 
 fn rms_norm_gpu_warp_tiling_128[
     mut: Bool,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     layout: Layout,
     dtype: DType,
     //,
@@ -944,7 +944,7 @@ fn rms_norm_gpu_warp_tiling_128[
 
 fn rms_norm_gpu_warp_tiling[
     mut: Bool,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     layout: Layout,
     dtype: DType,
     //,
@@ -1077,7 +1077,7 @@ fn _rms_norm_gpu_block_subkernel[
 
 fn rms_norm_gpu_block[
     mut: Bool,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     layout: Layout,
     dtype: DType,
     //,
@@ -1458,10 +1458,10 @@ fn _rms_norm_impl[
 
 fn rms_norm_fused_residual_add_gpu_warp_tiling[
     mut1: Bool,
-    origin1: Origin[mut1],
+    origin1: Origin[mut=mut1],
     layout1: Layout,
     mut2: Bool,
-    origin2: Origin[mut2],
+    origin2: Origin[mut=mut2],
     layout2: Layout,
     dtype: DType,
     //,
@@ -1543,10 +1543,10 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
 
 fn rms_norm_fused_residual_add_gpu_block[
     mut1: Bool,
-    origin1: Origin[mut1],
+    origin1: Origin[mut=mut1],
     layout1: Layout,
     mut2: Bool,
-    origin2: Origin[mut2],
+    origin2: Origin[mut=mut2],
     layout2: Layout,
     dtype: DType,
     //,
@@ -2173,7 +2173,7 @@ fn group_norm_reshape[
 
 fn group_norm_gpu_warp_tiling[
     mut: Bool,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     layout: Layout,
     //,
     dtype: DType,
@@ -2252,7 +2252,7 @@ fn group_norm_gpu_warp_tiling[
 
 fn group_norm_gpu_block[
     mut: Bool,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     layout: Layout,
     //,
     dtype: DType,

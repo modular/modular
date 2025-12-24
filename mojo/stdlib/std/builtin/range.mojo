@@ -45,7 +45,7 @@ fn _sign(x: Int) -> Int:
 @register_passable("trivial")
 struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Int
     var curr: Int
@@ -91,7 +91,7 @@ struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
 @register_passable("trivial")
 struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Int
     var start: Int
@@ -137,7 +137,7 @@ struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
 @register_passable("trivial")
 struct _StridedRangeIterator(Iterable, Iterator, Sized):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Int
     var start: Int
@@ -186,7 +186,7 @@ struct _StridedRangeIterator(Iterable, Iterator, Sized):
 @register_passable("trivial")
 struct _StridedRange(Iterable, Iterator, ReversibleRange, Sized):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _StridedRangeIterator
     comptime Element = Int
     var start: Int
@@ -440,7 +440,7 @@ fn _uint_range_bounds(len: UInt) -> Tuple[Int, Optional[Int]]:
 @register_passable("trivial")
 struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = UInt
     var curr: UInt
@@ -481,7 +481,7 @@ struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
 @register_passable("trivial")
 struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = UInt
     var start: UInt
@@ -512,7 +512,7 @@ struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
 @register_passable("trivial")
 struct _UIntStridedRange(Iterable, Iterator, UIntSized):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _UIntStridedRangeIterator
     comptime Element = UInt
     var start: UInt
@@ -615,7 +615,7 @@ struct _ZeroStartingScalarRange[dtype: DType](
     Iterable, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
     var curr: Scalar[Self.dtype]
@@ -678,7 +678,7 @@ struct _SequentialScalarRange[dtype: DType](
     Iterable, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
     var start: Scalar[Self.dtype]
@@ -728,7 +728,7 @@ struct _StridedScalarRange[dtype: DType](
     Iterable, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
     var start: Scalar[Self.dtype]

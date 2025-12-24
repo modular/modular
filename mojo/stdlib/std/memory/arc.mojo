@@ -199,7 +199,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
 
     fn unsafe_ptr[
         mut: Bool,
-        origin: Origin[mut],
+        origin: Origin[mut=mut],
         //,
     ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
         """Retrieves a pointer to the underlying memory.

@@ -230,7 +230,7 @@ struct NDBuffer[
     //,
     dtype: DType,
     rank: Int,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     shape: DimList = DimList.create_unknown[rank](),
     strides: DimList = DimList.create_unknown[rank](),
     *,

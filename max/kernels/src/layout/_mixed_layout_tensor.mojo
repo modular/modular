@@ -49,7 +49,7 @@ struct MixedLayoutTensor[
     stride_types: Variadic.TypesOfTrait[MixedTupleLike],
     //,
     dtype: DType,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     linear_idx_type: DType = _get_index_type(address_space),
@@ -728,7 +728,7 @@ struct MixedLayoutTensorIter[
     shape_types: Variadic.TypesOfTrait[MixedTupleLike],
     stride_types: Variadic.TypesOfTrait[MixedTupleLike],
     //,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -759,7 +759,7 @@ struct MixedLayoutTensorIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Self.MixedLayoutTensorType
 

@@ -123,7 +123,7 @@ Parameters:
 comptime OpaquePointer[
     mut: Bool,
     //,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = UnsafePointer[NoneType, origin, address_space=address_space]
@@ -165,7 +165,7 @@ struct UnsafePointer[
     mut: Bool,
     //,
     type: AnyType,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](
@@ -300,7 +300,7 @@ struct UnsafePointer[
     """The underlying pointer type."""
 
     comptime _with_origin[
-        with_mut: Bool, //, with_origin: Origin[with_mut]
+        with_mut: Bool, //, with_origin: Origin[mut=with_mut]
     ] = UnsafePointer[
         mut=with_mut,
         Self.type,
@@ -496,7 +496,7 @@ struct UnsafePointer[
         out self: UnsafePointer[
             mut = Self.mut,
             Self.type,
-            Origin[Self.mut].cast_from[MutAnyOrigin],
+            Origin[mut = Self.mut].cast_from[MutAnyOrigin],
             address_space = Self.address_space,
         ],
     ):
@@ -528,7 +528,7 @@ struct UnsafePointer[
         ],
         out self: UnsafePointer[
             T,
-            Origin[Self.mut].external,
+            Origin[mut = Self.mut].external,
             address_space = Self.address_space,
         ],
     ):
@@ -1455,7 +1455,7 @@ struct UnsafePointer[
         return self._as_legacy().bitcast[T]()
 
     comptime _OriginCastType[
-        target_mut: Bool, target_origin: Origin[target_mut]
+        target_mut: Bool, target_origin: Origin[mut=target_mut]
     ] = UnsafePointer[
         Self.type,
         target_origin,
@@ -1466,7 +1466,7 @@ struct UnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut].cast_from[Self.origin]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1487,7 +1487,7 @@ struct UnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut].cast_from[Self.origin]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1514,7 +1514,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn unsafe_origin_cast[
-        target_origin: Origin[Self.mut]
+        target_origin: Origin[mut = Self.mut]
     ](self) -> Self._OriginCastType[Self.mut, target_origin]:
         """Changes the origin of a pointer.
 

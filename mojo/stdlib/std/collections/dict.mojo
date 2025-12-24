@@ -49,7 +49,7 @@ dictionary keys. Dict keys must minimally be `Copyable`, `Hashable`,
 and `Equatable`."""
 
 
-struct DictKeyError[mut: Bool, //, K: KeyElement, origin: Origin[mut]](
+struct DictKeyError[mut: Bool, //, K: KeyElement, origin: Origin[mut=mut]](
     ImplicitlyCopyable, Movable, Writable
 ):
     """A custom error type for Dict lookups that fail.
@@ -109,7 +109,7 @@ struct _DictEntryIter[
     K: KeyElement,
     V: Copyable,
     H: Hasher,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over immutable DictEntry references.
@@ -124,7 +124,7 @@ struct _DictEntryIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = DictEntry[Self.K, Self.V, Self.H]
 
@@ -173,7 +173,7 @@ struct _DictEntryIter[
 
 @fieldwise_init
 struct _TakeDictEntryIter[
-    K: KeyElement, V: Copyable, H: Hasher, origin: Origin[True]
+    K: KeyElement, V: Copyable, H: Hasher, origin: MutOrigin
 ](Copyable, Iterable, Iterator):
     """Iterator over mutable DictEntry references that moves entries out of the dictionary.
 
@@ -185,7 +185,7 @@ struct _TakeDictEntryIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = DictEntry[Self.K, Self.V, Self.H]
 
@@ -229,7 +229,7 @@ struct _DictKeyIter[
     K: KeyElement,
     V: Copyable,
     H: Hasher,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over immutable Dict key references.
@@ -244,7 +244,7 @@ struct _DictKeyIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime dict_entry_iter = _DictEntryIter[
         Self.K, Self.V, Self.H, Self.origin, Self.forward
@@ -275,7 +275,7 @@ struct _DictValueIter[
     K: KeyElement,
     V: Copyable,
     H: Hasher,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over Dict value references. These are mutable if the dict
@@ -291,7 +291,7 @@ struct _DictValueIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     var iter: _DictEntryIter[Self.K, Self.V, Self.H, Self.origin, Self.forward]
     comptime Element = Self.V
@@ -704,7 +704,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
     # ===-------------------------------------------------------------------===#
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[Self.K, Self.V, Self.H, iterable_origin]
     """The iterator type for this dictionary.
 
@@ -1414,7 +1414,7 @@ struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
     """The key type for this dictionary (always String)."""
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
         Self.key_type, Self.V, default_comp_time_hasher, iterable_origin
     ]

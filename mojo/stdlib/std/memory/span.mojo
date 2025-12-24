@@ -38,7 +38,7 @@ struct _SpanIter[
     mut: Bool,
     //,
     T: Copyable,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for Span.
@@ -51,7 +51,7 @@ struct _SpanIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for this span iterator.
 
@@ -87,7 +87,7 @@ struct _SpanIter[
 
 
 @register_passable("trivial")
-struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
+struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut]](
     Boolable,
     Defaultable,
     DevicePassable,
@@ -114,7 +114,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     ]
     """The unsafe pointer type for this `Span`."""
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _SpanIter[Self.T, Self.origin]
     """The iterator type for this `Span`.
 

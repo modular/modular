@@ -397,7 +397,7 @@ struct SharedMemBarrier(ImplicitlyCopyable):
     fn unsafe_ptr[
         mut: Bool,
         //,
-        origin: Origin[mut],
+        origin: Origin[mut=mut],
     ](
         ref [origin, AddressSpace.SHARED]self,
     ) -> UnsafePointer[

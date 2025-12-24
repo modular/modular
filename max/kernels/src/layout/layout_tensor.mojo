@@ -265,7 +265,7 @@ struct LayoutTensor[
     //,
     dtype: DType,
     layout: Layout,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -934,7 +934,7 @@ struct LayoutTensor[
 
     comptime OriginCastType[
         mut: Bool,
-        origin: Origin[mut],
+        origin: Origin[mut=mut],
     ] = LayoutTensor[
         Self.dtype,
         Self.layout,
@@ -1163,7 +1163,7 @@ struct LayoutTensor[
         ),
         other_layout: Layout,
         other_mut: Bool,
-        other_origin: Origin[other_mut],
+        other_origin: Origin[mut=other_mut],
         other_masked: Bool,
         other_alignment: Int,
         other_layout_int_type: DType,
@@ -8026,7 +8026,7 @@ struct LayoutTensorIter[
     //,
     dtype: DType,
     layout: Layout,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,

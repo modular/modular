@@ -87,7 +87,7 @@ comptime StaticString = StringSlice[StaticConstantOrigin]
 struct CodepointSliceIter[
     mut: Bool,
     //,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
@@ -105,7 +105,7 @@ struct CodepointSliceIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for this codepoint iterator.
 
@@ -322,7 +322,7 @@ struct CodepointSliceIter[
         return result
 
 
-struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
+struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
     ImplicitlyCopyable, Iterable, Iterator, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
@@ -334,7 +334,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for this codepoint iterator.
 
@@ -468,7 +468,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
 
 
 @register_passable("trivial")
-struct StringSlice[mut: Bool, //, origin: Origin[mut]](
+struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Boolable,
     ConvertibleToPython,
     Defaultable,

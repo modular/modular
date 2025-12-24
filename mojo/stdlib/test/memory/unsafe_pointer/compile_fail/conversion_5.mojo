@@ -15,7 +15,7 @@
 
 
 fn test_cannot_cast_from_mutable_any_to_named[
-    T: AnyType, mut: Bool, //, origin: Origin[mut]
+    T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[T, origin]):
     pass
 

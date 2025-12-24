@@ -274,7 +274,7 @@ struct HopperMatmulSM90Kernel[
     ]
 
     comptime RingBufferConsumer[
-        origin: Origin[True], tma_transfer: Bool
+        origin: MutOrigin, tma_transfer: Bool
     ] = RingBufferConsumer[origin, Self.RingBuffer[tma_transfer]]
 
     comptime WgmmaOp = TensorCoreAsync[
@@ -1220,7 +1220,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn consumer_main_loop[
-        ring_buffer_origin: Origin[True],
+        ring_buffer_origin: MutOrigin,
         //,
         num_k_iters: Int,
     ](

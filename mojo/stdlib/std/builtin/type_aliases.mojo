@@ -18,10 +18,10 @@ These are Mojo built-ins, so you don't need to import them.
 comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
 """Represents any register passable Mojo data type."""
 
-comptime ImmutOrigin = Origin[False]
+comptime ImmutOrigin = Origin[mut=False]
 """Immutable origin reference type."""
 
-comptime MutOrigin = Origin[True]
+comptime MutOrigin = Origin[mut=True]
 """Mutable origin reference type."""
 
 comptime ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
@@ -47,7 +47,7 @@ by functions that never return."""
 
 
 @register_passable("trivial")
-struct Origin[mut: Bool]:
+struct Origin[*, mut: Bool]:
     """This represents a origin reference for a memory value.
 
     Parameters:
@@ -87,7 +87,7 @@ struct Origin[mut: Bool]:
     Cast a mutable origin to be immutable:
 
     ```mojo
-    struct Container[mut: Bool, //, origin: Origin[mut]]:
+    struct Container[mut: Bool, //, origin: Origin[mut=mut]]:
         var data: Int
 
         fn imm_borrow(self) -> Container[ImmutOrigin.cast_from[origin]]:
@@ -128,7 +128,7 @@ struct Origin[mut: Bool]:
 
     @implicit
     @always_inline("builtin")
-    fn __init__(out self: ImmutOrigin, other: Origin[_]):
+    fn __init__(out self: ImmutOrigin, other: Origin):
         """Allow converting an mutable origin to an immutable one.
 
         Args:

@@ -214,7 +214,7 @@ struct _WriteBufferHeap(Writable, Writer):
         self._pos += 1
 
     fn as_span[
-        mut: Bool, origin: Origin[mut], //
+        mut: Bool, origin: Origin[mut=mut], //
     ](ref [origin]self) -> Span[Byte, origin]:
         return Span(
             ptr=self._data.mut_cast[mut]().unsafe_origin_cast[origin](),

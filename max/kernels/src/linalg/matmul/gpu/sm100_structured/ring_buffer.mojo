@@ -129,7 +129,7 @@ struct RingBuffer[
 
     @always_inline
     fn producer[
-        origin: Origin[True]
+        origin: MutOrigin
     ](ref [origin]self) -> Producer[
         origin,
         Self.a_type,
@@ -145,7 +145,7 @@ struct RingBuffer[
 
     @always_inline
     fn consumer[
-        origin: Origin[True]
+        origin: MutOrigin
     ](ref [origin]self) -> Consumer[
         origin,
         Self.a_type,
@@ -250,7 +250,7 @@ struct RingBuffer[
 @fieldwise_init
 @register_passable("trivial")
 struct ProducerTiles[
-    origin: Origin[True],
+    origin: MutOrigin,
     a_type: DType,
     b_type: DType,
     a_tile_layout: Layout,
@@ -298,7 +298,7 @@ struct ProducerTiles[
 @fieldwise_init
 @register_passable("trivial")
 struct ConsumerTiles[
-    origin: Origin[True],
+    origin: MutOrigin,
     a_type: DType,
     b_type: DType,
     a_tile_layout: Layout,
@@ -351,7 +351,7 @@ struct ConsumerTiles[
 @fieldwise_init
 @register_passable("trivial")
 struct Producer[
-    origin: Origin[True],
+    origin: MutOrigin,
     a_type: DType,
     b_type: DType,
     a_tile_layout: Layout,
@@ -428,7 +428,7 @@ struct Producer[
 @fieldwise_init
 @register_passable("trivial")
 struct Consumer[
-    origin: Origin[True],
+    origin: MutOrigin,
     a_type: DType,
     b_type: DType,
     a_tile_layout: Layout,
