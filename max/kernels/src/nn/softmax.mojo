@@ -609,7 +609,7 @@ fn _softmax_cpu[
             softmax_3_pass[
                 simd_width,
                 dtype,
-                origin_of(),
+                origin_of()._mlir_origin,
                 input_fn_1d,
                 logsoftmax=logsoftmax,
             ](output_buffer_view)
@@ -860,7 +860,7 @@ fn softmax[
                 dtype,
                 simd_width,
                 rank,
-                origin_of(),
+                origin_of()._mlir_origin,
                 input_fn,
                 logsoftmax=logsoftmax,
             ](shape, output, axis)

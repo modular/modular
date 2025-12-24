@@ -414,7 +414,8 @@ struct TaskGroup(Defaultable):
 
         _suspend_async[await_body]()
 
-    fn wait[origins: OriginSet = origin_of()](mut self):
+    # FIXME: OriginSet isn't a first class type.  This API isn't very usable.
+    fn wait[origins: OriginSet = origin_of()._mlir_origin](mut self):
         """Wait for all tasks in the `TaskGroup` to complete.
 
         This is a blocking call that returns only when all tasks have finished.

@@ -60,13 +60,15 @@ struct Origin[mut: Bool]:
         `>`,
     ]
 
-    comptime cast_from[o: Origin] = __mlir_attr[
-        `#lit.origin.mutcast<`,
-        o._mlir_origin,
-        `> : !lit.origin<`,
-        Self.mut._mlir_value,
-        `>`,
-    ]
+    comptime cast_from[o: Origin] = Origin(
+        __mlir_attr[
+            `#lit.origin.mutcast<`,
+            o._mlir_origin,
+            `> : !lit.origin<`,
+            Self.mut._mlir_value,
+            `>`,
+        ]
+    )
     """Cast an existing Origin to be of the specified mutability.
 
     This is a low-level way to coerce Origin mutability. This should be used
@@ -123,3 +125,13 @@ struct Origin[mut: Bool]:
             mlir_origin: The raw MLIR origin value.
         """
         self._mlir_origin = mlir_origin
+
+    @implicit
+    @always_inline("builtin")
+    fn __init__(out self: Origin[False], other: Origin[_]):
+        """Allow converting an mutable origin to an immutable one.
+
+        Args:
+            other: The mutable origin to convert.
+        """
+        self._mlir_origin = other._mlir_origin

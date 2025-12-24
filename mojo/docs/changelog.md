@@ -220,6 +220,9 @@ what we publish.
   ref-returning variant, but will allow it to conform to `Iterator` for use with
   generic algorithms (which use a copied value).
 
+- The `origin_of(x)` operator now returns a value of type `Origin` instead of an
+  internal MLIR type.
+
 ### Library changes
 
 - The `Iterator` trait and and for-each loop have removed the `__has_next__`
