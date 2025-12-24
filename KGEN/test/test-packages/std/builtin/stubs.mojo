@@ -46,6 +46,16 @@ struct Origin[mut: Bool]:
             mlir_origin: The raw MLIR origin value."""
         self._mlir_origin = mlir_origin
 
+    @implicit
+    @always_inline("builtin")
+    fn __init__(out self: Origin[False], other: Origin[True]):
+        """Allow converting an mutable origin to an immutable one.
+
+        Args:
+            other: The mutable origin to convert.
+        """
+        self._mlir_origin = other._mlir_origin
+
 
 # Static constants are a named subset of the global origin.
 comptime StaticConstantOrigin = __mlir_attr[

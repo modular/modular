@@ -628,7 +628,6 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // Look up the IntLiteral type.
   ASTType type =
       emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
-
   return handleIntFPStringLiteral(attr, type, this, dest, emitter);
 }
 
@@ -4216,8 +4215,18 @@ AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
         });
   }
 
+  // Form the final value of !lit.origin type.
   auto result = OriginUnionAttr::get(emitter.getContext(), origins);
-  return emitter.emitResult(PValue(result), this, dest);
+
+  // Convert to Origin type.
+  // TODO: Use handleIntFPStringLiteral when Origin has dep type.
+  ASTType type =
+      emitter.shared.getBuiltinOriginType(emitter.declScope, getLoc());
+  if (sugarIsa<TypeCheckErrorType>(type))
+    return {}; // Sanity check the returned declaration.
+  return emitter.emitConstructorCall(type,
+                                     CallOperands({{PValue(result), this}}),
+                                     this, CallSyntax::kTypeCall, dest);
 }
 
 AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,

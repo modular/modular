@@ -3126,6 +3126,8 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   // Fold rebinds of an unbound.
   if (isa<UnboundAttr>(input))
     return UnboundAttr::get(resultType);
+  if (isa<UnknownAttr>(input))
+    return UnknownAttr::get(resultType);
 
   // Fold rebinds of a StructType. Unify metatypes so information is not lost.
   if (auto typeCst = sugarDynCast<TypeParamAttr>(input))

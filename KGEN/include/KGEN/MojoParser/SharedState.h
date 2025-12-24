@@ -438,6 +438,9 @@ public:
 
   /// Get a builtin type, or emit an error and return TypeCheckErrorType if
   /// invalid. These never return null.
+  ASTType getBuiltinOriginType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupBuiltinType("Origin", context, loc);
+  }
   ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc) {
     return lookupBuiltinType("Bool", context, loc);
   }
