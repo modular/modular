@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -import-mojo %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
 fn register_internal(x: StaticString):
@@ -47,8 +47,8 @@ fn custom_op_param[a: Int](b: ParamType[a], c: ParamType[1]) -> ParamType[a]:
 
 
 # CHECK: lit.fn @"unknown_type
-# CHECK-NEXT: mogg.arg_value_witnesses = [{__moveinit__{{.*}} = #kgen.get_witness<:!Movable T, "std::builtin::value::Movable", "__moveinit__{{.*}}">{{.*}}}]
-# CHECK-SAME: mogg.result_value_witnesses = {__moveinit__{{.*}} = #kgen.get_witness<:!Movable T, "std::builtin::value::Movable", "__moveinit__{{.*}}">{{.*}}}
+# CHECK-NEXT: mogg.arg_value_witnesses = [{__moveinit__{{.*}} = #kgen.get_witness<:!Movable T, "{{.*}}::Movable", "__moveinit__{{.*}}">{{.*}}}]
+# CHECK-SAME: mogg.result_value_witnesses = {__moveinit__{{.*}} = #kgen.get_witness<:!Movable T, "{{.*}}::Movable", "__moveinit__{{.*}}">{{.*}}}
 @register_internal("custom.op")
 fn unknown_type[T: Movable](a: T) -> T:
     pass
