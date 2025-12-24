@@ -861,7 +861,7 @@ fn test_signature():
   # expected-error @+1 {{invalid call to '__init__': expected at most 0 positional arguments, got 1}}
   HasIntParam[1].__init__(str)
 
-fn bad_union[ao: Origin[True]](ref [ao] a: String, mut b: String) -> ref [a, b] String:
+fn bad_union[ao: MutOrigin](ref [ao] a: String, mut b: String) -> ref [a, b] String:
     var c: String
     # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{b, ao._mlir_origin}'}}
     return c

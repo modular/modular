@@ -766,7 +766,7 @@ struct MyList[T: ImplicitlyCopyable]:
 
 # Infer-only parameters should be bindable with keywords
 comptime ImmMyStringSlice = MyStringSlice[mut=False]
-struct MyStringSlice[mut: Bool, //, origin: Origin[mut]]:  pass
+struct MyStringSlice[mut: Bool, //, origin: Origin[mut=mut]]:  pass
 
 # This only binds to immutable things.
 # CHECK-LABEL: lit.fn @"test_imm_string_slice
@@ -1075,14 +1075,14 @@ fn infer_box_type[T: AnyType, //, box: Box[T]]():
     infer_box_type[Int()]()
 
 # MOCO-1457: Support struct param inference for origins
-struct OriginStructInferenceImm[origin: Origin[False]]:
+struct OriginStructInferenceImm[origin: ImmutOrigin]:
     fn __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
-struct OriginStructInferencePar[mut: Bool, //, origin: Origin[mut]]:
+struct OriginStructInferencePar[mut: Bool, //, origin: Origin[mut=mut]]:
     fn __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
-struct OriginStructInferenceParWrapped[mut: Bool, //, origin: Origin[mut]]:
+struct OriginStructInferenceParWrapped[mut: Bool, //, origin: Origin[mut=mut]]:
     fn __init__(out self, ref [Self.origin]data: Int):  pass
-struct OriginStructInferenceParSpecialized[mut: Bool, //, origin: Origin[mut]]:
-    fn __init__[O: Origin[False]](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
+struct OriginStructInferenceParSpecialized[mut: Bool, //, origin: Origin[mut=mut]]:
+    fn __init__[O: ImmutOrigin](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
 
 # CHECK-LABEL: lit.fn @"test_origin_struct_inf
 fn test_origin_struct_inf[imm_data: Int](mut data: Int):
@@ -1594,7 +1594,7 @@ fn call_variadic_pack_with_function():
 struct MOCO1065[
     mut: Bool, //,
     T: ImplicitlyCopyable,
-    o: Origin[mut]._mlir_type,
+    o: Origin[mut=mut]._mlir_type,
 ]:
     fn __init__(out self: MOCO1065[UInt8, Self.o], ref [Self.o] string: Empty):
         pass

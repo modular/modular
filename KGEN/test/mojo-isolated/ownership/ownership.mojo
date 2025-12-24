@@ -1206,7 +1206,7 @@ fn handleAnyLifetime5():
 # to reason about these.
 
 # CHECK-LABEL: lit.fn @"test_origin_ctor_folding
-fn test_origin_ctor_folding[orig1: Origin[_]](abcdef: A):
+fn test_origin_ctor_folding[orig1: Origin](abcdef: A):
     # CHECK-NEXT: lit.alias.decl *"x{{.*}} = <{{.*}}{_mlir_origin: origin<0> = *"abcdef`1"}
     comptime x = origin_of(abcdef)
 
