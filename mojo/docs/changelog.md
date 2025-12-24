@@ -142,16 +142,6 @@ what we publish.
   generic functions instantiated with `Never` as their error type) compile into
   the same ABI as functions that don't `raise`.
 
-- The `deinit` argument convention can now be applied to any argument of a
-  struct method, but the argument type still must be of the enclosing struct
-  type.
-
-- Context managers (used in `with` statements) can now define consuming exit
-  methods, i.e. `fn __exit__(var self)` which can be useful for linear context
-  managers. This also works with `deinit`.
-
-### Language changes
-
 - Mojo now allows the use of a `comptime(x)` expression to force a subexpression
   to be evaluated at compile time.  This can help make working with certain
   types more elegant when you can't (or don't want to) materialize them into a
@@ -168,6 +158,16 @@ what we publish.
     # Can now tell Mojo to evaluate the expression at comptime.
     print(comptime(a.size()))
   ```
+
+- The `deinit` argument convention can now be applied to any argument of a
+  struct method, but the argument type still must be of the enclosing struct
+  type.
+
+- Context managers (used in `with` statements) can now define consuming exit
+  methods, i.e. `fn __exit__(var self)` which can be useful for linear context
+  managers. This also works with `deinit`.
+
+### Language changes
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
 
@@ -202,6 +202,11 @@ what we publish.
   is equivalent to the new `AnyType` behavior.
 
 ### Library changes
+
+- The `Iterator` trait and and for-each loop have removed the `__has_next__`
+  method and now using a `__next__` method that `raises StopIteration`. This
+  follows Python precedent better, is more convenient to implement, and can be a
+  minor performance win in some cases.
 
 - `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
 
