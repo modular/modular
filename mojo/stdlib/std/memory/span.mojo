@@ -70,7 +70,7 @@ struct _SpanIter[
         return self.copy()
 
     @always_inline
-    fn __next_ref__(mut self) raises StopIteration -> ref [Self.origin] Self.T:
+    fn __next__(mut self) raises StopIteration -> ref [Self.origin] Self.T:
         @parameter
         if Self.forward:
             if self.index >= len(self.src):
@@ -84,10 +84,6 @@ struct _SpanIter[
                 raise StopIteration()
             self.index -= 1
             return self.src[self.index]
-
-    @always_inline
-    fn __next__(mut self) raises StopIteration -> Self.T:
-        return self.__next_ref__().copy()
 
 
 @register_passable("trivial")
