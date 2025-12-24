@@ -180,7 +180,7 @@ compatibility and will be removed in a future release."""
 struct Pointer[
     mut: Bool,
     //,
-    type: UnknownDestructibility,
+    type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](ImplicitlyCopyable, Stringable):

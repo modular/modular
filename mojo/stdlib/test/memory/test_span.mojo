@@ -432,24 +432,21 @@ def test_iter():
     var data = [1, 2, 3, 4, 5]
     var span = Span(data)
     var it = iter(span)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 1)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 2)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 3)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 4)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 5)
-    assert_false(it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_iter_empty():
     var data: List[Int] = []
     var span = Span(data)
     var it = iter(span)
-    assert_false(it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 def main():

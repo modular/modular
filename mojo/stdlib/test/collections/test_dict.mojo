@@ -205,6 +205,20 @@ def test_key_error():
         _ = dict.pop("a")
 
 
+def test_key_error_hold_key():
+    var dict: Dict[String, Int] = {}
+    var error_raised = False
+
+    var key = "a"
+    try:
+        _ = dict[key]
+    except e:
+        assert_equal(e.key(), key)
+        error_raised = True
+
+    assert_true(error_raised)
+
+
 def _test_iter_bounds[
     I: Iterator, //
 ](var dict_iter: I, dict_len: Int,):
@@ -233,7 +247,9 @@ def test_iter():
     _test_iter_bounds(dict.__iter__(), len(dict))
 
     var empty_dict: Dict[String, Int] = {}
-    assert_equal(iter(empty_dict).__has_next__(), False)
+    with assert_raises():
+        var it = iter(empty_dict)
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_iter_keys():
@@ -307,7 +323,9 @@ def test_iter_take_items():
     assert_equal(values, "abc")
     assert_equal(keys, 3)
     assert_equal(len(dict), 0)
-    assert_false(dict.take_items().__has_next__())
+    with assert_raises():
+        var it = dict.take_items()
+        _ = it.__next__()  # raises StopIteration
 
     for i in range(3):
         with assert_raises(contains="KeyError"):
@@ -517,7 +535,7 @@ def test_mojo_issue_1729():
         d[DummyKey(key)] = i
     assert_equal(len(d), len(keys))
     for i, key in enumerate(keys):
-        assert_equal(i, d[key])
+        assert_equal(i, d[DummyKey(key)])
 
 
 def _test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
@@ -592,7 +610,7 @@ def test_dict_popitem():
     assert_equal(item.key, "a")
     assert_equal(item.value, 1)
     assert_equal(len(dict), 0)
-    with assert_raises(contains="KeyError"):
+    with assert_raises(contains="EmptyDictError"):
         _ = dict.popitem()
 
 
@@ -726,7 +744,7 @@ def test_popitem_no_copies():
     assert_equal(item.key, "a")
     assert_equal(item.value.copy_count, 0)
     assert_equal(len(dict), 0)
-    with assert_raises(contains="KeyError"):
+    with assert_raises(contains="EmptyDictError"):
         _ = dict.popitem()
 
 
