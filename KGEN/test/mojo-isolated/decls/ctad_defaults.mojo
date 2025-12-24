@@ -16,7 +16,7 @@ struct MyUnsafePointer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = False,
     alignment: Int = 1,
-    lifetime: MutOrigin._mlir_type = MutAnyOrigin,
+    lifetime: MutOrigin = MutAnyOrigin,
 ]:
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
@@ -41,5 +41,4 @@ fn unsafe_ptr(s: __mlir_type.`!kgen.string`):
     # CHECK-SAME: :!AddressSpace {_value: !Int = {0}},
     # CHECK-SAME: :!Bool {:i1 0},
     # CHECK-SAME: :!Int {1},
-    # CHECK-SAME: :origin<1> #lit.any.origin>
     var ptr = MyUnsafePointer(__mlir_op.`pop.string.address`(s))

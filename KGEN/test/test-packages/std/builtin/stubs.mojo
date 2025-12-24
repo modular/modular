@@ -13,8 +13,16 @@ comptime float = __mlir_type.`!pop.scalar<f64>`
 comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
 comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
-comptime ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
-comptime MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
+comptime ImmutAnyOrigin = Origin(__mlir_attr.`#lit.any.origin : !lit.origin<0>`)
+comptime MutAnyOrigin = Origin(__mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`)
+comptime StaticConstantOrigin = Origin(
+    __mlir_attr[
+        `#lit.origin.field<`,
+        `#lit.static.origin : !lit.origin<0>`,
+        `, "__constants__"> : !lit.origin<0>`,
+    ]
+)
+
 comptime OriginSet = __mlir_type.`!lit.origin.set`
 comptime Never = __mlir_type.`!kgen.never`
 
@@ -55,14 +63,6 @@ struct Origin[*, mut: Bool]:
             other: The mutable origin to convert.
         """
         self._mlir_origin = other._mlir_origin
-
-
-# Static constants are a named subset of the global origin.
-comptime StaticConstantOrigin = __mlir_attr[
-    `#lit.origin.field<`,
-    `#lit.static.origin : !lit.origin<0>`,
-    `, "__constants__"> : !lit.origin<0>`,
-]
 
 
 struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]]:

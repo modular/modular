@@ -752,7 +752,7 @@ fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
   var x : Pointer[T, b.origin] = a[]
 
   # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutAnyOrigin]'}}
-  var y : Pointer[T,  __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`, a.address_space] = a[]
+  var y : Pointer[T, MutAnyOrigin, a.address_space] = a[]
 
 fn test_subscript_conflict(a: Int):
   # expected-error @below {{duplicate keyword parameter 'idx'}}
