@@ -320,7 +320,8 @@ fn unfoldable_predicate(y: Int) -> Bool:
 # expected-note @below {{function declared here}}
 # expected-note @below {{cannot prove constraint}}
 fn unprovable_constraints[x: Int, y: Int]()
-  # expected-note @+1 {{constraint declared here evaluated to False, expected '(x >= 2)'}}
+  # FIXME(MOCO-3011): Constraint failures are printing desugared params
+  # expected-note @+1 {{constraint declared here evaluated to False, expected '(xor (lt x._mlir_value, 2), True)'}}
   where x > 1
   # expected-note @+1 {{constraint declared here needs evidence for}}
   where unfoldable_predicate(y):
@@ -340,7 +341,7 @@ fn test_constraints():
   # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
   unprovable_constraints[2, 0]()
 
-# expected-note @below {{constraint declared here evaluated to False, expected '(x >= 2)'}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(xor (lt x._mlir_value, 2), True)'}}
 # expected-note @below {{function declared here}}
 fn unprovable_param_constraints[x: Int where x > 1]():
   pass
@@ -352,7 +353,7 @@ fn test_param_constraints():
 # expected-note @below {{cannot prove constraint}}
 struct ConstraintStruct[
   # expected-note @below {{constraint declared here needs evidence for}}
-  # expected-note @below {{constraint declared here evaluated to False, expected '(a >= 1)'}}
+  # expected-note @below {{constraint declared here evaluated to False, expected '(xor (lt a._mlir_value, 1), True)'}}
   a: Int where a > 0
 ]:
     pass
