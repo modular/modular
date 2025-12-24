@@ -24,18 +24,20 @@ comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
 """Mutable origin reference type."""
 
-comptime ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+comptime ImmutAnyOrigin = Origin(__mlir_attr.`#lit.any.origin : !lit.origin<0>`)
 """The immutable origin that might access any memory value."""
 
-comptime MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
+comptime MutAnyOrigin = Origin(__mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`)
 """The mutable origin that might access any memory value."""
 
 # Static constants are a named subset of the global origin.
-comptime StaticConstantOrigin = __mlir_attr[
-    `#lit.origin.field<`,
-    `#lit.static.origin : !lit.origin<0>`,
-    `, "__constants__"> : !lit.origin<0>`,
-]
+comptime StaticConstantOrigin = Origin(
+    __mlir_attr[
+        `#lit.origin.field<`,
+        `#lit.static.origin : !lit.origin<0>`,
+        `, "__constants__"> : !lit.origin<0>`,
+    ]
+)
 """An origin for strings and other always-immutable static constants."""
 
 comptime OriginSet = __mlir_type.`!lit.origin.set`
