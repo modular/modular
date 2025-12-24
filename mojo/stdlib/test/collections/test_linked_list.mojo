@@ -580,18 +580,18 @@ def test_list_dtor():
 def test_iter():
     var l = LinkedList[Int](1, 2, 3)
     var it = l.__iter__()
-    assert_true(it.__has_next__(), "Expected iter to have next")
-    assert_equal(it.__next_ref__(), 1)
-    assert_equal(it.__next_ref__(), 2)
-    assert_equal(it.__next_ref__(), 3)
-    assert_false(it.__has_next__(), "Expected iter to not have next")
+    assert_equal(it.__next__(), 1)
+    assert_equal(it.__next__(), 2)
+    assert_equal(it.__next__(), 3)
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
     var riter = l.__reversed__()
-    assert_true(riter.__has_next__(), "Expected iter to have next")
-    assert_equal(riter.__next_ref__(), 3)
-    assert_equal(riter.__next_ref__(), 2)
-    assert_equal(riter.__next_ref__(), 1)
-    assert_false(riter.__has_next__(), "Expected iter to not have next")
+    assert_equal(riter.__next__(), 3)
+    assert_equal(riter.__next__(), 2)
+    assert_equal(riter.__next__(), 1)
+    with assert_raises():
+        _ = riter.__next__()  # raises StopIteration
 
     var i = 0
     for el in l:
@@ -604,7 +604,9 @@ def test_iter():
         i -= 1
 
     var ll = LinkedList[Int]()
-    assert_equal(iter(ll).__has_next__(), False)
+    with assert_raises():
+        var it = iter(ll)
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_repr_wrap():

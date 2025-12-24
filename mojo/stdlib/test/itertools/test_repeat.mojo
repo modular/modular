@@ -12,20 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 from itertools import repeat
-from testing import TestSuite, assert_equal, assert_false, assert_true
+from testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_true,
+    assert_raises,
+)
 
 
 def test_repeat_finite():
     """Tests repeat with a finite number of times."""
     var it = repeat(42, times=3)
 
-    assert_true(it.__has_next__())
     assert_equal(next(it), 42)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 42)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 42)
-    assert_false(it.__has_next__())
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
 
 
 def test_repeat_string():
@@ -43,16 +47,17 @@ def test_repeat_string():
 def test_repeat_zero_times():
     """Tests repeat with zero repetitions."""
     var it = repeat(99, times=0)
-    assert_false(it.__has_next__())
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
 
 
 def test_repeat_one_time():
     """Tests repeat with a single repetition."""
     var it = repeat(7, times=1)
 
-    assert_true(it.__has_next__())
     assert_equal(next(it), 7)
-    assert_false(it.__has_next__())
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
 
 
 def test_repeat_large_count():
