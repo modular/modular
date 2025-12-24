@@ -3879,7 +3879,7 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
   bool isLastOne = opIdx + 1 == ops.size();
   SMLoc ifLoc = exprs[opIdx - 1]->getLoc();
   Location ifLocation = emitter.translateLocation(ifLoc);
-  std::optional<OpBuilder> lastBuilder = {};
+  std::optional<OpBuilder> lastBuilder;
   if (emitter.builder)
     lastBuilder = emitter.builder.value();
   RValue prevCmpI1Value = emitter.emitI1({prevCmpVal, this}, EC_BoolCondition);
@@ -4301,7 +4301,7 @@ MagicFunctionNode::emitGetCurrentFunctionName(ValueDest &dest,
                                               IREmitter &emitter) const {
   // Intentional choice: return an empty string
   // if used outside of a function (e.g. in a comptime field initializer)
-  std::string funcName = "";
+  std::string funcName;
   ASTDecl *fnDecl = emitter.declScope.getNearestDeclOfType<FnOp>();
   if (fnDecl) {
     FnOp fnOp = cast<FnOp>(fnDecl->getIfOperation());

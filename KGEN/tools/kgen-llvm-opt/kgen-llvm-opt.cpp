@@ -56,13 +56,13 @@ struct CLOptions : public M::CLOptionsBase {
   M::OptionsBase options;
   std::string inputFilename{"-"};
   std::string outputFilename{"-"};
-  std::string passPipeline = "";
+  std::string passPipeline;
   bool optLevelO0 = false;
   bool optLevelO1 = false;
   bool optLevelO2 = false;
   bool optLevelO3 = false;
-  std::string targetTriple = "";
-  std::string dataLayout = "";
+  std::string targetTriple;
+  std::string dataLayout;
   bool noOutput = false;
   bool outputAssembly = false;
   unsigned codeGenOptLevel = 0;

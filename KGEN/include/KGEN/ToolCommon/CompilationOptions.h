@@ -105,24 +105,24 @@ public:
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
-  std::string targetDataLayout = "";
-  std::optional<llvm::CodeModel::Model> mcmodel = {};
-  std::optional<uint64_t> largeDataThreshold = {};
+  std::string targetDataLayout;
+  std::optional<llvm::CodeModel::Model> mcmodel;
+  std::optional<uint64_t> largeDataThreshold;
   int64_t loopUnrollingWarnThreshold = 65536;
 
-  std::string targetAccelerator = "";
+  std::string targetAccelerator;
   bool isCrossCompilation = false;
   bool useParametricInterpreter = false;
 
   llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_;
   DebugInfoLanguage debugInfoLanguage = kLangMojo;
 
-  std::string saveTempsPrefix = "";
-  std::string searchPaths = "";
-  SmallVector<std::string> extraSearchPaths = {};
+  std::string saveTempsPrefix;
+  std::string searchPaths;
+  SmallVector<std::string> extraSearchPaths;
 
   // File paths to external bitcode libraries specified via command line.
-  SmallVector<std::string> bitcodeLibs = {};
+  SmallVector<std::string> bitcodeLibs;
 
   bool verboseOutput = false;
 
@@ -142,7 +142,7 @@ public:
   bool enableLLVMPerFunctionSplitting = false;
   bool enableParallelLLC = true;
 
-  std::string emissionOptions = "";
+  std::string emissionOptions;
 
   // Maximum number of threads to be used by AsyncRT. 0 means use all available.
   size_t numThreads = 0;
