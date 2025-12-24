@@ -369,6 +369,20 @@ def test_write_to():
 
     assert_equal(output, "InlineArray[Int, 3](10, 20, 30)")
 
+    # Test with different types
+    var string_array = InlineArray[String, 2]("hello", "world")
+    var string_output = String()
+    string_array.write_to(string_output)
+
+    assert_equal(string_output, "InlineArray[String, 2]('hello', 'world')")
+
+    # Test empty array
+    var empty_array = InlineArray[Int, 0](fill=0)
+    var empty_output = String()
+    empty_array.write_to(empty_output)
+
+    assert_equal(empty_output, "InlineArray[Int, 0]()")
+
 
 def test_inline_array_triviality():
     assert_true(InlineArray[Int, 1].__del__is_trivial)
