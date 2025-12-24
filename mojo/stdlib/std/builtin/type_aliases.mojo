@@ -128,7 +128,7 @@ struct Origin[mut: Bool]:
 
     @implicit
     @always_inline("builtin")
-    fn __init__(out self: Origin[False], other: Origin[_]):
+    fn __init__(out self: ImmutOrigin, other: Origin[_]):
         """Allow converting an mutable origin to an immutable one.
 
         Args:
