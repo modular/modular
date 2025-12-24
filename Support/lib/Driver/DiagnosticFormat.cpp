@@ -90,8 +90,12 @@ static Diagnostic toJSONDiagnostic(const llvm::SMDiagnostic &diag) {
   // Otherwise, collect information about the file and source location of the
   // diagnostic.
   SourceDiagnostic locDiag{
-      diag.getFilename().str(), diag.getLineContents().str(),
-      DiagnosticLocation{diag.getLineNo(), diag.getColumnNo()}};
+      diag.getFilename().str(),
+      diag.getLineContents().str(),
+      DiagnosticLocation{diag.getLineNo(), diag.getColumnNo()},
+      {},
+      {},
+  };
   locDiag.ranges.reserve(diag.getRanges().size());
   for (const auto &range : diag.getRanges())
     locDiag.ranges.push_back(DiagnosticRange{range.first, range.second});

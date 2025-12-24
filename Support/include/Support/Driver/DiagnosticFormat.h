@@ -88,10 +88,10 @@ struct SourceDiagnostic {
   DiagnosticLocation location;
   /// Zero or more ranges of text that are related to the diagnostic. These all
   /// appear on the same line as the diagnostic itself.
-  std::vector<DiagnosticRange> ranges = {};
+  std::vector<DiagnosticRange> ranges;
   /// Zero or more fix-it suggestions that, when applied, address the problem
   /// raised by the diagnostic.
-  std::vector<FixIt> fixIts = {};
+  std::vector<FixIt> fixIts;
 };
 
 /// Serializes a source location diagnostic as a JSON object.

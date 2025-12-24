@@ -2501,7 +2501,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     RValue condI1RVal = emitter.emitExprI1(condExp, EC_BoolCondition);
     if (!condI1RVal)
       return {failure(), {}};
-    std::optional<bool> knownConditionForWarning = {};
+    std::optional<bool> knownConditionForWarning;
     if (PValue condI1PVal = condI1RVal.getIfPValue();
         IntegerAttr asIntAttr =
             sugarDynCastIfPresent<IntegerAttr>(condI1PVal.get())) {
@@ -2516,7 +2516,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     HLCF::ElifYieldOp::create(builder, loc, condRVal,
                               /*no extra values*/ ValueRange());
 
-    std::optional<DeadCodeInfo> deadCodeInfo = {};
+    std::optional<DeadCodeInfo> deadCodeInfo;
     if (knownConditionForWarning.has_value()) {
       deadCodeInfo = {knownConditionForWarning.value(),
                       condExp->getLocation(emitter), indexOfCondition};
