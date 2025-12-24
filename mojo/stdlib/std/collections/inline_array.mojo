@@ -60,10 +60,15 @@ fn _inline_array_construction_checks[size: Int]():
     ), "number of elements in `InlineArray` must be >= 0"
 
 
-struct InlineArray[
-    ElementType: Copyable,
-    size: Int,
-](Defaultable, DevicePassable, ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
+struct InlineArray[ElementType: Copyable, size: Int,](
+    Defaultable,
+    DevicePassable,
+    ImplicitlyCopyable,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
+):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
@@ -637,7 +642,7 @@ struct InlineArray[
         _constrained_conforms_to[
             conforms_to(Self.ElementType, Representable),
             Parent=Self,
-            Element=Self.ElementType,
+            Element = Self.ElementType,
             ParentConformsTo="Stringable",
             ElementConformsTo="Representable",
         ]()
