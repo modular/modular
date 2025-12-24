@@ -2485,6 +2485,18 @@ struct BuiltinFunctionFolder {
   // Lookup a pre-bound value and check for validity.  This emits an error and
   // returns null if something goes wrong.
   TypedAttr findValue(Value v) {
+    // RebindOp isn't tracked, just map it here.
+    if (auto rebind = v.getDefiningOp<RebindOp>()) {
+      auto result = findValue(rebind.getInput());
+      if (!result)
+        return {};
+      auto destTy = evaluator.getReboundType(rebind.getType());
+      // FIXME(OriginDepType) Origins shouldn't be dynamic values.
+      if (isa<OriginType>(destTy))
+        return OriginMutCastAttr::get(result, destTy);
+      return ParamOperatorAttr::getRebind(result, destTy);
+    }
+
     auto result = boundValues[v];
     if (!result)
       emitError(v.getLoc()) << "could not resolve operand value";
@@ -2496,6 +2508,84 @@ struct BuiltinFunctionFolder {
            "incorrect fold");
     assert(!boundValues[v] && "value already has a bound value");
     boundValues[v] = attr;
+  }
+
+  // Load and store operations for VarDecls are limited, but have limited
+  // support for field sensitivity and rebinds (due to sugar).
+  TypedAttr getLoadedValue(Value srcRef) {
+    // If this is a direct reference to a vardecl, return it.
+    auto it = varDeclSoFar.find(srcRef);
+    if (it != varDeclSoFar.end())
+      return it->second;
+
+    // If this is a rebind, it is just adjusting sugar.  Load the base and
+    // rebind the result.
+    if (auto rebind = srcRef.getDefiningOp<RebindOp>()) {
+      auto base = getLoadedValue(rebind.getInput());
+      if (!base)
+        return {};
+      ASTType actualType = evaluator.getReboundType(rebind.getType());
+      actualType = actualType.getReferenceElementType();
+      return ParamOperatorAttr::getRebind(base, actualType);
+    }
+
+    if (auto ger = srcRef.getDefiningOp<RefStructGEROp>()) {
+      auto base = getLoadedValue(ger.getContainer());
+      if (!base)
+        return {};
+      ASTType actualType = evaluator.getReboundType(ger.getType());
+      actualType = actualType.getReferenceElementType();
+      return LIT::StructExtractAttr::get(base, ger.getFieldAttr(), actualType);
+    }
+
+    // Otherwise fail.
+    return {};
+  }
+
+  LogicalResult performStore(TypedAttr value, Value destRef) {
+    // If this is a direct store to a variable, update it.
+    auto it = varDeclSoFar.find(destRef);
+    if (it != varDeclSoFar.end()) {
+      it->second = value;
+      return success();
+    }
+
+    // If this is a rebind, it is just adjusting sugar.
+    if (auto rebind = destRef.getDefiningOp<RebindOp>()) {
+      ASTType srcTy = evaluator.getReboundType(rebind.getInput().getType());
+      srcTy = srcTy.getReferenceElementType();
+      return performStore(ParamOperatorAttr::getRebind(value, srcTy),
+                          rebind.getInput());
+    }
+
+    // To store to a subfield, we do a load of the entire value, update the
+    // field, then store the whole value.
+    if (auto ger = destRef.getDefiningOp<RefStructGEROp>()) {
+      auto whole = getLoadedValue(ger.getContainer());
+      if (!whole)
+        return failure();
+
+      // We need the struct decl to get the fields.
+      auto structType = cast<LIT::StructType>(whole.getType());
+      auto structDecl = ASTType(structType).getDecl(shared);
+      auto structOp = cast<StructDeclOp>(structDecl->getIfOperation());
+
+      // Rebuild the struct with the new value in the field.
+      SmallVector<std::tuple<StringAttr, TypedAttr>> fields;
+      for (auto field : structOp.getFieldDecls()) {
+        // Use StructExtractAttr::get to compute the adjusted field type
+        // (substituting in parameters etc) even for when we overwrite it.
+        TypedAttr fieldValue;
+        if (field.getNameAttr() == ger.getFieldAttr())
+          fieldValue = value;
+        else
+          fieldValue = LIT::StructExtractAttr::get(whole, field);
+        fields.push_back({field.getNameAttr(), fieldValue});
+      }
+      whole = LITStructAttr::get(fields, structType);
+      return performStore(whole, ger.getContainer());
+    }
+    return failure();
   }
 
   /// Process the following operation, doing one of three things:
@@ -2613,12 +2703,12 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       return POP::DTypeFromUI8Attr::get(value);
 
   if (auto castOp = dyn_cast<POP::CastFromBuiltinOp>(op))
-    if (auto op = findValue(castOp.getOperand()))
-      return POP::CastFromBuiltinAttr::get(op, castOp.getType());
+    if (auto input = findValue(castOp.getOperand()))
+      return POP::CastFromBuiltinAttr::get(input, castOp.getType());
 
   if (auto castOp = dyn_cast<POP::CastToBuiltinOp>(op))
-    if (auto op = findValue(castOp.getOperand()))
-      return POP::CastToBuiltinAttr::get(op, castOp.getType());
+    if (auto input = findValue(castOp.getOperand()))
+      return POP::CastToBuiltinAttr::get(input, castOp.getType());
 
   if (auto selectOp = dyn_cast<POP::SelectOp>(op))
     return foldSelectOp(selectOp);
@@ -2750,16 +2840,6 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           POC::PtrBitcast, src, evaluator.getReboundType(bitcast.getType()));
   }
 
-  if (auto rebind = dyn_cast<RebindOp>(op)) {
-    if (auto src = findValue(rebind.getInput())) {
-      auto destTy = evaluator.getReboundType(rebind.getType());
-      // FIXME(OriginDepType) Origins shouldn't be dynamic values.
-      if (isa<OriginType>(destTy))
-        return OriginMutCastAttr::get(src, destTy);
-      return ParamOperatorAttr::getRebind(src, destTy);
-    }
-  }
-
   // FIXME(StringLiteral): Remove this operation.
   if (auto strSize = dyn_cast<POP::StringSizeOp>(op)) {
     if (auto str = findValue(strSize.getStr()))
@@ -2829,51 +2909,16 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (isa<AliasDeclOp>(op))
     return TypedAttr(); // handled by user.
 
-  if (auto load = dyn_cast<LoadConsumeOp>(op))
-    return varDeclSoFar[load.getRef()];
+  if (isa<LoadConsumeOp, RefLoadOp>(op))
+    return getLoadedValue(op.getOperand(0));
 
-  if (auto load = dyn_cast<RefLoadOp>(op))
-    return varDeclSoFar[load.getRef()];
-
-  if (auto ger = dyn_cast<RefStructGEROp>(op))
+  if (isa<RefStructGEROp, RebindOp>(op))
     return TypedAttr(); // handled by user.
 
   if (auto store = dyn_cast<RefStoreOp>(op)) {
     TypedAttr value = findValue(store.getValue());
-    auto ger = store.getDest().getDefiningOp<RefStructGEROp>();
-    if (value && varDeclSoFar[store.getDest()]) {
-      // Store of the whole value.
-      varDeclSoFar[store.getDest()] = value;
+    if (value && succeeded(performStore(value, store.getDest())))
       return TypedAttr();
-    }
-    if (value && ger && varDeclSoFar[ger.getContainer()]) {
-      // Store to a subfield.
-      auto gerBase = ger.getContainer();
-      auto &varEntry = varDeclSoFar[gerBase];
-      auto structType = cast<LIT::StructType>(
-          evaluator.getReboundType(gerBase.getType().getElementType()));
-
-      // These asserting casts are checked when the VarDecl is processed.
-      auto structDecl = ASTType(structType).getDecl(shared);
-      auto structOp =
-          structDecl ? cast_or_null<StructDeclOp>(structDecl->getIfOperation())
-                     : nullptr;
-
-      // Form the new struct using all the same fields as before but with the
-      // new one replaced.
-      SmallVector<std::tuple<StringAttr, TypedAttr>> fields;
-      for (auto field : structOp.getFieldDecls()) {
-        // Use StructExtractAttr::get to compute the adjusted field type
-        // (substituting in parameters etc) even for when we overwrite it.
-        TypedAttr fieldValue = LIT::StructExtractAttr::get(varEntry, field);
-        if (field.getNameAttr() == ger.getFieldAttr())
-          fieldValue =
-              ParamOperatorAttr::getRebind(value, fieldValue.getType());
-        fields.push_back({field.getNameAttr(), fieldValue});
-      }
-      varEntry = LITStructAttr::get(fields, structType);
-      return TypedAttr();
-    }
   }
 
   if (auto variant = dyn_cast<VariantCreateOp>(op)) {

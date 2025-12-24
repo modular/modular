@@ -530,3 +530,20 @@ struct DecoratorOrder3:
 @deprecated("DecoratorOrder4")
 struct DecoratorOrder4:
     var a: Int
+
+@register_passable("trivial")
+struct AIBuiltinPair:
+    var a: Int
+    var b: Int
+
+    comptime MyAlias = AIBuiltinPair
+
+    @always_inline("builtin")
+    fn __init__(out self: Self.MyAlias, x: Int, y: Int):
+        self.a = x
+        self.b = y
+
+# CHECK-LABEL: lit.fn @"test_ai_builtin_pair
+fn test_ai_builtin_pair():
+    # CHECK-NEXT: lit.alias.decl *"example{{.*}}!AIBuiltinPair {a: !Int = {1}, b: !Int = {2}}
+    comptime example = AIBuiltinPair(1, 2)
