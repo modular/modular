@@ -622,76 +622,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       printParam(os, operands.back(), diagShared);
       os << ']';
       return;
-    case POC::Xor:
-      // If this is a inverted boolean sugar, handle it.
-      if (op.getType().isSignlessInteger(1) && op.getNumOperands() == 2 &&
-          isa<IntegerAttr>(op.getOperand(1))) {
-        if (auto invertedExpr = dyn_cast<ParamOperatorAttr>(op.getOperand(0))) {
-          if (invertedExpr.getOpcode() == POC::EQ)
-            return printOperands(invertedExpr.getOperands(), " != ");
-          if (invertedExpr.getOpcode() == POC::LT)
-            return printOperands(invertedExpr.getOperands(), " >= ");
-          if (invertedExpr.getOpcode() == POC::LE)
-            return printOperands(invertedExpr.getOperands(), " > ");
-        }
-
-        // Otherwise, print as a generic "not".
-        os << "(not ";
-        printParam(os, op.getOperand(0), diagShared);
-        os << ")";
-        return;
-      }
-      [[fallthrough]];
     default:
-      const char *binOp = nullptr;
-      switch (op.getOpcode()) {
-      case POC::Add:
-        binOp = " + ";
-        break;
-      case POC::Mul:
-      case POC::MulNoWrap:
-        binOp = " * ";
-        break;
-      case POC::Div:
-        binOp = " / ";
-        break;
-      case POC::Mod:
-        binOp = " % ";
-        break;
-      case POC::And:
-        binOp = " & ";
-        break;
-      case POC::Or:
-        binOp = " | ";
-        break;
-      case POC::Xor:
-        binOp = " ^ ";
-        break;
-      case POC::Shl:
-        binOp = " << ";
-        break;
-      case POC::Shr:
-        binOp = " >> ";
-        break;
-      case POC::EQ:
-        binOp = " == ";
-        break;
-      case POC::LT:
-        binOp = " < ";
-        break;
-      case POC::LE:
-        binOp = " <= ";
-        break;
-      case POC::In:
-        binOp = " in ";
-        break;
-      default:
-        break;
-      }
-      // Simple things that show up in integer param expressions.
-      if (binOp)
-        return printOperands(operands, /*separator=*/binOp);
-
       // Otherwise, fall back to printing as a parenthesized form like the KGEN
       // printer does.  We don't fall back to the kgen printer because it will
       // print nested subexpressions as KGEN and lose all sugar.
