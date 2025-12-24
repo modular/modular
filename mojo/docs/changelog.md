@@ -167,6 +167,19 @@ what we publish.
   methods, i.e. `fn __exit__(var self)` which can be useful for linear context
   managers. This also works with `deinit`.
 
+- Mojo now allows functions that return references to convert to functions that
+  return values if the type is implicitly copyable or implicitly convertible to
+  the destination type:
+
+  ```mojo
+  fn fn_returns_ref(x: SomeType) -> ref [x.field] Int: ...
+  fn examples():
+      # OK, Int result from fn_returns_ref can be implicitly copied.
+      var f1 : fn (x: SomeType) -> Int = fn_returns_ref
+      # OK, Int result from fn_returns_ref implicitly converts to Float64.
+      var f2 : fn (x: SomeType) -> Float64 = fn_returns_ref
+  ```
+
 ### Language changes
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
@@ -200,6 +213,12 @@ what we publish.
 
   Relatedly, the `UnknownDestructibility` trait is now no longer required, as it
   is equivalent to the new `AnyType` behavior.
+
+- The `__next_ref__` method in for-each loops has been removed.  Now you can
+  implement the `__next__` method of your iterator to return either a value or a
+  reference.  When directly using the collection, Mojo will use the
+  ref-returning variant, but will allow it to conform to `Iterator` for use with
+  generic algorithms (which use a copied value).
 
 ### Library changes
 
@@ -486,6 +505,8 @@ or removed in future releases.
   string literal at start of a function is a doc comment
 - [Issue #4501](https://github.com/modular/modular/issues/4501): Incorrect
   parsing of incomplete assignment
+- [Issue #4765](https://github.com/modular/modular/issues/4765): Parser
+  accepts pointless var ref a = n binding form
 - [Issue #5578](https://github.com/modular/modular/issues/5578): ownership
   overloading not working when used with `ref`.
 - [Issue #5137](https://github.com/modular/modular/issues/5137): Tail call

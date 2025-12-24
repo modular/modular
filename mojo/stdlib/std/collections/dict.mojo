@@ -146,11 +146,7 @@ struct _DictEntryIter[
         return self.copy()
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Self.Element:
-        return self.__next_ref__().copy()
-
-    @always_inline
-    fn __next_ref__(
+    fn __next__(
         mut self,
     ) raises StopIteration -> ref [self.src[]._entries[0].value()] Self.Element:
         if self.seen >= len(self.src[]):
@@ -262,14 +258,10 @@ struct _DictKeyIter[
         return self.copy()
 
     @always_inline
-    fn __next_ref__(
+    fn __next__(
         mut self,
-    ) raises StopIteration -> ref [self.iter.__next_ref__().key] Self.Element:
-        return self.iter.__next_ref__().key
-
-    @always_inline
-    fn __next__(mut self) raises StopIteration -> Self.Element:
-        return self.__next_ref__().copy()
+    ) raises StopIteration -> ref [self.iter.__next__().key] Self.Element:
+        return self.iter.__next__().key
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -317,19 +309,15 @@ struct _DictValueIter[
             )
         )
 
-    fn __next_ref__(
+    fn __next__(
         mut self,
     ) raises StopIteration -> ref [Self.origin] Self.Element:
-        ref entry_ref = self.iter.__next_ref__()
+        ref entry_ref = self.iter.__next__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
         return UnsafePointer(to=entry_ref.value).unsafe_origin_cast[
             MutOrigin.cast_from[Self.origin]
         ]()[]
-
-    @always_inline
-    fn __next__(mut self) raises StopIteration -> Self.Element:
-        return self.__next_ref__().copy()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:

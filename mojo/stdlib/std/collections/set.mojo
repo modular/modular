@@ -396,7 +396,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         if not self:
             raise "Pop on empty set"
         var iter = self.__iter__()
-        var first = iter.__next_ref__().copy()
+        var first = iter.__next__().copy()
         self.remove(first)
         return first^
 

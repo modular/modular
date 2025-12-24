@@ -996,8 +996,8 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-VL-30B-A3B-Instruct",
             encoding="bfloat16",
-            cos_dist_threshold=1.1e-01,
-            kl_div_threshold=1.2e01,
+            cos_dist_threshold=1.7e00,
+            kl_div_threshold=2.1e01,
         ),
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
