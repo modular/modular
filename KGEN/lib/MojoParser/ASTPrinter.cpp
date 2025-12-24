@@ -803,6 +803,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         typeName = structType.getSymbol().getLeafReference().strref();
 
       if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
+          // TODO(OriginDepTypes): Remove this hack.
           typeName == "Origin") {
         if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
           elt = extract.getStructValue();
@@ -939,6 +940,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   // These are origins but don't need `origin_of(...)` around them.
   if (auto anyOrig = sugarDynCast<AnyOriginAttr>(param)) {
+    // TODO(OriginDepTypes): Remove these.
     if (anyOrig.getType().isMutableKnown(true))
       os << "MutAnyOrigin";
     else if (anyOrig.getType().isMutableKnown(false))
@@ -948,6 +950,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
   if (auto comptimeOrig = sugarDynCast<ComptimeOriginAttr>(param)) {
+    // TODO(OriginDepTypes): Remove these.
     os << "ComptimeOrigin";
     return;
   }
@@ -955,6 +958,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     if (isa<StaticOriginAttr>(originField.getBase())) {
       if (originField.getField().str() == "__constants__" &&
           originField.getType().isMutableKnown(false)) {
+        // TODO(OriginDepTypes): Remove these.
         os << "StaticConstantOrigin";
         return;
       }
@@ -1008,6 +1012,7 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
     if (isa<StaticOriginAttr>(originField.getBase())) {
       if (originField.getField().str() == "__constants__" &&
           originField.getType().isMutableKnown(false)) {
+        // TODO(OriginDepTypes): Remove these.
         os << "StaticConstantOrigin";
         return;
       }
@@ -1043,6 +1048,7 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
+    // TODO(OriginDepTypes): Remove these.
     if (anyOrig.getType().isMutableKnown(true))
       os << "MutAnyOrigin";
     else if (anyOrig.getType().isMutableKnown(false))
