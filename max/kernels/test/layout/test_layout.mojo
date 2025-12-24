@@ -39,7 +39,7 @@ from layout.layout import (
     zipped_divide,
 )
 from math import ceildiv
-from testing import assert_equal
+from testing import assert_equal, assert_raises
 
 from utils import IndexList
 
@@ -885,9 +885,12 @@ def test_iter():
     assert_equal(next(it), Layout(2, 12))
     assert_equal(next(it), Layout(3, 4))
     assert_equal(next(it), Layout(4, 1))
-    assert_equal(it.__has_next__(), False)
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
     var layout2 = Layout()
-    assert_equal(iter(layout2).__has_next__(), False)
+    with assert_raises():
+        var it = iter(layout2)
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_arange_nested_layout():

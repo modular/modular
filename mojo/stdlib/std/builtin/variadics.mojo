@@ -22,7 +22,7 @@ from sys.intrinsics import _type_is_eq_parse_time
 struct Variadic:
     """A namespace for variadic utilities."""
 
-    comptime ValuesOfType[type: UnknownDestructibility] = __mlir_type[
+    comptime ValuesOfType[type: AnyType] = __mlir_type[
         `!kgen.variadic<`, type, `>`
     ]
     """Represents a raw variadic sequence of values of the specified type.
@@ -31,7 +31,7 @@ struct Variadic:
         type: The type of values in the variadic sequence.
     """
 
-    comptime TypesOfTrait[T: type_of(UnknownDestructibility)] = __mlir_type[
+    comptime TypesOfTrait[T: type_of(AnyType)] = __mlir_type[
         `!kgen.variadic<`, T, `>`
     ]
     """Represents a raw variadic sequence of types that satisfy the specified trait.
@@ -42,7 +42,7 @@ struct Variadic:
 
     @staticmethod
     @always_inline("builtin")
-    fn size[T: UnknownDestructibility](seq: Self.ValuesOfType[T]) -> Int:
+    fn size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
         """Returns the length of a variadic sequence.
 
         Parameters:
@@ -58,9 +58,7 @@ struct Variadic:
 
     @staticmethod
     @always_inline("builtin")
-    fn size[
-        T: type_of(UnknownDestructibility)
-    ](seq: Self.TypesOfTrait[T]) -> Int:
+    fn size[T: type_of(AnyType)](seq: Self.TypesOfTrait[T]) -> Int:
         """Returns the length of a variadic sequence.
 
         Parameters:
@@ -191,7 +189,7 @@ struct Variadic:
         Reducer = _MapTypeToTypeReducer[From, To, Mapper],
     ]
     """Map a variadic of types to a new variadic of types using a mapper.
-    
+
     Returns a new variadic of types resulting from applying `Mapper[T]` to each
     type in the input variadic.
 
@@ -202,7 +200,7 @@ struct Variadic:
         Mapper: A generator that maps a type to another type. The generator type is `[T: From] -> To`.
 
     Examples:
-    
+
     ```mojo
     from std.builtin.variadics import Variadic
     from testing import *
@@ -331,12 +329,12 @@ struct _VariadicListIter[type: AnyTrivialRegType](
     var src: VariadicList[Self.type]
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.index < len(self.src)
-
-    fn __next__(mut self) -> Self.type:
-        self.index += 1
-        return self.src[self.index - 1]
+    fn __next__(mut self) raises StopIteration -> Self.type:
+        var index = self.index
+        if index >= len(self.src):
+            raise StopIteration()
+        self.index = index + 1
+        return self.src[index]
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
@@ -501,15 +499,15 @@ struct _VariadicListMemIter[
         self.src = Pointer(to=list)
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.index < len(self.src[])
-
-    fn __next_ref__(
+    fn __next__(
         mut self,
-    ) -> ref [Self.elt_origin._mlir_origin] Self.elt_type:
-        self.index += 1
+    ) raises StopIteration -> ref [Self.elt_origin._mlir_origin] Self.elt_type:
+        var index = self.index
+        if index >= len(self.src[]):
+            raise StopIteration()
+        self.index = index + 1
         return rebind[Self.variadic_list_type.reference_type](
-            Pointer(to=self.src[][self.index - 1])
+            Pointer(to=self.src[][index])
         )[]
 
 
@@ -663,16 +661,13 @@ struct VariadicListMem[
 # ===-----------------------------------------------------------------------===#
 
 
-comptime _AnyTypeMetaType = type_of(AnyType)
-
-
 @register_passable
 struct VariadicPack[
     elt_is_mutable: Bool,
     //,
     is_owned: Bool,
     origin: Origin[elt_is_mutable],
-    element_trait: type_of(UnknownDestructibility),
+    element_trait: type_of(AnyType),
     *element_types: element_trait,
 ](Sized):
     """A utility class to access heterogeneous variadic function arguments.

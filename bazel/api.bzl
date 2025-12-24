@@ -26,7 +26,9 @@ modular_cc_library = _cc_library
 modular_multi_py_version_test = _modular_multi_py_version_test
 modular_py_binary = _modular_py_binary
 modular_py_library = _modular_py_library
+modular_py_test = _modular_py_test
 modular_py_venv = _modular_py_venv
+modular_run_binary_test = _modular_run_binary_test
 modular_versioned_expand_template = _modular_versioned_expand_template
 mojo_binary = _mojo_binary
 mojo_library = _mojo_library
@@ -47,14 +49,6 @@ def modular_cc_binary(deps = [], **kwargs):
         deps = deps,
         **kwargs
     )
-
-def modular_py_test(external_noop = False, **kwargs):
-    if not external_noop:
-        _modular_py_test(**kwargs)
-
-def modular_run_binary_test(external_noop = False, **kwargs):
-    if not external_noop:
-        _modular_run_binary_test(**kwargs)
 
 def modular_generate_stubfiles(name, pyi_srcs, deps = [], **_kwargs):
     modular_py_library(

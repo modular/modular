@@ -1087,7 +1087,8 @@ def test_string_codepoints_iter():
     assert_equal(iter.__next__(), Codepoint.ord("a"))
     assert_equal(iter.__next__(), Codepoint.ord("b"))
     assert_equal(iter.__next__(), Codepoint.ord("c"))
-    assert_equal(iter.__has_next__(), False)
+    with assert_raises():
+        _ = iter.__next__()  # raises StopIteration
 
 
 def test_string_char_slices_iter():
@@ -1096,7 +1097,8 @@ def test_string_char_slices_iter():
     assert_true(s0_iter.__next__() == "a")
     assert_true(s0_iter.__next__() == "b")
     assert_true(s0_iter.__next__() == "c")
-    assert_equal(s0_iter.__has_next__(), False)
+    with assert_raises():
+        _ = s0_iter.__next__()  # raises StopIteration
 
     var vs = "123"
 
@@ -1183,7 +1185,6 @@ def test_string_char_slices_iter():
         for v in item.__reversed__():
             concat += v
         assert_equal(rev[item_idx], concat)
-        item_idx += 1
 
 
 def test_format_args():
