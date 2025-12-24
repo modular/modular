@@ -13,12 +13,12 @@
 """Implements the ReadOnly datatype."""
 
 
-@fieldwise_init
 struct ReadOnly[T: Movable & ImplicitlyDestructible]:
     """A wrapper type to provide a runtime read-only value.
 
     `ReadOnly` wraps a value that is initialized at runtime and can't be
-    modified thereafter. It provides an immutable reference to the underlying value.
+    modified thereafter. It provides an immutable reference to the underlying
+    value.
 
     Example:
     ```mojo
@@ -45,11 +45,32 @@ struct ReadOnly[T: Movable & ImplicitlyDestructible]:
     If the value is provided through a default (`read`) argument convention
     `RuntimeConst` might not be needed either.
 
+    Parameters:
+        T: The type of the value being wrapped. Must be `Movable` and
+           `ImplicitlyDestructible`.
     """
 
     var _value: Self.T
+    """The wrapped value."""
+
+    @always_inline
+    fn __init__(out self, var value: Self.T):
+        """Initializes a `ReadOnly` instance with the provided value.
+
+        Args:
+            value: The value to be wrapped as read-only.
+
+        Returns:
+            A new `ReadOnly` instance wrapping the provided value.
+        """
+
+        self._value = value^
 
     @always_inline
     fn __getitem__(self) -> ref [self._value] Self.T:
-        """Get the underlying value as an immutable reference."""
+        """Get the underlying value as an immutable reference.
+
+        Returns:
+            An immutable reference to the underlying value.
+        """
         return self._value
