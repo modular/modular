@@ -152,6 +152,9 @@ struct CodepointSliceIter[
 
         Returns:
             The next character in the string.
+
+        Raises:
+            `StopIteration` if the iterator has been exhausted.
         """
 
         # NOTE: This intentionally check if the length *in bytes* is greater

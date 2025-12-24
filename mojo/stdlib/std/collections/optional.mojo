@@ -267,6 +267,9 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Returns:
             The value contained in the Optional.
+
+        Raises:
+            `StopIteration` if the iterator has been exhausted.
         """
         if not self.__bool__():
             raise StopIteration()
