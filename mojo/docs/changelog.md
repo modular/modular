@@ -142,16 +142,6 @@ what we publish.
   generic functions instantiated with `Never` as their error type) compile into
   the same ABI as functions that don't `raise`.
 
-- The `deinit` argument convention can now be applied to any argument of a
-  struct method, but the argument type still must be of the enclosing struct
-  type.
-
-- Context managers (used in `with` statements) can now define consuming exit
-  methods, i.e. `fn __exit__(var self)` which can be useful for linear context
-  managers. This also works with `deinit`.
-
-### Language changes
-
 - Mojo now allows the use of a `comptime(x)` expression to force a subexpression
   to be evaluated at compile time.  This can help make working with certain
   types more elegant when you can't (or don't want to) materialize them into a
@@ -168,6 +158,29 @@ what we publish.
     # Can now tell Mojo to evaluate the expression at comptime.
     print(comptime(a.size()))
   ```
+
+- The `deinit` argument convention can now be applied to any argument of a
+  struct method, but the argument type still must be of the enclosing struct
+  type.
+
+- Context managers (used in `with` statements) can now define consuming exit
+  methods, i.e. `fn __exit__(var self)` which can be useful for linear context
+  managers. This also works with `deinit`.
+
+- Mojo now allows functions that return references to convert to functions that
+  return values if the type is implicitly copyable or implicitly convertible to
+  the destination type:
+
+  ```mojo
+  fn fn_returns_ref(x: SomeType) -> ref [x.field] Int: ...
+  fn examples():
+      # OK, Int result from fn_returns_ref can be implicitly copied.
+      var f1 : fn (x: SomeType) -> Int = fn_returns_ref
+      # OK, Int result from fn_returns_ref implicitly converts to Float64.
+      var f2 : fn (x: SomeType) -> Float64 = fn_returns_ref
+  ```
+
+### Language changes
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
 
@@ -201,7 +214,18 @@ what we publish.
   Relatedly, the `UnknownDestructibility` trait is now no longer required, as it
   is equivalent to the new `AnyType` behavior.
 
+- The `__next_ref__` method in for-each loops has been removed.  Now you can
+  implement the `__next__` method of your iterator to return either a value or a
+  reference.  When directly using the collection, Mojo will use the
+  ref-returning variant, but will allow it to conform to `Iterator` for use with
+  generic algorithms (which use a copied value).
+
 ### Library changes
+
+- The `Iterator` trait and and for-each loop have removed the `__has_next__`
+  method and now using a `__next__` method that `raises StopIteration`. This
+  follows Python precedent better, is more convenient to implement, and can be a
+  minor performance win in some cases.
 
 - `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
 
@@ -480,6 +504,8 @@ or removed in future releases.
   string literal at start of a function is a doc comment
 - [Issue #4501](https://github.com/modular/modular/issues/4501): Incorrect
   parsing of incomplete assignment
+- [Issue #4765](https://github.com/modular/modular/issues/4765): Parser
+  accepts pointless var ref a = n binding form
 - [Issue #5578](https://github.com/modular/modular/issues/5578): ownership
   overloading not working when used with `ref`.
 - [Issue #5137](https://github.com/modular/modular/issues/5137): Tail call

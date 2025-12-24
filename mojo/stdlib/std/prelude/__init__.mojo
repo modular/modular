@@ -134,7 +134,16 @@ from builtin.value import (
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from builtin.read_only import ReadOnly
 from documentation import doc_private
-from iter import Iterable, Iterator, enumerate, iter, map, next, zip
+from iter import (
+    Iterable,
+    Iterator,
+    StopIteration,
+    enumerate,
+    iter,
+    map,
+    next,
+    zip,
+)
 from memory import (
     alloc,
     AddressSpace,

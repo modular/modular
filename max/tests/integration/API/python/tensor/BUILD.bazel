@@ -15,6 +15,7 @@ modular_py_test(
         "auto",
     ],
     imports = ["."],
+    tags = ["resources:memory:50000"],  # 50 GB
     target_compatible_with = select({
         # Takes too long, this is mostly just testing plumbing into other code so low value.
         "//:asan": ["@platforms//:incompatible"],

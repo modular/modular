@@ -25,7 +25,10 @@ modular_py_test(
         "//max:tensor",
         "@mojo//:std",
     ],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "resources:memory:35000",  # 35 GB
+    ],
     target_compatible_with = select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

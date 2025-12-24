@@ -16,7 +16,13 @@ from layout._mixed_layout_tensor import MixedLayoutTensor, MixedLayoutTensorIter
 from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from layout.int_tuple import IntTuple
 from math import ceildiv
-from testing import TestSuite, assert_equal, assert_false, assert_true
+from testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_true,
+    assert_raises,
+)
 
 
 def main():
@@ -110,28 +116,26 @@ def test_layout_tensor_iterator():
     assert_equal(tile[(Idx(1), Idx(0))], 2)
     assert_equal(tile[(Idx(1), Idx(1))], 3)
     assert_equal(tile.layout.size(), 4)
-    assert_true(iter.__has_next__())
     tile = next(iter)
     assert_equal(tile[(Idx(0), Idx(0))], 4)
     assert_equal(tile[(Idx(0), Idx(1))], 5)
     assert_equal(tile[(Idx(1), Idx(0))], 6)
     assert_equal(tile[(Idx(1), Idx(1))], 7)
     assert_equal(tile.layout.size(), 4)
-    assert_true(iter.__has_next__())
     tile = next(iter)
     assert_equal(tile[(Idx(0), Idx(0))], 8)
     assert_equal(tile[(Idx(0), Idx(1))], 9)
     assert_equal(tile[(Idx(1), Idx(0))], 10)
     assert_equal(tile[(Idx(1), Idx(1))], 11)
     assert_equal(tile.layout.size(), 4)
-    assert_true(iter.__has_next__())
     tile = next(iter)
     assert_equal(tile[(Idx(0), Idx(0))], 12)
     assert_equal(tile[(Idx(0), Idx(1))], 13)
     assert_equal(tile[(Idx(1), Idx(0))], 14)
     assert_equal(tile[(Idx(1), Idx(1))], 15)
     assert_equal(tile.layout.size(), 4)
-    assert_false(iter.__has_next__())
+    with assert_raises():
+        _ = next(iter)  # raises StopIteration
 
 
 def test_fill():
