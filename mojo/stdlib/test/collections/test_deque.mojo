@@ -1129,6 +1129,13 @@ def test_write_to():
 
     assert_equal(string_output, "Deque('hello', 'world')")
 
+    # Test empty deque
+    var empty_deque = Deque[Int]()
+    var empty_output = String()
+    empty_deque.write_to(empty_output)
+
+    assert_equal(empty_output, "Deque()")
+
 
 # ===-------------------------------------------------------------------===#
 # main
