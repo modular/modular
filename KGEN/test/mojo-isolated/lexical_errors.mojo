@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s
+# RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 ##===----------------------------------------------------------------------===##
 # Lexical Issues
