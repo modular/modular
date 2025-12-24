@@ -37,13 +37,7 @@ struct Origin[*, mut: Bool]:
 
     var _mlir_origin: Self._mlir_type
 
-    comptime cast_from[o: Origin] = __mlir_attr[
-        `#lit.origin.mutcast<`,
-        o._mlir_origin,
-        `> : !lit.origin<`,
-        Self.mut._mlir_value,
-        `>`,
-    ]
+    comptime external = Self(unsafe_cast=origin_of())
 
     @always_inline("builtin")
     @implicit
@@ -56,13 +50,23 @@ struct Origin[*, mut: Bool]:
 
     @implicit
     @always_inline("builtin")
-    fn __init__(out self: Origin[mut=False], other: Origin[mut=True]):
+    fn __init__(out self: ImmutOrigin, other: Origin):
         """Allow converting an mutable origin to an immutable one.
 
         Args:
             other: The mutable origin to convert.
         """
         self._mlir_origin = other._mlir_origin
+
+    @always_inline("builtin")
+    fn __init__(out self, *, unsafe_cast: Origin):
+        """Allow converting an mutable origin to an immutable one.
+
+        Args:
+            other: The mutable origin to convert.
+        """
+        # TODO: Should use lit.origin.mutcast in the param domain.
+        self._mlir_origin = rebind[Self._mlir_type](unsafe_cast._mlir_origin)
 
 
 struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]]:
@@ -888,9 +892,9 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[mut = Self.elt_is_mutable].cast_from[
-            origin_of(Self.origin, self)
-        ]
+        Origin[mut = Self.elt_is_mutable](
+            unsafe_cast=origin_of(Self.origin, self)
+        )
     ] Self.element_type:
         while True:
             pass
@@ -1144,7 +1148,7 @@ struct UnsafePointer[
     fn get_unique_item_ref[
         self_origin: ImmutOrigin
     ](ref [self_origin]self, offset: Int = 0) -> ref [
-        MutOrigin.cast_from[_lit_indirect_origin[self_origin].result],
+        MutOrigin(unsafe_cast=_lit_indirect_origin[self_origin].result),
         Self.address_space,
     ] Self.type:
         while __mlir_attr.true:
@@ -1276,7 +1280,7 @@ struct Optional[T: ImplicitlyCopyable]:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn rebind[
     src_type: AnyTrivialRegType,
     //,
