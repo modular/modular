@@ -36,7 +36,7 @@ using namespace M::KGEN::LIT;
 
 /// This helper function emits a call to VariadicPack(refPackValue) and returns
 /// the result value.  'variadicPackType' is the fully bound VariadicPack type
-/// per the function signature.
+/// per the function signature - the callee's view of the type, not the callers.
 static CValue
 emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
                             const ExprNode *expr, IREmitter &emitter,
@@ -55,50 +55,22 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
   // Build the !lit.ref.pack or #lit.ref.pack value with the adjusted origin.
   CValue refPackValue = refPackBuilder(packType);
 
-  // Emit a VariadicPack constructor call taking the #lit.ref.pack and a
-  // bool indicating whether the argument is owned.
-  CallOperands operands;
-  operands.add({refPackValue, expr});
+  auto unboundVariadicPackType =
+      variadicPackType.getWithoutParameters(emitter.shared);
 
-  ValueDest packDest(ExprContext::EC_PackArgument);
-
-  auto variadicPackDecl = variadicPackType.getDecl(emitter.shared);
-  assert(variadicPackDecl && "Missing VariadicPack declaration");
-  auto variadicPackStructDecl =
-      cast<StructDeclOp>(variadicPackDecl->getIfOperation());
-  SmallVector<TypedAttr> bindings(
-      cast<LIT::StructType>(variadicPackType).getParamValues());
-  // NOTE: `bindings[0]` and `bindings[2]` are expected to be the Mojo `Bool`
-  // type, and `bindings[1]` is an Origin.
-  assert(bindings.size() == 5 &&
-         sugarIsa<LIT::StructType>(bindings[0].getType()) &&
-         sugarIsa<LIT::StructType>(bindings[1].getType()) &&
-         sugarIsa<LIT::StructType>(bindings[2].getType()) &&
-         sugarIsa<AnyTraitType>(bindings[3].getType()) &&
-         sugarIsa<VariadicType>(bindings[4].getType()) &&
-         "Not a VariadicPack struct?");
-
-  // Construct the pack type without parameters so we re-infer the origin which
-  // is different on the caller side (the union of the argument origins) than
-  // the declared callee side (a parameter).
-  ParserParameterEvaluator evaluator(emitter.shared);
-  for (auto [idx, currBinding] : llvm::enumerate(bindings)) {
-    // Do not clear the `is_owned` parameter since it's not inferrable from the
-    // operands to VariadicPack. It has to be set explicitly based on what
-    // convention was used to construct the pack.
-    Type reboundTp = evaluator.getReboundType(currBinding.getType());
-    if (idx == 4) // Unpack and use element type to match pos_vararg convention.
-      reboundTp = sugarCast<VariadicType>(reboundTp).getElementType();
-    if (idx != 2) // Parameter #2 is the `is_owned` parameter.
-      currBinding = UnboundAttr::get(reboundTp);
-    evaluator.appendIndexBinding(currBinding);
-  }
-  ASTType unboundVariadicPackType =
-      variadicPackStructDecl.bindReference(bindings);
-
-  return emitter.emitConstructorCall(unboundVariadicPackType,
-                                     std::move(operands), expr,
-                                     CallSyntax::kTypeCall, packDest);
+  // Emit "VariadicPack[is_owned=argType.is_owned](refPack)".
+  SyntheticNode origTypeExpr(expr->getLoc(), PValue(variadicPackType));
+  AttributeRefNode isOwned(&origTypeExpr, expr->getLoc(), "is_owned");
+  SyntheticNode unboundTypeExpr(expr->getLoc(),
+                                PValue(unboundVariadicPackType));
+  Operand subscriptOperand(&isOwned, expr->getLoc(), Operand::kKeyword,
+                           StringAttr::get(emitter.getContext(), "is_owned"));
+  SubscriptNode subscript(&unboundTypeExpr, expr->getLoc(), subscriptOperand,
+                          expr->getLoc());
+  SyntheticNode refPackExpr(expr->getLoc(), refPackValue);
+  Operand callOperand(&refPackExpr, expr->getLoc(), Operand::kPositional);
+  CallNode call(&subscript, expr->getLoc(), callOperand, expr->getLoc());
+  return emitter.emitExprCValue(&call, ExprContext::EC_PackArgument);
 }
 
 //===----------------------------------------------------------------------===//
