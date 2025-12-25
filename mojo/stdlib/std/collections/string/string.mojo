@@ -377,7 +377,7 @@ struct String(
         *Ts: Writable,
     ](
         out self,
-        args: VariadicPack[_, _, Writable, *Ts],
+        args: VariadicPack[_, Writable, *Ts],
         sep: StaticString = "",
         end: StaticString = "",
     ):

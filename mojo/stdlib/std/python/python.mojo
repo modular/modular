@@ -461,7 +461,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     fn _list[
         *Ts: ConvertibleToPython & Copyable
     ](
-        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
+        values: VariadicPack[True, ConvertibleToPython & Copyable, *Ts]
     ) raises -> PythonObject:
         """Initialize the object from a list literal.
 
@@ -508,7 +508,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     fn _tuple[
         *Ts: ConvertibleToPython & Copyable
     ](
-        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
+        values: VariadicPack[True, ConvertibleToPython & Copyable, *Ts]
     ) raises -> PythonObject:
         """Initialize the object from a tuple literal.
 

@@ -118,7 +118,7 @@ struct _FormatUtils:
     ](
         mut writer: Some[Writer],
         compiled: _PrecompiledEntries[*Ts],
-        args: VariadicPack[_, _, _CurlyEntryFormattable, *Ts],
+        args: VariadicPack[_, _CurlyEntryFormattable, *Ts],
     ):
         """Format the arguments using the given format string and precompiled entries.
         """

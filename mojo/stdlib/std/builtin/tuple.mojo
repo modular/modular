@@ -68,7 +68,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
     fn __init__(
         out self,
         *,
-        var storage: VariadicPack[_, _, Movable, *Self.element_types],
+        var storage: VariadicPack[_, Movable, *Self.element_types],
     ):
         """Construct the tuple from a low-level internal representation.
 

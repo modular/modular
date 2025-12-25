@@ -1633,7 +1633,7 @@ struct DeviceStream(ImplicitlyCopyable):
     ](
         self,
         f: DeviceFunction,
-        args: VariadicPack[_, _, AnyType, *Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -1661,7 +1661,7 @@ struct DeviceStream(ImplicitlyCopyable):
     ](
         self,
         f: DeviceFunction,
-        args: VariadicPack[_, _, DevicePassable, *Ts],
+        args: VariadicPack[_, DevicePassable, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -2225,7 +2225,7 @@ struct DeviceFunction[
     ](
         self,
         ctx: DeviceContext,
-        args: VariadicPack[_, _, AnyType, *Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -2397,7 +2397,7 @@ struct DeviceFunction[
     ](
         self,
         stream: DeviceStream,
-        args: VariadicPack[_, _, AnyType, *Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -2598,7 +2598,7 @@ struct DeviceFunction[
     ](
         self,
         stream: DeviceStream,
-        args: VariadicPack[_, _, DevicePassable, *Ts],
+        args: VariadicPack[_, DevicePassable, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -2720,7 +2720,7 @@ struct DeviceFunction[
     ](
         self,
         ctx: DeviceContext,
-        args: VariadicPack[_, _, DevicePassable, *Ts],
+        args: VariadicPack[_, DevicePassable, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -3157,7 +3157,7 @@ struct DeviceExternalFunction:
     ](
         self,
         ctx: DeviceContext,
-        args: VariadicPack[_, _, AnyType, *Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -5075,7 +5075,7 @@ struct DeviceContext(ImplicitlyCopyable):
     ](
         self,
         f: DeviceFunction,
-        args: VariadicPack[_, _, AnyType, *Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -5103,7 +5103,7 @@ struct DeviceContext(ImplicitlyCopyable):
     ](
         self,
         f: DeviceFunction,
-        args: VariadicPack[_, _, DevicePassable, *Ts],
+        args: VariadicPack[_, DevicePassable, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -5131,7 +5131,7 @@ struct DeviceContext(ImplicitlyCopyable):
     ](
         self,
         f: DeviceExternalFunction,
-        args: VariadicPack[_, _, AnyType, *Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,

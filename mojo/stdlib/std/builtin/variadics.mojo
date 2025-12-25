@@ -479,7 +479,10 @@ struct _VariadicListMemIter[
     """
 
     comptime variadic_list_type = VariadicListMem[
-        Self.elt_type, Self.elt_origin._mlir_origin, Self.is_owned
+        elt_is_mutable = Self.elt_is_mutable,
+        origin = Self.elt_origin,
+        Self.elt_type,
+        Self.is_owned,
     ]
 
     comptime Element = Self.elt_type
@@ -513,9 +516,9 @@ struct _VariadicListMemIter[
 
 struct VariadicListMem[
     elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable],
     //,
     element_type: ImplicitlyDestructible,
-    origin: Origin[mut=elt_is_mutable],
     is_owned: Bool,
 ](Sized):
     """A utility class to access variadic function arguments of memory-only
@@ -525,8 +528,8 @@ struct VariadicListMem[
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
                         mut or owned argument.
-        element_type: The type of the elements in the list.
         origin: The origin of the underlying elements.
+        element_type: The type of the elements in the list.
         is_owned: Whether the elements are owned by the list because they are
                   passed as an 'var' argument.
     """
@@ -666,9 +669,9 @@ struct VariadicListMem[
 @register_passable
 struct VariadicPack[
     elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable],
     //,
     is_owned: Bool,
-    origin: Origin[mut=elt_is_mutable],
     element_trait: type_of(AnyType),
     *element_types: element_trait,
 ](Sized):
@@ -717,9 +720,9 @@ struct VariadicPack[
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
                         mut or owned argument pack.
+        origin: The origin of the underlying elements.
         is_owned: Whether the elements are owned by the pack. If so, the pack
                   will release the elements when it is destroyed.
-        origin: The origin of the underlying elements.
         element_trait: The trait that each element of the pack conforms to.
         element_types: The list of types held by the argument pack.
     """
