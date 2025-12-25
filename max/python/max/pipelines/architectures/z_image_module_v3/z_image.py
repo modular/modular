@@ -18,6 +18,7 @@ from dataclasses import asdict
 
 from max.driver import Device
 from max.nn.module_v3 import Module
+from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 
 from .model_config import ZImageConfig
 from .nn.autoencoder_kl import AutoencoderKL
@@ -25,13 +26,14 @@ from .nn.transformer_z_image import ZImageTransformer2DModel
 from .scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
 )
-from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 
 
 class ZImage(Module):
     """The overall interface to the ZImage model."""
 
-    def __init__(self, config: ZImageConfig, device: Device | None = None) -> None:
+    def __init__(
+        self, config: ZImageConfig, device: Device | None = None
+    ) -> None:
         self.config = config
         self.device = device
         self.scheduler = self.build_scheduler()
@@ -64,7 +66,6 @@ class ZImage(Module):
         transformer_kwargs = asdict(self.config.transformer_config)
         transformer_kwargs["device"] = self.device
         return ZImageTransformer2DModel(**transformer_kwargs)
-
 
     def __call__(self, *args, **kwargs):
         """This class is not meant to be called directly. Use the component models instead."""

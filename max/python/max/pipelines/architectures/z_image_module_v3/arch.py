@@ -15,6 +15,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.llama3 import weight_adapters
+from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -29,7 +30,6 @@ from .nn.transformer_z_image import ZImageTransformer2DModel
 from .scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
 )
-from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 
 z_image_arch = SupportedArchitecture(
     name="ZImagePipeline",

@@ -15,17 +15,15 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from functools import cached_property
-from typing import Tuple
 
 import max.experimental.functional as F
 import max.nn.module_v3 as nn
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental.tensor import Tensor
-from max.nn.module_v3.sequential import ModuleList
-from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
 from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn.module_v3.sequential import ModuleList
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 from .layers import (
@@ -34,9 +32,6 @@ from .layers import (
     RMSNorm,
     SiLU,
     Transformer2DModelOutput,
-    create_attention_mask,
-    masked_scatter,
-    pad_sequence,
 )
 
 ADALN_EMBED_DIM = 256
@@ -140,14 +135,15 @@ class ZImageSingleStreamAttention(nn.Module):
         key = key.reshape((B, S, self.heads, self.head_dim))
         value = value.reshape((B, S, self.heads, self.head_dim))
 
-
         # Apply norms
         query = self.norm_q(query)
         key = self.norm_k(key)
 
         # Apply RoPE
         # Note: This implementation avoids list(tensor.shape) which causes sync issues
-        def apply_rotary_emb(x_in: Tensor, freqs_cis: Tensor, b: int, s: int, h: int, d: int) -> Tensor:
+        def apply_rotary_emb(
+            x_in: Tensor, freqs_cis: Tensor, b: int, s: int, h: int, d: int
+        ) -> Tensor:
             # x_in shape: (B, S, H, D)
             # Reshape for complex interpretation: (B, S, H, D) -> (B, S, H, D/2, 2)
             half_d = d // 2
@@ -163,24 +159,26 @@ class ZImageSingleStreamAttention(nn.Module):
             x_out = x_rotated.reshape((b, s, h, d))
             return x_out.cast(x_in.dtype)
 
-
         if freqs_cis is not None:
             # For graph compilation, use fixed batch_size=1 and known heads/head_dim
             # S (sequence length) comes from the reshaped query which has shape (B, S, H, D)
             # We use symbolic S from reshape, but H and D are known Python ints
-            query = apply_rotary_emb(query, freqs_cis, 1, query.shape[1], self.heads, self.head_dim)
-            key = apply_rotary_emb(key, freqs_cis, 1, key.shape[1], self.heads, self.head_dim)
-
+            query = apply_rotary_emb(
+                query, freqs_cis, 1, query.shape[1], self.heads, self.head_dim
+            )
+            key = apply_rotary_emb(
+                key, freqs_cis, 1, key.shape[1], self.heads, self.head_dim
+            )
 
         # Compute joint attention
         # Note: For batch size 1 testing, we skip valid_length.
         # TODO: Add valid_length support for batched inference with padding.
         attn_out = flash_attention_gpu(
-           query,
-           key,
-           value,
-           MHAMaskVariant.NULL_MASK,
-           self.scale,
+            query,
+            key,
+            value,
+            MHAMaskVariant.NULL_MASK,
+            self.scale,
         )
 
         # attn_out: (B, S, H, D) -> (B, S, H*D)
@@ -365,9 +363,6 @@ class RopeEmbedder(nn.Module):
         return F.concat([result_0, result_1, result_2], axis=1)
 
 
-
-
-
 class ZImageTransformer2DModel(nn.Module):
     def __init__(
         self,
@@ -469,7 +464,9 @@ class ZImageTransformer2DModel(nn.Module):
         self.axes_dims = axes_dims
         self.axes_lens = axes_lens
 
-        self.rope_embedder = RopeEmbedder(rope_theta, axes_dims, axes_lens, device)
+        self.rope_embedder = RopeEmbedder(
+            rope_theta, axes_dims, axes_lens, device
+        )
 
         # Fixed shape parameters for graph compilation (batch_size=1, 1024x1024 output)
         # These avoid int(tensor.shape) during graph tracing
@@ -482,7 +479,7 @@ class ZImageTransformer2DModel(nn.Module):
     def unpatchify(
         self,
         x: list[Tensor],
-        size: list[Tuple],
+        size: list[tuple],
         patch_size: int,
         f_patch_size: int,
     ) -> list[Tensor]:
@@ -531,9 +528,15 @@ class ZImageTransformer2DModel(nn.Module):
         f_start, h_start, w_start = start[0], start[1], start[2]
 
         # Create ranges for each axis
-        f_axis = F.range(f_start, f_start + f_size, dtype=DType.int32, device=device)
-        h_axis = F.range(h_start, h_start + h_size, dtype=DType.int32, device=device)
-        w_axis = F.range(w_start, w_start + w_size, dtype=DType.int32, device=device)
+        f_axis = F.range(
+            f_start, f_start + f_size, dtype=DType.int32, device=device
+        )
+        h_axis = F.range(
+            h_start, h_start + h_size, dtype=DType.int32, device=device
+        )
+        w_axis = F.range(
+            w_start, w_start + w_size, dtype=DType.int32, device=device
+        )
 
         # Reshape for broadcasting: (F, 1, 1), (1, H, 1), (1, 1, W)
         f_grid = f_axis.reshape((f_size, 1, 1))
@@ -548,14 +551,13 @@ class ZImageTransformer2DModel(nn.Module):
         # Stack along last dimension: (F, H, W, 3)
         return F.stack([f_grid, h_grid, w_grid], axis=-1)
 
-
     def patchify_and_embed(
         self,
         all_image: list[Tensor],
         all_cap_feats: list[Tensor],
         patch_size: int,
         f_patch_size: int,
-    ) -> Tuple[
+    ) -> tuple[
         list[Tensor],
         list[Tensor],
         list[Tensor],
@@ -754,7 +756,6 @@ class ZImageTransformer2DModel(nn.Module):
         x_size = (F_dim, H_dim, W_dim)
         F_tokens, H_tokens, W_tokens = F_dim // pF, H_dim // pH, W_dim // pW
 
-
         # Reshape to patches: (C, F, H, W) -> (F_tokens * H_tokens * W_tokens, pF * pH * pW * C)
         x = x.reshape((C, F_tokens, pF, H_tokens, pH, W_tokens, pW))
         x = x.permute((1, 3, 5, 2, 4, 6, 0)).reshape(
@@ -762,7 +763,6 @@ class ZImageTransformer2DModel(nn.Module):
         )
 
         image_seq_len = F_tokens * H_tokens * W_tokens
-
 
         # Embed image patches
         x = self.all_x_embedder[f"{patch_size}-{f_patch_size}"](x)
@@ -834,11 +834,12 @@ class ZImageTransformer2DModel(nn.Module):
         # The hidden_dim after final layer should be pF * pH * pW * out_channels
         out_channels = self.out_channels
         x = x.reshape((F_tokens, H_tokens, W_tokens, pF, pH, pW, out_channels))
-        x = x.permute((6, 0, 3, 1, 4, 2, 5))  # (out_channels, F_tokens, pF, H_tokens, pH, W_tokens, pW)
+        x = x.permute(
+            (6, 0, 3, 1, 4, 2, 5)
+        )  # (out_channels, F_tokens, pF, H_tokens, pH, W_tokens, pW)
         x = x.reshape((out_channels, F_dim, H_dim, W_dim))
 
         if not return_dict:
             return x
 
         return Transformer2DModelOutput(sample=x)
-

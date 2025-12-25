@@ -535,9 +535,13 @@ class ZImageModel(
         C, F_dim, H_dim, W_dim = 16, 1, 128, 128
         cap_seq_len = 101
 
-        hidden_states_type = TensorType(DType.bfloat16, shape=(C, F_dim, H_dim, W_dim), device=device_ref)
+        hidden_states_type = TensorType(
+            DType.bfloat16, shape=(C, F_dim, H_dim, W_dim), device=device_ref
+        )
         t_type = TensorType(DType.float32, shape=(1,), device=device_ref)
-        cap_feats_type = TensorType(DType.bfloat16, shape=(cap_seq_len, 2560), device=device_ref)
+        cap_feats_type = TensorType(
+            DType.bfloat16, shape=(cap_seq_len, 2560), device=device_ref
+        )
         # compiled_transformer_model = self.model.transformer.compile(
         #     hidden_states_type,
         #     t_type,

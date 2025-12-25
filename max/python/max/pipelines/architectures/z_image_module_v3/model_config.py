@@ -420,6 +420,7 @@ class ZImageConfig(MAXModelConfig, ZImageConfigBase):
         # Use ReturnHiddenStates.SECOND_TO_LAST to get hidden_states[-2]
         # (second-to-last layer) for Z-Image conditioning - matching diffusers behavior
         from max.nn import ReturnHiddenStates
+
         text_encoder_config = Qwen3Config.generate(
             pipeline_config,
             text_encoder_config,
