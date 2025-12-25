@@ -1791,15 +1791,15 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
     SmallVector<TypedAttr> typeParams(4);
     ParserParameterEvaluator evaluator(emitter.shared);
     Type boolType = varListStruct.getSignature().getParamTypes()[0];
-    Type eltType = varListStruct.getSignature().getParamTypes()[1];
-    Type originType = varListStruct.getSignature().getParamTypes()[2];
+    Type originType = varListStruct.getSignature().getParamTypes()[1];
+    Type eltType = varListStruct.getSignature().getParamTypes()[2];
+    SyntheticNode expr(loc);
 
     // The first parameter is the "elt_is_mutable" parameter.
     // Emit the "is_mutable" parameter
     auto makeBoolAttr = [&](bool value) -> PValue {
       auto boolAttr = BoolAttr::get(emitter.getContext(), value);
-      SyntheticNode locMutableExpr(loc);
-      return emitter.emitPValue({boolAttr, &locMutableExpr}, EC_Type, boolType);
+      return emitter.emitPValue({boolAttr, &expr}, EC_Type, boolType);
     };
 
     auto isMut = makeBoolAttr(convention == ArgConvention::OwnedMem ||
@@ -1808,25 +1808,20 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
     evaluator.appendIndexBinding(isMut);
     typeParams[0] = isMut.get();
 
-    SyntheticNode locElExpr(loc);
-    auto eltTypeAttr = emitter.emitPValue(
-        {refType.getElementType(), &locElExpr}, EC_Type, eltType);
-    if (!eltTypeAttr)
-      return {};
-    evaluator.appendIndexBinding(eltTypeAttr);
-    typeParams[1] = eltTypeAttr.get();
-
-    SyntheticNode locOriginExpr(loc);
+    // origin.
     auto reboundOriginType = evaluator.getReboundType(originType);
-    auto origin = emitter.emitPValue({refType.getOrigin(), &locOriginExpr},
-                                     EC_Type, reboundOriginType);
-    evaluator.appendIndexBinding(origin);
-    typeParams[2] = origin.get();
-
-    auto isOwned = makeBoolAttr(convention == ArgConvention::OwnedMem ||
-                                convention == ArgConvention::DeinitMem);
-    evaluator.appendIndexBinding(isOwned);
-    typeParams[3] = isOwned.get();
+    typeParams[1] = emitter.emitPValue({refType.getOrigin(), &expr}, EC_Type,
+                                       reboundOriginType);
+    // element_type.
+    typeParams[2] =
+        emitter.emitPValue({refType.getElementType(), &expr}, EC_Type, eltType);
+    // is_owned.
+    typeParams[3] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
+                                 convention == ArgConvention::DeinitMem);
+    // Check for any emitted errors.
+    for (auto param : typeParams)
+      if (!param)
+        return {};
 
     varListType = varListStruct.bindReference(typeParams);
     assert(varListType && "Failed to bind type params");

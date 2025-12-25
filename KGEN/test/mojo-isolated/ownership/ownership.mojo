@@ -731,7 +731,7 @@ fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
-  # CHECK-SAME: <{{.*}}:!AnyType !MemExample{{.*}}origin<0> = *"mems`"}, :!Bool {:i1 0}>(%mems, %mems_0)
+  # CHECK-SAME: <{{.*}}origin<0> = *"mems`"}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
   pass
 
 # CHECK-LABEL: lit.fn @"call_variadic_mems
@@ -792,7 +792,7 @@ fn variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
-  # CHECK-SAME: <:!Bool {:i1 1}, :!AnyType !MemExample{{.*}}origin<1> = *"mems`"}, :!Bool {:i1 0}>(%mems, %mems_0)
+  # CHECK-SAME: <:!Bool {:i1 1}, {{.*}}origin<1> = *"mems`"}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[IMMREF]], [[ZERO]])

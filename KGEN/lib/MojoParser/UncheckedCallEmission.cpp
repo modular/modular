@@ -68,8 +68,8 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
       cast<StructDeclOp>(variadicPackDecl->getIfOperation());
   SmallVector<TypedAttr> bindings(
       cast<LIT::StructType>(variadicPackType).getParamValues());
-  // NOTE: `bindings[0]` and `bindings[1]` are expected to be the Mojo `Bool`
-  // type, and `bindings[2]` is an Origin.
+  // NOTE: `bindings[0]` and `bindings[2]` are expected to be the Mojo `Bool`
+  // type, and `bindings[1]` is an Origin.
   assert(bindings.size() == 5 &&
          sugarIsa<LIT::StructType>(bindings[0].getType()) &&
          sugarIsa<LIT::StructType>(bindings[1].getType()) &&
@@ -89,7 +89,7 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
     Type reboundTp = evaluator.getReboundType(currBinding.getType());
     if (idx == 4) // Unpack and use element type to match pos_vararg convention.
       reboundTp = sugarCast<VariadicType>(reboundTp).getElementType();
-    if (idx != 1) // Index `1` is the `is_owned` parameter.
+    if (idx != 2) // Parameter #2 is the `is_owned` parameter.
       currBinding = UnboundAttr::get(reboundTp);
     evaluator.appendIndexBinding(currBinding);
   }

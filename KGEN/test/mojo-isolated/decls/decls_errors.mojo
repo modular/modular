@@ -276,7 +276,7 @@ fn badPackCalls(value: Int):
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType]:
-    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, args, AnyType, Ts]'}}
+    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, AnyType, Ts]'}}
     # expected-error @below {{__init__ method must return Self type with 'out' argument}}
     fn __init__(*args: *Self.Ts):
          pass

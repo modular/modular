@@ -238,8 +238,8 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
     // parameter value.
     SmallVector<TypedAttr> elements;
 
-    for (size_t actualArgIndex = numNormalArgs;
-         actualArgIndex < actualArgTypes.size(); ++actualArgIndex) {
+    for (size_t actualArgIndex = numNormalArgs, e = actualArgTypes.size();
+         actualArgIndex < e; ++actualArgIndex) {
       auto actualConv = actual.getArgConvention(actualArgIndex);
       ASTType actualAstType = actualArgTypes[actualArgIndex];
 
@@ -260,11 +260,10 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
       // arguments (see TTSMFS).
       IREmitter emitter(declScope, EC_TypeParamValue);
       SyntheticNode synthNode(declScope.getLoc());
-      CValue actualAstTypeCValue = CValue(actualValueAstType);
       // Now, check if the actual arg can be converted to the expected trait.
       PValue actualAstTypeAsVariadicElTrait =
           emitter.emitMetaTypeToTraitConversion(
-              {actualAstTypeCValue, synthNode}, expectedTraitType);
+              {CValue(actualValueAstType), synthNode}, expectedTraitType);
       if (!actualAstTypeAsVariadicElTrait) {
         return failure();
       }
