@@ -375,10 +375,11 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         This returns the next `Codepoint` encoded in the underlying string, and
         advances the iterator state.
 
-        This function will abort if this iterator has been exhausted.
-
         Returns:
             The next character in the string.
+
+        Raises:
+            StopIteration: If the iterator is exhausted.
         """
         if len(self._slice) <= 0:
             raise StopIteration()

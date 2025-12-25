@@ -170,6 +170,9 @@ fn next[
 
     Returns:
         The next element from the iterator.
+
+    Raises:
+        StopIteration: If the iterator is exhausted.
     """
     return iterator.__next__()
 
