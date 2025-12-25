@@ -1435,7 +1435,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 
   // We expect:
   // VariadicPack[
-  //   mut: Bool, //, is_owned: Bool, origin: Origin[mut],
+  //   mut: Bool, origin: Origin[mut], //, is_owned: Bool,
   //   element_trait: _AnyTypeMetaType, *element_types: element_trait]
   if (!packDecl) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
@@ -1467,12 +1467,12 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 #endif
 
   auto isMutType = typeSig.getParamTypes()[0];
-  auto isVarType = typeSig.getParamTypes()[1];
-  auto originType = typeSig.getParamTypes()[2];
+  auto originType = typeSig.getParamTypes()[1];
+  auto isVarType = typeSig.getParamTypes()[2];
   auto traitMetaType = typeSig.getParamTypes()[3];
   if (!sugarIsa<LIT::StructType>(isMutType) ||
-      !sugarIsa<LIT::StructType>(isVarType) ||
       !sugarIsa<LIT::StructType>(originType) ||
+      !sugarIsa<LIT::StructType>(isVarType) ||
       !sugarIsa<AnyTraitType>(traitMetaType) ||
       !sugarIsa<VariadicType>(typeSig.getParamTypes()[4])) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
@@ -1488,19 +1488,13 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   evaluator.appendIndexBinding(isMut);
 
-  auto isVarAttr = BoolAttr::get(emitter.getContext(), isVar);
-  PValue isVarVal =
-      emitter.emitPValue({isVarAttr, arg.typeExpr}, EC_Type, isVarType);
-  if (!isVarVal)
-    return {};
-  evaluator.appendIndexBinding(isVarVal);
-
   PValue origin =
       emitter.emitPValue({refType.getOrigin(), arg.typeExpr}, EC_Type,
                          evaluator.getReboundType(originType));
-  if (!origin)
-    return {};
-  evaluator.appendIndexBinding(origin);
+
+  auto isVarAttr = BoolAttr::get(emitter.getContext(), isVar);
+  PValue isVarVal =
+      emitter.emitPValue({isVarAttr, arg.typeExpr}, EC_Type, isVarType);
 
   // The default element_trait param type is
   // !lit.anytrait<<@std::@builtin::@anytype::@AnyType>>
@@ -1510,14 +1504,13 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // !lit.anytrait<AnyType> type.
   PValue traitMT = emitter.emitPValue({PValue(elementType), arg.typeExpr},
                                       EC_Type, traitMetaType);
-  if (!traitMT)
+  if (!isVarVal || !origin || !traitMT)
     return {};
-  evaluator.appendIndexBinding(traitMT);
 
   // Bind the VariadicPack[isMutable, origin, element_trait, element_types]
   // parameters.
   return packStruct.bindReference(
-      {isMut.get(), isVarVal.get(), origin.get(), traitMT.get(), param.get()});
+      {isMut.get(), origin.get(), isVarVal.get(), traitMT.get(), param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default

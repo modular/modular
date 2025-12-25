@@ -854,7 +854,10 @@ struct _VariadicListMemIter[
     """
 
     comptime variadic_list_type = VariadicListMem[
-        Self.elt_type, Self.elt_origin, Self.is_owned
+        elt_is_mutable = Self.elt_is_mutable,
+        origin = Self.elt_origin,
+        Self.elt_type,
+        Self.is_owned,
     ]
 
     var index: Int
@@ -868,9 +871,9 @@ struct _VariadicListMemIter[
 
 struct VariadicListMem[
     elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable],
     //,
     element_type: AnyType,
-    origin: Origin[mut=elt_is_mutable],
     is_owned: Bool,
 ]:
     comptime reference_type = Pointer[Self.element_type, Self.origin]
@@ -916,9 +919,9 @@ struct VariadicListMem[
 @register_passable
 struct VariadicPack[
     elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable],
     //,
     is_owned: Bool,
-    origin: Origin[mut=elt_is_mutable],
     element_trait: type_of(AnyType),
     *element_types: element_trait,
 ]:
