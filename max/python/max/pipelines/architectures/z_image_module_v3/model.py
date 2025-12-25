@@ -55,7 +55,6 @@ from .model_config import ZImageConfig
 from .nn.autoencoder_kl import AutoencoderKL
 from .nn.image_processor import VaeImageProcessor
 from .nn.transformer_z_image import ZImageTransformer2DModel
-from .qwen3_encoder import Qwen3Encoder
 from .scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
 )
@@ -452,7 +451,7 @@ class ZImageModel(
 
         # Apply the architecture weight adapter (if any) only to the text encoder
         # subset. For Z-Image this maps Qwen3-VL style names to the expected
-        # Qwen3Encoder format.
+        # ? format.
         if self.adapter:
             text_encoder_llm_state_dict: dict[str, WeightData] = self.adapter(
                 text_encoder_weights,
@@ -491,7 +490,9 @@ class ZImageModel(
             raise ValueError("Model config must be initialized")
 
         # Instantiate ZImage container to build sub-models
-        self.model: Module = ZImage(self.model_config)
+        # Pass device for RoPE embedding precomputation on GPU
+        device0 = self.devices[0]
+        self.model: Module = ZImage(self.model_config, device=device0)
 
         graph_inputs = self.model.text_encoder.input_types(
             self.model.text_encoder.kv_params
@@ -525,24 +526,24 @@ class ZImageModel(
             if key.startswith("decoder.")
         }
 
-        compiled_vae_decode_model = self.model.vae.decoder.compile(
-            sample_type,
-            weights=decoder_weights,
-        )
+        # compiled_vae_decode_model = self.model.vae.decoder.compile(
+        #     sample_type,
+        #     weights=decoder_weights,
+        # )
 
-        # TODO: Fix transformer bmm kernel rank mismatch before enabling
-        # hidden_states_type = TensorType(DType.bfloat16, shape=(16, 1, 128, 128), device=device_ref)
-        # t_type = TensorType(DType.float32, shape=(1,), device=device_ref)
-        # cap_feats_type = TensorType(DType.bfloat16, shape=(101, 2560), device=device_ref)
-        # return_dict_type = TensorType(DType.bool, shape=[], device=device_ref)
+        # Shape constants for compilation - must match transformer._compile_* attributes
+        C, F_dim, H_dim, W_dim = 16, 1, 128, 128
+        cap_seq_len = 101
+
+        hidden_states_type = TensorType(DType.bfloat16, shape=(C, F_dim, H_dim, W_dim), device=device_ref)
+        t_type = TensorType(DType.float32, shape=(1,), device=device_ref)
+        cap_feats_type = TensorType(DType.bfloat16, shape=(cap_seq_len, 2560), device=device_ref)
         # compiled_transformer_model = self.model.transformer.compile(
         #     hidden_states_type,
         #     t_type,
         #     cap_feats_type,
-        #     # return_dict_type,
         #     weights=transformer_state_dict,
         # )
-        compiled_transformer_model = None  # Placeholder for now
 
         logger.info("Building and compiling text encoder...")
         before_text_encoder_build = time.perf_counter()
@@ -575,7 +576,20 @@ class ZImageModel(
     def _build_text_encoder_graph(
         self, graph_inputs: tuple[TensorType, ...]
     ) -> Graph:
-        with Graph("qwen3", input_types=graph_inputs) as graph:
+        """Build the MAX graph for the text encoder.
+
+        Uses native Qwen3 with return_hidden_states=SECOND_TO_LAST configured in
+        model_config.py. SECOND_TO_LAST returns the second-to-last layer's hidden
+        states directly (matching diffusers' hidden_states[-2] pattern).
+
+        Args:
+            graph_inputs: Tuple of TensorType defining the graph inputs.
+
+        Returns:
+            Compiled MAX graph that outputs hidden states of shape
+            (seq_len, hidden_size) from the second-to-last layer.
+        """
+        with Graph("qwen3_text_encoder", input_types=graph_inputs) as graph:
             tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                 graph.inputs
             )
@@ -585,13 +599,18 @@ class ZImageModel(
                 lookup_table=kv_cache_inputs[2].tensor,
                 max_lengths=kv_cache_inputs[3].tensor,
             )
+            # Qwen3 with ReturnHiddenStates.SECOND_TO_LAST returns
+            # (logits, second_to_last_hidden_states) directly
             outputs = self.model.text_encoder(
                 tokens.tensor,
                 kv_collection,
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
             )
-            graph.output(*outputs)
+            # Extract second-to-last hidden states (last element of output tuple)
+            # Shape: (seq_len, hidden_size)
+            hidden_states = outputs[-1]
+            graph.output(hidden_states)
             return graph
 
     def encode_prompt(
