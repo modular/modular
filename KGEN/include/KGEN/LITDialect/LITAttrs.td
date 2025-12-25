@@ -688,13 +688,13 @@ def IndirectOriginAttr : LITTypedAttr<"IndirectOrigin", "indirect.origin",  [
 //===----------------------------------------------------------------------===//
 
 def ImplicitOriginRefAttr
-  : LITTypedAttr<"ImplicitOriginRef", "origin.ref", [
+  : LITTypedAttr<"ImplicitOriginRef", "implicit.origin.ref", [
     DeclareAttrInterfaceMethods<IndexRefAttrInterface>,
     DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
   let summary = "Reference to an unbound implicit origin parameter.";
   let description = [{
-    The `#lit.origin.ref` attribute is a reference to an unbound implicit
-    origin parameter decl of an enclosing signature.
+    The `#lit.implicit.origin.ref` attribute is a reference to an unbound
+    implicit origin parameter decl of an enclosing signature.
 
     This attribute can only be used inside a `GeneratorType`.
 
@@ -715,9 +715,9 @@ def ImplicitOriginRefAttr
 
     ```mlir
     // Second implicit origin parameter-decl of the nearest signature.
-    #lit.origin.ref<0, 1>
+    #lit.implicit.origin.ref<0, 1>
     // First implicit origin parameter-decl of next enclosing signature.
-    #lit.origin.ref<1, 0>
+    #lit.implicit.origin.ref<1, 0>
     ```
 
     The latter would appear in something like this:
@@ -730,7 +730,7 @@ def ImplicitOriginRefAttr
     ```
 
     That `fn[Y: AnyType](X, Y)->None`'s mention of `X` is actually a lit.ref
-    whose origin is a #lit.origin.ref<1, 0> to refer to an implicit origin on
+    whose origin is a #lit.implicit.origin.ref<1, 0> to refer to an implicit origin on
     the outermost `fn`.
 
     But, per DCRTODS, it can NOT be used inside a generator's body to refer to
@@ -739,7 +739,7 @@ def ImplicitOriginRefAttr
     ```
     fn foo[X: AnyType](x: X):
         alias zork: fn[...](
-          # Cannot have: #lit.origin.ref<1, 0>
+          # Cannot have: #lit.implicit.origin.ref<1, 0>
         )->None = ...
     ```
 
