@@ -15,7 +15,7 @@ _DATA = [
 ]
 
 lit_tests(
-    name = "mojo-isolated",
+    name = "mojo-parser",
     srcs = glob(
         [
             "**/*.mojo",

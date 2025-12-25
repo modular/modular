@@ -9,7 +9,7 @@ import os
 from lit.llvm import llvm_config
 
 # name: The name of this test suite.
-config.name = "mojo-isolated"
+config.name = "mojo-parser"
 
 config.parser_stubs_source = os.path.abspath(
     os.path.join("KGEN", "test", "test-packages")
@@ -22,7 +22,7 @@ config.suffixes = [".mojo", ".🔥", ".test"]
 config.test_source_root = os.path.dirname(__file__)
 
 # test_exec_root: The root path where tests should be run.
-config.test_exec_root = os.path.join("KGEN", "test", "mojo-isolated")
+config.test_exec_root = os.path.join("KGEN", "test", "mojo-parser")
 
 config.excludes = [
     "debuginfo/inputs",
@@ -46,5 +46,5 @@ config.substitutions.append(
 )
 
 config.environment["MODULAR_HOME"] = os.path.join(
-    "KGEN", "test", "mojo-isolated"
+    "KGEN", "test", "mojo-parser"
 )

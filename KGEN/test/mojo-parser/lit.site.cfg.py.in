@@ -4,4 +4,4 @@ lit_config.load_config(
     config, "./bazel/internal/llvm-lit/lit.common.configured"
 )
 
-lit_config.load_config(config, "./KGEN/test/mojo-isolated/lit.cfg.py")
+lit_config.load_config(config, "./KGEN/test/mojo-parser/lit.cfg.py")
