@@ -201,8 +201,8 @@ kgen.generator @lifetime_union<x: !lit.origin<0>, y: !lit.origin<0>>() {
                                  #kgen.param.decl.ref<"x"> :!lit.origin<0>>
         : !lit.origin<0>} : () -> ()
 
-  // CHECK-NEXT: "e"() {a = #lit.origin.union<#lit.origin.ref<0, 1> : !lit.origin<0>, #lit.origin.ref<1, 0> : !lit.origin<0>> : !lit.origin<0>}
-  "e"() {a = #lit.origin.union<#lit.origin.ref<1, 0> : !lit.origin<0>, #lit.origin.ref<0, 1> : !lit.origin<0>> : !lit.origin<0>} : () -> ()
+  // CHECK-NEXT: "e"() {a = #lit.origin.union<#lit.implicit.origin.ref<0, 1> : !lit.origin<0>, #lit.implicit.origin.ref<1, 0> : !lit.origin<0>> : !lit.origin<0>}
+  "e"() {a = #lit.origin.union<#lit.implicit.origin.ref<1, 0> : !lit.origin<0>, #lit.implicit.origin.ref<0, 1> : !lit.origin<0>> : !lit.origin<0>} : () -> ()
 
   kgen.param.declare is_mut: i1 = <0>
   kgen.param.declare a: origin<1> = <?>
