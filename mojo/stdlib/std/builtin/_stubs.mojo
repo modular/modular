@@ -33,10 +33,14 @@ struct __MLIRType[T: AnyTrivialRegType](ImplicitlyCopyable):
 
 fn paramfor_has_next[
     IteratorType: Iterator & Copyable
-](it: IteratorType) -> Bool:
+](it: IteratorType) -> Bool where conforms_to(
+    IteratorType.Element,
+    Movable & ImplicitlyDestructible,
+):
     var result = it.copy()
     try:
-        _ = result.__next__()
+        var elem = result.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](elem^)
         return True
     except:
         return False
@@ -44,7 +48,10 @@ fn paramfor_has_next[
 
 fn paramfor_next_iter[
     IteratorType: Iterator & Copyable
-](it: IteratorType) -> IteratorType:
+](it: IteratorType) -> IteratorType where conforms_to(
+    IteratorType.Element,
+    Movable & ImplicitlyDestructible,
+):
     # NOTE: This function is called by the compiler's elaborator only when
     # paramfor_has_next will return true. This is needed because the interpreter
     # memory model isn't smart enough to handle mut arguments cleanly.
@@ -52,7 +59,8 @@ fn paramfor_next_iter[
     # This intentionally discards the value, but this only happens at comptime,
     # so recomputing it in the body of the loop is fine.
     try:
-        _ = result.__next__()
+        var elem = result.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](elem^)
         return result.copy()
     except:
         abort()

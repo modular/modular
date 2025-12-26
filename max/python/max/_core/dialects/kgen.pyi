@@ -1147,6 +1147,35 @@ class StructExtractAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class StructFieldIndexByNameAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_index_by_name` attribute returns the index of a field
+    in a struct type given the field name. Produces a compile error if the
+    field name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_index_by_name<#MyStruct, "x"> : index
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_name: max._core.dialects.builtin.TypedAttr,
+        type: max._core.dialects.builtin.IndexType,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IndexType: ...
+
 class StructFieldNamesAttr(max._core.Attribute):
     """
     The `#kgen.struct_field_names` attribute returns the names of all fields
@@ -1168,6 +1197,35 @@ class StructFieldNamesAttr(max._core.Attribute):
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> VariadicType: ...
+
+class StructFieldTypeByNameAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_type_by_name` attribute returns the type of a field
+    in a struct given the field name. Produces a compile error if the field
+    name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !kgen.type
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_name: max._core.dialects.builtin.TypedAttr,
+        type: TypeType,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> TypeType: ...
 
 class StructFieldTypesAttr(max._core.Attribute):
     """

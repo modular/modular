@@ -140,6 +140,29 @@ fn trait_downcast[
     return rebind[downcast[Trait, T]](src)
 
 
+fn trait_downcast_var[
+    T: Movable,
+    //,
+    Trait: type_of(Movable),
+](var src: T) -> downcast[Trait, T]:
+    """Downcast a parameter input type `T` and rebind the type such that the
+    return value's type conforms to the provided `Trait`. If `T`, after
+    resolving to a concrete type, does not actually conform to `Trait`, a
+    compilation error will occur.
+
+    Parameters:
+        T: The original type (inferred).
+        Trait: The trait to downcast into.
+
+    Args:
+        src: The value to downcast.
+
+    Returns:
+        The downcasted value.
+    """
+    return rebind_var[downcast[Trait, T]](src^)
+
+
 @always_inline
 fn trait_downcast[
     T: AnyType, //, Trait: type_of(AnyType)

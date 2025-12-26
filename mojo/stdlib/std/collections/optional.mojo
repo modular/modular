@@ -52,7 +52,7 @@ struct _NoneType(ImplicitlyCopyable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Optional[T: Movable & ImplicitlyDestructible](
+struct Optional[T: Movable](
     Boolable,
     Defaultable,
     ImplicitlyCopyable,
@@ -451,9 +451,15 @@ struct Optional[T: Movable & ImplicitlyDestructible](
         debug_assert(self.__bool__(), "`.unsafe_take()` on empty `Optional`")
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
-    fn or_else(deinit self, var default: Self.T) -> Self.T:
+    fn or_else[
+        _T: Movable & ImplicitlyDestructible, //
+    ](deinit self: Optional[_T], var default: _T) -> _T:
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
+
+        Parameters:
+            _T: Type of the optional element, which must conform to
+                `ImplicitlyDestructible`.
 
         Args:
             default: The new value to use if no value was present.
