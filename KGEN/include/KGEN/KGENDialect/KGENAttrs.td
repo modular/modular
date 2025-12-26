@@ -960,6 +960,68 @@ def KGEN_StructFieldNamesAttr : KGEN_ExprAttr<"StructFieldNames",
 }
 
 //===----------------------------------------------------------------------===//
+// StructFieldIndexByNameAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructFieldIndexByNameAttr : KGEN_ExprAttr<"StructFieldIndexByName",
+    "struct_field_index_by_name", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the index of a struct field by name.";
+  let description = [{
+    The `#kgen.struct_field_index_by_name` attribute returns the index of a field
+    in a struct type given the field name. Produces a compile error if the
+    field name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_index_by_name<#MyStruct, "x"> : index
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    "TypedAttr":$fieldName,
+    AttributeSelfTypeParameter<"", "IndexType">:$type
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `,` $fieldName `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// StructFieldTypeByNameAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructFieldTypeByNameAttr : KGEN_ExprAttr<"StructFieldTypeByName",
+    "struct_field_type_by_name", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the type of a struct field by name.";
+  let description = [{
+    The `#kgen.struct_field_type_by_name` attribute returns the type of a field
+    in a struct given the field name. Produces a compile error if the field
+    name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !kgen.type
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    "TypedAttr":$fieldName,
+    AttributeSelfTypeParameter<"", "TypeType">:$type
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `,` $fieldName `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // BindParams
 //===----------------------------------------------------------------------===//
 
