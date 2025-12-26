@@ -4,16 +4,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/SaveAndRestore.h"
-
+#include "ParameterInference.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "MojoUtils.h"
+#include "ParamBindings.h"
+
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
-#include "ParamBindings.h"
-#include "ParameterInference.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -22,7 +22,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 
-#include "MojoUtils.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -636,10 +636,12 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         ire.getIndex() <= evaluator.getNumIndexBindings()) {
       // We are at `paramIndexRefDepth`, but all parameters have been inferred
       // as if at level 0.
-      IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
-      Type expectedType =
-          evaluator.getReboundType(adjuster.replace(expectedAttr.getType()));
-
+      Type expectedType = expectedAttr.getType();
+      if (paramIndexRefDepth) {
+        IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
+        expectedType = adjuster.replace(expectedType);
+      }
+      expectedType = evaluator.getReboundType(expectedType);
       size_t parameterIndex = ire.getIndex();
 
       // If the types don't agree, attempt an implicit conversion between the
@@ -648,20 +650,25 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         // We can only see subtypes in type values, all other values must be
         // aligned perfectly.
         assert(LIT::isMetaType(expectedType) ||
-               LIT::isVariadicOfMetaType(expectedType));
+               LIT::isVariadicOfMetaType(expectedType) ||
+               enableOutOfOrderInferenceHack);
         IREmitter emitter(declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
         ASTExprAnd<CValue> toConvert = {actualAttr, node};
         // We should have ensured type convertibility
-        assert(IREmitter::canImplicitlyConvertToType(toConvert, expectedType,
-                                                     emitter.getDeclScope()) &&
-               "Unconvertible parameter should have been detected.");
-        actualAttr =
-            emitter.emitPValue(toConvert, EC_TypeParamValue, expectedType);
-        assert(actualAttr);
+        if (IREmitter::canImplicitlyConvertToType(toConvert, expectedType,
+                                                  emitter.getDeclScope())) {
+          actualAttr =
+              emitter.emitPValue(toConvert, EC_TypeParamValue, expectedType);
+          assert(actualAttr && "Already checked implicit convertibility");
+        } else {
+          assert(enableOutOfOrderInferenceHack &&
+                 "Unconvertible parameter should have been detected");
+        }
       }
       // At this point, type must have been aligned.
-      assert(isEqualCanon(actualAttr.getType(), expectedType));
+      assert(enableOutOfOrderInferenceHack ||
+             isEqualCanon(actualAttr.getType(), expectedType));
 
       // If we didn't already have a slot for this, make space.
       if (inferredParams.size() <= parameterIndex)
@@ -784,6 +791,16 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     return matchParams(actualSugar.getExpanded(), expectedAttr);
   if (expectedSugar)
     return matchParams(actualAttr, expectedSugar.getExpanded());
+
+  // If this is a reference to a parameter that hasn't been inferred (and thus
+  // substituted yet) just ignore it because it will be inferred later.
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(actualAttr)) {
+    if (indexRef.getDepth() == 0 &&
+        indexRef.getIndex() >= evaluator.getNumIndexBindings()) {
+      assert(enableOutOfOrderInferenceHack && "How does this happen?");
+      return success();
+    }
+  }
 
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << "\n");
@@ -930,27 +947,28 @@ static bool usesUnboundParameters(TypedAttr paramValue,
 /// custom logic is required because often (eg in this case) the "actual" type
 /// will have UnboundAttr parameters, instead of fully bound ones like a normal
 /// argument.
-LogicalResult
-ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
+LogicalResult ParameterInferenceState::inferSelfFromInitResult(
+    FnTypeGeneratorType signature) {
+  auto returnedType = signature.getUserResultType();
   // We can only support struct inference right now.
   auto returnedDRT = sugarDynCast<StructType>(returnedType);
   if (!returnedDRT)
     return success();
+
+  // Disable checks since we're going to reference parameters out of order and
+  // then resolve them through selfResultParams.
+  llvm::SaveAndRestore<bool> saveOutOfOrderInferenceHack(
+      enableOutOfOrderInferenceHack, true);
 
   // Match up the parameter bindings if the 'actual' param is an UnboundAttr and
   // the expected has something more specific than a reference to the contextual
   // parameter.
   for (auto [idx, param] : llvm::enumerate(returnedDRT.getParamValues())) {
     // If this is simply a reference to the enclosing parameter (as in a normal
-    // Self) init, then we can't infer anything from it.
+    // Self) init, then we can't infer anything from it.  In the example above,
+    // this ignores the "a" parameter in "fn __init__() -> S[a]:" which is what
+    // "out self" desugars to.
     if (auto indexRef = sugarDynCast<ParamIndexRefAttr>(param))
-      // If this == 0 seems weird, it's probably okay because the returnedType
-      // always comes from the result type of a FnTypeGeneratorType. So this
-      // depth 0 always means it refers to the FnTypeGeneratorType that we're
-      // trying to run parameter inference on. It's only when we're walking that
-      // we have no idea what depth we are. Here we're always at the surface.
-      // See
-      // https://github.com/modularml/modular/pull/62096#discussion_r2114820565
       if (indexRef.getDepth() == 0 && indexRef.getIndex() == idx)
         continue;
 
@@ -964,7 +982,8 @@ ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
 
     // Otherwise, this is a more specialized parameter bound on Self for this
     // method.  Form the parameter that we need to infer.
-    auto toInfer = ParamIndexRefAttr::get(/*depth*/ 0, idx, param.getType());
+    auto toInfer = ParamIndexRefAttr::get(/*depth*/ 0, idx,
+                                          signature.getInputParamTypes()[idx]);
 
     // Try to infer this parameter from the expected (declared) type.
     if (failed(matchParams(param, toInfer))) {
@@ -1477,7 +1496,7 @@ LogicalResult ParameterInferenceState::infer(
   // this we go ahead and resolve $0 = Int.  This is crazily circuitous but is
   // because we have to infer parameter 0 before we can infer param #1.
   if (returnsSelf) {
-    if (failed(inferSelfFromInitResult(signature.getUserResultType())))
+    if (failed(inferSelfFromInitResult(signature)))
       return failure();
   }
 
@@ -1566,7 +1585,7 @@ LogicalResult ParameterInferenceState::infer(
         Type metatype = toPush.getMetaType();
         TypedAttr actualAttr = TypeParamAttr::get(
             toPush, metatype ? metatype : TypeType::get(shared.getContext()));
-        SyntheticNode node(shared.getTopLevelDecl().getLoc());
+        SyntheticNode node(operand.expr->getLoc());
         if (!IREmitter::canImplicitlyConvertToType(
                 {actualAttr, node}, elementType, emitter.getDeclScope())) {
 
@@ -1657,13 +1676,15 @@ LogicalResult ParameterInferenceState::infer(
   //         fn __init__[U: Movable](x: U, out self: Foo[U]):
   //
   if (!selfResultParams.empty()) {
-    // Need to first populate the evaluator with unbound attrs in case some
-    // Self params were not deduced.
+    // Fill the evaluator with unbound attrs for any parameters that were not
+    // inferred yet.
     ArrayRef<Type> paramTypes = signature.getInputParamTypes();
     for (size_t paramIdx = evaluator.getNumIndexBindings(),
                 e = signature.getInputParamTypes().size();
-         paramIdx < e; ++paramIdx)
-      evaluator.appendIndexBinding(UnboundAttr::get(paramTypes[paramIdx]));
+         paramIdx < e; ++paramIdx) {
+      auto paramType = evaluator.getReboundType(paramTypes[paramIdx]);
+      evaluator.appendIndexBinding(UnboundAttr::get(paramType));
+    }
 
     for (unsigned idx : selfResultParams) {
       if (idx < inferredParams.size()) {

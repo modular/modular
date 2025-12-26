@@ -12,6 +12,7 @@ struct Empty: pass
 # Input parameters
 ##===----------------------------------------------------------------------===##
 
+@fieldwise_init
 @register_passable
 struct StructWithIntParam[size: Int]:
     pass
@@ -1561,11 +1562,22 @@ fn tryCallingAThingReturningMOCO1144Bound():
     # CHECK-NEXT:  lit.var.decl "x" {{.*}}#MOCO1144 <:!Bool {:i1 1}, :!AnyType !Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType !Int
     var x = getMOCO1144Bound()
 
+struct HasAutoParam[arg: StructWithIntParam]:
+    pass
+# Solving this requires understanding that self_a = shadow_a and
+# self_param = shadow_param, even though they're resolved out of order.
+struct Ex1[self_a: Int, //, self_param: StructWithIntParam[self_a]]:
+    fn __init__[
+        shadow_a: Int, //, shadow_param: StructWithIntParam[shadow_a]
+    ](out self: Ex1[shadow_param], data: HasAutoParam[shadow_param]):
+        pass
+fn testEx1(imm_data: HasAutoParam[StructWithIntParam[1]()]):
+    parSpecializedTest = Ex1(imm_data)
+
 
 ##===----------------------------------------------------------------------===##
 # Origin Parameters
 ##===----------------------------------------------------------------------===##
-
 
 @register_passable("trivial")
 struct SomeReference[lt: __mlir_type.`!lit.origin<0>`]:

@@ -130,7 +130,7 @@ private:
                                    FnTypeGeneratorType expected);
   LogicalResult matchSingleEltStruct(TypedAttr actualAddrSpace,
                                      TypedAttr expectedAddrSpace);
-  LogicalResult inferSelfFromInitResult(Type returnedType);
+  LogicalResult inferSelfFromInitResult(FnTypeGeneratorType signature);
 
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not
@@ -180,6 +180,13 @@ private:
 
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
+
+  /// True if we're inferring Self parameters from result types that may have
+  /// unresolved parameters references in them.  See the comments around
+  /// 'inferSelfFromInitResult' and 'selfResultParams' for more details.
+  /// FIXME: Remove this (and selfResultParams) when we can infer parameters in
+  /// any order.
+  bool enableOutOfOrderInferenceHack = false;
 
   /// The expression of the current argument being used for parameter inference.
   const ExprNode *curArgExpr = nullptr;
