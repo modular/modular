@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/POPDialect/POPUtils.h"
@@ -152,6 +153,12 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateStructFieldTypesAttr(structFieldTypesAttr);
   if (auto structFieldNamesAttr = dyn_cast<StructFieldNamesAttr>(attr))
     return evaluateStructFieldNamesAttr(structFieldNamesAttr);
+  if (auto structFieldIndexByNameAttr =
+          dyn_cast<StructFieldIndexByNameAttr>(attr))
+    return evaluateStructFieldIndexByNameAttr(structFieldIndexByNameAttr);
+  if (auto structFieldTypeByNameAttr =
+          dyn_cast<StructFieldTypeByNameAttr>(attr))
+    return evaluateStructFieldTypeByNameAttr(structFieldTypeByNameAttr);
   if (auto typeConformToTraitAttr = dyn_cast<TypeConformsToTraitAttr>(attr))
     return evaluateTypeConformToTraitAttr(typeConformToTraitAttr);
   if (auto compileOffloadClosureAttr =
@@ -430,6 +437,76 @@ IREvaluator::evaluateStructFieldNamesAttr(StructFieldNamesAttr attr) {
   }
 
   return {cast<TypedAttr>(VariadicAttr::get(fieldNames, attr.getType()))};
+}
+
+FailureOr<TypedAttr> IREvaluator::evaluateStructFieldIndexByNameAttr(
+    StructFieldIndexByNameAttr attr) {
+  FailureOr<StructInstanceType> structTypeOr = resolveStructInstanceType(
+      attr.getTypeValue(), "struct_field_index_by_name");
+  if (failed(structTypeOr))
+    return failure();
+  StructInstanceType structType = *structTypeOr;
+
+  // The field name should be a StringAttr after parameter evaluation
+  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
+  if (!fieldNameAttr) {
+    emitError({*errorLoc,
+               "struct_field_index_by_name requires a string literal for field "
+               "name, got " +
+                   mlir::debugString(attr.getFieldName())});
+    return failure();
+  }
+  StringRef fieldName = fieldNameAttr.getValue();
+
+  // Find field by name
+  size_t index = 0;
+  for (StructDefFieldAttr field : structType.getFields()) {
+    if (field.getName().getValue() == fieldName) {
+      // Return the index as an IntegerAttr with index type
+      return {cast<TypedAttr>(Builder(attr.getContext()).getIndexAttr(index))};
+    }
+    ++index;
+  }
+
+  // Field not found - emit compile error
+  emitError({*errorLoc, "struct '" + mlir::debugString(structType) +
+                            "' has no field named '" + fieldName + "'"});
+  return failure();
+}
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr) {
+  FailureOr<StructInstanceType> structTypeOr = resolveStructInstanceType(
+      attr.getTypeValue(), "struct_field_type_by_name");
+  if (failed(structTypeOr))
+    return failure();
+  StructInstanceType structType = *structTypeOr;
+
+  // The field name should be a StringAttr after parameter evaluation
+  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
+  if (!fieldNameAttr) {
+    emitError({*errorLoc,
+               "struct_field_type_by_name requires a string literal for field "
+               "name, got " +
+                   mlir::debugString(attr.getFieldName())});
+    return failure();
+  }
+  StringRef fieldName = fieldNameAttr.getValue();
+
+  // Find field by name
+  MLIRContext *ctx = attr.getContext();
+  for (StructDefFieldAttr field : structType.getFields()) {
+    if (field.getName().getValue() == fieldName) {
+      // Return the field type wrapped in TypeParamAttr
+      return {cast<TypedAttr>(TypeParamAttr::get(
+          field.getType(), field.getType(), TypeType::get(ctx)))};
+    }
+  }
+
+  // Field not found - emit compile error
+  emitError({*errorLoc, "struct '" + mlir::debugString(structType) +
+                            "' has no field named '" + fieldName + "'"});
+  return failure();
 }
 
 ParamNodeBase *IREvaluator::lookupParamNodeBase(SymbolRefAttr symbol) {

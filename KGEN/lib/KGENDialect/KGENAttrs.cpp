@@ -796,6 +796,18 @@ bool StructFieldTypesAttr::isConstant() const { return false; }
 bool StructFieldNamesAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// StructFieldIndexByNameAttr
+//===----------------------------------------------------------------------===//
+
+bool StructFieldIndexByNameAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
+// StructFieldTypeByNameAttr
+//===----------------------------------------------------------------------===//
+
+bool StructFieldTypeByNameAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 
