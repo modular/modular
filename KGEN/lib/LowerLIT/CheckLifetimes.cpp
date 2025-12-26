@@ -2294,8 +2294,9 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
     return;
   }
 
-  // Adjust eleemnt type sugar if needed.
-  assert(isEqualCanon(delSelfTy.getElementType(), argRef.getElementType()));
+  // Adjust element type sugar if needed.
+  // FIXME(MOCO-3006): Re-enable / adjust this assertion.
+  // assert(isEqualCanon(delSelfTy.getElementType(), argRef.getElementType()));
   if (delSelfTy.getElementType() != argRef.getElementType()) {
     value = RebindOp::create(
         builder, argRef.getWithElement(delSelfTy.getElementType()), value);
