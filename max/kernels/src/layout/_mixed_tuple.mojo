@@ -289,7 +289,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     fn __init__(
         out self,
         *,
-        var storage: VariadicPack[_, _, MixedTupleLike, *Self.element_types],
+        var storage: VariadicPack[_, MixedTupleLike, *Self.element_types],
     ):
         """Construct from a low-level variadic pack.
 
@@ -299,8 +299,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         var t = Tuple(
             storage=rebind_var[
                 VariadicPack[
+                    elt_is_mutable = type_of(storage).elt_is_mutable,
+                    origin = type_of(storage).origin,
                     type_of(storage).is_owned,
-                    type_of(storage).origin,
                     Movable,
                     *Self.element_types,
                 ]

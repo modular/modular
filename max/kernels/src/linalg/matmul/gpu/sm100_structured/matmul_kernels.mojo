@@ -790,7 +790,7 @@ struct BlackwellMatmulSM100Kernel[
     @staticmethod
     @always_inline
     fn _load_AB_tiles[
-        tiles_origin: Origin[True],
+        tiles_origin: MutOrigin,
         //,
     ](
         a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],

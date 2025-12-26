@@ -74,7 +74,7 @@ class Bench:
     theoretical_flops = BenchMetric(3, "TheoreticalArithmetic", "GFLOPS/s")
 
     BENCH_LABEL = "name"
-    MET_LABEL = "met (ms)"
+    MET_LABEL = "met (s)"
     ITERS_LABEL = "iters"
 
     def dump_report(self, output_path: Path | None = None) -> None:
