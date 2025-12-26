@@ -45,6 +45,10 @@ def test_static_int_tuple():
 
     assert_equal(String(IndexList[4]((1, 2, 3, 4))), "(1, 2, 3, 4)")
 
+    assert_equal(String(IndexList[5]((1, 2, 3, 4, 5))), "(1, 2, 3, 4, 5)")
+
+    assert_equal(String(IndexList[5](1, 2, 3, 4, 5)), "(1, 2, 3, 4, 5)")
+
 
 def test_tuple_literal():
     assert_equal(len((1, 2, (3, 4), 5)), 4)
