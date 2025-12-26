@@ -1378,16 +1378,12 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   size_t posIdx = 0, numParams = givenBindings.size();
   DefaultValueHandler defaultHandler(paramListAttr);
   for (auto [idx, pog] : llvm::enumerate(paramListAttr.getPogs())) {
-    // Inferred parameters won't have supplied values because they cannot be
-    // specified by the user. We want to infer them from other parameters.
-    if (pog.getPassingKind() == PassingKind::Inferred)
-      continue;
-
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
     Type expectedType = types[idx];
 
-    // Zoom up to the next positional param.
+    // Skip over any provided keyword parameters when matching things up, we
+    // handle them separately below.
     while (posIdx < numParams && givenBindings[posIdx].keyword)
       ++posIdx;
 
@@ -1404,19 +1400,24 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
       continue;
     }
 
-    // This must be a positional binding.
-    if (posIdx < numParams) {
+    // If we have a non-kw param value, it binds to this parameter if it accepts
+    // it.
+    if (posIdx < numParams && (pog.getPassingKind() == PassingKind::PosOrKw ||
+                               pog.getPassingKind() == PassingKind::PosOnly)) {
       inferOneParam(givenBindings[posIdx], expectedType);
       ++posIdx;
       continue;
     }
 
-    // If we're out of positional bindings, try looking for a provided keyword
-    // parameter binding.
-    if (const OperandValue *param =
-            givenBindings.findKwArg(paramListAttr.getName(idx))) {
-      inferOneParam(*param, expectedType);
-      continue;
+    // If we're out of positional bindings, or this works with a keyword, try
+    // looking for a provided keyword parameter binding.
+    if ((pog.getPassingKind() != PassingKind::PosOnly &&
+         pog.getPassingKind() != PassingKind::Implicit)) {
+      if (const OperandValue *param =
+              givenBindings.findKwArg(paramListAttr.getName(idx))) {
+        inferOneParam(*param, expectedType);
+        continue;
+      }
     }
 
     // If not, and this parameter has a default value, then just skip it. We

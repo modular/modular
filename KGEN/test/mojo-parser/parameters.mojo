@@ -355,6 +355,12 @@ fn test_auto_kw_default(a: IndexParam, b: IndexParam):
   auto_kw_default[1, v=2](a, b)
 
 
+struct HasInferredParamWithAutoParam[value: StructWithIntParam, //]:
+    pass
+fn test_autoparam_inferred[x: StructWithIntParam]():
+    var arg: HasInferredParamWithAutoParam[value=x]
+
+
 trait ASuperTrait:
     pass
 
