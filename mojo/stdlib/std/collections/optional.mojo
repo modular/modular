@@ -92,7 +92,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
     # Iterator aliases
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for this optional.
 
@@ -267,6 +267,9 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Returns:
             The value contained in the Optional.
+
+        Raises:
+            `StopIteration` if the iterator has been exhausted.
         """
         if not self.__bool__():
             raise StopIteration()
@@ -464,7 +467,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
     fn copied[
         mut: Bool,
-        origin: Origin[mut],
+        origin: Origin[mut=mut],
         //,
         _T: Copyable,
     ](self: Optional[Pointer[_T, origin]]) -> Optional[_T]:

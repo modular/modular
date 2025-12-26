@@ -72,7 +72,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[Self.V, Int, Self.H, iterable_origin]
     """The iterator type for this counter.
 

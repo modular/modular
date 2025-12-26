@@ -40,7 +40,7 @@ struct _ListIter[
     mut: Bool,
     //,
     T: Copyable,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for List.
@@ -55,7 +55,7 @@ struct _ListIter[
     comptime Element = Self.T  # FIXME(MOCO-2068): shouldn't be needed.
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var index: Int
@@ -261,7 +261,7 @@ struct List[T: Copyable](
     """The amount of elements that can fit in the list without resizing it."""
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _ListIter[Self.T, iterable_origin, True]
     """The iterator type for this list.
 
