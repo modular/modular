@@ -95,7 +95,7 @@ trait Iterator(Movable):
     iterator, e.g. in a `for` loop.
     """
 
-    comptime Element: Movable & ImplicitlyDestructible
+    comptime Element: Movable
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
         """Returns the next element from the iterator.
@@ -299,7 +299,31 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         )
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
-        return next(self._inner_a), next(self._inner_b)
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeB,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+
+        var a = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_a)
+        )
+        var b = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_b)
+        )
+        return (
+            rebind_var[Self.IteratorTypeA.Element](a^),
+            rebind_var[Self.IteratorTypeB.Element](b^),
+        )
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return _min_bounds(self._inner_a.bounds(), self._inner_b.bounds())
@@ -355,7 +379,42 @@ struct _Zip3[
         )
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
-        return next(self._inner_a), next(self._inner_b), next(self._inner_c)
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeB,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeC, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeC,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+
+        var a = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_a)
+        )
+        var b = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_b)
+        )
+        var c = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_c)
+        )
+        return (
+            rebind_var[Self.IteratorTypeA.Element](a^),
+            rebind_var[Self.IteratorTypeB.Element](b^),
+            rebind_var[Self.IteratorTypeC.Element](c^),
+        )
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return _min_bounds(
@@ -429,11 +488,52 @@ struct _Zip4[
         )
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeB,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeC, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeC,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeD, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeD,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+
+        var a = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_a)
+        )
+        var b = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_b)
+        )
+        var c = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_c)
+        )
+        var d = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_d)
+        )
         return (
-            next(self._inner_a),
-            next(self._inner_b),
-            next(self._inner_c),
-            next(self._inner_d),
+            rebind_var[Self.IteratorTypeA.Element](a^),
+            rebind_var[Self.IteratorTypeB.Element](b^),
+            rebind_var[Self.IteratorTypeC.Element](c^),
+            rebind_var[Self.IteratorTypeD.Element](d^),
         )
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:

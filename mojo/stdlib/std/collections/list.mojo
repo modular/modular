@@ -395,7 +395,7 @@ struct List[T: Copyable](
         var lower, _ = iter(iterable).bounds()
         self = Self(capacity=lower)
         for value in iterable:
-            self.append(rebind[Self.T](value).copy())
+            self.append(rebind_var[Self.T](value^))
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):

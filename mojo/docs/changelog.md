@@ -363,10 +363,11 @@ what we publish.
   - `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear types
     - Added `UnsafePointer.destroy_pointee_with()`, for destroying linear types
       in-place using a destructor function pointer.
-  - `Variant` and `VariadicPack` can now contain linear types
+  - `Optional`, `Variant` and `VariadicPack` can now contain linear types
     - `Variant.take` now takes `deinit self` instead of `mut self`.
     - Added `Variant.destroy_with` for destroying a linear type in-place with an
       explicit destructor function.
+  - `Iterator.Element` no longer requires `ImplicitlyDestructible`
   - `UnsafeMaybeUninitialized` can now contain linear types
 
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
