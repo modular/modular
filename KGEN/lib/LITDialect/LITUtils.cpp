@@ -56,7 +56,17 @@ bool LIT::isVariadicOfTypeExpr(TypedAttr attr) {
 /// Demangle a mangled parameter name if it is has a "`" postfix and and
 /// trailing depth and unique ID.
 StringRef LIT::demangleParameterName(StringRef name) {
-  return name.empty() ? name : name.take_front(name.find('`'));
+  if (name.empty())
+    return {};
+  // Remove any uniquing number suffix.
+  name = name.take_front(name.find('`'));
+  // Remove any type prefixes if present.
+  auto dotLoc = name.find_last_of('.');
+  if (dotLoc != StringRef::npos) {
+    name = name.drop_front(dotLoc + 1);
+    assert(!name.empty());
+  }
+  return name;
 }
 
 //===----------------------------------------------------------------------===//

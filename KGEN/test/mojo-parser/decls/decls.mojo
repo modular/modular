@@ -1170,7 +1170,7 @@ fn explicitLifetime[lt: MutOrigin, //, arg: HasLifetimeParam[lt]]():
 
 
 # CHECK-LABEL: lit.fn @"inaccessibleImplicitLifetimeParam
-# CHECK-SAME: "<?, *"p`": !lit.struct<#Origin <:!Bool {:i1 1}>>>(%arg:
+# CHECK-SAME: "<?, *"arg.p`": !lit.struct<#Origin <:!Bool {:i1 1}>>>(%arg:
 fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
     pass
 
@@ -1224,7 +1224,7 @@ fn inferCaptureOrigins[
     # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {mut *"x`"}),
     # CHECK-SAME: !lit.generator<:{mut *"x`"}:() capturing -> !kgen.none>
     closureParameterCaptures[captureSomething]()
-    # CHECK: call {{.*}}closureParameterInference{{.*}}<:!Int *"p`{{.*}}",
+    # CHECK: call {{.*}}closureParameterInference{{.*}}<:!Int *"arg.p`{{.*}}",
     # CHECK-SAME: rebind(:!lit.generator<:{mut *"x`"}:{{.*}} *"captureSomething
     closureParameterInference[captureSomething](arg)
 
@@ -1599,7 +1599,7 @@ fn use_constraint_struct[x: Int where x > 0, cs: ConstraintStruct[x]]():
     need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <["a`"]*"a`": !Int {{.*}}ge(#lit.struct.extract<:!Int *"a`", "_mlir_value">, 1)
+# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int {{.*}}ge(#lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)
 fn use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
     pass
 

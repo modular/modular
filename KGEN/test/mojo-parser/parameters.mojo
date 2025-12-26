@@ -192,7 +192,7 @@ fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK: lit.call {{.*}}@"fnToCall{{.*}}"<:!Int {10}, :array<10, f32> array>()
    fnToCall[10, array]()
 
-# CHECK-LABEL: lit.fn @"meta_str{{.*}}"<["value`"]*"value`": string, +, type: !lit.struct<#StringLiteral <:string *"value`">>>() -> !kgen.none
+# CHECK-LABEL: lit.fn @"meta_str{{.*}}"<["type.value`"]*"type.value`": string, +, type: !lit.struct<#StringLiteral <:string *"type.value`">>>() -> !kgen.none
 fn meta_str[type: StringLiteral]():
   pass
 
@@ -212,9 +212,9 @@ struct TwoParams[a: Int, b: Int]:
 fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
-# CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<{{.*}}cond: !Bool, message: !lit.struct<#StringLiteral <:string *"value`">>>()
+# CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<{{.*}}cond: !Bool, message: !lit.struct<#StringLiteral <:string *"message.value`">>>()
 fn my_constrained[cond: Bool, message: StringLiteral]():
-    # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>, *"value`"
+    # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>, *"message.value`"
     __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
     return
 
@@ -247,7 +247,7 @@ fn infer_implicit_params():
     # CHECK-SAME: :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     implicit_params_with_others[42](one, two)
 
-    # CHECK: alias.decl *"partial_bind{{.*}}: !lit.generator<<?, "a`": !Int, "b`1": !Int, "a`2": !Int, "b`3": !Int>
+    # CHECK: alias.decl *"partial_bind{{.*}}: !lit.generator<<?, "lhs.a`": !Int, "lhs.b`1": !Int, "rhs.a`2": !Int, "rhs.b`3": !Int>
     # CHECK-SAME: implicit_params_with_others{{.*}}<:!Int {1}, :!Int ?, :!Int ?, :!Int ?, :!Int ?>
     comptime partial_bind = implicit_params_with_others[1]
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {1}, :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
@@ -278,7 +278,7 @@ fn autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
     return x.a + y.b
 
 # CHECK-LABEL: lit.fn @"autoparam_param_alias_params
-# CHECK-SAME: <x: !Int, ["a`"][[A0:.*]]: !Int, +, y: {{.*}}TwoParams <:!Int [[A0]], :!Int {2}>
+# CHECK-SAME: <x: !Int, ["y.a`"][[A0:.*]]: !Int, +, y: {{.*}}TwoParams <:!Int [[A0]], :!Int {2}>
 fn autoparam_param_alias_params[x: Int, //, y: TwoParamsSwap[2, _]]():
     pass
 
@@ -290,12 +290,12 @@ struct IndexParam[x: Int]:
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_params
-# CHECK-SAME: <a: !Int, ["x`"]*"x`": !Int, +, b: {{.*}}IndexParam <:!Int *"x`">>, c: {{.*}}IndexParam <:!Int a>
+# CHECK-SAME: <a: !Int, ["b.x`"]*"b.x`": !Int, +, b: {{.*}}IndexParam <:!Int *"b.x`">>, c: {{.*}}IndexParam <:!Int a>
 fn autoparam_of_params[a: Int, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
 # CHECK-LABEL: lit.fn @"autoparam_of_struct_metatype_params
-# CHECK-SAME: <["x`1"]*"x`1": !Int, +, a: meta<!lit.struct<#IndexParam <:!Int *"x`1">>>>
+# CHECK-SAME: <["a.x`1"]*"a.x`1": !Int, +, a: meta<!lit.struct<#IndexParam <:!Int *"a.x`1">>>>
 fn autoparam_of_struct_metatype_params[a: type_of(IndexParam)]():
     pass
 
@@ -306,13 +306,13 @@ struct DependentParams[x: Int, //, p: IndexParam[x]]:
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_dependent_params
-# CHECK-SAME: <["x`"]*"x`": !Int, ["p`1"]*"p`1": {{.*}}IndexParam <:!Int *"x`">>, +, dp: {{.*}}DependentParams <:!Int *"x`", :{{.*}}IndexParam <:!Int *"x`">> *"p`1">>
+# CHECK-SAME: <["dp.x`"]*"dp.x`": !Int, ["dp.p`1"]*"dp.p`1": {{.*}}IndexParam <:!Int *"dp.x`">>, +, dp: {{.*}}DependentParams <:!Int *"dp.x`", :{{.*}}IndexParam <:!Int *"dp.x`">> *"dp.p`1">>
 fn autoparam_of_dependent_params[dp: DependentParams]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"function_autoparam
-# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<["__origins__`"][[F_LT:.*]]: origin.set, ["__origins__`1"][[G_LT:.*]]: origin.set, +
+# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<["f.__origins__`"][[F_LT:.*]]: origin.set, ["g.__origins__`1"][[G_LT:.*]]: origin.set, +
 # CHECK-SAME: f: !lit.generator<:[[F_LT]]:() capturing -> !kgen.none>
 # CHECK-SAME: g: !lit.generator<:[[G_LT]]:() capturing -> !kgen.none>
 fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> None]():
@@ -326,13 +326,13 @@ fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> 
 
 
 # CHECK-LABEL: lit.fn @"nonprop_capture_set
-# CHECK-SAME: ()"<f: !lit.generator<<"__origins__`": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
+# CHECK-SAME: ()"<f: !lit.generator<<"g.__origins__`": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
 fn nonprop_capture_set[f: fn[g: fn () capturing [_] -> None] () -> None]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
-# CHECK-SAME: <["__origins__`"]*"__origins__`": origin.set, +, f: {{.*}}, x: variadic<!Int> pos_vararg>
+# CHECK-SAME: <["f.__origins__`"]*"f.__origins__`": origin.set, +, f: {{.*}}, x: variadic<!Int> pos_vararg>
 fn autoparam_param_vararg[f: fn () [_] -> None, *x: Int]():
     pass
 
@@ -1019,7 +1019,7 @@ struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt._mlir_origin] -> None]
 
 # CHECK-LABEL: lit.fn @"infer_implicit_params
 fn infer_implicit_params(var p: ClosureParam):
-    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<{{.*}}Origin <:!Bool {:i1 1}>> *"lt`", :!lit.generator<:{mut #lit.struct.extract<:{{.*}}#Origin <:!Bool {:i1 1}>> *"lt`", "_mlir_origin">}:() capturing -> !kgen.none> *"f`1">
+    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<{{.*}}Origin <:!Bool {:i1 1}>> *"p.lt`", :!lit.generator<:{mut #lit.struct.extract<:{{.*}}#Origin <:!Bool {:i1 1}>> *"p.lt`", "_mlir_origin">}:() capturing -> !kgen.none> *"p.f`1">
     var tmp = p^
     _ = tmp^
 
@@ -1181,7 +1181,7 @@ struct DependentParam[x: Int, y: ParamType[x]]:
 # CHECK-LABEL: lit.fn @"auto_param_dependent
 # CHECK-SAME: <?, [[Y0:.*]]: !Int, [[Y1:.*]]: {{.*}}#ParamType <:!Int [[Y0]]>>
 fn auto_param_dependent(value: DependentParam[*_]):
-    # CHECK-NEXT: ParamType <:!Int [[Y0]]>> = <*"y`1">
+    # CHECK-NEXT: ParamType <:!Int [[Y0]]>> = <*"value.y`1">
     comptime param = value.y
 
 
