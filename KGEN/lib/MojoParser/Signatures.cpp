@@ -762,7 +762,8 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
 /// passing-kind parameters if `append` is set (this is used for unbound
 /// arguments), or added to the beginning of the parameter list as `Inferred`
 /// passing-kind parameters (this is used for unbound parameters).
-static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
+static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
+                                     ASTType type,
                                      TypeCheckedParamList &paramList,
                                      bool append, SMLoc loc) {
   SmallVector<ParamDeclAttr> paramDeclAttrs;
@@ -856,7 +857,8 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
       }
     }
 
-    auto mangledName = paramList.declScope.mangleParamName(name);
+    auto mangledName =
+        paramList.declScope.mangleParamName(argName.strref() + "." + name);
     auto paramDecl = ParamDeclAttr::get(mangledName, boundParamType);
     names.push_back(mangledName);
     passingKinds.push_back(append ? PassingKind::Implicit
@@ -944,7 +946,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         type = TraitType::get(getFullyResolvedSymbolRef(
             cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
       }
-      type = addImplicitTypeParams(result.shared, type, result,
+      type = addImplicitTypeParams(result.shared, arg.name, type, result,
                                    /*append=*/false, arg.loc);
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
@@ -1564,7 +1566,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       arg.variadicKind =
           VariadicKind::None; // Don't break invariants on errors.
     }
-    type = addImplicitTypeParams(shared, type, tcSignature.paramList,
+    type = addImplicitTypeParams(shared, arg.name, type, tcSignature.paramList,
                                  /*append=*/true, arg.loc);
   } else if (idx == 0 && tcSignature.selfType &&
              // FIXME: This is incorrect, the @static_method decorators haven't

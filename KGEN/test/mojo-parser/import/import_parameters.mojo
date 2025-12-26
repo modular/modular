@@ -24,7 +24,7 @@ fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
         pass
 
     # CHECK: lit.alias.decl *"fn_type`3":
-    # CHECK-SAME: generator<<?, "value`2x": !Int>[2]("x":
+    # CHECK-SAME: generator<<?, "x.value`2x": !Int>[2]("x":
     # CHECK-SAME: "y": !lit.ref<{{.*}}#ParameterizedType <:!Int *(0,0)>
     comptime fn_type: fn (
         x: ParameterizedType, y: ParameterizedType[x.value]

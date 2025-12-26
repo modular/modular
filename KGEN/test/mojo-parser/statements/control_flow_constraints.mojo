@@ -23,7 +23,7 @@ struct PStruct[*a: Int]:
 
 
 # CHECK-LABEL: lit.fn @"double_where_clause
-# CHECK-SAME: where {<eq(#kgen.variadic.size<#kgen.param.decl.ref<"a`"> : !kgen.variadic<!Int>>, 2), #{{[[:alnum:]]+}}>, <eq(#kgen.variadic.size<#kgen.param.decl.ref<"a`2"> : !kgen.variadic<!Int>>, 2), #{{[[:alnum:]]+}}>}
+# CHECK-SAME: where {<eq(#kgen.variadic.size<#kgen.param.decl.ref<"x.a`"> : !kgen.variadic<!Int>>, 2), #{{[[:alnum:]]+}}>, <eq(#kgen.variadic.size<#kgen.param.decl.ref<"y.a`2"> : !kgen.variadic<!Int>>, 2), #{{[[:alnum:]]+}}>}
 fn double_where_clause(
     x: PStruct[*_], y: PStruct[*_]
 ) where type_of(x).predicate() where type_of(y).predicate():
