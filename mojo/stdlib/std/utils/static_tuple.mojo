@@ -227,7 +227,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._mlir_value).address, idx._mlir_value
         )
-        return UnsafePointer(ptr)[]
+        return UnsafePointer[origin = origin_of(self)](ptr)[]
 
     @always_inline("nodebug")
     fn _replace[idx: Int](self, val: Self.element_type) -> Self:
