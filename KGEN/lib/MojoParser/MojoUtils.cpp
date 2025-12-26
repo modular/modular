@@ -31,12 +31,6 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
   // consider their origin accesses.
   params = params.drop_back(countNumImplicitKinds(paramList));
 
-  SmallVector<Type> types;
-  for (ParamDeclAttr param : params)
-    types.push_back(param.getType());
-  SmallVector<TypedAttr> origins =
-      shared.cachedOriginFinder.findOriginsIn(types);
-
   // We also need to find all accessible origin sets, even if they are
   // parametric, and union them with the found origins. We don't need to
   // recurse into any nested parameter origins. Even if they contain origin
@@ -51,6 +45,7 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
   //
   // We can union the sets together by wrapping them in a origin set union.
   // The mutability doesn't matter since it will get flattened.
+  SmallVector<TypedAttr> origins;
   auto addOriginSet = [&](TypedAttr param) {
     origins.push_back(OriginSetUnionAttr::get(
         param, OriginType::get(shared.getContext(), /*isMutable=*/true)));
