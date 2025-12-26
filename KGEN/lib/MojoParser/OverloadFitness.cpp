@@ -1204,7 +1204,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         resultTypeDiag << "return type " << resultType << " parameter "
                        << ParamDeclRefAttr::get(
                               declOp.getParams()[paramIdx].getName(), paramType)
-                       << " doesn't match expected value " << expected;
+                       << " has value " << actual
+                       << " that doesn't match expected " << expected;
         return std::move(resultTypeDiag);
       }
     }
