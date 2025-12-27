@@ -304,6 +304,13 @@ public:
   void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
                                  SpecialFunctionInfo &fnInfo) const;
 
+  /// In a method with a self argument, check to make sure it has the correct
+  /// type and invariants. "isSelfResult" is true for initializers that return
+  /// Self, they don't take it as an input argument.
+  void checkSelfArgument(ASTDecl &decl, ASTType selfArgType,
+                         const ParsedArgument &selfArg,
+                         bool isSelfResult) const;
+
   /// Return a FunctionType with the specified argTypes and resultType.
   FunctionType getFunctionType() const;
 
