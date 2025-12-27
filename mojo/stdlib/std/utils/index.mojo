@@ -769,6 +769,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
+    constrained[args.__len__() > 0, "At least one argument is required"]()
 
     var result = IndexList[args.__len__(), element_type=dtype]()
 
