@@ -190,7 +190,7 @@ def test_optional_unwrap():
     assert_true(a)
     assert_equal(123, a[])
     a = Optional[Int](None)
-    with assert_raises(contains="on empty Optional"):
+    with assert_raises(contains="EmptyOptionalError"):
         _ = a[]
 
 

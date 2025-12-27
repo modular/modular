@@ -47,6 +47,24 @@ struct _NoneType(ImplicitlyCopyable):
     pass
 
 
+@register_passable
+@fieldwise_init
+struct EmptyOptionalError[T: AnyType](ImplicitlyCopyable, Writable):
+    """An error type for when an empty `Optional` is accessed.
+
+    Parameters:
+        T: The type of the value that was accessed in the `Optional`.
+    """
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the error to a `Writer`.
+
+        Args:
+            writer: The `Writer` to write to.
+        """
+        writer.write("EmptyOptionalError[", get_type_name[Self.T](), "]")
+
+
 # ===-----------------------------------------------------------------------===#
 # Optional
 # ===-----------------------------------------------------------------------===#
@@ -304,7 +322,9 @@ struct Optional[T: Movable](
         return not self
 
     @always_inline
-    fn __getitem__(ref self) raises -> ref [self._value] Self.T:
+    fn __getitem__(
+        ref self,
+    ) raises EmptyOptionalError[Self.T] -> ref [self._value] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
 
         Returns:
@@ -314,7 +334,7 @@ struct Optional[T: Movable](
             On empty `Optional`.
         """
         if not self:
-            raise Error(".value() on empty Optional")
+            raise EmptyOptionalError[Self.T]()
         return self.unsafe_value()
 
     fn __str__(self: Self) -> String:
