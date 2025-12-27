@@ -13,6 +13,7 @@
 
 from testing import TestSuite, assert_true
 from time import perf_counter_ns
+from utils import ReadOnly
 
 
 @fieldwise_init

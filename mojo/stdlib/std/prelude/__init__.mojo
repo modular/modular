@@ -12,13 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Standard library prelude: fundamental types, traits, and operations auto-imported."""
 
-from collections import (
-    Dict,
-    InlineArray,
-    KeyElement,
-    List,
-    Optional,
-)
+from collections import Dict, InlineArray, KeyElement, List, Optional
 from collections.string import (
     Codepoint,
     StaticString,
@@ -137,7 +131,6 @@ from builtin.value import (
     materialize,
 )
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
-from builtin.read_only import ReadOnly
 from documentation import doc_private
 from iter import (
     Iterable,

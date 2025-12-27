@@ -23,6 +23,7 @@ struct ReadOnly[T: Movable & ImplicitlyDestructible]:
     Example:
     ```mojo
     from time import current_time_ns
+    from utils import ReadOnly
 
     def main():
         ref start_time = ReadOnly(current_time_ns())[]
