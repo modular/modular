@@ -184,6 +184,8 @@ struct Unit:
 
     comptime ns = "ns"
     """Nanoseconds."""
+    comptime us = "us"
+    """Microseconds."""
     comptime ms = "ms"
     """Milliseconds."""
     comptime s = "s"
@@ -193,6 +195,8 @@ struct Unit:
     fn _divisor(unit: String) -> Int:
         if unit == Unit.ns:
             return 1
+        elif unit == Unit.us:
+            return 1_000
         elif unit == Unit.ms:
             return 1_000_000
         else:
@@ -240,7 +244,7 @@ struct Report(Copyable, Defaultable):
         The total duration it took to run all benchmarks.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
 
         Returns:
             The total duration it took to run all benchmarks.
@@ -256,7 +260,7 @@ struct Report(Copyable, Defaultable):
         The average duration of all benchmark runs.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
 
         Returns:
             The average duration of all benchmark runs.
@@ -268,7 +272,7 @@ struct Report(Copyable, Defaultable):
         The batch of benchmarks that was the fastest to run.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
 
         Returns:
             The fastest duration out of all batches.
@@ -286,7 +290,7 @@ struct Report(Copyable, Defaultable):
         The batch of benchmarks that was the slowest to run.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
 
         Returns:
             The slowest duration out of all batches.
@@ -306,7 +310,7 @@ struct Report(Copyable, Defaultable):
         """Converts the Report to a String.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
 
         Returns:
             The string representation of the Report.
@@ -331,7 +335,7 @@ struct Report(Copyable, Defaultable):
         Prints out the shortened version of the report.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
         """
         print(self.as_string(unit))
 
@@ -341,7 +345,7 @@ struct Report(Copyable, Defaultable):
         runs.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
         """
 
         var divisor = Unit._divisor(unit)
