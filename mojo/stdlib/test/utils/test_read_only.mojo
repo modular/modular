@@ -10,10 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""General utils: indexing, variants, static tuples, and thread synchronization."""
 
-from .index import Index, IndexList, product
-from .lock import BlockingScopedLock, BlockingSpinLock, SpinWaiter
-from .static_tuple import StaticTuple
-from .variant import Variant
-from .read_only import ReadOnly
+from testing import TestSuite, assert_true
+from time import perf_counter_ns
+from utils import ReadOnly
+
+
+@fieldwise_init
+struct TimeHolder(ImplicitlyCopyable):
+    var time: UInt
+
+
+def test_read_only():
+    var current_time = TimeHolder(perf_counter_ns())
+    ref start_time = ReadOnly(current_time)[]
+    current_time.time = 0  # does not affect start_time
+    # start_time.time = 0  # compile error
+    assert_true(
+        start_time.time > 0,
+        msg="failed to use runtime constant value",
+    )
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()
