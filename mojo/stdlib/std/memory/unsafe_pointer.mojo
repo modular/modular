@@ -487,22 +487,29 @@ struct UnsafePointer[
             other.address
         )
 
-    @doc_private
     @always_inline("builtin")
     @implicit
-    fn __init__[
-        T: AnyType
-    ](
-        other: LegacyUnsafePointer[
-            T,
-            address_space = Self.address_space, **_,
-        ],
+    fn __init__(
+        other: LegacyUnsafePointer,
         out self: UnsafePointer[
-            T,
-            Origin[mut = Self.mut].external,
-            address_space = Self.address_space,
+            other.type,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
         ],
     ):
+        """Cast a `LegacyUnsafePointer` to an immutable `UnsafePointer`.
+
+        Args:
+            other: The `LegacyUnsafePointer` to cast from.
+
+        Returns:
+            An `UnsafePointer` with the same type, origin and
+            address space as the original `LegacyUnsafePointer` but immutable.
+
+        Notes:
+            This constructor will be removed in a future version of Mojo when
+            `LegacyUnsafePointer` is removed.
+        """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
         ](other.address)

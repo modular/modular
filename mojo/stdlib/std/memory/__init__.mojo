@@ -19,6 +19,7 @@ from .arc import ArcPointer
 from .legacy_unsafe_pointer import (
     LegacyOpaquePointer,
     LegacyUnsafePointer,
+    LegacyExternalMutOpaquePointer,
 )
 from .memory import memcmp, memcpy, memset, memset_zero, stack_allocation
 from .owned_pointer import OwnedPointer

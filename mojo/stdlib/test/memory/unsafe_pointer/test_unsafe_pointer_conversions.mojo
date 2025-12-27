@@ -119,7 +119,6 @@ def test_v1_immutable_converts_to_v2():
     var x = 42
     var p = LegacyUnsafePointer(to=x).as_immutable()
 
-    v2_mutable(p)
     v2_immutable(p)
     v2_unbound(p)
 
@@ -138,17 +137,12 @@ def test_v1_immutable_any_converts_to_v2():
     var x = 42
     var p = LegacyUnsafePointer(to=x).as_immutable().as_any_origin()
 
-    v2_mutable(p)
     v2_immutable(p)
     v2_immutable_any(p)
     v2_unbound(p)
 
 
 def test_v1_to_v2_external():
-    var x = 42
-    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer[Int]()
-    _: UnsafePointer[Int, ImmutOrigin.external] = LegacyUnsafePointer[Int]()
-    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer(to=x)
     _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer[
         Int, origin = MutOrigin.external
     ]()

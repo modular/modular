@@ -24,6 +24,7 @@ from memory import (
     LegacyOpaquePointer as OpaquePointer,
     LegacyUnsafePointer as UnsafePointer,
     memcpy,
+    LegacyExternalMutOpaquePointer,
 )
 from nn.concat import concat
 from register import register_internal
@@ -343,10 +344,10 @@ fn unpack_device_ctx(
 ) -> DeviceContextPtr:
     var ptr = external_call[
         "MGP_RT_UnpackDeviceContext",
-        OpaquePointer,
+        LegacyExternalMutOpaquePointer,
     ](async_ptr)
 
-    return DeviceContextPtr(ptr)
+    return DeviceContextPtr(ptr.unsafe_origin_cast[MutOrigin.external]())
 
 
 @register_internal("builtin.unpack_buffer_ref")
@@ -357,7 +358,7 @@ fn unpack_buffer_ref(
     var size: UInt64 = 0
     var data_ptr = external_call[
         "MGP_RT_GetDataFromBuffer",
-        OpaquePointer,
+        LegacyExternalMutOpaquePointer,
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
     return NDBuffer[DType.int8, 1](data_ptr.bitcast[Int8](), shape)
@@ -380,7 +381,7 @@ fn unpack_tensor[
     var shapes = IndexList[buffer_rank]()
     var buffer_ptr = external_call[
         "MGP_RT_GetShapeAndDataFromTensor",
-        OpaquePointer,
+        LegacyExternalMutOpaquePointer,
     ](
         UnsafePointer(to=shapes.data),
         tensor_async_ptr,

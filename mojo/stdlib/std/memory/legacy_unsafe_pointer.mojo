@@ -1594,3 +1594,8 @@ struct LegacyUnsafePointer[
 
 comptime LegacyOpaquePointer = LegacyUnsafePointer[NoneType]
 """An opaque pointer, equivalent to the C `void*` type."""
+
+comptime LegacyExternalMutOpaquePointer = LegacyUnsafePointer[
+    NoneType, origin = MutOrigin.external
+]
+"""An external mutable opaque pointer, equivalent to the C `void*` type."""
