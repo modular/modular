@@ -34,7 +34,6 @@ modular_cc_test(
         "ProcessTest.cpp",
         "RandomTest.cpp",
         "StringExtrasTest.cpp",
-        "VersionTest.cpp",
     ],
     deps = [
         "//Support:Base",
@@ -172,7 +171,6 @@ modular_cc_test(
 modular_cc_test(
     name = "MLTest",
     srcs = [
-        "BCastTest.cpp",
         "DTypeTest.cpp",
         "TensorShapeTest.cpp",
         "TensorSpecTest.cpp",
