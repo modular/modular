@@ -770,33 +770,6 @@ fn Index[
         The constructed IndexList.
     """
 
-    @parameter
-    if args.__len__() == 1:
-        return {Int(args[0])}
-
-    @parameter
-    if args.__len__() == 2:
-        return {Int(args[0]), Int(args[1])}
-
-    @parameter
-    if args.__len__() == 3:
-        return {Int(args[0]), Int(args[1]), Int(args[2])}
-
-    @parameter
-    if args.__len__() == 4:
-        return {Int(args[0]), Int(args[1]), Int(args[2]), Int(args[3])}
-
-    @parameter
-    if args.__len__() == 5:
-        return {
-            Int(args[0]),
-            Int(args[1]),
-            Int(args[2]),
-            Int(args[3]),
-            Int(args[4]),
-        }
-
-    # For 6+ dimensions, use a parameter loop
     var result = IndexList[args.__len__(), element_type=dtype]()
 
     @parameter
