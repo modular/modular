@@ -44,7 +44,7 @@ struct ReadOnly[T: Movable & ImplicitlyDestructible]:
         print("Magic Number: ", magic_number)
     ```
     If the value is provided through a default (`read`) argument convention
-    `RuntimeConst` might not be needed either.
+    `ReadOnly` might not be needed either.
 
     Parameters:
         T: The type of the value being wrapped. Must be `Movable` and
