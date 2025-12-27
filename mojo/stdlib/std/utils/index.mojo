@@ -754,9 +754,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 # Factory functions for creating index.
 # ===-----------------------------------------------------------------------===#
 @always_inline
-fn Index[*Ts: Intable, dtype: DType = DType.int64](
-    *args: *Ts,
-) -> IndexList[args.__len__(), element_type=dtype]:
+fn Index[
+    *Ts: Intable, dtype: DType = DType.int64
+](*args: *Ts,) -> IndexList[args.__len__(), element_type=dtype]:
     """Constructs an N-D Index from the given values.
 
     Parameters:
@@ -769,6 +769,7 @@ fn Index[*Ts: Intable, dtype: DType = DType.int64](
     Returns:
         The constructed IndexList.
     """
+
     @parameter
     if args.__len__() == 1:
         return {Int(args[0])}
@@ -787,10 +788,17 @@ fn Index[*Ts: Intable, dtype: DType = DType.int64](
 
     @parameter
     if args.__len__() == 5:
-        return {Int(args[0]), Int(args[1]), Int(args[2]), Int(args[3]), Int(args[4])}
+        return {
+            Int(args[0]),
+            Int(args[1]),
+            Int(args[2]),
+            Int(args[3]),
+            Int(args[4]),
+        }
 
     # For 6+ dimensions, use a parameter loop
     var result = IndexList[args.__len__(), element_type=dtype]()
+
     @parameter
     for i in range(args.__len__()):
         result[i] = Int(args[i])
