@@ -15,7 +15,7 @@
 The memory package provides several pointer types, as well
 as utility functions for dealing with memory."""
 
-from .arc import ArcPointer
+from .arc_pointer import ArcPointer
 from .legacy_unsafe_pointer import (
     LegacyOpaquePointer,
     LegacyUnsafePointer,
