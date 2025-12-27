@@ -25,6 +25,7 @@ from sys import bit_width_of
 
 from builtin.device_passable import DevicePassable
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
+from builtin.variadics import Variadic
 
 from .static_tuple import StaticTuple
 
@@ -204,8 +205,11 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    fn __init__(out self, elems: Tuple[Int, Int]):
+    fn __init__[*Ts: Movable & Intable](out self, elems: Tuple[*Ts]):
         """Constructs a static int tuple given a tuple of integers.
+
+        Parameters:
+            Ts: The element types of the input tuple (must be `Intable`).
 
         Args:
             elems: The tuple to copy from.
@@ -213,68 +217,16 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         __comptime_assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
-        var num_elements = len(elems)
-
-        debug_assert(
-            Self.size == num_elements,
-            "[IndexList] mismatch in the number of elements",
-        )
-
-        var tup = Self()
-
-        @parameter
-        for idx in range(2):
-            tup[idx] = rebind[Int](elems[idx])
-
-        self = tup
-
-    @always_inline
-    fn __init__(out self, elems: Tuple[Int, Int, Int]):
-        """Constructs a static int tuple given a tuple of integers.
-
-        Args:
-            elems: The tuple to copy from.
-        """
+        comptime num_elements = type_of(elems).__len__()
         __comptime_assert (
-            Self.element_type.is_integral()
-        ), "Element type must be of integral type."
-        var num_elements = len(elems)
-
-        debug_assert(
-            Self.size == num_elements,
-            "[IndexList] mismatch in the number of elements",
-        )
+            Self.size == num_elements
+        ), "[IndexList] mismatch in the number of elements"
 
         var tup = Self()
 
         @parameter
-        for idx in range(3):
-            tup[idx] = rebind[Int](elems[idx])
-
-        self = tup
-
-    @always_inline
-    fn __init__(out self, elems: Tuple[Int, Int, Int, Int]):
-        """Constructs a static int tuple given a tuple of integers.
-
-        Args:
-            elems: The tuple to copy from.
-        """
-        __comptime_assert (
-            Self.element_type.is_integral()
-        ), "Element type must be of integral type."
-        var num_elements = len(elems)
-
-        debug_assert(
-            Self.size == num_elements,
-            "[IndexList] mismatch in the number of elements",
-        )
-
-        var tup = Self()
-
-        @parameter
-        for idx in range(4):
-            tup[idx] = rebind[Int](elems[idx])
+        for idx in range(num_elements):
+            tup[idx] = Int(elems[idx])
 
         self = tup
 
