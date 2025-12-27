@@ -18,7 +18,9 @@ functionality in the rest of the Mojo standard library.
 """
 
 from sys import CompilationTarget
-from sys.ffi import c_char, c_int, c_size_t, get_errno
+from sys.ffi import c_char, c_int, c_size_t, c_pid_t, get_errno
+
+from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -101,6 +103,130 @@ struct BufferMode:
 
 
 # ===-----------------------------------------------------------------------===#
+# spawn.h - Spawn process
+# ===-----------------------------------------------------------------------===#
+
+
+struct posix_spawn_file_actions_t:
+    """
+    Opaque, platform-dependent structure used to define file actions
+    for `posix_spawnp`. Its internal layout varies by operating system's
+    C library implementation (e.g., glibc on Linux, macOS's libc).
+
+    This definition uses a fixed-size opaque buffer (128 bytes) to
+    accommodate the largest known common implementations (e.g., glibc
+    on x86-64 requires approx. 80 bytes; macOS uses a pointer-to-pointer
+    model which also fits within this).
+
+    Slightly over sized to ensure future compatibility.
+
+    Refer to:
+    - POSIX `posix_spawn_file_actions_t` man page for opaque nature.
+    - https://github.com/lattera/glibc/blob/master/posix/spawn.h
+    - https://docs.rs/libc/latest/src/libc/unix/linux_like/linux/mod.rs.html#101-1612
+    """
+
+    var _opaque_data: StaticTuple[UInt64, 16]  # 128 bytes
+
+    fn __init__(out self):
+        self._opaque_data = StaticTuple[UInt64, 16]()
+
+
+comptime posix_spawn_file_actions_t_ptr = UnsafePointer[
+    posix_spawn_file_actions_t
+]
+
+
+@always_inline
+fn posix_spawn_file_actions_init(
+    file_actions: posix_spawn_file_actions_t_ptr,
+) -> c_int:
+    """[`posix_spawn_file_actions_init()`](https://pubs.opengroup.org/onlinepubs/9699919799/functions/posix_spawn_file_actions_init.html)
+    — initialize a `posix_spawn_file_actions_t` object.
+
+    Args:
+        file_actions: A pointer to the `posix_spawn_file_actions_t` object to initialize.
+
+    Returns:
+        0 on success, or an error number on failure.
+    """
+    return external_call["posix_spawn_file_actions_init", c_int](file_actions)
+
+
+@always_inline
+fn posix_spawn_file_actions_destroy(
+    file_actions: posix_spawn_file_actions_t_ptr,
+) -> c_int:
+    """[`posix_spawn_file_actions_destroy()`](https://pubs.opengroup.org/onlinepubs/9699919799/functions/posix_spawn_file_actions_destroy.html)
+    — destroy a `posix_spawn_file_actions_t` object.
+
+    Args:
+        file_actions: A pointer to the `posix_spawn_file_actions_t` object to destroy.
+
+    Returns:
+        0 on success, or an error number on failure.
+    """
+    return external_call["posix_spawn_file_actions_destroy", c_int](
+        file_actions
+    )
+
+
+@always_inline
+fn posix_spawn_file_actions_adddup2(
+    file_actions: posix_spawn_file_actions_t_ptr,
+    fildes: c_int,
+    newfildes: c_int,
+) -> c_int:
+    """[`posix_spawn_file_actions_adddup2()`](https://pubs.opengroup.org/onlinepubs/9699919799/functions/posix_spawn_file_actions_adddup2.html)
+    — add a `dup2()` action to a `posix_spawn_file_actions_t` object.
+
+    Args:
+        file_actions: A pointer to the `posix_spawn_file_actions_t` object.
+        fildes: The file descriptor to duplicate.
+        newfildes: The new file descriptor.
+
+    Returns:
+        0 on success, or an error number on failure.
+    """
+    return external_call["posix_spawn_file_actions_adddup2", c_int](
+        file_actions, fildes, newfildes
+    )
+
+
+@always_inline
+fn posix_spawnp[
+    origin: ImmutOrigin,
+    //,
+](
+    pid: UnsafePointer[mut=True, c_pid_t],
+    file: UnsafePointer[mut=False, c_char],
+    file_actions: posix_spawn_file_actions_t_ptr,
+    argv: UnsafePointer[UnsafePointer[mut=False, c_char, origin]],
+    envp: UnsafePointer[UnsafePointer[mut=False, c_char, origin]],
+) -> c_int:
+    """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
+    — function creates a new process (child process) from the specified process image.
+
+    Args:
+        pid: UnsafePointer[c_pid_t], dest. for process id if spawned successfully.
+        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
+        file_actions: The file actions to be performed on the new process.
+        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+        envp: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+    """
+    # TODO: Implement `const posix_spawnattr_t *restrict attrp,`
+    # to allow full control of how process is spawned
+    return external_call["posix_spawnp", c_int](
+        pid,
+        file,
+        file_actions,
+        OpaquePointer[mut=False, origin](),
+        argv,
+        envp,
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # unistd.h
 # ===-----------------------------------------------------------------------===#
 
@@ -116,7 +242,7 @@ fn execvp[
     //,
 ](
     file: UnsafePointer[mut=False, c_char],
-    argv: UnsafePointer[mut=False, UnsafePointer[c_char, origin]],
+    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin]],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -173,6 +299,30 @@ fn write(fd: c_int, buf: OpaquePointer[mut=False], nbyte: c_size_t) -> c_int:
     — write to a file descriptor.
     """
     return external_call["write", c_int](fd, buf, nbyte)
+
+
+# ===-----------------------------------------------------------------------===#
+# sys/wait.h - Control over file descriptors
+# ===-----------------------------------------------------------------------===#
+
+
+struct WaitFlags:
+    """Flags for `waitpid`."""
+
+    comptime WNOHANG: c_int = 1
+
+
+# pid_t waitpid(pid_t pid, int *wstatus, int options);
+@always_inline
+fn waitpid(
+    pid: c_pid_t,
+    status: UnsafePointer[mut=True, c_int],
+    options: c_int,
+) -> c_pid_t:
+    """[`waitpid()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/waitpid.html)
+    — Wait on child process to finish executing.
+    """
+    return external_call["waitpid", c_pid_t](pid, status, options)
 
 
 # ===-----------------------------------------------------------------------===#

@@ -1,0 +1,8 @@
+#Load the custom rule for creating Mojo binaries.
+load("//bazel:api.bzl", "mojo_binary")
+
+mojo_binary(
+    name = "process_example",
+    srcs = ["process_example.mojo"],
+    deps = ["@mojo//:std"],
+)
