@@ -112,8 +112,6 @@ def test_v1_mutable_converts_to_v2():
 
     v2_mutable(p)
     v2_immutable(p)
-    v2_mutable_any(p)
-    v2_immutable_any(p)
     v2_unbound(p)
 
 
@@ -123,8 +121,6 @@ def test_v1_immutable_converts_to_v2():
 
     v2_mutable(p)
     v2_immutable(p)
-    v2_mutable_any(p)
-    v2_immutable_any(p)
     v2_unbound(p)
 
 
@@ -135,7 +131,6 @@ def test_v1_mutable_any_converts_to_v2():
     v2_mutable(p)
     v2_immutable(p)
     v2_mutable_any(p)
-    v2_immutable_any(p)
     v2_unbound(p)
 
 
@@ -145,7 +140,6 @@ def test_v1_immutable_any_converts_to_v2():
 
     v2_mutable(p)
     v2_immutable(p)
-    v2_mutable_any(p)
     v2_immutable_any(p)
     v2_unbound(p)
 
