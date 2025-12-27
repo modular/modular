@@ -28,6 +28,8 @@ from max.interfaces import (
     BaseContext,
     EmbeddingsGenerationOutput,
     GenerationStatus,
+    ImageGenerationOutput,
+    ImageGenerationRequest,
     LogProbabilities,
     PipelineOutput,
     PipelineTokenizer,
@@ -385,5 +387,79 @@ class AudioGeneratorPipeline(
             audio_data=combined_audio,
             metadata=last_chunk.metadata,
             steps_executed=sum(chunk.steps_executed for chunk in audio_chunks),
+            final_status=GenerationStatus.END_OF_SEQUENCE,
+        )
+
+
+class ImageGeneratorPipeline(
+    BasePipeline[TextContext, ImageGenerationRequest, ImageGenerationOutput]
+):
+    """Base class for diffusion-based image generation pipelines."""
+
+    async def next_chunk(
+        self, request: ImageGenerationRequest
+    ) -> AsyncGenerator[ImageGenerationOutput, None]:
+        """Generates and streams images for the provided request."""
+        total_sw = StopWatch()
+        self.logger.debug(
+            "%s: Started: Elapsed: %0.2f ms",
+            request.request_id,
+            total_sw.elapsed_ms,
+        )
+
+        try:
+            with record_ms(METRICS.input_time):
+                context = await self.tokenizer.new_context(request)
+
+            with record_ms(METRICS.output_time):
+                async for response in self.engine_queue.stream(
+                    request.request_id, context
+                ):
+                    yield response
+        finally:
+            if self.debug_logging:
+                self.logger.debug(
+                    "%s: Completed: Elapsed: %0.2f ms",
+                    request.request_id,
+                    total_sw.elapsed_ms,
+                )
+
+    async def generate_full_image(
+        self, request: ImageGenerationRequest
+    ) -> ImageGenerationOutput:
+        """Generates complete image for the provided request."""
+        image_chunks: list[ImageGenerationOutput] = []
+        np_chunks: list[npt.NDArray[np.floating[Any]]] = []
+        async for chunk in self.next_chunk(request):
+            if chunk.image_data.size == 0 or chunk.image_data.size == 0:
+                continue
+            np_chunks.append(chunk.image_data)
+            image_chunks.append(chunk)
+
+        # We import torch here so that only folks that use the
+        # ImageGeneratorPipeline will need to have it installed.
+        import numpy as np
+
+        if len(image_chunks) == 0:
+            return ImageGenerationOutput(
+                steps_executed=sum(
+                    chunk.steps_executed for chunk in image_chunks
+                ),
+                final_status=GenerationStatus.END_OF_SEQUENCE,
+            )
+
+        # Combine image chunks and metadata.
+        # Convert numpy arrays to torch tensors for concatenation, then back to numpy
+        combined_image = np.concatenate(np_chunks, axis=-1)
+
+        # We should only return from the next_chunk loop when the last chunk
+        # is done.
+        last_chunk = image_chunks[-1]
+        assert last_chunk.is_done
+
+        return ImageGenerationOutput(
+            image_data=combined_image,
+            metadata=last_chunk.metadata,
+            steps_executed=sum(chunk.steps_executed for chunk in image_chunks),
             final_status=GenerationStatus.END_OF_SEQUENCE,
         )
