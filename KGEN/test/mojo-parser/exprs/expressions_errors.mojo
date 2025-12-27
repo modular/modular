@@ -1112,3 +1112,12 @@ fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
 
     # expected-error @below {{expected '(' after 'comptime'}}
     var d = comptime nrm.method()
+
+
+
+struct TwoParamsType[a: Int, b: Int]:
+    pass
+comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B]
+fn take_anytype[T: AnyType]():
+  # expected-error @below {{cannot pass '[B: Int] AnyStruct[TwoParamsType[B, ?]]' value, expected 'AnyType' in call parameter}}
+    take_anytype[TwoParamsTypeAlias]()

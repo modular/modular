@@ -1303,6 +1303,13 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
       ASTType(resultType).print(os, diagShared);
   } else if (auto paramRef = dyn_cast<ParamType>(type)) {
     printParam(os, paramRef.getParam(), diagShared);
+  } else if (auto genType = dyn_cast<GeneratorType>(type)) {
+    Type reboundBody =
+        printGeneratorInterface(os, genType.getInputParamTypes(),
+                                dyn_cast<PogListAttr>(genType.getMetadata()),
+                                diagShared, genType.getBody());
+    os << ' ';
+    ASTType(reboundBody).print(os, diagShared);
   } else if (isa<TypeType>(type)) {
     os << "AnyTrivialRegType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
