@@ -270,7 +270,3 @@ build:ci-remote-mi355 --config=remote-mi355
 
 # TODO: Remove once transitives are fixed
 common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo,+@rules_cc
-
-# Use GitHub mirror for BCR to work around bcr.bazel.build outages
-# TODO: Remove once https://github.com/bazelbuild/bazel/issues/28101 is resolved
-common --registry=https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/main/
