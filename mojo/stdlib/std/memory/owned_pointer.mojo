@@ -111,16 +111,37 @@ struct OwnedPointer[T: AnyType]:
         Safety:
 
         This function is unsafe as the provided `UnsafePointer` must be initialize with a single valid `T`
-        initialliy allocated with this `OwnedPointer`'s backing allocator.
+        initially allocated with this `OwnedPointer`'s backing allocator.
         This function is unsafe as other memory problems can arise such as a double-free if this function
         is called twice with the same pointer or a user manually deallocates the same data.
 
         After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
-        self._inner = unsafe_from_raw_pointer.unsafe_origin_cast[
-            MutOrigin.external
-        ]()
+        self._inner = unsafe_from_raw_pointer
+
+    fn __init__(out self, *, unsafe_from_opaque_pointer: MutOpaquePointer[_]):
+        """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
+
+        Args:
+            unsafe_from_opaque_pointer: The `OpaquePointer` to take ownership of.
+
+        Safety:
+
+        This function is unsafe as the provided `OpaquePointer` must be initialize with a single valid `T`
+        initially allocated with this `OwnedPointer`'s backing allocator.
+        This function is unsafe as other memory problems can arise such as a double-free if this function
+        is called twice with the same pointer or a user manually deallocates the same data.
+
+        After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
+        In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
+        """
+        var ptr = unsafe_from_opaque_pointer.bitcast[Self.T]()
+        self = Self(
+            unsafe_from_raw_pointer=ptr.unsafe_origin_cast[
+                ptr.origin.external
+            ]()
+        )
 
     fn __del__(deinit self):
         """Destroy the OwnedPointer[]."""

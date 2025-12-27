@@ -660,8 +660,10 @@ struct LegacyUnsafePointer[
 
             var self_tmp = UnsafeMaybeUninitialized[U]()
             var other_tmp = UnsafeMaybeUninitialized[U]()
-            memcpy(dest=self_tmp.unsafe_ptr(), src=self, count=1)
-            memcpy(dest=other_tmp.unsafe_ptr(), src=other, count=1)
+            memcpy(dest=self_tmp.unsafe_ptr(), src=UnsafePointer(self), count=1)
+            memcpy(
+                dest=other_tmp.unsafe_ptr(), src=UnsafePointer(other), count=1
+            )
 
             memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
             memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
@@ -992,7 +994,7 @@ struct LegacyUnsafePointer[
             A vector which is stride loaded.
         """
         return strided_load(
-            self, Int(stride), SIMD[DType.bool, width](fill=True)
+            UnsafePointer(self), Int(stride), SIMD[DType.bool, width](fill=True)
         )
 
     @always_inline("nodebug")

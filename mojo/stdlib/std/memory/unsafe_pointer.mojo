@@ -369,8 +369,10 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    fn __init__(
-        other: UnsafePointer[mut=True, **_],
+    fn __init__[
+        disambig2: Int = 0
+    ](
+        other: UnsafePointer,
         out self: UnsafePointer[
             other.type,
             ImmutOrigin(other.origin),
@@ -381,6 +383,9 @@ struct UnsafePointer[
 
         Args:
             other: The mutable pointer to cast from.
+
+        Parameters:
+            disambig2: Ignored. Works around name mangling conflict.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
