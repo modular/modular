@@ -2236,62 +2236,20 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
   // Check any special function information.
 
   // Check that the 'self' argument/result of a method was specified correctly.
-  if (selfType && (!funcOp.getIsStatic() ||
-                   (fnInfo.flags & SpecialFunctionInfo::kSelfResult))) {
-    // Implement this as a lambda so we can early exit with 'return'.
-    auto checkSelf = [&](ASTType selfArgType, const ParsedArgument &selfArg) {
-      // Don't check broken args, because we don't want redundant diagnostics.
-      if (selfArg.isErroneous)
-        return;
-
-      // It ok if it exactly matches (typically with a specific convention).
-      if (selfType.isEqualCanon(selfArgType))
-        return;
-
-      // If an error was already diagnosed with the type, disable follow-ons.
-      if (isa<TypeCheckErrorType>(selfArgType)) {
-        selfArg.isErroneous = true;
-        return;
-      }
-
-      // It is ok if the self type has different parameters than the
-      // declaration, this is a form of conditional conformance.
-      if (selfType.getWithoutParameters(shared).isEqualCanon(
-              selfArgType.getWithoutParameters(shared)))
-        // TODO: We should check to make sure the parameters are a subtype of
-        // the declared parameters.  We don't want Self to say T is Movable, but
-        // then have it be implemented with AnyType.
-        // Replacing this whole thing with 'where' clauses would be much nicer
-        // anyhow.
-        return;
-
-      // Otherwise, this is an unrecognized self type. If this is a trait, the
-      // explicit self type is very hard to specify in mojo, so we suggest to
-      // use 'Self' instead.
-      auto diag = emitErrorLoc(selfArg.loc, "'self' argument must have type ");
-      if (decl.getParentDecl() &&
-          isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation()))
-        diag << "'Self' in trait method declaration";
-      else
-        diag << selfType;
-      diag << ", but actually has type " << selfArgType;
-      selfArg.isErroneous = true;
-      if (selfArg.typeExpr)
-        diag << selfArg.typeExpr->getRange();
-    };
-
+  if (selfType) {
     if (fnInfo.flags & SpecialFunctionInfo::kSelfResult) {
       // __new__ and __init__ require a Self result type, or a specialization
       // thereof.
-      checkSelf(resultType, argList.resultArg);
+      checkSelfArgument(decl, resultType, argList.resultArg,
+                        /*isSelfResult*/ true);
+    } else if (funcOp.getIsStatic()) {
+      // Static methods don't have a self argument.
     } else if (argTypes.empty()) {
-      // TODO('def' allows unused arguments): We can/should relax this for
-      // 'def' declarations in the future, they should be able to implicit
-      // ignore arguments like Python does.
       emitError("self argument must be present in instance method");
     } else {
       // Normal methods require a self argument.
-      checkSelf(argTypes[kSelfArgNo], parsedArgs[kSelfArgNo]);
+      checkSelfArgument(decl, argTypes[kSelfArgNo], parsedArgs[kSelfArgNo],
+                        /*isSelfResult*/ false);
     }
   }
 
@@ -2395,6 +2353,125 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
   // remember which kind it is.
   if (fnInfo.kind != SpecialFunctionKind::kNormal)
     funcOp.setSpecialFnKind(uint8_t(fnInfo.kind));
+}
+
+/// In a method with a self argument, check to make sure it has the correct
+/// type and invariants. "isSelfResult" is true for initializers that return
+/// Self, they don't take it as an input argument.
+void TypeCheckedFnSignature::checkSelfArgument(ASTDecl &decl,
+                                               ASTType selfArgType,
+                                               const ParsedArgument &selfArg,
+                                               bool isSelfResult) const {
+  auto &shared = paramList.shared;
+
+  // Don't check broken args, because we don't want redundant diagnostics.
+  if (selfArg.isErroneous)
+    return;
+  // It ok if it exactly matches.
+  if (selfType.isEqualCanon(selfArgType))
+    return;
+
+  // If an error was already diagnosed with the type, disable follow-ons.
+  if (isa<TypeCheckErrorType>(selfArgType)) {
+    selfArg.isErroneous = true;
+    return;
+  }
+
+  auto emitErrorLoc = [&](SMLoc loc) -> MojoInflightDiag {
+    decl.setErroneous();
+    return shared.emitError(loc);
+  };
+
+  // It is ok if the self type has different parameters than the
+  // declaration, this is a form of conditional conformance.
+  if (selfType.getDecl(shared) != selfArgType.getDecl(shared)) {
+    // Otherwise, this is an unrecognized self type. If this is a trait,
+    // the explicit self type is very hard to specify in mojo, so we
+    // suggest to use 'Self' instead.
+    auto diag = emitErrorLoc(selfArg.loc) << "'self' argument must have type ";
+    if (decl.getParentDecl() &&
+        isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation()))
+      diag << "'Self' in trait method declaration";
+    else
+      diag << selfType;
+    diag << ", but actually has type " << selfArgType;
+    if (selfArg.typeExpr)
+      diag << selfArg.typeExpr->getRange();
+    selfArg.isErroneous = true;
+    return;
+  }
+
+  // We are done with normal methods here.
+  if (!isSelfResult)
+    return;
+
+  // If this is an init with a specialized result that has different
+  // parameters than Self, then the declared parameter cannot be used - such
+  // a thing would cause cycles in parameter inference that cannot solve:
+  //   struct Cyclic[a: Int]: fn __init__(out self: Cyclic[Self.a + 1]): ...
+  // or that can lead to complicated cases like:
+  //   struct Weird[T: AnyType]: fn __init__(a: T, out self: Weird[Int]):
+  // if you can compute the result type, you don't need to also use it some
+  // other way.
+  ArrayRef<TypedAttr> selfParams = selfType.getParamBindings();
+  ArrayRef<TypedAttr> selfResultParams = selfArgType.getParamBindings();
+  assert(selfParams.size() == selfResultParams.size() &&
+         "self params and result params must match");
+  SmallDenseMap<ParamDeclRefAttr, TypedAttr, 2> disabledParams;
+  for (auto [selfParam, resultParam] :
+       llvm::zip(selfParams, selfResultParams)) {
+    // Don't disable the parameter if it is the same as the result, e.g.
+    // disable 'x' but not 'y' here:
+    //   struct T[x: Int, y: Int]:
+    //     fn __init__(out self: T[1, y]): ...
+    if (selfParam != resultParam)
+      disabledParams[cast<ParamDeclRefAttr>(selfParam)] = resultParam;
+  }
+
+  // If any parameters are disabled, scan the parameter and argument list
+  // to make sure they didn't appear there.
+  if (disabledParams.empty())
+    return;
+
+  ParameterCollector::Analysis collectorCache;
+  ParameterCollector collector(collectorCache);
+
+  bool hadError = false;
+  SmallVector<ParamDeclRefAttr> paramUses;
+  auto checkDecl = [&](Type argType, SMLoc loc, const ExprNode *expr) {
+    bool unused = false;
+    paramUses.clear();
+    collector.collectUsesFromType(argType, paramUses, unused);
+    for (ParamDeclRefAttr use : paramUses) {
+      if (!disabledParams.count(use))
+        continue;
+      auto diag = emitErrorLoc(loc)
+                  << "cannot use Self parameter " << use
+                  << " in constructor whose result defines it to "
+                  << disabledParams[use];
+      if (expr)
+        diag << expr->getRange();
+      selfArg.isErroneous = true;
+      hadError = true;
+      return;
+    }
+  };
+
+  // Check the parameters.
+  for (auto [param, paramDeclAttr, paramLoc] :
+       llvm::zip(paramList.paramDeclAttrs, paramList.paramDeclAttrs,
+                 paramList.locations)) {
+    checkDecl(paramDeclAttr.getType(), paramLoc, nullptr);
+    if (hadError)
+      return;
+  }
+
+  // Check the arguments.
+  for (auto [arg, argType] : llvm::zip(argList.parsedArgs, argTypes)) {
+    checkDecl(argType, arg.loc, arg.typeExpr);
+    if (hadError)
+      return;
+  }
 }
 
 FunctionType TypeCheckedFnSignature::getFunctionType() const {

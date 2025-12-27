@@ -170,6 +170,22 @@ struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
     def __init__(out self, *args: Self.T):
         pass
 
+struct BadResultParams[a: Int]:
+  fn __init__(out self: Self): pass # Ok.
+  # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '(a + 1)'}}
+  fn __init__(x: Int, out self: BadResultParams[Self.a + 1]): pass
+  # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '4'}}
+  fn __init__(x: BadResultParams[Self.a], out self: BadResultParams[4]): pass
+  # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '7'}}
+  fn __init__[p: BadResultParams[Self.a]](*, y: Int, out self: BadResultParams[7]):
+      pass
+
+fn useBadResultParams():
+  # These shouldn't generate errors.
+  _ = BadResultParams[1](1)
+  _ = BadResultParams()
+  _ = BadResultParams[1]()
+
 @fieldwise_init
 struct TestTuple[*Ts: AnyTrivialRegType]:
     # expected-note @+1 {{function declared here}}
