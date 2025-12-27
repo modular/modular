@@ -134,9 +134,9 @@ def get_default_test_env(exec_properties):
 
     return select({
         "@//:has_gpu": {
-            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY": "true",
-            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE": "{}".format(int(adjusted_gpu_memory_limit * 1073741824.0)),
-            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT": "100",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "true",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "{}".format(int(adjusted_gpu_memory_limit * 1073741824.0)),
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
         },
         "//conditions:default": {},
     })

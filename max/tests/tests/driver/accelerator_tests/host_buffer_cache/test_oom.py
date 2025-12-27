@@ -16,10 +16,10 @@ import pytest
 from conftest import MiB, alloc_pinned
 
 
-def test_oom(buffer_cache_config: None) -> None:
+def test_oom(memory_manager_config: None) -> None:
     # We expect a OOM because we cannot allocate 101MiB when the limit is 100MiB.
     with pytest.raises(
         ValueError,
-        match=r"\[Use only buffer cache mode\]: No room left in buffer cache: .*\[0 - host\] on .* \(size: 101MB ; free: 0B ; cache_size: 0B ; max_cache_size: 100MB\)",
+        match=r"\[Use only memory manager mode\]: No room left in memory manager: .*\[0 - host\] on .* \(size: 101MB ; free: 0B ; cache_size: 0B ; max_cache_size: 100MB\)",
     ):
         _ = alloc_pinned(101 * MiB)

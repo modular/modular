@@ -17,13 +17,13 @@ from conftest import MiB, alloc_pinned
 
 
 @pytest.mark.skip(
-    reason="GEX-2980: Host buffer cache is not working as expected"
+    reason="GEX-2980: Host memory manager is not working as expected"
 )
-def test_enumerate(buffer_cache_config: None) -> None:
+def test_enumerate(memory_manager_config: None) -> None:
     # allocate 1MiB, 2MiB, 3MiB, 4MiB, 5MiB in increasing order
     # the sum of the sizes is far less than 100MiB
     for i in range(1, 6):
         size = i * MiB
         # Fails due to:
-        #   ValueError: [Use only buffer cache mode]: No room left in buffer cache: cuda[0 - host] on 0x421a2c00 (size: 3MB ; free: 1MB ; cache_size: 4MB ; max_cache_size: 100MB)
+        #   ValueError: [Use only memory manager mode]: No room left in memory manager: cuda[0 - host] on 0x421a2c00 (size: 3MB ; free: 1MB ; cache_size: 4MB ; max_cache_size: 100MB)
         _ = alloc_pinned(size)

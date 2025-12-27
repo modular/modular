@@ -40,7 +40,7 @@ def __exclude_env(key: str) -> bool:
 
 
 def __set_torch_memory_limit() -> None:
-    if size := os.getenv("MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE"):
+    if size := os.getenv("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE"):
         if size == "0":
             return
 
@@ -67,7 +67,7 @@ def __set_torch_memory_limit() -> None:
         torch.cuda.set_per_process_memory_fraction(torch_fraction)
 
         our_total_memory = int(float(size) * (1 - requested_torch_percent))
-        os.environ["MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE"] = str(
+        os.environ["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE"] = str(
             our_total_memory
         )
 

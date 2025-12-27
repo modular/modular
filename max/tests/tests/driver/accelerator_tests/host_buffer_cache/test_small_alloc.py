@@ -16,12 +16,13 @@ from conftest import MiB, alloc_pinned
 from max.driver import Accelerator
 
 
-def test_small_alloc(buffer_cache_config: None) -> None:
-    # The cache has 100MiB so we try to alloc / free 100 buffers of 1MiB each.
+def test_small_alloc(memory_manager_config: None) -> None:
+    # The memory manager has 100MiB so we try to alloc / free 100 buffers of
+    # 1MiB each.
     for _ in range(7):
         bufs = [alloc_pinned(1 * MiB) for _ in range(100)]
         del bufs
 
         # Synchronizing is necessary to ensure that allocated memory is returned
-        # to the buffer cache.
+        # to the memory manager.
         Accelerator().synchronize()

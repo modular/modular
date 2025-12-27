@@ -28,19 +28,21 @@ GiB = 1024 * 1024 * 1024
 
 
 @pytest.fixture
-def buffer_cache_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def memory_manager_config(monkeypatch: pytest.MonkeyPatch) -> None:
     # Max cache size is 100MiB
     monkeypatch.setenv(
-        "MODULAR_DEVICE_CONTEXT_HOST_BUFFER_CACHE_SIZE", f"{100 * MiB}"
+        "MODULAR_DEVICE_CONTEXT_HOST_MEMORY_MANAGER_SIZE", f"{100 * MiB}"
     )
     # 2% of 100MiB is 2MiB per chunk
     monkeypatch.setenv(
-        "MODULAR_DEVICE_CONTEXT_HOST_BUFFER_CACHE_CHUNK_PERCENT", "2"
+        "MODULAR_DEVICE_CONTEXT_HOST_MEMORY_MANAGER_CHUNK_PERCENT", "2"
     )
     # This toggles asserts in the buffer cache
-    monkeypatch.setenv("MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SELF_CHECK", "True")
+    monkeypatch.setenv(
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK", "True"
+    )
     # This can be manually enabled for debugging
-    monkeypatch.setenv("MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_LOG", "False")
+    monkeypatch.setenv("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG", "False")
 
 
 def alloc_pinned(size: int) -> Tensor:

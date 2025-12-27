@@ -16,7 +16,7 @@ from conftest import MiB, alloc_pinned
 from max.driver import Accelerator
 
 
-def test_limit(buffer_cache_config: None) -> None:
+def test_limit(memory_manager_config: None) -> None:
     # The cache has 100MiB so we try to alloc/free 100MiB a bunch of times.
     for _ in range(321):
         t = alloc_pinned(100 * MiB)
