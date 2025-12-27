@@ -21,6 +21,7 @@ package(default_visibility = [
             "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
         },
         imports = ["../.."],
+        tags = ["external-exclusive"] if src == "test_reset_prefix_cache.py" else [],  # FIXME: SDLC-2838
         target_compatible_with = select({
             "@platforms//os:macos": ["@platforms//:incompatible"],
             "//conditions:default": [],
