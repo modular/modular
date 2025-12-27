@@ -51,7 +51,6 @@ modular_cc_library(
         "lib/Random.cpp",
         "lib/ReferenceCounted.cpp",
         "lib/StringExtras.cpp",
-        "lib/Version.cpp",
     ],
     hdrs = [
         "include/Support/AlignedAlloc.h",
@@ -77,7 +76,6 @@ modular_cc_library(
         "include/Support/ReferenceCounted.h",
         "include/Support/STLExtras.h",
         "include/Support/StringExtras.h",
-        "include/Support/Version.h",
     ],
     local_defines = [
         "SHARED_LIBRARY_PREFIX='\"lib\"'",
