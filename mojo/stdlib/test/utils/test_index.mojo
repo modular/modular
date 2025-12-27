@@ -63,8 +63,13 @@ def test_index():
     assert_equal(String(Index[dtype = DType.int32](1, 2, 3)), "(1, 2, 3)")
     assert_equal(String(Index[dtype = DType.uint32](1, 2, 3)), "(1, 2, 3)")
     assert_equal(String(Index[dtype = DType.int64](1, 2, 3, 4)), "(1, 2, 3, 4)")
-    assert_equal(String(Index[dtype = DType.int64](1, 2, 3, 4, 5)), "(1, 2, 3, 4, 5)")
-    assert_equal(String(Index[dtype = DType.int64](1, 2, 3, 4, 5, 6)), "(1, 2, 3, 4, 5, 6)")
+    assert_equal(
+        String(Index[dtype = DType.int64](1, 2, 3, 4, 5)), "(1, 2, 3, 4, 5)"
+    )
+    assert_equal(
+        String(Index[dtype = DType.int64](1, 2, 3, 4, 5, 6)),
+        "(1, 2, 3, 4, 5, 6)",
+    )
 
 
 def test_list_literal():
