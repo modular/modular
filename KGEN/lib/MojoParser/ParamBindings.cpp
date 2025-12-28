@@ -479,7 +479,7 @@ ParamBindings::verifyBindingsImpl(
   size_t numBindings = operands.size();
 
   auto inferParameter = [&](Type requestedType) {
-    PValue value = parameterInferenceHook(newBindings, evaluator);
+    PValue value = parameterInferenceHook(newBindings);
     assert(!value || value.getType().isEqualCanon(requestedType) &&
                          "inferred a parameter value of wrong type");
     return value;
@@ -843,13 +843,11 @@ ParamBindings::verifyBindings(LITGeneratorType sig) const {
 ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
                                                      PogListAttr paramList,
                                                      bool partial) const {
-  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
-                                    const ParserParameterEvaluator &evaluator) {
+  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     // The inference diagnostics will be unused.
     ParameterInferenceDiagnostics inferenceDiags;
     ParameterInferenceState inference(declScope, getParameters(), paramTypes,
-                                      paramList, bindingsSoFar, evaluator,
-                                      inferenceDiags,
+                                      paramList, bindingsSoFar, inferenceDiags,
                                       /*allowImplicitConversions=*/true);
 
     inference.inferFromParamList(/*hasArguments*/ partial);
@@ -1023,11 +1021,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   };
 
   SyntheticNode errorLoc(exprLoc);
-  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
-                                    const ParserParameterEvaluator &evaluator) {
+  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     ParameterInferenceState inference(declScope, getParameters(),
                                       expectedParamTypes, paramListAttr,
-                                      bindingsSoFar, evaluator, inferenceDiags,
+                                      bindingsSoFar, inferenceDiags,
                                       /*allowImplicitConversions=*/true);
 
     // Infer information from the current parameter list.

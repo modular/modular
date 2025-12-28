@@ -90,7 +90,6 @@ public:
                           ArrayRef<Type> declaredParamTypes,
                           PogListAttr declaredParamPogs,
                           ArrayRef<TypedAttr> bindingsSoFar,
-                          const ParserParameterEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
                           bool allowImplicitConversions);
 
@@ -120,7 +119,8 @@ public:
 
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {
-    return idx < inferredParams.size() ? inferredParams[idx] : TypedAttr();
+    assert(idx < inferredParams.size() && "invalid parameter idx");
+    return inferredParams[idx];
   }
 
 private:
@@ -160,8 +160,9 @@ private:
   /// refine dependent types as we infer parameters.
   ParserParameterEvaluator evaluator;
 
-  /// One entry for each parameter from the original binding list.  If
-  /// non-null, we've already inferred a value for that parameter.
+  /// One entry for each parameter from the binding list we are trying to infer.
+  /// If any entries are non-null then we've already inferred a value for that
+  /// parameter.
   SmallVector<TypedAttr> inferredParams;
 
   /// This is how many signature types deep inference is inside parameter

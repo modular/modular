@@ -888,12 +888,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       },
   };
 
-  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
-                                    const ParserParameterEvaluator &evaluator) {
+  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     ParameterInferenceState inference(
         callable.paramBindings.declScope,
         callable.paramBindings.getParameters(), signature.getInputParamTypes(),
-        signature.getParamListAttrs(), bindingsSoFar, evaluator, inferenceDiags,
+        signature.getParamListAttrs(), bindingsSoFar, inferenceDiags,
         allowImplicitConversions);
 
     // Determine if this is an initializer that returns Self, which can be used

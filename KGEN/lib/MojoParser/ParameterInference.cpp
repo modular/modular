@@ -108,14 +108,24 @@ void ParameterInferenceDiagnostics::addExplanation(MojoInflightDiag &diag) {
 ParameterInferenceState::ParameterInferenceState(
     ASTDecl &declScope, const CallOperands &givenBindings,
     ArrayRef<Type> declaredParamTypes, PogListAttr declaredParamPogs,
-    ArrayRef<TypedAttr> bindingsSoFar,
-    const ParserParameterEvaluator &evaluator,
-    ParameterInferenceDiagnostics &diags, bool allowImplicitConversions)
+    ArrayRef<TypedAttr> bindingsSoFar, ParameterInferenceDiagnostics &diags,
+    bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
       givenBindings(givenBindings), declaredParamTypes(declaredParamTypes),
-      declaredParamPogs(declaredParamPogs), evaluator(evaluator),
-      inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()), diags(diags),
-      allowImplicitConversions(allowImplicitConversions) {}
+      declaredParamPogs(declaredParamPogs), evaluator(declScope.getShared()),
+      diags(diags), allowImplicitConversions(allowImplicitConversions) {
+
+  // Maintain the invariant that 'inferredParams' is the full size of the set of
+  // parameters we're trying to infer.
+  assert(bindingsSoFar.size() <= declaredParamTypes.size() &&
+         "too many params inferred already?");
+  inferredParams.append(bindingsSoFar.begin(), bindingsSoFar.end());
+  inferredParams.resize(declaredParamTypes.size());
+
+  // Add all of the bindings we've seen to our evaluator.
+  for (auto paramValue : bindingsSoFar)
+    evaluator.appendIndexBinding(paramValue);
+}
 
 LogicalResult
 ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
@@ -671,9 +681,8 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       assert(enableOutOfOrderInferenceHack ||
              isEqualCanon(actualAttr.getType(), expectedType));
 
-      // If we didn't already have a slot for this, make space.
-      if (inferredParams.size() <= parameterIndex)
-        inferredParams.resize(parameterIndex + 1);
+      assert(parameterIndex < inferredParams.size() &&
+             "invalid parameter index");
       TypedAttr inferredValue = inferredParams[parameterIndex];
 
       // Otherwise we succeeded in finding a value, see if it is compatible with
@@ -918,11 +927,7 @@ static bool usesUnboundParameters(TypedAttr paramValue,
                                   ArrayRef<TypedAttr> bindingsSoFar) {
   return paramValue
       .walk([&](ParamIndexRefAttr ref) -> WalkResult {
-        // TODO(MOCO-2080): Fix this == 0, it seems weird... it would catch
-        // things inside vtables and stuff, but those wouldn't be represented in
-        // bindingsSoFar. See
-        // https://github.com/modularml/modular/pull/62096#discussion_r2114820425
-        if (ref.getDepth() == 0 && ref.getIndex() >= bindingsSoFar.size())
+        if (ref.getDepth() == 0 && !bindingsSoFar[ref.getIndex()])
           return WalkResult::interrupt();
         return WalkResult::advance();
       })
@@ -1084,15 +1089,9 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   /// where the type of 'v' depends on 'dt' being inferred.
   auto getPartiallySpecializedType = [&](Type exptype) -> ASTType {
     SmallVector<TypedAttr> currentParams;
-    for (TypedAttr param : inferredParams) {
-      if (param)
-        currentParams.push_back(param);
-      else
-        break;
-    }
     SmallVector<Attribute> pendingAttrs;
     SmallVector<Type> pendingTypes = {Type(exptype)};
-    getPartiallySpecializedAttrTypes(currentParams, evaluator,
+    getPartiallySpecializedAttrTypes(inferredParams, evaluator,
                                      declaredParamTypes.size(), pendingAttrs,
                                      pendingTypes);
     Type type = pendingTypes.front();
@@ -1440,9 +1439,6 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments) {
     size_t nextParamNo = evaluator.getNumIndexBindings();
     if (nextParamNo < types.size() &&
         declaredParamPogs.isPosVarArg(nextParamNo)) {
-      // If we didn't already have a slot for this, make space.
-      if (inferredParams.size() <= nextParamNo)
-        inferredParams.resize(nextParamNo + 1);
       auto type = types[evaluator.getNumIndexBindings()];
       auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
       inferredParams[nextParamNo] = empty;
@@ -1664,12 +1660,10 @@ LogicalResult ParameterInferenceState::inferForCall(
   // If we had a variadic parameter that is unspecified, it must be because of
   // an empty variadic list.
   size_t nextParamNo = evaluator.getNumIndexBindings();
-  if (nextParamNo < signature.getInputParamTypes().size() &&
+  if (nextParamNo != signature.getInputParamTypes().size() &&
       signature.getParamListAttrs().isPosVarArg(nextParamNo)) {
-    // If we didn't already have a slot for this, make space.
-    if (inferredParams.size() <= nextParamNo)
-      inferredParams.resize(nextParamNo + 1);
-    auto type = signature.getInputParamTypes()[evaluator.getNumIndexBindings()];
+    // FIXME: This isn't rewriting the variadic list for dependent types.
+    auto type = declaredParamTypes[evaluator.getNumIndexBindings()];
     auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
     inferredParams[nextParamNo] = empty;
     evaluator.appendIndexBinding(empty);
@@ -1693,10 +1687,9 @@ LogicalResult ParameterInferenceState::inferForCall(
     }
 
     for (unsigned idx : selfResultParams) {
-      if (idx < inferredParams.size()) {
-        TypedAttr &param = inferredParams[idx];
+      TypedAttr &param = inferredParams[idx];
+      if (param)
         param = evaluator.getReboundAttribute(param);
-      }
     }
   }
 

@@ -93,8 +93,7 @@ public:
   /// hook will be provided the index of the parameter to be inferred, along
   /// with a list of existing bindings, and a parameter evaluator to be used to
   /// infer types.
-  using ParameterInferenceHookTy = function_ref<PValue(
-      ArrayRef<TypedAttr>, const ParserParameterEvaluator &)>;
+  using ParameterInferenceHookTy = function_ref<PValue(ArrayRef<TypedAttr>)>;
 
   /// Describe how closely the given parameter bindings match the specified
   /// parameters and call operands.
