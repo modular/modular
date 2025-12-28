@@ -304,6 +304,144 @@ struct Variadic:
         values: The values to zip.
     """
 
+    comptime exclude_type[
+        Trait: type_of(AnyType),
+        //,
+        exclude_type: Trait,
+        element_types: Variadic.TypesOfTrait[Trait],
+    ] = _ReduceVariadicAndIdxToVariadic[
+        BaseVal = Variadic.empty_of_trait[Trait],
+        VariadicType=element_types,
+        Reducer = _ExcludeOneReducer[Trait, exclude_type],
+    ]
+    """Exclude a single type from a variadic sequence.
+
+    Returns a new variadic containing all types from the input except the
+    specified type to exclude.
+
+    Parameters:
+        Trait: The trait that the types conform to.
+        exclude_type: The type to exclude from the sequence.
+        element_types: The input variadic sequence.
+
+    Examples:
+
+    ```mojo
+    from std.builtin.variadics import Variadic
+    from utils import Variant
+
+    comptime FullVariant = Variant[Int, String, Float64, Bool]
+
+    # Remove Int from the variant's types
+    comptime WithoutInt = Variadic.exclude_type[
+        exclude_type=Int,
+        element_types=FullVariant.Ts
+    ]
+
+    # Create a new variant without Int
+    comptime FilteredVariant = Variant[*WithoutInt]
+    # FilteredVariant is Variant[String, Float64, Bool]
+    ```
+    """
+
+    comptime keep_types[
+        Trait: type_of(AnyType),
+        //,
+        keep_types: Variadic.TypesOfTrait[Trait],
+        element_types: Variadic.TypesOfTrait[Trait],
+    ] = _ReduceVariadicAndIdxToVariadic[
+        BaseVal = Variadic.empty_of_trait[Trait],
+        VariadicType=element_types,
+        Reducer = _KeepOnlyReducer[Trait, keep_types],
+    ]
+    """Keep only specified types from a variadic sequence.
+
+    Returns a new variadic containing only the types that appear in both the
+    input sequence and the keep list.
+
+    Parameters:
+        Trait: The trait that the types conform to.
+        keep_types: The variadic of types to keep.
+        element_types: The input variadic sequence.
+
+    Examples:
+
+    ```mojo
+    from std.builtin.variadics import Variadic
+    from utils import Variant
+
+    comptime FullVariant = Variant[Int, String, Float64, Bool]
+
+    # Keep only String and Float64
+    comptime KeepList = Variadic.types[T=AnyType, String, Float64]
+    comptime OnlyStringFloat = Variadic.keep_types[
+        keep_types=KeepList,
+        element_types=FullVariant.Ts
+    ]
+
+    # Create a new variant with only the kept types
+    comptime FilteredVariant = Variant[*OnlyStringFloat]
+    # FilteredVariant is Variant[String, Float64]
+    ```
+    """
+
+    comptime exclude_types[
+        Trait: type_of(AnyType),
+        //,
+        exclude_types: Variadic.TypesOfTrait[Trait],
+        element_types: Variadic.TypesOfTrait[Trait],
+    ] = _ReduceVariadicAndIdxToVariadic[
+        BaseVal = Variadic.empty_of_trait[Trait],
+        VariadicType=element_types,
+        Reducer = _ExcludeManyReducer[Trait, exclude_types],
+    ]
+    """Exclude multiple types from a variadic sequence.
+
+    Returns a new variadic containing all types from the input except those
+    that appear in the exclude list.
+
+    Parameters:
+        Trait: The trait that the types conform to.
+        exclude_types: The variadic of types to exclude.
+        element_types: The input variadic sequence.
+
+    Examples:
+
+    ```mojo
+    from std.builtin.variadics import Variadic
+    from utils import Variant
+
+    comptime FullVariant = Variant[Int, String, Float64, Bool]
+
+    # Remove Int and Bool
+    comptime ExcludeList = Variadic.types[T=AnyType, Int, Bool]
+    comptime WithoutIntBool = Variadic.exclude_types[
+        exclude_types=ExcludeList,
+        element_types=FullVariant.Ts
+    ]
+
+    # Create a new variant without the excluded types
+    comptime FilteredVariant = Variant[*WithoutIntBool]
+    # FilteredVariant is Variant[String, Float64]
+    ```
+
+    These filtering operations can be chained for complex transformations:
+
+    ```mojo
+    # First exclude Bool, then exclude Int
+    comptime Step1 = Variadic.exclude_type[
+        exclude_type=Bool,
+        element_types=FullVariant.Ts
+    ]
+    comptime Step2 = Variadic.exclude_type[
+        exclude_type=Int,
+        element_types=Step1
+    ]
+    comptime ChainedVariant = Variant[*Step2]
+    # ChainedVariant is Variant[String, Float64]
+    ```
+    """
+
 
 # ===-----------------------------------------------------------------------===#
 # VariadicList / VariadicListMem
@@ -1219,6 +1357,69 @@ Parameters:
     Trait: The trait that the types conform to.
     start: The starting index (inclusive).
     end: The ending index (exclusive).
+    Prev: The accumulated result variadic so far.
+    From: The input variadic sequence.
+    idx: The current index being processed.
+"""
+
+comptime _ExcludeOneReducer[
+    Trait: type_of(AnyType),
+    ExcludeType: Trait,
+    Prev: Variadic.TypesOfTrait[Trait],
+    From: Variadic.TypesOfTrait[Trait],
+    idx: Int,
+] = (
+    Prev if _type_is_eq_parse_time[
+        From[idx], ExcludeType
+    ]() else Variadic.concat[Prev, Variadic.types[T=Trait, From[idx]]]
+)
+"""A reducer that excludes a single type from a variadic sequence.
+
+Parameters:
+    Trait: The trait that the types conform to.
+    ExcludeType: The type to exclude from the sequence.
+    Prev: The accumulated result variadic so far.
+    From: The input variadic sequence.
+    idx: The current index being processed.
+"""
+
+comptime _KeepOnlyReducer[
+    Trait: type_of(AnyType),
+    KeepTypes: Variadic.TypesOfTrait[Trait],
+    Prev: Variadic.TypesOfTrait[Trait],
+    From: Variadic.TypesOfTrait[Trait],
+    idx: Int,
+] = (
+    Variadic.concat[
+        Prev, Variadic.types[T=Trait, From[idx]]
+    ] if Variadic.contains[type = From[idx], element_types=KeepTypes] else Prev
+)
+"""A reducer that keeps only specified types from a variadic sequence.
+
+Parameters:
+    Trait: The trait that the types conform to.
+    KeepTypes: The variadic of types to keep.
+    Prev: The accumulated result variadic so far.
+    From: The input variadic sequence.
+    idx: The current index being processed.
+"""
+
+comptime _ExcludeManyReducer[
+    Trait: type_of(AnyType),
+    ExcludeTypes: Variadic.TypesOfTrait[Trait],
+    Prev: Variadic.TypesOfTrait[Trait],
+    From: Variadic.TypesOfTrait[Trait],
+    idx: Int,
+] = (
+    Prev if Variadic.contains[
+        type = From[idx], element_types=ExcludeTypes
+    ] else Variadic.concat[Prev, Variadic.types[T=Trait, From[idx]]]
+)
+"""A reducer that excludes multiple types from a variadic sequence.
+
+Parameters:
+    Trait: The trait that the types conform to.
+    ExcludeTypes: The variadic of types to exclude.
     Prev: The accumulated result variadic so far.
     From: The input variadic sequence.
     idx: The current index being processed.
