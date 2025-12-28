@@ -755,27 +755,29 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 # ===-----------------------------------------------------------------------===#
 @always_inline
 fn Index[
-    *Ts: Intable, dtype: DType = DType.int64
-](*args: *Ts,) -> IndexList[args.__len__(), element_type=dtype]:
+    T: Intable, *Ts: Intable, dtype: DType = DType.int64
+](arg0: T, *args: *Ts,) -> IndexList[args.__len__() + 1, element_type=dtype]:
     """Constructs an N-D Index from the given values.
 
     Parameters:
-        Ts: The types of the arguments (must be `Intable`).
+        T: The type of the first argument (must be `Intable`).
+        Ts: The types of the remaining arguments (must be `Intable`).
         dtype: The integer type of the underlying element.
 
     Args:
-        args: The initial values (variable number of arguments).
+        arg0: The first value.
+        args: The follow-up values (variable number of arguments).
 
     Returns:
         The constructed IndexList.
     """
-    constrained[args.__len__() > 0, "At least one argument is required"]()
+    var result = IndexList[args.__len__() + 1, element_type=dtype]()
 
-    var result = IndexList[args.__len__(), element_type=dtype]()
+    result[0] = Int(arg0)
 
     @parameter
     for i in range(args.__len__()):
-        result[i] = Int(args[i])
+        result[i + 1] = Int(args[i])
     return result
 
 
