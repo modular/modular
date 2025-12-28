@@ -146,7 +146,7 @@ fn reversed[
     V: Copyable,
     H: Hasher,
     dict_mutability: Bool,
-    dict_origin: Origin[dict_mutability],
+    dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictValueIter[K, V, H, dict_origin]) -> _DictValueIter[
     K, V, H, dict_origin, False
 ]:
@@ -175,7 +175,7 @@ fn reversed[
     V: Copyable,
     H: Hasher,
     dict_mutability: Bool,
-    dict_origin: Origin[dict_mutability],
+    dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictEntryIter[K, V, H, dict_origin]) -> _DictEntryIter[
     K, V, H, dict_origin, False
 ]:

@@ -273,7 +273,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         return String(bytes=list)
 
     fn read[
-        dtype: DType, origin: Origin[True]
+        dtype: DType, origin: MutOrigin
     ](self, buffer: Span[Scalar[dtype], origin]) raises -> Int:
         """Read data from the file into the Span.
 

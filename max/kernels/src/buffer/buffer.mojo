@@ -230,7 +230,7 @@ struct NDBuffer[
     //,
     dtype: DType,
     rank: Int,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     shape: DimList = DimList.create_unknown[rank](),
     strides: DimList = DimList.create_unknown[rank](),
     *,
@@ -600,7 +600,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn get_immutable(
         self,
-    ) -> Self.OriginCastType[ImmutOrigin.cast_from[Self.origin]]:
+    ) -> Self.OriginCastType[ImmutOrigin(Self.origin)]:
         """Changes the mutability of the `NDBuffer` to immutable.
 
         Returns:

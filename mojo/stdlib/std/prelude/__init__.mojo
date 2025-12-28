@@ -10,7 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Standard library prelude: fundamental types, traits, and operations auto-imported."""
+"""Standard library prelude: fundamental types, traits, and operations auto-imported.
+
+This package's contents form the basic vocabulary of Mojo programming that every
+developer uses. It is implicitly imported to every Mojo program.
+
+The `prelude` package contains the core types, traits, and functions that are
+automatically imported into every Mojo program. It provides the foundational
+building blocks of the language including basic types (Int, String, Bool),
+essential traits (Copyable, Movable, Equatable), memory primitives (Pointer,
+Span), and common operations (print, len, range). This package defines the
+default namespace that makes Mojo code immediately usable without explicit
+imports.
+"""
 
 from collections import Dict, InlineArray, KeyElement, List, Optional
 from collections.string import (
@@ -71,7 +83,12 @@ from builtin.math import (
 )
 from builtin.none import NoneType
 from builtin.range import range
-from builtin.rebind import rebind, rebind_var, trait_downcast
+from builtin.rebind import (
+    rebind,
+    rebind_var,
+    trait_downcast,
+    trait_downcast_var,
+)
 from builtin.repr import Representable, repr
 from builtin.reversed import ReversibleRange, reversed
 from builtin.simd import (
