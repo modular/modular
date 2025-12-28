@@ -1035,8 +1035,8 @@ dropResultSlots(ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
 }
 
 namespace {
-/// Replace all dangling ("free") implicit origin references with the empty
-/// origin union. This is used for emitting calls in the param context.
+/// Replace all dangling ("free") implicit origin references with
+/// ComptimeOriginAttr. This is used for emitting calls in the param context.
 struct DanglingImplicitOriginRefEraser
     : IndexParameterReplacer<DanglingImplicitOriginRefEraser> {
   Type tryReplace(Type, size_t) { return {}; }
