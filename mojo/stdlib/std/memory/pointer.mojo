@@ -181,7 +181,7 @@ struct Pointer[
     mut: Bool,
     //,
     type: AnyType,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](ImplicitlyCopyable, Stringable):
     """Defines a non-nullable safe pointer.
@@ -208,9 +208,9 @@ struct Pointer[
     ]
     comptime _with_origin = Pointer[Self.type, _, Self.address_space]
 
-    comptime Mutable = Self._with_origin[MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = Self._with_origin[MutOrigin(unsafe_cast=Self.origin)]
     """The mutable version of the `Pointer`."""
-    comptime Immutable = Self._with_origin[ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = Self._with_origin[ImmutOrigin(Self.origin)]
     """The immutable version of the `Pointer`."""
     # Fields
     var _value: Self._mlir_type
@@ -224,8 +224,12 @@ struct Pointer[
     @implicit
     @always_inline("nodebug")
     fn __init__(
-        other: Self._with_origin[_],
-        out self: Self._with_origin[ImmutOrigin.cast_from[other.origin]],
+        other: Pointer,
+        out self: Pointer[
+            other.type,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
+        ],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 

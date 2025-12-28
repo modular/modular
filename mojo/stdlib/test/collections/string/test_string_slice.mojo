@@ -14,7 +14,7 @@
 from collections.string.string_slice import _to_string_list, get_static_string
 from sys.info import size_of
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, assert_raises
 from testing import TestSuite
 
 # ===----------------------------------------------------------------------=== #
@@ -901,7 +901,8 @@ def test_chars_iter():
     var s0 = StringSlice("")
     var s0_iter = s0.codepoints()
 
-    assert_false(s0_iter.__has_next__())
+    with assert_raises():
+        _ = s0_iter.__next__()  # raises StopIteration
     assert_true(s0_iter.peek_next() is None)
     assert_true(s0_iter.next() is None)
 
@@ -924,7 +925,8 @@ def test_chars_iter():
     assert_equal(iter.__next__(), Codepoint.ord("a"))
     # U+0301 Combining Acute Accent
     assert_equal(iter.__next__().to_u32(), 0x0301)
-    assert_equal(iter.__has_next__(), False)
+    with assert_raises():
+        _ = iter.__next__()  # raises StopIteration
 
     # A piece of text containing, 1-byte, 2-byte, 3-byte, and 4-byte codepoint
     # sequences.
@@ -936,7 +938,6 @@ def test_chars_iter():
     # Iterator __len__ returns length in codepoints, not bytes.
     assert_equal(s3_iter.__len__(), 5)
     assert_equal(s3_iter._slice.byte_length(), 13)
-    assert_equal(s3_iter.__has_next__(), True)
     assert_equal(s3_iter.__next__(), Codepoint.ord("߷"))
 
     assert_equal(s3_iter.__len__(), 4)
@@ -955,12 +956,12 @@ def test_chars_iter():
 
     assert_equal(s3_iter.__len__(), 1)
     assert_equal(s3_iter._slice.byte_length(), 1)
-    assert_equal(s3_iter.__has_next__(), True)
     assert_equal(s3_iter.__next__(), Codepoint.ord("!"))
 
     assert_equal(s3_iter.__len__(), 0)
     assert_equal(s3_iter._slice.byte_length(), 0)
-    assert_equal(s3_iter.__has_next__(), False)
+    with assert_raises():
+        _ = s3_iter.__next__()  # raises StopIteration
 
 
 def test_string_slice_from_pointer():

@@ -281,7 +281,7 @@ struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
     """Iterator for traversing elements of an IntTuple."""
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for IntTuple iteration.
 
@@ -305,15 +305,25 @@ struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
         self.idx = idx
 
     @always_inline("nodebug")
-    fn __has_next__(self) -> Bool:
-        return self.idx < len(self.src[])
-
-    @always_inline("nodebug")
-    fn __next__(mut self) -> IntTuple:
+    fn __next__(mut self) raises StopIteration -> IntTuple:
         """Get the next element and advance the iterator."""
+        var idx = self.idx
+        if idx >= len(self.src[]):
+            raise StopIteration()
+        self.idx += 1
+        return self.src[][idx]
+
+    # FIXME(GENAI-359): Remove __next_old__ and __has_next__ once we figure out
+    # why doing so regresses code generation.
+    @always_inline
+    fn __next_old__(mut self) -> Self.Element:
         var idx = self.idx
         self.idx += 1
         return self.src[][idx]
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.idx < len(self.src[])
 
     @always_inline("nodebug")
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -346,8 +356,8 @@ struct IntTuple(
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _IntTupleIter[ImmutOrigin.cast_from[iterable_origin]]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = _IntTupleIter[ImmutOrigin(iterable_origin)]
     """The iterator type for IntTuple iteration.
 
     Parameters:

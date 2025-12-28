@@ -49,7 +49,7 @@ struct MixedLayoutTensor[
     stride_types: Variadic.TypesOfTrait[MixedTupleLike],
     //,
     dtype: DType,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     linear_idx_type: DType = _get_index_type(address_space),
@@ -728,7 +728,7 @@ struct MixedLayoutTensorIter[
     shape_types: Variadic.TypesOfTrait[MixedTupleLike],
     stride_types: Variadic.TypesOfTrait[MixedTupleLike],
     //,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -759,7 +759,7 @@ struct MixedLayoutTensorIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Self.MixedLayoutTensorType
 
@@ -903,7 +903,7 @@ struct MixedLayoutTensorIter[
         self.offset += self.stride
 
     @always_inline
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         """Return an iterator pointing to a position ahead by rhs steps.
 
         Creates a new iterator that points rhs positions ahead of the current
@@ -913,6 +913,9 @@ struct MixedLayoutTensorIter[
         Returns:
            A MixedLayoutTensor at the given offset.
         """
+        if self.offset >= self.bound:
+            raise StopIteration()
+
         var next_idx = Self.linear_uint_type(0)
         var next_offset = self.offset + self.stride
         var item = self.get()
@@ -924,10 +927,6 @@ struct MixedLayoutTensorIter[
         self.offset = next_offset
 
         return item^
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.offset < self.bound
 
     comptime BitcastType[
         new_type: DType, *, address_space: AddressSpace = Self.address_space

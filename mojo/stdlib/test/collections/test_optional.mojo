@@ -190,7 +190,7 @@ def test_optional_unwrap():
     assert_true(a)
     assert_equal(123, a[])
     a = Optional[Int](None)
-    with assert_raises(contains="on empty Optional"):
+    with assert_raises(contains="EmptyOptionalError"):
         _ = a[]
 
 
@@ -206,9 +206,9 @@ def test_optional_iter():
     var it = o.__iter__()
     assert_equal(it.bounds()[0], 1)
     assert_equal(it.bounds()[1].value(), 1)
-    assert_true(it.__has_next__())
     assert_equal(it.__next__(), 10)
-    assert_false(it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
     var called = False
     var o2 = Optional(20)
@@ -222,7 +222,8 @@ def test_optional_iter_empty():
     var it = o.__iter__()
     assert_equal(it.bounds()[0], 0)
     assert_equal(it.bounds()[1].value(), 0)
-    assert_false(it.__has_next__())
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
     var called = False
     var o2 = Optional[Int](None)

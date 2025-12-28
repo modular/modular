@@ -60,7 +60,7 @@ def _parameterized_pointer(p: UnsafePointer[Int, **_]):
 
 
 def _named_origin[
-    mut: Bool, //, origin: Origin[mut]
+    mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[Int, origin, **_]):
     assert_true(p)
     assert_equal(p[], 42)

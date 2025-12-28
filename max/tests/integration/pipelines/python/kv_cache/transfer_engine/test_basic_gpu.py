@@ -145,7 +145,7 @@ def test_initiate_send_transfer() -> None:
     engine_2.cleanup()
 
 
-def test_ensure_we_use_buffer_cache() -> None:
+def test_ensure_we_use_memory_manager() -> None:
     cpu_device = CPU()
     cpu_tensor = Tensor.from_numpy(np.arange(10, dtype=np.int16)).to(cpu_device)
 
@@ -158,7 +158,7 @@ def test_ensure_we_use_buffer_cache() -> None:
     # fails
     with pytest.raises(
         ValueError,
-        match="MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT must be set when using TransferEngine with GPU memory",
+        match="MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT must be set when using TransferEngine with GPU memory",
     ):
         engine = KVTransferEngine("engine", [[acc_tensor]], total_num_pages=1)
 
@@ -167,7 +167,7 @@ def test_ensure_we_use_buffer_cache() -> None:
     engine.cleanup()
 
     # ok
-    os.environ["MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT"] = "99"
+    os.environ["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT"] = "99"
     engine = KVTransferEngine("engine", [[acc_tensor]], total_num_pages=1)
     engine.cleanup()
 

@@ -186,7 +186,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     # correctly.
     fn __getitem__[
         self_life: ImmutOrigin
-    ](ref [self_life]self) -> ref [MutOrigin.cast_from[self_life]] Self.T:
+    ](ref [self_life]self) -> ref [MutOrigin(unsafe_cast=self_life)] Self.T:
         """Returns a mutable reference to the managed value.
 
         Parameters:
@@ -199,7 +199,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
 
     fn unsafe_ptr[
         mut: Bool,
-        origin: Origin[mut],
+        origin: Origin[mut=mut],
         //,
     ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
         """Retrieves a pointer to the underlying memory.

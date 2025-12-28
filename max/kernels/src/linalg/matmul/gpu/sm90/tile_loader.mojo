@@ -68,7 +68,7 @@ trait TileLoader:
 
 @register_passable("trivial")
 struct TileLoaderTMA[
-    tma_origin: Origin[False],
+    tma_origin: ImmutOrigin,
     dtype: DType,
     tile_layout: Layout,
     desc_layout: Layout,

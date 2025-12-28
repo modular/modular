@@ -41,7 +41,7 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DequeIter[Self.ElementType, iterable_origin]
     """The iterator type for this deque.
 
@@ -980,7 +980,7 @@ struct _DequeIter[
     mut: Bool,
     //,
     T: Copyable,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for Deque.
@@ -993,7 +993,7 @@ struct _DequeIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Self.T
 
@@ -1003,26 +1003,22 @@ struct _DequeIter[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
-    fn __has_next__(self) -> Bool:
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> ref [Self.origin] Self.Element:
         @parameter
         if Self.forward:
-            return self.index < len(self.src[])
-        else:
-            return self.index > 0
+            if self.index >= len(self.src[]):
+                raise StopIteration()
 
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
             var idx = self.index
             self.index += 1
             return self.src[][idx]
         else:
+            if self.index <= 0:
+                raise StopIteration()
             self.index -= 1
             return self.src[][self.index]
-
-    fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__().copy()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:

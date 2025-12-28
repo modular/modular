@@ -57,7 +57,7 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
 
     comptime Element = IndexList[Self.n_loops]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var cur: Self.Element
@@ -105,9 +105,11 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
-    fn __next__(mut self) -> Self.Element:
-        var cur = self.cur
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        if self.__len__() <= 0:
+            raise StopIteration()
 
+        var cur = self.cur
         self.cur[len(self.cur) - 1] += 1
 
         for i in range(Self.n_loops - 1, 0, -1):
@@ -118,9 +120,6 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
         return cur
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
     fn __len__(self) -> Int:
         if self.cur[0] >= self._ub_loop(0) or self.early_stop:
             return 0
@@ -666,7 +665,9 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         output_offset: Int,
         input_offset: Int,
         output: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[Self.dtype],
+            mut=True,
+            address_space = AddressSpace.GENERIC, **_,
         ],
         input: UnsafePointer[
             Scalar[Self.dtype], address_space = AddressSpace.GENERIC, **_
@@ -703,7 +704,7 @@ fn _pad_reflect_axis[
     axis: Int,
 ](
     output: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], mut=True, address_space = AddressSpace.GENERIC, **_
     ],
     input: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.GENERIC, **_
@@ -763,7 +764,7 @@ fn _pad_reflect_impl[
     paddings_type: DType,
 ](
     output: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], mut=True, address_space = AddressSpace.GENERIC, **_
     ],
     input: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.GENERIC, **_

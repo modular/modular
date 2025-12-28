@@ -17,10 +17,10 @@ from max.driver import Accelerator
 from max.support import to_human_readable_bytes
 
 
-def test_pyramid(buffer_cache_config: None) -> None:
+def test_pyramid(memory_manager_config: None) -> None:
     print("====== test_pyramid")
 
-    # allocate 1x90MiB, 2x45MiB, 3x30MiB, ..., 30x3MiB in a pyramid pattern.
+    # Allocate 1x90MiB, 2x45MiB, 3x30MiB, ..., 30x3MiB in a pyramid pattern.
     total_size = 90 * MiB
     for num_buffers in range(1, 31):
         # Compute the size of each buffer, aligning down to the nearest multiple of 256 KiB.
@@ -39,7 +39,7 @@ def test_pyramid(buffer_cache_config: None) -> None:
         bufs.clear()
 
         # This explicit sync is necessary to ensure that the buffers are returned
-        # to the buffer cache.
+        # to the memory manager.
         # Interally, this calls checkPendingWork() which polls for ready events
         # and runs the above handlers we enqueued earlier. These handlers free
         # the buffers.

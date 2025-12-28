@@ -53,7 +53,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[Self.T, NoneType, Self.H, iterable_origin]
     """The iterator type for this set.
 
@@ -396,7 +396,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         if not self:
             raise "Pop on empty set"
         var iter = self.__iter__()
-        var first = iter.__next_ref__().copy()
+        var first = iter.__next__().copy()
         self.remove(first)
         return first^
 
