@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides memory barrier utilities for preventing compiler optimizations.
+
+This module includes the `clobber_memory()` function which acts as a memory
+fence to prevent the compiler from reordering or eliminating memory operations.
+This is essential for accurate benchmarking when memory access patterns need to
+be preserved exactly as written.
+"""
 
 from os.atomic import Consistency, fence
 

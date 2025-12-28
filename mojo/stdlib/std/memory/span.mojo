@@ -173,8 +173,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut]](
     @implicit
     @always_inline("nodebug")
     fn __init__(
-        other: Span[Self.T, _],
-        out self: Span[Self.T, ImmutOrigin(other.origin)],
+        other: Span, out self: Span[other.T, ImmutOrigin(other.origin)]
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
