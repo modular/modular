@@ -1205,7 +1205,7 @@ fn _simd_load_maybe_partial[
 fn _simd_store_maybe_partial[
     dt: DType, //, simd_width: Int, partial_store: Bool
 ](
-    ptr: UnsafePointer[Scalar[dt], **_],
+    ptr: UnsafePointer[Scalar[dt], mut=True, **_],
     offset: Int,
     vec: SIMD[dt, simd_width],
     partial_store_size: OptionalReg[Int] = None,

@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements thread synchronization primitives including spin locks.
+
+This module provides low-level locking mechanisms for thread synchronization,
+including spin locks with blocking behavior and scoped lock guards for
+automatic lock management. These primitives enable safe concurrent access to
+shared resources in multi-threaded code.
+"""
 
 from os import Atomic
 from sys import external_call

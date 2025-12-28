@@ -15,7 +15,7 @@
 
 
 fn test_cannot_cast_between_different_named_origins[
-    T: AnyType, mut: Bool, //, origin: Origin[mut]
+    T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[T, origin]):
     pass
 

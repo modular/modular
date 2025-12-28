@@ -639,7 +639,7 @@ struct MemoryElement[
     //,
     dtype: DType,
     layout: Layout,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     /,
     address_space: AddressSpace,
     *,

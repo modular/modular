@@ -12,16 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """OS interface layer: environment, filesystem, process control.
 
-The types and functions in this package primarily provide operating-system
-independent access to operating-system dependent features, such as file systems
-and environment variables.
+The `os` package provides platform-independent access to operating system
+functionality including filesystem operations, environment variables, and
+process control. It offers portable interfaces to OS-dependent features,
+abstracting platform differences while exposing system-level capabilities. This
+package serves as the foundation for system programming in Mojo.
 
-For accessing files, see built-in [`open()`](/mojo/std/builtin/file/open)
-function and the [`file`](/mojo/std/builtin/file/) module. For manipulating
-file system paths, see the [`os.path`](/mojo/std/os/path/) package for
-OS-independent path manipulation functions and the `pathlib` package for
-the [`Path`](/mojo/std/pathlib/path/Path) struct, an abstraction for handling
-paths.
+Use this package for system-level operations, filesystem management,
+environment configuration, or platform abstraction. For file I/O operations,
+use the built-in `open()` function. For path manipulation, see the `os.path`
+package for path functions or the `pathlib` package for the object-oriented
+`Path` type.
 """
 
 from .atomic import Atomic

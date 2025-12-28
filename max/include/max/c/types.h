@@ -174,9 +174,6 @@ typedef struct M_TensorSpec M_TensorSpec;
 /// `M_freeAsyncTensorMap()`.
 typedef struct M_AsyncTensorMap M_AsyncTensorMap;
 
-/// Contains an async value for inference.
-typedef struct M_AsyncValue M_AsyncValue;
-
 /// Contains an `AllocatorType`. You can choose between kCaching and kSystem
 /// kCaching trades off higher memory usage for better performance.
 /// kSystem uses the default system allocator.

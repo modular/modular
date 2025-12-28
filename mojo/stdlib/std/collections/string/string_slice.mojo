@@ -87,7 +87,7 @@ comptime StaticString = StringSlice[StaticConstantOrigin]
 struct CodepointSliceIter[
     mut: Bool,
     //,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
@@ -105,7 +105,7 @@ struct CodepointSliceIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for this codepoint iterator.
 
@@ -152,6 +152,9 @@ struct CodepointSliceIter[
 
         Returns:
             The next character in the string.
+
+        Raises:
+            `StopIteration` if the iterator has been exhausted.
         """
 
         # NOTE: This intentionally check if the length *in bytes* is greater
@@ -319,7 +322,7 @@ struct CodepointSliceIter[
         return result
 
 
-struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
+struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
     ImplicitlyCopyable, Iterable, Iterator, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
@@ -331,7 +334,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for this codepoint iterator.
 
@@ -372,10 +375,11 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         This returns the next `Codepoint` encoded in the underlying string, and
         advances the iterator state.
 
-        This function will abort if this iterator has been exhausted.
-
         Returns:
             The next character in the string.
+
+        Raises:
+            StopIteration: If the iterator is exhausted.
         """
         if len(self._slice) <= 0:
             raise StopIteration()
@@ -465,7 +469,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
 
 
 @register_passable("trivial")
-struct StringSlice[mut: Bool, //, origin: Origin[mut]](
+struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Boolable,
     ConvertibleToPython,
     Defaultable,
@@ -501,9 +505,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     """
 
     # Aliases
-    comptime Mutable = StringSlice[MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = StringSlice[MutOrigin(unsafe_cast=Self.origin)]
     """The mutable version of the `StringSlice`."""
-    comptime Immutable = StringSlice[ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = StringSlice[ImmutOrigin(Self.origin)]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, Self.origin]
@@ -522,7 +526,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     @always_inline("nodebug")
     fn __init__(
         other: StringSlice,
-        out self: StringSlice[ImmutOrigin.cast_from[other.origin]],
+        out self: StringSlice[ImmutOrigin(other.origin)],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 

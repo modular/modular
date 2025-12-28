@@ -23,17 +23,16 @@ from sys.param_env import env_get_string
 from gpu.host.device_attribute import DeviceAttribute
 from gpu.host.dim import Dim
 from gpu.host import DeviceBuffer
-from memory import LegacyUnsafePointer as UnsafePointer
 from python import Python
 from shmem import *
 from testing import assert_equal
 
 
 fn ring_bcast(
-    data: UnsafePointer[c_int],
+    data: UnsafePointer[c_int, MutAnyOrigin],
     nelem: Int,
     root: c_int,
-    psync: UnsafePointer[UInt64],
+    psync: UnsafePointer[UInt64, MutAnyOrigin],
 ):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
@@ -59,7 +58,7 @@ def test_ring_bcast(ctx: SHMEMContext):
     var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
     var data = ctx.enqueue_create_buffer[DType.int32](data_len)
-    var data_h = UnsafePointer[Int32].alloc(data_len)
+    var data_h = alloc[Int32](data_len)
     var psync = shmem_calloc[DType.uint64](1)
 
     for i in range(data_len):

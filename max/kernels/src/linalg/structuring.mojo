@@ -252,7 +252,7 @@ struct SMemTileArrayType[
     ]
 
     fn __init__[
-        mut: Bool, //, origin: Origin[mut]
+        mut: Bool, //, origin: Origin[mut=mut]
     ](
         out self,
         unsafe_ptr: UnsafePointer[

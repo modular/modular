@@ -10,14 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Math functions and constants: trig, exponential, logarithmic, and special functions."""
+"""Math functions and constants: trig, exponential, logarithmic, and special functions.
 
-# In Python, these are in the math module, so we also expose them here.
+The `math` package provides mathematical functions and constants for numerical
+computation. It includes standard mathematical operations from trigonometry,
+exponential and logarithmic functions, special functions, and numerical
+utilities. This package implements both precise mathematical operations and fast
+approximations for performance-critical code, along with support for rounding,
+clamping, and IEEE 754 floating-point behavior.
+
+Use this package for scientific computing, numerical algorithms, graphics and
+game development, statistical calculations, or any application requiring
+mathematical operations beyond basic arithmetic. The `fast` module provides
+optimized approximations when absolute precision can be traded for performance.
+"""
+
+# In Python, these are in the `math` package, so we also expose them here.
 from utils.numerics import inf, isfinite, isinf, isnan, nan, nextafter
 
 from .constants import e, pi, tau
 
-# These are not part of Python's `math` module, but we define them here.
+# These are not part of Python's `math` package, but we define them here.
 from .math import (
     Ceilable,
     CeilDivable,

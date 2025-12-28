@@ -373,7 +373,8 @@ fn stsm_helper[
             dst.dtype
         ]()
         st_matrix[simd_width=4, transpose=transpose_c](
-            dst.ptr + offset, bitcast[DType.float32, 4](v)
+            dst.ptr.unsafe_mut_cast[True]() + offset,
+            bitcast[DType.float32, 4](v),
         )
 
 

@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %mojo %s 2>&1 | FileCheck %s
+
+from conftest import MiB, alloc_pinned
+from max.driver import Accelerator
 
 
-fn test_cannot_cast_immutable_to_mutable_any[
-    T: AnyType
-](p: UnsafePointer[T, MutAnyOrigin, **_]):
-    pass
+def test_small_alloc(memory_manager_config: None) -> None:
+    # The memory manager has 100MiB so we try to alloc / free 100 buffers of
+    # 1MiB each.
+    for _ in range(7):
+        bufs = [alloc_pinned(1 * MiB) for _ in range(100)]
+        del bufs
 
-
-def main():
-    var x = 42
-
-    var p = UnsafePointer(to=x).as_immutable()
-    # CHECK: constraint failed: Invalid UnsafePointer conversion from immutable to mutable
-    test_cannot_cast_immutable_to_mutable_any(p)
+        # Synchronizing is necessary to ensure that allocated memory is returned
+        # to the memory manager.
+        Accelerator().synchronize()

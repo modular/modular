@@ -11,8 +11,8 @@ mojo_test(
         "test_multimem_allreduce.mojo",
     ],
     env = {
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY": "false",
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT": "80",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
     },
     exec_properties = {
         "test.resources:gpu-memory": "4",
@@ -47,8 +47,8 @@ HIGH_GPU_MEMORY_TESTS = [
         size = "large",
         srcs = [src],
         env = {
-            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY": "false",
-            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT": "80",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
         },
         exec_properties = {
             "test.resources:gpu-memory": "20" if src in HIGH_GPU_MEMORY_TESTS else "4",

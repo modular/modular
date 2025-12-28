@@ -85,19 +85,19 @@ def _validate_device_type(devices: Sequence[Device]) -> None:
         raise NotImplementedError("Currently UCX does not support HIP devices.")
 
     if not first_device.is_host and (
-        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT" not in os.environ
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT" not in os.environ
         and "BAZEL_TEST" not in os.environ
     ):
         # See GEX-2445 for more details.
         # We intentionally make falling back to the slower CUDA_COPY transport
         # a hard error. This check is best effort. Just because it is not
         # tripped does not guarantee that the we will end up using CUDA_IPC.
-        # Note that we will use BufferCache regardless when running under
+        # Note that we will use MemoryManager regardless when running under
         # bazel test.
         raise ValueError(
-            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT must be set when using TransferEngine with GPU memory. "
-            "This flag enables the BufferCache which is required for the fast CUDA_IPC transport. "
-            "Try rerunning your command with MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT=99"
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT must be set when using TransferEngine with GPU memory. "
+            "This flag enables the MemoryManager which is required for the fast CUDA_IPC transport. "
+            "Try rerunning your command with MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT=99"
         )
 
 

@@ -26,7 +26,6 @@ modular_cc_library = _cc_library
 modular_multi_py_version_test = _modular_multi_py_version_test
 modular_py_binary = _modular_py_binary
 modular_py_library = _modular_py_library
-modular_py_test = _modular_py_test
 modular_py_venv = _modular_py_venv
 modular_run_binary_test = _modular_run_binary_test
 modular_versioned_expand_template = _modular_versioned_expand_template
@@ -41,6 +40,11 @@ pkg_filegroup = _pkg_filegroup
 py_repl = _py_repl
 requirement = _requirement
 strip_prefix = _strip_prefix
+
+def modular_py_test(tags = [], **kwargs):
+    if "external-exclusive" in tags:
+        tags.append("exclusive")
+    _modular_py_test(tags = tags, **kwargs)
 
 def modular_cc_binary(deps = [], **kwargs):
     # TODO: This will break in the presence of select()s

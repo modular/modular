@@ -10,6 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides iterator utilities for common iteration patterns.
+
+This module includes functions for creating specialized iterators:
+
+- `count()` - Creates an infinite counter with customizable start and step values
+- `product()` - Computes the Cartesian product of two, three, or four iterables
+- `repeat()` - Repeats an element a specified number of times
+
+These utilities enable functional-style iteration patterns and composable iterator
+operations.
+"""
+
 # ===-----------------------------------------------------------------------===#
 # count
 # ===-----------------------------------------------------------------------===#
@@ -23,7 +35,7 @@ from builtin.variadics import Variadic
 @register_passable("trivial")
 struct _CountIterator(Iterable, Iterator):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Int
     var start: Int
@@ -68,7 +80,7 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
@@ -212,7 +224,7 @@ struct _Product3[
         Self.IteratorTypeC.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     comptime _Product2Type = _Product2[Self.IteratorTypeB, Self.IteratorTypeC]
@@ -346,7 +358,7 @@ struct _Product4[
         Self.IteratorTypeD.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     comptime _Product3Type = _Product3[
@@ -499,7 +511,7 @@ struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
 
     comptime Element = Self.ElementType
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var element: Self.ElementType

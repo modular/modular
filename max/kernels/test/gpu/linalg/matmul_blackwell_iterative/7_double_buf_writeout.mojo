@@ -309,7 +309,9 @@ fn stsm_helper[
     swizzle: Swizzle
 ](
     vec: SIMD,
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    dst: LayoutTensor[
+        mut=True, _, _, address_space = AddressSpace.SHARED, *_, **_
+    ],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()

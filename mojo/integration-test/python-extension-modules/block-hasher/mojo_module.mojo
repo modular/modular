@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from hashlib import default_comp_time_hasher
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import size_of
 
@@ -45,10 +44,10 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var nd: Int
-    var dimensions: UnsafePointer[Int]
-    var strides: UnsafePointer[Int]
+    var dimensions: UnsafePointer[Int, MutAnyOrigin]
+    var strides: UnsafePointer[Int, MutAnyOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -113,7 +112,7 @@ fn mojo_block_hasher(
     block_size_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32], **_](
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32]](
         unchecked_downcast_value=py_array_object
     )
 

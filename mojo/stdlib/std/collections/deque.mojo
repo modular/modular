@@ -41,7 +41,7 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DequeIter[Self.ElementType, iterable_origin]
     """The iterator type for this deque.
 
@@ -980,7 +980,7 @@ struct _DequeIter[
     mut: Bool,
     //,
     T: Copyable,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for Deque.
@@ -993,7 +993,7 @@ struct _DequeIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Self.T
 

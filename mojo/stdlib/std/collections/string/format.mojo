@@ -101,7 +101,7 @@ struct _FormatUtils:
     fn compile_entries[
         *Ts: Stringable & Representable
     ](format: StringSlice) -> Variant[
-        _PrecompiledEntries[origin = ImmutOrigin.cast_from[format.origin], *Ts],
+        _PrecompiledEntries[origin = ImmutOrigin(format.origin), *Ts],
         Error,
     ]:
         """Precompile the entries using the given format string."""
@@ -118,7 +118,7 @@ struct _FormatUtils:
     ](
         mut writer: Some[Writer],
         compiled: _PrecompiledEntries[*Ts],
-        args: VariadicPack[_, _, _CurlyEntryFormattable, *Ts],
+        args: VariadicPack[_, _CurlyEntryFormattable, *Ts],
     ):
         """Format the arguments using the given format string and precompiled entries.
         """
@@ -159,11 +159,11 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntries[
-        origin = ImmutOrigin.cast_from[format.origin], *Ts
+        origin = ImmutOrigin(format.origin), *Ts
     ]:
         """Returns a list of entries and its total estimated entry byte width.
         """
-        comptime FormatOrigin = ImmutOrigin.cast_from[format.origin]
+        comptime FormatOrigin = ImmutOrigin(format.origin)
         comptime EntryType = _FormatCurlyEntry[FormatOrigin]
 
         var manual_indexing_count = 0

@@ -322,7 +322,7 @@ struct _VariadicListIter[type: AnyTrivialRegType](
 
     comptime Element = Self.type
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var index: Int
@@ -392,7 +392,7 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
     """The underlying storage for the variadic list."""
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _VariadicListIter[Self.type]
     """The iterator type for this variadic list.
 
@@ -463,7 +463,7 @@ struct _VariadicListMemIter[
     elt_is_mutable: Bool,
     //,
     elt_type: ImplicitlyDestructible,
-    elt_origin: Origin[elt_is_mutable],
+    elt_origin: Origin[mut=elt_is_mutable],
     list_origin: ImmutOrigin,
     is_owned: Bool,
 ]:
@@ -479,7 +479,10 @@ struct _VariadicListMemIter[
     """
 
     comptime variadic_list_type = VariadicListMem[
-        Self.elt_type, Self.elt_origin._mlir_origin, Self.is_owned
+        elt_is_mutable = Self.elt_is_mutable,
+        origin = Self.elt_origin,
+        Self.elt_type,
+        Self.is_owned,
     ]
 
     comptime Element = Self.elt_type
@@ -513,9 +516,9 @@ struct _VariadicListMemIter[
 
 struct VariadicListMem[
     elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable],
     //,
     element_type: ImplicitlyDestructible,
-    origin: Origin[elt_is_mutable],
     is_owned: Bool,
 ](Sized):
     """A utility class to access variadic function arguments of memory-only
@@ -525,8 +528,8 @@ struct VariadicListMem[
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
                         mut or owned argument.
-        element_type: The type of the elements in the list.
         origin: The origin of the underlying elements.
+        element_type: The type of the elements in the list.
         is_owned: Whether the elements are owned by the list because they are
                   passed as an 'var' argument.
     """
@@ -628,7 +631,9 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[Self.elt_is_mutable].cast_from[origin_of(Self.origin, self)]
+        Origin[mut = Self.elt_is_mutable](
+            unsafe_cast=origin_of(Self.origin, self)
+        )
     ] Self.element_type:
         """Gets a single element on the variadic list.
 
@@ -664,9 +669,9 @@ struct VariadicListMem[
 @register_passable
 struct VariadicPack[
     elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable],
     //,
     is_owned: Bool,
-    origin: Origin[elt_is_mutable],
     element_trait: type_of(AnyType),
     *element_types: element_trait,
 ](Sized):
@@ -715,9 +720,9 @@ struct VariadicPack[
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
                         mut or owned argument pack.
+        origin: The origin of the underlying elements.
         is_owned: Whether the elements are owned by the pack. If so, the pack
                   will release the elements when it is destroyed.
-        origin: The origin of the underlying elements.
         element_trait: The trait that each element of the pack conforms to.
         element_types: The list of types held by the argument pack.
     """

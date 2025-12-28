@@ -17,7 +17,7 @@ from sys import simd_width_of
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from bit import count_trailing_zeros
-from memory import LegacyUnsafePointer as UnsafePointer, memcmp, pack_bits
+from memory import memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
@@ -147,15 +147,15 @@ comptime needle = "school"  # a word intentionally not in the test data
 fn _memmem_baseline[
     dtype: DType
 ](
-    haystack: UnsafePointer[Scalar[dtype]],
+    haystack: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     haystack_len: Int,
-    needle: UnsafePointer[Scalar[dtype]],
+    needle: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     needle_len: Int,
-) -> UnsafePointer[Scalar[dtype]]:
+) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
     if not needle_len:
         return haystack
     if needle_len > haystack_len:
-        return UnsafePointer[Scalar[dtype]]()
+        return {}
     if needle_len == 1:
         return _memchr(
             Span[Scalar[dtype], ImmutAnyOrigin](
@@ -184,7 +184,7 @@ fn _memmem_baseline[
 
         if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
             return haystack + i
-    return UnsafePointer[Scalar[dtype]]()
+    return {}
 
 
 # ===-----------------------------------------------------------------------===#

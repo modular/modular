@@ -10,6 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Language foundation: built-in types, traits, and fundamental operations."""
+"""Language foundation: built-in types, traits, and fundamental operations.
+
+The `builtin` package provides the core types, traits, and operations that form
+the foundation of the Mojo language. It defines fundamental types like integers,
+booleans, and strings, essential traits for type behavior (`Copyable`, `Movable`,
+`Comparable`), and basic operations used throughout all Mojo code. Most symbols
+from this package are automatically available without explicit imports through
+the prelude.
+
+This package is implicitly imported. It
+defines the core vocabulary of Mojo programming that every developer uses
+without thinking about imports. Library authors implement traits from this
+package to integrate custom types with language features.
+"""
 
 from .variadics import Variadic

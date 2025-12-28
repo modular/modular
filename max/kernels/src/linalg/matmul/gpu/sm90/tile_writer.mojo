@@ -168,7 +168,7 @@ trait SMemTileWriter:
 
 @register_passable("trivial")
 struct TileWriterTMA[
-    tma_origin: Origin[False],
+    tma_origin: ImmutOrigin,
     dtype: DType,
     tma_layout: Layout,
     desc_layout: Layout,

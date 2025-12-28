@@ -55,7 +55,7 @@ struct PackMatrixRows[
     simd_size: Int,
     row_inner_size: Int,
     packed_origin: MutOrigin,
-    original_origin: Origin[original_mut],
+    original_origin: Origin[mut=original_mut],
 ](ImplicitlyCopyable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
@@ -311,7 +311,7 @@ struct PackMatrixCols[
     use_vnni: Bool,
     use_i8mm: Bool,
     packed_origin: MutOrigin,
-    original_origin: Origin[original_mut],
+    original_origin: Origin[mut=original_mut],
 ](ImplicitlyCopyable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
@@ -774,7 +774,7 @@ fn _pack_b_ndbuffer_impl[
     c_type: DType,
     c_shape: DimList,
     transposed: Bool,
-    b_origin: Origin[b_mut],
+    b_origin: Origin[mut=b_mut],
     output_origin: MutOrigin,
 ](
     b_input: NDBuffer[b_type, 2, b_origin, b_shape],
@@ -857,7 +857,7 @@ fn pack_b_ndbuffer[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-    b_origin: Origin[b_mut],
+    b_origin: Origin[mut=b_mut],
     output_origin: MutOrigin,
 ](
     b_input: NDBuffer[b_type, 2, b_origin, b_shape],
@@ -920,7 +920,7 @@ struct BTileGenerator[
     shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
 ](ImplicitlyCopyable):
     """Struct to encapsulate a tile of B that supports prepacking.
 

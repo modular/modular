@@ -55,8 +55,8 @@ from .ring_buffer import ProducerTiles, MbarPtr
 
 @register_passable("trivial")
 struct TileLoaderTMA[
-    a_tma_origin: Origin[False],
-    b_tma_origin: Origin[False],
+    a_tma_origin: ImmutOrigin,
+    b_tma_origin: ImmutOrigin,
     a_type: DType,
     b_type: DType,
     a_layout: Layout,
@@ -188,7 +188,7 @@ struct TileLoaderTMA[
 
     @always_inline
     fn load_tiles[
-        tiles_origin: Origin[True],
+        tiles_origin: MutOrigin,
         //,
     ](
         self,

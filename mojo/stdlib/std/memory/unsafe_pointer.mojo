@@ -10,6 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements unsafe pointer types for manual memory management.
+
+This module provides `UnsafePointer` and related type aliases for direct memory
+manipulation with explicit control over mutability, origins, and address spaces.
+It includes the `alloc()` function for heap allocation and comprehensive methods
+for loading, storing, and managing pointer lifetimes. These types enable
+low-level memory operations, interfacing with C code, and building custom data
+structures.
+"""
+
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
@@ -123,7 +133,7 @@ Parameters:
 comptime OpaquePointer[
     mut: Bool,
     //,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = UnsafePointer[NoneType, origin, address_space=address_space]
@@ -165,7 +175,7 @@ struct UnsafePointer[
     mut: Bool,
     //,
     type: AnyType,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](
@@ -300,7 +310,7 @@ struct UnsafePointer[
     """The underlying pointer type."""
 
     comptime _with_origin[
-        with_mut: Bool, //, with_origin: Origin[with_mut]
+        with_mut: Bool, //, with_origin: Origin[mut=with_mut]
     ] = UnsafePointer[
         mut=with_mut,
         Self.type,
@@ -369,11 +379,13 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    fn __init__(
-        other: UnsafePointer[mut=True, **_],
+    fn __init__[
+        disambig2: Int = 0
+    ](
+        other: UnsafePointer,
         out self: UnsafePointer[
             other.type,
-            ImmutOrigin.cast_from[other.origin],
+            ImmutOrigin(other.origin),
             address_space = other.address_space,
         ],
     ):
@@ -381,6 +393,9 @@ struct UnsafePointer[
 
         Args:
             other: The mutable pointer to cast from.
+
+        Parameters:
+            disambig2: Ignored. Works around name mangling conflict.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
@@ -388,8 +403,10 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    fn __init__(
-        other: UnsafePointer[mut=True, Self.type, **_],
+    fn __init__[
+        disambig: Int = 0  # FIXME: Work around name mangling conflict.
+    ](
+        other: UnsafePointer[mut=True, **_],
         out self: UnsafePointer[
             other.type,
             MutAnyOrigin,
@@ -400,6 +417,9 @@ struct UnsafePointer[
 
         Args:
             other: The mutable pointer to cast from.
+
+        Parameters:
+            disambig: Ignored. Works around name mangling conflict.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
@@ -423,16 +443,6 @@ struct UnsafePointer[
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
         ](other.address)
-
-    @doc_private
-    @implicit
-    fn __init__(
-        other: UnsafePointer[mut=False, Self.type, **_]
-    ) -> UnsafePointer[other.type, MutOrigin.cast_from[MutAnyOrigin], **_]:
-        constrained[
-            False, "Invalid UnsafePointer conversion from immutable to mutable"
-        ]()
-        abort()
 
     fn __init__[
         T: ImplicitlyDestructible, //
@@ -490,48 +500,26 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        other: LegacyUnsafePointer[
-            Self.type, address_space = Self.address_space, **_
-        ],
+        other: LegacyUnsafePointer,
         out self: UnsafePointer[
-            mut = Self.mut,
-            Self.type,
-            Origin[Self.mut].cast_from[MutAnyOrigin],
-            address_space = Self.address_space,
+            other.type,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
         ],
     ):
-        """Cast a `LegacyUnsafePointer` to an `UnsafePointer`.
+        """Cast a `LegacyUnsafePointer` to an immutable `UnsafePointer`.
 
         Args:
             other: The `LegacyUnsafePointer` to cast from.
 
         Returns:
-            An `UnsafePointer` with the same type and mutability.
+            An `UnsafePointer` with the same type, origin and
+            address space as the original `LegacyUnsafePointer` but immutable.
 
         Notes:
             This constructor will be removed in a future version of Mojo when
             `LegacyUnsafePointer` is removed.
         """
-        self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
-            other.address
-        )
-
-    @doc_private
-    @always_inline("builtin")
-    @implicit
-    fn __init__[
-        T: AnyType
-    ](
-        other: LegacyUnsafePointer[
-            T,
-            address_space = Self.address_space, **_,
-        ],
-        out self: UnsafePointer[
-            T,
-            Origin[Self.mut].external,
-            address_space = Self.address_space,
-        ],
-    ):
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
         ](other.address)
@@ -1455,7 +1443,7 @@ struct UnsafePointer[
         return self._as_legacy().bitcast[T]()
 
     comptime _OriginCastType[
-        target_mut: Bool, target_origin: Origin[target_mut]
+        target_mut: Bool, target_origin: Origin[mut=target_mut]
     ] = UnsafePointer[
         Self.type,
         target_origin,
@@ -1466,7 +1454,7 @@ struct UnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1487,7 +1475,7 @@ struct UnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1514,7 +1502,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn unsafe_origin_cast[
-        target_origin: Origin[Self.mut]
+        target_origin: Origin[mut = Self.mut]
     ](self) -> Self._OriginCastType[Self.mut, target_origin]:
         """Changes the origin of a pointer.
 
@@ -1539,7 +1527,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn as_immutable(
         self,
-    ) -> Self._OriginCastType[False, ImmutOrigin.cast_from[Self.origin]]:
+    ) -> Self._OriginCastType[False, ImmutOrigin(Self.origin)]:
         """Changes the mutability of a pointer to immutable.
 
         Unlike `unsafe_mut_cast`, this function is always safe to use as casting

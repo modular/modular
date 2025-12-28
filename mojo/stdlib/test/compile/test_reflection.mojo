@@ -20,6 +20,8 @@ from compile.reflection import (
     get_struct_field_count,
     get_struct_field_names,
     get_struct_field_types,
+    struct_field_index_by_name,
+    struct_field_type_by_name,
 )
 from testing import assert_equal
 from testing import TestSuite
@@ -290,6 +292,122 @@ def test_struct_field_types_are_correct():
     comptime types = get_struct_field_types[SimpleStruct]()
     assert_equal(get_type_name[types[0]](), "Int")
     assert_equal(get_type_name[types[1]](), "SIMD[DType.float64, 1]")
+
+
+# ===----------------------------------------------------------------------=== #
+# Field Index and Type by Name Tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_struct_field_index_simple():
+    # Test getting field index by name for SimpleStruct
+    comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
+    assert_equal(x_idx, 0)
+
+    comptime y_idx = struct_field_index_by_name[SimpleStruct, "y"]()
+    assert_equal(y_idx, 1)
+
+
+def test_struct_field_index_nested():
+    # Test getting field index for nested struct
+    comptime name_idx = struct_field_index_by_name[Outer, "name"]()
+    assert_equal(name_idx, 0)
+
+    comptime inner_idx = struct_field_index_by_name[Outer, "inner"]()
+    assert_equal(inner_idx, 1)
+
+    comptime count_idx = struct_field_index_by_name[Outer, "count"]()
+    assert_equal(count_idx, 2)
+
+
+def test_struct_field_index_mixed_visibility():
+    # Test that all fields are accessible, including private-like names
+    comptime public_idx = struct_field_index_by_name[
+        MixedVisibility, "public_field"
+    ]()
+    assert_equal(public_idx, 0)
+
+    comptime private_idx = struct_field_index_by_name[
+        MixedVisibility, "_private_field"
+    ]()
+    assert_equal(private_idx, 1)
+
+    comptime dunder_idx = struct_field_index_by_name[
+        MixedVisibility, "__dunder_field"
+    ]()
+    assert_equal(dunder_idx, 2)
+
+
+def test_struct_field_type_by_index_simple():
+    # Test getting field type by index (using composition of index lookup and types)
+    comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
+    comptime x_type = get_struct_field_types[SimpleStruct]()[x_idx]
+    assert_equal(get_type_name[x_type](), "Int")
+
+    comptime y_idx = struct_field_index_by_name[SimpleStruct, "y"]()
+    comptime y_type = get_struct_field_types[SimpleStruct]()[y_idx]
+    assert_equal(get_type_name[y_type](), "SIMD[DType.float64, 1]")
+
+
+def test_struct_field_type_by_index_nested():
+    # Test that nested struct fields return the struct type, not flattened
+    comptime inner_idx = struct_field_index_by_name[Outer, "inner"]()
+    comptime inner_type = get_struct_field_types[Outer]()[inner_idx]
+    assert_equal(get_type_name[inner_type](), "test_reflection.Inner")
+
+
+def test_struct_field_index_consistent():
+    # Verify that struct_field_index_by_name returns consistent indices
+    # for field names - test with literal strings
+    comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
+    comptime y_idx = struct_field_index_by_name[SimpleStruct, "y"]()
+    # x is the first field, y is the second
+    assert_equal(x_idx, 0)
+    assert_equal(y_idx, 1)
+    # They should be different
+    assert_equal(x_idx != y_idx, True)
+
+
+def test_struct_field_type_matches_index():
+    # Verify that field index lookup correctly corresponds to field types
+    comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
+    comptime x_type_by_idx = get_struct_field_types[SimpleStruct]()[x_idx]
+    assert_equal(get_type_name[x_type_by_idx](), "Int")
+
+    comptime y_idx = struct_field_index_by_name[SimpleStruct, "y"]()
+    comptime y_type_by_idx = get_struct_field_types[SimpleStruct]()[y_idx]
+    assert_equal(get_type_name[y_type_by_idx](), "SIMD[DType.float64, 1]")
+
+
+# ===----------------------------------------------------------------------=== #
+# Field Type by Name Tests (using ReflectedType wrapper)
+# ===----------------------------------------------------------------------=== #
+
+
+def test_struct_field_type_by_name_simple():
+    # Test getting field type by name for SimpleStruct
+    comptime x_type = struct_field_type_by_name[SimpleStruct, "x"]()
+    assert_equal(get_type_name[x_type.T](), "Int")
+
+    comptime y_type = struct_field_type_by_name[SimpleStruct, "y"]()
+    assert_equal(get_type_name[y_type.T](), "SIMD[DType.float64, 1]")
+
+
+def test_struct_field_type_by_name_nested():
+    # Test that nested struct fields return the struct type, not flattened
+    comptime inner_type = struct_field_type_by_name[Outer, "inner"]()
+    assert_equal(get_type_name[inner_type.T](), "test_reflection.Inner")
+
+
+def test_struct_field_type_by_name_matches_index():
+    # Verify that struct_field_type_by_name returns the same type
+    # as get_struct_field_types with the corresponding index
+    comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
+    comptime x_type_by_name = struct_field_type_by_name[SimpleStruct, "x"]()
+    comptime x_type_by_idx = get_struct_field_types[SimpleStruct]()[x_idx]
+    assert_equal(
+        get_type_name[x_type_by_name.T](), get_type_name[x_type_by_idx]()
+    )
 
 
 def main():

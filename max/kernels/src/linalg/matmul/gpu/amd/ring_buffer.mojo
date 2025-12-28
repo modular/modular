@@ -47,7 +47,7 @@ from .ring_buffer_traits import (
 
 @register_passable("trivial")
 struct ProducerTile[
-    origin: Origin[True],
+    origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
 ]:
@@ -93,7 +93,7 @@ struct ProducerTile[
 
 @register_passable("trivial")
 struct ConsumerTile[
-    origin: Origin[True],
+    origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
 ]:
@@ -144,7 +144,7 @@ struct ConsumerTile[
 
 @register_passable("trivial")
 struct ProducerView[
-    origin: Origin[True],
+    origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
 ]:
@@ -247,7 +247,7 @@ struct ProducerView[
 
 @register_passable("trivial")
 struct ConsumerView[
-    origin: Origin[True],
+    origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
 ]:

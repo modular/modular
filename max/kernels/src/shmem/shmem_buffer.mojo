@@ -24,19 +24,17 @@ from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
-from memory import (
-    LegacyUnsafePointer as UnsafePointer,
-    LegacyOpaquePointer as OpaquePointer,
-)
 from builtin.device_passable import DevicePassable
 
 
 struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
-    var _data: UnsafePointer[Scalar[Self.dtype]]
+    var _data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var _ctx_ptr: _DeviceContextPtr
     var _size: Int
 
-    comptime device_type: AnyType = UnsafePointer[Scalar[Self.dtype]]
+    comptime device_type: AnyType = UnsafePointer[
+        Scalar[Self.dtype], MutAnyOrigin
+    ]
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self._data
@@ -65,7 +63,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             CompilationTarget.unsupported_target_error[
                 operation="SHMEMBuffer.__init__",
             ]()
-            self._data = UnsafePointer[Scalar[Self.dtype]]()
+            self._data = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]()
             self._ctx_ptr = ctx._handle
             self._size = size
 
@@ -74,7 +72,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     fn __init__(
         out self,
         ctx: DeviceContext,
-        data: UnsafePointer[Scalar[Self.dtype]],
+        data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         size: Int,
     ):
         self._data = data
@@ -87,10 +85,12 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     fn __len__(self) -> Int:
         return self._size
 
-    fn unsafe_ptr(self) -> UnsafePointer[Scalar[Self.dtype]]:
+    fn unsafe_ptr(self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         return self._data
 
-    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[Self.dtype]]) raises:
+    fn enqueue_copy_to(
+        self, dst_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -103,10 +103,10 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async_sized",
-                UnsafePointer[Byte],
+                UnsafePointer[Byte, MutAnyOrigin],
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[Self.dtype]],
-                UnsafePointer[Scalar[Self.dtype]],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,
             ](
                 self._ctx_ptr,
@@ -129,10 +129,10 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async_sized",
-                UnsafePointer[Byte],
+                UnsafePointer[Byte, MutAnyOrigin],
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[Self.dtype]],
-                UnsafePointer[Scalar[Self.dtype]],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,
             ](
                 self._ctx_ptr,
@@ -143,7 +143,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         )
 
     fn enqueue_copy_from(
-        self, src_ptr: UnsafePointer[Scalar[Self.dtype]]
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     ) raises:
         """Enqueues an asynchronous copy from host memory to this buffer.
 
@@ -157,10 +157,10 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async_sized",
-                UnsafePointer[Byte],
+                UnsafePointer[Byte, MutAnyOrigin],
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[Self.dtype]],
-                UnsafePointer[Scalar[Self.dtype]],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,
             ](
                 self._ctx_ptr,
@@ -183,10 +183,10 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async_sized",
-                UnsafePointer[Byte],
+                UnsafePointer[Byte, MutAnyOrigin],
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[Self.dtype]],
-                UnsafePointer[Scalar[Self.dtype]],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,
             ](
                 self._ctx_ptr,

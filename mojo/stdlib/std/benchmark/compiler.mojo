@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides compiler hints to prevent optimization of benchmark code.
+
+This module includes utilities that prevent the compiler from optimizing away
+code being benchmarked. The `keep()` function ensures that values are not
+eliminated during dead code elimination, which is essential for accurate
+performance measurements.
+"""
 
 from sys._assembly import inlined_assembly
 
