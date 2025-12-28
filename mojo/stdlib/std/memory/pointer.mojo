@@ -224,8 +224,12 @@ struct Pointer[
     @implicit
     @always_inline("nodebug")
     fn __init__(
-        other: Self._with_origin[_],
-        out self: Self._with_origin[ImmutOrigin(other.origin)],
+        other: Pointer,
+        out self: Pointer[
+            other.type,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
+        ],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
