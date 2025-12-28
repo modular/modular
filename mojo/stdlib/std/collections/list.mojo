@@ -712,6 +712,14 @@ struct List[T: Copyable](
         Notes:
             If there is no capacity left, resizes to twice the current capacity.
             Except for 0 capacity where it sets 1.
+
+        Examples:
+
+        ```mojo
+        list = [1, 2, 3, 4, 5]
+        list.append(6)
+        print(list) # [1, 2, 3, 4, 5, 6]
+        ```
         """
         if self._len >= self.capacity:
             self._realloc(self.capacity * 2 | Int(self.capacity == 0))
@@ -726,6 +734,14 @@ struct List[T: Copyable](
         Args:
             i: The index for the value.
             value: The value to insert.
+
+        Examples:
+
+        ```mojo
+        list = ["one", "three"]
+        list.insert(1, "two")
+        print(list) # ['one', 'two', 'three']
+        ```
         """
         debug_assert(i <= len(self), "insert index out of range")
 
@@ -754,6 +770,16 @@ struct List[T: Copyable](
         Args:
             other: List whose elements will be added in order at the end of this
                 list.
+
+        Examples:
+
+        ```mojo
+        list = ["one", "two", "three"]
+        more = ["four", "five"]
+        list.extend(more^) # more's values are consumed
+        # print(more)      # Error: use of initialized value
+        print(list)        # ['one', 'two', 'three', 'four', 'five']
+        ```
         """
 
         var other_len = len(other)
@@ -786,6 +812,15 @@ struct List[T: Copyable](
 
         Args:
             elements: The elements to copy into this list.
+
+        Examples:
+
+        ```mojo
+        numbers = [1, 2, 3]
+        more = [4, 5, 6]
+        numbers.extend(Span(more))
+        print(numbers.__str__())   # [1, 2, 3, 4, 5, 6]
+        ```
         """
         var elements_len = len(elements)
         var new_num_elts = self._len + elements_len
@@ -822,6 +857,16 @@ struct List[T: Copyable](
 
         Notes:
             If there is no capacity left, resizes to `len(self) + value.size`.
+
+        Examples:
+
+        ```mojo
+        numbers: List[Int64] = [1, 2]
+        more = SIMD[DType.int64, 2](3, 4)
+        numbers.extend(more)
+        print(numbers) # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
+                       #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
+        ```
         """
         self.reserve(self._len + value.size)
         self._annotate_increase(value.size)
@@ -848,6 +893,16 @@ struct List[T: Copyable](
 
         Notes:
             If there is no capacity left, resizes to `len(self) + count`.
+
+        Examples:
+
+        ```mojo
+        numbers: List[Int64] = [1, 2]
+        more = SIMD[DType.int64, 4](3, 4, 5, 6)
+        numbers.extend(more, count=2)
+        print(numbers) # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
+                       #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
+        ```
         """
         debug_assert(count <= value.size, "count must be <= value.size")
         self.reserve(self._len + count)
@@ -864,6 +919,17 @@ struct List[T: Copyable](
 
         Returns:
             The popped value.
+
+        Examples:
+
+        ```mojo
+        numbers = ["1", "2", "3", "4", "5"]
+        value = numbers.pop(); print(value)   # 5
+        print("length", len(numbers))         # length 4
+        value = numbers.pop(2); print(value)  # 3
+        print(numbers)                        # ['1', '2', '4']
+        value = numbers.pop(-2); print(value) # 2, negative index
+        ```
         """
         debug_assert(-self._len <= i < self._len, "pop index out of range")
 
@@ -903,6 +969,16 @@ struct List[T: Copyable](
             If the new size is smaller than the current one, elements at the end
             are discarded. If the new size is larger than the current one, the
             list is appended with new values elements up to the requested size.
+
+        Examples:
+
+        ```mojo
+        list = ["z", "y", "x", "w"]
+        list.resize(3, "v")
+        print(list)                  # ['z', 'y', 'x']
+        list.resize(6, "v")
+        print(list)                  # ['z', 'y', 'x', 'v', 'v', 'v']
+        ```
         """
         if new_size <= self._len:
             self.shrink(new_size)
@@ -923,6 +999,16 @@ struct List[T: Copyable](
 
         Args:
             unsafe_uninit_length: The new size.
+
+        Examples:
+
+        ```mojo
+        list = [1, 2, 3]
+        list.resize(unsafe_uninit_length=5) # Indices 3 and 4 are uninitialized memory
+        print(len(list))                    # 5
+        list[3] = 10; list[4] = 20
+        print(list)                         # [1, 2, 3, 10, 20]
+        ```
         """
         if unsafe_uninit_length <= self._len:
             self.shrink(unsafe_uninit_length)
@@ -940,6 +1026,14 @@ struct List[T: Copyable](
         Notes:
             With no new value provided, the new size must be smaller than or
             equal to the current one. Elements at the end are discarded.
+
+        Examples:
+
+        ```mojo
+        numbers = [1, 2, 3, 4, 5, 6]
+        numbers.shrink(2); print(numbers) # [1, 2]
+        # numbers.shrink(8)               # Error: new size is bigger than current
+        ```
         """
         if len(self) < new_size:
             abort(
@@ -959,7 +1053,16 @@ struct List[T: Copyable](
         self.reserve(new_size)
 
     fn reverse(mut self):
-        """Reverses the elements of the list."""
+        """Reverses the elements of the list.
+
+        Examples:
+
+        ```mojo
+        list = ["o", "l", "l", "e", "H"]
+        list.reverse()
+        print("".join(list)) # Hello
+        ```
+        """
 
         var earlier_idx = 0
         var later_idx = len(self) - 1
@@ -1037,7 +1140,17 @@ struct List[T: Copyable](
         raise "ValueError: Given element is not in list"
 
     fn clear(mut self):
-        """Clears the elements in the list."""
+        """Clears the elements in the list.
+
+        Examples:
+
+        ```mojo
+        list = ["o", "l", "l", "e", "H"]
+        print(len(list))  # 5
+        list.clear()
+        print(len(list))  # 0
+        ```
+        """
         for i in range(self._len):
             (self._data + i).destroy_pointee()
         var old_size: Int = self._len
@@ -1049,6 +1162,18 @@ struct List[T: Copyable](
 
         Returns:
             The underlying data.
+
+        Examples:
+
+        ```mojo
+        from sys.info import size_of
+        list: List[Int64] = [1, 2, 3, 4]
+        ptr = list.steal_data() # list is no longer available
+        for idx in range(4):
+            print(ptr[idx], end=" ")
+        print() # Output: 1 2 3 4
+        # Free the pointer data
+        ```
         """
         self._annotate_delete()
         var ptr = self._data
@@ -1186,6 +1311,13 @@ struct List[T: Copyable](
 
         Returns:
             The number of occurrences of the value in the list.
+
+        Examples:
+
+        ```mojo
+        list = ["a", "b", "c", "b", "b", "a", "c"]
+        print(list.count("b")) # 3
+        ```
         """
         var count = 0
         for elem in self:
