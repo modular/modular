@@ -97,7 +97,7 @@ fn testSIMD(
     # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     var z = b + a
 
-    # expected-error @below {{invalid call to 'twoUses': failed to infer parameter 'size', it inferred to two different values: '1' and '2'}}
+    # expected-error @below {{failed to infer parameter 'dt1', it inferred to two different values: '1' and '2'}}
     # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     twoUses(a, b)
 

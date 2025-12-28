@@ -115,16 +115,23 @@ ParameterInferenceState::ParameterInferenceState(
       declaredParamPogs(declaredParamPogs), evaluator(declScope.getShared()),
       diags(diags), allowImplicitConversions(allowImplicitConversions) {
 
-  // Maintain the invariant that 'inferredParams' is the full size of the set of
-  // parameters we're trying to infer.
-  assert(bindingsSoFar.size() <= declaredParamTypes.size() &&
+  // Maintain the invariant that 'evaluator' has the full size of the set of
+  // parameters we're trying to infer.  Add null entries for any uninferred
+  // values.
+  size_t finalSize = declaredParamTypes.size();
+  assert(bindingsSoFar.size() <= finalSize &&
          "too many params inferred already?");
-  inferredParams.append(bindingsSoFar.begin(), bindingsSoFar.end());
-  inferredParams.resize(declaredParamTypes.size());
-
-  // Add all of the bindings we've seen to our evaluator.
   for (auto paramValue : bindingsSoFar)
     evaluator.appendIndexBinding(paramValue);
+  while (evaluator.getNumIndexBindings() < finalSize)
+    evaluator.appendIndexBinding(TypedAttr());
+}
+
+void ParameterInferenceState::dump() const {
+  llvm::errs() << "ParameterInferenceState:\n";
+  for (auto [idx, value] : llvm::enumerate(evaluator.getIndexBindings())) {
+    llvm::errs() << "  *(0," << idx << ") = " << value << "\n";
+  }
 }
 
 LogicalResult
@@ -640,20 +647,15 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     // Check if this ParamIndexRefAttr is referring to a param-decl in the
     // ParameterInferenceState's original scope. See paramIndexRefDepth's
     // comments for more about this.
-    if (ire.getDepth() == paramIndexRefDepth &&
-        // We need to infer in lexical order because we may have dependent types
-        // between parameters.  The evaluator implicitly keeps track of how many
-        // we have inferred.
-        ire.getIndex() <= evaluator.getNumIndexBindings()) {
-      // We are at `paramIndexRefDepth`, but all parameters have been inferred
-      // as if at level 0.
+    if (ire.getDepth() == paramIndexRefDepth) {
       Type expectedType = expectedAttr.getType();
+      // We are at `paramIndexRefDepth`, but all parameters have been inferred
+      // as if at level 0.  Readjust if needed.
       if (paramIndexRefDepth) {
         IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
         expectedType = adjuster.replace(expectedType);
       }
       expectedType = evaluator.getReboundType(expectedType);
-      size_t parameterIndex = ire.getIndex();
 
       // If the types don't agree, attempt an implicit conversion between the
       // actual value and the expected type.
@@ -681,24 +683,23 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       assert(enableOutOfOrderInferenceHack ||
              isEqualCanon(actualAttr.getType(), expectedType));
 
-      assert(parameterIndex < inferredParams.size() &&
-             "invalid parameter index");
-      TypedAttr inferredValue = inferredParams[parameterIndex];
+      size_t parameterIndex = ire.getIndex();
+      TypedAttr inferredValue = evaluator.getIndexBindings()[parameterIndex];
 
-      // Otherwise we succeeded in finding a value, see if it is compatible with
-      // or more specific than the other values we've inferred.
-      if (inferredValue && failed(matchParams(inferredValue, actualAttr))) {
+      // If this is a new parameter we've inferred, huzzah, remember it.
+      if (!inferredValue) {
+        evaluator.overwriteIndexBinding(parameterIndex, actualAttr);
+        evaluator.clearCache();
+        return success();
+      }
+
+      // If we saw this parameter before, make sure it is compatible with
+      // (or more specific than) the other values we've inferred.
+      if (failed(matchParams(inferredValue, actualAttr))) {
         addFailure(parameterIndex, InferenceFailure::ValueConflictFailure{
                                        inferredValue, actualAttr});
         return failure();
       }
-      inferredParams[parameterIndex] = actualAttr;
-
-      // If we found the next missing parameter value for the evaluator, install
-      // it so we can remap dependent types more effectively.
-      if (parameterIndex == evaluator.getNumIndexBindings())
-        evaluator.appendIndexBinding(actualAttr);
-
       return success();
     }
     // If this is some parameter other than the one we're inferring, assume it
@@ -806,7 +807,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   // substituted yet) just ignore it because it will be inferred later.
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(actualAttr)) {
     if (indexRef.getDepth() == 0 &&
-        indexRef.getIndex() >= evaluator.getNumIndexBindings()) {
+        !evaluator.getIndexBindings()[indexRef.getIndex()]) {
       assert(enableOutOfOrderInferenceHack && "How does this happen?");
       return success();
     }
@@ -927,6 +928,8 @@ static bool usesUnboundParameters(TypedAttr paramValue,
                                   ArrayRef<TypedAttr> bindingsSoFar) {
   return paramValue
       .walk([&](ParamIndexRefAttr ref) -> WalkResult {
+        // FIXME: parameter references in nested contexts will have depth>0,
+        // this needs to maintain that depth and do a proper comparison.
         if (ref.getDepth() == 0 && !bindingsSoFar[ref.getIndex()])
           return WalkResult::interrupt();
         return WalkResult::advance();
@@ -1005,35 +1008,13 @@ LogicalResult ParameterInferenceState::inferSelfFromInitResult(
       // discover what the value of X is when inferring parameter 1.  It is
       // gross that the value of parameter #0 can depend on parameter #1.  We
       // need out-of-order resolution.
-      if (usesUnboundParameters(param, inferredParams))
+      if (usesUnboundParameters(param, evaluator.getIndexBindings()))
         continue;
       return failure();
     }
   }
 
   return success();
-}
-
-/// Given some attr/types that have some of their parameter bindings known,
-/// substitute the known values for those parameters into the attr/types. Any
-/// unknown parameters are left untouched so we can infer them.
-static void getPartiallySpecializedAttrTypes(
-    ArrayRef<TypedAttr> bindingsSoFar, ParserParameterEvaluator &evaluator,
-    size_t totalNumBindings, SmallVectorImpl<Attribute> &pendingAttrs,
-    SmallVectorImpl<Type> &pendingTypes) {
-  if (bindingsSoFar.empty())
-    return;
-
-  ParameterEvaluator bindingsEvaluator(bindingsSoFar);
-  bindingsEvaluator.setEvaluationContext(evaluator.getEvaluationContext());
-  // Add null entries for any uninferred parameters so they are left unmodified.
-  while (bindingsEvaluator.getNumIndexBindings() < totalNumBindings)
-    bindingsEvaluator.appendIndexBinding(TypedAttr());
-
-  for (Attribute &attr : pendingAttrs)
-    attr = bindingsEvaluator.getReboundAttribute(attr);
-  for (Type &type : pendingTypes)
-    type = bindingsEvaluator.getReboundType(type);
 }
 
 static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
@@ -1075,35 +1056,14 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   AnyValue value = operand.ir;
   curArgExpr = operand.expr;
-  /// When checking if an implicit conversion is possible, apply the bindings
-  /// inferred so far (plus a distinct new attribute relating back to the
-  /// original decls for ones that are missing) to the signature with
-  /// getSpecializedSignature so we benefit from the already-fixed substitutions
-  /// being applied to the input types.  This can make them more concrete and
-  /// help with inferring dependent types based on already-bound parameters.  If
-  /// we inferred a value for the parameter from previous arguments, substitute
-  /// it into the expected types of subsequent arguments.  This allows us to
-  /// handle dependent argument types like:
-  ///     fn foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
-  ///     Scalar[p.type.type]):
-  /// where the type of 'v' depends on 'dt' being inferred.
-  auto getPartiallySpecializedType = [&](Type exptype) -> ASTType {
-    SmallVector<TypedAttr> currentParams;
-    SmallVector<Attribute> pendingAttrs;
-    SmallVector<Type> pendingTypes = {Type(exptype)};
-    getPartiallySpecializedAttrTypes(inferredParams, evaluator,
-                                     declaredParamTypes.size(), pendingAttrs,
-                                     pendingTypes);
-    Type type = pendingTypes.front();
-    return type;
-  };
+
   auto resolveOperandCValue = [&](Type expectedTypeOfOperand) -> CValue {
     if (auto argVal = value.getIfCValue())
       return argVal;
 
     // Handle collection literals.
     if (auto init = value.getIfInitializer()) {
-      auto inferredType = getPartiallySpecializedType(expectedTypeOfOperand);
+      ASTType inferredType = evaluator.getReboundType(expectedTypeOfOperand);
       // If we have a type like List[$0] replace it with List[?] so we can
       // infer the unbound parameter.
       inferredType = inferredType.getWithUnknownParametersReplaced(shared);
@@ -1209,7 +1169,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // since those are what we're inferring from the arguments.  The result
   // 'actualType' will have those newly inferred parameters.
   if (auto initValue = operand.ir.getIfInitializer()) {
-    auto inferredType = getPartiallySpecializedType(expectedType);
+    ASTType inferredType = evaluator.getReboundType(expectedType);
     // If we have a type like List[$0] replace it with List[?] so we can
     // infer the unbound parameter.
     inferredType = inferredType.getWithUnknownParametersReplaced(shared);
@@ -1287,7 +1247,21 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // If implicit conversions are enabled and the target type is known, then
   // we can check to see if any of the constructors for the result type can
   // work.
-  ASTType knownExpectedType = getPartiallySpecializedType(expectedType);
+
+  /// When checking if an implicit conversion is possible, apply the bindings
+  /// inferred so far (plus a distinct new attribute relating back to the
+  /// original decls for ones that are missing) to the signature with
+  /// getSpecializedSignature so we benefit from the already-fixed substitutions
+  /// being applied to the input types.  This can make them more concrete and
+  /// help with inferring dependent types based on already-bound parameters.  If
+  /// we inferred a value for the parameter from previous arguments, substitute
+  /// it into the expected types of subsequent arguments.  This allows us to
+  /// handle dependent argument types like:
+  ///     fn foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
+  ///     Scalar[p.type.type]):
+  /// where the type of 'v' depends on 'dt' being inferred.
+
+  ASTType knownExpectedType = evaluator.getReboundType(expectedType);
   ASTDecl *expectedDecl = knownExpectedType.getDecl(shared);
   if (!allowImplicitConversions || !expectedDecl) {
     diags.resetDiags(std::move(noImplicitConversionDiags));
@@ -1372,12 +1346,11 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments) {
 
   // Partially specialize the pogs so any default values are specialized to
   // include any already-inferred values.
-  SmallVector<Attribute> pendingAttrs = {declaredParamPogs};
-  SmallVector<Type> types(declaredParamTypes.begin(), declaredParamTypes.end());
-  getPartiallySpecializedAttrTypes(inferredParams, evaluator,
-                                   declaredParamTypes.size(), pendingAttrs,
-                                   types);
-  declaredParamPogs = cast<PogListAttr>(pendingAttrs[0]);
+  SmallVector<Type> types;
+  for (auto type : declaredParamTypes)
+    types.push_back(evaluator.getReboundType(type));
+  declaredParamPogs =
+      cast<PogListAttr>(evaluator.getReboundAttribute(declaredParamPogs));
 
   size_t posIdx = 0, numParams = givenBindings.size();
   DefaultValueHandler defaultHandler(declaredParamPogs);
@@ -1436,13 +1409,16 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments) {
   // If we had a variadic parameter that is unspecified, and no arguments to
   // infer it from, it must be because of an empty variadic list.
   if (!hasArguments) {
-    size_t nextParamNo = evaluator.getNumIndexBindings();
-    if (nextParamNo < types.size() &&
-        declaredParamPogs.isPosVarArg(nextParamNo)) {
-      auto type = types[evaluator.getNumIndexBindings()];
-      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
-      inferredParams[nextParamNo] = empty;
-      evaluator.appendIndexBinding(empty);
+    for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
+      if (declaredParamPogs.isPosVarArg(i) &&
+          !evaluator.getIndexBindings()[i]) {
+        // FIXME: variadic element type may be dependent on an earlier inferred
+        // parameter, we should get the rebound type.
+        auto type = types[i];
+        auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
+        evaluator.overwriteIndexBinding(i, empty);
+        evaluator.clearCache();
+      }
     }
   }
 }
@@ -1475,16 +1451,14 @@ LogicalResult ParameterInferenceState::inferForCall(
     // generator type so that the depths of index references are correct.
     FnType bodyType = signature.getBody();
     PogListAttr metadata = signature.getMetadata();
-    SmallVector<Attribute> pendingAttrs = {metadata};
-    SmallVector<Type> pendingTypes(signature.getInputParamTypes());
-    pendingTypes.push_back(bodyType);
-    getPartiallySpecializedAttrTypes(inferredParams, evaluator,
-                                     declaredParamTypes.size(), pendingAttrs,
-                                     pendingTypes);
-    bodyType = sugarCast<FnType>(pendingTypes.back());
-    metadata = cast<PogListAttr>(pendingAttrs.front());
-    signature = sugarCast<FnTypeGeneratorType>(GeneratorType::get(
-        ArrayRef<Type>(pendingTypes).drop_back(), bodyType, metadata));
+    SmallVector<Type> paramTypes;
+    for (auto ty : signature.getInputParamTypes())
+      paramTypes.push_back(evaluator.getReboundType(ty));
+
+    bodyType = sugarCast<FnType>(evaluator.getReboundType(bodyType));
+    metadata = cast<PogListAttr>(evaluator.getReboundAttribute(metadata));
+    signature = sugarCast<FnTypeGeneratorType>(
+        GeneratorType::get(paramTypes, bodyType, metadata));
   }
 
   // If this is a result in a returnsSelf function like an __init__, infer
@@ -1657,16 +1631,18 @@ LogicalResult ParameterInferenceState::inferForCall(
   if (posOperandIdx != numOperands && !signature.getMetadata().hasAnyVarArg())
     return failure();
 
-  // If we had a variadic parameter that is unspecified, it must be because of
-  // an empty variadic list.
-  size_t nextParamNo = evaluator.getNumIndexBindings();
-  if (nextParamNo != signature.getInputParamTypes().size() &&
-      signature.getParamListAttrs().isPosVarArg(nextParamNo)) {
-    // FIXME: This isn't rewriting the variadic list for dependent types.
-    auto type = declaredParamTypes[evaluator.getNumIndexBindings()];
-    auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
-    inferredParams[nextParamNo] = empty;
-    evaluator.appendIndexBinding(empty);
+  // See if we can fulfill any missing parameters with default values for their
+  // type.
+  for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
+    if (!evaluator.getIndexBindings()[i] &&
+        signature.getParamListAttrs().isPosVarArg(i)) {
+      // FIXME: This isn't rewriting the variadic list for dependent types.
+      auto type = declaredParamTypes[i];
+      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
+      evaluator.overwriteIndexBinding(i, empty);
+      evaluator.clearCache();
+      break;
+    }
   }
 
   // Make sure to rebind any selfResultParams if they've been inferred already.
@@ -1676,20 +1652,12 @@ LogicalResult ParameterInferenceState::inferForCall(
   //         fn __init__[U: Movable](x: U, out self: Foo[U]):
   //
   if (!selfResultParams.empty()) {
-    // Fill the evaluator with unbound attrs for any parameters that were not
-    // inferred yet.
-    ArrayRef<Type> paramTypes = signature.getInputParamTypes();
-    for (size_t paramIdx = evaluator.getNumIndexBindings(),
-                e = signature.getInputParamTypes().size();
-         paramIdx < e; ++paramIdx) {
-      auto paramType = evaluator.getReboundType(paramTypes[paramIdx]);
-      evaluator.appendIndexBinding(UnboundAttr::get(paramType));
-    }
-
     for (unsigned idx : selfResultParams) {
-      TypedAttr &param = inferredParams[idx];
-      if (param)
+      if (TypedAttr param = evaluator.getIndexBindings()[idx]) {
         param = evaluator.getReboundAttribute(param);
+        evaluator.overwriteIndexBinding(idx, param);
+        evaluator.clearCache();
+      }
     }
   }
 

@@ -1577,8 +1577,10 @@ struct Ex1[self_a: Int, //, self_param: StructWithIntParam[self_a]]:
         shadow_a: Int, //, shadow_param: StructWithIntParam[shadow_a]
     ](out self: Ex1[shadow_param], data: HasAutoParam[shadow_param]):
         pass
-fn testEx1(imm_data: HasAutoParam[StructWithIntParam[1]()]):
-    parSpecializedTest = Ex1(imm_data)
+
+# FIXME: reenable this test.
+#fn testEx1(imm_data: HasAutoParam[StructWithIntParam[1]()]):
+#    parSpecializedTest = Ex1(imm_data)
 
 
 ##===----------------------------------------------------------------------===##

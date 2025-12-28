@@ -119,9 +119,10 @@ public:
 
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {
-    assert(idx < inferredParams.size() && "invalid parameter idx");
-    return inferredParams[idx];
+    return evaluator.getIndexBindings()[idx];
   }
+
+  void dump() const;
 
 private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
@@ -159,11 +160,6 @@ private:
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.
   ParserParameterEvaluator evaluator;
-
-  /// One entry for each parameter from the binding list we are trying to infer.
-  /// If any entries are non-null then we've already inferred a value for that
-  /// parameter.
-  SmallVector<TypedAttr> inferredParams;
 
   /// This is how many signature types deep inference is inside parameter
   /// expressions and determines which index references we match against.
