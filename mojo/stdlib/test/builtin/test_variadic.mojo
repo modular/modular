@@ -304,5 +304,43 @@ def test_map_types_to_types():
     assert_true(_type_is_eq[variadic[1], String]())
 
 
+def test_exclude_type():
+    comptime without_int = Variadic.exclude_type[
+        *Tuple[Int, String, Float64, Bool].element_types, type=Int
+    ]
+    assert_equal(Variadic.size(without_int), 3)
+    assert_true(_type_is_eq[without_int[0], String]())
+
+
+def test_keep_types():
+    comptime kept = Variadic.keep_types[
+        *Tuple[Int, String, Float64].element_types,
+        keep_types = Tuple[String, Float64].element_types,
+    ]
+    assert_equal(Variadic.size(kept), 2)
+    assert_true(_type_is_eq[kept[0], String]())
+    assert_true(_type_is_eq[kept[1], Float64]())
+
+
+def test_exclude_types():
+    comptime filtered = Variadic.exclude_types[
+        *Tuple[Int, String, Float64, Bool].element_types,
+        exclude_types = Tuple[Int, Bool].element_types,
+    ]
+    assert_equal(Variadic.size(filtered), 2)
+    assert_true(_type_is_eq[filtered[0], String]())
+    assert_true(_type_is_eq[filtered[1], Float64]())
+
+
+def test_filtering_chained():
+    comptime step1 = Variadic.exclude_type[
+        *Tuple[Int, String, Float64, Bool].element_types, type=Bool
+    ]
+    comptime step2 = Variadic.exclude_type[*step1, type=Int]
+    assert_equal(Variadic.size(step2), 2)
+    assert_true(_type_is_eq[step2[0], String]())
+    assert_true(_type_is_eq[step2[1], Float64]())
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

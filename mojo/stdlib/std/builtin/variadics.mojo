@@ -305,14 +305,11 @@ struct Variadic:
     """
 
     comptime exclude_type[
-        Trait: type_of(AnyType),
-        //,
-        exclude_type: Trait,
-        element_types: Variadic.TypesOfTrait[Trait],
+        T: type_of(AnyType), //, *element_types: T, type: T
     ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal = Variadic.empty_of_trait[Trait],
+        BaseVal = Variadic.empty_of_trait[T],
         VariadicType=element_types,
-        Reducer = _ExcludeOneReducer[Trait, exclude_type],
+        Reducer = _ExcludeOneReducer[T, type],
     ]
     """Exclude a single type from a variadic sequence.
 
@@ -320,9 +317,9 @@ struct Variadic:
     specified type to exclude.
 
     Parameters:
-        Trait: The trait that the types conform to.
-        exclude_type: The type to exclude from the sequence.
+        T: The trait that the types conform to.
         element_types: The input variadic sequence.
+        type: The type to exclude from the sequence.
 
     Examples:
 
@@ -333,10 +330,7 @@ struct Variadic:
     comptime FullVariant = Variant[Int, String, Float64, Bool]
 
     # Remove Int from the variant's types
-    comptime WithoutInt = Variadic.exclude_type[
-        exclude_type=Int,
-        element_types=FullVariant.Ts
-    ]
+    comptime WithoutInt = Variadic.exclude_type[*FullVariant.Ts, type=Int]
 
     # Create a new variant without Int
     comptime FilteredVariant = Variant[*WithoutInt]
@@ -345,14 +339,14 @@ struct Variadic:
     """
 
     comptime keep_types[
-        Trait: type_of(AnyType),
+        T: type_of(AnyType),
         //,
-        keep_types: Variadic.TypesOfTrait[Trait],
-        element_types: Variadic.TypesOfTrait[Trait],
+        *element_types: T,
+        keep_types: Variadic.TypesOfTrait[T],
     ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal = Variadic.empty_of_trait[Trait],
+        BaseVal = Variadic.empty_of_trait[T],
         VariadicType=element_types,
-        Reducer = _KeepOnlyReducer[Trait, keep_types],
+        Reducer = _KeepOnlyReducer[T, keep_types],
     ]
     """Keep only specified types from a variadic sequence.
 
@@ -360,9 +354,9 @@ struct Variadic:
     input sequence and the keep list.
 
     Parameters:
-        Trait: The trait that the types conform to.
-        keep_types: The variadic of types to keep.
+        T: The trait that the types conform to.
         element_types: The input variadic sequence.
+        keep_types: The variadic of types to keep.
 
     Examples:
 
@@ -374,10 +368,7 @@ struct Variadic:
 
     # Keep only String and Float64
     comptime KeepList = Variadic.types[T=AnyType, String, Float64]
-    comptime OnlyStringFloat = Variadic.keep_types[
-        keep_types=KeepList,
-        element_types=FullVariant.Ts
-    ]
+    comptime OnlyStringFloat = Variadic.keep_types[*FullVariant.Ts, keep_types=KeepList]
 
     # Create a new variant with only the kept types
     comptime FilteredVariant = Variant[*OnlyStringFloat]
@@ -386,14 +377,14 @@ struct Variadic:
     """
 
     comptime exclude_types[
-        Trait: type_of(AnyType),
+        T: type_of(AnyType),
         //,
-        exclude_types: Variadic.TypesOfTrait[Trait],
-        element_types: Variadic.TypesOfTrait[Trait],
+        *element_types: T,
+        exclude_types: Variadic.TypesOfTrait[T],
     ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal = Variadic.empty_of_trait[Trait],
+        BaseVal = Variadic.empty_of_trait[T],
         VariadicType=element_types,
-        Reducer = _ExcludeManyReducer[Trait, exclude_types],
+        Reducer = _ExcludeManyReducer[T, exclude_types],
     ]
     """Exclude multiple types from a variadic sequence.
 
@@ -401,9 +392,9 @@ struct Variadic:
     that appear in the exclude list.
 
     Parameters:
-        Trait: The trait that the types conform to.
-        exclude_types: The variadic of types to exclude.
+        T: The trait that the types conform to.
         element_types: The input variadic sequence.
+        exclude_types: The variadic of types to exclude.
 
     Examples:
 
@@ -415,10 +406,7 @@ struct Variadic:
 
     # Remove Int and Bool
     comptime ExcludeList = Variadic.types[T=AnyType, Int, Bool]
-    comptime WithoutIntBool = Variadic.exclude_types[
-        exclude_types=ExcludeList,
-        element_types=FullVariant.Ts
-    ]
+    comptime WithoutIntBool = Variadic.exclude_types[*FullVariant.Ts, exclude_types=ExcludeList]
 
     # Create a new variant without the excluded types
     comptime FilteredVariant = Variant[*WithoutIntBool]
@@ -429,14 +417,8 @@ struct Variadic:
 
     ```mojo
     # First exclude Bool, then exclude Int
-    comptime Step1 = Variadic.exclude_type[
-        exclude_type=Bool,
-        element_types=FullVariant.Ts
-    ]
-    comptime Step2 = Variadic.exclude_type[
-        exclude_type=Int,
-        element_types=Step1
-    ]
+    comptime Step1 = Variadic.exclude_type[*FullVariant.Ts, type=Bool]
+    comptime Step2 = Variadic.exclude_type[*Step1, type=Int]
     comptime ChainedVariant = Variant[*Step2]
     # ChainedVariant is Variant[String, Float64]
     ```
