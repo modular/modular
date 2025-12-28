@@ -10,6 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements unsafe pointer types for manual memory management.
+
+This module provides `UnsafePointer` and related type aliases for direct memory
+manipulation with explicit control over mutability, origins, and address spaces.
+It includes the `alloc()` function for heap allocation and comprehensive methods
+for loading, storing, and managing pointer lifetimes. These types enable
+low-level memory operations, interfacing with C code, and building custom data
+structures.
+"""
+
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
@@ -369,8 +379,10 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    fn __init__(
-        other: UnsafePointer[mut=True, **_],
+    fn __init__[
+        disambig2: Int = 0
+    ](
+        other: UnsafePointer,
         out self: UnsafePointer[
             other.type,
             ImmutOrigin(other.origin),
@@ -381,6 +393,9 @@ struct UnsafePointer[
 
         Args:
             other: The mutable pointer to cast from.
+
+        Parameters:
+            disambig2: Ignored. Works around name mangling conflict.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
@@ -388,8 +403,10 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    fn __init__(
-        other: UnsafePointer[mut=True, Self.type, **_],
+    fn __init__[
+        disambig: Int = 0  # FIXME: Work around name mangling conflict.
+    ](
+        other: UnsafePointer[mut=True, **_],
         out self: UnsafePointer[
             other.type,
             MutAnyOrigin,
@@ -400,6 +417,9 @@ struct UnsafePointer[
 
         Args:
             other: The mutable pointer to cast from.
+
+        Parameters:
+            disambig: Ignored. Works around name mangling conflict.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
@@ -423,16 +443,6 @@ struct UnsafePointer[
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
         ](other.address)
-
-    @doc_private
-    @implicit
-    fn __init__(
-        other: UnsafePointer[mut=False, Self.type, **_]
-    ) -> UnsafePointer[other.type, MutAnyOrigin, **_]:
-        constrained[
-            False, "Invalid UnsafePointer conversion from immutable to mutable"
-        ]()
-        abort()
 
     fn __init__[
         T: ImplicitlyDestructible, //
@@ -490,48 +500,26 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        other: LegacyUnsafePointer[
-            Self.type, address_space = Self.address_space, **_
-        ],
+        other: LegacyUnsafePointer,
         out self: UnsafePointer[
-            mut = Self.mut,
-            Self.type,
-            Origin[mut = Self.mut](unsafe_cast=MutAnyOrigin),
-            address_space = Self.address_space,
+            other.type,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
         ],
     ):
-        """Cast a `LegacyUnsafePointer` to an `UnsafePointer`.
+        """Cast a `LegacyUnsafePointer` to an immutable `UnsafePointer`.
 
         Args:
             other: The `LegacyUnsafePointer` to cast from.
 
         Returns:
-            An `UnsafePointer` with the same type and mutability.
+            An `UnsafePointer` with the same type, origin and
+            address space as the original `LegacyUnsafePointer` but immutable.
 
         Notes:
             This constructor will be removed in a future version of Mojo when
             `LegacyUnsafePointer` is removed.
         """
-        self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
-            other.address
-        )
-
-    @doc_private
-    @always_inline("builtin")
-    @implicit
-    fn __init__[
-        T: AnyType
-    ](
-        other: LegacyUnsafePointer[
-            T,
-            address_space = Self.address_space, **_,
-        ],
-        out self: UnsafePointer[
-            T,
-            Origin[mut = Self.mut].external,
-            address_space = Self.address_space,
-        ],
-    ):
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type = type_of(self)._mlir_type
         ](other.address)

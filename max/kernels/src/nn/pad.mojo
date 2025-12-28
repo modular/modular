@@ -665,7 +665,9 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         output_offset: Int,
         input_offset: Int,
         output: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[Self.dtype],
+            mut=True,
+            address_space = AddressSpace.GENERIC, **_,
         ],
         input: UnsafePointer[
             Scalar[Self.dtype], address_space = AddressSpace.GENERIC, **_
@@ -702,7 +704,7 @@ fn _pad_reflect_axis[
     axis: Int,
 ](
     output: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], mut=True, address_space = AddressSpace.GENERIC, **_
     ],
     input: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.GENERIC, **_
@@ -762,7 +764,7 @@ fn _pad_reflect_impl[
     paddings_type: DType,
 ](
     output: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], mut=True, address_space = AddressSpace.GENERIC, **_
     ],
     input: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.GENERIC, **_
