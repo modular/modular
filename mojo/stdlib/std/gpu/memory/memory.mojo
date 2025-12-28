@@ -910,12 +910,12 @@ fn external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[dtype, 0], MutOrigin.external, address_space=address_space
+        StaticTuple[dtype, 0], MutAnyOrigin, address_space=address_space
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
             _type = UnsafePointer[
                 StaticTuple[dtype, 0],
-                MutOrigin.external,
+                MutAnyOrigin,
                 address_space=address_space,
             ]._mlir_type,
             name = _get_kgen_string[name](),

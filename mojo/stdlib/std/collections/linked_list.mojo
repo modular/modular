@@ -10,7 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements a doubly-linked list data structure.
 
+This module provides the `LinkedList` type, a doubly-linked list where each
+element points to both the next and previous elements. This structure enables
+efficient insertion and deletion at any position, though random access requires
+traversal. The implementation includes iterator support for forward and reverse
+traversal.
+"""
 
 from collections._index_normalization import normalize_index
 from os import abort
@@ -90,14 +97,14 @@ struct _LinkedListIter[
     mut: Bool,
     //,
     ElementType: Copyable,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     var src: Pointer[LinkedList[Self.ElementType], Self.origin]
     var curr: UnsafePointer[Node[Self.ElementType], MutOrigin.external]
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     comptime Element = Self.ElementType  # FIXME(MOCO-2068): shouldn't be needed.
@@ -149,7 +156,7 @@ struct LinkedList[
     ]
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _LinkedListIter[Self.ElementType, iterable_origin]
     """The iterator type for this linked list.
 

@@ -308,7 +308,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         out self,
         *,
         var storage: VariadicListMem[
-            Self.ElementType, origin=origin, is_owned=True
+            elt_is_mutable=True, origin=origin, Self.ElementType, is_owned=True
         ],
     ):
         """Construct an array from a low-level internal representation.
