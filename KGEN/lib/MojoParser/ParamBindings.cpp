@@ -847,11 +847,12 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
                                     const ParserParameterEvaluator &evaluator) {
     // The inference diagnostics will be unused.
     ParameterInferenceDiagnostics inferenceDiags;
-    ParameterInferenceState inference(
-        declScope, getParameters(), paramTypes.size(), bindingsSoFar, evaluator,
-        inferenceDiags, /*allowImplicitConversions=*/true);
+    ParameterInferenceState inference(declScope, getParameters(), paramTypes,
+                                      paramList, bindingsSoFar, evaluator,
+                                      inferenceDiags,
+                                      /*allowImplicitConversions=*/true);
 
-    inference.infer(paramTypes, paramList, /*hasArguments*/ partial);
+    inference.inferFromParamList(/*hasArguments*/ partial);
     return PValue(inference.getInferredValue(bindingsSoFar.size()));
   };
   auto [bindings, _] = verifyBindingsImpl(parameters, paramTypes, paramList,
@@ -1024,12 +1025,13 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   SyntheticNode errorLoc(exprLoc);
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParameterEvaluator &evaluator) {
-    ParameterInferenceState inference(
-        declScope, getParameters(), expectedParamTypes.size(), bindingsSoFar,
-        evaluator, inferenceDiags, /*allowImplicitConversions=*/true);
+    ParameterInferenceState inference(declScope, getParameters(),
+                                      expectedParamTypes, paramListAttr,
+                                      bindingsSoFar, evaluator, inferenceDiags,
+                                      /*allowImplicitConversions=*/true);
 
     // Infer information from the current parameter list.
-    inference.infer(expectedParamTypes, paramListAttr, partial);
+    inference.inferFromParamList(partial);
 
     // See if we inferred information about the next value.
     if (auto result = inference.getInferredValue(bindingsSoFar.size()))

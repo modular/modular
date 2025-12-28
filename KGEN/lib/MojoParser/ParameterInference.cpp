@@ -107,12 +107,13 @@ void ParameterInferenceDiagnostics::addExplanation(MojoInflightDiag &diag) {
 
 ParameterInferenceState::ParameterInferenceState(
     ASTDecl &declScope, const CallOperands &givenBindings,
-    size_t totalExpectedBindings, ArrayRef<TypedAttr> bindingsSoFar,
+    ArrayRef<Type> declaredParamTypes, PogListAttr declaredParamPogs,
+    ArrayRef<TypedAttr> bindingsSoFar,
     const ParserParameterEvaluator &evaluator,
     ParameterInferenceDiagnostics &diags, bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
-      givenBindings(givenBindings),
-      totalExpectedBindings(totalExpectedBindings), evaluator(evaluator),
+      givenBindings(givenBindings), declaredParamTypes(declaredParamTypes),
+      declaredParamPogs(declaredParamPogs), evaluator(evaluator),
       inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()), diags(diags),
       allowImplicitConversions(allowImplicitConversions) {}
 
@@ -1090,7 +1091,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     SmallVector<Attribute> pendingAttrs;
     SmallVector<Type> pendingTypes = {Type(exptype)};
     getPartiallySpecializedAttrTypes(currentParams, evaluator,
-                                     totalExpectedBindings, pendingAttrs,
+                                     declaredParamTypes.size(), pendingAttrs,
                                      pendingTypes);
     Type type = pendingTypes.front();
     return type;
@@ -1359,25 +1360,27 @@ void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
 /// Given an incomplete parameter binding set for a parameter list, try to
 /// infer the value of the next parameter. We only do this if there are any
 /// inferred parameters present.
-void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
-                                    PogListAttr paramListAttr,
-                                    bool hasArguments) {
+void ParameterInferenceState::inferFromParamList(bool hasArguments) {
   // If the parameter list has any inferred parameters, then we have to infer
   // against the provided binding list, since we might infer parameters from
   // other parameters. Otherwise, just exit early.
-  if (paramTypes.empty() || (!paramListAttr.hasInferredParams() &&
-                             !paramListAttr.isPosVarArg(paramTypes.size() - 1)))
+  if (declaredParamTypes.empty() ||
+      (!declaredParamPogs.hasInferredParams() &&
+       !declaredParamPogs.isPosVarArg(declaredParamTypes.size() - 1)))
     return;
 
-  SmallVector<Attribute> pendingAttrs = {paramListAttr};
-  SmallVector<Type> types(paramTypes.begin(), paramTypes.end());
+  // Partially specialize the pogs so any default values are specialized to
+  // include any already-inferred values.
+  SmallVector<Attribute> pendingAttrs = {declaredParamPogs};
+  SmallVector<Type> types(declaredParamTypes.begin(), declaredParamTypes.end());
   getPartiallySpecializedAttrTypes(inferredParams, evaluator,
-                                   totalExpectedBindings, pendingAttrs, types);
-  paramListAttr = cast<PogListAttr>(pendingAttrs[0]);
+                                   declaredParamTypes.size(), pendingAttrs,
+                                   types);
+  declaredParamPogs = cast<PogListAttr>(pendingAttrs[0]);
 
   size_t posIdx = 0, numParams = givenBindings.size();
-  DefaultValueHandler defaultHandler(paramListAttr);
-  for (auto [idx, pog] : llvm::enumerate(paramListAttr.getPogs())) {
+  DefaultValueHandler defaultHandler(declaredParamPogs);
+  for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
     Type expectedType = types[idx];
@@ -1389,7 +1392,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
 
     // If we have a varargs parameters, then it will eat the rest of the
     // parameters, but we have to check each of them.
-    if (paramListAttr.isPosVarArg(idx)) {
+    if (declaredParamPogs.isPosVarArg(idx)) {
       auto expectedVariadic = sugarCast<VariadicType>(expectedType);
       Type varArgsEltType = expectedVariadic.getElementType();
       while (posIdx != numParams) {
@@ -1414,7 +1417,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
     if ((pog.getPassingKind() != PassingKind::PosOnly &&
          pog.getPassingKind() != PassingKind::Implicit)) {
       if (const OperandValue *param =
-              givenBindings.findKwArg(paramListAttr.getName(idx))) {
+              givenBindings.findKwArg(declaredParamPogs.getName(idx))) {
         inferOneParam(*param, expectedType);
         continue;
       }
@@ -1433,7 +1436,8 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   // infer it from, it must be because of an empty variadic list.
   if (!hasArguments) {
     size_t nextParamNo = evaluator.getNumIndexBindings();
-    if (nextParamNo < types.size() && paramListAttr.isPosVarArg(nextParamNo)) {
+    if (nextParamNo < types.size() &&
+        declaredParamPogs.isPosVarArg(nextParamNo)) {
       // If we didn't already have a slot for this, make space.
       if (inferredParams.size() <= nextParamNo)
         inferredParams.resize(nextParamNo + 1);
@@ -1445,12 +1449,11 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   }
 }
 
-LogicalResult ParameterInferenceState::infer(
+LogicalResult ParameterInferenceState::inferForCall(
     FnTypeGeneratorType signature, const CallOperands &operands,
     const OperandValueList &variadicKwOperands, bool returnsSelf) {
   // First try to infer parameters from the already provided bindings.
-  infer(signature.getInputParamTypes(), signature.getParamListAttrs(),
-        /*hasArguments*/ true);
+  inferFromParamList(/*hasArguments*/ true);
 
   {
     // Substitute the already inferred parameters into the signature, without
@@ -1478,7 +1481,7 @@ LogicalResult ParameterInferenceState::infer(
     SmallVector<Type> pendingTypes(signature.getInputParamTypes());
     pendingTypes.push_back(bodyType);
     getPartiallySpecializedAttrTypes(inferredParams, evaluator,
-                                     totalExpectedBindings, pendingAttrs,
+                                     declaredParamTypes.size(), pendingAttrs,
                                      pendingTypes);
     bodyType = sugarCast<FnType>(pendingTypes.back());
     metadata = cast<PogListAttr>(pendingAttrs.front());
