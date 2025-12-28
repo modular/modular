@@ -10,7 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the stat module."""
+"""Provides constants and functions for interpreting file mode bits.
+
+This module defines file type constants and functions for testing file modes,
+similar to Python's `stat` module. It includes bit masks for identifying different
+file types (regular files, directories, symbolic links, devices, etc.) and
+convenience functions for mode testing.
+"""
 
 comptime S_IFMT = 0o0170000
 """Bits that determine the file type."""

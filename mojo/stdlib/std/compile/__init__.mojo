@@ -12,8 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Runtime function compilation and introspection: assembly, IR, linkage, metadata.
 
-This module exposes functionality for compiling individual Mojo functions and
-examining their low-level implementation details. It is particularly useful for:
+The `compile` package exposes functionality for compiling individual Mojo
+functions and examining their low-level implementation details. It enables
+inspecting generated code, obtaining linkage information, and controlling
+compilation options at runtime. This package provides tools for
+metaprogramming, debugging, and understanding how Mojo code compiles.
+
+This package is particularly useful for:
 
 - Inspecting assembly, LLVM IR, or object code output
 - Getting linkage names and module information
@@ -23,14 +28,14 @@ examining their low-level implementation details. It is particularly useful for:
 
 Example:
 ```mojo
-    from compile import compile_info
+from compile import compile_info
 
-    fn my_func():
-        print("Hello")
+fn my_func():
+    print("Hello")
 
-    # Get assembly for the function
-    info = compile_info[my_func]()
-    print(info.asm)
+# Get assembly for the function
+info = compile_info[my_func]()
+print(info.asm)
 ```
 """
 
