@@ -39,7 +39,7 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # ===-------------------------------------------------------------------===#
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = PythonObject
 
@@ -67,16 +67,15 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return Bool(self.next_item)
-
-    fn __next__(mut self) -> PythonObject:
+    fn __next__(mut self) raises StopIteration -> PythonObject:
         """Return the next item and update to point to subsequent item.
 
         Returns:
             The next item in the traversable object that this iterator
             points to.
         """
+        if not self.next_item:
+            raise StopIteration()
         ref cpy = Python().cpython()
         var curr_item = self.next_item
         self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
@@ -1748,7 +1747,7 @@ struct PythonObject(
         return None
 
     fn unchecked_downcast_value_ptr[
-        mut: Bool, origin: Origin[mut], //, T: ImplicitlyDestructible
+        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDestructible
     ](ref [origin]self) -> UnsafePointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 

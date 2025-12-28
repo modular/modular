@@ -227,7 +227,9 @@ def _test_iter_bounds[
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
-        _ = iter.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
+            iter.__next__()^
+        )
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -247,7 +249,9 @@ def test_iter():
     _test_iter_bounds(dict.__iter__(), len(dict))
 
     var empty_dict: Dict[String, Int] = {}
-    assert_equal(iter(empty_dict).__has_next__(), False)
+    with assert_raises():
+        var it = iter(empty_dict)
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_iter_keys():
@@ -321,7 +325,9 @@ def test_iter_take_items():
     assert_equal(values, "abc")
     assert_equal(keys, 3)
     assert_equal(len(dict), 0)
-    assert_false(dict.take_items().__has_next__())
+    with assert_raises():
+        var it = dict.take_items()
+        _ = it.__next__()  # raises StopIteration
 
     for i in range(3):
         with assert_raises(contains="KeyError"):

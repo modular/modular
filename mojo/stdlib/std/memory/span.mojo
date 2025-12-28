@@ -38,7 +38,7 @@ struct _SpanIter[
     mut: Bool,
     //,
     T: Copyable,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for Span.
@@ -51,7 +51,7 @@ struct _SpanIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for this span iterator.
 
@@ -70,31 +70,24 @@ struct _SpanIter[
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
+    fn __next__(mut self) raises StopIteration -> ref [Self.origin] Self.T:
         @parameter
         if Self.forward:
-            return self.index < len(self.src)
-        else:
-            return self.index > 0
+            if self.index >= len(self.src):
+                raise StopIteration()
 
-    @always_inline
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.T:
-        @parameter
-        if Self.forward:
             var curr = self.index
             self.index += 1
             return self.src[curr]
         else:
+            if self.index <= 0:
+                raise StopIteration()
             self.index -= 1
             return self.src[self.index]
 
-    @always_inline
-    fn __next__(mut self) -> Self.T:
-        return self.__next_ref__().copy()
-
 
 @register_passable("trivial")
-struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
+struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut]](
     Boolable,
     Defaultable,
     DevicePassable,
@@ -111,9 +104,9 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     """
 
     # Aliases
-    comptime Mutable = Span[Self.T, MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = Span[Self.T, MutOrigin(unsafe_cast=Self.origin)]
     """The mutable version of the `Span`."""
-    comptime Immutable = Span[Self.T, ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = Span[Self.T, ImmutOrigin(Self.origin)]
     """The immutable version of the `Span`."""
     comptime UnsafePointerType = UnsafePointer[
         Self.T,
@@ -121,7 +114,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     ]
     """The unsafe pointer type for this `Span`."""
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _SpanIter[Self.T, Self.origin]
     """The iterator type for this `Span`.
 
@@ -180,8 +173,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     @implicit
     @always_inline("nodebug")
     fn __init__(
-        other: Span[Self.T, _],
-        out self: Span[Self.T, ImmutOrigin.cast_from[other.origin]],
+        other: Span, out self: Span[other.T, ImmutOrigin(other.origin)]
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 

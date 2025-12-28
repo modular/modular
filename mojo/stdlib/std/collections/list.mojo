@@ -40,7 +40,7 @@ struct _ListIter[
     mut: Bool,
     //,
     T: Copyable,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for List.
@@ -55,7 +55,7 @@ struct _ListIter[
     comptime Element = Self.T  # FIXME(MOCO-2068): shouldn't be needed.
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var index: Int
@@ -65,26 +65,20 @@ struct _ListIter[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
-    fn __has_next__(self) -> Bool:
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> ref [Self.origin] Self.Element:
         @parameter
         if Self.forward:
-            return self.index < len(self.src[])
-        else:
-            return self.index > 0
-
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
+            if self.index >= len(self.src[]):
+                raise StopIteration()
             self.index += 1
             return self.src[][self.index - 1]
         else:
+            if self.index <= 0:
+                raise StopIteration()
             self.index -= 1
             return self.src[][self.index]
-
-    @always_inline
-    fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__().copy()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -267,7 +261,7 @@ struct List[T: Copyable](
     """The amount of elements that can fit in the list without resizing it."""
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _ListIter[Self.T, iterable_origin, True]
     """The iterator type for this list.
 
@@ -401,7 +395,7 @@ struct List[T: Copyable](
         var lower, _ = iter(iterable).bounds()
         self = Self(capacity=lower)
         for value in iterable:
-            self.append(rebind[Self.T](value).copy())
+            self.append(rebind_var[Self.T](value^))
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):

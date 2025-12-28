@@ -87,7 +87,7 @@ struct Progress(ImplicitlyCopyable):
         self._term_dims = _get_terminal_size()
         print("")
 
-    fn advance(mut self, steps: Int = 1):
+    fn advance(mut self, steps: Int = 1) raises StopIteration:
         comptime BLOCK = "▇"
         comptime PLACE_HOLDER = " "
 

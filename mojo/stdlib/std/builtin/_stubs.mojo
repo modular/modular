@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
 
 # ===-----------------------------------------------------------------------===#
 # __MLIRType
@@ -30,24 +31,49 @@ struct __MLIRType[T: AnyTrivialRegType](ImplicitlyCopyable):
 # ===-----------------------------------------------------------------------===#
 
 
+fn paramfor_has_next[
+    IteratorType: Iterator & Copyable
+](it: IteratorType) -> Bool where conforms_to(
+    IteratorType.Element,
+    Movable & ImplicitlyDestructible,
+):
+    var result = it.copy()
+    try:
+        var elem = result.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](elem^)
+        return True
+    except:
+        return False
+
+
 fn paramfor_next_iter[
     IteratorType: Iterator & Copyable
-](it: IteratorType) -> IteratorType:
+](it: IteratorType) -> IteratorType where conforms_to(
+    IteratorType.Element,
+    Movable & ImplicitlyDestructible,
+):
     # NOTE: This function is called by the compiler's elaborator only when
-    # __has_next__ will return true.  This is needed because the interpreter
+    # paramfor_has_next will return true. This is needed because the interpreter
     # memory model isn't smart enough to handle mut arguments cleanly.
     var result = it.copy()
     # This intentionally discards the value, but this only happens at comptime,
     # so recomputing it in the body of the loop is fine.
-    _ = result.__next__()
-    return result.copy()
+    try:
+        var elem = result.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](elem^)
+        return result.copy()
+    except:
+        abort()
 
 
 fn paramfor_next_value[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when
-    # __has_next__ will return true.  This is needed because the interpreter
+    # paramfor_has_next will return true. This is needed because the interpreter
     # memory model isn't smart enough to handle mut arguments cleanly.
-    var result = it.copy()
-    return result.__next__()
+    try:
+        var result = it.copy()
+        return result.__next__()
+    except:
+        abort()

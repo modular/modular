@@ -116,7 +116,6 @@ modular_py_test(
         "conftest.py",
         "test_logits_processor_gpu.py",
     ],
-    external_noop = True,  # FIXME: SDLC-2743
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2743
         "//conditions:default": [],

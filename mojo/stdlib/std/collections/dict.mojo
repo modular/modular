@@ -49,7 +49,7 @@ dictionary keys. Dict keys must minimally be `Copyable`, `Hashable`,
 and `Equatable`."""
 
 
-struct DictKeyError[mut: Bool, //, K: KeyElement, origin: Origin[mut]](
+struct DictKeyError[mut: Bool, //, K: KeyElement, origin: Origin[mut=mut]](
     ImplicitlyCopyable, Movable, Writable
 ):
     """A custom error type for Dict lookups that fail.
@@ -109,7 +109,7 @@ struct _DictEntryIter[
     K: KeyElement,
     V: Copyable,
     H: Hasher,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over immutable DictEntry references.
@@ -124,7 +124,7 @@ struct _DictEntryIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = DictEntry[Self.K, Self.V, Self.H]
 
@@ -146,17 +146,12 @@ struct _DictEntryIter[
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.seen < len(self.src[])
-
-    @always_inline
-    fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__().copy()
-
-    @always_inline
-    fn __next_ref__(
+    fn __next__(
         mut self,
-    ) -> ref [self.src[]._entries[0].value()] Self.Element:
+    ) raises StopIteration -> ref [self.src[]._entries[0].value()] Self.Element:
+        if self.seen >= len(self.src[]):
+            raise StopIteration()
+
         while True:
             ref opt_entry_ref = self.src[]._entries[self.index]
 
@@ -178,7 +173,7 @@ struct _DictEntryIter[
 
 @fieldwise_init
 struct _TakeDictEntryIter[
-    K: KeyElement, V: Copyable, H: Hasher, origin: Origin[True]
+    K: KeyElement, V: Copyable, H: Hasher, origin: MutOrigin
 ](Copyable, Iterable, Iterator):
     """Iterator over mutable DictEntry references that moves entries out of the dictionary.
 
@@ -190,7 +185,7 @@ struct _TakeDictEntryIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = DictEntry[Self.K, Self.V, Self.H]
 
@@ -206,13 +201,12 @@ struct _TakeDictEntryIter[
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return len(self.src[]) > 0
-
-    @always_inline
     fn __next__(
         mut self,
-    ) -> Self.Element:
+    ) raises StopIteration -> Self.Element:
+        if len(self.src[]) <= 0:
+            raise StopIteration()
+
         while True:
             ref opt_entry_ref = self.src[]._entries[self.index]
             self.index += 1
@@ -235,7 +229,7 @@ struct _DictKeyIter[
     K: KeyElement,
     V: Copyable,
     H: Hasher,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over immutable Dict key references.
@@ -250,7 +244,7 @@ struct _DictKeyIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime dict_entry_iter = _DictEntryIter[
         Self.K, Self.V, Self.H, Self.origin, Self.forward
@@ -264,18 +258,10 @@ struct _DictKeyIter[
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.iter.__has_next__()
-
-    @always_inline
-    fn __next_ref__(
+    fn __next__(
         mut self,
-    ) -> ref [self.iter.__next_ref__().key] Self.Element:
-        return self.iter.__next_ref__().key
-
-    @always_inline
-    fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__().copy()
+    ) raises StopIteration -> ref [self.iter.__next__().key] Self.Element:
+        return self.iter.__next__().key
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -289,7 +275,7 @@ struct _DictValueIter[
     K: KeyElement,
     V: Copyable,
     H: Hasher,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator over Dict value references. These are mutable if the dict
@@ -305,7 +291,7 @@ struct _DictValueIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     var iter: _DictEntryIter[Self.K, Self.V, Self.H, Self.origin, Self.forward]
     comptime Element = Self.V
@@ -323,21 +309,15 @@ struct _DictValueIter[
             )
         )
 
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.iter.__has_next__()
-
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
-        ref entry_ref = self.iter.__next_ref__()
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> ref [Self.origin] Self.Element:
+        ref entry_ref = self.iter.__next__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
         return UnsafePointer(to=entry_ref.value).unsafe_origin_cast[
-            MutOrigin.cast_from[Self.origin]
+            Self.origin
         ]()[]
-
-    @always_inline
-    fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__().copy()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -724,7 +704,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
     # ===-------------------------------------------------------------------===#
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[Self.K, Self.V, Self.H, iterable_origin]
     """The iterator type for this dictionary.
 
@@ -1434,7 +1414,7 @@ struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
     """The key type for this dictionary (always String)."""
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
         Self.key_type, Self.V, default_comp_time_hasher, iterable_origin
     ]
