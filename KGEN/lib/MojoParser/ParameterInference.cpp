@@ -1021,7 +1021,9 @@ static void getPartiallySpecializedAttrTypes(
 
   ParameterEvaluator bindingsEvaluator(bindingsSoFar);
   bindingsEvaluator.setEvaluationContext(evaluator.getEvaluationContext());
-  bindingsEvaluator.setExpectedNumIndexBindings(totalNumBindings);
+  // Add null entries for any uninferred parameters so they are left unmodified.
+  while (bindingsEvaluator.getNumIndexBindings() < totalNumBindings)
+    bindingsEvaluator.appendIndexBinding(TypedAttr());
 
   for (Attribute &attr : pendingAttrs)
     attr = bindingsEvaluator.getReboundAttribute(attr);

@@ -129,11 +129,9 @@ public:
       DenseMap<StringAttr, TypedAttr> declBindings =
           DenseMap<StringAttr, TypedAttr>(),
       ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>(),
-      size_t expectedNumIndexBindings = 0, size_t inputDepth = 0)
+      size_t inputDepth = 0)
       : declBindings(std::move(declBindings)),
-        indexBindings(std::move(indexBindings)),
-        expectedNumIndexBindings(expectedNumIndexBindings),
-        inputDepth(inputDepth) {}
+        indexBindings(std::move(indexBindings)), inputDepth(inputDepth) {}
 
   /// Set the evaluation context to use.
   void setEvaluationContext(ParameterEvaluationContext *context) {
@@ -202,18 +200,10 @@ public:
   void dump() const;
 
   /// Append an index-based parameter binding.
-  void appendIndexBinding(TypedAttr value) {
-    indexBindings.push_back(value);
-    expectedNumIndexBindings =
-        std::max(expectedNumIndexBindings, indexBindings.size());
-  }
-  /// Extend the expected number of index bindings. This value cannot be
-  /// smaller than the number of index bindings that have already been
-  /// registered. This should be used when performing partial substitution,
-  /// where only a prefix of the index bindings are registered.
-  void setExpectedNumIndexBindings(size_t num) {
-    assert(num >= indexBindings.size() && "expected too few index bindings!");
-    expectedNumIndexBindings = num;
+  void appendIndexBinding(TypedAttr value) { indexBindings.push_back(value); }
+  void overwriteIndexBinding(size_t idx, TypedAttr value) {
+    assert(idx < indexBindings.size() && "invalid index");
+    indexBindings[idx] = value;
   }
 
   /// Return the number of input parameter values that have been added.
@@ -242,13 +232,10 @@ private:
   DenseMap<StringAttr, TypedAttr> declBindings;
 
   /// These are the top-level index-based parameter bindings. This list is
-  /// allowed to be shorter than the `expectedNumIndexBindings` value, in that
-  /// case, any index reference at the `inputDepth` with an index past the size
-  /// of this list will remain unsubstituted.
+  /// allowed to contain null entries.  When encountered, the parameter replacer
+  /// will leave ParamIndexRefAttr referring to them unchanged (actually will
+  /// remap the type if needed).
   SmallVector<TypedAttr> indexBindings;
-  /// The total number of index bindings expected. Any index reference at the
-  /// `inputDepth` must have an index smaller than this value.
-  size_t expectedNumIndexBindings = 0;
 
   /// The optional context to use for evaluating contextually evaluated
   /// attributes.
@@ -301,7 +288,7 @@ public:
       DenseMap<StringAttr, TypedAttr> declBindings =
           DenseMap<StringAttr, TypedAttr>(),
       ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>(),
-      size_t expectedNumIndexBindings = 0, size_t inputDepth = 0);
+      size_t inputDepth = 0);
 
   /// Fields added for interpreting parametric functions
   /// for memorizing ParameterReplacer's rewritten cache

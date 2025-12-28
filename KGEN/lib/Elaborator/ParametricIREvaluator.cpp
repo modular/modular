@@ -795,8 +795,7 @@ ParametricIREvaluator::ParametricIREvaluator(const ParametricIREvaluator &other)
   if (!other.paramEvaluators.empty()) {
     const ParametricParameterEvaluator &eval = other.paramEvaluators.back();
     this->paramEvaluators.push_back(ParametricParameterEvaluator(
-        eval.getDeclBindings(), eval.getIndexBindings(),
-        eval.getNumIndexBindings(), eval.inputDepth));
+        eval.getDeclBindings(), eval.getIndexBindings(), eval.inputDepth));
     this->paramEvaluators.back().setEvaluationContext(this);
   }
 }

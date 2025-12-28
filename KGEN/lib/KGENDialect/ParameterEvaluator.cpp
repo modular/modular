@@ -272,12 +272,12 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
     }
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
              indexRef && indexRef.getDepth() == rootDepth) {
-    assert(indexRef.getIndex() < expectedNumIndexBindings &&
+    assert(indexRef.getIndex() < indexBindings.size() &&
            "parameter index out of range");
     auto indexRefType = doReplace(indexRef.getType(), rootDepth);
-    if (indexRef.getIndex() < indexBindings.size()) {
-      auto resultV =
-          cast<TypedAttr>(upbindValue(indexBindings[indexRef.getIndex()]));
+    TypedAttr resultV = indexBindings[indexRef.getIndex()];
+    if (resultV) {
+      resultV = cast<TypedAttr>(upbindValue(resultV));
       // If we are mapping between a sugared and non-sugared version of the
       // parameter, make sure to keep a consistent type.  This enables us to
       // substitute values into parameter expressions that have sugared and
@@ -285,11 +285,13 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
       if (resultV.getType() != indexRefType &&
           isEqualCanon(resultV.getType(), indexRefType))
         resultV = ParamOperatorAttr::getRebind(resultV, indexRefType);
-      result = resultV;
-    } else {
-      result = ParamIndexRefAttr::get(indexRef.getDepth(), indexRef.getIndex(),
-                                      indexRefType);
+    } else if (indexRefType == indexRef.getType()) {
+      resultV = indexRef; // Reuse the IndexRef if the type matches.
+    } else {              // Otherwise rebuild it.
+      resultV = ParamIndexRefAttr::get(indexRef.getDepth(), indexRef.getIndex(),
+                                       indexRefType);
     }
+    result = resultV;
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
@@ -523,7 +525,5 @@ ParametricParameterEvaluator::ParametricParameterEvaluator(
 /// Instantiate a new parameter evaluator with the given parameter values.
 ParametricParameterEvaluator::ParametricParameterEvaluator(
     DenseMap<StringAttr, TypedAttr> declBindings,
-    ArrayRef<TypedAttr> indexBindings, size_t expectedNumIndexBindings,
-    size_t inputDepth)
-    : ParameterEvaluator(declBindings, indexBindings, expectedNumIndexBindings,
-                         inputDepth) {}
+    ArrayRef<TypedAttr> indexBindings, size_t inputDepth)
+    : ParameterEvaluator(declBindings, indexBindings, inputDepth) {}
