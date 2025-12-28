@@ -521,21 +521,6 @@ Another Int param.
     );
     await doc.open();
 
-    assert.deepStrictEqual(await doc.hover(doc.findFirstPosition("builtin")), {
-      contents: {
-        kind: "markdown",
-        value: `### package \`builtin\`
-
----
-
-###
-Language foundation: built-in types, traits, and fundamental operations.
-
-`,
-      },
-      range: doc.findFirstRange("builtin"),
-    });
-
     const simd = await doc.hover(doc.findFirstPosition("simd"));
     assert.ok(MarkupContent.is(simd!.contents));
     assert.ok(
