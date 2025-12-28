@@ -199,7 +199,7 @@ def test_pointer_to():
 def test_explicit_copy_of_pointer_address():
     var local = 1
     var ptr = UnsafePointer[Int](to=local)
-    var copy = UnsafePointer(other=ptr)
+    var copy = UnsafePointer.copy(ptr)
     assert_equal(Int(ptr), Int(copy))
     _ = local
 
