@@ -819,19 +819,39 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
 
   TypedAttr message;
   if (messageExpr) {
-    // Parse the message into an expression with std "StaticString" type,
-    // which is an alias for "StringSlice[StaticConstantOrigin]".
-    auto staticStringType =
-        shared.getBuiltinStaticStringType(*curDeclScope, smLoc);
-    PValue messageVal = emitter.emitExprPValue(messageExpr, EC_ComptimeAssert,
-                                               staticStringType);
-    if (!messageVal)
-      return failure();
+    // Parse the message into an expression with std "StringSlice" type.
+    auto stringSliceType =
+        shared.getBuiltinStringSliceType(*curDeclScope, smLoc)
+            .getWithoutParameters(emitter.shared);
 
+    IREmitter paramEmitter = emitter.getParamEmitter(EC_ComptimeAssert);
+    CValue messageVal =
+        paramEmitter.emitExprCValue(messageExpr, EC_ComptimeAssert);
+
+    // If not already a StringSlice, convert to one.
+    if (messageVal && messageVal.getType().getDecl(emitter.shared) !=
+                          stringSliceType.getDecl(emitter.shared)) {
+      if (!paramEmitter.canImplicitlyConvertToType(
+              {messageVal, messageExpr}, stringSliceType, getDeclScope())) {
+        emitter.emitError(messageExpr->getLoc())
+            << "cannot implicitly convert " << messageVal.getType()
+            << " to a `StringSlice` for message";
+        return failure();
+      }
+
+      ValueDest dest(EC_ComptimeAssert);
+      messageVal = paramEmitter.emitConstructorCall(
+          stringSliceType, {{{messageVal, messageExpr}}}, expr,
+          CallSyntax::kTypeCall, dest);
+    }
+    auto messagePVal =
+        paramEmitter.emitPValue({messageVal, messageExpr}, EC_ComptimeAssert);
+    if (!messagePVal)
+      return failure();
     message = ParamOperatorAttr::get(
         POC::DataToStr,
-        {messageVal.get(),
-         VariadicAttr::get({}, VariadicType::get(staticStringType))});
+        {messagePVal,
+         VariadicAttr::get({}, VariadicType::get(messagePVal.getType()))});
   } else {
     message = StringAttr::get({}, KGEN::StringType::get(builder.getContext()));
   }

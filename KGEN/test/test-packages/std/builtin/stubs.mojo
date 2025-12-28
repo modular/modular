@@ -571,6 +571,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]]:
         pass
 
     @always_inline
+    fn __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
+        pass
+
+    @always_inline
     fn unsafe_ptr(
         self,
     ) -> UnsafePointer[Byte, origin]:
@@ -608,7 +612,7 @@ fn _get_kgen_string[
 fn get_static_string[
     string: StaticString, *extra: StaticString
 ]() -> StaticString:
-    return StringLiteral(_get_kgen_string[string, extra]())
+    return StaticString(_get_kgen_string[string, extra]())
 
 
 trait Stringable:
