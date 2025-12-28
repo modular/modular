@@ -10,7 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements a doubly-linked list data structure.
 
+This module provides the `LinkedList` type, a doubly-linked list where each
+element points to both the next and previous elements. This structure enables
+efficient insertion and deletion at any position, though random access requires
+traversal. The implementation includes iterator support for forward and reverse
+traversal.
+"""
 
 from collections._index_normalization import normalize_index
 from os import abort

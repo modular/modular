@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Compile-time reflection utilities.
+"""Provides utilities for compile-time reflection and type introspection.
 
-This module provides compile-time reflection capabilities for introspecting
+This module provides reflection capabilities for introspecting
 Mojo types, functions, and struct fields.
 
 Struct Field Reflection:
