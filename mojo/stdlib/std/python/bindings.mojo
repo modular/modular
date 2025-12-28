@@ -10,6 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides infrastructure for creating Python bindings to Mojo code.
+
+This module implements the core machinery for exposing Mojo functions and types
+to Python through CPython's C API. It includes builder types for constructing
+Python modules and type objects, wrapper functions for converting between Mojo
+and Python calling conventions, and utilities for argument validation and type
+conversion. This enables seamless bidirectional interoperability between Mojo
+and Python code.
+"""
 
 from sys.ffi import _Global, c_int
 from sys.info import size_of

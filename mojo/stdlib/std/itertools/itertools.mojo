@@ -10,6 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides iterator utilities for common iteration patterns.
+
+This module includes functions for creating specialized iterators:
+
+- `count()` - Creates an infinite counter with customizable start and step values
+- `product()` - Computes the Cartesian product of two, three, or four iterables
+- `repeat()` - Repeats an element a specified number of times
+
+These utilities enable functional-style iteration patterns and composable iterator
+operations.
+"""
+
 # ===-----------------------------------------------------------------------===#
 # count
 # ===-----------------------------------------------------------------------===#

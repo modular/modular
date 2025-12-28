@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Iteration traits and utilities: Iterable, Iterator, enumerate, zip, map.
 
-This module defines the core iteration protocol for Mojo through the `Iterable`
+This package defines the core iteration protocol for Mojo through the `Iterable`
 and `Iterator` traits. Types that conform to these traits can be used with
 `for` loops and iteration utilities like `enumerate()`, `zip()`, and `map()`.
 

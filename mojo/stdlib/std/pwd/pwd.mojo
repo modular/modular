@@ -10,6 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides access to the user password database on Unix-like systems.
+
+This module retrieves user account information from the system password database,
+similar to Python's `pwd` module. It provides functions to look up user entries by
+user ID or username, returning structured account information including home
+directory, shell, and user/group IDs.
+
+Constraints:
+    Available on Linux and macOS only.
+"""
 
 from sys import CompilationTarget
 

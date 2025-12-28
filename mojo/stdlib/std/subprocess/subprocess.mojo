@@ -10,8 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the subprocess package."""
+"""Provides utilities for executing shell commands and capturing output.
 
+This module offers functions for running shell commands in subprocesses and
+retrieving their output, similar to Python's `subprocess` module. It handles
+process creation, output capture, and resource cleanup automatically.
+"""
 
 import sys._libc as libc
 from sys import external_call

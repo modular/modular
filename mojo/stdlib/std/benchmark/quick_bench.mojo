@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides simplified benchmarking interface with automatic boilerplate handling.
+
+This module implements the `QuickBench` type, which wraps the full `Bench`
+infrastructure to provide a simpler interface for common benchmarking tasks. It
+automatically handles `Bencher` setup and the `keep()` calls needed to prevent
+optimization, supporting functions with 0-10 arguments.
+"""
 
 from .bencher import Bench, Bencher, BenchId, ThroughputMeasure
 

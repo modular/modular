@@ -10,6 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements unsafe pointer types for manual memory management.
+
+This module provides `UnsafePointer` and related type aliases for direct memory
+manipulation with explicit control over mutability, origins, and address spaces.
+It includes the `alloc()` function for heap allocation and comprehensive methods
+for loading, storing, and managing pointer lifetimes. These types enable
+low-level memory operations, interfacing with C code, and building custom data
+structures.
+"""
+
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 

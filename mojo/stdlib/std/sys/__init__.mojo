@@ -10,7 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""System runtime: I/O, hardware info, FFI, intrinsics, compile-time utils."""
+"""System runtime: I/O, hardware info, FFI, intrinsics, compile-time utils.
+
+The `sys` package provides low-level access to system functionality and runtime
+information. It includes tools for interacting with the operating system,
+querying hardware capabilities, interfacing with foreign code, and accessing
+compiler intrinsics. This package bridges Mojo code and the underlying system
+environment.
+
+Use this package for system-level programming, hardware-specific optimizations,
+interfacing with C libraries, or when you need direct access to platform
+capabilities and compiler features.
+"""
 
 from ._io import stderr, stdin, stdout
 from .arg import argv

@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements comprehensive benchmarking infrastructure with statistical analysis.
+
+This module provides the core types and functions for running benchmarks with
+configurable execution parameters, statistical analysis, and formatted output.
+It includes support for throughput metrics, warmup iterations, batch execution,
+and both CPU and GPU kernel benchmarking.
+"""
 
 import time
 from collections import Dict, Optional

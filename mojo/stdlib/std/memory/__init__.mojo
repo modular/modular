@@ -12,8 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 """Low-level memory management: pointers, allocations, address spaces.
 
-The memory package provides several pointer types, as well
-as utility functions for dealing with memory."""
+The `memory` package provides primitives for direct memory manipulation and
+pointer operations. It offers multiple pointer types with varying safety
+guarantees, from reference-counted smart pointers to raw unsafe pointers, along
+with functions for memory operations and allocation. This package enables
+systems programming and interfacing with external code requiring explicit
+memory control.
+
+Use this package for performance-critical code requiring manual memory control,
+interfacing with C libraries, implementing custom data structures, or accessing
+specialized memory. Most code should prefer higher-level collections and
+automatic memory management.
+"""
 
 from .arc import ArcPointer
 from .legacy_unsafe_pointer import (
