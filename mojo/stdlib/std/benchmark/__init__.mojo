@@ -12,6 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Performance benchmarking: statistical analysis and detailed reports.
 
+The `benchmark` package provides tools for measuring and analyzing the
+performance of Mojo code. It enables statistical benchmarking with automatic
+warmup, batch execution, and comprehensive reporting including mean, min, max,
+and total time statistics across multiple runs.
+
 You can import these APIs from the `benchmark` package. For example:
 
 ```mojo

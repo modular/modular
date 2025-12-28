@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyOpaquePointer as OpaquePointer
-
 
 @fieldwise_init
 struct WeightsRegistry(ImplicitlyCopyable):
     """Bag of weights where names[i] names a weight with data weights[i]."""
 
     var names: List[String]
-    var weights: List[OpaquePointer]
+    var weights: List[OpaquePointer[MutAnyOrigin]]
 
     fn __copyinit__(out self, existing: Self):
         """Copy an existing weights registry.
@@ -30,7 +28,7 @@ struct WeightsRegistry(ImplicitlyCopyable):
         self.names = existing.names.copy()
         self.weights = existing.weights.copy()
 
-    def __getitem__(self, name: String) -> OpaquePointer:
+    def __getitem__(self, name: String) -> OpaquePointer[MutAnyOrigin]:
         for i in range(len(self.names)):
             if self.names[i] == name:
                 return self.weights[i]

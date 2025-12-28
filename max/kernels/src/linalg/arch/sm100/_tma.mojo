@@ -375,7 +375,7 @@ fn copy[
         var copy_tile_coords = (coords + offset_coords).reverse()
 
         cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
-            dst.ptr + dst_copy_offset,
+            dst.ptr.unsafe_mut_cast[True]() + dst_copy_offset,
             UnsafePointer(to=policy.descriptor).bitcast[NoneType](),
             mbar_ptr,
             copy_tile_coords.cast[DType.int64](),
