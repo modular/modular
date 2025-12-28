@@ -890,11 +890,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParameterEvaluator &evaluator) {
-    ParameterInferenceState inference(callable.paramBindings.declScope,
-                                      callable.paramBindings.getParameters(),
-                                      signature.getInputParamTypes().size(),
-                                      bindingsSoFar, evaluator, inferenceDiags,
-                                      allowImplicitConversions);
+    ParameterInferenceState inference(
+        callable.paramBindings.declScope,
+        callable.paramBindings.getParameters(), signature.getInputParamTypes(),
+        signature.getParamListAttrs(), bindingsSoFar, evaluator, inferenceDiags,
+        allowImplicitConversions);
 
     // Determine if this is an initializer that returns Self, which can be used
     // for inferring parameters on Self.
@@ -916,8 +916,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     // inference failure, instead of being reported too early and misleading the
     // user.
     size_t existingFailures = inferenceDiags.getNumFailures();
-    if (failed(inference.infer(signature, operands, variadicKwOperands,
-                               returnsSelf)) &&
+    if (failed(inference.inferForCall(signature, operands, variadicKwOperands,
+                                      returnsSelf)) &&
         inferenceDiags.getNumFailures() > existingFailures)
       return PValue();
 

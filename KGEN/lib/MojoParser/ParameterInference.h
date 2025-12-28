@@ -87,7 +87,8 @@ public:
   SharedState &shared;
 
   ParameterInferenceState(ASTDecl &declScope, const CallOperands &givenBindings,
-                          size_t totalExpectedBindings,
+                          ArrayRef<Type> declaredParamTypes,
+                          PogListAttr declaredParamPogs,
                           ArrayRef<TypedAttr> bindingsSoFar,
                           const ParserParameterEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
@@ -98,8 +99,7 @@ public:
   /// inferred parameters present.  The 'hasArguments' field specifies whether
   /// there are arguments that can be used to infer parameters from (which are
   /// not handled by this call).
-  void infer(ArrayRef<Type> paramTypes, PogListAttr paramListAttr,
-             bool hasArguments);
+  void inferFromParamList(bool hasArguments);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the value of the next 'decl'
@@ -108,10 +108,10 @@ public:
   ///
   /// returnsSelf is True if this is performing inference on a function like
   /// __init__ that returns Self, which might be specialized.
-  LogicalResult infer(FnTypeGeneratorType signature,
-                      const CallOperands &callOperands,
-                      const OperandValueList &variadicKwOperands,
-                      bool returnsSelf);
+  LogicalResult inferForCall(FnTypeGeneratorType signature,
+                             const CallOperands &callOperands,
+                             const OperandValueList &variadicKwOperands,
+                             bool returnsSelf);
 
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
@@ -149,8 +149,12 @@ private:
   /// to infer parameters from other parameter values.
   const CallOperands &givenBindings;
 
-  /// The total number of bindings expected.
-  size_t totalExpectedBindings;
+  /// This describes the number of type of all of the parameters we're trying to
+  /// resolve for this entire declaration.
+  ArrayRef<Type> declaredParamTypes;
+
+  /// This describes the nature of the parameter list we're inferring for.
+  PogListAttr declaredParamPogs;
 
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.
