@@ -710,6 +710,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         self = value.as_string_slice_mut()
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: StaticString,
+        ref [
+            Origin(__mlir_attr.`#lit.comptime.origin : !lit.origin<0>`)
+        ]value: String,
+    ):
+        """Construct an immutable StringSlice at comptime.
+        FIXME: This is a hack.
+
+        Args:
+            value: The string value.
+        """
+        self = rebind[StaticString](value.as_string_slice())
+
     # ===------------------------------------------------------------------===#
     # Trait implementations
     # ===------------------------------------------------------------------===#
@@ -1202,6 +1218,25 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             .unsafe_origin_cast[result.origin](),
             length = len(self),
         }
+
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_type: type_of(String),
+    ](self, out result: String):
+        """Returns a string slice merge with a String.
+
+        Parameters:
+            other_type: The type of the origin to merge with.
+
+        Returns:
+            A String this is merged with.
+        """
+        # Note, this is used to disambiguate some cases because String converts
+        # to StringSlice and StringSlice converts to string.  Ideally this would
+        # return a StringSlice, but the __merge_with__ protocol is type
+        # directed, not value directed.  Types don't carry the origins of a
+        # value.
+        return String(self)
 
     # ===------------------------------------------------------------------===#
     # Methods
