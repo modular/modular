@@ -1578,10 +1578,15 @@ struct Ex1[self_a: Int, //, self_param: StructWithIntParam[self_a]]:
     ](out self: Ex1[shadow_param], data: HasAutoParam[shadow_param]):
         pass
 
-# FIXME: reenable this test.
-#fn testEx1(imm_data: HasAutoParam[StructWithIntParam[1]()]):
-#    parSpecializedTest = Ex1(imm_data)
+fn testEx1(imm_data: HasAutoParam[StructWithIntParam[1]()]):
+    parSpecializedTest = Ex1(imm_data)
 
+# MOCO-1826: Improve parameter inference from other parameter bindings
+struct MyTypeWithOrigin[
+    elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable], //
+]: pass
+fn testMOCO1826[o: ImmutOrigin](a: MyTypeWithOrigin[origin=o]): pass
 
 ##===----------------------------------------------------------------------===##
 # Origin Parameters

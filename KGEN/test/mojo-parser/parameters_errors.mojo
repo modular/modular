@@ -575,13 +575,14 @@ fn use_take_args[width: Int]():
 
 
 # MOCO-1480: handle init-self param not deduce-able.
+# expected-note @below {{struct declared here}}
 struct UnusedInitSelfParam[A: Int]:
     # expected-note @below {{function declared here}}
     fn __init__[B: Int](out self: UnusedInitSelfParam[B]):
         pass
 
 fn unused_init_self_param():
-    # expected-error @below {{invalid initialization: failed to infer parameter 'B', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'A' of parent struct 'UnusedInitSelfParam', it isn't used in any argument}}
     var slice = UnusedInitSelfParam()
 
 
@@ -591,7 +592,9 @@ struct SimpleSIMD[arg1: Int, size: Int]:
     fn __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
 
 fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
-    # expected-error @below {{failed to infer parameter 'T'}}
+    # xpected-error @below {{return type 'SimpleSIMD[50, 1]' parameter 'size' has value '1' that doesn't match expected '4'}}
+    # expected-error @below {{invalid initialization: failed to infer parameter 'T'}}
+    # expected-note @below {{try `rebind` them to one type}}
     x = SimpleSIMD[50, 4](b)
 
 # expected-note @below {{function declared here}}

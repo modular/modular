@@ -182,20 +182,8 @@ private:
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
 
-  /// True if we're inferring Self parameters from result types that may have
-  /// unresolved parameters references in them.  See the comments around
-  /// 'inferSelfFromInitResult' and 'selfResultParams' for more details.
-  /// FIXME: Remove this (and selfResultParams) when we can infer parameters in
-  /// any order.
-  bool enableOutOfOrderInferenceHack = false;
-
   /// The expression of the current argument being used for parameter inference.
   const ExprNode *curArgExpr = nullptr;
-
-  /// These are parameters that were inferred from a more specific Self type
-  /// result in an initializer call. These parameters can forward reference
-  /// non-Self parameters. We need to refine them again at the end of inference.
-  SmallVector<unsigned> selfResultParams;
 
   /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
   ParamIndexRefAttrFinder paramFinder;
