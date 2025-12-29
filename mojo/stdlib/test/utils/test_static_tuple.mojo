@@ -51,5 +51,13 @@ def test_setitem():
     assert_equal(t[0], 400)
 
 
+def test_get_unsafe_ptr():
+    var t = StaticTuple[Int, 3](1, 2, 3)
+    var ptr: UnsafePointer[Int, ImmutAnyOrigin] = t.unsafe_ptr()
+    assert_equal(ptr[0], 1)
+    assert_equal(ptr[1], 2)
+    assert_equal(ptr[2], 3)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
