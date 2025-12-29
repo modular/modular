@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Compatibility layer that re-exports ArcPointer utilities.
 
-Existing imports such as `from memory import ArcPointer` continue to work by
-re-exporting everything from `arc_pointer`.
+Existing imports such as `from memory.arc import ArcPointer` continue to work
+by re-exporting everything from `arc_pointer`.
 """
 
 # Re-export every symbol defined in arc_pointer for backwards compatibility.
