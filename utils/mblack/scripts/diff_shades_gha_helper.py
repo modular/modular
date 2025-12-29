@@ -38,16 +38,11 @@ import sys
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Final, Literal
 
 import click
 import urllib3
 from packaging.version import Version
-
-if sys.version_info >= (3, 8):
-    from typing import Final, Literal
-else:
-    from typing_extensions import Final, Literal
 
 COMMENT_FILE: Final = ".pr-comment.json"
 DIFF_STEP_NAME: Final = "Generate HTML diff report"

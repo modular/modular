@@ -20,12 +20,7 @@ Simple formatting on strings. Further string formatting code is in trans.py.
 import re
 import sys
 from functools import lru_cache
-from typing import List, Pattern
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Final
-else:
-    from typing import Final
+from typing import Final, List, Pattern
 
 
 STRING_PREFIX_CHARS: Final = "furbFURB"  # All possible string prefix characters.

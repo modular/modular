@@ -19,12 +19,7 @@ Parse Python code and perform AST validation.
 import ast
 import platform
 import sys
-from typing import Any, Iterable, Iterator, List, Set, Tuple, Type, Union
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Final
-else:
-    from typing import Final
+from typing import Any, Final, Iterable, Iterator, List, Set, Tuple, Type, Union
 
 from mblack.mode import Feature, TargetVersion, supports_feature
 from mblack.nodes import syms

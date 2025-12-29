@@ -19,14 +19,8 @@ import ast
 import collections
 import dataclasses
 import secrets
-import sys
 from functools import lru_cache
-from typing import Dict, List, Optional, Tuple
-
-if sys.version_info >= (3, 10):
-    from typing import TypeGuard
-else:
-    from typing_extensions import TypeGuard
+from typing import Dict, List, Optional, Tuple, TypeGuard
 
 from mblack.output import out
 from mblack.report import NothingChanged
