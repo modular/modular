@@ -17,9 +17,8 @@
 Parse Python code and perform AST validation.
 """
 import ast
-import platform
 import sys
-from typing import Any, Final, Iterable, Iterator, List, Set, Tuple, Type, Union
+from typing import Final, Iterable, Iterator, List, Set, Tuple, Type
 
 from mblack.mode import Feature, TargetVersion, supports_feature
 from mblack.nodes import syms
@@ -29,25 +28,6 @@ from mblib2to3.pgen2.grammar import Grammar
 from mblib2to3.pgen2.parse import ParseError
 from mblib2to3.pgen2.tokenize import TokenError
 from mblib2to3.pytree import Leaf, Node
-
-ast3: Any
-
-_IS_PYPY = platform.python_implementation() == "PyPy"
-
-try:
-    from typed_ast import ast3  # type: ignore
-except ImportError:
-    if sys.version_info < (3, 8) and not _IS_PYPY:
-        print(
-            "The typed_ast package is required but not installed.\n"
-            "You can upgrade to Python 3.8+ or install typed_ast with\n"
-            "`python3 -m pip install typed-ast`.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    else:
-        ast3 = ast
-
 
 PY2_HINT: Final = "Python 2 support was removed in version 22.0."
 
@@ -158,26 +138,12 @@ def lib2to3_unparse(node: Node) -> str:
 
 def parse_single_version(
     src: str, version: Tuple[int, int]
-) -> Union[ast.AST, ast3.AST]:
+) -> ast.AST:
     filename = "<unknown>"
-    # typed-ast is needed because of feature version limitations in the builtin ast 3.8>
-    if sys.version_info >= (3, 8) and version >= (3,):
-        return ast.parse(src, filename, feature_version=version, type_comments=True)
-
-    if _IS_PYPY:
-        # PyPy 3.7 doesn't support type comment tracking which is not ideal, but there's
-        # not much we can do as typed-ast won't work either.
-        if sys.version_info >= (3, 8):
-            return ast3.parse(src, filename, type_comments=True)
-        else:
-            return ast3.parse(src, filename)
-    else:
-        # Typed-ast is guaranteed to be used here and automatically tracks type
-        # comments separately.
-        return ast3.parse(src, filename, feature_version=version[1])
+    return ast.parse(src, filename, feature_version=version, type_comments=True)
 
 
-def parse_ast(src: str) -> Union[ast.AST, ast3.AST]:
+def parse_ast(src: str) -> ast.AST:
     # TODO: support Python 4+ ;)
     versions = [(3, minor) for minor in range(3, sys.version_info[1] + 1)]
 
@@ -192,7 +158,7 @@ def parse_ast(src: str) -> Union[ast.AST, ast3.AST]:
     raise SyntaxError(first_error)
 
 
-ast3_AST: Final[Type[ast3.AST]] = ast3.AST
+ast3_AST: Final[Type[ast.AST]] = ast.AST
 
 
 def _normalize(lineend: str, value: str) -> str:
@@ -205,21 +171,15 @@ def _normalize(lineend: str, value: str) -> str:
     return normalized.strip()
 
 
-def stringify_ast(node: Union[ast.AST, ast3.AST], depth: int = 0) -> Iterator[str]:
+def stringify_ast(node: ast.AST, depth: int = 0) -> Iterator[str]:
     """Simple visitor generating strings to compare ASTs by content."""
 
     yield f"{'  ' * depth}{node.__class__.__name__}("
 
-    type_ignore_classes: Tuple[Type[Any], ...]
     for field in sorted(node._fields):  # noqa: F402
-        # TypeIgnore will not be present using pypy < 3.8, so need for this
-        if not (_IS_PYPY and sys.version_info < (3, 8)):
-            # TypeIgnore has only one field 'lineno' which breaks this comparison
-            type_ignore_classes = (ast3.TypeIgnore,)
-            if sys.version_info >= (3, 8):
-                type_ignore_classes += (ast.TypeIgnore,)
-            if isinstance(node, type_ignore_classes):
-                break
+        # TypeIgnore has only one field 'lineno' which breaks this comparison
+        if isinstance(node, ast.TypeIgnore):
+            break
 
         try:
             value: object = getattr(node, field)
@@ -234,13 +194,13 @@ def stringify_ast(node: Union[ast.AST, ast3.AST], depth: int = 0) -> Iterator[st
                 # parentheses and they change the AST.
                 if (
                     field == "targets"
-                    and isinstance(node, (ast.Delete, ast3.Delete))
-                    and isinstance(item, (ast.Tuple, ast3.Tuple))
+                    and isinstance(node, ast.Delete)
+                    and isinstance(item, ast.Tuple)
                 ):
                     for elt in item.elts:
                         yield from stringify_ast(elt, depth + 2)
 
-                elif isinstance(item, (ast.AST, ast3.AST)):
+                elif isinstance(item, ast.AST):
                     yield from stringify_ast(item, depth + 2)
 
         # Note that we are referencing the typed-ast ASTs via global variables and not
