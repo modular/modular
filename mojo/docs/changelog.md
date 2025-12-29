@@ -405,6 +405,9 @@ what we publish.
   `reflection` module. Update imports from `from compile.reflection import ...`
   to `from reflection import ...`.
 
+- `StaticTuple` now has a `unsafe_ptr` method that returns a pointer to the
+  tuple.
+
 - The `reflection` module now supports compile-time struct field introspection:
 
   - `struct_field_count[T]()` returns the number of fields
