@@ -42,9 +42,9 @@ are the same, except instead of generating tokens, tokeneater is a callback
 function to which the 5 fields described above are passed as 5 arguments,
 each time a new token is found."""
 
-import sys
 from typing import (
     Callable,
+    Final,
     Iterable,
     Iterator,
     List,
@@ -55,11 +55,6 @@ from typing import (
     Union,
     cast,
 )
-
-if sys.version_info >= (3, 8):
-    from typing import Final
-else:
-    from typing_extensions import Final
 
 from mblib2to3.pgen2.grammar import Grammar
 from mblib2to3.pgen2.token import *

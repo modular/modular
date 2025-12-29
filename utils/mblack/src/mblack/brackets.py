@@ -15,14 +15,8 @@
 
 """Builds on top of nodes.py to track brackets."""
 
-import sys
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
-
-if sys.version_info < (3, 8):
-    from typing_extensions import Final
-else:
-    from typing import Final
+from typing import Dict, Final, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 from mblack.nodes import (
     BRACKET,
