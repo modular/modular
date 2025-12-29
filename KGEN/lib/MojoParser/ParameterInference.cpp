@@ -662,26 +662,18 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       if (!isEqualCanon(actualAttr.getType(), expectedType)) {
         // We can only see subtypes in type values, all other values must be
         // aligned perfectly.
-        assert(LIT::isMetaType(expectedType) ||
-               LIT::isVariadicOfMetaType(expectedType) ||
-               enableOutOfOrderInferenceHack);
         IREmitter emitter(declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
         ASTExprAnd<CValue> toConvert = {actualAttr, node};
         // We should have ensured type convertibility
-        if (IREmitter::canImplicitlyConvertToType(toConvert, expectedType,
-                                                  emitter.getDeclScope())) {
-          actualAttr =
-              emitter.emitPValue(toConvert, EC_TypeParamValue, expectedType);
-          assert(actualAttr && "Already checked implicit convertibility");
-        } else {
-          assert(enableOutOfOrderInferenceHack &&
-                 "Unconvertible parameter should have been detected");
-        }
+        assert(IREmitter::canImplicitlyConvertToType(toConvert, expectedType,
+                                                     emitter.getDeclScope()) &&
+               "Unconvertible parameter should have been detected");
+        actualAttr =
+            emitter.emitPValue(toConvert, EC_TypeParamValue, expectedType);
+        assert(actualAttr && "Already checked implicit convertibility");
+        assert(isEqualCanon(actualAttr.getType(), expectedType));
       }
-      // At this point, type must have been aligned.
-      assert(enableOutOfOrderInferenceHack ||
-             isEqualCanon(actualAttr.getType(), expectedType));
 
       size_t parameterIndex = ire.getIndex();
       TypedAttr inferredValue = evaluator.getIndexBindings()[parameterIndex];
@@ -803,16 +795,6 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (expectedSugar)
     return matchParams(actualAttr, expectedSugar.getExpanded());
 
-  // If this is a reference to a parameter that hasn't been inferred (and thus
-  // substituted yet) just ignore it because it will be inferred later.
-  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(actualAttr)) {
-    if (indexRef.getDepth() == 0 &&
-        !evaluator.getIndexBindings()[indexRef.getIndex()]) {
-      assert(enableOutOfOrderInferenceHack && "How does this happen?");
-      return success();
-    }
-  }
-
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << "\n");
   return failure();
@@ -922,21 +904,6 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actualOrig,
   return matchParams(actualOrig, expectedOrig);
 }
 
-/// Return true if the specified parameter expression contains a reference to an
-/// parameter that isn't yet bound in bindingsSoFar.
-static bool usesUnboundParameters(TypedAttr paramValue,
-                                  ArrayRef<TypedAttr> bindingsSoFar) {
-  return paramValue
-      .walk([&](ParamIndexRefAttr ref) -> WalkResult {
-        // FIXME: parameter references in nested contexts will have depth>0,
-        // this needs to maintain that depth and do a proper comparison.
-        if (ref.getDepth() == 0 && !bindingsSoFar[ref.getIndex()])
-          return WalkResult::interrupt();
-        return WalkResult::advance();
-      })
-      .wasInterrupted();
-}
-
 /// Try to infer parameters of Self from an initializer if specialized.
 ///
 /// Consider:
@@ -958,59 +925,46 @@ static bool usesUnboundParameters(TypedAttr paramValue,
 /// argument.
 LogicalResult ParameterInferenceState::inferSelfFromInitResult(
     FnTypeGeneratorType signature) {
-  auto returnedType = signature.getUserResultType();
-  // We can only support struct inference right now.
-  auto returnedDRT = sugarDynCast<StructType>(returnedType);
-  if (!returnedDRT)
-    return success();
-
-  // Disable checks since we're going to reference parameters out of order and
-  // then resolve them through selfResultParams.
-  llvm::SaveAndRestore<bool> saveOutOfOrderInferenceHack(
-      enableOutOfOrderInferenceHack, true);
+  ASTType returnedType =
+      evaluator.getReboundType(signature.getUserResultType());
 
   // Match up the parameter bindings if the 'actual' param is an UnboundAttr and
   // the expected has something more specific than a reference to the contextual
   // parameter.
-  for (auto [idx, param] : llvm::enumerate(returnedDRT.getParamValues())) {
+  for (auto [idx, retParam] :
+       llvm::enumerate(returnedType.getParamBindings())) {
     // If this is simply a reference to the enclosing parameter (as in a normal
     // Self) init, then we can't infer anything from it.  In the example above,
     // this ignores the "a" parameter in "fn __init__() -> S[a]:" which is what
     // "out self" desugars to.
-    if (auto indexRef = sugarDynCast<ParamIndexRefAttr>(param))
-      if (indexRef.getDepth() == 0 && indexRef.getIndex() == idx)
-        continue;
+    auto selfParam = evaluator.getIndexBindings()[idx];
+    if (retParam == selfParam)
+      continue;
 
-    // Notice that this is an explicitly bound Self parameter that we are going
-    // to try to infer a more specific value for.  We need to remember this so
-    // we can come back and refine it later. This is because we could have
-    // inferred a forward reference, such as in:
-    //   struct Foo[T: AnyType]:
-    //     fn __init__[U: Movable](out self: Foo[U], x: U):
-    selfResultParams.push_back(idx);
-
-    // Otherwise, this is a more specialized parameter bound on Self for this
-    // method.  Form the parameter that we need to infer.
-    auto toInfer = ParamIndexRefAttr::get(/*depth*/ 0, idx,
-                                          signature.getInputParamTypes()[idx]);
-
-    // Try to infer this parameter from the expected (declared) type.
-    if (failed(matchParams(param, toInfer))) {
-      // If the parameter value depends on any uninferred (yet) parameters then
-      // ignore the error.  Not doing so would cause a conflict with the correct
-      // value eventually inferred.
-      //
-      // This is to enable us to handle things like:
-      //   struct Foo[T: Int]:
-      //     fn __init__[X: Int](out self: Foo[X+1], arg: Foo[X]):
-      // Where we initially infer T = "X+1" (which isn't even valid because it
-      // is referring the the X parameter), and then later refing it after we
-      // discover what the value of X is when inferring parameter 1.  It is
-      // gross that the value of parameter #0 can depend on parameter #1.  We
-      // need out-of-order resolution.
-      if (usesUnboundParameters(param, evaluator.getIndexBindings()))
-        continue;
-      return failure();
+    // Otherwise, if the self parameter got inferred, propagate the result
+    // from it to the returned parameter.  This handles things like:
+    //   struct X[A: AnyType]:
+    //     fn __init__[T: Movable](arg: Int, out self: X[T]):
+    // which gets used as X[String](42) inferring T and A.
+    if (selfParam) {
+      if (failed(matchParams(selfParam, retParam))) {
+        addFailure(idx,
+                   InferenceFailure::ValueConflictFailure{selfParam, retParam});
+        return failure();
+      }
+    } else if (!paramFinder.hasReferences(retParam)) {
+      // Otherwise if the the returned parameter has no unbound parameter
+      // references then we infer the self parameter from it. This infers X=42:
+      //   struct X[A: Int]:
+      //     fn __init__(out self: X[42]):
+      auto selfType =
+          evaluator.getReboundType(signature.getInputParamTypes()[idx]);
+      auto selfParam = ParamIndexRefAttr::get(/*depth*/ 0, idx, selfType);
+      if (failed(matchParams(retParam, selfParam))) {
+        addFailure(idx,
+                   InferenceFailure::ValueConflictFailure{retParam, selfParam});
+        return failure();
+      }
     }
   }
 
@@ -1461,21 +1415,6 @@ LogicalResult ParameterInferenceState::inferForCall(
         GeneratorType::get(paramTypes, bodyType, metadata));
   }
 
-  // If this is a result in a returnsSelf function like an __init__, infer
-  // self parameters (which could be specialized and shadowed).
-  // NOTE: This has to happen early due to crazy cases like this:
-  //   struct Example[T: AnyType]:
-  //      fn __init__[U: Movable](owned value: U) -> Example[U]:
-  //         pass
-  // The way this works is that we infer "T = $0" here, then go on to analyze
-  // the argument to infer that U = Int (or whatever), and then at the end of
-  // this we go ahead and resolve $0 = Int.  This is crazily circuitous but is
-  // because we have to infer parameter 0 before we can infer param #1.
-  if (returnsSelf) {
-    if (failed(inferSelfFromInitResult(signature)))
-      return failure();
-  }
-
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
   // careful here!
@@ -1631,6 +1570,18 @@ LogicalResult ParameterInferenceState::inferForCall(
   if (posOperandIdx != numOperands && !signature.getMetadata().hasAnyVarArg())
     return failure();
 
+  // If this is a result in a returnsSelf function like an __init__, infer
+  // self parameters (which could be specialized and shadowed).
+  //   struct Example[T: AnyType]:
+  //      fn __init__[U: Movable](owned value: U) -> Example[U]:
+  //         pass
+  // All of the arguments have been resolved here so all parameters must be
+  // inferred (or not able to).
+  if (returnsSelf) {
+    if (failed(inferSelfFromInitResult(signature)))
+      return failure();
+  }
+
   // See if we can fulfill any missing parameters with default values for their
   // type.
   for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
@@ -1644,23 +1595,6 @@ LogicalResult ParameterInferenceState::inferForCall(
       break;
     }
   }
-
-  // Make sure to rebind any selfResultParams if they've been inferred already.
-  // This is because we have to support things like:
-  //
-  //     struct Foo[T: AnyType]:
-  //         fn __init__[U: Movable](x: U, out self: Foo[U]):
-  //
-  if (!selfResultParams.empty()) {
-    for (unsigned idx : selfResultParams) {
-      if (TypedAttr param = evaluator.getIndexBindings()[idx]) {
-        param = evaluator.getReboundAttribute(param);
-        evaluator.overwriteIndexBinding(idx, param);
-        evaluator.clearCache();
-      }
-    }
-  }
-
   // We succeed iff we inferred a value for this parameter.
   return success();
 }

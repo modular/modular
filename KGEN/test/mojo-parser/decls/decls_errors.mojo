@@ -286,7 +286,7 @@ fn badPackCalls(value: Int):
   # expected-error-re @below {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to 'FloatDyn'}}
   examplePack[Int, FloatDyn](1, Int(2)._mlir_value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
-  # expected-error @below {{invalid call to 'examplePack': failed to infer parameter 'Ts', it isn't used in any argument}}
+  # expected-error @below {{invalid call to 'examplePack': failed to infer parameter 'Ts'}}
   examplePack(packArgOverload)
   # expected-error @below {{invalid call to 'first_and_rest': failed to infer parameter 'T', it isn't used in any argument}}
   first_and_rest(value)
