@@ -11,7 +11,7 @@
 
 from sys import env_get_bool
 
-from compile.reflection import (
+from reflection import (
     struct_field_index_by_name,
     struct_field_type_by_name,
     get_type_name,
