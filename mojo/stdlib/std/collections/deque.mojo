@@ -30,7 +30,7 @@ from builtin.constrained import _constrained_conforms_to
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: Copyable](
+struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
     Iterable,
@@ -965,7 +965,7 @@ struct Deque[ElementType: Copyable](
 struct _DequeIter[
     mut: Bool,
     //,
-    T: Copyable,
+    T: Copyable & ImplicitlyDestructible,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
