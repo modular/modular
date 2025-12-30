@@ -222,7 +222,7 @@ struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
 
 # TODO: This type should not be Copyable, but has to be to satisfy
 #       Copyable at the moment.
-struct MoveCounter[T: Copyable](Copyable):
+struct MoveCounter[T: Copyable & ImplicitlyDestructible](Copyable):
     """Counts the number of moves performed on a value.
 
     Parameters:
