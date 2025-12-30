@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Test compile-time errors for struct field reflection APIs when field names
-# don't exist.
+# Test compile-time errors for struct field reflection APIs.
 
 # RUN: not kgen %s -elaborate -D TEST_NONEXISTENT_INDEX=1 2>&1 | FileCheck %s --check-prefix=CHECK-INDEX
 # RUN: not kgen %s -elaborate -D TEST_NONEXISTENT_TYPE=1 2>&1 | FileCheck %s --check-prefix=CHECK-TYPE

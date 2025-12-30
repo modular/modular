@@ -234,7 +234,8 @@ def KGEN_VariadicSplatAttr : KGEN_ExprAttr<"VariadicSplat", "variadic.splat"> {
   let skipDefaultBuilders = 1;
 }
 
-def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size"> {
+def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size",
+    [ContextuallyEvaluatedAttrInterface]> {
   let summary = "return the size of a variadic";
 
   let parameters = (ins

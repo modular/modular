@@ -88,6 +88,7 @@ private:
   evaluateStructFieldIndexByNameAttr(StructFieldIndexByNameAttr attr);
   FailureOr<TypedAttr>
   evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr);
+  FailureOr<TypedAttr> evaluateVariadicSizeAttr(VariadicSizeAttr attr);
 
   /// Helper to resolve a type reference to a StructInstanceType.
   /// Emits an error with the given function name context on failure.

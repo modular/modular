@@ -710,6 +710,16 @@ struct MagicFunctionNode final : public ExprNode {
   AnyValue emitConformsTo(ValueDest &dest, IREmitter &emitter) const;
   AnyValue emitGetCurrentFunctionName(ValueDest &dest,
                                       IREmitter &emitter) const;
+  AnyValue emitStructFieldTypes(ValueDest &dest, IREmitter &emitter) const;
+  AnyValue emitStructFieldNames(ValueDest &dest, IREmitter &emitter) const;
+  AnyValue emitStructFieldCount(ValueDest &dest, IREmitter &emitter) const;
+
+private:
+  /// Helper to validate and extract the type argument for struct field
+  /// reflection magic functions. Returns the PValue if valid, or emits an
+  /// error and returns std::nullopt.
+  std::optional<PValue>
+  getValidatedStructTypeArg(IREmitter &emitter, StringRef publicApiName) const;
 };
 
 } // namespace M::KGEN::LIT

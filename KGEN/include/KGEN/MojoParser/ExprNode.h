@@ -86,8 +86,10 @@ public:
     kConformsTo,               // conforms_to(T, Trait)
     kFunctionsInModule,        // __functions_in_module()
     kGetCurrentFunctionName,   // __get_current_function_name()
+    kStructFieldTypes,         // __struct_field_types[T]()
+    kStructFieldNames,         // __struct_field_names[T]()
     kFirstMagicFunction = kGetMValueAsLitRef,
-    kLastMagicFunction = kGetCurrentFunctionName,
+    kLastMagicFunction = kStructFieldNames,
 
     // Prefix and Postfix unary expressions.
     kNeg,      // -x
