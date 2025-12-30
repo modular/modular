@@ -749,6 +749,7 @@ trait AnyType:
     pass
 
 
+@explicit_destroy
 trait Copyable(Movable):
     fn __copyinit__(out self, existing: Self, /):
         ...

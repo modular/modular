@@ -70,7 +70,7 @@ trait TraitExpectingValueReturn:
     comptime Element: ImplicitlyDestructible
     fn return_value(self) -> Self.Element:
         ...
-struct StructProvidingRefReturn[T: Copyable](TraitExpectingValueReturn):
+struct StructProvidingRefReturn[T: Copyable & ImplicitlyDestructible](TraitExpectingValueReturn):
     comptime Element = Self.T
     fn return_value(self) -> ref [self] Self.T:
         pass
