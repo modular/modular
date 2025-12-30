@@ -37,7 +37,7 @@ from compile import get_type_name
 struct _SpanIter[
     mut: Bool,
     //,
-    T: Copyable,
+    T: Copyable & ImplicitlyDestructible,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -87,7 +87,12 @@ struct _SpanIter[
 
 
 @register_passable("trivial")
-struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut]](
+struct Span[
+    mut: Bool,
+    //,
+    T: Copyable & ImplicitlyDestructible,
+    origin: Origin[mut=mut],
+](
     Boolable,
     Defaultable,
     DevicePassable,

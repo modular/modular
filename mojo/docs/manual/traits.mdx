@@ -739,7 +739,7 @@ The following struct implements the `Stacklike` trait using a `List` as the
 underlying storage:
 
 ```mojo
-struct MyStack[type: Copyable](Stacklike):
+struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
     """A simple Stack built using a List."""
     comptime EltType = Self.type
     comptime list_type = List[Self.EltType]

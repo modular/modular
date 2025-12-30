@@ -26,7 +26,7 @@ from builtin.constrained import _constrained_conforms_to
 
 
 struct Node[
-    ElementType: Copyable,
+    ElementType: Copyable & ImplicitlyDestructible,
 ](Copyable):
     """A node in a linked list data structure.
 
@@ -62,7 +62,7 @@ struct Node[
         self.next = next.value() if next else Self._NodePointer()
 
     fn __str__[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: Node[_ElementType]) -> String:
         """Convert this node's value to a string representation.
 
@@ -80,7 +80,7 @@ struct Node[
 
     @no_inline
     fn write_to[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: Node[_ElementType], mut writer: Some[Writer]):
         """Write this node's value to the given writer.
 
@@ -98,7 +98,7 @@ struct Node[
 struct _LinkedListIter[
     mut: Bool,
     //,
-    ElementType: Copyable,
+    ElementType: Copyable & ImplicitlyDestructible,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -139,7 +139,7 @@ struct _LinkedListIter[
         return old[].value
 
 
-struct LinkedList[ElementType: Copyable,](
+struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
     Defaultable,

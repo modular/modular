@@ -17,25 +17,40 @@ Mojo types, functions, and struct fields.
 
 Struct Field Reflection:
 
-The struct field reflection APIs (`get_struct_field_types`, `get_struct_field_names`,
-`get_struct_field_count`, `struct_field_index_by_name`, `struct_field_type_by_name`)
-allow compile-time introspection of struct fields.
+The struct field reflection APIs allow compile-time introspection of struct fields:
 
-Note: These APIs require concrete types. They do not work with generic type
-parameters. For example:
+- `struct_field_count[T]()` - returns the number of fields
+- `struct_field_names[T]()` - returns an `InlineArray[StaticString, N]` of field names
+- `struct_field_types[T]()` - returns a variadic of field types
+
+These APIs work with both concrete types and generic type parameters, enabling
+generic serialization, comparison, and other reflection-based utilities.
+
+For field lookup by name (concrete types only):
+
+- `struct_field_index_by_name[T, name]()` - returns the index of a field by name
+- `struct_field_type_by_name[T, name]()` - returns the type of a field by name
+
+Example iterating over all fields (works with generics):
 
 ```mojo
-# This works - Point is a concrete type
-comptime names = get_struct_field_names[Point]()
+fn print_fields[T: AnyType]():
+    comptime names = struct_field_names[T]()
+    @parameter
+    for i in range(struct_field_count[T]()):
+        print(names[i])
 
-# This does NOT work - T is a generic parameter
-fn serialize[T: AnyType](value: T):
-    # Error: T is not yet specialized
-    comptime names = get_struct_field_names[T]()
+fn main():
+    print_fields[Point]()  # Works with any struct!
 ```
 
-This limitation exists because the reflection attributes are evaluated before
-generic type parameters are specialized to concrete types.
+Example looking up a field by name:
+
+```mojo
+comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
+comptime field_type = struct_field_type_by_name[Point, "y"]()
+var value: field_type.T = 3.14  # field_type.T is Float64
+```
 """
 
 from sys.info import _current_target, _TargetType
@@ -112,94 +127,6 @@ fn get_type_name[
         `> : !kgen.string`,
     ]
     return StaticString(res)
-
-
-fn get_struct_field_types[
-    T: AnyType,
-]() -> __mlir_type[`!kgen.variadic<!kgen.type>`]:
-    """Returns the types of all fields in struct `T` as a variadic.
-
-    This function provides compile-time reflection over struct fields. It returns
-    the types of all fields (including private fields) in declaration order.
-
-    For nested structs, this returns the struct type itself, not its flattened
-    fields. Use recursive calls to introspect nested types.
-
-    Note: `T` must be a concrete type, not a generic type parameter.
-    See the module documentation for details on this limitation.
-
-    Parameters:
-        T: A concrete struct type.
-
-    Returns:
-        A variadic of types, one for each field in the struct.
-    """
-    return __mlir_attr[
-        `#kgen.struct_field_types<`,
-        T,
-        `> : !kgen.variadic<!kgen.type>`,
-    ]
-
-
-fn _get_struct_field_names_raw[
-    T: AnyType,
-]() -> __mlir_type[`!kgen.variadic<!kgen.string>`]:
-    """Returns the names of all fields in struct `T` as a raw variadic.
-
-    This is an internal helper. Use `get_struct_field_names` for a more
-    ergonomic API that returns `InlineArray[StaticString, N]`.
-    """
-    return __mlir_attr[
-        `#kgen.struct_field_names<`,
-        T,
-        `> : !kgen.variadic<!kgen.string>`,
-    ]
-
-
-fn get_struct_field_names[
-    T: AnyType,
-]() -> InlineArray[StaticString, get_struct_field_count[T]()]:
-    """Returns the names of all fields in struct `T` as an InlineArray.
-
-    This function provides compile-time reflection over struct field names.
-    It returns the names of all fields (including private fields) in declaration
-    order.
-
-    Note: `T` must be a concrete type, not a generic type parameter.
-    See the module documentation for details on this limitation.
-
-    Parameters:
-        T: A concrete struct type.
-
-    Returns:
-        An InlineArray of StaticStrings, one for each field name in the struct.
-    """
-    comptime count = get_struct_field_count[T]()
-    comptime raw = _get_struct_field_names_raw[T]()
-    var result = InlineArray[StaticString, count](uninitialized=True)
-
-    @parameter
-    for i in range(count):
-        result[i] = StaticString(raw[i])
-
-    return result
-
-
-fn get_struct_field_count[
-    T: AnyType,
-]() -> Int:
-    """Returns the number of fields in struct `T`.
-
-    Note: `T` must be a concrete type, not a generic type parameter.
-    See the module documentation for details on this limitation.
-
-    Parameters:
-        T: A concrete struct type.
-
-    Returns:
-        The number of fields in the struct.
-    """
-    return std.builtin.Variadic.size(get_struct_field_types[T]())
 
 
 fn struct_field_index_by_name[
@@ -303,3 +230,165 @@ fn struct_field_type_by_name[
         ```
     """
     return {}
+
+
+# ===----------------------------------------------------------------------=== #
+# Struct Field Reflection APIs
+# ===----------------------------------------------------------------------=== #
+#
+# Implementation Note: KGEN Attributes with ContextuallyEvaluatedAttrInterface
+#
+# The struct field reflection APIs use KGEN attributes that implement
+# ContextuallyEvaluatedAttrInterface. This interface allows attributes to be
+# evaluated during elaboration AFTER generic type parameters have been
+# specialized to concrete types. This enables reflection to work with generic
+# code:
+#
+#   fn foo[T: AnyType]():
+#       # Works - T is concrete when the attribute is evaluated
+#       comptime count = struct_field_count[T]()
+#
+# The implementation approach varies by API:
+# - struct_field_count: Uses #kgen.variadic.size<#kgen.struct_field_types<T>>
+# - struct_field_types/names: Use magic functions for type validation
+# - struct_field_index/type_by_name: Use KGEN attributes directly (require
+#   compile-time string literal for field name, only available with concrete
+#   types anyway)
+# ===----------------------------------------------------------------------=== #
+
+
+fn struct_field_count[T: AnyType]() -> Int:
+    """Returns the number of fields in struct `T`.
+
+    This function works with both concrete types and generic type parameters.
+
+    Note: For best performance, assign the result to a `comptime` variable to
+    ensure compile-time evaluation:
+        `comptime count = struct_field_count[T]()`
+
+    Parameters:
+        T: A struct type.
+
+    Constraints:
+        T must be a struct type. Passing a non-struct type results in a
+        compile-time error.
+
+    Returns:
+        The number of fields in the struct.
+
+    Example:
+        ```mojo
+        fn count_fields[T: AnyType]() -> Int:
+            return struct_field_count[T]()
+
+        fn main():
+            print(count_fields[MyStruct]())  # Prints field count
+        ```
+    """
+    # Use variadic.size on struct_field_types to get the count.
+    # This avoids needing a dedicated struct_field_count attribute.
+    return Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<#kgen.struct_field_types<`,
+            T,
+            `> : !kgen.variadic<!kgen.type>> : index`,
+        ]
+    )
+
+
+fn struct_field_types[
+    T: AnyType,
+]() -> __mlir_type[`!kgen.variadic<!kgen.type>`]:
+    """Returns the types of all fields in struct `T` as a variadic.
+
+    This function works with both concrete types and generic type parameters.
+
+    For nested structs, this returns the struct type itself, not its flattened
+    fields. Use recursive calls to introspect nested types.
+
+    Note: For best performance, assign the result to a `comptime` variable to
+    ensure compile-time evaluation:
+        `comptime types = struct_field_types[T]()`
+
+    Parameters:
+        T: A struct type.
+
+    Constraints:
+        T must be a struct type. Passing a non-struct type results in a
+        compile-time error.
+
+    Returns:
+        A variadic of types, one for each field in the struct. Access individual
+        types by indexing: `types[i]`.
+
+    Example:
+        ```mojo
+        fn print_field_types[T: AnyType]():
+            comptime types = struct_field_types[T]()
+            @parameter
+            for i in range(struct_field_count[T]()):
+                print(get_type_name[types[i]]())
+
+        fn main():
+            print_field_types[MyStruct]()  # Works with any struct!
+        ```
+    """
+    return __struct_field_types(T)
+
+
+fn _struct_field_names_raw[
+    T: AnyType,
+]() -> __mlir_type[`!kgen.variadic<!kgen.string>`]:
+    """Returns the names of all fields in struct `T` as a raw variadic.
+
+    This is an internal helper. Use `struct_field_names` for a more
+    ergonomic API that returns `InlineArray[StaticString, N]`.
+    """
+    return __struct_field_names(T)
+
+
+fn struct_field_names[
+    T: AnyType,
+]() -> InlineArray[StaticString, struct_field_count[T]()]:
+    """Returns the names of all fields in struct `T` as an InlineArray.
+
+    This function works with both concrete types and generic type parameters.
+
+    Note: For best performance, assign the result to a `comptime` variable to
+    ensure compile-time evaluation:
+        `comptime names = struct_field_names[T]()`
+
+    Parameters:
+        T: A struct type.
+
+    Constraints:
+        T must be a struct type. Passing a non-struct type results in a
+        compile-time error.
+
+    Returns:
+        An InlineArray of StaticStrings, one for each field name in the struct.
+
+    Example:
+        ```mojo
+        fn print_field_names[T: AnyType]():
+            comptime names = struct_field_names[T]()
+            @parameter
+            for i in range(struct_field_count[T]()):
+                print(names[i])
+
+        fn main():
+            print_field_names[MyStruct]()  # Works with any struct!
+        ```
+    """
+    comptime count = struct_field_count[T]()
+    comptime raw = _struct_field_names_raw[T]()
+
+    # Safety: uninitialized=True is safe here because the @parameter for loop
+    # guarantees complete initialization of all elements at compile time.
+    var result = InlineArray[StaticString, count](uninitialized=True)
+
+    @parameter
+    for i in range(count):
+        result[i] = StaticString(raw[i])
+
+    return result
