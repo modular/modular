@@ -14,6 +14,7 @@
 from builtin.variadics import Variadic, _ReduceValueAndIdxToVariadic
 from sys.intrinsics import _type_is_eq
 from testing import assert_equal, assert_false, assert_true, TestSuite
+from test_utils import ExplicitDelOnly
 
 
 fn test_variadic_iterator() raises:
@@ -302,6 +303,19 @@ def test_map_types_to_types():
     assert_equal(Variadic.size(variadic), 2)
     assert_true(_type_is_eq[variadic[0], Int]())
     assert_true(_type_is_eq[variadic[1], String]())
+
+
+def test_variadic_list_linear_type():
+    """Test owned variadics with a linear type (ExplicitDelOnly)."""
+
+    @parameter
+    fn destroy_elem(_idx: Int, var arg: ExplicitDelOnly):
+        arg^.destroy()
+
+    fn take_owned_linear(var *args: ExplicitDelOnly):
+        args^.consume_elements[destroy_elem]()
+
+    take_owned_linear(ExplicitDelOnly(5), ExplicitDelOnly(10))
 
 
 def main():
