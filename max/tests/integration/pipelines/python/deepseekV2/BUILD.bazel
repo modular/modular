@@ -20,10 +20,7 @@ modular_py_library(
         "torch_reference/configuration_deepseek.py",
         "torch_reference/modeling_deepseek.py",
     ],
-    imports = [
-        ".",
-        "torch_reference",
-    ],  # Ensure imports work as expected
+    imports = ["."],
     tags = ["no-mypy"],
     deps = [
         requirement("torch"),
