@@ -424,6 +424,8 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
         the way to call this method is a bit special. Here is an example below:
 
         ```mojo
+        from collections import Deque
+
         my_deque = Deque[Int](1, 2, 3)
         print(my_deque.__str__())
         ```
@@ -450,6 +452,8 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
         the way to call this method is a bit special. Here is an example below:
 
         ```mojo
+        from collections import Deque
+
         my_deque = Deque[Int](1, 2, 3)
         print(my_deque.__repr__())
         ```

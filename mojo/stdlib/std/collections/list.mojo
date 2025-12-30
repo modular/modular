@@ -861,6 +861,8 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
+        from collections import List
+
         numbers: List[Int64] = [1, 2]
         more = SIMD[DType.int64, 2](3, 4)
         numbers.extend(more)
@@ -897,6 +899,8 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
+        from collections import List
+
         numbers: List[Int64] = [1, 2]
         more = SIMD[DType.int64, 4](3, 4, 5, 6)
         numbers.extend(more, count=2)
@@ -1166,7 +1170,8 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        from sys.info import size_of
+        from collections import List
+
         list: List[Int64] = [1, 2, 3, 4]
         ptr = list.steal_data() # list is no longer available
         for idx in range(4):

@@ -406,7 +406,7 @@ struct Codepoint(
         Check if a string contains only whitespace:
 
         ```mojo
-        from testing import assert_true
+        from testing import assert_true, assert_false
 
         # ASCII space characters
         assert_true(Codepoint.ord(" ").is_python_space())
@@ -416,7 +416,7 @@ struct Codepoint(
         assert_true(Codepoint.from_u32(0x2029).value().is_python_space())
 
         # Letters are not space characters
-        assert_fales(Codepoint.ord("a").is_python_space())
+        assert_false(Codepoint.ord("a").is_python_space())
         ```
         """
 

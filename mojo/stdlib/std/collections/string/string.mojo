@@ -1085,7 +1085,7 @@ struct String(
         Print the characters in a string:
 
         ```mojo
-        from testing import assert_equal
+        from testing import assert_equal, assert_raises
 
         var s = "abc"
         var iter = s.codepoints()
@@ -1100,7 +1100,7 @@ struct String(
         codepoints:
 
         ```mojo
-        from testing import assert_equal
+        from testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
         var s = "á"
@@ -1130,7 +1130,7 @@ struct String(
         Iterate over the character slices in a string:
 
         ```mojo
-        from testing import assert_equal, assert_true
+        from testing import assert_equal, assert_raises, assert_true
 
         var s = "abc"
         var iter = s.codepoint_slices()

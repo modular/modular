@@ -1430,7 +1430,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal
+        from testing import assert_equal, assert_raises
 
         var s = StringSlice("abc")
         var iter = s.codepoints()
@@ -1446,7 +1446,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal
+        from testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
         var s = StringSlice("á")

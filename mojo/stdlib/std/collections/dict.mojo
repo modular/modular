@@ -489,7 +489,7 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
     var values = [255, 128, 64]
     var colors = Dict[String, Int]()
     for key, value in zip(keys, values):
-        colors[key] = value
+        colors[String(key)] = value # cast list iterator to key-type
     ```
 
     Be aware of the following characteristics:
