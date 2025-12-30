@@ -69,6 +69,7 @@ trait Movable:
     """
 
 
+@explicit_destroy
 trait Copyable(Movable):
     """The Copyable trait denotes a type whose value can be explicitly copied.
 
