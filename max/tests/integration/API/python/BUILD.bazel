@@ -147,7 +147,6 @@ modular_py_test(
     env = {"MODULAR_PATH": "."},
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
-        "//:a10_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2564
         "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862
         "//conditions:default": [],
     }),
