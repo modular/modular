@@ -4258,23 +4258,44 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
 AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
                                            IREmitter &emitter) const {
 
-  // Two cases, either a !lit.trait, or a !meta<struct>
+  // The first argument should be a type to check conformance for.
+  // Accept:
+  // 1. Types with metatype TraitType or StructMetaType (e.g., generic params,
+  //    concrete struct types)
+  // 2. Values of type !kgen.type (TypeType) - these come from reflection APIs
+  //    like struct_field_types[T]()[i] and will be resolved during elaboration
   PValue typeToCheck = emitter.emitExprPValue(subExprs[0], EC_ConformsTo);
-  if (!typeToCheck || !typeToCheck.getIfTypeValue()) {
+  if (!typeToCheck) {
     emitter.emitError(subExprs[0]->getLoc(),
                       "expected a type for the first argument")
         << subExprs[0]->getRange();
     return {};
   }
 
-  auto metaType = ASTType(typeToCheck.getIfTypeValue()).getMetaType();
-  if (!sugarIsaAndNonNull<LIT::TraitType>(metaType) &&
-      !sugarIsaAndNonNull<LIT::StructMetaType>(metaType)) {
-    // TODO: we should fold to constant when the metatype is `StructMetaType`,
-    // that means we know the concrete type to check at parsing time:
-    emitter.emitError(subExprs[0]->getLoc())
-        << typeToCheck << " is not an 'AnyType'" << subExprs[0]->getRange();
+  // Check if this is a !kgen.type value (from reflection APIs).
+  bool isTypeTypeValue =
+      sugarIsaAndNonNull<KGEN::TypeType>(typeToCheck.getType());
+
+  // If not a !kgen.type value, check for metatype-based type expressions.
+  auto valueType = typeToCheck.getIfTypeValue();
+  if (!isTypeTypeValue && !valueType) {
+    emitter.emitError(subExprs[0]->getLoc(),
+                      "expected a type for the first argument")
+        << subExprs[0]->getRange();
     return {};
+  }
+
+  // Validate the metatype for non-TypeType values.
+  if (!isTypeTypeValue) {
+    auto metaType = ASTType(valueType).getMetaType();
+    if (!sugarIsaAndNonNull<LIT::TraitType>(metaType) &&
+        !sugarIsaAndNonNull<LIT::StructMetaType>(metaType)) {
+      // TODO: we should fold to constant when the metatype is `StructMetaType`,
+      // that means we know the concrete type to check at parsing time:
+      emitter.emitError(subExprs[0]->getLoc())
+          << typeToCheck << " is not an 'AnyType'" << subExprs[0]->getRange();
+      return {};
+    }
   }
 
   // The second operand must be a !lit.anytrait
