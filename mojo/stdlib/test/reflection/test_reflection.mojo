@@ -531,5 +531,75 @@ def test_generic_with_parametric_struct():
     assert_equal(generic_parametric_inspector[Float64, 100](), 2)
 
 
+# ===----------------------------------------------------------------------=== #
+# conforms_to with Reflection APIs
+# ===----------------------------------------------------------------------=== #
+
+
+# Test struct with various trait-conforming types
+struct TraitTestStruct:
+    var copyable_field: Int  # Int is Copyable
+    var stringable_field: String  # String is Stringable
+
+
+def test_conforms_to_with_field_types():
+    """Test that conforms_to works with types from struct_field_types."""
+    comptime types = struct_field_types[TraitTestStruct]()
+
+    # Int conforms to Copyable
+    @parameter
+    if conforms_to(types[0], Copyable):
+        pass  # Expected path
+    else:
+        assert_equal(True, False)
+
+    # String conforms to Stringable
+    @parameter
+    if conforms_to(types[1], Stringable):
+        pass  # Expected path
+    else:
+        assert_equal(True, False)
+
+
+def test_conforms_to_field_iteration():
+    """Test iterating over field types and checking trait conformance."""
+    var copyable_count = 0
+
+    @parameter
+    for i in range(struct_field_count[SimpleStruct]()):
+        comptime field_type = struct_field_types[SimpleStruct]()[i]
+
+        @parameter
+        if conforms_to(field_type, Copyable):
+            copyable_count += 1
+
+    # Both Int and Float64 are Copyable
+    assert_equal(copyable_count, 2)
+
+
+fn count_copyable_fields[T: AnyType]() -> Int:
+    """Generic function that counts fields conforming to Copyable."""
+    var count = 0
+
+    @parameter
+    for i in range(struct_field_count[T]()):
+        comptime field_type = struct_field_types[T]()[i]
+
+        @parameter
+        if conforms_to(field_type, Copyable):
+            count += 1
+
+    return count
+
+
+def test_conforms_to_generic_function():
+    """Test conforms_to with field types in a generic context."""
+    # SimpleStruct has 2 Copyable fields (Int, Float64)
+    assert_equal(count_copyable_fields[SimpleStruct](), 2)
+
+    # Inner has 2 Copyable fields (Int, Int)
+    assert_equal(count_copyable_fields[Inner](), 2)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

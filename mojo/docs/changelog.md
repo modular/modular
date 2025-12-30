@@ -278,6 +278,19 @@ what we publish.
   var value: field_type.T = 3.14  # field_type.T is Float64
   ```
 
+- The `conforms_to` builtin now accepts types from the reflection APIs like
+  `struct_field_types[T]()`. This enables checking trait conformance on
+  dynamically obtained field types:
+
+  ```mojo
+  @parameter
+  for i in range(struct_field_count[MyStruct]()):
+      comptime field_type = struct_field_types[MyStruct]()[i]
+      @parameter
+      if conforms_to(field_type, Copyable):
+          print("Field", i, "is Copyable")
+  ```
+
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
   and generic algorithms that already require `Copyable` don't need to also
   mention they require `Movable.
