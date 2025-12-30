@@ -25,7 +25,9 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -4121,6 +4123,15 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return emitConformsTo(dest, emitter);
   }
 
+  // Struct field reflection magic functions take exactly one argument (a type).
+  if (kind == kStructFieldTypes || kind == kStructFieldNames) {
+    if (!checkArgCount(1))
+      return {};
+    if (kind == kStructFieldTypes)
+      return emitStructFieldTypes(dest, emitter);
+    return emitStructFieldNames(dest, emitter);
+  }
+
   // All other magic function types take exactly one argument.
   if (!checkArgCount(1))
     return {};
@@ -4373,6 +4384,73 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
 
   // Finally, emit the IR for the expression.
   return tupleCallNode.emitIR(dest, emitter);
+}
+
+// Struct field reflection magic functions.
+//
+// These magic functions provide type validation and cleaner syntax for struct
+// field reflection. The underlying KGEN attributes (StructFieldTypesAttr,
+// StructFieldNamesAttr) implement ContextuallyEvaluatedAttrInterface, which
+// allows them to be evaluated during elaboration after generic type parameters
+// have been specialized.
+//
+// Note: struct_field_count is implemented purely in stdlib using
+// #kgen.variadic.size<#kgen.struct_field_types<T>> without a magic function.
+//
+// See stdlib/std/reflection/reflection.mojo for detailed documentation.
+
+std::optional<PValue>
+MagicFunctionNode::getValidatedStructTypeArg(IREmitter &emitter,
+                                             StringRef publicApiName) const {
+  // Get the type argument as a PValue.
+  PValue typeArg = emitter.emitExprPValue(subExprs[0], EC_TypeOf);
+  if (!typeArg || !typeArg.getIfTypeValue()) {
+    emitter.emitError(subExprs[0]->getLoc(),
+                      Twine("expected a type for ") + publicApiName)
+        << subExprs[0]->getRange();
+    return std::nullopt;
+  }
+
+  // Verify that the type is a struct type or trait-bound type parameter.
+  // For trait-bound types (T: AnyType), the actual struct type will be
+  // resolved when the function is instantiated.
+  auto metaType = ASTType(typeArg.getIfTypeValue()).getMetaType();
+  if (!sugarIsaAndNonNull<LIT::StructMetaType>(metaType) &&
+      !sugarIsaAndNonNull<LIT::TraitType>(metaType)) {
+    emitter.emitError(subExprs[0]->getLoc())
+        << typeArg << " is not a struct type" << subExprs[0]->getRange();
+    return std::nullopt;
+  }
+
+  return typeArg;
+}
+
+AnyValue MagicFunctionNode::emitStructFieldTypes(ValueDest &dest,
+                                                 IREmitter &emitter) const {
+  auto typeArg = getValidatedStructTypeArg(emitter, "struct_field_types");
+  if (!typeArg)
+    return {};
+
+  // Create the struct_field_types attribute. It will be evaluated during
+  // elaboration to return the actual field types.
+  MLIRContext *ctx = emitter.getContext();
+  auto variadicType = VariadicType::get(TypeType::get(ctx));
+  auto attr = StructFieldTypesAttr::get(ctx, typeArg->get(), variadicType);
+  return emitter.emitResult(PValue(attr), this, dest);
+}
+
+AnyValue MagicFunctionNode::emitStructFieldNames(ValueDest &dest,
+                                                 IREmitter &emitter) const {
+  auto typeArg = getValidatedStructTypeArg(emitter, "struct_field_names");
+  if (!typeArg)
+    return {};
+
+  // Create the struct_field_names attribute. It will be evaluated during
+  // elaboration to return the actual field names.
+  MLIRContext *ctx = emitter.getContext();
+  auto variadicType = VariadicType::get(StringType::get(ctx));
+  auto attr = StructFieldNamesAttr::get(ctx, typeArg->get(), variadicType);
+  return emitter.emitResult(PValue(attr), this, dest);
 }
 
 LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,

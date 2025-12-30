@@ -168,6 +168,8 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateCompileAssemblyAttr(compileAssemblyAttr);
   if (auto variadicReduceAttr = dyn_cast<VariadicReduceAttr>(attr))
     return variadicReduceAttr.evaluateWith(this);
+  if (auto variadicSizeAttr = dyn_cast<VariadicSizeAttr>(attr))
+    return evaluateVariadicSizeAttr(variadicSizeAttr);
 
   if (auto castAttr = dyn_cast<POP::CastAttr>(attr)) {
     auto outType = cast<POP::SIMDType>(castAttr.getType());
@@ -507,6 +509,19 @@ IREvaluator::evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr) {
   emitError({*errorLoc, "struct '" + mlir::debugString(structType) +
                             "' has no field named '" + fieldName + "'"});
   return failure();
+}
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateVariadicSizeAttr(VariadicSizeAttr attr) {
+  // If the inner variadic is a concrete VariadicAttr, return its size.
+  // This enables folding after nested attributes like StructFieldTypesAttr
+  // have been evaluated to concrete variadics.
+  auto vaAttr = sugarDynCast<VariadicAttr>(attr.getVariadic());
+  if (!vaAttr)
+    return failure();
+
+  return {cast<TypedAttr>(
+      Builder(attr.getContext()).getIndexAttr(vaAttr.getValues().size()))};
 }
 
 ParamNodeBase *IREvaluator::lookupParamNodeBase(SymbolRefAttr symbol) {
