@@ -13,7 +13,7 @@
 
 from sys.info import CompilationTarget, _current_target
 
-from compile.reflection import (
+from reflection import (
     get_linkage_name,
     get_type_name,
     get_function_name,

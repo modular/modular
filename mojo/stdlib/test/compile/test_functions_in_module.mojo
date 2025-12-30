@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compile.reflection import get_linkage_name
+from reflection import get_linkage_name
 from testing import assert_equal
 
 

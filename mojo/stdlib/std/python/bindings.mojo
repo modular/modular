@@ -24,7 +24,7 @@ from sys.ffi import _Global, c_int
 from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
-from compile.reflection import get_type_name
+from reflection import get_type_name
 from memory import OpaquePointer, stack_allocation
 from python import Python, PythonObject
 from python._cpython import (

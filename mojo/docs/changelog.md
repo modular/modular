@@ -238,6 +238,10 @@ what we publish.
 
 - `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
 
+- The `reflection` module has been moved from `compile.reflection` to a top-level
+  `reflection` module. Update imports from `from compile.reflection import ...`
+  to `from reflection import ...`.
+
 - The `reflection` module now supports compile-time struct field introspection:
 
   - `struct_field_count[T]()` returns the number of fields
@@ -257,9 +261,10 @@ what we publish.
   ```mojo
   fn print_fields[T: AnyType]():
       comptime names = struct_field_names[T]()
+      comptime types = struct_field_types[T]()
       @parameter
       for i in range(struct_field_count[T]()):
-          print(names[i])
+          print(names[i], get_type_name[types[i]]())
 
   fn main():
       print_fields[Point]()  # Works with any struct!

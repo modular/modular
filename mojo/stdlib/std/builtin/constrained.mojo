@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 from collections.string.string_slice import _get_kgen_string
-from compile.reflection import get_type_name
+from reflection import get_type_name
 
 
 @always_inline("nodebug")
