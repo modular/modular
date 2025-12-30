@@ -29,7 +29,9 @@ from bit import next_power_of_two
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
+struct Deque[ElementType: Copyable & ImplicitlyDestructible](
+    Boolable, Copyable, Iterable, Sized
+):
     """Implements a double-ended queue.
 
     It supports pushing and popping from both ends in O(1) time resizing the
@@ -979,7 +981,7 @@ struct Deque[ElementType: Copyable](Boolable, Copyable, Iterable, Sized):
 struct _DequeIter[
     mut: Bool,
     //,
-    T: Copyable,
+    T: Copyable & ImplicitlyDestructible,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):

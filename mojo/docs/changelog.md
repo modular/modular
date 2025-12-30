@@ -198,10 +198,11 @@ what we publish.
 - The Mojo language basic trait hierarchy has changed to expand first-class
   support for linear types (aka. non-implicitly-destructible types).
 
-  The `AnyType` and `Movable` traits no longer requires that a type provide a
-  `__del__()` method that may be called by the compiler implicitly whenever an
-  owned value is unused. Instead, the `ImplicitlyDestructible` trait should be
-  used in generic code to require that a type is implicitly destructible.
+  The `AnyType`, `Movable`, and `Copyable` traits no longer require that a type
+  provide a `__del__()` method that may be called by the compiler implicitly
+  whenever an owned value is unused. Instead, the `ImplicitlyDestructible` trait
+  should be used in generic code to require that a type is implicitly
+  destructible.
 
   Linear types enable Mojo programs to encode powerful invariants in the type
   system, by modeling a type in such a way that a user is required to take an

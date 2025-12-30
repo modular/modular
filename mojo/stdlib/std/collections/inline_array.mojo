@@ -58,7 +58,7 @@ fn _inline_array_construction_checks[size: Int]():
 
 
 struct InlineArray[
-    ElementType: Copyable,
+    ElementType: Copyable & ImplicitlyDestructible,
     size: Int,
 ](Defaultable, DevicePassable, ImplicitlyCopyable, Sized):
     """A fixed-size sequence of homogeneous elements where size is a constant

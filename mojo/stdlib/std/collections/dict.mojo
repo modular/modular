@@ -107,7 +107,7 @@ struct _DictEntryIter[
     mut: Bool,
     //,
     K: KeyElement,
-    V: Copyable,
+    V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -173,7 +173,10 @@ struct _DictEntryIter[
 
 @fieldwise_init
 struct _TakeDictEntryIter[
-    K: KeyElement, V: Copyable, H: Hasher, origin: MutOrigin
+    K: KeyElement,
+    V: Copyable & ImplicitlyDestructible,
+    H: Hasher,
+    origin: MutOrigin,
 ](Copyable, Iterable, Iterator):
     """Iterator over mutable DictEntry references that moves entries out of the dictionary.
 
@@ -227,7 +230,7 @@ struct _DictKeyIter[
     mut: Bool,
     //,
     K: KeyElement,
-    V: Copyable,
+    V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -273,7 +276,7 @@ struct _DictValueIter[
     mut: Bool,
     //,
     K: KeyElement,
-    V: Copyable,
+    V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -325,7 +328,9 @@ struct _DictValueIter[
 
 
 @fieldwise_init
-struct DictEntry[K: KeyElement, V: Copyable, H: Hasher](Copyable):
+struct DictEntry[
+    K: KeyElement, V: Copyable & ImplicitlyDestructible, H: Hasher
+](Copyable):
     """Store a key-value pair entry inside a dictionary.
 
     Parameters:
@@ -455,7 +460,11 @@ struct _DictIndex(Movable):
         self.data.free()
 
 
-struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
+struct Dict[
+    K: KeyElement,
+    V: Copyable & ImplicitlyDestructible,
+    H: Hasher = default_hasher,
+](
     Boolable,
     Copyable,
     Defaultable,
@@ -1398,7 +1407,9 @@ struct Dict[K: KeyElement, V: Copyable, H: Hasher = default_hasher](
         self._n_entries = self._len
 
 
-struct OwnedKwargsDict[V: Copyable](Copyable, Defaultable, Iterable, Sized):
+struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
+    Copyable, Defaultable, Iterable, Sized
+):
     """Container used to pass owned variadic keyword arguments to functions.
 
     Parameters:

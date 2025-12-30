@@ -2561,7 +2561,8 @@ fn get_static_string[
 fn _to_string_list[
     O: Origin,
     //,
-    T: Copyable,  # TODO(MOCO-1446): Make `T` parameter inferred
+    # TODO(MOCO-1446): Make `T` parameter inferred
+    T: Copyable & ImplicitlyDestructible,
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:

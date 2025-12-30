@@ -39,7 +39,7 @@ from .optional import Optional
 struct _ListIter[
     mut: Bool,
     //,
-    T: Copyable,
+    T: Copyable & ImplicitlyDestructible,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -93,7 +93,7 @@ struct _ListIter[
         return (iter_len, {iter_len})
 
 
-struct List[T: Copyable](
+struct List[T: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
     Defaultable,
