@@ -22,7 +22,7 @@ trait Stacklike:
         ...
 
 
-struct MyStack[type: Copyable](Stacklike):
+struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
     """A simple Stack built using a List."""
 
     comptime EltType = Self.type
