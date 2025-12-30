@@ -237,35 +237,39 @@ what we publish.
 
 - `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
 
-- The `compile.reflection` module now supports compile-time struct field
-  introspection:
+- The `reflection` module now supports compile-time struct field introspection:
 
-  - `get_struct_field_types[T]()` returns a variadic of all field types
-  - `get_struct_field_names[T]()` returns an `InlineArray[StaticString, N]` of
+  - `struct_field_count[T]()` returns the number of fields
+  - `struct_field_names[T]()` returns an `InlineArray[StaticString, N]` of
     all field names
-  - `get_struct_field_count[T]()` returns the number of fields
+  - `struct_field_types[T]()` returns a variadic of all field types
   - `struct_field_index_by_name[T, name]()` returns the index of a field by name
   - `struct_field_type_by_name[T, name]()` returns the type of a field,
     wrapped in a `ReflectedType` struct
 
-  Example:
+  These APIs work with both concrete types and generic type parameters,
+  enabling generic serialization, comparison, and other reflection-based
+  utilities.
+
+  Example iterating over fields (works with generics):
 
   ```mojo
-  struct Point:
-      var x: Int
-      var y: Float64
-
-  fn example():
-      # Iterate over all fields
+  fn print_fields[T: AnyType]():
+      comptime names = struct_field_names[T]()
       @parameter
-      for i in range(get_struct_field_count[Point]()):
-          comptime field_type = get_struct_field_types[Point]()[i]
-          comptime field_name = get_struct_field_names[Point]()[i]
+      for i in range(struct_field_count[T]()):
+          print(names[i])
 
-      # Lookup by name
-      comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
-      comptime field_type = struct_field_type_by_name[Point, "y"]()
-      var value: field_type.T = 3.14  # field_type.T is Float64
+  fn main():
+      print_fields[Point]()  # Works with any struct!
+  ```
+
+  Example looking up a field by name:
+
+  ```mojo
+  comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
+  comptime field_type = struct_field_type_by_name[Point, "y"]()
+  var value: field_type.T = 3.14  # field_type.T is Float64
   ```
 
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs

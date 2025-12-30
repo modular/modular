@@ -17,11 +17,11 @@ from compile.reflection import (
     get_linkage_name,
     get_type_name,
     get_function_name,
-    get_struct_field_count,
-    get_struct_field_names,
-    get_struct_field_types,
     struct_field_index_by_name,
     struct_field_type_by_name,
+    struct_field_count,
+    struct_field_names,
+    struct_field_types,
 )
 from testing import assert_equal
 from testing import TestSuite
@@ -230,45 +230,45 @@ struct MixedVisibility:
 
 
 def test_struct_field_count_simple():
-    comptime count = get_struct_field_count[SimpleStruct]()
+    comptime count = struct_field_count[SimpleStruct]()
     assert_equal(count, 2)
 
 
 def test_struct_field_count_nested():
-    comptime outer_count = get_struct_field_count[Outer]()
+    comptime outer_count = struct_field_count[Outer]()
     assert_equal(outer_count, 3)
 
-    comptime inner_count = get_struct_field_count[Inner]()
+    comptime inner_count = struct_field_count[Inner]()
     assert_equal(inner_count, 2)
 
 
 def test_struct_field_count_empty():
-    comptime count = get_struct_field_count[EmptyStruct]()
+    comptime count = struct_field_count[EmptyStruct]()
     assert_equal(count, 0)
 
 
 def test_struct_field_count_mixed_visibility():
-    comptime count = get_struct_field_count[MixedVisibility]()
+    comptime count = struct_field_count[MixedVisibility]()
     assert_equal(count, 3)
 
 
 def test_struct_field_names():
     # Test field names via indexing - returns InlineArray[StaticString, N]
-    comptime names = get_struct_field_names[SimpleStruct]()
+    comptime names = struct_field_names[SimpleStruct]()
     assert_equal(names[0], "x")
     assert_equal(names[1], "y")
 
 
 def test_struct_field_types():
     # Test field types via indexing (detailed verification in test_struct_field_types_are_correct)
-    comptime types = get_struct_field_types[SimpleStruct]()
+    comptime types = struct_field_types[SimpleStruct]()
     _ = types
 
 
 def test_nested_struct_returns_struct_type():
     # When a struct contains another struct, we get the struct type
     # not flattened fields. Users can recursively introspect.
-    comptime outer_count = get_struct_field_count[Outer]()
+    comptime outer_count = struct_field_count[Outer]()
     assert_equal(outer_count, 3)  # name, inner, count - not flattened
 
 
@@ -277,9 +277,9 @@ def test_struct_field_iteration():
     var count = 0
 
     @parameter
-    for i in range(get_struct_field_count[SimpleStruct]()):
-        comptime field_type = get_struct_field_types[SimpleStruct]()[i]
-        comptime field_name = get_struct_field_names[SimpleStruct]()[i]
+    for i in range(struct_field_count[SimpleStruct]()):
+        comptime field_type = struct_field_types[SimpleStruct]()[i]
+        comptime field_name = struct_field_names[SimpleStruct]()[i]
         _ = field_type
         _ = field_name
         count += 1
@@ -289,7 +289,7 @@ def test_struct_field_iteration():
 def test_struct_field_types_are_correct():
     # Verify that field types match expected types using type names.
     # Note: _type_is_eq doesn't work across !kgen.type / Mojo type boundary.
-    comptime types = get_struct_field_types[SimpleStruct]()
+    comptime types = struct_field_types[SimpleStruct]()
     assert_equal(get_type_name[types[0]](), "Int")
     assert_equal(get_type_name[types[1]](), "SIMD[DType.float64, 1]")
 
@@ -341,18 +341,18 @@ def test_struct_field_index_mixed_visibility():
 def test_struct_field_type_by_index_simple():
     # Test getting field type by index (using composition of index lookup and types)
     comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
-    comptime x_type = get_struct_field_types[SimpleStruct]()[x_idx]
+    comptime x_type = struct_field_types[SimpleStruct]()[x_idx]
     assert_equal(get_type_name[x_type](), "Int")
 
     comptime y_idx = struct_field_index_by_name[SimpleStruct, "y"]()
-    comptime y_type = get_struct_field_types[SimpleStruct]()[y_idx]
+    comptime y_type = struct_field_types[SimpleStruct]()[y_idx]
     assert_equal(get_type_name[y_type](), "SIMD[DType.float64, 1]")
 
 
 def test_struct_field_type_by_index_nested():
     # Test that nested struct fields return the struct type, not flattened
     comptime inner_idx = struct_field_index_by_name[Outer, "inner"]()
-    comptime inner_type = get_struct_field_types[Outer]()[inner_idx]
+    comptime inner_type = struct_field_types[Outer]()[inner_idx]
     assert_equal(get_type_name[inner_type](), "test_reflection.Inner")
 
 
@@ -371,11 +371,11 @@ def test_struct_field_index_consistent():
 def test_struct_field_type_matches_index():
     # Verify that field index lookup correctly corresponds to field types
     comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
-    comptime x_type_by_idx = get_struct_field_types[SimpleStruct]()[x_idx]
+    comptime x_type_by_idx = struct_field_types[SimpleStruct]()[x_idx]
     assert_equal(get_type_name[x_type_by_idx](), "Int")
 
     comptime y_idx = struct_field_index_by_name[SimpleStruct, "y"]()
-    comptime y_type_by_idx = get_struct_field_types[SimpleStruct]()[y_idx]
+    comptime y_type_by_idx = struct_field_types[SimpleStruct]()[y_idx]
     assert_equal(get_type_name[y_type_by_idx](), "SIMD[DType.float64, 1]")
 
 
@@ -404,10 +404,129 @@ def test_struct_field_type_by_name_matches_index():
     # as get_struct_field_types with the corresponding index
     comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
     comptime x_type_by_name = struct_field_type_by_name[SimpleStruct, "x"]()
-    comptime x_type_by_idx = get_struct_field_types[SimpleStruct]()[x_idx]
+    comptime x_type_by_idx = struct_field_types[SimpleStruct]()[x_idx]
     assert_equal(
         get_type_name[x_type_by_name.T](), get_type_name[x_type_by_idx]()
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# Magic Function Tests (for generic type support)
+# ===----------------------------------------------------------------------=== #
+
+
+# Test struct for generic iteration test
+struct GenericTestPoint:
+    var x: Int
+    var y: Int
+    var z: Float64
+
+
+fn generic_field_info_printer[T: AnyType]():
+    """Generic function that uses magic functions to introspect any struct."""
+
+    @parameter
+    for i in range(struct_field_count[T]()):
+        comptime field_name = struct_field_names[T]()[i]
+        comptime field_type = struct_field_types[T]()[i]
+        # Just verify we can access them - the types are correct if this compiles
+        _ = field_name
+        _ = field_type
+
+
+def test_generic_iteration():
+    # Test that we can iterate over struct fields generically
+    generic_field_info_printer[GenericTestPoint]()
+    generic_field_info_printer[SimpleStruct]()
+    generic_field_info_printer[Outer]()
+
+
+fn count_fields_generically[T: AnyType]() -> Int:
+    """Counts fields generically - works with any struct type."""
+    return struct_field_count[T]()
+
+
+def test_count_through_generic_function():
+    # Verify generic function returns correct counts for different types
+    assert_equal(count_fields_generically[SimpleStruct](), 2)
+    assert_equal(count_fields_generically[Outer](), 3)
+    assert_equal(count_fields_generically[Inner](), 2)
+    assert_equal(count_fields_generically[EmptyStruct](), 0)
+    assert_equal(count_fields_generically[MixedVisibility](), 3)
+
+
+fn get_first_field_name_generically[T: AnyType]() -> StaticString:
+    """Gets first field name - works with any struct type."""
+    # Only call this for structs with at least one field
+    return struct_field_names[T]()[0]
+
+
+def test_magic_field_name_through_generic_function():
+    # Verify generic function returns correct first field name
+    assert_equal(get_first_field_name_generically[SimpleStruct](), "x")
+    assert_equal(get_first_field_name_generically[Outer](), "name")
+    assert_equal(get_first_field_name_generically[Inner](), "a")
+    assert_equal(
+        get_first_field_name_generically[MixedVisibility](), "public_field"
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# Parametric Struct Tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_parametric_struct_field_count():
+    # Test that parametric structs work correctly with reflection.
+    # SIMD is a parametric struct with type and size parameters.
+    comptime simd_count = struct_field_count[SIMD[DType.float32, 4]]()
+    # SIMD has a single 'value' field internally
+    assert_equal(
+        simd_count >= 0, True
+    )  # Just verify it works, don't depend on internals
+
+    # InlineArray is another parametric struct
+    comptime array_count = struct_field_count[InlineArray[Int, 3]]()
+    assert_equal(array_count >= 0, True)
+
+
+def test_parametric_struct_in_generic_function():
+    # Verify parametric structs work through generic functions
+    _ = count_fields_generically[SIMD[DType.float32, 4]]()
+    _ = count_fields_generically[InlineArray[Int, 3]]()
+    # If this compiles and runs, parametric structs work with generics
+
+
+struct ParametricTestStruct[T: Copyable & Movable, size: Int]:
+    """A user-defined parametric struct for testing."""
+
+    var data: Self.T
+    var count: Int
+
+    fn __init__(out self, var data: Self.T, count: Int):
+        self.data = data^
+        self.count = count
+
+
+def test_user_defined_parametric_struct():
+    # Test user-defined parametric structs
+    comptime count = struct_field_count[ParametricTestStruct[Float64, 10]]()
+    assert_equal(count, 2)
+
+    comptime names = struct_field_names[ParametricTestStruct[Float64, 10]]()
+    assert_equal(names[0], "data")
+    assert_equal(names[1], "count")
+
+
+fn generic_parametric_inspector[T: Copyable & Movable, size: Int]() -> Int:
+    """Generic function that inspects a parametric struct."""
+    return struct_field_count[ParametricTestStruct[T, size]]()
+
+
+def test_generic_with_parametric_struct():
+    # Test generic function instantiated with different parameter values
+    assert_equal(generic_parametric_inspector[Int, 5](), 2)
+    assert_equal(generic_parametric_inspector[Float64, 100](), 2)
 
 
 def main():
