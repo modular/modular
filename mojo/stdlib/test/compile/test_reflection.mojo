@@ -497,7 +497,7 @@ def test_parametric_struct_in_generic_function():
     # If this compiles and runs, parametric structs work with generics
 
 
-struct ParametricTestStruct[T: Copyable & Movable, size: Int]:
+struct ParametricTestStruct[T: Copyable & ImplicitlyDestructible, size: Int]:
     """A user-defined parametric struct for testing."""
 
     var data: Self.T
@@ -518,7 +518,9 @@ def test_user_defined_parametric_struct():
     assert_equal(names[1], "count")
 
 
-fn generic_parametric_inspector[T: Copyable & Movable, size: Int]() -> Int:
+fn generic_parametric_inspector[
+    T: Copyable & ImplicitlyDestructible, size: Int
+]() -> Int:
     """Generic function that inspects a parametric struct."""
     return struct_field_count[ParametricTestStruct[T, size]]()
 
