@@ -133,11 +133,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             gpu_ctx.enqueue_memset(
                 DeviceBuffer[output.dtype](
                     gpu_ctx,
-                    rebind[
-                        LegacyUnsafePointer[
-                            mut=True, Scalar[output.dtype], origin=MutAnyOrigin
-                        ]
-                    ](out_layout.ptr),
+                    out_layout.ptr,
                     M * N,
                     owning=False,
                 ),
