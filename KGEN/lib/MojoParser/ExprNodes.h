@@ -713,6 +713,9 @@ struct MagicFunctionNode final : public ExprNode {
   AnyValue emitStructFieldTypes(ValueDest &dest, IREmitter &emitter) const;
   AnyValue emitStructFieldNames(ValueDest &dest, IREmitter &emitter) const;
   AnyValue emitStructFieldCount(ValueDest &dest, IREmitter &emitter) const;
+  AnyValue emitStructFieldTypeAtIndex(ValueDest &dest,
+                                      IREmitter &emitter) const;
+  AnyValue emitStructFieldRef(ValueDest &dest, IREmitter &emitter) const;
 
 private:
   /// Helper to validate and extract the type argument for struct field

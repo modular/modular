@@ -95,6 +95,10 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "StructFieldTypes";
   case ExprNode::kStructFieldNames:
     return "StructFieldNames";
+  case ExprNode::kStructFieldTypeAtIndex:
+    return "StructFieldTypeAtIndex";
+  case ExprNode::kStructFieldRef:
+    return "StructFieldRef";
   case ExprNode::kNeg:
     return "Neg";
   case ExprNode::kPos:

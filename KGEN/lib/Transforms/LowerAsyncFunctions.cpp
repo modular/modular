@@ -844,7 +844,8 @@ FuncOp LowerAsyncBuildContext::createSharedResume(StringRef prefix,
     while (current) {
       auto gep = dyn_cast<StructGEPOp>(current);
       if (gep && gep.getContainer() == hotStartContinuation) {
-        if (gep.getIndex() >= hotContSize)
+        auto indexAttr = cast<IntegerAttr>(gep.getIndex());
+        if (static_cast<size_t>(indexAttr.getInt()) >= hotContSize)
           current->setOperand(0, coldStartContinuation);
       }
       Operation *next = current->getNextNode();

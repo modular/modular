@@ -1048,6 +1048,11 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
 
   // If this is a GER, check the base and focus in on a field of it.
   if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
+    // For index access, we can't determine field offset without concrete index.
+    // Treat as opaque access to the full container.
+    if (!structGER.usesFieldAccess())
+      return {};
+
     ValueRef baseVal = getDirectValueRef(structGER.getContainer(), isDeref);
     if (!baseVal || !baseVal.isIndirect)
       return {};

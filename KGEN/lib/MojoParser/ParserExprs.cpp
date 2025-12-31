@@ -409,6 +409,8 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw___get_current_function_name:
   case Token::kw___struct_field_types:
   case Token::kw___struct_field_names:
+  case Token::kw___struct_field_type_at_index:
+  case Token::kw___struct_field_ref:
     return true;
   default:
     return false;
@@ -593,6 +595,8 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw___get_current_function_name:
   case Token::kw___struct_field_types:
   case Token::kw___struct_field_names:
+  case Token::kw___struct_field_type_at_index:
+  case Token::kw___struct_field_ref:
     if (failed(parseMagicFunction(result)))
       return failure();
     break;
@@ -1238,6 +1242,12 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
     break;
   case Token::kw___struct_field_names:
     nodeKind = ExprNode::kStructFieldNames;
+    break;
+  case Token::kw___struct_field_type_at_index:
+    nodeKind = ExprNode::kStructFieldTypeAtIndex;
+    break;
+  case Token::kw___struct_field_ref:
+    nodeKind = ExprNode::kStructFieldRef;
     break;
   }
 

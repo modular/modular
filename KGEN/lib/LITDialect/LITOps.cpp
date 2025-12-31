@@ -21,6 +21,7 @@
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/MDialect/ParserUtils.h"
+#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1273,6 +1274,10 @@ RefType RefStructGEROp::getFieldType(RefType structRefTy, StructFieldOp field) {
 
 LogicalResult
 RefStructGEROp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  // Symbol verification only applies to field name access
+  if (!usesFieldAccess())
+    return success();
+
   Type structType = getContainer().getType().getElementType();
   return verifyStructFieldAndType(symbolTable, *this,
                                   cast<StructType>(structType), getFieldAttr(),
@@ -1282,46 +1287,268 @@ RefStructGEROp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
                            Value structBaseRef, StructFieldOp field) {
   auto resultType = getFieldType(cast<RefType>(structBaseRef.getType()), field);
-  build(builder, result, resultType, field.getNameAttr(), structBaseRef);
+  result.addTypes(resultType);
+  result.addAttribute("field", field.getNameAttr());
+  // Don't add index attribute for field access
+  result.addOperands(structBaseRef);
+}
+
+void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
+                           Type resultType, TypedAttr index, Value container) {
+  result.addTypes(resultType);
+  // Don't add field attribute for index access
+  result.addAttribute("index", index);
+  result.addOperands(container);
+}
+
+void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
+                           Type resultType, StringAttr field, Value container) {
+  result.addTypes(resultType);
+  result.addAttribute("field", field);
+  // Don't add index attribute for field access
+  result.addOperands(container);
 }
 
 LogicalResult RefStructGEROp::verify() {
-  if (getType() != getReboundFieldType(getContainer().getType(), getFieldAttr(),
-                                       getType().getElementType()))
-    return emitOpError("invalid origin or address space");
+  // Must have exactly one of field or index
+  bool hasField = getField().has_value();
+  bool hasIndex = getIndex().has_value();
+  if (hasField == hasIndex)
+    return emitOpError("must have exactly one of 'field' or 'index' attribute");
+
+  auto containerRefType = getContainer().getType();
+  Type elementType = containerRefType.getElementType();
+
+  if (hasField) {
+    // Field access requires a concrete struct type
+    if (!isa<StructType>(elementType))
+      return emitOpError(
+          "field access requires container to be a reference to a struct type");
+
+    // Verify the origin is field-sensitive
+    if (getType() != getReboundFieldType(containerRefType, getFieldAttr(),
+                                         getType().getElementType()))
+      return emitOpError("invalid origin or address space");
+  } else {
+    // Index access allows both StructType and ParamType
+    if (!isa<StructType>(elementType) && !isa<KGEN::ParamType>(elementType))
+      return emitOpError(
+          "index access requires container to be a reference to a struct or "
+          "parametric type");
+  }
+
   return success();
 }
 
-static ParseResult parseStructGERTypes(AsmParser &p, Type &containerType,
-                                       Type &fieldRefType,
-                                       StringAttr fieldName) {
-  llvm::SMLoc loc = p.getCurrentLocation();
-  Type fieldType;
-  // parse: 'type' `->` 'type'
-  containerType = RefType::parse(p);
-  if (!containerType || p.parseArrow() || parseParamType(p, fieldType))
+ErrorTreeOrSuccess RefStructGEROp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  // This operation doesn't need special interpretation logic - it just
+  // needs to exist in the IR. For index access, canonicalization will convert
+  // to field access when possible.
+  return success();
+}
+
+ErrorTreeOrSuccess
+RefStructGEROp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
+namespace {
+/// Canonicalization pattern that converts index access to field name access
+/// when the index is a concrete integer and the struct type is known.
+struct ResolveIndexToFieldName : public mlir::OpRewritePattern<RefStructGEROp> {
+  using mlir::OpRewritePattern<RefStructGEROp>::OpRewritePattern;
+
+  LogicalResult
+  matchAndRewrite(RefStructGEROp op,
+                  mlir::PatternRewriter &rewriter) const override {
+    // Only applies to index access
+    if (!op.usesIndexAccess())
+      return failure();
+
+    // Only lower when index is a concrete integer
+    auto indexAttr = dyn_cast<IntegerAttr>(*op.getIndex());
+    if (!indexAttr)
+      return failure(); // Still parametric, wait for elaboration
+
+    unsigned index = indexAttr.getInt();
+
+    // Get the struct type from the container. If the element type is still
+    // parametric (ParamType), wait for further elaboration.
+    auto containerRefType = op.getContainer().getType();
+    auto structType =
+        dyn_cast<LIT::StructType>(containerRefType.getElementType());
+    if (!structType)
+      return failure();
+
+    // Look up the struct declaration
+    SymbolTableCollection symbolTable;
+    auto module = KGENModule::from(op.getOperation(), symbolTable);
+    auto structDecl = module.lookup<StructDeclOp>(structType.getSymbol());
+    if (!structDecl)
+      return op.emitOpError("could not find struct declaration for ")
+             << structType.getSymbol();
+
+    // Find the field at the given index
+    StructFieldOp targetField;
+    unsigned currentIdx = 0;
+    for (StructFieldOp field : structDecl.getFieldDecls()) {
+      if (currentIdx == index) {
+        targetField = field;
+        break;
+      }
+      ++currentIdx;
+    }
+
+    if (!targetField)
+      return op.emitOpError("field index ") << index << " is out of bounds";
+
+    // Replace with field name access
+    rewriter.replaceOpWithNewOp<RefStructGEROp>(op, op.getContainer(),
+                                                targetField);
+    return success();
+  }
+};
+} // namespace
+
+void RefStructGEROp::getCanonicalizationPatterns(RewritePatternSet &patterns,
+                                                 MLIRContext *context) {
+  patterns.add<ResolveIndexToFieldName>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// RefStructGEROp - Custom Assembly Format
+//===----------------------------------------------------------------------===//
+
+// Syntax:
+//   Field access:  lit.ref.struct.ger %s[fieldname] : <@Struct, mut l> -> T
+//   Index access:  lit.ref.struct.ger %s[idx 0] : <@Struct, mut l> -> T
+//   Parametric:    lit.ref.struct.ger %s[idx I] : <!kgen.param<T>, mut l> -> R
+
+ParseResult RefStructGEROp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand container;
+  Type containerType, resultType;
+
+  // Parse: %container
+  if (parser.parseOperand(container))
     return failure();
-  auto containerRefType = dyn_cast<RefType>(containerType);
-  if (!containerRefType)
-    return p.emitError(loc, "expected '!lit.ref' type in lit.ref.struct.ger");
 
-  // The field type gets wrapped with the same mutability and origin as
-  // the result element.
-  fieldRefType = RefStructGEROp::getReboundFieldType(containerRefType,
-                                                     fieldName, fieldType);
+  // Parse: '[' (field_name | 'idx' index) ']'
+  if (parser.parseLSquare())
+    return failure();
+
+  StringAttr fieldAttr;
+  TypedAttr indexAttr;
+  bool alreadyParsedRSquare = false;
+
+  // Check if this is index access (starts with 'idx' keyword followed by a
+  // value). We need to be careful here because 'idx' could also be a field name
+  // (e.g., struct IntTupleIter has a field named 'idx').
+  //
+  // Index access syntax: [idx VALUE]  - 'idx' keyword followed by index value
+  // Field name access:   [idx]        - field named 'idx' (no value after)
+  //                      [fieldname]  - any other field name
+  //
+  // To disambiguate: if we see 'idx' followed immediately by ']', it's a field
+  // name. Otherwise, it's the keyword for index access.
+  if (parser.parseOptionalKeyword("idx").succeeded()) {
+    // Check if next token is ']' - if so, this is field name 'idx', not keyword
+    if (parser.parseOptionalRSquare().succeeded()) {
+      // Followed by ']', so 'idx' is a field name
+      fieldAttr = parser.getBuilder().getStringAttr("idx");
+      result.addAttribute("field", fieldAttr);
+      alreadyParsedRSquare = true;
+    } else {
+      // Not followed by ']', so this is index access - parse the index value
+      if (parseIndexParamValue(parser, indexAttr))
+        return failure();
+      result.addAttribute("index", indexAttr);
+    }
+  } else {
+    // Parse field name as identifier
+    StringRef fieldName;
+    if (parser.parseKeyword(&fieldName))
+      return failure();
+    fieldAttr = parser.getBuilder().getStringAttr(fieldName);
+    result.addAttribute("field", fieldAttr);
+  }
+
+  // Parse ']' if we haven't already consumed it
+  if (!alreadyParsedRSquare) {
+    if (parser.parseRSquare())
+      return failure();
+  }
+
+  // Parse optional attributes
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return failure();
+
+  // Parse: ':' container_type '->' result_type
+  if (parser.parseColon())
+    return failure();
+
+  containerType = RefType::parse(parser);
+  if (!containerType)
+    return failure();
+
+  if (parser.parseArrow())
+    return failure();
+
+  // For field access, result type is just the element type (origin is computed)
+  // For index access, result type is the full ref type
+  if (fieldAttr) {
+    Type fieldType;
+    if (parseParamType(parser, fieldType))
+      return failure();
+
+    auto containerRefType = cast<RefType>(containerType);
+    resultType = RefStructGEROp::getReboundFieldType(containerRefType,
+                                                     fieldAttr, fieldType);
+  } else {
+    resultType = RefType::parse(parser);
+    if (!resultType)
+      return failure();
+  }
+
+  // Resolve operand and add result type
+  if (parser.resolveOperand(container, containerType, result.operands))
+    return failure();
+  result.addTypes(resultType);
+
   return success();
 }
 
-static void printStructGERTypes(AsmPrinter &p, Operation *,
-                                RefType containerType, RefType fieldType,
-                                StringAttr fieldName) {
-  containerType.print(p);
+void RefStructGEROp::print(OpAsmPrinter &p) {
+  p << " " << getContainer() << "[";
+
+  if (usesFieldAccess()) {
+    // Field name access: print as identifier
+    p << *getField();
+  } else {
+    // Index access: print with 'idx' keyword
+    p << "idx ";
+    printIndexParamValue(p, *getIndex());
+  }
+
+  p << "]";
+
+  // Print optional attributes (excluding field and index which are handled
+  // above)
+  SmallVector<StringRef> elidedAttrs = {"field", "index"};
+  p.printOptionalAttrDict((*this)->getAttrs(), elidedAttrs);
+
+  // Print: ':' container_type '->' result_type
+  p << " : ";
+  getContainer().getType().print(p);
   p << " -> ";
-  if (auto refType = dyn_cast<RefType>(fieldType))
-    printParamType(p, refType.getElementType());
-  else {
-    p << "<<ERROR NOT REF CONTAINER>>";
-    p.printType(fieldType);
+
+  if (usesFieldAccess()) {
+    // For field access, print just the element type
+    printParamType(p, getType().getElementType());
+  } else {
+    // For index access, print the full ref type
+    getType().print(p);
   }
 }
 

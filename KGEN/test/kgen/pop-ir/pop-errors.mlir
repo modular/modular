@@ -203,7 +203,7 @@ kgen.generator @pack_attr<Ts: variadic<i32>>() {
 // -----
 
 kgen.func @struct_gep_type(%a: !kgen.pointer<struct<(i32)>>) {
-  // expected-error @below {{'kgen.struct.gep' op element index 1 out of bounds (>=1)}}
+  // expected-error @below {{'kgen.struct.gep' op struct field index 1 is out of bounds for struct with 1 elements}}
   %0 = "kgen.struct.gep"(%a) { index = 1 : index } : (!kgen.pointer<struct<(i32)>>) -> !kgen.pointer<i32>
   kgen.return
 }
@@ -211,7 +211,7 @@ kgen.func @struct_gep_type(%a: !kgen.pointer<struct<(i32)>>) {
 // -----
 
 kgen.func @struct_gep_type(%a: !kgen.pointer<struct<(i32)>>) {
-  // expected-error @below {{'kgen.struct.gep' op result type 'i64' does not match struct element type at index 0: 'i32'}}
+  // expected-error @below {{'kgen.struct.gep' op result element type 'i64' does not match struct element type 'i32' at index 0}}
   %0 = "kgen.struct.gep"(%a) { index = 0 : index } : (!kgen.pointer<struct<(i32)>>) -> !kgen.pointer<i64>
   kgen.return
 }

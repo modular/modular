@@ -916,11 +916,11 @@ struct ConvertKGENStructGEP : ConvertPOPToLLVMPattern<StructGEPOp> {
     Type elementType = convertType(ptrType.getElementType());
     if (!elementType)
       return op.emitError("failed to convert result type");
+    auto indexAttr = cast<IntegerAttr>(op.getIndex());
     LLVM::LLVMPointerType opaquePtr = LLVM::LLVMPointerType::get(getContext());
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, opaquePtr, elementType, adaptor.getContainer(),
-        ArrayRef<LLVM::GEPArg>{
-            0, static_cast<int32_t>(op.getIndexAttr().getInt())});
+        ArrayRef<LLVM::GEPArg>{0, static_cast<int32_t>(indexAttr.getInt())});
     return success();
   }
 };

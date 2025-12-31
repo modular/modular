@@ -844,7 +844,7 @@ kgen.func @coroutine(%arg1: index) async -> index {
   // CHECK-NEXT: pop.store [[ARG]], [[SLOT]] : !kgen.pointer<index>
   %0 = pop.stack_allocation 1 x !kgen.struct<(index, index)> marked
   pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<struct<(index, index)>>
-  %1 = kgen.struct.gep %0[1] : !kgen.pointer<struct<(index,index)>>
+  %1 = kgen.struct.gep %0[1] : <struct<(index, index)>>
   pop.store %arg1, %1 : !kgen.pointer<index>
   co.suspend (%hdl) {
     co.suspend.end
@@ -1346,7 +1346,7 @@ kgen.func @missing_markers(%arg1: index, %arg2: i1) async -> index {
   // CHECK-NEXT: [[STACK_ALLOC:%.*]] = kgen.struct.gep %arg0[[[#FRAME7:]]]
   // CHECK-NEXT: [[V2:%.*]] = kgen.struct.gep [[STACK_ALLOC]][1] : <struct<(index, index)>>
   %0 = pop.stack_allocation 1 x !kgen.struct<(index, index)>
-  %1 = kgen.struct.gep %0[1] : !kgen.pointer<struct<(index,index)>>
+  %1 = kgen.struct.gep %0[1] : <struct<(index, index)>>
   // CHECK: hlcf.if
   hlcf.if %arg2 {
     // CHECK-NEXT: [[V12:%.*]] = pop.stack_allocation 1 x index
