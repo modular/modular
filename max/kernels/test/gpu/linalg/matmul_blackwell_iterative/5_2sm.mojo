@@ -28,7 +28,9 @@ from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from internal_utils import assert_almost_equal
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,

@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from os import abort
 
 from python import PythonObject
@@ -62,7 +64,7 @@ fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
 
     print("Hello from mojo_incr_np_array")
 
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[dtype], **_](
+    var py_array_object_ptr = LegacyUnsafePointer[PyArrayObject[dtype], **_](
         unchecked_downcast_value=py_array_object
     )
 

@@ -29,7 +29,9 @@ from benchmark import (
 from buffer import NDBuffer
 from builtin.range import _StridedRange
 from compile import compile_info
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 fn apply[

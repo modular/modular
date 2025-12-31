@@ -477,6 +477,16 @@ what we publish.
 - The `iter.peekable` function has been added. This allows users to peek at
   the next element of an iterator without advancing it.
 
+- The "LegacyUnsafePointer" type has been changed to take its mutability as a
+  first inferred parameter without a default, rather than a later explicit
+  parameter with a default value of true. We recommend moving off of this type
+  as soon as possible, but to roughly emulate the prior behavior, try out:
+
+  ```mojo
+  from memory import LegacyUnsafePointer
+  comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+  ```
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain

@@ -19,10 +19,12 @@ from algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
 from memory import (
-    LegacyUnsafePointer as UnsafePointer,
+    LegacyUnsafePointer,
     memcpy,
     stack_allocation,
 )
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from register import register_internal
 
 from utils.index import Index, IndexList

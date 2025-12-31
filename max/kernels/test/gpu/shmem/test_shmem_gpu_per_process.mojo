@@ -24,7 +24,9 @@ mpirun.
 # RUN: %mpirun -n $NUM_GPUS %t
 
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from os.path import dirname
 from pathlib import Path
 from shmem import *

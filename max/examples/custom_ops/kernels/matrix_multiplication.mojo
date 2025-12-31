@@ -913,7 +913,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
             gpu_ctx.enqueue_memset(
                 DeviceBuffer[output.dtype](
                     gpu_ctx,
-                    rebind[LegacyUnsafePointer[Scalar[output.dtype]]](
+                    rebind[LegacyUnsafePointer[mut=True, Scalar[output.dtype]]](
                         out_layout.ptr
                     ),
                     M * N,

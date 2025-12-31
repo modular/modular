@@ -16,9 +16,13 @@ from math import ceildiv
 from math.constants import log2e
 from memory import (
     bitcast,
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
 )
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from sys import size_of
 
 import gpu.warp as warp

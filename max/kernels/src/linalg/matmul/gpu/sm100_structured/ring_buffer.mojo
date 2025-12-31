@@ -29,7 +29,9 @@ Usage:
             mma_tiles(tiles)  # Access tiles.a_tiles[stage * k_group + j]
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 from layout import LayoutTensor
 from layout.tma_async import PipelineState, SharedMemBarrier

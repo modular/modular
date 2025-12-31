@@ -21,7 +21,9 @@ from sys.intrinsics import PrefetchOptions
 from algorithm.functional import tile
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from utils.index import IndexList
 
 
@@ -1205,7 +1207,7 @@ fn _simd_load_maybe_partial[
 fn _simd_store_maybe_partial[
     dt: DType, //, simd_width: Int, partial_store: Bool
 ](
-    ptr: UnsafePointer[Scalar[dt], mut=True, **_],
+    ptr: UnsafePointer[Scalar[dt], **_],
     offset: Int,
     vec: SIMD[dt, simd_width],
     partial_store_size: OptionalReg[Int] = None,

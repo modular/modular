@@ -14,7 +14,9 @@
 from internal_utils import correlation, kl_div
 from internal_utils._testing import _assert_with_measure_impl
 from itertools import product
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_almost_equal
 
 
@@ -28,8 +30,8 @@ fn test_assert_with_custom_measure() raises:
     fn always_zero[
         dtype: DType
     ](
-        lhs: UnsafePointer[Scalar[dtype], mut=False],
-        rhs: UnsafePointer[Scalar[dtype], mut=False],
+        lhs: LegacyUnsafePointer[mut=False, Scalar[dtype]],
+        rhs: LegacyUnsafePointer[mut=False, Scalar[dtype]],
         n: Int,
     ) -> Float64:
         return 0

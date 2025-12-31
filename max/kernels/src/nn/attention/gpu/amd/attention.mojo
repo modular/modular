@@ -14,7 +14,9 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import size_of, simd_width_of
 from sys.info import _cdna_4_or_newer
 from sys.intrinsics import _type_is_eq

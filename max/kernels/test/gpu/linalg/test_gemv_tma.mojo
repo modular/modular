@@ -13,7 +13,9 @@
 
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from random import rand
 from sys import argv, size_of
 
@@ -85,8 +87,12 @@ fn gemv_tma_kernel[
 
     comptime b_smem_layout = Layout.row_major(Int(BLOCK_SIZE_K))
 
-    var descriptor_a_ptr = UnsafePointer(to=descriptor_a).bitcast[NoneType]()
-    var descriptor_b_ptr = UnsafePointer(to=descriptor_b).bitcast[NoneType]()
+    var descriptor_a_ptr = LegacyUnsafePointer(to=descriptor_a).bitcast[
+        NoneType
+    ]()
+    var descriptor_b_ptr = LegacyUnsafePointer(to=descriptor_b).bitcast[
+        NoneType
+    ]()
 
     var a_smem_base = rebind[
         UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED]
@@ -173,7 +179,7 @@ fn gemv_tma_kernel[
             ](
                 a_smem.next(stage)[].ptr,
                 descriptor_a_ptr,
-                UnsafePointer(to=tma_mbar[stage]),
+                LegacyUnsafePointer(to=tma_mbar[stage]),
                 Index(UInt(col_offset), block_row),
             )
             cp_async_bulk_tensor_shared_cluster_global[
@@ -183,7 +189,7 @@ fn gemv_tma_kernel[
             ](
                 b_smem.next(stage)[].ptr,
                 descriptor_b_ptr,
-                UnsafePointer(to=tma_mbar[stage]),
+                LegacyUnsafePointer(to=tma_mbar[stage]),
                 Index(UInt(col_offset)),
             )
             producer_phase.step()

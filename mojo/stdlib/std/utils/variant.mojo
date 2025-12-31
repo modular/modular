@@ -276,7 +276,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type = __mlir_type.`!kgen.pointer<scalar<ui8>>`
         ](ptr)
-        return UnsafePointer(discr_ptr).bitcast[UInt8]()[]
+        return UnsafePointer[mut=True](discr_ptr).bitcast[UInt8]()[]
 
     @always_inline
     fn take[T: Movable](deinit self) -> T:

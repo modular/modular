@@ -35,7 +35,9 @@ from layout._ndbuffer_stub import (
     vectorize,
 )
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from utils import Index, IndexList, StaticTuple
 
 
@@ -78,7 +80,7 @@ fn print_element[
     rank: Int,
     element_shape: IndexList[rank],
 ](
-    element_ptr: UnsafePointer[Scalar[dtype], mut=False],
+    element_ptr: LegacyUnsafePointer[mut=False, Scalar[dtype]],
     element_layout: ElementLayout[rank, element_shape],
 ):
     var simd_element = SIMD[dtype, element_shape[0] * element_shape[1]](0)

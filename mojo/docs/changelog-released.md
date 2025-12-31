@@ -224,7 +224,7 @@ This version is still a work in progress.
   statement to the beginning of any files relying on the old pointer type:
 
   ```mojo
-  from memory import LegacyUnsafePointer as UnsafePointer
+  from memory import LegacyUnsafePointer as UnsafePointer, **_]
   # and/or if you use OpaquePointer
   from memory import LegacyOpaquePointer as OpaquePointer
   ```

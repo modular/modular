@@ -27,7 +27,9 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import arg_parse
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from internal_utils._utils import (
     InitializationType,
     ValOrDim,

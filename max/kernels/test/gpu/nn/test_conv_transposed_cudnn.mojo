@@ -14,7 +14,9 @@ from gpu.host import DeviceContext
 from gpu.host.info import Vendor
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import random
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from testing import assert_almost_equal
 

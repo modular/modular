@@ -40,11 +40,12 @@ from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    stack_allocation,
-)
+from memory import stack_allocation, LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+"""Legacy OpaquePointer migration helper."""
+comptime OpaquePointer = UnsafePointer[NoneType, origin=MutAnyOrigin]
+"""Legacy OpaquePointer migration helper."""
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -391,10 +392,9 @@ struct LayoutTensor[
     comptime rank = Self.layout.rank()
     """The number of dimensions in the tensor's layout."""
 
-    var ptr: UnsafePointer[
+    var ptr: LegacyUnsafePointer[
         Scalar[Self.dtype],
         address_space = Self.address_space,
-        mut = Self.mut,
         origin = Self.origin,
     ]
     """Pointer to the underlying memory buffer containing the tensor data.
@@ -538,10 +538,9 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        unsafe_ptr: UnsafePointer[
+        unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
-            mut = Self.mut,
             origin = Self.origin, **_,
         ],
     ):
@@ -570,10 +569,9 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        unsafe_ptr: UnsafePointer[
+        unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
-            mut = Self.mut,
             origin = Self.origin, **_,
         ],
         runtime_layout: RuntimeLayout[Self.layout, **_],
@@ -603,10 +601,9 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        unsafe_ptr: UnsafePointer[
+        unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
-            mut = Self.mut,
             origin = Self.origin, **_,
         ],
         runtime_layout: RuntimeLayout[Self.layout, **_],
@@ -8073,10 +8070,9 @@ struct LayoutTensorIter[
     ]
     """The unsigned integer type used for indexing into memory."""
 
-    var ptr: UnsafePointer[
+    var ptr: LegacyUnsafePointer[
         Scalar[Self.dtype],
         address_space = Self.address_space,
-        mut = Self.mut,
         origin = Self.origin,
     ]
     """Pointer to the memory region being iterated, with appropriate type and memory attributes."""
@@ -8131,10 +8127,9 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[
+        ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
-            mut = Self.mut,
             origin = Self.origin,
         ],
         bound: Self.linear_uint_type,
@@ -8176,10 +8171,9 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[
+        ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
-            mut = Self.mut,
             origin = Self.origin,
         ],
         bound: Self.linear_uint_type,

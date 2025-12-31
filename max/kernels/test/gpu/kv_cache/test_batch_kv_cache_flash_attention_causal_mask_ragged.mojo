@@ -14,7 +14,9 @@
 from collections import OptionalReg, Set
 from math import rsqrt
 from memory import memcpy
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from random import random_ui64, seed
 
 from gpu.host import DeviceContext

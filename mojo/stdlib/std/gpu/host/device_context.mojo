@@ -782,7 +782,9 @@ struct DeviceBuffer[dtype: DType](
     """
 
     # Implementation of `DevicePassable`
-    comptime device_type: AnyType = LegacyUnsafePointer[Scalar[Self.dtype]]
+    comptime device_type: AnyType = LegacyUnsafePointer[
+        mut=True, Scalar[Self.dtype]
+    ]
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
@@ -2017,7 +2019,7 @@ struct DeviceFunction[
                 _DeviceFunctionPtr,
                 _ConstCharPtr,
                 _SizeT,
-                OpaquePointer[MutAnyOrigin],
+                OpaquePointer[ImmutAnyOrigin],
                 _SizeT,
             ](
                 self._handle,

@@ -18,7 +18,9 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import LegacyUnsafePointer as UnsafePointer, memcpy
+from memory import LegacyUnsafePointer, memcpy
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,

@@ -18,7 +18,9 @@ from math import exp2
 import testing
 from buffer import NDBuffer
 from builtin._location import __call_location, _SourceLocation
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing.testing import _assert_cmp_error
 
 from utils.numerics import FPUtils
@@ -111,8 +113,8 @@ fn _assert_with_measure_impl[
     dtype: DType,
     //,
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype], mut=False],
-        UnsafePointer[Scalar[dtype], mut=False],
+        LegacyUnsafePointer[mut=False, Scalar[dtype]],
+        LegacyUnsafePointer[mut=False, Scalar[dtype]],
         Int,
     ) -> Float64,
 ](
@@ -145,8 +147,8 @@ fn _assert_with_measure_impl[
 @always_inline
 fn assert_with_measure[
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype], mut=False],
-        UnsafePointer[Scalar[dtype], mut=False],
+        LegacyUnsafePointer[mut=False, Scalar[dtype]],
+        LegacyUnsafePointer[mut=False, Scalar[dtype]],
         Int,
     ) -> Float64,
 ](

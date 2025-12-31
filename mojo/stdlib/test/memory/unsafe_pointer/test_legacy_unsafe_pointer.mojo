@@ -30,9 +30,9 @@ def test_unsafepointer_of_move_only_type():
     var actions = List[String]()
     var actions_ptr = LegacyUnsafePointer(to=actions).as_immutable()
 
-    var ptr = LegacyUnsafePointer[ObservableMoveOnly[actions_ptr.origin]].alloc(
-        1
-    )
+    var ptr = LegacyUnsafePointer[
+        mut=True, ObservableMoveOnly[actions_ptr.origin]
+    ].alloc(1)
     ptr.init_pointee_move(ObservableMoveOnly(42, actions_ptr))
     assert_equal(len(actions_ptr[0]), 2)
     assert_equal(actions_ptr[0][0], "__init__")
@@ -54,7 +54,7 @@ def test_unsafepointer_of_move_only_type():
 
 
 def test_unsafepointer_move_pointee_move_count():
-    var ptr = LegacyUnsafePointer[MoveCounter[Int]].alloc(1)
+    var ptr = LegacyUnsafePointer[mut=True, MoveCounter[Int]].alloc(1)
 
     var value = MoveCounter(5)
     assert_equal(0, value.move_count)
@@ -66,14 +66,14 @@ def test_unsafepointer_move_pointee_move_count():
 
     assert_equal(1, ptr[].move_count)
 
-    var ptr_2 = LegacyUnsafePointer[MoveCounter[Int]].alloc(1)
+    var ptr_2 = LegacyUnsafePointer[mut=True, MoveCounter[Int]].alloc(1)
     ptr_2.init_pointee_move_from(ptr)
 
     assert_equal(2, ptr_2[].move_count)
 
 
 def test_unsafepointer_init_pointee_copy():
-    var ptr = LegacyUnsafePointer[ExplicitCopyOnly].alloc(1)
+    var ptr = LegacyUnsafePointer[mut=True, ExplicitCopyOnly].alloc(1)
 
     var orig = ExplicitCopyOnly(5)
     assert_equal(orig.copy_count, 0)
@@ -86,7 +86,7 @@ def test_unsafepointer_init_pointee_copy():
 
 
 def test_refitem():
-    var ptr = LegacyUnsafePointer[Int].alloc(1)
+    var ptr = LegacyUnsafePointer[mut=True, Int].alloc(1)
     ptr[0] = 0
     ptr[] += 1
     assert_equal(ptr[], 1)
@@ -94,7 +94,7 @@ def test_refitem():
 
 
 def test_refitem_offset():
-    var ptr = LegacyUnsafePointer[Int].alloc(5)
+    var ptr = LegacyUnsafePointer[mut=True, Int].alloc(5)
     for i in range(5):
         ptr[i] = i
     for i in range(5):
@@ -104,7 +104,7 @@ def test_refitem_offset():
 
 def test_address_of():
     var local = 1
-    assert_not_equal(0, Int(LegacyUnsafePointer[Int](to=local)))
+    assert_not_equal(0, Int(LegacyUnsafePointer[mut=True, Int](to=local)))
     _ = local
 
 
@@ -115,7 +115,7 @@ def test_pointer_to():
 
 def test_explicit_copy_of_pointer_address():
     var local = 1
-    var ptr = LegacyUnsafePointer[Int](to=local)
+    var ptr = LegacyUnsafePointer[mut=True, Int](to=local)
     var copy = LegacyUnsafePointer(other=ptr)
     assert_equal(Int(ptr), Int(copy))
     _ = local
@@ -123,7 +123,7 @@ def test_explicit_copy_of_pointer_address():
 
 def test_bitcast():
     var local = 1
-    var ptr = LegacyUnsafePointer[Int](to=local)
+    var ptr = LegacyUnsafePointer[mut=True, Int](to=local)
     var aliased_ptr = ptr.bitcast[SIMD[DType.uint8, 4]]()
 
     assert_equal(Int(ptr), Int(ptr.bitcast[Int]()))
@@ -134,10 +134,10 @@ def test_bitcast():
 
 
 def test_unsafepointer_string():
-    var nullptr = LegacyUnsafePointer[Int]()
+    var nullptr = LegacyUnsafePointer[mut=True, Int]()
     assert_equal(String(nullptr), "0x0")
 
-    var ptr = LegacyUnsafePointer[Int].alloc(1)
+    var ptr = LegacyUnsafePointer[mut=True, Int].alloc(1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
     ptr.free()
@@ -161,7 +161,7 @@ def test_eq():
 
 
 def test_comparisons():
-    var p1 = LegacyUnsafePointer[Int].alloc(1)
+    var p1 = LegacyUnsafePointer[mut=True, Int].alloc(1)
 
     assert_true((p1 - 1) < p1)
     assert_true((p1 - 1) <= p1)
@@ -174,30 +174,38 @@ def test_comparisons():
 
 
 def test_unsafepointer_address_space():
-    var p1 = LegacyUnsafePointer[Int, address_space = AddressSpace(0)].alloc(1)
+    var p1 = LegacyUnsafePointer[
+        mut=True, Int, address_space = AddressSpace(0)
+    ].alloc(1)
     p1.free()
 
     var p2 = LegacyUnsafePointer[
-        Int, address_space = AddressSpace.GENERIC
+        mut=True, Int, address_space = AddressSpace.GENERIC
     ].alloc(1)
     p2.free()
 
 
 def test_unsafepointer_aligned_alloc():
     comptime alignment_1 = 32
-    var ptr = LegacyUnsafePointer[UInt8].alloc(1, alignment=alignment_1)
+    var ptr = LegacyUnsafePointer[mut=True, UInt8].alloc(
+        1, alignment=alignment_1
+    )
     var ptr_uint64 = UInt64(Int(ptr))
     ptr.free()
     assert_equal(ptr_uint64 % alignment_1, 0)
 
     comptime alignment_2 = 64
-    var ptr_2 = LegacyUnsafePointer[UInt8].alloc(1, alignment=alignment_2)
+    var ptr_2 = LegacyUnsafePointer[mut=True, UInt8].alloc(
+        1, alignment=alignment_2
+    )
     var ptr_uint64_2 = UInt64(Int(ptr_2))
     ptr_2.free()
     assert_equal(ptr_uint64_2 % alignment_2, 0)
 
     comptime alignment_3 = 128
-    var ptr_3 = LegacyUnsafePointer[UInt8].alloc(1, alignment=alignment_3)
+    var ptr_3 = LegacyUnsafePointer[mut=True, UInt8].alloc(
+        1, alignment=alignment_3
+    )
     var ptr_uint64_3 = UInt64(Int(ptr_3))
     ptr_3.free()
     assert_equal(ptr_uint64_3 % alignment_3, 0)
@@ -213,7 +221,7 @@ def test_unsafepointer_alloc_origin():
     var did_del_1 = False
 
     # Allocate pointer with MutAnyOrigin.
-    var ptr_1 = LegacyUnsafePointer[Int].alloc(1).as_any_origin()
+    var ptr_1 = LegacyUnsafePointer[mut=True, Int].alloc(1).as_any_origin()
 
     var obj_1 = ObservableDel(LegacyUnsafePointer(to=did_del_1))
 
@@ -232,7 +240,7 @@ def test_unsafepointer_alloc_origin():
     var did_del_2 = False
 
     # Allocate pointer with empty origin.
-    var ptr_2 = LegacyUnsafePointer[Int].alloc(1)
+    var ptr_2 = LegacyUnsafePointer[mut=True, Int].alloc(1)
 
     # Note: Set ObservableDel origin explicitly since it otherwise contains a
     #   MutAnyOrigin pointer that interferes with this test.
@@ -258,7 +266,7 @@ def test_unsafepointer_alloc_origin():
 
 
 def test_indexing():
-    var ptr = LegacyUnsafePointer[Int].alloc(4)
+    var ptr = LegacyUnsafePointer[mut=True, Int].alloc(4)
     for i in range(4):
         ptr[i] = i
 
@@ -269,7 +277,7 @@ def test_indexing():
 
 
 def test_indexing_simd():
-    var ptr = LegacyUnsafePointer[Int].alloc(4)
+    var ptr = LegacyUnsafePointer[mut=True, Int].alloc(4)
     for i in range(4):
         ptr[UInt8(i)] = i
 
@@ -294,8 +302,8 @@ def test_indexing_simd():
 
 
 def test_bool():
-    var nullptr = LegacyUnsafePointer[Int]()
-    var ptr = LegacyUnsafePointer[Int].alloc(1)
+    var nullptr = LegacyUnsafePointer[mut=True, Int]()
+    var ptr = LegacyUnsafePointer[mut=True, Int].alloc(1)
 
     assert_true(ptr.__bool__())
     assert_false(nullptr.__bool__())
@@ -304,17 +312,17 @@ def test_bool():
 
 
 def test_alignment():
-    var ptr = LegacyUnsafePointer[Int64].alloc(8, alignment=64)
+    var ptr = LegacyUnsafePointer[mut=True, Int64].alloc(8, alignment=64)
     assert_equal(Int(ptr) % 64, 0)
     ptr.free()
 
-    var ptr_2 = LegacyUnsafePointer[UInt8].alloc(32, alignment=32)
+    var ptr_2 = LegacyUnsafePointer[mut=True, UInt8].alloc(32, alignment=32)
     assert_equal(Int(ptr_2) % 32, 0)
     ptr_2.free()
 
 
 def test_offset():
-    var ptr = LegacyUnsafePointer[Int].alloc(5)
+    var ptr = LegacyUnsafePointer[mut=True, Int].alloc(5)
     for i in range(5):
         ptr[i] = i
     var x = UInt(3)
@@ -322,7 +330,7 @@ def test_offset():
     assert_equal(ptr.offset(x)[], 3)
     assert_equal(ptr.offset(y)[], 4)
 
-    var ptr2 = LegacyUnsafePointer[Int].alloc(5)
+    var ptr2 = LegacyUnsafePointer[mut=True, Int].alloc(5)
     var ptr3 = ptr2
     ptr2 += UInt(3)
     assert_equal(ptr2, ptr3.offset(3))
@@ -336,7 +344,7 @@ def test_offset():
 
 
 def test_load_and_store_simd():
-    var ptr = LegacyUnsafePointer[Int8].alloc(16)
+    var ptr = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(16):
         ptr[i] = i
     for i in range(0, 16, 4):
@@ -344,7 +352,7 @@ def test_load_and_store_simd():
         assert_equal(vec, SIMD[DType.int8, 4](i, i + 1, i + 2, i + 3))
     ptr.free()
 
-    var ptr2 = LegacyUnsafePointer[Int8].alloc(16)
+    var ptr2 = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(0, 16, 4):
         ptr2.store(i, SIMD[DType.int8, 4](i))
     for i in range(16):
@@ -353,7 +361,7 @@ def test_load_and_store_simd():
 
 
 def test_volatile_load_and_store_simd():
-    var ptr = LegacyUnsafePointer[Int8].alloc(16)
+    var ptr = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(16):
         ptr[i] = i
     for i in range(0, 16, 4):
@@ -361,7 +369,7 @@ def test_volatile_load_and_store_simd():
         assert_equal(vec, SIMD[DType.int8, 4](i, i + 1, i + 2, i + 3))
     ptr.free()
 
-    var ptr2 = LegacyUnsafePointer[Int8].alloc(16)
+    var ptr2 = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(0, 16, 4):
         ptr2.store[volatile=True](i, SIMD[DType.int8, 4](i))
     for i in range(16):

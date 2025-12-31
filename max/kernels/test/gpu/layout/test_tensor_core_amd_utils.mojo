@@ -18,7 +18,9 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout.tensor_core import TensorCore
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from utils.index import Index, IndexList
 
 comptime fp8_dtype = (

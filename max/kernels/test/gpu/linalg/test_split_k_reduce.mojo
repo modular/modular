@@ -19,7 +19,9 @@ from gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.layout import UNKNOWN_VALUE
 from linalg.matmul.gpu import split_k_reduce
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_almost_equal
 
 from utils import IndexList

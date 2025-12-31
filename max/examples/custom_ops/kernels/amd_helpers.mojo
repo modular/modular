@@ -567,9 +567,9 @@ fn compare_equal[
     gpu_ctx.enqueue_memset(
         DeviceBuffer[max_relative_error.dtype](
             gpu_ctx,
-            rebind[LegacyUnsafePointer[Scalar[max_relative_error.dtype]]](
-                max_relative_error.ptr
-            ),
+            rebind[
+                LegacyUnsafePointer[mut=True, Scalar[max_relative_error.dtype]]
+            ](max_relative_error.ptr),
             m * n,
             owning=False,
         ),

@@ -13,7 +13,9 @@
 
 from collections import OptionalReg
 from math import ceildiv, exp, iota
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import align_of, simd_width_of, size_of, env_get_bool
 
 import gpu.warp as warp
