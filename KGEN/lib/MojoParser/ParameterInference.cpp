@@ -665,12 +665,13 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         IREmitter emitter(declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
         ASTExprAnd<CValue> toConvert = {actualAttr, node};
-        // We should have ensured type convertibility
-        assert(IREmitter::canImplicitlyConvertToType(toConvert, expectedType,
-                                                     emitter.getDeclScope()) &&
-               "Unconvertible parameter should have been detected");
         actualAttr =
             emitter.emitPValue(toConvert, EC_TypeParamValue, expectedType);
+        // FIXME: Figure out why this is happening in invalid code.  Something
+        // else not propagating failures aggressively?
+        if (!actualAttr)
+          return failure();
+
         assert(actualAttr && "Already checked implicit convertibility");
         assert(isEqualCanon(actualAttr.getType(), expectedType));
       }

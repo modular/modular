@@ -25,7 +25,7 @@ import .test
       `
 alias Value = 10
 
-fn foo(a: LegacyUnsafePointer[Float32]) -> Float32:
+fn foo(a: LegacyUnsafePointer[mut=True, Float32]) -> Float32:
   var variable = 15
   fn inner_fn():
     return

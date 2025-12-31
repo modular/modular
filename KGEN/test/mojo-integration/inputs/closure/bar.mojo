@@ -5,7 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 @no_inline

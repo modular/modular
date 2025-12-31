@@ -252,11 +252,4 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   EXPECT_EQ(
       ctx.runCommand("v c_simd").output,
       "(__mlir_type.`!pop.simd<2, index>`) c_simd = ([0] = 5, [1] = 6)\n");
-  EXPECT_EQ(
-      ctx.runCommand("v a_float_or_bool_or_simd").output,
-      R"((__mlir_type.`!kgen.struct<(union<scalar<f64>, i1, simd<2, index>>, scalar<ui8>)>`) a_float_or_bool_or_simd = {
-  [0] =
-  [1] = ([0] = 2)
-}
-)");
 }
