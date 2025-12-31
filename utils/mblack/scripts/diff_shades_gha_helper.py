@@ -50,7 +50,9 @@ DOCS_URL: Final = (
     "https://black.readthedocs.io/en/latest/"
     "contributing/gauging_changes.html#diff-shades"
 )
-USER_AGENT: Final = f"psf/black diff-shades workflow via urllib3/{urllib3.__version__}"
+USER_AGENT: Final = (
+    f"psf/black diff-shades workflow via urllib3/{urllib3.__version__}"
+)
 SHA_LENGTH: Final = 10
 GH_API_TOKEN: Final = os.getenv("GITHUB_TOKEN")
 REPO: Final = os.getenv("GITHUB_REPOSITORY", default="psf/black")
@@ -121,7 +123,9 @@ def config(event: Literal["push", "pull_request"]) -> None:
     import diff_shades
 
     if event == "push":
-        jobs = [{"mode": "preview-changes", "force-flag": "--force-preview-style"}]
+        jobs = [
+            {"mode": "preview-changes", "force-flag": "--force-preview-style"}
+        ]
         # Push on main, let's use PyPI Black as the baseline.
         baseline_name = str(get_pypi_version())
         baseline_cmd = f"git checkout {baseline_name}"
@@ -162,7 +166,9 @@ def config(event: Literal["push", "pull_request"]) -> None:
     pprint.pprint(jobs)
 
 
-@main.command("comment-body", help="Generate the body for a summary PR comment.")
+@main.command(
+    "comment-body", help="Generate the body for a summary PR comment."
+)
 @click.argument("baseline", type=click.Path(exists=True, path_type=Path))
 @click.argument("target", type=click.Path(exists=True, path_type=Path))
 @click.argument("baseline-sha")
@@ -204,10 +210,14 @@ def comment_body(
         json.dump({"body": body, "pr-number": pr_num}, f)
 
 
-@main.command("comment-details", help="Get PR comment resources from a workflow run.")
+@main.command(
+    "comment-details", help="Get PR comment resources from a workflow run."
+)
 @click.argument("run-id")
 def comment_details(run_id: str) -> None:
-    data = http_get(f"https://api.github.com/repos/{REPO}/actions/runs/{run_id}")
+    data = http_get(
+        f"https://api.github.com/repos/{REPO}/actions/runs/{run_id}"
+    )
     if data["event"] != "pull_request" or data["conclusion"] == "cancelled":
         set_output("needs-comment", "false")
         return

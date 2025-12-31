@@ -13,16 +13,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator, TypeVar, Union
+from typing import TypeVar
+
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node, type_repr
 
 from mblack.nodes import Visitor
 from mblack.output import out
 from mblack.parsing import lib2to3_parse
-from mblib2to3.pgen2 import token
-from mblib2to3.pytree import Leaf, Node, type_repr
 
-LN = Union[Leaf, Node]
+LN = Leaf | Node
 T = TypeVar("T")
 
 
@@ -51,7 +53,7 @@ class DebugVisitor(Visitor[T]):
             out(f" {node.value!r}", fg="blue", bold=False)
 
     @classmethod
-    def show(cls, code: Union[str, Leaf, Node]) -> None:
+    def show(cls, code: str | Leaf | Node) -> None:
         """Pretty-print the lib2to3 AST of a given string of `code`.
 
         Convenience method for debugging.

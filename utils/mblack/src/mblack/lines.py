@@ -15,18 +15,16 @@
 
 import itertools
 import sys
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import (
-    Callable,
-    Dict,
-    Iterator,
-    List,
     Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     cast,
 )
+
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 
 from mblack.brackets import DOT_PRIORITY, BracketTracker
 from mblack.mode import Mode, Preview
@@ -45,8 +43,6 @@ from mblack.nodes import (
     syms,
     whitespace,
 )
-from mblib2to3.pgen2 import token
-from mblib2to3.pytree import Leaf, Node
 
 # types
 T = TypeVar("T")
@@ -60,13 +56,13 @@ class Line:
 
     mode: Mode
     depth: int = 0
-    leaves: List[Leaf] = field(default_factory=list)
+    leaves: list[Leaf] = field(default_factory=list)
     # keys ordered like `leaves`
-    comments: Dict[LeafID, List[Leaf]] = field(default_factory=dict)
+    comments: dict[LeafID, list[Leaf]] = field(default_factory=dict)
     bracket_tracker: BracketTracker = field(default_factory=BracketTracker)
     inside_brackets: bool = False
     should_split_rhs: bool = False
-    magic_trailing_comma: Optional[Leaf] = None
+    magic_trailing_comma: Leaf | None = None
 
     def append(
         self,
@@ -127,7 +123,9 @@ class Line:
     @property
     def is_comment(self) -> bool:
         """Is this line a standalone comment?"""
-        return len(self.leaves) == 1 and self.leaves[0].type == STANDALONE_COMMENT
+        return (
+            len(self.leaves) == 1 and self.leaves[0].type == STANDALONE_COMMENT
+        )
 
     @property
     def is_decorator(self) -> bool:
@@ -145,7 +143,8 @@ class Line:
         return bool(self) and (
             (
                 self.leaves[0].type == token.NAME
-                and self.leaves[0].value in ("class", "struct", "trait", "__extension")
+                and self.leaves[0].value
+                in ("class", "struct", "trait", "__extension")
             )
             or self.leaves[0].type == token.STRUCT
             or self.leaves[0].type == token.TRAIT
@@ -168,15 +167,26 @@ class Line:
             return False
 
         try:
-            second_leaf: Optional[Leaf] = self.leaves[1]
+            second_leaf: Leaf | None = self.leaves[1]
         except IndexError:
             second_leaf = None
 
-        leaf_is_def = lambda leaf : leaf.type == token.NAME and leaf.value == "def"
-        return first_leaf.type == token.FN or first_leaf.type == token.MLIR_REGION or leaf_is_def(first_leaf) or (
-            first_leaf.type == token.ASYNC
-            and second_leaf is not None
-            and (second_leaf.type == token.FN or second_leaf.type == token.MLIR_REGION or leaf_is_def(second_leaf))
+        leaf_is_def = (
+            lambda leaf: leaf.type == token.NAME and leaf.value == "def"
+        )
+        return (
+            first_leaf.type == token.FN
+            or first_leaf.type == token.MLIR_REGION
+            or leaf_is_def(first_leaf)
+            or (
+                first_leaf.type == token.ASYNC
+                and second_leaf is not None
+                and (
+                    second_leaf.type == token.FN
+                    or second_leaf.type == token.MLIR_REGION
+                    or leaf_is_def(second_leaf)
+                )
+            )
         )
 
     @property
@@ -211,10 +221,15 @@ class Line:
             return False
         return self.leaves[-1].type == token.COLON
 
-    def contains_standalone_comments(self, depth_limit: int = sys.maxsize) -> bool:
+    def contains_standalone_comments(
+        self, depth_limit: int = sys.maxsize
+    ) -> bool:
         """If so, needs to be split before emitting."""
         for leaf in self.leaves:
-            if leaf.type == STANDALONE_COMMENT and leaf.bracket_depth <= depth_limit:
+            if (
+                leaf.type == STANDALONE_COMMENT
+                and leaf.bracket_depth <= depth_limit
+            ):
                 return True
 
         return False
@@ -272,7 +287,9 @@ class Line:
         # one line in the original code.
 
         # Grab the first and last line numbers, skipping generated leaves
-        first_line = next((leaf.lineno for leaf in self.leaves if leaf.lineno != 0), 0)
+        first_line = next(
+            (leaf.lineno for leaf in self.leaves if leaf.lineno != 0), 0
+        )
         last_line = next(
             (leaf.lineno for leaf in reversed(self.leaves) if leaf.lineno != 0),
             0,
@@ -351,12 +368,12 @@ class Line:
         if self.is_import:
             return True
 
-        if closing.opening_bracket is not None and not is_one_sequence_between(
-            closing.opening_bracket, closing, self.leaves
-        ):
-            return True
-
-        return False
+        return bool(
+            closing.opening_bracket is not None
+            and not is_one_sequence_between(
+                closing.opening_bracket, closing, self.leaves
+            )
+        )
 
     def append_comment(self, comment: Leaf) -> bool:
         """Add an inline or standalone comment to the line."""
@@ -395,7 +412,7 @@ class Line:
         self.comments.setdefault(id(last_leaf), []).append(comment)
         return True
 
-    def comments_after(self, leaf: Leaf) -> List[Leaf]:
+    def comments_after(self, leaf: Leaf) -> list[Leaf]:
         """Generate comments that should appear directly after `leaf`."""
         return self.comments.get(id(leaf), [])
 
@@ -427,13 +444,13 @@ class Line:
 
     def enumerate_with_length(
         self, reversed: bool = False
-    ) -> Iterator[Tuple[Index, Leaf, int]]:
+    ) -> Iterator[tuple[Index, Leaf, int]]:
         """Return an enumeration of leaves with their length.
 
         Stops prematurely on multiline strings and standalone comments.
         """
         op = cast(
-            Callable[[Sequence[Leaf]], Iterator[Tuple[Index, Leaf]]],
+            Callable[[Sequence[Leaf]], Iterator[tuple[Index, Leaf]]],
             enumerate_reversed if reversed else enumerate,
         )
         for index, leaf in op(self.leaves):
@@ -488,13 +505,15 @@ class LinesBlock:
     previous_block: Optional["LinesBlock"]
     original_line: Line
     before: int = 0
-    content_lines: List[str] = field(default_factory=list)
+    content_lines: list[str] = field(default_factory=list)
     after: int = 0
 
-    def all_lines(self) -> List[str]:
+    def all_lines(self) -> list[str]:
         empty_line = str(Line(mode=self.mode))
         return (
-            [empty_line * self.before] + self.content_lines + [empty_line * self.after]
+            [empty_line * self.before]
+            + self.content_lines
+            + [empty_line * self.after]
         )
 
 
@@ -509,10 +528,10 @@ class EmptyLineTracker:
     """
 
     mode: Mode
-    previous_line: Optional[Line] = None
-    previous_block: Optional[LinesBlock] = None
-    previous_defs: List[int] = field(default_factory=list)
-    semantic_leading_comment: Optional[LinesBlock] = None
+    previous_line: Line | None = None
+    previous_block: LinesBlock | None = None
+    previous_defs: list[int] = field(default_factory=list)
+    semantic_leading_comment: LinesBlock | None = None
 
     def maybe_empty_lines(self, current_line: Line) -> LinesBlock:
         """Return the number of extra empty lines before and after the `current_line`.
@@ -525,9 +544,7 @@ class EmptyLineTracker:
         before = (
             # Black should not insert empty lines at the beginning
             # of the file
-            0
-            if self.previous_line is None
-            else before - previous_after
+            0 if self.previous_line is None else before - previous_after
         )
         block = LinesBlock(
             mode=self.mode,
@@ -553,7 +570,7 @@ class EmptyLineTracker:
         self.previous_block = block
         return block
 
-    def _maybe_empty_lines(self, current_line: Line) -> Tuple[int, int]:
+    def _maybe_empty_lines(self, current_line: Line) -> tuple[int, int]:
         max_allowed = 1
         if current_line.depth == 0:
             max_allowed = 1 if self.mode.is_pyi else 2
@@ -569,7 +586,11 @@ class EmptyLineTracker:
         while self.previous_defs and self.previous_defs[-1] >= depth:
             if self.mode.is_pyi:
                 assert self.previous_line is not None
-                if depth and not current_line.is_def and self.previous_line.is_def:
+                if (
+                    depth
+                    and not current_line.is_def
+                    and self.previous_line.is_def
+                ):
                     # Empty lines between attributes and methods should be preserved.
                     before = min(1, before)
                 elif depth:
@@ -599,8 +620,14 @@ class EmptyLineTracker:
                 else:
                     before = 2
             self.previous_defs.pop()
-        if current_line.is_decorator or current_line.is_def or current_line.is_class:
-            return self._maybe_empty_lines_for_class_or_def(current_line, before)
+        if (
+            current_line.is_decorator
+            or current_line.is_def
+            or current_line.is_class
+        ):
+            return self._maybe_empty_lines_for_class_or_def(
+                current_line, before
+            )
 
         if (
             self.previous_line
@@ -627,7 +654,7 @@ class EmptyLineTracker:
 
     def _maybe_empty_lines_for_class_or_def(
         self, current_line: Line, before: int
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         if not current_line.is_decorator:
             self.previous_defs.append(current_line.depth)
         if self.previous_line is None:
@@ -646,7 +673,7 @@ class EmptyLineTracker:
         ):
             return 0, 0
 
-        comment_to_add_newlines: Optional[LinesBlock] = None
+        comment_to_add_newlines: LinesBlock | None = None
         if (
             self.previous_line.is_comment
             and self.previous_line.depth == current_line.depth
@@ -672,7 +699,10 @@ class EmptyLineTracker:
                     newlines = 0
                 elif self.previous_line.depth > current_line.depth:
                     newlines = 1
-                elif current_line.is_stub_class and self.previous_line.is_stub_class:
+                elif (
+                    current_line.is_stub_class
+                    and self.previous_line.is_stub_class
+                ):
                     # No blank line between classes with an empty body
                     newlines = 0
                 else:
@@ -698,13 +728,14 @@ class EmptyLineTracker:
             previous_block = comment_to_add_newlines.previous_block
             if previous_block is not None:
                 comment_to_add_newlines.before = (
-                    max(comment_to_add_newlines.before, newlines) - previous_block.after
+                    max(comment_to_add_newlines.before, newlines)
+                    - previous_block.after
                 )
                 newlines = 0
         return newlines, 0
 
 
-def enumerate_reversed(sequence: Sequence[T]) -> Iterator[Tuple[Index, T]]:
+def enumerate_reversed(sequence: Sequence[T]) -> Iterator[tuple[Index, T]]:
     """Like `reversed(enumerate(sequence))` if that were possible."""
     index = len(sequence) - 1
     for element in reversed(sequence):
@@ -715,7 +746,7 @@ def enumerate_reversed(sequence: Sequence[T]) -> Iterator[Tuple[Index, T]]:
 def append_leaves(
     new_line: Line,
     old_line: Line,
-    leaves: List[Leaf],
+    leaves: list[Leaf],
     preformatted: bool = False,
 ) -> None:
     """
@@ -739,7 +770,9 @@ def append_leaves(
             new_line.append(comment_leaf, preformatted=True)
 
 
-def is_line_short_enough(line: Line, *, line_length: int, line_str: str = "") -> bool:
+def is_line_short_enough(
+    line: Line, *, line_length: int, line_str: str = ""
+) -> bool:
     """Return True if `line` is no longer than `line_length`.
 
     Uses the provided `line_str` rendering, if any, otherwise computes a new one.
@@ -777,7 +810,9 @@ def can_be_split(line: Line) -> bool:
             elif leaf.type == token.DOT:
                 dot_count += 1
             elif leaf.type == token.NAME:
-                if not (next.type == token.DOT or next.type in OPENING_BRACKETS):
+                if not (
+                    next.type == token.DOT or next.type in OPENING_BRACKETS
+                ):
                     return False
 
             elif leaf.type not in CLOSING_BRACKETS:
@@ -856,7 +891,9 @@ def can_omit_invisible_parens(
     return False
 
 
-def _can_omit_opening_paren(line: Line, *, first: Leaf, line_length: int) -> bool:
+def _can_omit_opening_paren(
+    line: Line, *, first: Leaf, line_length: int
+) -> bool:
     """See `can_omit_invisible_parens`."""
     remainder = False
     length = 4 * line.depth
@@ -881,7 +918,9 @@ def _can_omit_opening_paren(line: Line, *, first: Leaf, line_length: int) -> boo
     return False
 
 
-def _can_omit_closing_paren(line: Line, *, last: Leaf, line_length: int) -> bool:
+def _can_omit_closing_paren(
+    line: Line, *, last: Leaf, line_length: int
+) -> bool:
     """See `can_omit_invisible_parens`."""
     length = 4 * line.depth
     seen_other_brackets = False

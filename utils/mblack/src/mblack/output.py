@@ -20,14 +20,14 @@ The double calls are for patching purposes in tests.
 
 import json
 import tempfile
-from typing import Any, Optional
+from typing import Any
 
 from click import echo, style
 from mypy_extensions import mypyc_attr
 
 
 @mypyc_attr(patchable=True)
-def _out(message: Optional[str] = None, nl: bool = True, **styles: Any) -> None:
+def _out(message: str | None = None, nl: bool = True, **styles: Any) -> None:
     if message is not None:
         if "bold" not in styles:
             styles["bold"] = True
@@ -36,7 +36,7 @@ def _out(message: Optional[str] = None, nl: bool = True, **styles: Any) -> None:
 
 
 @mypyc_attr(patchable=True)
-def _err(message: Optional[str] = None, nl: bool = True, **styles: Any) -> None:
+def _err(message: str | None = None, nl: bool = True, **styles: Any) -> None:
     if message is not None:
         if "fg" not in styles:
             styles["fg"] = "red"
@@ -45,11 +45,11 @@ def _err(message: Optional[str] = None, nl: bool = True, **styles: Any) -> None:
 
 
 @mypyc_attr(patchable=True)
-def out(message: Optional[str] = None, nl: bool = True, **styles: Any) -> None:
+def out(message: str | None = None, nl: bool = True, **styles: Any) -> None:
     _out(message, nl=nl, **styles)
 
 
-def err(message: Optional[str] = None, nl: bool = True, **styles: Any) -> None:
+def err(message: str | None = None, nl: bool = True, **styles: Any) -> None:
     _err(message, nl=nl, **styles)
 
 

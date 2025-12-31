@@ -14,9 +14,13 @@
 # ===----------------------------------------------------------------------=== #
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Final, Iterator, List, Optional, Union
+from typing import Final
+
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 
 from mblack.nodes import (
     CLOSING_BRACKETS,
@@ -27,11 +31,9 @@ from mblack.nodes import (
     preceding_leaf,
     syms,
 )
-from mblib2to3.pgen2 import token
-from mblib2to3.pytree import Leaf, Node
 
 # types
-LN = Union[Leaf, Node]
+LN = Leaf | Node
 
 FMT_OFF: Final = {"# fmt: off", "# fmt:off", "# yapf: disable"}
 FMT_SKIP: Final = {"# fmt: skip", "# fmt:skip"}
@@ -56,7 +58,9 @@ class ProtoComment:
     type: int  # token.COMMENT or STANDALONE_COMMENT
     value: str  # content of the comment
     newlines: int  # how many newlines before the comment
-    consumed: int  # how many characters of the original leaf's prefix did we consume
+    consumed: (
+        int  # how many characters of the original leaf's prefix did we consume
+    )
 
 
 def generate_comments(leaf: LN, *, preview: bool) -> Iterator[Leaf]:
@@ -87,9 +91,9 @@ def generate_comments(leaf: LN, *, preview: bool) -> Iterator[Leaf]:
 @lru_cache(maxsize=4096)
 def list_comments(
     prefix: str, *, is_endmarker: bool, preview: bool
-) -> List[ProtoComment]:
+) -> list[ProtoComment]:
     """Return a list of :class:`ProtoComment` objects parsed from the given `prefix`."""
-    result: List[ProtoComment] = []
+    result: list[ProtoComment] = []
     if not prefix or "#" not in prefix:
         return result
 
@@ -140,7 +144,7 @@ def make_comment(content: str, *, preview: bool) -> str:
 
     if content[0] == "#":
         content = content[1:]
-    NON_BREAKING_SPACE = " "
+    NON_BREAKING_SPACE = " "  # noqa: RUF001
     if (
         content
         and content[0] == NON_BREAKING_SPACE
@@ -166,7 +170,9 @@ def convert_one_fmt_off_pair(node: Node, *, preview: bool) -> bool:
     """
     for leaf in node.leaves():
         previous_consumed = 0
-        for comment in list_comments(leaf.prefix, is_endmarker=False, preview=preview):
+        for comment in list_comments(
+            leaf.prefix, is_endmarker=False, preview=preview
+        ):
             if comment.value not in FMT_PASS:
                 previous_consumed = comment.consumed
                 continue
@@ -181,7 +187,9 @@ def convert_one_fmt_off_pair(node: Node, *, preview: bool) -> bool:
                     if comment.value in FMT_SKIP and prev.type in WHITESPACE:
                         continue
 
-            ignored_nodes = list(generate_ignored_nodes(leaf, comment, preview=preview))
+            ignored_nodes = list(
+                generate_ignored_nodes(leaf, comment, preview=preview)
+            )
             if not ignored_nodes:
                 continue
 
@@ -202,17 +210,18 @@ def convert_one_fmt_off_pair(node: Node, *, preview: bool) -> bool:
                 hidden_value = comment.value + "\n" + hidden_value
             if comment.value in FMT_SKIP:
                 hidden_value += "  " + comment.value
-            if hidden_value.endswith("\n"):
-                # That happens when one of the `ignored_nodes` ended with a NEWLINE
-                # leaf (possibly followed by a DEDENT).
-                hidden_value = hidden_value[:-1]
-            first_idx: Optional[int] = None
+            hidden_value = hidden_value.removesuffix("\n")
+            first_idx: int | None = None
             for ignored in ignored_nodes:
                 index = ignored.remove()
                 if first_idx is None:
                     first_idx = index
-            assert parent is not None, "INTERNAL ERROR: fmt: on/off handling (1)"
-            assert first_idx is not None, "INTERNAL ERROR: fmt: on/off handling (2)"
+            assert parent is not None, (
+                "INTERNAL ERROR: fmt: on/off handling (1)"
+            )
+            assert first_idx is not None, (
+                "INTERNAL ERROR: fmt: on/off handling (2)"
+            )
             parent.insert_child(
                 first_idx,
                 Leaf(
@@ -235,9 +244,11 @@ def generate_ignored_nodes(
     Stops at the end of the block.
     """
     if comment.value in FMT_SKIP:
-        yield from _generate_ignored_nodes_from_fmt_skip(leaf, comment, preview=preview)
+        yield from _generate_ignored_nodes_from_fmt_skip(
+            leaf, comment, preview=preview
+        )
         return
-    container: Optional[LN] = container_of(leaf)
+    container: LN | None = container_of(leaf)
     while container is not None and container.type != token.ENDMARKER:
         if is_fmt_on(container, preview=preview):
             return
@@ -245,7 +256,9 @@ def generate_ignored_nodes(
         # fix for fmt: on in children
         if children_contains_fmt_on(container, preview=preview):
             for child in container.children:
-                if isinstance(child, Leaf) and is_fmt_on(child, preview=preview):
+                if isinstance(child, Leaf) and is_fmt_on(
+                    child, preview=preview
+                ):
                     if child.type in CLOSING_BRACKETS:
                         # This means `# fmt: on` is placed at a different bracket level
                         # than `# fmt: off`. This is an invalid use, but as a courtesy,
@@ -257,7 +270,10 @@ def generate_ignored_nodes(
                     return
                 yield child
         else:
-            if container.type == token.DEDENT and container.next_sibling is None:
+            if (
+                container.type == token.DEDENT
+                and container.next_sibling is None
+            ):
                 # This can happen when there is no matching `# fmt: on` comment at the
                 # same level as `# fmt: on`. We need to keep this DEDENT.
                 return
@@ -279,18 +295,23 @@ def _generate_ignored_nodes_from_fmt_skip(
     if prev_sibling is not None:
         leaf.prefix = ""
         siblings = [prev_sibling]
-        while "\n" not in prev_sibling.prefix and prev_sibling.prev_sibling is not None:
+        while (
+            "\n" not in prev_sibling.prefix
+            and prev_sibling.prev_sibling is not None
+        ):
             prev_sibling = prev_sibling.prev_sibling
             siblings.insert(0, prev_sibling)
         yield from siblings
     elif (
-        parent is not None and parent.type == syms.suite and leaf.type == token.NEWLINE
+        parent is not None
+        and parent.type == syms.suite
+        and leaf.type == token.NEWLINE
     ):
         # The `# fmt: skip` is on the colon line of the if/while/def/class/...
         # statements. The ignored nodes should be previous siblings of the
         # parent suite node.
         leaf.prefix = ""
-        ignored_nodes: List[LN] = []
+        ignored_nodes: list[LN] = []
         parent_sibling = parent.prev_sibling
         while parent_sibling is not None and parent_sibling.type != syms.suite:
             ignored_nodes.insert(0, parent_sibling)
@@ -312,7 +333,9 @@ def is_fmt_on(container: LN, preview: bool) -> bool:
     Determined by whether the last `# fmt:` comment is `on` or `off`.
     """
     fmt_on = False
-    for comment in list_comments(container.prefix, is_endmarker=False, preview=preview):
+    for comment in list_comments(
+        container.prefix, is_endmarker=False, preview=preview
+    ):
         if comment.value in FMT_ON:
             fmt_on = True
         elif comment.value in FMT_OFF:
@@ -330,7 +353,7 @@ def children_contains_fmt_on(container: LN, *, preview: bool) -> bool:
     return False
 
 
-def contains_pragma_comment(comment_list: List[Leaf]) -> bool:
+def contains_pragma_comment(comment_list: list[Leaf]) -> bool:
     """
     Returns:
         True iff one of the comments in @comment_list is a pragma used by one

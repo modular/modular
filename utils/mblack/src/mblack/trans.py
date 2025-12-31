@@ -16,29 +16,22 @@
 """
 String transformers that can split and merge strings.
 """
+
 import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Collection,
-    Dict,
     Final,
-    Iterable,
-    Iterator,
-    List,
     Literal,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
     TypeVar,
-    Union,
 )
 
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 from mypy_extensions import trait
 
 from mblack.brackets import BracketMatchError
@@ -63,8 +56,6 @@ from mblack.strings import (
     has_triple_quotes,
     normalize_string_quotes,
 )
-from mblib2to3.pgen2 import token
-from mblib2to3.pytree import Leaf, Node
 
 
 class CannotTransform(Exception):
@@ -73,7 +64,7 @@ class CannotTransform(Exception):
 
 # types
 T = TypeVar("T")
-LN = Union[Leaf, Node]
+LN = Leaf | Node
 Transformer = Callable[[Line, Collection[Feature]], Iterator[Line]]
 Index = int
 NodeType = int
@@ -115,7 +106,10 @@ def hug_power_op(line: Line, features: Collection[Feature]) -> Iterator[Line]:
             current = line.leaves[index]
             if current.type in disallowed:
                 return False
-            if current.type not in {token.NAME, token.DOT} or current.value == "for":
+            if (
+                current.type not in {token.NAME, token.DOT}
+                or current.value == "for"
+            ):
                 # If the current token isn't disallowed, we'll assume this is simple as
                 # only the disallowed tokens are semantically attached to this lookup
                 # expression we're checking. Also, stop early if we hit the 'for' bit
@@ -126,12 +120,16 @@ def hug_power_op(line: Line, features: Collection[Feature]) -> Iterator[Line]:
 
         return True
 
-    def is_simple_operand(index: int, kind: Literal["base", "exponent"]) -> bool:
+    def is_simple_operand(
+        index: int, kind: Literal["base", "exponent"]
+    ) -> bool:
         # An operand is considered "simple" if's a NAME, a numeric CONSTANT, a simple
         # lookup (see above), with or without a preceding unary operator.
         start = line.leaves[index]
         if start.type in {token.NAME, token.NUMBER}:
-            return is_simple_lookup(index, step=(1 if kind == "exponent" else -1))
+            return is_simple_lookup(
+                index, step=(1 if kind == "exponent" else -1)
+            )
 
         if start.type in {token.PLUS, token.MINUS, token.TILDE}:
             if line.leaves[index + 1].type in {token.NAME, token.NUMBER}:
@@ -216,7 +214,9 @@ class StringTransformer(ABC):
         """
 
     @abstractmethod
-    def do_transform(self, line: Line, string_idx: int) -> Iterator[TResult[Line]]:
+    def do_transform(
+        self, line: Line, string_idx: int
+    ) -> Iterator[TResult[Line]]:
         """
         Yields:
             * Ok(new_line) where new_line is the new transformed line.
@@ -234,7 +234,9 @@ class StringTransformer(ABC):
             yield an CannotTransform after that point.)
         """
 
-    def __call__(self, line: Line, _features: Collection[Feature]) -> Iterator[Line]:
+    def __call__(
+        self, line: Line, _features: Collection[Feature]
+    ) -> Iterator[Line]:
         """
         StringTransformer instances have a call signature that mirrors that of
         the Transformer type.
@@ -303,9 +305,9 @@ class CustomSplitMapMixin:
     the resultant substrings go over the configured max line length.
     """
 
-    _Key: ClassVar = Tuple[StringID, str]
-    _CUSTOM_SPLIT_MAP: ClassVar[Dict[_Key, Tuple[CustomSplit, ...]]] = defaultdict(  # type: ignore
-        tuple
+    _Key: ClassVar = tuple[StringID, str]
+    _CUSTOM_SPLIT_MAP: ClassVar[dict[_Key, tuple[CustomSplit, ...]]] = (  # type: ignore
+        defaultdict(tuple)
     )
 
     @staticmethod
@@ -328,7 +330,7 @@ class CustomSplitMapMixin:
         key = self._get_key(string)
         self._CUSTOM_SPLIT_MAP[key] = tuple(custom_splits)
 
-    def pop_custom_splits(self, string: str) -> List[CustomSplit]:
+    def pop_custom_splits(self, string: str) -> list[CustomSplit]:
         """Custom Split Map Getter Method
 
         Returns:
@@ -395,7 +397,9 @@ class StringMerger(StringTransformer, CustomSplitMapMixin):
 
         return TErr("This line has no strings that need merging.")
 
-    def do_transform(self, line: Line, string_idx: int) -> Iterator[TResult[Line]]:
+    def do_transform(
+        self, line: Line, string_idx: int
+    ) -> Iterator[TResult[Line]]:
         new_line = line
         rblc_result = self._remove_backslash_line_continuation_chars(
             new_line, string_idx
@@ -544,7 +548,10 @@ class StringMerger(StringTransformer, CustomSplitMapMixin):
         NS = ""
         num_of_strings = 0
         next_str_idx = string_idx
-        while is_valid_index(next_str_idx) and LL[next_str_idx].type == token.STRING:
+        while (
+            is_valid_index(next_str_idx)
+            and LL[next_str_idx].type == token.STRING
+        ):
             num_of_strings += 1
 
             SS = LL[next_str_idx].value
@@ -577,9 +584,9 @@ class StringMerger(StringTransformer, CustomSplitMapMixin):
         temp_string = S_leaf.value[len(prefix) + 1 : -1]
         for has_prefix in prefix_tracker:
             mark_idx = temp_string.find(BREAK_MARK)
-            assert (
-                mark_idx >= 0
-            ), "Logic error while filling the custom string breakpoint cache."
+            assert mark_idx >= 0, (
+                "Logic error while filling the custom string breakpoint cache."
+            )
 
             temp_string = temp_string[mark_idx + len(BREAK_MARK) :]
             breakpoint_idx = mark_idx + (len(prefix) if has_prefix else 0) + 1
@@ -681,7 +688,9 @@ class StringMerger(StringTransformer, CustomSplitMapMixin):
             if id(leaf) in line.comments:
                 num_of_inline_string_comments += 1
                 if contains_pragma_comment(line.comments[id(leaf)]):
-                    return TErr("Cannot merge strings which have pragma comments.")
+                    return TErr(
+                        "Cannot merge strings which have pragma comments."
+                    )
 
         if num_of_strings < 2:
             return TErr(
@@ -749,7 +758,8 @@ class StringParenStripper(StringTransformer):
             # bracket (which could be a function which returns a function or a
             # list/dictionary that contains a function)...
             if is_valid_index(idx - 2) and (
-                LL[idx - 2].type == token.NAME or LL[idx - 2].type in CLOSING_BRACKETS
+                LL[idx - 2].type == token.NAME
+                or LL[idx - 2].type in CLOSING_BRACKETS
             ):
                 continue
 
@@ -765,7 +775,9 @@ class StringParenStripper(StringTransformer):
             if is_valid_index(idx - 2):
                 # mypy can't quite follow unless we name this
                 before_lpar = LL[idx - 2]
-                if token.PERCENT in {leaf.type for leaf in LL[idx - 1 : next_idx]} and (
+                if token.PERCENT in {
+                    leaf.type for leaf in LL[idx - 1 : next_idx]
+                } and (
                     (
                         before_lpar.type
                         in {
@@ -810,7 +822,9 @@ class StringParenStripper(StringTransformer):
 
         return TErr("This line has no strings wrapped in parens.")
 
-    def do_transform(self, line: Line, string_idx: int) -> Iterator[TResult[Line]]:
+    def do_transform(
+        self, line: Line, string_idx: int
+    ) -> Iterator[TResult[Line]]:
         LL = line.leaves
 
         string_parser = StringParser()
@@ -831,7 +845,9 @@ class StringParenStripper(StringTransformer):
             # HACK: I believe there is currently a bug somewhere in
             # right_hand_split() that is causing brackets to not be tracked
             # properly by a shared BracketTracker.
-            append_leaves(new_line, line, LL[: string_idx - 1], preformatted=True)
+            append_leaves(
+                new_line, line, LL[: string_idx - 1], preformatted=True
+            )
 
         string_leaf = Leaf(token.STRING, LL[string_idx].value)
         LL[string_idx - 1].remove()
@@ -925,7 +941,9 @@ class BaseStringSplitter(StringTransformer):
                 "The string itself is not what is causing this line to be too long."
             )
 
-        if not string_leaf.parent or [L.type for L in string_leaf.parent.children] == [
+        if not string_leaf.parent or [
+            L.type for L in string_leaf.parent.children
+        ] == [
             token.STRING,
             token.NEWLINE,
         ]:
@@ -934,7 +952,9 @@ class BaseStringSplitter(StringTransformer):
                 " (i.e. has no parent)."
             )
 
-        if id(line.leaves[string_idx]) in line.comments and contains_pragma_comment(
+        if id(
+            line.leaves[string_idx]
+        ) in line.comments and contains_pragma_comment(
             line.comments[id(line.leaves[string_idx])]
         ):
             return TErr(
@@ -1020,7 +1040,11 @@ class BaseStringSplitter(StringTransformer):
 
         if is_valid_index(string_idx + 1):
             N = LL[string_idx + 1]
-            if N.type == token.RPAR and N.value == "" and len(LL) > string_idx + 2:
+            if (
+                N.type == token.RPAR
+                and N.value == ""
+                and len(LL) > string_idx + 2
+            ):
                 # If the next leaf is an empty RPAR placeholder, we should skip it.
                 N = LL[string_idx + 2]
 
@@ -1062,7 +1086,7 @@ class BaseStringSplitter(StringTransformer):
         return max_string_length
 
     @staticmethod
-    def _prefer_paren_wrap_match(LL: List[Leaf]) -> Optional[int]:
+    def _prefer_paren_wrap_match(LL: list[Leaf]) -> int | None:
         """
         Returns:
             string_idx such that @LL[string_idx] is equal to our target (i.e.
@@ -1079,7 +1103,11 @@ class BaseStringSplitter(StringTransformer):
         # If the string is surrounded by commas (or is the first/last child)...
         prev_sibling = LL[0].prev_sibling
         next_sibling = LL[0].next_sibling
-        if not prev_sibling and not next_sibling and parent_type(LL[0]) == syms.atom:
+        if (
+            not prev_sibling
+            and not next_sibling
+            and parent_type(LL[0]) == syms.atom
+        ):
             # If it's an atom string, we need to check the parent atom's siblings.
             parent = LL[0].parent
             assert parent is not None  # For type checkers.
@@ -1093,14 +1121,14 @@ class BaseStringSplitter(StringTransformer):
         return None
 
 
-def iter_fexpr_spans(s: str) -> Iterator[Tuple[int, int]]:
+def iter_fexpr_spans(s: str) -> Iterator[tuple[int, int]]:
     """
     Yields spans corresponding to expressions in a given f-string.
     Spans are half-open ranges (left inclusive, right exclusive).
     Assumes the input string is a valid f-string, but will not crash if the input
     string is invalid.
     """
-    stack: List[int] = []  # our curly paren stack
+    stack: list[int] = []  # our curly paren stack
     i = 0
     while i < len(s):
         if s[i] == "{":
@@ -1205,8 +1233,7 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
         # Else the first leaf MAY be a string operator symbol or the 'in' keyword...
         elif is_valid_index(idx) and (
             LL[idx].type in self.STRING_OPERATORS
-            or LL[idx].type == token.NAME
-            and str(LL[idx]) == "in"
+            or (LL[idx].type == token.NAME and str(LL[idx]) == "in")
         ):
             idx += 1
 
@@ -1238,7 +1265,9 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
 
         return Ok(string_idx)
 
-    def do_transform(self, line: Line, string_idx: int) -> Iterator[TResult[Line]]:
+    def do_transform(
+        self, line: Line, string_idx: int
+    ) -> Iterator[TResult[Line]]:
         LL = line.leaves
 
         QUOTE = LL[string_idx].value[-1]
@@ -1279,7 +1308,8 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
                 new_line.append(prefix_leaf)
 
         ends_with_comma = (
-            is_valid_index(string_idx + 1) and LL[string_idx + 1].type == token.COMMA
+            is_valid_index(string_idx + 1)
+            and LL[string_idx + 1].type == token.COMMA
         )
 
         def max_last_string() -> int:
@@ -1314,7 +1344,9 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
         # line limit.
         use_custom_breakpoints = bool(
             custom_splits
-            and all(csplit.break_idx <= max_break_idx for csplit in custom_splits)
+            and all(
+                csplit.break_idx <= max_break_idx for csplit in custom_splits
+            )
         )
 
         # Temporary storage for the remaining chunk of the string line that
@@ -1332,7 +1364,7 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
             else:
                 return len(rest_value) > max_last_string()
 
-        string_line_results: List[Ok[Line]] = []
+        string_line_results: list[Ok[Line]] = []
         while more_splits_should_be_made():
             if use_custom_breakpoints:
                 # Custom User Split (manual)
@@ -1453,7 +1485,9 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
             last_line.comments = line.comments.copy()
             yield Ok(last_line)
 
-    def _iter_nameescape_slices(self, string: str) -> Iterator[Tuple[Index, Index]]:
+    def _iter_nameescape_slices(
+        self, string: str
+    ) -> Iterator[tuple[Index, Index]]:
         """
         Yields:
             All ranges of @string which, if @string were to be split there,
@@ -1466,7 +1500,9 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
         it = iter(enumerate(string))
         for idx, c in it:
             if c == "\\":
-                previous_was_unescaped_backslash = not previous_was_unescaped_backslash
+                previous_was_unescaped_backslash = (
+                    not previous_was_unescaped_backslash
+                )
                 continue
             if not previous_was_unescaped_backslash or c != "N":
                 previous_was_unescaped_backslash = False
@@ -1484,7 +1520,7 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
                 raise RuntimeError(f"{self.__class__.__name__} LOGIC ERROR!")
             yield begin, end
 
-    def _iter_fexpr_slices(self, string: str) -> Iterator[Tuple[Index, Index]]:
+    def _iter_fexpr_slices(self, string: str) -> Iterator[tuple[Index, Index]]:
         """
         Yields:
             All ranges of @string which, if @string were to be split there,
@@ -1495,8 +1531,8 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
             return
         yield from iter_fexpr_spans(string)
 
-    def _get_illegal_split_indices(self, string: str) -> Set[Index]:
-        illegal_indices: Set[Index] = set()
+    def _get_illegal_split_indices(self, string: str) -> set[Index]:
+        illegal_indices: set[Index] = set()
         iterators = [
             self._iter_fexpr_slices(string),
             self._iter_nameescape_slices(string),
@@ -1506,7 +1542,7 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
                 illegal_indices.update(range(begin, end + 1))
         return illegal_indices
 
-    def _get_break_idx(self, string: str, max_break_idx: int) -> Optional[int]:
+    def _get_break_idx(self, string: str, max_break_idx: int) -> int | None:
         """
         This method contains the algorithm that StringSplitter uses to
         determine which character to split each string at.
@@ -1572,7 +1608,9 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
 
         # First, we check all indices BELOW @max_break_idx.
         break_idx = max_break_idx
-        while is_valid_index(break_idx - 1) and not passes_all_checks(break_idx):
+        while is_valid_index(break_idx - 1) and not passes_all_checks(
+            break_idx
+        ):
             break_idx -= 1
 
         if not passes_all_checks(break_idx):
@@ -1582,10 +1620,14 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
             # to be longer than the specified line length, but it's probably
             # better than doing nothing at all.
             break_idx = max_break_idx + 1
-            while is_valid_index(break_idx + 1) and not passes_all_checks(break_idx):
+            while is_valid_index(break_idx + 1) and not passes_all_checks(
+                break_idx
+            ):
                 break_idx += 1
 
-            if not is_valid_index(break_idx) or not passes_all_checks(break_idx):
+            if not is_valid_index(break_idx) or not passes_all_checks(
+                break_idx
+            ):
                 return None
 
         return break_idx
@@ -1621,7 +1663,7 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
         else:
             return string
 
-    def _get_string_operator_leaves(self, leaves: Iterable[Leaf]) -> List[Leaf]:
+    def _get_string_operator_leaves(self, leaves: Iterable[Leaf]) -> list[Leaf]:
         LL = list(leaves)
 
         string_op_leaves = []
@@ -1726,7 +1768,7 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
         return TErr("This line does not contain any non-atomic strings.")
 
     @staticmethod
-    def _return_match(LL: List[Leaf]) -> Optional[int]:
+    def _return_match(LL: list[Leaf]) -> int | None:
         """
         Returns:
             string_idx such that @LL[string_idx] is equal to our target (i.e.
@@ -1751,7 +1793,7 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
         return None
 
     @staticmethod
-    def _else_match(LL: List[Leaf]) -> Optional[int]:
+    def _else_match(LL: list[Leaf]) -> int | None:
         """
         Returns:
             string_idx such that @LL[string_idx] is equal to our target (i.e.
@@ -1778,7 +1820,7 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
         return None
 
     @staticmethod
-    def _assert_match(LL: List[Leaf]) -> Optional[int]:
+    def _assert_match(LL: list[Leaf]) -> int | None:
         """
         Returns:
             string_idx such that @LL[string_idx] is equal to our target (i.e.
@@ -1790,8 +1832,12 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
         """
         # If this line is part of an assert or comptime_assert statement and the first leaf
         # contains the "assert" or "__comptime_assert" keyword...
-        if ((parent_type(LL[0]) == syms.assert_stmt and LL[0].value == "assert") or
-            (parent_type(LL[0]) == syms.comptime_assert_stmt and LL[0].value == "__comptime_assert")):
+        if (
+            parent_type(LL[0]) == syms.assert_stmt and LL[0].value == "assert"
+        ) or (
+            parent_type(LL[0]) == syms.comptime_assert_stmt
+            and LL[0].value == "__comptime_assert"
+        ):
             is_valid_index = is_valid_index_factory(LL)
 
             for i, leaf in enumerate(LL):
@@ -1814,7 +1860,7 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
         return None
 
     @staticmethod
-    def _assign_match(LL: List[Leaf]) -> Optional[int]:
+    def _assign_match(LL: list[Leaf]) -> int | None:
         """
         Returns:
             string_idx such that @LL[string_idx] is equal to our target (i.e.
@@ -1861,7 +1907,7 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
         return None
 
     @staticmethod
-    def _dict_match(LL: List[Leaf]) -> Optional[int]:
+    def _dict_match(LL: list[Leaf]) -> int | None:
         """
         Returns:
             string_idx such that @LL[string_idx] is equal to our target (i.e.
@@ -1898,7 +1944,9 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
 
         return None
 
-    def do_transform(self, line: Line, string_idx: int) -> Iterator[TResult[Line]]:
+    def do_transform(
+        self, line: Line, string_idx: int
+    ) -> Iterator[TResult[Line]]:
         LL = line.leaves
 
         is_valid_index = is_valid_index_factory(LL)
@@ -2040,7 +2088,7 @@ class StringParser:
     DONE: Final = 8
 
     # Lookup Table for Next State
-    _goto: Final[Dict[Tuple[ParserState, NodeType], ParserState]] = {
+    _goto: Final[dict[tuple[ParserState, NodeType], ParserState]] = {
         # A string trailer may start with '.' OR '%'.
         (START, token.DOT): DOT,
         (START, token.PERCENT): PERCENT,
@@ -2069,7 +2117,7 @@ class StringParser:
         self._state = self.START
         self._unmatched_lpars = 0
 
-    def parse(self, leaves: List[Leaf], string_idx: int) -> int:
+    def parse(self, leaves: list[Leaf], string_idx: int) -> int:
         """
         Pre-conditions:
             * @leaves[@string_idx].type == token.STRING
@@ -2131,7 +2179,9 @@ class StringParser:
                 # If no default has been assigned, then this parser has a logic
                 # error.
                 else:
-                    raise RuntimeError(f"{self.__class__.__name__} LOGIC ERROR!")
+                    raise RuntimeError(
+                        f"{self.__class__.__name__} LOGIC ERROR!"
+                    )
 
             if self._state == self.DONE:
                 return False

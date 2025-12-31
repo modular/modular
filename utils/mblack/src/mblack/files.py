@@ -16,19 +16,13 @@
 import io
 import os
 import sys
+from collections.abc import Iterable, Iterator, Sequence
 from functools import lru_cache
 from pathlib import Path
+from re import Pattern
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Pattern,
-    Sequence,
-    Tuple,
     Union,
 )
 
@@ -54,10 +48,10 @@ if TYPE_CHECKING:
     import colorama  # type: ignore
 
 
-@lru_cache()
+@lru_cache
 def find_project_root(
-    srcs: Sequence[str], stdin_filename: Optional[str] = None
-) -> Tuple[Path, str]:
+    srcs: Sequence[str], stdin_filename: str | None = None
+) -> tuple[Path, str]:
     """Return a directory containing .git, .hg, or pyproject.toml.
 
     That directory will be a common parent of all files and directories
@@ -80,7 +74,8 @@ def find_project_root(
     # A list of lists of parents for each 'src'. 'src' is included as a
     # "parent" of itself if it is a directory
     src_parents = [
-        list(path.parents) + ([path] if path.is_dir() else []) for path in path_srcs
+        list(path.parents) + ([path] if path.is_dir() else [])
+        for path in path_srcs
     ]
 
     common_base = max(
@@ -101,7 +96,7 @@ def find_project_root(
     return directory, "file system root"
 
 
-def find_pyproject_toml(path_search_start: Tuple[str, ...]) -> Optional[str]:
+def find_pyproject_toml(path_search_start: tuple[str, ...]) -> str | None:
     """Find the absolute filepath to a pyproject.toml if it exists"""
     path_project_root, _ = find_project_root(path_search_start)
     path_pyproject_toml = path_project_root / "pyproject.toml"
@@ -122,7 +117,7 @@ def find_pyproject_toml(path_search_start: Tuple[str, ...]) -> Optional[str]:
 
 
 @mypyc_attr(patchable=True)
-def parse_pyproject_toml(path_config: str) -> Dict[str, Any]:
+def parse_pyproject_toml(path_config: str) -> dict[str, Any]:
     """Parse a pyproject toml file, pulling out relevant parts for Black
 
     If parsing fails, will raise a tomllib.TOMLDecodeError
@@ -133,7 +128,7 @@ def parse_pyproject_toml(path_config: str) -> Dict[str, Any]:
     return {k.replace("--", "").replace("-", "_"): v for k, v in config.items()}
 
 
-@lru_cache()
+@lru_cache
 def find_user_pyproject_toml() -> Path:
     r"""Return the path to the top-level user configuration for black.
 
@@ -153,11 +148,11 @@ def find_user_pyproject_toml() -> Path:
     return user_config_path.resolve()
 
 
-@lru_cache()
+@lru_cache
 def get_gitignore(root: Path) -> PathSpec:
     """Return a PathSpec matching gitignore content if present."""
     gitignore = root / ".gitignore"
-    lines: List[str] = []
+    lines: list[str] = []
     if gitignore.is_file():
         with gitignore.open(encoding="utf-8") as gf:
             lines = gf.readlines()
@@ -171,8 +166,8 @@ def get_gitignore(root: Path) -> PathSpec:
 def normalize_path_maybe_ignore(
     path: Path,
     root: Path,
-    report: Optional[Report] = None,
-) -> Optional[str]:
+    report: Report | None = None,
+) -> str | None:
     """Normalize `path`. May return `None` if `path` was ignored.
 
     `report` is where "path ignored" output goes.
@@ -198,10 +193,12 @@ def normalize_path_maybe_ignore(
 
 
 def path_is_ignored(
-    path: Path, gitignore_dict: Dict[Path, PathSpec], report: Report
+    path: Path, gitignore_dict: dict[Path, PathSpec], report: Report
 ) -> bool:
     for gitignore_path, pattern in gitignore_dict.items():
-        relative_path = normalize_path_maybe_ignore(path, gitignore_path, report)
+        relative_path = normalize_path_maybe_ignore(
+            path, gitignore_path, report
+        )
         if relative_path is None:
             break
         if pattern.match_file(relative_path):
@@ -212,7 +209,7 @@ def path_is_ignored(
 
 def path_is_excluded(
     normalized_path: str,
-    pattern: Optional[Pattern[str]],
+    pattern: Pattern[str] | None,
 ) -> bool:
     match = pattern.search(normalized_path) if pattern else None
     return bool(match and match.group(0))
@@ -223,10 +220,10 @@ def gen_python_files(
     root: Path,
     include: Pattern[str],
     exclude: Pattern[str],
-    extend_exclude: Optional[Pattern[str]],
-    force_exclude: Optional[Pattern[str]],
+    extend_exclude: Pattern[str] | None,
+    force_exclude: Pattern[str] | None,
     report: Report,
-    gitignore_dict: Optional[Dict[Path, PathSpec]],
+    gitignore_dict: dict[Path, PathSpec] | None,
     *,
     verbose: bool,
     quiet: bool,
@@ -240,7 +237,9 @@ def gen_python_files(
     `report` is where output about exclusions goes.
     """
 
-    assert root.is_absolute(), f"INTERNAL ERROR: `root` must be absolute but is {root}"
+    assert root.is_absolute(), (
+        f"INTERNAL ERROR: `root` must be absolute but is {root}"
+    )
     for child in paths:
         normalized_path = normalize_path_maybe_ignore(child, root, report)
         if normalized_path is None:
@@ -256,7 +255,9 @@ def gen_python_files(
             normalized_path += "/"
 
         if path_is_excluded(normalized_path, exclude):
-            report.path_ignored(child, "matches the --exclude regular expression")
+            report.path_ignored(
+                child, "matches the --exclude regular expression"
+            )
             continue
 
         if path_is_excluded(normalized_path, extend_exclude):
@@ -266,7 +267,9 @@ def gen_python_files(
             continue
 
         if path_is_excluded(normalized_path, force_exclude):
-            report.path_ignored(child, "matches the --force-exclude regular expression")
+            report.path_ignored(
+                child, "matches the --force-exclude regular expression"
+            )
             continue
 
         if child.is_dir():
@@ -293,8 +296,11 @@ def gen_python_files(
             )
 
         elif child.is_file():
-            if child.suffix == ".ipynb" and not jupyter_dependencies_are_installed(
-                verbose=verbose, quiet=quiet
+            if (
+                child.suffix == ".ipynb"
+                and not jupyter_dependencies_are_installed(
+                    verbose=verbose, quiet=quiet
+                )
             ):
                 continue
             include_match = include.search(normalized_path) if include else True
@@ -324,4 +330,6 @@ def wrap_stream_for_windows(
         return f
     else:
         # Set `strip=False` to avoid needing to modify test_express_diff_with_color.
-        return wrap_stream(f, convert=None, strip=False, autoreset=False, wrap=True)
+        return wrap_stream(
+            f, convert=None, strip=False, autoreset=False, wrap=True
+        )

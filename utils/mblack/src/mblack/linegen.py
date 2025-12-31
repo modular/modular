@@ -16,10 +16,15 @@
 """
 Generating lines of code.
 """
+
 import sys
+from collections.abc import Collection, Iterator
 from enum import Enum, auto
 from functools import partial, wraps
-from typing import Collection, Iterator, List, Optional, Set, Union, cast
+from typing import cast
+
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 
 from mblack.brackets import (
     COMMA_PRIORITY,
@@ -81,12 +86,10 @@ from mblack.trans import (
     Transformer,
     hug_power_op,
 )
-from mblib2to3.pgen2 import token
-from mblib2to3.pytree import Leaf, Node
 
 # types
 LeafID = int
-LN = Union[Leaf, Node]
+LN = Leaf | Node
 
 
 class CannotSplit(CannotTransform):
@@ -120,13 +123,17 @@ class LineGenerator(Visitor[Line]):
             return  # Line is empty, don't emit. Creating a new one unnecessary.
 
         complete_line = self.current_line
-        self.current_line = Line(mode=self.mode, depth=complete_line.depth + indent)
+        self.current_line = Line(
+            mode=self.mode, depth=complete_line.depth + indent
+        )
         yield complete_line
 
     def visit_default(self, node: LN) -> Iterator[Line]:
         """Default `visit_*()` implementation. Recurses to children of `node`."""
         if isinstance(node, Leaf):
-            any_open_brackets = self.current_line.bracket_tracker.any_open_brackets()
+            any_open_brackets = (
+                self.current_line.bracket_tracker.any_open_brackets()
+            )
             for comment in generate_comments(node, preview=self.mode.preview):
                 if any_open_brackets:
                     # any comment within brackets is subject to splitting
@@ -174,7 +181,11 @@ class LineGenerator(Visitor[Line]):
         yield from self.line(-1)
 
     def visit_stmt(
-        self, node: Node, keywords: Set[str], parens: Set[str], nodeTypes: Set[int] = set()
+        self,
+        node: Node,
+        keywords: set[str],
+        parens: set[str],
+        nodeTypes: set[int] | None = None,
     ) -> Iterator[Line]:
         """Visit a statement.
 
@@ -187,9 +198,15 @@ class LineGenerator(Visitor[Line]):
         `parens` holds a set of string leaf values immediately after which
         invisible parens should be put.
         """
-        normalize_invisible_parens(node, parens_after=parens, preview=self.mode.preview)
+        if nodeTypes is None:
+            nodeTypes = set()
+        normalize_invisible_parens(
+            node, parens_after=parens, preview=self.mode.preview
+        )
         for child in node.children:
-            if child.type in nodeTypes or (is_name_token(child) and child.value in keywords):
+            if child.type in nodeTypes or (
+                is_name_token(child) and child.value in keywords
+            ):
                 yield from self.line()
 
             yield from self.visit(child)
@@ -197,7 +214,12 @@ class LineGenerator(Visitor[Line]):
     def visit_funcdef(self, node: Node) -> Iterator[Line]:
         """Visit function definition."""
         if Preview.annotation_parens not in self.mode:
-            yield from self.visit_stmt(node, keywords={"def"}, parens=set(), nodeTypes={token.FN, token.MLIR_REGION})
+            yield from self.visit_stmt(
+                node,
+                keywords={"def"},
+                parens=set(),
+                nodeTypes={token.FN, token.MLIR_REGION},
+            )
         else:
             yield from self.line()
 
@@ -207,7 +229,10 @@ class LineGenerator(Visitor[Line]):
                 if child.type == token.RARROW:
                     is_return_annotation = True
                 elif is_return_annotation:
-                    if child.type == syms.atom and child.children[0].type == token.LPAR:
+                    if (
+                        child.type == syms.atom
+                        and child.children[0].type == token.LPAR
+                    ):
                         if maybe_make_parens_invisible_in_atom(
                             child,
                             parent=node,
@@ -223,7 +248,9 @@ class LineGenerator(Visitor[Line]):
 
     def visit_match_case(self, node: Node) -> Iterator[Line]:
         """Visit either a match or case statement."""
-        normalize_invisible_parens(node, parens_after=set(), preview=self.mode.preview)
+        normalize_invisible_parens(
+            node, parens_after=set(), preview=self.mode.preview
+        )
 
         yield from self.line()
         for child in node.children:
@@ -238,9 +265,11 @@ class LineGenerator(Visitor[Line]):
 
     def visit_simple_stmt(self, node: Node) -> Iterator[Line]:
         """Visit a statement without nested statements."""
-        prev_type: Optional[int] = None
+        prev_type: int | None = None
         for child in node.children:
-            if (prev_type is None or prev_type == token.SEMI) and is_arith_like(child):
+            if (prev_type is None or prev_type == token.SEMI) and is_arith_like(
+                child
+            ):
                 wrap_in_parentheses(node, child, visible=False)
             prev_type = child.type
 
@@ -354,7 +383,10 @@ class LineGenerator(Visitor[Line]):
         if is_docstring(leaf) and "\\\n" not in leaf.value:
             # We're ignoring docstrings with backslash newline escapes because changing
             # indentation of those changes the AST representation of the code.
-            if Preview.normalize_docstring_quotes_and_prefixes_properly in self.mode:
+            if (
+                Preview.normalize_docstring_quotes_and_prefixes_properly
+                in self.mode
+            ):
                 # There was a bug where --skip-string-normalization wouldn't stop us
                 # from normalizing docstring prefixes. To maintain stability, we can
                 # only address this buggy behaviour while the preview style is enabled.
@@ -397,7 +429,9 @@ class LineGenerator(Visitor[Line]):
                 if docstring[-1] == quote_char:
                     docstring += " "
                 if docstring[-1] == "\\":
-                    backslash_count = len(docstring) - len(docstring.rstrip("\\"))
+                    backslash_count = len(docstring) - len(
+                        docstring.rstrip("\\")
+                    )
                     if backslash_count % 2:
                         # Odd number of tailing backslashes, add some padding to
                         # avoid escaping the closing string quote.
@@ -409,7 +443,10 @@ class LineGenerator(Visitor[Line]):
             quote = quote_char * quote_len
 
             # It's invalid to put closing single-character quotes on a new line.
-            if Preview.long_docstring_quotes_on_newline in self.mode and quote_len == 3:
+            if (
+                Preview.long_docstring_quotes_on_newline in self.mode
+                and quote_len == 3
+            ):
                 # We need to find the length of the last line of the docstring
                 # to find if we can add the closing quotes to the line without
                 # exceeding the maximum line length.
@@ -426,7 +463,9 @@ class LineGenerator(Visitor[Line]):
                 # the maximum line length then put a line break before the
                 # closing quotes
                 if last_line_length + quote_len > self.mode.line_length:
-                    leaf.value = prefix + quote + docstring + "\n" + indent + quote
+                    leaf.value = (
+                        prefix + quote + docstring + "\n" + indent + quote
+                    )
                 else:
                     leaf.value = prefix + quote + docstring + quote
             else:
@@ -457,15 +496,18 @@ class LineGenerator(Visitor[Line]):
             if isinstance(c, Leaf) and c.type == token.NAME:
                 c.replace(Leaf(token.NAME, next(sorted_conformances)))
 
-    def visit_classdef_sorted(
+    def visit_classdef_sorted(  # noqa: ANN201
         self,
         node: Node,
-        keywords: Set[str],
-        parens: Set[str],
-        nodeTypes: Set[int] = set(),
+        keywords: set[str],
+        parens: set[str],
+        nodeTypes: set[int] | None = None,
     ):
         # Only sort for struct/trait, not regular class
         from mblib2to3.pgen2 import token as mtoken
+
+        if nodeTypes is None:
+            nodeTypes = set()
         if node.children[0].type in (mtoken.STRUCT, mtoken.TRAIT):
             self._sort_struct_trait_conformances(node)
         # Fallback to original logic
@@ -476,14 +518,22 @@ class LineGenerator(Visitor[Line]):
         self.current_line = Line(mode=self.mode)
 
         v = self.visit_stmt
-        Ø: Set[str] = set()
-        self.visit_assert_stmt = partial(v, keywords={"assert"}, parens={"assert", ","})
-        self.visit_comptime_assert_stmt = partial(v, keywords={"__comptime_assert"}, parens={"__comptime_assert", ","})
+        Ø: set[str] = set()
+        self.visit_assert_stmt = partial(
+            v, keywords={"assert"}, parens={"assert", ","}
+        )
+        self.visit_comptime_assert_stmt = partial(
+            v, keywords={"__comptime_assert"}, parens={"__comptime_assert", ","}
+        )
         self.visit_if_stmt = partial(
             v, keywords={"if", "else", "elif"}, parens={"if", "elif"}
         )
-        self.visit_while_stmt = partial(v, keywords={"while", "else"}, parens={"while"})
-        self.visit_for_stmt = partial(v, keywords={"for", "else"}, parens={"for", "in"})
+        self.visit_while_stmt = partial(
+            v, keywords={"while", "else"}, parens={"while"}
+        )
+        self.visit_for_stmt = partial(
+            v, keywords={"for", "else"}, parens={"for", "in"}
+        )
         self.visit_try_stmt = partial(
             v, keywords={"try", "except", "else", "finally"}, parens=Ø
         )
@@ -491,15 +541,25 @@ class LineGenerator(Visitor[Line]):
             self.visit_except_clause = partial(
                 v, keywords={"except"}, parens={"except"}
             )
-            self.visit_with_stmt = partial(v, keywords={"with"}, parens={"with"})
+            self.visit_with_stmt = partial(
+                v, keywords={"with"}, parens={"with"}
+            )
         else:
             self.visit_except_clause = partial(v, keywords={"except"}, parens=Ø)
             self.visit_with_stmt = partial(v, keywords={"with"}, parens=Ø)
         # Patch: use our sorting logic for struct/trait/extension
         from mblib2to3.pgen2 import token as mtoken
-        self.visit_classdef = partial(self.visit_classdef_sorted, keywords={"class"}, parens=Ø, nodeTypes={mtoken.STRUCT, mtoken.TRAIT, mtoken.EXTENSION})
+
+        self.visit_classdef = partial(
+            self.visit_classdef_sorted,
+            keywords={"class"},
+            parens=Ø,
+            nodeTypes={mtoken.STRUCT, mtoken.TRAIT, mtoken.EXTENSION},
+        )
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
-        self.visit_return_stmt = partial(v, keywords={"return"}, parens={"return"})
+        self.visit_return_stmt = partial(
+            v, keywords={"return"}, parens={"return"}
+        )
         self.visit_import_from = partial(v, keywords=Ø, parens={"import"})
         self.visit_del_stmt = partial(v, keywords=Ø, parens={"del"})
         self.visit_async_funcdef = self.visit_async_stmt
@@ -511,10 +571,13 @@ class LineGenerator(Visitor[Line]):
 
         # Mojo-specific declarations
         from mblib2to3.pgen2 import token as mtoken
+
         self.visit_alias = partial(v, keywords={"alias"}, parens=set())
 
     def visit_where_clause(self, node: Node) -> Iterator[Line]:
-        normalize_invisible_parens(node, parens_after={"where"}, preview=self.mode.preview)
+        normalize_invisible_parens(
+            node, parens_after={"where"}, preview=self.mode.preview
+        )
         for child in node.children:
             yield from self.visit_default(child)
 
@@ -541,13 +604,15 @@ def transform_line(
     string_split = StringSplitter(ll, sn)
     string_paren_wrap = StringParenWrapper(ll, sn)
 
-    transformers: List[Transformer]
+    transformers: list[Transformer]
     if (
         not line.contains_uncollapsable_type_comments()
         and not line.should_split_rhs
         and not line.magic_trailing_comma
         and (
-            is_line_short_enough(line, line_length=mode.line_length, line_str=line_str)
+            is_line_short_enough(
+                line, line_length=mode.line_length, line_str=line_str
+            )
             or line.contains_unsplittable_type_ignore()
         )
         and not (line.inside_brackets and line.contains_standalone_comments())
@@ -572,7 +637,9 @@ def transform_line(
             """
             for omit in generate_trailers_to_omit(line, mode.line_length):
                 lines = list(
-                    right_hand_split(line, mode.line_length, features, omit=omit)
+                    right_hand_split(
+                        line, mode.line_length, features, omit=omit
+                    )
                 )
                 # Note: this check is only able to figure out if the first line of the
                 # *current* transformation fits in the line length.  This is true only
@@ -629,7 +696,9 @@ def transform_line(
         # mission and return the original line in the end, or attempt a different
         # split altogether.
         try:
-            result = run_transformer(line, transform, mode, features, line_str=line_str)
+            result = run_transformer(
+                line, transform, mode, features, line_str=line_str
+            )
         except CannotTransform:
             continue
         else:
@@ -646,18 +715,20 @@ class _BracketSplitComponent(Enum):
     tail = auto()
 
 
-def left_hand_split(line: Line, _features: Collection[Feature] = ()) -> Iterator[Line]:
+def left_hand_split(
+    line: Line, _features: Collection[Feature] = ()
+) -> Iterator[Line]:
     """Split line into many lines, starting with the first matching bracket pair.
 
     Note: this usually looks weird, only use this for function definitions.
     Prefer RHS otherwise.  This is why this function is not symmetrical with
     :func:`right_hand_split` which also handles optional parentheses.
     """
-    tail_leaves: List[Leaf] = []
-    body_leaves: List[Leaf] = []
-    head_leaves: List[Leaf] = []
+    tail_leaves: list[Leaf] = []
+    body_leaves: list[Leaf] = []
+    head_leaves: list[Leaf] = []
     current_leaves = head_leaves
-    matching_bracket: Optional[Leaf] = None
+    matching_bracket: Leaf | None = None
     for leaf in line.leaves:
         if (
             current_leaves is body_leaves
@@ -714,12 +785,12 @@ def right_hand_split(
 
     Note: running this function modifies `bracket_depth` on the leaves of `line`.
     """
-    tail_leaves: List[Leaf] = []
-    body_leaves: List[Leaf] = []
-    head_leaves: List[Leaf] = []
+    tail_leaves: list[Leaf] = []
+    body_leaves: list[Leaf] = []
+    head_leaves: list[Leaf] = []
     current_leaves = tail_leaves
-    opening_bracket: Optional[Leaf] = None
-    closing_bracket: Optional[Leaf] = None
+    opening_bracket: Leaf | None = None
+    closing_bracket: Leaf | None = None
     for leaf in reversed(line.leaves):
         if current_leaves is body_leaves:
             if leaf is opening_bracket:
@@ -776,7 +847,9 @@ def right_hand_split(
     ):
         omit = {id(closing_bracket), *omit}
         try:
-            yield from right_hand_split(line, line_length, features=features, omit=omit)
+            yield from right_hand_split(
+                line, line_length, features=features, omit=omit
+            )
             return
 
         except CannotSplit as e:
@@ -788,7 +861,10 @@ def right_hand_split(
                     "Splitting failed, body is still too long and can't be split."
                 ) from e
 
-            elif head.contains_multiline_strings() or tail.contains_multiline_strings():
+            elif (
+                head.contains_multiline_strings()
+                or tail.contains_multiline_strings()
+            ):
                 raise CannotSplit(
                     "The current optional pair of parentheses is bound to fail"
                     " to satisfy the splitting algorithm because the head or"
@@ -803,7 +879,9 @@ def right_hand_split(
             yield result
 
 
-def bracket_split_succeeded_or_raise(head: Line, body: Line, tail: Line) -> None:
+def bracket_split_succeeded_or_raise(
+    head: Line, body: Line, tail: Line
+) -> None:
     """Raise :exc:`CannotSplit` if the last left- or right-hand split failed.
 
     Do nothing otherwise.
@@ -830,7 +908,7 @@ def bracket_split_succeeded_or_raise(head: Line, body: Line, tail: Line) -> None
 
 
 def bracket_split_build_line(
-    leaves: List[Leaf],
+    leaves: list[Leaf],
     original: Line,
     opening_bracket: Leaf,
     *,
@@ -870,7 +948,8 @@ def bracket_split_build_line(
                         leaves[0].parent,
                         getattr(leaves[0].parent, "parent", None),
                     )
-                    if isinstance(node, Node) and isinstance(node.prev_sibling, Leaf)
+                    if isinstance(node, Node)
+                    and isinstance(node.prev_sibling, Leaf)
                 )
             )
 
@@ -884,7 +963,7 @@ def bracket_split_build_line(
                         leaves.insert(i + 1, new_comma)
                     break
 
-    leaves_to_track: Set[LeafID] = set()
+    leaves_to_track: set[LeafID] = set()
     if (
         Preview.handle_trailing_commas_in_head in original.mode
         and component is _BracketSplitComponent.head
@@ -913,7 +992,9 @@ def dont_increase_indentation(split_func: Transformer) -> Transformer:
     """
 
     @wraps(split_func)
-    def split_wrapper(line: Line, features: Collection[Feature] = ()) -> Iterator[Line]:
+    def split_wrapper(
+        line: Line, features: Collection[Feature] = ()
+    ) -> Iterator[Line]:
         for split_line in split_func(line, features):
             normalize_prefix(split_line.leaves[0], inside_brackets=True)
             yield split_line
@@ -922,7 +1003,9 @@ def dont_increase_indentation(split_func: Transformer) -> Transformer:
 
 
 @dont_increase_indentation
-def delimiter_split(line: Line, features: Collection[Feature] = ()) -> Iterator[Line]:
+def delimiter_split(
+    line: Line, features: Collection[Feature] = ()
+) -> Iterator[Line]:
     """Split according to delimiters of the highest priority.
 
     If the appropriate Features are given, the split will add trailing commas
@@ -941,7 +1024,9 @@ def delimiter_split(line: Line, features: Collection[Feature] = ()) -> Iterator[
 
     if delimiter_priority == DOT_PRIORITY:
         if bt.delimiter_count_with_priority(delimiter_priority) == 1:
-            raise CannotSplit("Splitting a single attribute from its owner looks wrong")
+            raise CannotSplit(
+                "Splitting a single attribute from its owner looks wrong"
+            )
 
     current_line = Line(
         mode=line.mode, depth=line.depth, inside_brackets=line.inside_brackets
@@ -972,13 +1057,17 @@ def delimiter_split(line: Line, features: Collection[Feature] = ()) -> Iterator[
 
         lowest_depth = min(lowest_depth, leaf.bracket_depth)
         if leaf.bracket_depth == lowest_depth:
-            if is_vararg(leaf, within={syms.typedargslist, syms.typedparamslist}):
+            if is_vararg(
+                leaf, within={syms.typedargslist, syms.typedparamslist}
+            ):
                 trailing_comma_safe = (
-                    trailing_comma_safe and Feature.TRAILING_COMMA_IN_DEF in features
+                    trailing_comma_safe
+                    and Feature.TRAILING_COMMA_IN_DEF in features
                 )
             elif is_vararg(leaf, within={syms.arglist, syms.argument}):
                 trailing_comma_safe = (
-                    trailing_comma_safe and Feature.TRAILING_COMMA_IN_CALL in features
+                    trailing_comma_safe
+                    and Feature.TRAILING_COMMA_IN_CALL in features
                 )
 
         leaf_priority = bt.delimiters.get(id(leaf))
@@ -1058,7 +1147,7 @@ def normalize_prefix(leaf: Leaf, *, inside_brackets: bool) -> None:
 
 
 def normalize_invisible_parens(
-    node: Node, parens_after: Set[str], *, preview: bool
+    node: Node, parens_after: set[str], *, preview: bool
 ) -> None:
     """Make existing optional parentheses invisible or create new ones.
 
@@ -1104,7 +1193,11 @@ def normalize_invisible_parens(
                     remove_brackets_around_comma=True,
                 ):
                     wrap_in_parentheses(node, child, visible=False)
-            elif preview and isinstance(child, Node) and node.type == syms.with_stmt:
+            elif (
+                preview
+                and isinstance(child, Node)
+                and node.type == syms.with_stmt
+            ):
                 remove_with_parens(child, node)
             elif child.type == syms.atom:
                 if maybe_make_parens_invisible_in_atom(
@@ -1303,7 +1396,9 @@ def should_split_line(line: Line, opening_bracket: Leaf) -> bool:
         if last_leaf.type == token.COMMA:
             trailing_comma = True
             exclude.add(id(last_leaf))
-        max_priority = line.bracket_tracker.max_delimiter_priority(exclude=exclude)
+        max_priority = line.bracket_tracker.max_delimiter_priority(
+            exclude=exclude
+        )
     except (IndexError, ValueError):
         return False
 
@@ -1314,7 +1409,9 @@ def should_split_line(line: Line, opening_bracket: Leaf) -> bool:
     )
 
 
-def generate_trailers_to_omit(line: Line, line_length: int) -> Iterator[Set[LeafID]]:
+def generate_trailers_to_omit(
+    line: Line, line_length: int
+) -> Iterator[set[LeafID]]:
     """Generate sets of closing bracket IDs that should be omitted in a RHS.
 
     Brackets can be omitted if the entire trailer up to and including
@@ -1325,14 +1422,14 @@ def generate_trailers_to_omit(line: Line, line_length: int) -> Iterator[Set[Leaf
     the one that needs to explode are omitted.
     """
 
-    omit: Set[LeafID] = set()
+    omit: set[LeafID] = set()
     if not line.magic_trailing_comma:
         yield omit
 
     length = 4 * line.depth
-    opening_bracket: Optional[Leaf] = None
-    closing_bracket: Optional[Leaf] = None
-    inner_brackets: Set[LeafID] = set()
+    opening_bracket: Leaf | None = None
+    closing_bracket: Leaf | None = None
+    inner_brackets: set[LeafID] = set()
     for index, leaf, leaf_length in line.enumerate_with_length(reversed=True):
         length += leaf_length
         if length > line_length:
@@ -1379,7 +1476,9 @@ def generate_trailers_to_omit(line: Line, line_length: int) -> Iterator[Set[Leaf
                 prev
                 and prev.type == token.COMMA
                 and leaf.opening_bracket is not None
-                and not is_one_sequence_between(leaf.opening_bracket, leaf, line.leaves)
+                and not is_one_sequence_between(
+                    leaf.opening_bracket, leaf, line.leaves
+                )
             ):
                 # Never omit bracket pairs with trailing commas.
                 # We need to explode on those.
@@ -1397,15 +1496,19 @@ def run_transformer(
     features: Collection[Feature],
     *,
     line_str: str = "",
-) -> List[Line]:
+) -> list[Line]:
     if not line_str:
         line_str = line_to_string(line)
-    result: List[Line] = []
+    result: list[Line] = []
     for transformed_line in transform(line, features):
         if str(transformed_line).strip("\n") == line_str:
-            raise CannotTransform("Line transformer returned an unchanged result")
+            raise CannotTransform(
+                "Line transformer returned an unchanged result"
+            )
 
-        result.extend(transform_line(transformed_line, mode=mode, features=features))
+        result.extend(
+            transform_line(transformed_line, mode=mode, features=features)
+        )
 
     if (
         transform.__class__.__name__ != "rhs"
@@ -1430,7 +1533,8 @@ def run_transformer(
         line_copy, transform, mode, features_fop, line_str=line_str
     )
     if all(
-        is_line_short_enough(ln, line_length=mode.line_length) for ln in second_opinion
+        is_line_short_enough(ln, line_length=mode.line_length)
+        for ln in second_opinion
     ):
         result = second_opinion
     return result

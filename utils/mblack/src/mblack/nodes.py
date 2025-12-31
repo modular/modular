@@ -17,15 +17,21 @@
 mblib2to3 Node/Leaf transformation-related utility functions.
 """
 
-from typing import Final, Generic, Iterator, List, Optional, Set, Tuple, TypeGuard, TypeVar, Union
+from collections.abc import Iterator
+from typing import (
+    Final,
+    Generic,
+    TypeGuard,
+    TypeVar,
+)
 
+from mblib2to3 import pygram
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import NL, Leaf, Node, type_repr
 from mypy_extensions import mypyc_attr
 
 from mblack.cache import CACHE_DIR
 from mblack.strings import has_triple_quotes
-from mblib2to3 import pygram
-from mblib2to3.pgen2 import token
-from mblib2to3.pytree import NL, Leaf, Node, type_repr
 
 pygram.initialize(CACHE_DIR)
 syms: Final = pygram.python_symbols
@@ -33,7 +39,7 @@ syms: Final = pygram.python_symbols
 
 # types
 T = TypeVar("T")
-LN = Union[Leaf, Node]
+LN = Leaf | Node
 LeafID = int
 NodeType = int
 
@@ -119,7 +125,15 @@ TEST_DESCENDANTS: Final = {
     syms.power,
 }
 TYPED_NAMES: Final = {syms.tname, syms.tname_star}
-CONVENTIONS: Final = {token.VAR, token.OWNED, token.READ, token.MUT, token.OUT, token.REF, token.DEINIT}
+CONVENTIONS: Final = {
+    token.VAR,
+    token.OWNED,
+    token.READ,
+    token.MUT,
+    token.OUT,
+    token.REF,
+    token.DEINIT,
+}
 ASSIGNMENTS: Final = {
     "=",
     "+=",
@@ -188,7 +202,7 @@ class Visitor(Generic[T]):
 
 def whitespace(
     leaf: Leaf, *, complex_subscript: bool, is_mojo: bool = False
-) -> str:  # noqa: C901
+) -> str:
     """Return whitespace prefix if needed for the given `leaf`.
 
     `complex_subscript` signals whether the given leaf is part of a subscription
@@ -207,7 +221,9 @@ def whitespace(
     if t == token.COMMENT:
         return DOUBLESPACE
 
-    assert p is not None, f"INTERNAL ERROR: hand-made leaf without parent: {leaf!r}"
+    assert p is not None, (
+        f"INTERNAL ERROR: hand-made leaf without parent: {leaf!r}"
+    )
     if t == token.COLON and p.type not in {
         syms.subscript,
         syms.subscriptlist,
@@ -240,7 +256,10 @@ def whitespace(
                 }:
                     return NO
 
-                elif prevp.parent.type in (syms.typedargslist, syms.typedparamslist):
+                elif prevp.parent.type in (
+                    syms.typedargslist,
+                    syms.typedparamslist,
+                ):
                     # A bit hacky: if the equal sign has whitespace, it means we
                     # previously found it's a typed argument.  So, we're using
                     # that, too.
@@ -272,7 +291,11 @@ def whitespace(
         ):
             return NO
 
-        elif prevp.type == token.AT and p.parent and p.parent.type == syms.decorator:
+        elif (
+            prevp.type == token.AT
+            and p.parent
+            and p.parent.type == syms.decorator
+        ):
             # no space in decorators
             return NO
 
@@ -419,7 +442,9 @@ def whitespace(
             }:
                 return NO
 
-            elif prevp.type == token.EQUAL and prevp_parent.type == syms.argument:
+            elif (
+                prevp.type == token.EQUAL and prevp_parent.type == syms.argument
+            ):
                 return NO
 
         elif t in {token.NAME, token.NUMBER, token.STRING}:
@@ -459,7 +484,7 @@ def whitespace(
     return SPACE
 
 
-def preceding_leaf(node: Optional[LN]) -> Optional[Leaf]:
+def preceding_leaf(node: LN | None) -> Leaf | None:
     """Return the first leaf that precedes `node`, if any."""
     while node:
         res = node.prev_sibling
@@ -477,7 +502,7 @@ def preceding_leaf(node: Optional[LN]) -> Optional[Leaf]:
     return None
 
 
-def prev_siblings_are(node: Optional[LN], tokens: List[Optional[NodeType]]) -> bool:
+def prev_siblings_are(node: LN | None, tokens: list[NodeType | None]) -> bool:
     """Return if the `node` and its previous siblings match types against the provided
     list of tokens; the provided `node`has its type matched against the last element in
     the list.  `None` can be used as the first element to declare that the start of the
@@ -493,7 +518,7 @@ def prev_siblings_are(node: Optional[LN], tokens: List[Optional[NodeType]]) -> b
     return prev_siblings_are(node.prev_sibling, tokens[:-1])
 
 
-def parent_type(node: Optional[LN]) -> Optional[NodeType]:
+def parent_type(node: LN | None) -> NodeType | None:
     """
     Returns:
         @node.parent.type, if @node is not None and has a parent.
@@ -506,9 +531,9 @@ def parent_type(node: Optional[LN]) -> Optional[NodeType]:
     return node.parent.type
 
 
-def child_towards(ancestor: Node, descendant: LN) -> Optional[LN]:
+def child_towards(ancestor: Node, descendant: LN) -> LN | None:
     """Return the child of `ancestor` that contains `descendant`."""
-    node: Optional[LN] = descendant
+    node: LN | None = descendant
     while node and node.parent != ancestor:
         node = node.parent
     return node
@@ -549,14 +574,17 @@ def container_of(leaf: Leaf) -> LN:
         if parent.type == syms.file_input:
             break
 
-        if parent.prev_sibling is not None and parent.prev_sibling.type in BRACKETS:
+        if (
+            parent.prev_sibling is not None
+            and parent.prev_sibling.type in BRACKETS
+        ):
             break
 
         container = parent
     return container
 
 
-def first_leaf_of(node: LN) -> Optional[Leaf]:
+def first_leaf_of(node: LN) -> Leaf | None:
     """Returns the first leaf of the node tree."""
     if isinstance(node, Leaf):
         return node
@@ -583,7 +611,9 @@ def is_docstring(leaf: Leaf) -> bool:
         return True
 
     # Multiline docstring on the same line as the `def`.
-    if prev_siblings_are(leaf.parent, [syms.parameters, token.COLON, syms.simple_stmt]):
+    if prev_siblings_are(  # noqa: SIM103
+        leaf.parent, [syms.parameters, token.COLON, syms.simple_stmt]
+    ):
         # `syms.parameters` is only used in funcdefs and async_funcdefs in the Python
         # grammar. We're safe to return True without further checks.
         return True
@@ -620,8 +650,8 @@ def is_one_tuple(node: LN) -> bool:
 def is_one_sequence_between(
     opening: Leaf,
     closing: Leaf,
-    leaves: List[Leaf],
-    brackets: Tuple[int, int] = (token.LPAR, token.RPAR),
+    leaves: list[Leaf],
+    brackets: tuple[int, int] = (token.LPAR, token.RPAR),
 ) -> bool:
     """Return True if content between `opening` and `closing` is a one-sequence."""
     if (opening.type, closing.type) != brackets:
@@ -732,7 +762,7 @@ def is_yield(node: LN) -> bool:
     return False
 
 
-def is_vararg(leaf: Leaf, within: Set[NodeType]) -> bool:
+def is_vararg(leaf: Leaf, within: set[NodeType]) -> bool:
     """Return True if `leaf` is a star or double star in a vararg or kwarg.
 
     If `within` includes VARARGS_PARENTS, this applies to function signatures.
@@ -838,10 +868,14 @@ def is_type_comment(leaf: Leaf, suffix: str = "") -> bool:
     Only returns true for type comments for now."""
     t = leaf.type
     v = leaf.value
-    return t in {token.COMMENT, STANDALONE_COMMENT} and v.startswith("# type:" + suffix)
+    return t in {token.COMMENT, STANDALONE_COMMENT} and v.startswith(
+        "# type:" + suffix
+    )
 
 
-def wrap_in_parentheses(parent: Node, child: LN, *, visible: bool = True) -> None:
+def wrap_in_parentheses(
+    parent: Node, child: LN, *, visible: bool = True
+) -> None:
     """Wrap `child` in parentheses.
 
     This replaces `child` with an atom holding the parentheses and the old
@@ -859,7 +893,7 @@ def wrap_in_parentheses(parent: Node, child: LN, *, visible: bool = True) -> Non
     parent.insert_child(index, new_child)
 
 
-def unwrap_singleton_parenthesis(node: LN) -> Optional[LN]:
+def unwrap_singleton_parenthesis(node: LN) -> LN | None:
     """Returns `wrapped` if `node` is of the shape ( wrapped ).
 
     Parenthesis can be optional. Returns None otherwise"""

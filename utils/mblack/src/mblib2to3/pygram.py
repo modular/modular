@@ -23,7 +23,7 @@ import os
 from typing import Union
 
 # Local imports
-from .pgen2 import driver, token
+from .pgen2 import driver
 from .pgen2.grammar import Grammar
 
 # Moved into initialize because mypyc can't handle __file__ (XXX bug)
@@ -33,7 +33,7 @@ from .pgen2.grammar import Grammar
 #                                      "PatternGrammar.txt")
 
 
-class Symbols(object):
+class Symbols:
     def __init__(self, grammar: Grammar) -> None:
         """Initializer.
 
@@ -221,28 +221,20 @@ def initialize(cache_dir: Union[str, "os.PathLike[str]", None] = None) -> None:
     python_grammar_no_print_statement_no_exec_statement_async_keywords = (
         python_grammar_no_print_statement_no_exec_statement.copy()
     )
-    python_grammar_no_print_statement_no_exec_statement_async_keywords.async_keywords = (
-        True
-    )
+    python_grammar_no_print_statement_no_exec_statement_async_keywords.async_keywords = True
     python_grammar_no_print_statement_no_exec_statement_async_keywords.version = (
         3,
         7,
     )
 
     # Python 3.10+
-    python_grammar_soft_keywords = (
-        python_grammar_no_print_statement_no_exec_statement_async_keywords.copy()
-    )
+    python_grammar_soft_keywords = python_grammar_no_print_statement_no_exec_statement_async_keywords.copy()
     python_grammar_soft_keywords.soft_keywords = soft_keywords
     python_grammar_soft_keywords.version = (3, 10)
 
     # MOJO+
-    mojo_grammar = (
-        python_grammar_soft_keywords.copy()
-    )
-    mojo_grammar.mojo_keywords = (
-        True
-    )
+    mojo_grammar = python_grammar_soft_keywords.copy()
+    mojo_grammar.mojo_keywords = True
     mojo_grammar.version = (0, 1)
 
     pattern_grammar = driver.load_packaged_grammar(

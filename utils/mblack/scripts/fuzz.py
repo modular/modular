@@ -23,10 +23,9 @@ a coverage-guided fuzzer I'm working on.
 import re
 
 import hypothesmith
+import mblack
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-
-import black
 from mblib2to3.pgen2.tokenize import TokenError
 
 
@@ -45,7 +44,7 @@ from mblib2to3.pgen2.tokenize import TokenError
     src_contents=hypothesmith.from_grammar() | hypothesmith.from_node(),
     # Using randomly-varied modes helps us to exercise less common code paths.
     mode=st.builds(
-        black.FileMode,
+        mblack.FileMode,
         line_length=st.just(88) | st.integers(0, 200),
         string_normalization=st.booleans(),
         preview=st.booleans(),
@@ -54,15 +53,15 @@ from mblib2to3.pgen2.tokenize import TokenError
     ),
 )
 def test_idempotent_any_syntactically_valid_python(
-    src_contents: str, mode: black.FileMode
+    src_contents: str, mode: mblack.FileMode
 ) -> None:
     # Before starting, let's confirm that the input string is valid Python:
     compile(src_contents, "<string>", "exec")  # else the bug is in hypothesmith
 
     # Then format the code...
     try:
-        dst_contents = black.format_str(src_contents, mode=mode)
-    except black.InvalidInput:
+        dst_contents = mblack.format_str(src_contents, mode=mode)
+    except mblack.InvalidInput:
         # This is a bug - if it's valid Python code, as above, Black should be
         # able to cope with it.  See issues #970, #1012
         # TODO: remove this try-except block when issues are resolved.
@@ -79,8 +78,8 @@ def test_idempotent_any_syntactically_valid_python(
         raise
 
     # And check that we got equivalent and stable output.
-    black.assert_equivalent(src_contents, dst_contents)
-    black.assert_stable(src_contents, dst_contents, mode=mode)
+    mblack.assert_equivalent(src_contents, dst_contents)
+    mblack.assert_stable(src_contents, dst_contents, mode=mode)
 
     # Future test: check that pure-python and mypyc versions of black
     # give identical output for identical input?

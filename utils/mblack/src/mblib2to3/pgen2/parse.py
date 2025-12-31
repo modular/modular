@@ -24,36 +24,29 @@ See Parser/parser.c in the Python distribution for additional info on
 how this parsing engine works.
 
 """
-import copy
+
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    cast,
+)
+
+from mblib2to3.pgen2.grammar import Grammar
+from mblib2to3.pytree import NL, Context, Leaf, Node, RawNode, convert
 
 # Local imports
 from . import grammar, token, tokenize
-from typing import (
-    cast,
-    Any,
-    Optional,
-    Text,
-    Union,
-    Tuple,
-    Dict,
-    List,
-    Iterator,
-    Callable,
-    Set,
-    TYPE_CHECKING,
-)
-from mblib2to3.pgen2.grammar import Grammar
-from mblib2to3.pytree import convert, NL, Context, RawNode, Leaf, Node
 
 if TYPE_CHECKING:
     from mblib2to3.pgen2.driver import TokenProxy
 
 
-Results = Dict[Text, NL]
-Convert = Callable[[Grammar, RawNode], Union[Node, Leaf]]
-DFA = List[List[Tuple[int, int]]]
-DFAS = Tuple[DFA, Dict[int, int]]
+Results = dict[str, NL]
+Convert = Callable[[Grammar, RawNode], Node | Leaf]
+DFA = list[list[tuple[int, int]]]
+DFAS = tuple[DFA, dict[int, int]]
 
 
 def lam_sub(grammar: Grammar, node: RawNode) -> NL:
@@ -66,28 +59,28 @@ DUMMY_NODE = (-1, None, None, None)
 
 
 def stack_copy(
-    stack: List[Tuple[DFAS, int, RawNode]]
-) -> List[Tuple[DFAS, int, RawNode]]:
+    stack: list[tuple[DFAS, int, RawNode]],
+) -> list[tuple[DFAS, int, RawNode]]:
     """Nodeless stack copy."""
     return [(dfa, label, DUMMY_NODE) for dfa, label, _ in stack]
 
 
 class Recorder:
     def __init__(
-        self, parser: "Parser", ilabels: List[int], context: Context
+        self, parser: "Parser", ilabels: list[int], context: Context
     ) -> None:
         self.parser = parser
         self._ilabels = ilabels
         self.context = context  # not really matter
 
-        self._dead_ilabels: Set[int] = set()
+        self._dead_ilabels: set[int] = set()
         self._start_point = self.parser.stack
         self._points = {
             ilabel: stack_copy(self._start_point) for ilabel in ilabels
         }
 
     @property
-    def ilabels(self) -> Set[int]:
+    def ilabels(self) -> set[int]:
         return self._dead_ilabels.symmetric_difference(self._ilabels)
 
     @contextmanager
@@ -119,9 +112,7 @@ class Recorder:
         finally:
             self.parser.is_backtracking = is_backtracking
 
-    def add_token(
-        self, tok_type: int, tok_val: Text, raw: bool = False
-    ) -> None:
+    def add_token(self, tok_type: int, tok_val: str, raw: bool = False) -> None:
         func: Callable[..., Any]
         if raw:
             func = self.parser._addtoken
@@ -136,8 +127,8 @@ class Recorder:
                 func(*args)  # type: ignore
 
     def determine_route(
-        self, value: Optional[Text] = None, force: bool = False
-    ) -> Optional[int]:
+        self, value: str | None = None, force: bool = False
+    ) -> int | None:
         alive_ilabels = self.ilabels
         if len(alive_ilabels) == 0:
             *_, most_successful_ilabel = self._dead_ilabels
@@ -157,14 +148,14 @@ class ParseError(Exception):
 
     def __init__(
         self,
-        msg: Text,
-        type: Optional[int],
-        value: Optional[Text],
+        msg: str,
+        type: int | None,
+        value: str | None,
         context: Context,
     ) -> None:
         Exception.__init__(
             self,
-            "%s: type=%r, value=%r, context=%r" % (msg, type, value, context),
+            f"{msg}: type={type!r}, value={value!r}, context={context!r}",
         )
         self.msg = msg
         self.type = type
@@ -172,7 +163,7 @@ class ParseError(Exception):
         self.context = context
 
 
-class Parser(object):
+class Parser:
     """Parser engine.
 
     The proper usage sequence is:
@@ -203,7 +194,7 @@ class Parser(object):
     """
 
     def __init__(
-        self, grammar: Grammar, convert: Optional[Convert] = None
+        self, grammar: Grammar, convert: Convert | None = None
     ) -> None:
         """Constructor.
 
@@ -243,7 +234,7 @@ class Parser(object):
         self.convert = convert or lam_sub
         self.is_backtracking = False
 
-    def setup(self, proxy: "TokenProxy", start: Optional[int] = None) -> None:
+    def setup(self, proxy: "TokenProxy", start: int | None = None) -> None:
         """Prepare for parsing.
 
         This *must* be called before starting to parse.
@@ -263,12 +254,12 @@ class Parser(object):
         # where children is a list of nodes or None, and context may be None.
         newnode: RawNode = (start, None, None, [])
         stackentry = (self.grammar.dfas[start], 0, newnode)
-        self.stack: List[Tuple[DFAS, int, RawNode]] = [stackentry]
-        self.rootnode: Optional[NL] = None
-        self.used_names: Set[str] = set()
+        self.stack: list[tuple[DFAS, int, RawNode]] = [stackentry]
+        self.rootnode: NL | None = None
+        self.used_names: set[str] = set()
         self.proxy = proxy
 
-    def addtoken(self, type: int, value: Text, context: Context) -> bool:
+    def addtoken(self, type: int, value: str, context: Context) -> bool:
         """Add a token; return True iff this is the end of the program."""
         # Map from token to label
         ilabels = self.classify(type, value, context)
@@ -319,12 +310,12 @@ class Parser(object):
         return self._addtoken(ilabel, type, value, context)
 
     def _addtoken(
-        self, ilabel: int, type: int, value: Text, context: Context
+        self, ilabel: int, type: int, value: str, context: Context
     ) -> bool:
         # Loop until the token is shifted; may raise exceptions
         while True:
-            dfa, state, node = self.stack[-1]
-            states, first = dfa
+            dfa, state, _ = self.stack[-1]
+            states, _ = dfa
             arcs = states[state]
             # Look for a state with this label
             for i, newstate in arcs:
@@ -332,7 +323,7 @@ class Parser(object):
                 if t >= 256:
                     # See if it's a symbol and if we're in its first set
                     itsdfa = self.grammar.dfas[t]
-                    itsstates, itsfirst = itsdfa
+                    _itsstates, itsfirst = itsdfa
                     if ilabel in itsfirst:
                         # Push a symbol
                         self.push(t, itsdfa, newstate, context)
@@ -349,8 +340,8 @@ class Parser(object):
                         if not self.stack:
                             # Done parsing!
                             return True
-                        dfa, state, node = self.stack[-1]
-                        states, first = dfa
+                        dfa, state, _node = self.stack[-1]
+                        states, _first = dfa
                     # Done with this token
                     return False
 
@@ -365,7 +356,7 @@ class Parser(object):
                     # No success finding a transition
                     raise ParseError("bad input", type, value, context)
 
-    def classify(self, type: int, value: Text, context: Context) -> List[int]:
+    def classify(self, type: int, value: str, context: Context) -> list[int]:
         """Turn a token into a label.  (Internal)
 
         Depending on whether the value is a soft-keyword or not,
@@ -389,14 +380,14 @@ class Parser(object):
         return [ilabel]
 
     def shift(
-        self, type: int, value: Text, newstate: int, context: Context
+        self, type: int, value: str, newstate: int, context: Context
     ) -> None:
         """Shift a token.  (Internal)"""
         if self.is_backtracking:
-            dfa, state, _ = self.stack[-1]
+            dfa, _, _ = self.stack[-1]
             self.stack[-1] = (dfa, newstate, DUMMY_NODE)
         else:
-            dfa, state, node = self.stack[-1]
+            dfa, _state, node = self.stack[-1]
             rawnode: RawNode = (type, value, context, None)
             newnode = convert(self.grammar, rawnode)
             assert node[-1] is not None
@@ -408,11 +399,11 @@ class Parser(object):
     ) -> None:
         """Push a nonterminal.  (Internal)"""
         if self.is_backtracking:
-            dfa, state, _ = self.stack[-1]
+            dfa, _, _ = self.stack[-1]
             self.stack[-1] = (dfa, newstate, DUMMY_NODE)
             self.stack.append((newdfa, 0, DUMMY_NODE))
         else:
-            dfa, state, node = self.stack[-1]
+            dfa, _state, node = self.stack[-1]
             newnode: RawNode = (type, None, context, [])
             self.stack[-1] = (dfa, newstate, node)
             self.stack.append((newdfa, 0, newnode))
@@ -422,10 +413,10 @@ class Parser(object):
         if self.is_backtracking:
             self.stack.pop()
         else:
-            popdfa, popstate, popnode = self.stack.pop()
+            _popdfa, _popstate, popnode = self.stack.pop()
             newnode = convert(self.grammar, popnode)
             if self.stack:
-                dfa, state, node = self.stack[-1]
+                _dfa, _state, node = self.stack[-1]
                 assert node[-1] is not None
                 node[-1].append(newnode)
             else:

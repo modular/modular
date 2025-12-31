@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from hashlib import sha256
 from operator import attrgetter
-from typing import Dict, Final, Set
+from typing import Final
 from warnings import warn
 
 from mblack.const import DEFAULT_LINE_LENGTH
@@ -71,7 +71,7 @@ FUTURE_FLAG_TO_FEATURE: Final = {
 }
 
 
-VERSION_TO_FEATURES: Dict[TargetVersion, Set[Feature]] = {
+VERSION_TO_FEATURES: dict[TargetVersion, set[Feature]] = {
     TargetVersion.PY33: {Feature.ASYNC_IDENTIFIERS},
     TargetVersion.PY34: {Feature.ASYNC_IDENTIFIERS},
     TargetVersion.PY35: {
@@ -168,12 +168,16 @@ VERSION_TO_FEATURES: Dict[TargetVersion, Set[Feature]] = {
         Feature.PATTERN_MATCHING,
         Feature.EXCEPT_STAR,
         Feature.VARIADIC_GENERICS,
-    }
+    },
 }
 
 
-def supports_feature(target_versions: Set[TargetVersion], feature: Feature) -> bool:
-    return all(feature in VERSION_TO_FEATURES[version] for version in target_versions)
+def supports_feature(
+    target_versions: set[TargetVersion], feature: Feature
+) -> bool:
+    return all(
+        feature in VERSION_TO_FEATURES[version] for version in target_versions
+    )
 
 
 class Preview(Enum):
@@ -197,7 +201,7 @@ class Deprecated(UserWarning):
 
 @dataclass
 class Mode:
-    target_versions: Set[TargetVersion] = field(default_factory=set)
+    target_versions: set[TargetVersion] = field(default_factory=set)
     line_length: int = DEFAULT_LINE_LENGTH
     string_normalization: bool = True
     is_pyi: bool = False
@@ -206,7 +210,7 @@ class Mode:
     skip_source_first_line: bool = False
     magic_trailing_comma: bool = True
     experimental_string_processing: bool = False
-    python_cell_magics: Set[str] = field(default_factory=set)
+    python_cell_magics: set[str] = field(default_factory=set)
     preview: bool = False
 
     def __post_init__(self) -> None:
@@ -232,7 +236,9 @@ class Mode:
         if self.target_versions:
             version_str = ",".join(
                 str(version.value)
-                for version in sorted(self.target_versions, key=attrgetter("value"))
+                for version in sorted(
+                    self.target_versions, key=attrgetter("value")
+                )
             )
         else:
             version_str = "-"
@@ -246,6 +252,8 @@ class Mode:
             str(int(self.magic_trailing_comma)),
             str(int(self.experimental_string_processing)),
             str(int(self.preview)),
-            sha256((",".join(sorted(self.python_cell_magics))).encode()).hexdigest(),
+            sha256(
+                (",".join(sorted(self.python_cell_magics))).encode()
+            ).hexdigest(),
         ]
         return ".".join(parts)

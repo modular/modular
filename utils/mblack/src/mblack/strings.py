@@ -20,10 +20,12 @@ Simple formatting on strings. Further string formatting code is in trans.py.
 import re
 import sys
 from functools import lru_cache
-from typing import Final, List, Pattern
+from re import Pattern
+from typing import Final
 
-
-STRING_PREFIX_CHARS: Final = "furbFURB"  # All possible string prefix characters.
+STRING_PREFIX_CHARS: Final = (
+    "furbFURB"  # All possible string prefix characters.
+)
 STRING_PREFIX_RE: Final = re.compile(
     r"^([" + STRING_PREFIX_CHARS + r"]*)(.*)$", re.DOTALL
 )
@@ -48,7 +50,7 @@ def has_triple_quotes(string: str) -> bool:
     return raw_string[:3] in {'"""', "'''"}
 
 
-def lines_with_leading_tabs_expanded(s: str) -> List[str]:
+def lines_with_leading_tabs_expanded(s: str) -> list[str]:
     """
     Splits string into lines and expands only leading tabs (following the normal
     Python rules)
@@ -136,16 +138,16 @@ def assert_is_leaf_string(string: str) -> None:
     else:
         quote_idx = min(squote_idx, dquote_idx)
 
-    assert (
-        0 <= quote_idx < len(string) - 1
-    ), f"{string!r} is missing a starting quote character (' or \")."
+    assert 0 <= quote_idx < len(string) - 1, (
+        f"{string!r} is missing a starting quote character (' or \")."
+    )
     assert string[-1] in (
         "'",
         '"',
     ), f"{string!r} is missing an ending quote character (' or \")."
-    assert set(string[:quote_idx]).issubset(
-        set(STRING_PREFIX_CHARS)
-    ), f"{set(string[:quote_idx])} is NOT a subset of {set(STRING_PREFIX_CHARS)}."
+    assert set(string[:quote_idx]).issubset(set(STRING_PREFIX_CHARS)), (
+        f"{set(string[:quote_idx])} is NOT a subset of {set(STRING_PREFIX_CHARS)}."
+    )
 
 
 def normalize_string_prefix(s: str) -> str:

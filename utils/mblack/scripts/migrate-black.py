@@ -17,6 +17,7 @@
 # check out every commit added by the current branch, blackify them,
 # and generate diffs to reconstruct the original commits, but then
 # blackified
+import itertools
 import logging
 import os
 import sys
@@ -27,7 +28,9 @@ def git(*args: str) -> str:
     return check_output(["git"] + list(args)).decode("utf8").strip()
 
 
-def blackify(base_branch: str, black_command: str, logger: logging.Logger) -> int:
+def blackify(
+    base_branch: str, black_command: str, logger: logging.Logger
+) -> int:
     current_branch = git("branch", "--show-current")
 
     if not current_branch or base_branch == current_branch:
@@ -41,21 +44,21 @@ def blackify(base_branch: str, black_command: str, logger: logging.Logger) -> in
     merge_base = git("merge-base", "HEAD", base_branch)
     if not merge_base:
         logger.error(
-            "Could not find a common commit for current head and %s" % base_branch
+            f"Could not find a common commit for current head and {base_branch}"
         )
         return 1
 
     commits = git(
-        "log", "--reverse", "--pretty=format:%H", "%s~1..HEAD" % merge_base
+        "log", "--reverse", "--pretty=format:%H", f"{merge_base}~1..HEAD"
     ).split()
     for commit in commits:
-        git("checkout", commit, "-b%s-black" % commit)
+        git("checkout", commit, f"-b{commit}-black")
         check_output(black_command, shell=True)
         git("commit", "-aqm", "blackify")
 
-    git("checkout", base_branch, "-b%s-black" % current_branch)
+    git("checkout", base_branch, f"-b{current_branch}-black")
 
-    for last_commit, commit in zip(commits, commits[1:]):
+    for last_commit, commit in itertools.pairwise(commits):
         allow_empty = (
             b"--allow-empty" in run(["git", "apply", "-h"], stdout=PIPE).stdout
         )
@@ -66,7 +69,7 @@ def blackify(base_branch: str, black_command: str, logger: logging.Logger) -> in
                 "diff",
                 "--binary",
                 "--find-copies",
-                "%s-black..%s-black" % (last_commit, commit),
+                f"{last_commit}-black..{commit}-black",
             ],
             stdout=PIPE,
         )
@@ -92,7 +95,7 @@ def blackify(base_branch: str, black_command: str, logger: logging.Logger) -> in
         git("commit", "--allow-empty", "-aqC", commit)
 
     for commit in commits:
-        git("branch", "-qD", "%s-black" % commit)
+        git("branch", "-qD", f"{commit}-black")
 
     return 0
 
@@ -103,7 +106,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("base_branch")
     parser.add_argument("--black_command", default="black -q .")
-    parser.add_argument("--logfile", type=argparse.FileType("w"), default=sys.stdout)
+    parser.add_argument(
+        "--logfile", type=argparse.FileType("w"), default=sys.stdout
+    )
     args = parser.parse_args()
     logger = logging.getLogger(__name__)
     logger.addHandler(logging.StreamHandler(args.logfile))

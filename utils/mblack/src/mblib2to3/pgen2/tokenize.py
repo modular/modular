@@ -42,17 +42,10 @@ are the same, except instead of generating tokens, tokeneater is a callback
 function to which the 5 fields described above are passed as 5 arguments,
 each time a new token is found."""
 
+from collections.abc import Callable, Iterable, Iterator
+from re import Pattern
 from typing import (
-    Callable,
     Final,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Pattern,
-    Text,
-    Tuple,
-    Union,
     cast,
 )
 
@@ -77,20 +70,22 @@ __all__ = [x for x in dir(token) if x[0] != "_"] + [
 del token
 
 
-def group(*choices):
+def group(*choices):  # noqa: ANN202
     return "(" + "|".join(choices) + ")"
 
 
-def any(*choices):
+def any(*choices):  # noqa: ANN202
     return group(*choices) + "*"
 
 
-def maybe(*choices):
+def maybe(*choices):  # noqa: ANN202
     return group(*choices) + "?"
 
 
-def _combinations(*l):
-    return set(x + y for x in l for y in l + ("",) if x.casefold() != y.casefold())
+def _combinations(*l):  # noqa: ANN202
+    return set(
+        x + y for x in l for y in l + ("",) if x.casefold() != y.casefold()
+    )
 
 
 Whitespace = r"[ \f\t]*"
@@ -106,9 +101,9 @@ Octnumber = r"0[oO]?_?[0-7]+(?:_[0-7]+)*[lL]?"
 Decnumber = group(r"[1-9]\d*(?:_\d+)*[lL]?", "0[lL]?")
 Intnumber = group(Binnumber, Hexnumber, Octnumber, Decnumber)
 Exponent = r"[eE][-+]?\d+(?:_\d+)*"
-Pointfloat = group(r"\d+(?:_\d+)*\.(?:\d+(?:_\d+)*)?", r"\.\d+(?:_\d+)*") + maybe(
-    Exponent
-)
+Pointfloat = group(
+    r"\d+(?:_\d+)*\.(?:\d+(?:_\d+)*)?", r"\.\d+(?:_\d+)*"
+) + maybe(Exponent)
 Expfloat = r"\d+(?:_\d+)*" + Exponent
 Floatnumber = group(Pointfloat, Expfloat)
 Imagnumber = group(r"\d+(?:_\d+)*[jJ]", Floatnumber + r"[jJ]")
@@ -204,19 +199,28 @@ class StopTokenizing(Exception):
     pass
 
 
-def printtoken(type, token, xxx_todo_changeme, xxx_todo_changeme1, line):  # for testing
+def printtoken(
+    type,  # noqa: ANN001
+    token,  # noqa: ANN001
+    xxx_todo_changeme,  # noqa: ANN001
+    xxx_todo_changeme1,  # noqa: ANN001
+    line,  # noqa: ANN001
+) -> None:  # for testing
     (srow, scol) = xxx_todo_changeme
     (erow, ecol) = xxx_todo_changeme1
     print(
-        "%d,%d-%d,%d:\t%s\t%s" % (srow, scol, erow, ecol, tok_name[type], repr(token))
+        "%d,%d-%d,%d:\t%s\t%s"  # noqa: UP031
+        % (srow, scol, erow, ecol, tok_name[type], repr(token))
     )
 
 
-Coord = Tuple[int, int]
-TokenEater = Callable[[int, Text, Coord, Coord, Text], None]
+Coord = tuple[int, int]
+TokenEater = Callable[[int, str, Coord, Coord, str], None]
 
 
-def tokenize(readline: Callable[[], Text], tokeneater: TokenEater = printtoken) -> None:
+def tokenize(
+    readline: Callable[[], str], tokeneater: TokenEater = printtoken
+) -> None:
     """
     The tokenize() function accepts two parameters: one representing the
     input stream, and one providing an output mechanism for tokenize().
@@ -236,17 +240,17 @@ def tokenize(readline: Callable[[], Text], tokeneater: TokenEater = printtoken) 
 
 
 # backwards compatible interface
-def tokenize_loop(readline, tokeneater):
+def tokenize_loop(readline, tokeneater) -> None:  # noqa: ANN001
     for token_info in generate_tokens(readline):
         tokeneater(*token_info)
 
 
-GoodTokenInfo = Tuple[int, Text, Coord, Coord, Text]
-TokenInfo = Union[Tuple[int, str], GoodTokenInfo]
+GoodTokenInfo = tuple[int, str, Coord, Coord, str]
+TokenInfo = tuple[int, str] | GoodTokenInfo
 
 
 class Untokenizer:
-    tokens: List[Text]
+    tokens: list[str]
     prev_row: int
     prev_col: int
 
@@ -262,13 +266,13 @@ class Untokenizer:
         if col_offset:
             self.tokens.append(" " * col_offset)
 
-    def untokenize(self, iterable: Iterable[TokenInfo]) -> Text:
+    def untokenize(self, iterable: Iterable[TokenInfo]) -> str:
         for t in iterable:
             if len(t) == 2:
-                self.compat(cast(Tuple[int, str], t), iterable)
+                self.compat(cast(tuple[int, str], t), iterable)
                 break
-            tok_type, token, start, end, line = cast(
-                Tuple[int, Text, Coord, Coord, Text], t
+            tok_type, token, start, end, _line = cast(
+                tuple[int, str, Coord, Coord, str], t
             )
             self.add_whitespace(start)
             self.tokens.append(token)
@@ -278,7 +282,9 @@ class Untokenizer:
                 self.prev_col = 0
         return "".join(self.tokens)
 
-    def compat(self, token: Tuple[int, Text], iterable: Iterable[TokenInfo]) -> None:
+    def compat(
+        self, token: tuple[int, str], iterable: Iterable[TokenInfo]
+    ) -> None:
         startline = False
         indents = []
         toks_append = self.tokens.append
@@ -324,7 +330,7 @@ def _get_normal_name(orig_enc: str) -> str:
     return orig_enc
 
 
-def detect_encoding(readline: Callable[[], bytes]) -> Tuple[str, List[bytes]]:
+def detect_encoding(readline: Callable[[], bytes]) -> tuple[str, list[bytes]]:
     """
     The detect_encoding() function is used to detect the encoding that should
     be used to decode a Python source file. It requires one argument, readline,
@@ -350,9 +356,9 @@ def detect_encoding(readline: Callable[[], bytes]) -> Tuple[str, List[bytes]]:
         try:
             return readline()
         except StopIteration:
-            return bytes()
+            return b""
 
-    def find_cookie(line: bytes) -> Optional[str]:
+    def find_cookie(line: bytes) -> str | None:
         try:
             line_string = line.decode("ascii")
         except UnicodeDecodeError:
@@ -365,7 +371,7 @@ def detect_encoding(readline: Callable[[], bytes]) -> Tuple[str, List[bytes]]:
             codec = lookup(encoding)
         except LookupError:
             # This behaviour mimics the Python interpreter
-            raise SyntaxError("unknown encoding: " + encoding)
+            raise SyntaxError("unknown encoding: " + encoding)  # noqa: B904
 
         if bom_found:
             if codec.name != "utf-8":
@@ -399,7 +405,7 @@ def detect_encoding(readline: Callable[[], bytes]) -> Tuple[str, List[bytes]]:
     return default, [first, second]
 
 
-def untokenize(iterable: Iterable[TokenInfo]) -> Text:
+def untokenize(iterable: Iterable[TokenInfo]) -> str:
     """Transform tokens back into Python source code.
 
     Each element returned by the iterable must be a token sequence
@@ -422,7 +428,7 @@ def untokenize(iterable: Iterable[TokenInfo]) -> Text:
 
 
 def generate_tokens(
-    readline: Callable[[], Text], grammar: Optional[Grammar] = None
+    readline: Callable[[], str], grammar: Grammar | None = None
 ) -> Iterator[GoodTokenInfo]:
     """
     The generate_tokens() generator requires one argument, readline, which
@@ -442,26 +448,28 @@ def generate_tokens(
     lnum = parenlev = continued = 0
     numchars: Final = "0123456789"
     contstr, needcont = "", 0
-    contline: Optional[str] = None
+    contline: str | None = None
     indents = [0]
 
     # If we know we're parsing 3.7+, we can unconditionally parse `async` and
     # `await` as keywords.
     async_keywords = False if grammar is None else grammar.async_keywords
     # 'stashed' and 'async_*' are used for async/await parsing
-    stashed: Optional[GoodTokenInfo] = None
+    stashed: GoodTokenInfo | None = None
     async_def = False
     async_def_indent = 0
     async_def_nl = False
     # If we know we're parsing lit, we can unconditionally parse various
     # identifiers, like `fn`, as keywords.
     has_mojo_keywords = False if grammar is None else grammar.mojo_keywords
-    def_keywords = ("def", "fn", "__mlir_region") if has_mojo_keywords else ("def")
+    def_keywords = (
+        ("def", "fn", "__mlir_region") if has_mojo_keywords else ("def")
+    )
     mojo_keyword_tokens = {
         "fn": FN,
         "struct": STRUCT,
         "alias": ALIAS,
-        "comptime" : COMPTIME,
+        "comptime": COMPTIME,
         "var": VAR,
         "__mlir_region": MLIR_REGION,
         "owned": OWNED,
@@ -473,10 +481,10 @@ def generate_tokens(
         "ref": REF,
         "unified": UNIFIED,
         "where": WHERE,
-        "__extension": EXTENSION
+        "__extension": EXTENSION,
     }
 
-    strstart: Tuple[int, int]
+    strstart: tuple[int, int]
     endprog: Pattern[str]
 
     while 1:  # loop over lines in stream
@@ -596,12 +604,12 @@ def generate_tokens(
         # checks for validity.  This is because we can't get things like 'out'
         # handled properly as soft tokens.  This returns true if this can be
         # handled as a normal Mojo token.
-        def check_mojo_token():
+        def check_mojo_token():  # noqa: ANN202
             # Context sensitive arg conventions are only a keyword if followed
             # by an identifier letter or a variadic.
-            if token not in ["out", "read", "mut", "deinit"]:
+            if token not in ["out", "read", "mut", "deinit"]:  # noqa: B023
                 return True
-            next_token = line[end:].lstrip()
+            next_token = line[end:].lstrip()  # noqa: B023
             return next_token and (
                 next_token[0].isidentifier() or next_token[0] == "*"
             )
@@ -705,7 +713,11 @@ def generate_tokens(
                         continue
 
                     if token == "for" or token in def_keywords:
-                        if stashed and stashed[0] == NAME and stashed[1] == "async":
+                        if (
+                            stashed
+                            and stashed[0] == NAME
+                            and stashed[1] == "async"
+                        ):
                             if token in def_keywords:
                                 async_def = True
                                 async_def_indent = indents[-1]
@@ -754,7 +766,7 @@ def generate_tokens(
         yield stashed
         stashed = None
 
-    for indent in indents[1:]:  # pop remaining indent levels
+    for _indent in indents[1:]:  # pop remaining indent levels
         yield (DEDENT, "", (lnum, 0), (lnum, 0), "")
     yield (ENDMARKER, "", (lnum, 0), (lnum, 0), "")
 
