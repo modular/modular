@@ -51,6 +51,6 @@ fn global_constant[T: AnyType, //, value: T]() -> ref [StaticConstantOrigin] T:
     print(data_ref[0], data_ref[1], data_ref[2])  # Prints: 1 11 100
     ```
     """
-    return UnsafePointer[mut=False](
+    return UnsafePointer[mut=False, origin=StaticConstantOrigin](
         __mlir_op.`pop.global_constant`[value=value]()
     )[]
