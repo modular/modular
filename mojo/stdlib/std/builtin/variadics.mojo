@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from builtin.constrained import _constrained_conforms_to
+from builtin.rebind import downcast
 from sys.intrinsics import _type_is_eq_parse_time
 
 
@@ -462,7 +463,7 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
 struct _VariadicListMemIter[
     elt_is_mutable: Bool,
     //,
-    elt_type: ImplicitlyDestructible,
+    elt_type: AnyType,
     elt_origin: Origin[mut=elt_is_mutable],
     list_origin: ImmutOrigin,
     is_owned: Bool,
@@ -518,7 +519,7 @@ struct VariadicListMem[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable],
     //,
-    element_type: ImplicitlyDestructible,
+    element_type: AnyType,
     is_owned: Bool,
 ](Sized):
     """A utility class to access variadic function arguments of memory-only
@@ -577,9 +578,21 @@ struct VariadicListMem[
         # normally torn down when CheckLifetimes is left to its own devices.
         @parameter
         if Self.is_owned:
+            _constrained_conforms_to[
+                conforms_to(Self.element_type, ImplicitlyDestructible),
+                Parent=Self,
+                Element = Self.element_type,
+                ParentConformsTo="ImplicitlyDestructible",
+            ]()
+            comptime TDestructible = downcast[
+                ImplicitlyDestructible, Self.element_type
+            ]
+
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[True]().bitcast[
+                    TDestructible
+                ]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn (idx: Int, var elt: Self.element_type) capturing

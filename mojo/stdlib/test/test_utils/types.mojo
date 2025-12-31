@@ -560,3 +560,40 @@ struct Observable[
         """Destroy the Observable and increment the del count."""
         if self._dels:
             self._dels.value()[] += 1
+
+
+# ===----------------------------------------------------------------------=== #
+# ConfigureTrivial
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct ConfigureTrivial[
+    *,
+    del_is_trivial: Bool = False,
+    copyinit_is_trivial: Bool = False,
+    moveinit_is_trivial: Bool = False,
+](Copyable):
+    """Testing type configurable conditional triviality.
+
+    Parameters:
+        del_is_trivial: Whether the destructor is trivial.
+        copyinit_is_trivial: Whether the copy initializer is trivial.
+        moveinit_is_trivial: Whether the move initializer is trivial.
+    """
+
+    comptime __del__is_trivial = Self.del_is_trivial
+    comptime __copyinit__is_trivial = Self.copyinit_is_trivial
+    comptime __moveinit__is_trivial = Self.moveinit_is_trivial
+
+
+# ===----------------------------------------------------------------------=== #
+# NonMovable
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct NonMovable:
+    """A non-movable type."""
+
+    pass

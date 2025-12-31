@@ -14,7 +14,14 @@
 from os import abort
 from sys.ffi import _Global
 
-from test_utils import MoveCopyCounter, ObservableDel, MoveOnly, ExplicitDelOnly
+from test_utils import (
+    MoveCopyCounter,
+    ObservableDel,
+    ConfigureTrivial,
+    MoveOnly,
+    ExplicitDelOnly,
+    NonMovable,
+)
 from testing import TestSuite, assert_equal, assert_false, assert_true
 from benchmark import keep
 
@@ -217,6 +224,43 @@ def test_variant_linear_type_move():
     var v2 = v1^
 
     v2^.destroy_with(ExplicitDelOnly.destroy)
+
+
+def test_variant_trivial_del():
+    comptime yes = ConfigureTrivial[del_is_trivial=True]
+    comptime no = ConfigureTrivial[del_is_trivial=False]
+
+    assert_true(Variant[yes].__del__is_trivial)
+    assert_false(Variant[no].__del__is_trivial)
+    assert_false(Variant[yes, no].__del__is_trivial)
+
+    # TODO (MOCO-3016):
+    # check variant of linear type
+    # assert_false(Variant[LinearType].__del__is_trivial)
+
+
+def test_variant_trivial_copyinit():
+    comptime yes = ConfigureTrivial[copyinit_is_trivial=True]
+    comptime no = ConfigureTrivial[copyinit_is_trivial=False]
+
+    assert_true(Variant[yes].__copyinit__is_trivial)
+    assert_false(Variant[no].__copyinit__is_trivial)
+    assert_false(Variant[yes, no].__copyinit__is_trivial)
+
+    # check variant of move-only type
+    assert_false(Variant[MoveOnly[Int]].__copyinit__is_trivial)
+
+
+def test_variant_trivial_moveinit():
+    comptime yes = ConfigureTrivial[moveinit_is_trivial=True]
+    comptime no = ConfigureTrivial[moveinit_is_trivial=False]
+
+    assert_true(Variant[yes].__moveinit__is_trivial)
+    assert_false(Variant[no].__moveinit__is_trivial)
+    assert_false(Variant[yes, no].__moveinit__is_trivial)
+
+    # check variant of non-movable type
+    assert_false(Variant[NonMovable].__moveinit__is_trivial)
 
 
 def main():

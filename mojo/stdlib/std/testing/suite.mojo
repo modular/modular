@@ -25,7 +25,7 @@ from utils._ansi import Color, Text
 from collections import Set
 
 from builtin._location import __call_location, _SourceLocation
-from compile.reflection import get_function_name
+from reflection import get_function_name
 from sys.intrinsics import _type_is_eq
 from sys import argv
 

@@ -46,9 +46,8 @@ from sys.param_env import _is_bool_like
 from builtin._location import __call_location, _SourceLocation
 from builtin.device_passable import DevicePassable
 from builtin.variadics import Variadic
-from compile import get_type_name
 from compile.compile import CompiledFunctionInfo
-from compile.reflection import get_linkage_name
+from reflection import get_linkage_name, get_type_name
 from gpu.host.compile import (
     _compile_code,
     _cross_compilation,
