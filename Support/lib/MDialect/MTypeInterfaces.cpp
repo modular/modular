@@ -83,13 +83,11 @@ struct IndexLayout
 } // namespace
 
 void MDialect::injectTypeInterfaces() {
+#define DECLARE_FLOAT(_, __, ___, MLIR_TYPE, ...)                              \
+  MLIR_TYPE::attachInterface<FloatLayout>(*getContext());
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
   IntegerType::attachInterface<IntegerLayout>(*getContext());
-  BFloat16Type::attachInterface<FloatLayout>(*getContext());
-  Float16Type::attachInterface<FloatLayout>(*getContext());
-  Float32Type::attachInterface<FloatLayout>(*getContext());
-  Float64Type::attachInterface<FloatLayout>(*getContext());
-  Float80Type::attachInterface<FloatLayout>(*getContext());
-  Float128Type::attachInterface<FloatLayout>(*getContext());
   FunctionType::attachInterface<FunctionLayout>(*getContext());
   IndexType::attachInterface<IndexLayout>(*getContext());
 }
