@@ -6,7 +6,9 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 struct my_iter:

@@ -5,7 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -emit=llvm --debug-level line-tables %s | FileCheck %s
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 # CHECK: define {{.*}}agnostic_user{{.*}} !dbg ![[SP:[0-9]+]]

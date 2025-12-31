@@ -5,7 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from memory import LegacyOpaquePointer as OpaquePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 
 
 struct CallbackHolder:
