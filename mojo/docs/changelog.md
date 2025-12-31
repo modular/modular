@@ -278,6 +278,52 @@ what we publish.
   var value: field_type.T = 3.14  # field_type.T is Float64
   ```
 
+- Two new magic functions have been added for index-based struct field access:
+
+  - `__struct_field_type_at_index(T, idx)` returns the type of the field at the
+    given index.
+  - `__struct_field_ref(idx, ref s)` returns a reference to the field at the
+    given index.
+
+  Unlike `kgen.struct.extract` which copies the field value, `__struct_field_ref`
+  returns a reference, enabling reflection-based utilities to work with
+  non-copyable types:
+
+  ```mojo
+  struct Container:
+      var id: Int
+      var resource: NonCopyableResource  # Cannot be copied!
+
+  fn inspect(ref c: Container):
+      # Get references to fields without copying
+      ref id_ref = __struct_field_ref(0, c)
+      ref resource_ref = __struct_field_ref(1, c)
+
+      print("id:", id_ref)
+      print("resource:", resource_ref.data)
+
+      # Mutation through reference also works
+      __struct_field_ref(0, c) = 42
+  ```
+
+  The index can be either a literal integer or a parametric index (such as a
+  loop variable in a `@parameter for` loop), enabling generic field iteration:
+
+  ```mojo
+  fn print_all_fields[T: AnyType](ref s: T):
+      comptime names = struct_field_names[T]()
+      @parameter
+      for i in range(struct_field_count[T]()):
+          print(names[i], "=", __struct_field_ref(i, s))
+
+  fn main():
+      var c = Container(42, NonCopyableResource(100))
+      print_all_fields(c)  # Works with any struct!
+  ```
+
+  This enables implementing generic Debug traits and serialization utilities
+  that work with any struct, regardless of whether its fields are copyable.
+
 - The `conforms_to` builtin now accepts types from the reflection APIs like
   `struct_field_types[T]()`. This enables checking trait conformance on
   dynamically obtained field types:
