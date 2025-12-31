@@ -57,7 +57,7 @@ kgen.struct.generator @"closure_types_escaping::fn"<CAPTURES: !kgen.param_closur
 // CHECK-NEXT: }
 kgen.generator @closure_types(%arg0 : index, %arg1: !kgen.pointer<struct<(index,index)>>) {
   %3 = kgen.closure.init(%arg1[@foo_copy, @foo_move, @foo_del])(%arg2: index) -> index {
-    %0 = kgen.struct.gep %arg1[0] : !kgen.pointer<struct<(index,index)>>
+    %0 = kgen.struct.gep %arg1[0] : <struct<(index, index)>>
     %1 = pop.load %0 : !kgen.pointer<index>
     kgen.return %1 : index
   } : (!kgen.pointer<struct<(index,index)>>), !kgen.pointer<!kgen.closure<@closure_types, "fn" nonescaping>>
@@ -71,7 +71,7 @@ kgen.generator @closure_types(%arg0 : index, %arg1: !kgen.pointer<struct<(index,
 // CHECK-NEXT: %0 = pop.aligned_alloc %index_0, %index : <struct<(struct<(index, index)>) memoryOnly>>
 kgen.generator @closure_types_escaping(%arg0 : index, %arg1: !kgen.pointer<struct<(index,index)>>) {
   %3 = kgen.closure.init(%arg1[@foo_copy, @foo_move, @foo_del])(%arg2: index) -> index {
-    %0 = kgen.struct.gep %arg1[0] : !kgen.pointer<struct<(index,index)>>
+    %0 = kgen.struct.gep %arg1[0] : <struct<(index, index)>>
     %1 = pop.load %0 : !kgen.pointer<index>
     kgen.return %1 : index
   } : (!kgen.pointer<struct<(index,index)>>), !kgen.pointer<!kgen.closure<@closure_types_escaping, "fn" escaping>>
@@ -413,7 +413,7 @@ kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !
 
 kgen.generator @foo<D: type, E: type>(%arg0 : !kgen.pointer<struct<(E, D)>>) {
 %3 = kgen.closure.init(%arg0)() {
-  %1 = kgen.struct.gep %arg0[1] : !kgen.pointer<struct<(E, D)>>
+  %1 = kgen.struct.gep %arg0[1] : <struct<(E, D)>>
   %2 = pop.load %1 : !kgen.pointer<D>
   kgen.return
 } : (!kgen.pointer<struct<(E, D)>>), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>

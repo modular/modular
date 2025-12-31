@@ -4132,6 +4132,20 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return emitStructFieldNames(dest, emitter);
   }
 
+  // struct_field_type_at_index takes two arguments: type and index.
+  if (kind == kStructFieldTypeAtIndex) {
+    if (!checkArgCount(2))
+      return {};
+    return emitStructFieldTypeAtIndex(dest, emitter);
+  }
+
+  // struct_field_ref takes two arguments: index and struct reference.
+  if (kind == kStructFieldRef) {
+    if (!checkArgCount(2))
+      return {};
+    return emitStructFieldRef(dest, emitter);
+  }
+
   // All other magic function types take exactly one argument.
   if (!checkArgCount(1))
     return {};
@@ -4446,6 +4460,36 @@ MagicFunctionNode::getValidatedStructTypeArg(IREmitter &emitter,
   return typeArg;
 }
 
+/// Normalize an index attribute to IndexType for use with variadic operations.
+/// Handles concrete integers, int literals, Int struct wrappers, and parametric
+/// expressions (using Rebind for the latter).
+static TypedAttr normalizeToIndexType(TypedAttr attr, MLIRContext *ctx) {
+  if (attr.getType().isIndex())
+    return attr;
+
+  // For concrete IntegerAttr, convert directly to index type.
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+    return IntegerAttr::get(IndexType::get(ctx), intAttr.getInt());
+
+  // For IntLiteralAttr, extract the value and convert.
+  if (auto intLitAttr = dyn_cast<POP::IntLiteralAttr>(attr))
+    return IntegerAttr::get(IndexType::get(ctx),
+                            intLitAttr.getValue().getAPInt().getSExtValue());
+
+  // Handle Int struct wrapper - extract the value field.
+  if (auto litStruct = dyn_cast<LIT::LITStructAttr>(attr)) {
+    auto values = litStruct.getValues();
+    if (!values.empty()) {
+      auto [_, valueAttr] = values.front();
+      if (auto innerInt = dyn_cast<IntegerAttr>(valueAttr))
+        return IntegerAttr::get(IndexType::get(ctx), innerInt.getInt());
+    }
+  }
+
+  // For parametric types (like ParamDeclRefAttr), use Rebind to cast.
+  return ParamOperatorAttr::get(POC::Rebind, attr, IndexType::get(ctx));
+}
+
 AnyValue MagicFunctionNode::emitStructFieldTypes(ValueDest &dest,
                                                  IREmitter &emitter) const {
   auto typeArg = getValidatedStructTypeArg(emitter, "struct_field_types");
@@ -4472,6 +4516,251 @@ AnyValue MagicFunctionNode::emitStructFieldNames(ValueDest &dest,
   auto variadicType = VariadicType::get(StringType::get(ctx));
   auto attr = StructFieldNamesAttr::get(ctx, typeArg->get(), variadicType);
   return emitter.emitResult(PValue(attr), this, dest);
+}
+
+AnyValue
+MagicFunctionNode::emitStructFieldTypeAtIndex(ValueDest &dest,
+                                              IREmitter &emitter) const {
+  MLIRContext *ctx = emitter.getContext();
+
+  // First argument: the struct type T
+  // getValidatedStructTypeArg returns a PValue with metatype wrapping, but we
+  // need the inner type wrapped with TypeParamAttr for StructFieldTypesAttr.
+  auto typeArg =
+      getValidatedStructTypeArg(emitter, "struct_field_type_at_index");
+  if (!typeArg)
+    return {};
+
+  // Extract the inner type from the metatype and wrap it fresh with
+  // TypeParamAttr for StructFieldTypesAttr.
+  Type innerType = typeArg->getIfTypeValue();
+  if (!innerType) {
+    emitter.emitError(subExprs[0]->getLoc(),
+                      "struct_field_type_at_index requires a type argument")
+        << subExprs[0]->getRange();
+    return {};
+  }
+
+  // Second argument: the index (can be parametric)
+  PValue indexPValue = emitter.emitExprPValue(subExprs[1], EC_MLIRMagic);
+  if (!indexPValue) {
+    emitter.emitError(
+        subExprs[1]->getLoc(),
+        "struct_field_type_at_index requires a compile-time index")
+        << subExprs[1]->getRange();
+    return {};
+  }
+
+  // Create StructFieldTypesAttr: wrap the inner type with TypeParamAttr
+  auto variadicType = VariadicType::get(TypeType::get(ctx));
+  TypedAttr structTypeAttr = TypeParamAttr::get(innerType, TypeType::get(ctx));
+  auto fieldTypesAttr =
+      StructFieldTypesAttr::get(ctx, structTypeAttr, variadicType);
+
+  // Normalize index to IndexType for VariadicGet.
+  TypedAttr indexAttr = normalizeToIndexType(indexPValue.get(), ctx);
+
+  // Compute element type as VariadicGet(fieldTypes, index)
+  auto elementTypeAttr =
+      ParamOperatorAttr::get(POC::VariadicGet, fieldTypesAttr, indexAttr);
+
+  // Return the type as a PValue (can be used in type position)
+  return emitter.emitResult(PValue(elementTypeAttr), this, dest);
+}
+
+AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
+                                               IREmitter &emitter) const {
+  auto mlirLoc = getLocation(emitter);
+
+  if (!emitter.builder) {
+    emitter.emitErrorForDynamicValueInParameter(this);
+    return {};
+  }
+
+  // First argument: compile-time index
+  // Can be an integer literal, a compile-time constant expression, or a
+  // parametric expression (e.g., a parameter reference).
+  std::optional<int64_t> indexValue;
+  TypedAttr parametricIndex;
+  const ExprNode *indexExpr = subExprs[0]->getWithoutParens();
+
+  // First try: check if it's a literal integer
+  if (auto *intLit = dyn_cast<IntLiteralNode>(indexExpr)) {
+    APInt value = Lexer::getIntegerLiteralValue(intLit->spelling);
+    indexValue = value.getSExtValue();
+  }
+
+  // Second try: emit as PValue and check if it resolves to an integer
+  // Use EC_MLIRMagic to properly evaluate compile-time constants including
+  // parameter references (e.g., when called from a wrapper function like
+  // struct_field_ref[idx: Int, T: AnyType]).
+  if (!indexValue) {
+    PValue indexPValue = emitter.emitExprPValue(subExprs[0], EC_MLIRMagic);
+    if (indexPValue) {
+      // Try to extract integer from various possible attribute types
+      if (auto intAttr = dyn_cast<IntegerAttr>(indexPValue.get())) {
+        indexValue = intAttr.getInt();
+      } else if (auto intLitAttr =
+                     dyn_cast<POP::IntLiteralAttr>(indexPValue.get())) {
+        indexValue = intLitAttr.getValue().getAPInt().getSExtValue();
+      } else if (auto litStruct =
+                     dyn_cast<LIT::LITStructAttr>(indexPValue.get())) {
+        // Handle Int struct wrapper - extract the value field
+        auto values = litStruct.getValues();
+        if (!values.empty()) {
+          auto [_, valueAttr] = values.front();
+          if (auto innerInt = dyn_cast<IntegerAttr>(valueAttr))
+            indexValue = innerInt.getInt();
+        }
+      }
+      // If we couldn't extract a concrete integer but have a valid PValue,
+      // it might be a parametric expression (e.g., ParamDeclRefAttr).
+      // Save it for RefStructGEROp with index access.
+      if (!indexValue) {
+        parametricIndex = indexPValue.get();
+      }
+    }
+  }
+
+  if (!indexValue && !parametricIndex) {
+    emitter.emitError(subExprs[0]->getLoc(),
+                      "struct_field_ref requires a compile-time integer index")
+        << subExprs[0]->getRange();
+    return {};
+  }
+
+  // Second argument: reference to struct
+  AnyValue structExprValue = emitter.emitExpr(subExprs[1], dest.getContext());
+  if (!structExprValue) {
+    return {};
+  }
+  MBValue structRef =
+      emitter.emitMBValue({structExprValue, subExprs[1]}, dest.getContext());
+  if (!structRef) {
+    emitter.emitError(subExprs[1]->getLoc(),
+                      "struct_field_ref requires a reference to a struct")
+        << subExprs[1]->getRange();
+    return {};
+  }
+
+  // Get the struct type from the reference
+  auto refType = cast<RefType>(structRef.getType());
+  Type elementType = refType.getElementType();
+
+  // Try to get a concrete struct type. If the element type is parametric
+  // (e.g., a generic T), structType will be null.
+  auto structType = sugarDynCast<LIT::StructType>(elementType);
+
+  Value resultRef;
+  MLIRContext *ctx = emitter.getContext();
+
+  // If we have a concrete struct type and a concrete index, use the direct path
+  if (structType && indexValue) {
+    // RefStructGEROp requires the base to be a StructType: rebind away sugar.
+    if (!isa<LIT::StructType>(structRef.getRValueType())) {
+      auto newEltType = SugarAttr::strip(structRef.getRValueType());
+      structRef = emitter.emitRebindOpIfNeeded(
+          structRef, refType.getWithElement(newEltType), getLoc());
+    }
+
+    // Look up the struct declaration
+    SymbolRefAttr structSymbol = structType.getSymbol();
+    ASTDecl &structAstDecl =
+        emitter.shared.declResolver->getDeclForTypeSymbol(structSymbol);
+    auto structDecl =
+        dyn_cast<LIT::StructDeclOp>(structAstDecl.getIfOperation());
+    if (!structDecl) {
+      std::string symbolStr;
+      llvm::raw_string_ostream os(symbolStr);
+      structSymbol.print(os);
+      emitter.emitError(getLoc(), Twine("could not find struct declaration "
+                                        "for ") +
+                                      symbolStr);
+      return {};
+    }
+
+    // Concrete index case: emit RefStructGEROp directly
+    size_t idx = static_cast<size_t>(*indexValue);
+    StructFieldOp fieldOp;
+    size_t currentIdx = 0;
+    for (Operation &op : structDecl.getFields().front()) {
+      if (auto field = dyn_cast<StructFieldOp>(&op)) {
+        if (currentIdx == idx) {
+          fieldOp = field;
+          break;
+        }
+        ++currentIdx;
+      }
+    }
+
+    if (!fieldOp) {
+      emitter.emitError(subExprs[0]->getLoc(), Twine("struct field index ") +
+                                                   Twine(idx) +
+                                                   " is out of bounds")
+          << subExprs[0]->getRange();
+      return {};
+    }
+
+    resultRef =
+        RefStructGEROp::create(*emitter.builder, mlirLoc, structRef, fieldOp);
+  } else if (parametricIndex) {
+    // Parametric index case (or parametric struct type): emit RefStructGEROp
+    // with index access. This will be canonicalized to field name access after
+    // the index is resolved during elaboration/canonicalization.
+
+    // We need to compute the result type. The result element type is computed
+    // as VariadicGet(StructFieldTypes(T), index). The origin is the container's
+    // origin (not field-sensitive until canonicalization to field name access).
+
+    RefType containerRefType = cast<RefType>(structRef.getType().mlirType);
+
+    // Create a TypedAttr representing the struct type for StructFieldTypesAttr
+    // If structType is null (parametric case), use the element type directly
+    auto variadicType = VariadicType::get(TypeType::get(ctx));
+    TypedAttr structTypeAttr;
+    if (structType) {
+      structTypeAttr = TypeParamAttr::get(structType, TypeType::get(ctx));
+    } else {
+      // For parametric types, wrap the element type as a type attribute
+      structTypeAttr = TypeParamAttr::get(elementType, TypeType::get(ctx));
+    }
+    auto fieldTypesAttr =
+        StructFieldTypesAttr::get(ctx, structTypeAttr, variadicType);
+
+    // Normalize index to IndexType for VariadicGet.
+    TypedAttr indexAttr = normalizeToIndexType(parametricIndex, ctx);
+
+    // Compute element type as VariadicGet(fieldTypes, index)
+    auto elementTypeAttr =
+        ParamOperatorAttr::get(POC::VariadicGet, fieldTypesAttr, indexAttr);
+    Type resultElementType = ParamType::get(elementTypeAttr);
+
+    // The result ref type uses the container's origin (not field-sensitive)
+    // The proper field-sensitive origin is computed when canonicalized to
+    // field name access
+    RefType resultType =
+        RefType::get(resultElementType, containerRefType.getOrigin(),
+                     containerRefType.getAddressSpace());
+
+    resultRef = RefStructGEROp::create(*emitter.builder, mlirLoc, resultType,
+                                       indexAttr, structRef);
+  } else {
+    // Concrete struct type but no index - this shouldn't happen
+    emitter.emitError(subExprs[1]->getLoc(),
+                      "struct_field_ref requires a compile-time index")
+        << subExprs[1]->getRange();
+    return {};
+  }
+
+  // Result kind depends on the input kind - preserve mutability
+  CValue result;
+  if (structExprValue.getIfMLValue())
+    result = MLValue(resultRef);
+  else if (structExprValue.getIfMBPValue())
+    result = MBPValue(resultRef);
+  else
+    result = MBValue(resultRef);
+  return emitter.emitCResult(result, this, dest);
 }
 
 LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,

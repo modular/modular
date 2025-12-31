@@ -1511,31 +1511,152 @@ LogicalResult StructReplaceOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult StructGEPOp::verify() {
-  return verifyStructValueType(
-      *this, cast<StructType>(getContainer().getType().getElementType()),
-      getIndexAttr(), getType().getElementType(), "result");
+  auto pointerType = dyn_cast<PointerType>(getContainer().getType());
+  if (!pointerType)
+    return emitOpError("expected pointer operand");
+
+  Type elementType = pointerType.getElementType();
+
+  // If the index is a concrete integer, we can verify more strictly.
+  if (auto indexAttr = dyn_cast<IntegerAttr>(getIndex())) {
+    auto structType = dyn_cast<StructType>(elementType);
+    if (!structType)
+      return emitOpError("constant index requires pointer to concrete struct "
+                         "type, got ")
+             << elementType;
+
+    unsigned index = indexAttr.getInt();
+    if (index >= structType.getNumElements())
+      return emitOpError("struct field index ")
+             << index << " is out of bounds for struct with "
+             << structType.getNumElements() << " elements";
+
+    // Verify result type matches the element type at the index.
+    Type expectedEltType = structType.getElementTypes()[index];
+    if (getType().getElementType() != expectedEltType)
+      return emitOpError("result element type ")
+             << getType().getElementType()
+             << " does not match struct element type " << expectedEltType
+             << " at index " << index;
+  } else {
+    // Parametric index: allow both StructType and ParamType for generic
+    // contexts.
+    if (!isa<StructType>(elementType) && !isa<ParamType>(elementType))
+      return emitOpError("expected pointer to struct or parametric type, got ")
+             << elementType;
+  }
+
+  return success();
 }
 
-LogicalResult
-StructGEPOp::inferReturnTypes(MLIRContext *context,
-                              std::optional<Location> location, Adaptor adaptor,
-                              SmallVectorImpl<Type> &inferredReturnTypes) {
-  auto emitError = [&](const Twine &msg) -> LogicalResult {
-    return mlir::emitOptionalError(location, msg);
-  };
+void StructGEPOp::build(OpBuilder &builder, OperationState &result,
+                        Value container, unsigned index) {
+  auto pointerType = cast<PointerType>(container.getType());
+  auto structType = cast<StructType>(pointerType.getElementType());
+  Type resultEltType = structType.getElementTypes()[index];
+  Type resultType = PointerType::get(resultEltType);
 
-  ValueRange operands = adaptor.getOperands();
-  if (operands.size() != 1)
-    return emitError("expected 1 operand");
-  auto pointerType = dyn_cast<PointerType>(adaptor.getContainer().getType());
-  if (!pointerType)
-    return emitError("expected pointer operand");
-  auto structType = dyn_cast<StructType>(pointerType.getElementType());
-  FailureOr<Type> type =
-      inferStructElementType<StructGEPOp>(emitError, structType, adaptor);
-  if (succeeded(type))
-    inferredReturnTypes.push_back(PointerType::get(*type));
-  return type;
+  result.addOperands(container);
+  result.addAttribute("index",
+                      builder.getIntegerAttr(builder.getIndexType(), index));
+  result.addTypes(resultType);
+}
+
+void StructGEPOp::build(OpBuilder &builder, OperationState &result,
+                        Type resultType, Value container, TypedAttr index) {
+  result.addOperands(container);
+  result.addAttribute("index", index);
+  result.addTypes(resultType);
+}
+
+//===----------------------------------------------------------------------===//
+// StructGEPOp - Custom Assembly Format
+//===----------------------------------------------------------------------===//
+
+// Syntax:
+//   Constant index:   kgen.struct.gep %s[0] : <struct<(i32, i64)>>
+//   Parametric index: kgen.struct.gep %s[I] : <struct<(i32, i64)>> -> <i64>
+//
+// For constant indices with concrete struct types, result type is omitted
+// (can be inferred). For parametric indices, result type must be specified.
+
+ParseResult StructGEPOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand container;
+  TypedAttr indexAttr;
+  Type containerType;
+
+  // Parse: %container '[' index ']'
+  if (parser.parseOperand(container) || parser.parseLSquare() ||
+      parseIndexParamValue(parser, indexAttr) || parser.parseRSquare())
+    return failure();
+
+  // Parse optional attributes
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return failure();
+
+  // Parse: ':' container_type
+  if (parser.parseColon())
+    return failure();
+
+  containerType = PointerType::parse(parser);
+  if (!containerType)
+    return failure();
+
+  // Determine result type: either inferred (for constant index) or explicit
+  Type resultType;
+  auto pointerType = cast<PointerType>(containerType);
+
+  if (succeeded(parser.parseOptionalArrow())) {
+    // Explicit result type: -> <element_type>
+    resultType = PointerType::parse(parser);
+    if (!resultType)
+      return failure();
+  } else {
+    // Infer result type from struct and constant index
+    auto indexIntAttr = dyn_cast<IntegerAttr>(indexAttr);
+    auto structType = dyn_cast<StructType>(pointerType.getElementType());
+    if (!indexIntAttr || !structType)
+      return parser.emitError(parser.getCurrentLocation(),
+                              "parametric index requires explicit result type");
+
+    unsigned index = indexIntAttr.getInt();
+    if (index >= structType.getNumElements())
+      return parser.emitError(parser.getCurrentLocation(),
+                              "struct field index out of bounds");
+
+    resultType = PointerType::get(structType.getElementTypes()[index]);
+  }
+
+  // Resolve operand and set result
+  if (parser.resolveOperand(container, containerType, result.operands))
+    return failure();
+
+  result.addAttribute("index", indexAttr);
+  result.addTypes(resultType);
+  return success();
+}
+
+void StructGEPOp::print(OpAsmPrinter &p) {
+  p << " " << getContainer() << "[";
+  printIndexParamValue(p, getIndex());
+  p << "]";
+
+  // Print optional attributes (excluding index which is handled above)
+  p.printOptionalAttrDict((*this)->getAttrs(), {"index"});
+
+  // Print: ':' container_type
+  p << " : ";
+  getContainer().getType().print(p);
+
+  // Print result type if it can't be inferred (parametric index or parametric
+  // struct type)
+  auto indexAttr = dyn_cast<IntegerAttr>(getIndex());
+  auto structType =
+      dyn_cast<StructType>(getContainer().getType().getElementType());
+  if (!indexAttr || !structType) {
+    p << " -> ";
+    getType().print(p);
+  }
 }
 
 //===----------------------------------------------------------------------===//

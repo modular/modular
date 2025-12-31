@@ -720,13 +720,25 @@ static Value lowerOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
 
 static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  auto ref =
-      cast<LIT::StructType>(op.getContainer().getType().getElementType());
-  if (b.isSingleElement(ref))
-    return adaptor.getContainer();
+  if (op.usesFieldAccess()) {
+    // Field name access: lower to kgen.struct.gep with computed index
+    auto ref =
+        cast<LIT::StructType>(op.getContainer().getType().getElementType());
+    if (b.isSingleElement(ref))
+      return adaptor.getContainer();
 
-  int index = b.getField(op.getFieldAttr(), ref);
-  return StructGEPOp::create(b, op.getLoc(), adaptor.getContainer(), index);
+    int index = b.getField(op.getFieldAttr(), ref);
+    return StructGEPOp::create(b, op.getLoc(), adaptor.getContainer(), index);
+  } else {
+    // Index access: lower to kgen.struct.gep with parametric index
+    auto resultTypeOr = b.replace(op.getType(), TypeDomain::AsType);
+    if (failed(resultTypeOr))
+      return nullptr;
+    auto resultType = cast<PointerType>(*resultTypeOr);
+
+    return StructGEPOp::create(b, op.getLoc(), resultType,
+                               adaptor.getContainer(), *op.getIndex());
+  }
 }
 
 /// Squash noop rebinds exposed by ref -> ptr lowering.

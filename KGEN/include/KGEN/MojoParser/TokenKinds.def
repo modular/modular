@@ -162,6 +162,8 @@ TOK_KEYWORD(__functions_in_module)
 TOK_KEYWORD(__get_current_function_name)
 TOK_KEYWORD(__struct_field_types)
 TOK_KEYWORD(__struct_field_names)
+TOK_KEYWORD(__struct_field_type_at_index)
+TOK_KEYWORD(__struct_field_ref)
 
 #undef TOK_MARKER
 #undef TOK_IDENTIFIER

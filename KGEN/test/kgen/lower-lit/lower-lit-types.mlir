@@ -197,6 +197,17 @@ lit.fn @gerToGEPFooFromBar<l: !lit.origin<1>, l2: !lit.origin<1>>
   kgen.return %a : si32
 }
 
+// CHECK-LABEL: kgen.generator @gerByIndexToKGEN
+lit.fn @gerByIndexToKGEN<l: !lit.origin<1>>
+  (%arg0: !lit.ref<@PairStruct, mut l>) -> si32 {
+  // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(si32, ui32) memoryOnly>>
+  %0 = lit.ref.struct.ger %arg0[idx 0] : <@PairStruct, mut l> -> <si32, mut l>
+  // CHECK-NEXT: %1 = pop.load %0 : !kgen.pointer<si32>
+  %a = lit.ref.load %0 : !lit.ref<si32, mut l>
+  // CHECK-NEXT: kgen.return %1
+  kgen.return %a : si32
+}
+
 // Issue #29038 - lower lit can't change positions of parameters.
 // CHECK-LABEL: kgen.generator @takes_val_after_origin
 // CHECK-SAME: <type: type>(%arg0: !kgen.pointer<type>)

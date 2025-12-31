@@ -1590,39 +1590,77 @@ def LIT_RefFromPointerREPLOp : LITOp<"ref.from_pointer.repl",
 //===----------------------------------------------------------------------===//
 
 def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Get a reference to a struct field.";
   let description = [{
-    The `lit.ref.struct.ger` operation computes a reference to a struct field by
-    name from a parametric struct.  The result has the same origin as the
-    source value.
+    The `lit.ref.struct.ger` operation computes a reference to a struct field
+    from a parametric struct. The result has the same origin as the source value
+    (or field-sensitive origin when using field name access).
 
-    Example:
+    The field can be specified either by name or by index:
+    - By name: Uses `field` attribute, requires concrete struct type
+    - By index: Uses `index` attribute, allows parametric types
+
+    When using index access with a parametric index, the operation will be
+    canonicalized to field name access once the index becomes concrete and the
+    struct type is known.
+
+    Examples:
 
     ```mlir
     lit.struct.decl @MyStruct<T: dtype> {
       lit.struct.field a : i32
+      lit.struct.field b : i64
     }
 
+    // Field name access
     %0 = lit.ref.struct.ger %struct[a] : <@MyStruct<...>, mut life> -> i32
+
+    // Index access (concrete)
+    %1 = lit.ref.struct.ger %struct[idx 0] : <@MyStruct<...>, mut life> -> i32
+
+    // Index access (parametric - in generic context)
+    %2 = lit.ref.struct.ger %struct[idx I] : <!kgen.param<T>, mut life> -> ...
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, RefOf<LIT_StructType>:$container);
+  // Note: We use LIT_RefType instead of RefOf<LIT_StructType> because this op
+  // needs to accept references to parametric types like `T` in generic
+  // functions when using index access:
+  //
+  //   fn foo[T: AnyType](ref s: T):
+  //       __struct_field_ref(0, s)  # s has type !lit.ref<!kgen.param<T>, ...>
+  //
+  // At this point, T hasn't been instantiated to a concrete struct type yet.
+  // The verifier allows both StructType and ParamType as the element type.
+  // When T is instantiated, the op will canonicalize to use field name.
+  let arguments = (ins OptionalAttr<StrAttr>:$field,
+                       OptionalAttr<AttrOfType<Index>>:$index,
+                       LIT_RefType:$container);
   let results = (outs LIT_RefType:$result);
-  let assemblyFormat = [{
-    $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
-    custom<StructGERTypes>(type($container), type($result), ref($field))
-  }];
+
+  let hasCustomAssemblyFormat = 1;
 
   let builders = [
-    // Infer the result type based on the result of lookup.
-    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>
+    // Infer the result type based on the result of lookup (field name access).
+    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>,
+    // Build with index access.
+    OpBuilder<(ins "Type":$resultType, "TypedAttr":$index, "Value":$container)>,
+    // Build with explicit field name and result type (for compatibility).
+    OpBuilder<(ins "Type":$resultType, "StringAttr":$field, "Value":$container)>
   ];
 
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 
   let extraClassDeclaration = [{
+    /// Return true if this operation uses field name access.
+    bool usesFieldAccess() { return getField().has_value(); }
+
+    /// Return true if this operation uses index access.
+    bool usesIndexAccess() { return getIndex().has_value(); }
+
     /// Given a reference to a struct, return the reference type to the
     /// specified field, maintaining origin and mutability, and rebinding any
     /// generics from the base type through the field type.

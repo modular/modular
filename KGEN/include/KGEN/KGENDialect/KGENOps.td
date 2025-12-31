@@ -1793,18 +1793,29 @@ def KGEN_StructReplaceOp : KGENOp<"struct.replace", [Pure,
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
-    InferTypeOpAdaptor,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "struct get element pointer";
   let description = [{
-    The `kgen.struct.gep` operation takes a pointer to a `!kgen.struct` and a
-    constant index and returns a pointer to the struct element at that index.
+    The `kgen.struct.gep` operation takes a pointer to a `!kgen.struct` and an
+    index and returns a pointer to the struct element at that index. The index
+    can be either a constant integer or a parametric expression that is resolved
+    post-elaboration.
 
     Example:
 
     ```mlir
     %struct = pop.stack_allocation 1 : !kgen.struct<(i32, i64)>
+    // Constant index - result type is inferred
     %i64Ptr = kgen.struct.gep %struct[1] : <struct<(i32, i64)>>
+    ```
+
+    With a parametric index:
+
+    ```mlir
+    kgen.generator @example<I: index>(%struct: !kgen.pointer<struct<(i32, i64)>>) {
+      // Parametric index - result type must be specified
+      %ptr = kgen.struct.gep %struct[I] : <struct<(i32, i64)>> -> <i64>
+    }
     ```
 
     To get a pointer to a struct from a value-semantic struct, the struct value
@@ -1817,12 +1828,18 @@ def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
     ```
   }];
 
-  let arguments = (ins PointerOf<KGEN_StructType>:$container,
-                       UnsignedIndexAttr:$index);
+  let arguments = (ins PointerType:$container, AttrOfType<Index>:$index);
   let results = (outs PointerType:$result);
-  let assemblyFormat = [{
-    $container `[` $index `]` attr-dict `:` type($container)
-  }];
+
+  let hasCustomAssemblyFormat = 1;
+  let skipDefaultBuilders = 1;
+
+  let builders = [
+    // Builder with constant integer index (infers result type).
+    OpBuilder<(ins "Value":$container, "unsigned":$index)>,
+    // Builder with parametric index (requires explicit result type).
+    OpBuilder<(ins "Type":$resultType, "Value":$container, "TypedAttr":$index)>
+  ];
 
   let hasVerifier = 1;
 }

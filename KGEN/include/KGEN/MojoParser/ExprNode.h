@@ -88,8 +88,10 @@ public:
     kGetCurrentFunctionName,   // __get_current_function_name()
     kStructFieldTypes,         // __struct_field_types[T]()
     kStructFieldNames,         // __struct_field_names[T]()
+    kStructFieldTypeAtIndex,   // __struct_field_type_at_index(T, idx)
+    kStructFieldRef,           // __struct_field_ref(idx, s)
     kFirstMagicFunction = kGetMValueAsLitRef,
-    kLastMagicFunction = kStructFieldNames,
+    kLastMagicFunction = kStructFieldRef,
 
     // Prefix and Postfix unary expressions.
     kNeg,      // -x

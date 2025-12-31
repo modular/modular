@@ -230,7 +230,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
   void replaceUserImpl(Operation *user,
                        SmallVectorImpl<Operation *> &toDelete) {
     if (auto gep = dyn_cast<StructGEPOp>(user)) {
-      gep.replaceAllUsesWith(newAllocas[gep.getIndexAttr().getInt()]);
+      auto indexAttr = cast<IntegerAttr>(gep.getIndex());
+      gep.replaceAllUsesWith(newAllocas[indexAttr.getInt()]);
     } else if (auto load = dyn_cast<POP::LoadOp>(user)) {
       // Store each load in its index in the array, using the fact that C++ will
       // make value null by default.
@@ -546,8 +547,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
       gep.replaceAllUsesWith(newGep.getResult());
     } else if (auto gep = dyn_cast<StructGEPOp>(user)) {
       // Ditto with struct geps, index is always legal.
-      auto newGep = StructGEPOp::create(builder, gep.getLoc(), newAllocas[0],
-                                        gep.getIndex());
+      auto newGep = StructGEPOp::create(builder, gep.getLoc(), gep.getType(),
+                                        newAllocas[0], gep.getIndex());
       gep.replaceAllUsesWith(newGep.getResult());
     } else if (auto load = dyn_cast<LoadOp>(user)) {
       // A load from a stack allocation is implicitly the first element in the

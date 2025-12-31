@@ -1460,14 +1460,18 @@ StructReplaceOp::parametric_interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
   auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
-  if (!ptr)
+  auto idxAttr = dyn_cast_if_present<IntegerAttr>(getIndex());
+  if (!ptr || !idxAttr)
     return ErrorTree(getLoc(), "non-constant inputs");
 
   int64_t offset = 0;
   auto structType = getContainer().getType().getElementAs<StructType>();
 
   // Move the address over the elements before the one we are reading.
-  unsigned index = getIndexAttr().getInt();
+  unsigned index = idxAttr.getInt();
+  if (index >= structType.getNumElements())
+    return ErrorTree(getLoc(), "struct field index out of bounds");
+
   for (unsigned i = 0; i != index; ++i) {
     auto dl = cast<DataLayoutInterface>(structType.getElementTypes()[i]);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
@@ -1487,7 +1491,9 @@ ErrorTreeOrSuccess
 StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
   auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
-  if (!ptr)
+  auto idxAttr =
+      dyn_cast_if_present<IntegerAttr>(state.getReboundAttribute(getIndex()));
+  if (!ptr || !idxAttr)
     return ErrorTree(getLoc(), "non-constant inputs");
 
   int64_t offset = 0;
@@ -1496,7 +1502,10 @@ StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
           .getElementAs<StructType>();
 
   // Move the address over the elements before the one we are reading.
-  unsigned index = getIndexAttr().getInt();
+  unsigned index = idxAttr.getInt();
+  if (index >= structType.getNumElements())
+    return ErrorTree(getLoc(), "struct field index out of bounds");
+
   for (unsigned i = 0; i != index; ++i) {
     auto dl = cast<DataLayoutInterface>(structType.getElementTypes()[i]);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
