@@ -1935,9 +1935,9 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
             targetArch = s.second.str();
 
           // Create CompilationDevice to compile from PTX to cuBIN
-          ErrorOr<std::unique_ptr<AsyncRT::CompilationDevice>> errCD =
-              AsyncRT::CompilationDevice::create(AsyncRT::Device::cudaAPI,
-                                                 targetArch);
+          ErrorOr<std::unique_ptr<Driver::CompilationDevice>> errCD =
+              Driver::CompilationDevice::create(Driver::Device::cudaAPI,
+                                                targetArch);
           if (errCD.isError()) {
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "failed to create cuda compilation device to compile to cubin",

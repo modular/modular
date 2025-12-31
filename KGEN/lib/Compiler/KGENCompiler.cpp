@@ -266,7 +266,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   compilationOptions.targetFeatures = target.getFeatures();
   if (compilationOptions.targetAccelerator.empty()) {
     compilationOptions.targetAccelerator =
-        AsyncRT::Device::getAcceleratorArchOrEmpty();
+        Driver::Device::getAcceleratorArchOrEmpty();
   }
   compilationOptions.relocModel = target.getRelocationModel();
   StringRef targetDataLayout = target.getDataLayout().toString();
@@ -432,7 +432,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       compilationOptions.targetFeatures = target.getFeatures();
       if (compilationOptions.targetAccelerator.empty()) {
         compilationOptions.targetAccelerator =
-            AsyncRT::Device::getAcceleratorArchOrEmpty();
+            Driver::Device::getAcceleratorArchOrEmpty();
       }
       compilationOptions.relocModel = target.getRelocationModel();
       StringRef targetDataLayout = target.getDataLayout().toString();
