@@ -451,7 +451,7 @@ ErrorOrSuccess M::parseTargetOptions(
     compilationOptions.isCrossCompilation = true;
   } else {
     compilationOptions.targetAccelerator =
-        M::AsyncRT::Device::getAcceleratorArchOrEmpty();
+        M::Driver::Device::getAcceleratorArchOrEmpty();
   }
 
   if (!mcmodel.empty()) {

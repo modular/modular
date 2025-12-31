@@ -689,7 +689,7 @@ int main(int argc, char **argv) {
   sourceManager.setIncludeDirs(clOptions.getIncludePaths());
   clOptions.addInputFilesToSourceMgrOrExit(sourceManager);
   if (clOptions.targetAccelerator.empty())
-    clOptions.targetAccelerator = AsyncRT::Device::getAcceleratorArchOrEmpty();
+    clOptions.targetAccelerator = Driver::Device::getAcceleratorArchOrEmpty();
 
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
