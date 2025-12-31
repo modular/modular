@@ -238,6 +238,10 @@ what we publish.
 
 - `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
 
+- The `reflection` module has been moved from `compile.reflection` to a top-level
+  `reflection` module. Update imports from `from compile.reflection import ...`
+  to `from reflection import ...`.
+
 - The `reflection` module now supports compile-time struct field introspection:
 
   - `struct_field_count[T]()` returns the number of fields
@@ -257,9 +261,10 @@ what we publish.
   ```mojo
   fn print_fields[T: AnyType]():
       comptime names = struct_field_names[T]()
+      comptime types = struct_field_types[T]()
       @parameter
       for i in range(struct_field_count[T]()):
-          print(names[i])
+          print(names[i], get_type_name[types[i]]())
 
   fn main():
       print_fields[Point]()  # Works with any struct!
@@ -271,6 +276,19 @@ what we publish.
   comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
   comptime field_type = struct_field_type_by_name[Point, "y"]()
   var value: field_type.T = 3.14  # field_type.T is Float64
+  ```
+
+- The `conforms_to` builtin now accepts types from the reflection APIs like
+  `struct_field_types[T]()`. This enables checking trait conformance on
+  dynamically obtained field types:
+
+  ```mojo
+  @parameter
+  for i in range(struct_field_count[MyStruct]()):
+      comptime field_type = struct_field_types[MyStruct]()[i]
+      @parameter
+      if conforms_to(field_type, Copyable):
+          print("Field", i, "is Copyable")
   ```
 
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
@@ -399,10 +417,12 @@ what we publish.
   - `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear types
     - Added `UnsafePointer.destroy_pointee_with()`, for destroying linear types
       in-place using a destructor function pointer.
-  - `Optional`, `Variant` and `VariadicPack` can now contain linear types
+  - `Optional`, `Variant`, `VariadicListMem`, and `VariadicPack` can now contain
+    linear types
     - `Variant.take` now takes `deinit self` instead of `mut self`.
     - Added `Variant.destroy_with` for destroying a linear type in-place with an
       explicit destructor function.
+    - The `*args` language syntax for arguments now supports linear types.
   - `Iterator.Element` no longer requires `ImplicitlyDestructible`
   - `UnsafeMaybeUninitialized` can now contain linear types
 
