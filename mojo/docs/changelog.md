@@ -198,10 +198,11 @@ what we publish.
 - The Mojo language basic trait hierarchy has changed to expand first-class
   support for linear types (aka. non-implicitly-destructible types).
 
-  The `AnyType` and `Movable` traits no longer requires that a type provide a
-  `__del__()` method that may be called by the compiler implicitly whenever an
-  owned value is unused. Instead, the `ImplicitlyDestructible` trait should be
-  used in generic code to require that a type is implicitly destructible.
+  The `AnyType`, `Movable`, and `Copyable` traits no longer require that a type
+  provide a `__del__()` method that may be called by the compiler implicitly
+  whenever an owned value is unused. Instead, the `ImplicitlyDestructible` trait
+  should be used in generic code to require that a type is implicitly
+  destructible.
 
   Linear types enable Mojo programs to encode powerful invariants in the type
   system, by modeling a type in such a way that a user is required to take an
@@ -237,35 +238,57 @@ what we publish.
 
 - `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
 
-- The `compile.reflection` module now supports compile-time struct field
-  introspection:
+- The `reflection` module has been moved from `compile.reflection` to a top-level
+  `reflection` module. Update imports from `from compile.reflection import ...`
+  to `from reflection import ...`.
 
-  - `get_struct_field_types[T]()` returns a variadic of all field types
-  - `get_struct_field_names[T]()` returns an `InlineArray[StaticString, N]` of
+- The `reflection` module now supports compile-time struct field introspection:
+
+  - `struct_field_count[T]()` returns the number of fields
+  - `struct_field_names[T]()` returns an `InlineArray[StaticString, N]` of
     all field names
-  - `get_struct_field_count[T]()` returns the number of fields
+  - `struct_field_types[T]()` returns a variadic of all field types
   - `struct_field_index_by_name[T, name]()` returns the index of a field by name
   - `struct_field_type_by_name[T, name]()` returns the type of a field,
     wrapped in a `ReflectedType` struct
 
-  Example:
+  These APIs work with both concrete types and generic type parameters,
+  enabling generic serialization, comparison, and other reflection-based
+  utilities.
+
+  Example iterating over fields (works with generics):
 
   ```mojo
-  struct Point:
-      var x: Int
-      var y: Float64
-
-  fn example():
-      # Iterate over all fields
+  fn print_fields[T: AnyType]():
+      comptime names = struct_field_names[T]()
+      comptime types = struct_field_types[T]()
       @parameter
-      for i in range(get_struct_field_count[Point]()):
-          comptime field_type = get_struct_field_types[Point]()[i]
-          comptime field_name = get_struct_field_names[Point]()[i]
+      for i in range(struct_field_count[T]()):
+          print(names[i], get_type_name[types[i]]())
 
-      # Lookup by name
-      comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
-      comptime field_type = struct_field_type_by_name[Point, "y"]()
-      var value: field_type.T = 3.14  # field_type.T is Float64
+  fn main():
+      print_fields[Point]()  # Works with any struct!
+  ```
+
+  Example looking up a field by name:
+
+  ```mojo
+  comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
+  comptime field_type = struct_field_type_by_name[Point, "y"]()
+  var value: field_type.T = 3.14  # field_type.T is Float64
+  ```
+
+- The `conforms_to` builtin now accepts types from the reflection APIs like
+  `struct_field_types[T]()`. This enables checking trait conformance on
+  dynamically obtained field types:
+
+  ```mojo
+  @parameter
+  for i in range(struct_field_count[MyStruct]()):
+      comptime field_type = struct_field_types[MyStruct]()[i]
+      @parameter
+      if conforms_to(field_type, Copyable):
+          print("Field", i, "is Copyable")
   ```
 
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
@@ -394,10 +417,12 @@ what we publish.
   - `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear types
     - Added `UnsafePointer.destroy_pointee_with()`, for destroying linear types
       in-place using a destructor function pointer.
-  - `Optional`, `Variant` and `VariadicPack` can now contain linear types
+  - `Optional`, `Variant`, `VariadicListMem`, and `VariadicPack` can now contain
+    linear types
     - `Variant.take` now takes `deinit self` instead of `mut self`.
     - Added `Variant.destroy_with` for destroying a linear type in-place with an
       explicit destructor function.
+    - The `*args` language syntax for arguments now supports linear types.
   - `Iterator.Element` no longer requires `ImplicitlyDestructible`
   - `UnsafeMaybeUninitialized` can now contain linear types
 
