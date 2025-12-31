@@ -12,8 +12,9 @@
 #   Path:   src/black/__main__.py
 #
 # ===----------------------------------------------------------------------=== #
-from mblack import patched_main
 import os
+
+from mblack import patched_main
 
 if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
     os.chdir(directory)

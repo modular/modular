@@ -18,19 +18,19 @@
 import os
 import pickle
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable, Set, Tuple
-
-from platformdirs import user_cache_dir
 
 from _mblack_version import version as __version__
+from platformdirs import user_cache_dir
+
 from mblack.mode import Mode
 
 # types
 Timestamp = float
 FileSize = int
-CacheInfo = Tuple[Timestamp, FileSize]
-Cache = Dict[str, CacheInfo]
+CacheInfo = tuple[Timestamp, FileSize]
+Cache = dict[str, CacheInfo]
 
 
 def get_cache_dir() -> Path:
@@ -80,7 +80,9 @@ def get_cache_info(path: Path) -> CacheInfo:
     return stat.st_mtime, stat.st_size
 
 
-def filter_cached(cache: Cache, sources: Iterable[Path]) -> Tuple[Set[Path], Set[Path]]:
+def filter_cached(
+    cache: Cache, sources: Iterable[Path]
+) -> tuple[set[Path], set[Path]]:
     """Split an iterable of paths in `sources` into two sets.
 
     The first contains paths of files that modified on disk or are not in the
@@ -105,7 +107,9 @@ def write_cache(cache: Cache, sources: Iterable[Path], mode: Mode) -> None:
             **cache,
             **{str(src.resolve()): get_cache_info(src) for src in sources},
         }
-        with tempfile.NamedTemporaryFile(dir=str(cache_file.parent), delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            dir=str(cache_file.parent), delete=False
+        ) as f:
             pickle.dump(new_cache, f, protocol=4)
         os.replace(f.name, cache_file)
     except OSError:

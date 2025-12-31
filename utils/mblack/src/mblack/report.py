@@ -16,6 +16,7 @@
 """
 Summarize Black runs to users.
 """
+
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -50,7 +51,9 @@ class Report:
     def done(self, src: Path, changed: Changed) -> None:
         """Increment the counter for successful reformatting. Write out a message."""
         if changed is Changed.YES:
-            reformatted = "would reformat" if self.check or self.diff else "reformatted"
+            reformatted = (
+                "would reformat" if self.check or self.diff else "reformatted"
+            )
             if self.verbose or not self.quiet:
                 out(f"{reformatted} {src}")
             self.change_count += 1
@@ -114,8 +117,12 @@ class Report:
 
         if self.same_count:
             s = "s" if self.same_count > 1 else ""
-            report.append(style(f"{self.same_count} file{s} ", fg="blue") + unchanged)
+            report.append(
+                style(f"{self.same_count} file{s} ", fg="blue") + unchanged
+            )
         if self.failure_count:
             s = "s" if self.failure_count > 1 else ""
-            report.append(style(f"{self.failure_count} file{s} {failed}", fg="red"))
+            report.append(
+                style(f"{self.failure_count} file{s} {failed}", fg="red")
+            )
         return ", ".join(report) + "."

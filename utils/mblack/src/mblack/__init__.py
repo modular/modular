@@ -21,34 +21,24 @@ import re
 import sys
 import tokenize
 import traceback
+from collections.abc import Generator, Iterator, MutableMapping, Sequence, Sized
 from contextlib import contextmanager
 from dataclasses import replace
 from enum import Enum
 from json.decoder import JSONDecodeError
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    Generator,
-    Iterator,
-    List,
-    MutableMapping,
-    Optional,
-    Pattern,
-    Sequence,
-    Set,
-    Sized,
-    Tuple,
-    Union,
-)
+from re import Pattern
+from typing import Any
 
 import click
+from _mblack_version import version as __version__
 from click.core import ParameterSource
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 from mypy_extensions import mypyc_attr
 from pathspec import PathSpec
 from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
 
-from _mblack_version import version as __version__
 from mblack.cache import Cache, get_cache_info, read_cache, write_cache
 from mblack.comments import normalize_fmt_off
 from mblack.const import (
@@ -95,12 +85,14 @@ from mblack.nodes import (
     syms,
 )
 from mblack.output import color_diff, diff, dump_to_file, err, ipynb_diff, out
-from mblack.parsing import InvalidInput  # noqa F401
-from mblack.parsing import lib2to3_parse, parse_ast, stringify_ast
+from mblack.parsing import (
+    InvalidInput,
+    lib2to3_parse,
+    parse_ast,
+    stringify_ast,
+)
 from mblack.report import Changed, NothingChanged, Report
 from mblack.trans import iter_fexpr_spans
-from mblib2to3.pgen2 import token
-from mblib2to3.pytree import Leaf, Node
 
 COMPILED = Path(__file__).suffix in (".pyd", ".so")
 
@@ -135,8 +127,8 @@ FileMode = Mode
 
 
 def read_pyproject_toml(
-    ctx: click.Context, param: click.Parameter, value: Optional[str]
-) -> Optional[str]:
+    ctx: click.Context, param: click.Parameter, value: str | None
+) -> str | None:
     """Inject Black configuration from "pyproject.toml" into defaults in `ctx`.
 
     Returns the path to a successfully found and read configuration file, None
@@ -171,7 +163,7 @@ def read_pyproject_toml(
             "target-version", "Config key target-version must be a list"
         )
 
-    default_map: Dict[str, Any] = {}
+    default_map: dict[str, Any] = {}
     if ctx.default_map:
         default_map.update(ctx.default_map)
     default_map.update(config)
@@ -182,9 +174,9 @@ def read_pyproject_toml(
 
 def target_version_option_callback(
     c: click.Context,
-    p: Union[click.Option, click.Parameter],
-    v: Tuple[str, ...],
-) -> List[TargetVersion]:
+    p: click.Option | click.Parameter,
+    v: tuple[str, ...],
+) -> list[TargetVersion]:
     """Compute the target versions from a --target-version flag.
 
     This is its own function because mypy couldn't infer the type correctly
@@ -207,12 +199,14 @@ def re_compile_maybe_verbose(regex: str) -> Pattern[str]:
 def validate_regex(
     ctx: click.Context,
     param: click.Parameter,
-    value: Optional[str],
-) -> Optional[Pattern[str]]:
+    value: str | None,
+) -> Pattern[str] | None:
     try:
         return re_compile_maybe_verbose(value) if value is not None else None
     except re.error as e:
-        raise click.BadParameter(f"Not a valid regular expression: {e}") from None
+        raise click.BadParameter(
+            f"Not a valid regular expression: {e}"
+        ) from None
 
 
 @click.command(
@@ -221,7 +215,9 @@ def validate_regex(
     # (annoyingly) strips 'em so we need to set it here too.
     help="The uncompromising code formatter.",
 )
-@click.option("-c", "--code", type=str, help="Format the code passed in as a string.")
+@click.option(
+    "-c", "--code", type=str, help="Format the code passed in as a string."
+)
 @click.option(
     "-l",
     "--line-length",
@@ -447,11 +443,11 @@ def validate_regex(
     help="Read configuration from FILE path.",
 )
 @click.pass_context
-def main(  # noqa: C901
+def main(
     ctx: click.Context,
-    code: Optional[str],
+    code: str | None,
     line_length: int,
-    target_version: List[TargetVersion],
+    target_version: list[TargetVersion],
     check: bool,
     diff: bool,
     color: bool,
@@ -466,15 +462,15 @@ def main(  # noqa: C901
     preview: bool,
     quiet: bool,
     verbose: bool,
-    required_version: Optional[str],
+    required_version: str | None,
     include: Pattern[str],
-    exclude: Optional[Pattern[str]],
-    extend_exclude: Optional[Pattern[str]],
-    force_exclude: Optional[Pattern[str]],
-    stdin_filename: Optional[str],
-    workers: Optional[int],
-    src: Tuple[str, ...],
-    config: Optional[str],
+    exclude: Pattern[str] | None,
+    extend_exclude: Pattern[str] | None,
+    force_exclude: Pattern[str] | None,
+    stdin_filename: str | None,
+    workers: int | None,
+    src: tuple[str, ...],
+    config: str | None,
 ) -> None:
     """The uncompromising code formatter."""
     ctx.ensure_object(dict)
@@ -505,7 +501,10 @@ def main(  # noqa: C901
                 (
                     (source, source)
                     if source == "-"
-                    else (normalize_path_maybe_ignore(Path(source), root), source)
+                    else (
+                        normalize_path_maybe_ignore(Path(source), root),
+                        source,
+                    )
                 )
                 for source in src
             ]
@@ -553,7 +552,9 @@ def main(  # noqa: C901
         err("Cannot pass both `pyi` and `ipynb` flags!")
         ctx.exit(1)
 
-    write_back = WriteBack.from_configuration(check=check, diff=diff, color=color)
+    write_back = WriteBack.from_configuration(
+        check=check, diff=diff, color=color
+    )
 
     # When formatting files, this will be overridden by the file extension
     is_mojo = False
@@ -641,7 +642,9 @@ def main(  # noqa: C901
             )
 
     if verbose or not quiet:
-        if code is None and (verbose or report.change_count or report.failure_count):
+        if code is None and (
+            verbose or report.change_count or report.failure_count
+        ):
             out()
         out(error_msg if report.return_code else "All done! ✨ 🍰 ✨")
         if code is None:
@@ -652,24 +655,28 @@ def main(  # noqa: C901
 def get_sources(
     *,
     ctx: click.Context,
-    src: Tuple[str, ...],
+    src: tuple[str, ...],
     quiet: bool,
     verbose: bool,
     include: Pattern[str],
-    exclude: Optional[Pattern[str]],
-    extend_exclude: Optional[Pattern[str]],
-    force_exclude: Optional[Pattern[str]],
+    exclude: Pattern[str] | None,
+    extend_exclude: Pattern[str] | None,
+    force_exclude: Pattern[str] | None,
     report: "Report",
-    stdin_filename: Optional[str],
+    stdin_filename: str | None,
     is_mojo: bool = False,
-) -> Set[Path]:
+) -> set[Path]:
     """Compute the set of files to be formatted."""
-    sources: Set[Path] = set()
+    sources: set[Path] = set()
     root = ctx.obj["root"]
 
     using_default_exclude = exclude is None
-    exclude = re_compile_maybe_verbose(DEFAULT_EXCLUDES) if exclude is None else exclude
-    gitignore: Optional[PathSpec] = None
+    exclude = (
+        re_compile_maybe_verbose(DEFAULT_EXCLUDES)
+        if exclude is None
+        else exclude
+    )
+    gitignore: PathSpec | None = None
     root_gitignore = get_gitignore(root)
 
     for s in src:
@@ -681,7 +688,9 @@ def get_sources(
             is_stdin = False
 
         if is_stdin or p.is_file():
-            normalized_path = normalize_path_maybe_ignore(p, ctx.obj["root"], report)
+            normalized_path = normalize_path_maybe_ignore(
+                p, ctx.obj["root"], report
+            )
             if normalized_path is None:
                 continue
 
@@ -692,7 +701,9 @@ def get_sources(
             else:
                 force_exclude_match = None
             if force_exclude_match and force_exclude_match.group(0):
-                report.path_ignored(p, "matches the --force-exclude regular expression")
+                report.path_ignored(
+                    p, "matches the --force-exclude regular expression"
+                )
                 continue
 
             if is_stdin:
@@ -729,7 +740,7 @@ def get_sources(
         else:
             err(f"invalid path: {s}")
 
-    def filter_mojo_sources(source: Path):
+    def filter_mojo_sources(source: Path):  # noqa: ANN202
         return source.suffix in [".mojo", ".🔥"] or source.name == "-"
 
     if is_mojo:
@@ -803,7 +814,9 @@ def reformat_one(
                 mode = replace(mode, is_pyi=True)
             elif src.suffix == ".ipynb":
                 mode = replace(mode, is_ipynb=True)
-            if format_stdin_to_stdout(fast=fast, write_back=write_back, mode=mode):
+            if format_stdin_to_stdout(
+                fast=fast, write_back=write_back, mode=mode
+            ):
                 changed = Changed.YES
         else:
             cache: Cache = {}
@@ -811,15 +824,17 @@ def reformat_one(
                 cache = read_cache(mode)
                 res_src = src.resolve()
                 res_src_s = str(res_src)
-                if res_src_s in cache and cache[res_src_s] == get_cache_info(res_src):
+                if res_src_s in cache and cache[res_src_s] == get_cache_info(
+                    res_src
+                ):
                     changed = Changed.CACHED
             if changed is not Changed.CACHED and format_file_in_place(
                 src, fast=fast, write_back=write_back, mode=mode
             ):
                 changed = Changed.YES
-            if (write_back is WriteBack.YES and changed is not Changed.CACHED) or (
-                write_back is WriteBack.CHECK and changed is Changed.NO
-            ):
+            if (
+                write_back is WriteBack.YES and changed is not Changed.CACHED
+            ) or (write_back is WriteBack.CHECK and changed is Changed.NO):
                 write_cache(cache, [src], mode)
         report.done(src, changed)
     except Exception as exc:
@@ -853,7 +868,9 @@ def format_file_in_place(
         # doesn't know how to parse lit syntax.
         fast = True
 
-    then = datetime.datetime.fromtimestamp(src.stat().st_mtime, datetime.timezone.utc)
+    then = datetime.datetime.fromtimestamp(
+        src.stat().st_mtime, datetime.timezone.utc
+    )
     header = b""
     with open(src, "rb") as buf:
         if mode.skip_source_first_line:
@@ -878,7 +895,9 @@ def format_file_in_place(
         src_name = f"{src}\t{then} +0000"
         dst_name = f"{src}\t{now} +0000"
         if mode.is_ipynb:
-            diff_contents = ipynb_diff(src_contents, dst_contents, src_name, dst_name)
+            diff_contents = ipynb_diff(
+                src_contents, dst_contents, src_name, dst_name
+            )
         else:
             diff_contents = diff(src_contents, dst_contents, src_name, dst_name)
 
@@ -902,7 +921,7 @@ def format_file_in_place(
 def format_stdin_to_stdout(
     fast: bool,
     *,
-    content: Optional[str] = None,
+    content: str | None = None,
     write_back: WriteBack = WriteBack.NO,
     mode: Mode,
 ) -> bool:
@@ -967,7 +986,9 @@ def check_stability_and_equivalence(
     assert_stable(src_contents, dst_contents, mode=mode)
 
 
-def format_file_contents(src_contents: str, *, fast: bool, mode: Mode) -> FileContent:
+def format_file_contents(
+    src_contents: str, *, fast: bool, mode: Mode
+) -> FileContent:
     """Reformat contents of a file and return new contents.
 
     If `fast` is False, additionally confirm that the reformatted code is
@@ -1007,11 +1028,14 @@ def validate_cell(src: str, mode: Mode) -> None:
     Due to the impossibility of safely roundtripping in such situations, cells
     containing transformed magics will be ignored.
     """
-    if any(transformed_magic in src for transformed_magic in TRANSFORMED_MAGICS):
+    if any(
+        transformed_magic in src for transformed_magic in TRANSFORMED_MAGICS
+    ):
         raise NothingChanged
     if (
         src[:2] == "%%"
-        and src.split()[0][2:] not in PYTHON_CELL_MAGICS | mode.python_cell_magics
+        and src.split()[0][2:]
+        not in PYTHON_CELL_MAGICS | mode.python_cell_magics
     ):
         raise NothingChanged
 
@@ -1066,7 +1090,9 @@ def validate_metadata(nb: MutableMapping[str, Any]) -> None:
         raise NothingChanged from None
 
 
-def format_ipynb_string(src_contents: str, *, fast: bool, mode: Mode) -> FileContent:
+def format_ipynb_string(
+    src_contents: str, *, fast: bool, mode: Mode
+) -> FileContent:
     """Format Jupyter notebook.
 
     Operate cell-by-cell, only on code cells, only for Python notebooks.
@@ -1139,12 +1165,14 @@ def format_str(src_contents: str, *, mode: Mode) -> str:
 
 def _format_str_once(src_contents: str, *, mode: Mode) -> str:
     src_node = lib2to3_parse(src_contents.lstrip(), mode.target_versions)
-    dst_blocks: List[LinesBlock] = []
+    dst_blocks: list[LinesBlock] = []
     if mode.target_versions:
         versions = mode.target_versions
     else:
         future_imports = get_future_imports(src_node)
-        versions = detect_target_versions(src_node, future_imports=future_imports)
+        versions = detect_target_versions(
+            src_node, future_imports=future_imports
+        )
 
     normalize_fmt_off(src_node, preview=mode.preview)
     lines = LineGenerator(mode=mode)
@@ -1157,7 +1185,7 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:
         }
         if supports_feature(versions, feature)
     }
-    block: Optional[LinesBlock] = None
+    block: LinesBlock | None = None
     for current_line in lines.visit(src_node):
         block = elt.maybe_empty_lines(current_line)
         dst_blocks.append(block)
@@ -1173,14 +1201,16 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:
     if mode.preview and not dst_contents:
         # Use decode_bytes to retrieve the correct source newline (CRLF or LF),
         # and check if normalized_content has more than one line
-        normalized_content, _, newline = decode_bytes(src_contents.encode("utf-8"))
+        normalized_content, _, newline = decode_bytes(
+            src_contents.encode("utf-8")
+        )
         if "\n" in normalized_content:
             return newline
         return ""
     return "".join(dst_contents)
 
 
-def decode_bytes(src: bytes) -> Tuple[FileContent, Encoding, NewLine]:
+def decode_bytes(src: bytes) -> tuple[FileContent, Encoding, NewLine]:
     """Return a tuple of (decoded_contents, encoding, newline).
 
     `newline` is either CRLF or LF but `decoded_contents` is decoded with
@@ -1197,9 +1227,9 @@ def decode_bytes(src: bytes) -> Tuple[FileContent, Encoding, NewLine]:
         return tiow.read(), encoding, newline
 
 
-def get_features_used(  # noqa: C901
-    node: Node, *, future_imports: Optional[Set[str]] = None
-) -> Set[Feature]:
+def get_features_used(
+    node: Node, *, future_imports: set[str] | None = None
+) -> set[Feature]:
     """Return a set of (relatively) new Python features used in this file.
 
     Currently looking for:
@@ -1213,7 +1243,7 @@ def get_features_used(  # noqa: C901
     - usage of __future__ flags (annotations);
     - print / exec statements;
     """
-    features: Set[Feature] = set()
+    features: set[Feature] = set()
     if future_imports:
         features |= {
             FUTURE_FLAG_TO_FEATURE[future_import]
@@ -1228,7 +1258,11 @@ def get_features_used(  # noqa: C901
                 features.add(Feature.F_STRINGS)
                 if Feature.DEBUG_F_STRINGS not in features:
                     for span_beg, span_end in iter_fexpr_spans(n.value):
-                        if n.value[span_beg : span_end - 1].rstrip().endswith("="):
+                        if (
+                            n.value[span_beg : span_end - 1]
+                            .rstrip()
+                            .endswith("=")
+                        ):
                             features.add(Feature.DEBUG_F_STRINGS)
                             break
 
@@ -1277,7 +1311,9 @@ def get_features_used(  # noqa: C901
             n.type in {syms.return_stmt, syms.yield_expr}
             and len(n.children) >= 2
             and n.children[1].type == syms.testlist_star_expr
-            and any(child.type == syms.star_expr for child in n.children[1].children)
+            and any(
+                child.type == syms.star_expr for child in n.children[1].children
+            )
         ):
             features.add(Feature.UNPACKING_ON_FLOW)
 
@@ -1311,21 +1347,23 @@ def get_features_used(  # noqa: C901
 
 
 def detect_target_versions(
-    node: Node, *, future_imports: Optional[Set[str]] = None
-) -> Set[TargetVersion]:
+    node: Node, *, future_imports: set[str] | None = None
+) -> set[TargetVersion]:
     """Detect the version to target based on the nodes used."""
     features = get_features_used(node, future_imports=future_imports)
     return {
-        version for version in TargetVersion if features <= VERSION_TO_FEATURES[version]
+        version
+        for version in TargetVersion
+        if features <= VERSION_TO_FEATURES[version]
     }
 
 
-def get_future_imports(node: Node) -> Set[str]:
+def get_future_imports(node: Node) -> set[str]:
     """Return a set of __future__ imports in the file."""
-    imports: Set[str] = set()
+    imports: set[str] = set()
 
     def get_imports_from_children(
-        children: List[LN],
+        children: list[LN],
     ) -> Generator[str, None, None]:
         for child in children:
             if isinstance(child, Leaf):
@@ -1334,8 +1372,12 @@ def get_future_imports(node: Node) -> Set[str]:
 
             elif child.type == syms.import_as_name:
                 orig_name = child.children[0]
-                assert isinstance(orig_name, Leaf), "Invalid syntax parsing imports"
-                assert orig_name.type == token.NAME, "Invalid syntax parsing imports"
+                assert isinstance(orig_name, Leaf), (
+                    "Invalid syntax parsing imports"
+                )
+                assert orig_name.type == token.NAME, (
+                    "Invalid syntax parsing imports"
+                )
                 yield orig_name.value
 
             elif child.type == syms.import_as_names:
@@ -1362,7 +1404,10 @@ def get_future_imports(node: Node) -> Set[str]:
 
         elif first_child.type == syms.import_from:
             module_name = first_child.children[1]
-            if not isinstance(module_name, Leaf) or module_name.value != "__future__":
+            if (
+                not isinstance(module_name, Leaf)
+                or module_name.value != "__future__"
+            ):
                 break
 
             imports |= set(get_imports_from_children(first_child.children[3:]))
@@ -1446,7 +1491,7 @@ def patch_click() -> None:
     file paths is minimal since it's Python source code.  Moreover, this crash was
     spurious on Python 3.7 thanks to PEP 538 and PEP 540.
     """
-    modules: List[Any] = []
+    modules: list[Any] = []
     try:
         from click import core
     except ImportError:

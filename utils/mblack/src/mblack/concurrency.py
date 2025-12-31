@@ -24,10 +24,11 @@ import logging
 import os
 import signal
 import sys
+from collections.abc import Iterable
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from multiprocessing import Manager
 from pathlib import Path
-from typing import Any, Iterable, Optional, Set
+from typing import Any
 
 from mypy_extensions import mypyc_attr
 
@@ -63,13 +64,17 @@ def shutdown(loop: asyncio.AbstractEventLoop) -> None:
     """Cancel all pending tasks on `loop`, wait for them, and close the loop."""
     try:
         # This part is borrowed from asyncio/runners.py in Python 3.7b2.
-        to_cancel = [task for task in asyncio.all_tasks(loop) if not task.done()]
+        to_cancel = [
+            task for task in asyncio.all_tasks(loop) if not task.done()
+        ]
         if not to_cancel:
             return
 
         for task in to_cancel:
             task.cancel()
-        loop.run_until_complete(asyncio.gather(*to_cancel, return_exceptions=True))
+        loop.run_until_complete(
+            asyncio.gather(*to_cancel, return_exceptions=True)
+        )
     finally:
         # `concurrent.futures.Future` objects cannot be cancelled once they
         # are already running. There might be some when the `shutdown()` happened.
@@ -83,12 +88,12 @@ def shutdown(loop: asyncio.AbstractEventLoop) -> None:
 # not ideal, but this shouldn't cause any issues ... hopefully. ~ichard26
 @mypyc_attr(patchable=True)
 def reformat_many(
-    sources: Set[Path],
+    sources: set[Path],
     fast: bool,
     write_back: WriteBack,
     mode: Mode,
     report: Report,
-    workers: Optional[int],
+    workers: int | None,
 ) -> None:
     """Reformat multiple files using a ProcessPoolExecutor."""
     maybe_install_uvloop()
@@ -132,7 +137,7 @@ def reformat_many(
 
 
 async def schedule_formatting(
-    sources: Set[Path],
+    sources: set[Path],
     fast: bool,
     write_back: WriteBack,
     mode: Mode,
@@ -186,7 +191,9 @@ async def schedule_formatting(
         # There are no good alternatives for these on Windows.
         pass
     while pending:
-        done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+        done, _ = await asyncio.wait(
+            pending, return_when=asyncio.FIRST_COMPLETED
+        )
         for task in done:
             src = tasks.pop(task)
             if task.cancelled():

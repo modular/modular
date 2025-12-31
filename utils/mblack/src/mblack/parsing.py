@@ -16,18 +16,21 @@
 """
 Parse Python code and perform AST validation.
 """
+
 import ast
 import sys
-from typing import Final, Iterable, Iterator, List, Set, Tuple, Type
+from collections.abc import Iterable, Iterator
+from typing import Final
 
-from mblack.mode import Feature, TargetVersion, supports_feature
-from mblack.nodes import syms
 from mblib2to3 import pygram
 from mblib2to3.pgen2 import driver
 from mblib2to3.pgen2.grammar import Grammar
 from mblib2to3.pgen2.parse import ParseError
 from mblib2to3.pgen2.tokenize import TokenError
 from mblib2to3.pytree import Leaf, Node
+
+from mblack.mode import Feature, TargetVersion, supports_feature
+from mblack.nodes import syms
 
 PY2_HINT: Final = "Python 2 support was removed in version 22.0."
 
@@ -36,7 +39,7 @@ class InvalidInput(ValueError):
     """Raised when input source code fails all parse attempts."""
 
 
-def get_grammars(target_versions: Set[TargetVersion]) -> List[Grammar]:
+def get_grammars(target_versions: set[TargetVersion]) -> list[Grammar]:
     if not target_versions:
         # No target_version specified, so try all grammars.
         return [
@@ -61,7 +64,9 @@ def get_grammars(target_versions: Set[TargetVersion]) -> List[Grammar]:
         )
     if not supports_feature(target_versions, Feature.ASYNC_KEYWORDS):
         # Python 3.0-3.6
-        grammars.append(pygram.python_grammar_no_print_statement_no_exec_statement)
+        grammars.append(
+            pygram.python_grammar_no_print_statement_no_exec_statement
+        )
     if supports_feature(target_versions, Feature.PATTERN_MATCHING):
         # Python 3.10+
         grammars.append(pygram.python_grammar_soft_keywords)
@@ -71,7 +76,9 @@ def get_grammars(target_versions: Set[TargetVersion]) -> List[Grammar]:
     return grammars
 
 
-def lib2to3_parse(src_txt: str, target_versions: Iterable[TargetVersion] = ()) -> Node:
+def lib2to3_parse(
+    src_txt: str, target_versions: Iterable[TargetVersion] = ()
+) -> Node:
     """Given a string with source, return the lib2to3 Node."""
     if not src_txt.endswith("\n"):
         src_txt += "\n"
@@ -136,9 +143,7 @@ def lib2to3_unparse(node: Node) -> str:
     return code
 
 
-def parse_single_version(
-    src: str, version: Tuple[int, int]
-) -> ast.AST:
+def parse_single_version(src: str, version: tuple[int, int]) -> ast.AST:
     filename = "<unknown>"
     return ast.parse(src, filename, feature_version=version, type_comments=True)
 
@@ -158,13 +163,13 @@ def parse_ast(src: str) -> ast.AST:
     raise SyntaxError(first_error)
 
 
-ast3_AST: Final[Type[ast.AST]] = ast.AST
+ast3_AST: Final[type[ast.AST]] = ast.AST
 
 
 def _normalize(lineend: str, value: str) -> str:
     # To normalize, we strip any leading and trailing space from
     # each line...
-    stripped: List[str] = [i.strip() for i in value.splitlines()]
+    stripped: list[str] = [i.strip() for i in value.splitlines()]
     normalized = lineend.join(stripped)
     # ...and remove any blank lines at the beginning and end of
     # the whole string
@@ -176,7 +181,7 @@ def stringify_ast(node: ast.AST, depth: int = 0) -> Iterator[str]:
 
     yield f"{'  ' * depth}{node.__class__.__name__}("
 
-    for field in sorted(node._fields):  # noqa: F402
+    for field in sorted(node._fields):
         # TypeIgnore has only one field 'lineno' which breaks this comparison
         if isinstance(node, ast.TypeIgnore):
             break
@@ -186,7 +191,7 @@ def stringify_ast(node: ast.AST, depth: int = 0) -> Iterator[str]:
         except AttributeError:
             continue
 
-        yield f"{'  ' * (depth+1)}{field}="
+        yield f"{'  ' * (depth + 1)}{field}="
 
         if isinstance(value, list):
             for item in value:
@@ -225,6 +230,8 @@ def stringify_ast(node: ast.AST, depth: int = 0) -> Iterator[str]:
                 normalized = _normalize("\n", value)
             else:
                 normalized = value
-            yield (f"{'  ' * (depth+2)}{normalized!r},  # {value.__class__.__name__}")
+            yield (
+                f"{'  ' * (depth + 2)}{normalized!r},  # {value.__class__.__name__}"
+            )
 
     yield f"{'  ' * depth})  # /{node.__class__.__name__}"

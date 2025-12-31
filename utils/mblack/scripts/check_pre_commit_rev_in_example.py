@@ -50,7 +50,7 @@ def main(changes: str, source_version_control: str) -> None:
 
     for repo in pre_commit_repos:
         pre_commit_rev = repo["rev"]
-        if not pre_commit_rev == latest_tag:
+        if pre_commit_rev != latest_tag:
             print(
                 "Please set the rev in ``source_version_control.md`` to be the"
                 f" latest one.\nExpected {latest_tag}, got {pre_commit_rev}.\n"

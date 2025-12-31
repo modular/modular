@@ -15,8 +15,12 @@
 
 """Builds on top of nodes.py to track brackets."""
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Dict, Final, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Final
+
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 
 from mblack.nodes import (
     BRACKET,
@@ -30,11 +34,9 @@ from mblack.nodes import (
     is_vararg,
     syms,
 )
-from mblib2to3.pgen2 import token
-from mblib2to3.pytree import Leaf, Node
 
 # types
-LN = Union[Leaf, Node]
+LN = Leaf | Node
 Depth = int
 LeafID = int
 NodeType = int
@@ -75,12 +77,14 @@ class BracketTracker:
     """Keeps track of brackets on a line."""
 
     depth: int = 0
-    bracket_match: Dict[Tuple[Depth, NodeType], Leaf] = field(default_factory=dict)
-    delimiters: Dict[LeafID, Priority] = field(default_factory=dict)
-    previous: Optional[Leaf] = None
-    _for_loop_depths: List[int] = field(default_factory=list)
-    _lambda_argument_depths: List[int] = field(default_factory=list)
-    invisible: List[Leaf] = field(default_factory=list)
+    bracket_match: dict[tuple[Depth, NodeType], Leaf] = field(
+        default_factory=dict
+    )
+    delimiters: dict[LeafID, Priority] = field(default_factory=dict)
+    previous: Leaf | None = None
+    _for_loop_depths: list[int] = field(default_factory=list)
+    _lambda_argument_depths: list[int] = field(default_factory=list)
+    invisible: list[Leaf] = field(default_factory=list)
 
     def mark(self, leaf: Leaf) -> None:
         """Mark `leaf` with bracket-related metadata. Keep track of delimiters.
@@ -105,7 +109,9 @@ class BracketTracker:
         if leaf.type in CLOSING_BRACKETS:
             self.depth -= 1
             try:
-                opening_bracket = self.bracket_match.pop((self.depth, leaf.type))
+                opening_bracket = self.bracket_match.pop(
+                    (self.depth, leaf.type)
+                )
             except KeyError as e:
                 raise BracketMatchError(
                     "Unable to match a closing bracket to the following opening"
@@ -136,7 +142,9 @@ class BracketTracker:
         """Return True if there is an yet unmatched open bracket on the line."""
         return bool(self.bracket_match)
 
-    def max_delimiter_priority(self, exclude: Iterable[LeafID] = ()) -> Priority:
+    def max_delimiter_priority(
+        self, exclude: Iterable[LeafID] = ()
+    ) -> Priority:
         """Return the highest priority of a delimiter found on the line.
 
         Values are consistent with what `is_split_*_delimiter()` return.
@@ -208,12 +216,14 @@ class BracketTracker:
 
         return False
 
-    def get_open_lsqb(self) -> Optional[Leaf]:
+    def get_open_lsqb(self) -> Leaf | None:
         """Return the most recent opening square bracket (if any)."""
         return self.bracket_match.get((self.depth - 1, token.RSQB))
 
 
-def is_split_after_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Priority:
+def is_split_after_delimiter(
+    leaf: Leaf, previous: Leaf | None = None
+) -> Priority:
     """Return the priority of the `leaf` delimiter, given a line break after it.
 
     The delimiter priorities returned here are from those delimiters that would
@@ -227,7 +237,9 @@ def is_split_after_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Pri
     return 0
 
 
-def is_split_before_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Priority:
+def is_split_before_delimiter(
+    leaf: Leaf, previous: Leaf | None = None
+) -> Priority:
     """Return the priority of the `leaf` delimiter, given a line break before it.
 
     The delimiter priorities returned here are from those delimiters that would
@@ -243,7 +255,8 @@ def is_split_before_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Pr
     if (
         leaf.type == token.DOT
         and leaf.parent
-        and leaf.parent.type not in {syms.import_from, syms.dotted_as_names, syms.dotted_name}
+        and leaf.parent.type
+        not in {syms.import_from, syms.dotted_as_names, syms.dotted_name}
         and (previous is None or previous.type in CLOSING_BRACKETS)
     ):
         return DOT_PRIORITY
@@ -272,8 +285,7 @@ def is_split_before_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Pr
         leaf.value == "for"
         and leaf.parent
         and leaf.parent.type in {syms.comp_for, syms.old_comp_for}
-        or leaf.type == token.ASYNC
-    ):
+    ) or leaf.type == token.ASYNC:
         if (
             not isinstance(leaf.prev_sibling, Leaf)
             or leaf.prev_sibling.value != "async"
@@ -287,7 +299,11 @@ def is_split_before_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Pr
     ):
         return COMPREHENSION_PRIORITY
 
-    if leaf.value in {"if", "else"} and leaf.parent and leaf.parent.type == syms.test:
+    if (
+        leaf.value in {"if", "else"}
+        and leaf.parent
+        and leaf.parent.type == syms.test
+    ):
         return TERNARY_PRIORITY
 
     if leaf.value == "is":
@@ -351,7 +367,7 @@ def max_delimiter_priority_in_atom(node: LN) -> Priority:
         return 0
 
 
-def get_leaves_inside_matching_brackets(leaves: Sequence[Leaf]) -> Set[LeafID]:
+def get_leaves_inside_matching_brackets(leaves: Sequence[Leaf]) -> set[LeafID]:
     """Return leaves that are inside matching brackets.
 
     The input `leaves` can have non-matching brackets at the head or tail parts.

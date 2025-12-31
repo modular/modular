@@ -27,19 +27,14 @@ There's also a pattern matching implementation here.
 
 # mypy: allow-untyped-defs, allow-incomplete-defs
 
+from collections.abc import Iterable, Iterator
 from typing import (
     Any,
-    Dict,
-    Iterator,
-    List,
     Optional,
-    Text,
-    Tuple,
     TypeVar,
     Union,
-    Set,
-    Iterable,
 )
+
 from mblib2to3.pgen2.grammar import Grammar
 
 __author__ = "Guido van Rossum <guido@python.org>"
@@ -49,10 +44,10 @@ from io import StringIO
 
 HUGE: int = 0x7FFFFFFF  # maximum repeat count, default max
 
-_type_reprs: Dict[int, Union[Text, int]] = {}
+_type_reprs: dict[int, str | int] = {}
 
 
-def type_repr(type_num: int) -> Union[Text, int]:
+def type_repr(type_num: int) -> str | int:
     global _type_reprs
     if not _type_reprs:
         from .pygram import python_symbols
@@ -61,7 +56,7 @@ def type_repr(type_num: int) -> Union[Text, int]:
         # from .pgen2 import token // token.__dict__.items():
         for name in dir(python_symbols):
             val = getattr(python_symbols, name)
-            if type(val) == int:
+            if isinstance(val, int):
                 _type_reprs[val] = name
     return _type_reprs.setdefault(type_num, type_num)
 
@@ -69,12 +64,11 @@ def type_repr(type_num: int) -> Union[Text, int]:
 _P = TypeVar("_P", bound="Base")
 
 NL = Union["Node", "Leaf"]
-Context = Tuple[Text, Tuple[int, int]]
-RawNode = Tuple[int, Optional[Text], Optional[Context], Optional[List[NL]]]
+Context = tuple[str, tuple[int, int]]
+RawNode = tuple[int, str | None, Context | None, list[NL] | None]
 
 
-class Base(object):
-
+class Base:
     """
     Abstract base class for Node and Leaf.
 
@@ -87,7 +81,7 @@ class Base(object):
     # Default values for instance variables
     type: int  # int: token number (< 256) or symbol number (>= 256)
     parent: Optional["Node"] = None  # Parent node pointer, or None
-    children: List[NL]  # List of subnodes
+    children: list[NL]  # List of subnodes
     was_changed: bool = False
     was_checked: bool = False
 
@@ -107,7 +101,7 @@ class Base(object):
         return self._eq(other)
 
     @property
-    def prefix(self) -> Text:
+    def prefix(self) -> str:
         raise NotImplementedError
 
     def _eq(self: _P, other: _P) -> bool:
@@ -148,7 +142,7 @@ class Base(object):
         """
         raise NotImplementedError
 
-    def replace(self, new: Union[NL, List[NL]]) -> None:
+    def replace(self, new: NL | list[NL]) -> None:
         """Replace this node with a new one in the parent."""
         assert self.parent is not None, str(self)
         assert new is not None
@@ -172,7 +166,7 @@ class Base(object):
             x.parent = self.parent
         self.parent = None
 
-    def get_lineno(self) -> Optional[int]:
+    def get_lineno(self) -> int | None:
         """Return the line number which generated the invocant node."""
         node = self
         while not isinstance(node, Leaf):
@@ -188,7 +182,7 @@ class Base(object):
             self.parent.changed()
         self.was_changed = True
 
-    def remove(self) -> Optional[int]:
+    def remove(self) -> int | None:
         """
         Remove the node from the tree. Returns the position of the node in its
         parent's children before it was removed.
@@ -204,7 +198,7 @@ class Base(object):
         return None
 
     @property
-    def next_sibling(self) -> Optional[NL]:
+    def next_sibling(self) -> NL | None:
         """
         The node immediately following the invocant in their parent's children
         list. If the invocant does not have a next sibling, it is None
@@ -218,7 +212,7 @@ class Base(object):
         return self.parent.next_sibling_map[id(self)]
 
     @property
-    def prev_sibling(self) -> Optional[NL]:
+    def prev_sibling(self) -> NL | None:
         """
         The node immediately preceding the invocant in their parent's children
         list. If the invocant does not have a previous sibling, it is None.
@@ -240,7 +234,7 @@ class Base(object):
             return 0
         return 1 + self.parent.depth()
 
-    def get_suffix(self) -> Text:
+    def get_suffix(self) -> str:
         """
         Return the string immediately following the invocant node. This is
         effectively equivalent to node.next_sibling.prefix
@@ -253,19 +247,18 @@ class Base(object):
 
 
 class Node(Base):
-
     """Concrete implementation for interior nodes."""
 
-    fixers_applied: Optional[List[Any]]
-    used_names: Optional[Set[Text]]
+    fixers_applied: list[Any] | None
+    used_names: set[str] | None
 
     def __init__(
         self,
         type: int,
-        children: List[NL],
-        context: Optional[Any] = None,
-        prefix: Optional[Text] = None,
-        fixers_applied: Optional[List[Any]] = None,
+        children: list[NL],
+        context: Any | None = None,
+        prefix: str | None = None,
+        fixers_applied: list[Any] | None = None,
     ) -> None:
         """
         Initializer.
@@ -289,16 +282,12 @@ class Node(Base):
         else:
             self.fixers_applied = None
 
-    def __repr__(self) -> Text:
+    def __repr__(self) -> str:
         """Return a canonical string representation."""
         assert self.type is not None
-        return "%s(%s, %r)" % (
-            self.__class__.__name__,
-            type_repr(self.type),
-            self.children,
-        )
+        return f"{self.__class__.__name__}({type_repr(self.type)}, {self.children!r})"
 
-    def __str__(self) -> Text:
+    def __str__(self) -> str:
         """
         Return a pretty string representation.
 
@@ -332,7 +321,7 @@ class Node(Base):
             yield from child.pre_order()
 
     @property
-    def prefix(self) -> Text:
+    def prefix(self) -> str:
         """
         The whitespace and comments preceding this node in the input.
         """
@@ -341,7 +330,7 @@ class Node(Base):
         return self.children[0].prefix
 
     @prefix.setter
-    def prefix(self, prefix: Text) -> None:
+    def prefix(self, prefix: str) -> None:
         if self.children:
             self.children[0].prefix = prefix
 
@@ -377,15 +366,15 @@ class Node(Base):
         self.invalidate_sibling_maps()
 
     def invalidate_sibling_maps(self) -> None:
-        self.prev_sibling_map: Optional[Dict[int, Optional[NL]]] = None
-        self.next_sibling_map: Optional[Dict[int, Optional[NL]]] = None
+        self.prev_sibling_map: dict[int, NL | None] | None = None
+        self.next_sibling_map: dict[int, NL | None] | None = None
 
     def update_sibling_maps(self) -> None:
-        _prev: Dict[int, Optional[NL]] = {}
-        _next: Dict[int, Optional[NL]] = {}
+        _prev: dict[int, NL | None] = {}
+        _next: dict[int, NL | None] = {}
         self.prev_sibling_map = _prev
         self.next_sibling_map = _next
-        previous: Optional[NL] = None
+        previous: NL | None = None
         for current in self.children:
             _prev[id(current)] = previous
             _next[id(previous)] = current
@@ -394,16 +383,15 @@ class Node(Base):
 
 
 class Leaf(Base):
-
     """Concrete implementation for leaf nodes."""
 
     # Default values for instance variables
-    value: Text
-    fixers_applied: List[Any]
+    value: str
+    fixers_applied: list[Any]
     bracket_depth: int
     # Changed later in brackets.py
     opening_bracket: Optional["Leaf"] = None
-    used_names: Optional[Set[Text]]
+    used_names: set[str] | None
     _prefix = ""  # Whitespace and comments preceding this token in the input
     lineno: int = 0  # Line where this token starts in the input
     column: int = 0  # Column where this token starts in the input
@@ -411,10 +399,10 @@ class Leaf(Base):
     def __init__(
         self,
         type: int,
-        value: Text,
-        context: Optional[Context] = None,
-        prefix: Optional[Text] = None,
-        fixers_applied: List[Any] = [],
+        value: str,
+        context: Context | None = None,
+        prefix: str | None = None,
+        fixers_applied: list[Any] | None = None,
         opening_bracket: Optional["Leaf"] = None,
     ) -> None:
         """
@@ -424,6 +412,8 @@ class Leaf(Base):
         optional context keyword argument.
         """
 
+        if fixers_applied is None:
+            fixers_applied = []
         assert 0 <= type < 256, type
         if context is not None:
             self._prefix, (self.lineno, self.column) = context
@@ -431,7 +421,7 @@ class Leaf(Base):
         self.value = value
         if prefix is not None:
             self._prefix = prefix
-        self.fixers_applied: Optional[List[Any]] = fixers_applied[:]
+        self.fixers_applied: list[Any] | None = fixers_applied[:]
         self.children = []
         self.opening_bracket = opening_bracket
 
@@ -440,13 +430,9 @@ class Leaf(Base):
         from .pgen2.token import tok_name
 
         assert self.type is not None
-        return "%s(%s, %r)" % (
-            self.__class__.__name__,
-            tok_name.get(self.type, self.type),
-            self.value,
-        )
+        return f"{self.__class__.__name__}({tok_name.get(self.type, self.type)}, {self.value!r})"
 
-    def __str__(self) -> Text:
+    def __str__(self) -> str:
         """
         Return a pretty string representation.
 
@@ -480,14 +466,14 @@ class Leaf(Base):
         yield self
 
     @property
-    def prefix(self) -> Text:
+    def prefix(self) -> str:
         """
         The whitespace and comments preceding this token in the input.
         """
         return self._prefix
 
     @prefix.setter
-    def prefix(self, prefix: Text) -> None:
+    def prefix(self, prefix: str) -> None:
         self.changed()
         self._prefix = prefix
 
@@ -512,11 +498,10 @@ def convert(gr: Grammar, raw_node: RawNode) -> NL:
         return Leaf(type, value or "", context=context)
 
 
-_Results = Dict[Text, NL]
+_Results = dict[str, NL]
 
 
-class BasePattern(object):
-
+class BasePattern:
     """
     A pattern is a tree matching pattern.
 
@@ -532,26 +517,26 @@ class BasePattern(object):
     """
 
     # Defaults for instance variables
-    type: Optional[int]
+    type: int | None
     type = None  # Node type (token if < 256, symbol if >= 256)
     content: Any = None  # Optional content matching pattern
-    name: Optional[
-        Text
-    ] = None  # Optional name used to store match in results dict
+    name: str | None = None  # Optional name used to store match in results dict
 
     def __new__(cls, *args, **kwds):
         """Constructor that prevents BasePattern from being instantiated."""
         assert cls is not BasePattern, "Cannot instantiate BasePattern"
         return object.__new__(cls)
 
-    def __repr__(self) -> Text:
+    def __repr__(self) -> str:
         assert self.type is not None
         args = [type_repr(self.type), self.content, self.name]
         while args and args[-1] is None:
             del args[-1]
-        return "%s(%s)" % (self.__class__.__name__, ", ".join(map(repr, args)))
+        return "{}({})".format(
+            self.__class__.__name__, ", ".join(map(repr, args))
+        )
 
-    def _submatch(self, node, results=None) -> bool:
+    def _submatch(self, node, results=None) -> bool:  # noqa: ANN001
         raise NotImplementedError
 
     def optimize(self) -> "BasePattern":
@@ -562,7 +547,7 @@ class BasePattern(object):
         """
         return self
 
-    def match(self, node: NL, results: Optional[_Results] = None) -> bool:
+    def match(self, node: NL, results: _Results | None = None) -> bool:
         """
         Does this pattern exactly match a node?
 
@@ -576,7 +561,7 @@ class BasePattern(object):
         if self.type is not None and node.type != self.type:
             return False
         if self.content is not None:
-            r: Optional[_Results] = None
+            r: _Results | None = None
             if results is not None:
                 r = {}
             if not self._submatch(node, r):
@@ -589,7 +574,7 @@ class BasePattern(object):
         return True
 
     def match_seq(
-        self, nodes: List[NL], results: Optional[_Results] = None
+        self, nodes: list[NL], results: _Results | None = None
     ) -> bool:
         """
         Does this pattern exactly match a sequence of nodes?
@@ -601,8 +586,8 @@ class BasePattern(object):
         return self.match(nodes[0], results)
 
     def generate_matches(
-        self, nodes: List[NL]
-    ) -> Iterator[Tuple[int, _Results]]:
+        self, nodes: list[NL]
+    ) -> Iterator[tuple[int, _Results]]:
         """
         Generator yielding all matches for this pattern.
 
@@ -616,9 +601,9 @@ class BasePattern(object):
 class LeafPattern(BasePattern):
     def __init__(
         self,
-        type: Optional[int] = None,
-        content: Optional[Text] = None,
-        name: Optional[Text] = None,
+        type: int | None = None,
+        content: str | None = None,
+        name: str | None = None,
     ) -> None:
         """
         Initializer.  Takes optional type, content, and name.
@@ -639,13 +624,13 @@ class LeafPattern(BasePattern):
         self.content = content
         self.name = name
 
-    def match(self, node: NL, results=None) -> bool:
+    def match(self, node: NL, results=None) -> bool:  # noqa: ANN001
         """Override match() to insist on a leaf node."""
         if not isinstance(node, Leaf):
             return False
         return BasePattern.match(self, node, results)
 
-    def _submatch(self, node, results=None):
+    def _submatch(self, node, results=None):  # noqa: ANN001, ANN202
         """
         Match the pattern's content to the node's children.
 
@@ -662,14 +647,13 @@ class LeafPattern(BasePattern):
 
 
 class NodePattern(BasePattern):
-
     wildcards: bool = False
 
     def __init__(
         self,
-        type: Optional[int] = None,
-        content: Optional[Iterable[Text]] = None,
-        name: Optional[Text] = None,
+        type: int | None = None,
+        content: Iterable[str] | None = None,
+        name: str | None = None,
     ) -> None:
         """
         Initializer.  Takes optional type, content, and name.
@@ -702,7 +686,7 @@ class NodePattern(BasePattern):
         self.content = newcontent  # TODO: this is unbound when content is None
         self.name = name
 
-    def _submatch(self, node, results=None) -> bool:
+    def _submatch(self, node, results=None) -> bool:  # noqa: ANN001
         """
         Match the pattern's content to the node's children.
 
@@ -724,14 +708,13 @@ class NodePattern(BasePattern):
             return False
         if len(self.content) != len(node.children):
             return False
-        for subpattern, child in zip(self.content, node.children):
+        for subpattern, child in zip(self.content, node.children, strict=False):
             if not subpattern.match(child, results):
                 return False
         return True
 
 
 class WildcardPattern(BasePattern):
-
     """
     A wildcard pattern can match zero or more nodes.
 
@@ -749,10 +732,10 @@ class WildcardPattern(BasePattern):
 
     def __init__(
         self,
-        content: Optional[Text] = None,
+        content: str | None = None,
         min: int = 0,
         max: int = HUGE,
-        name: Optional[Text] = None,
+        name: str | None = None,
     ) -> None:
         """
         Initializer.
@@ -821,11 +804,11 @@ class WildcardPattern(BasePattern):
             )
         return self
 
-    def match(self, node, results=None) -> bool:
+    def match(self, node, results=None) -> bool:  # noqa: ANN001
         """Does this pattern exactly match a node?"""
         return self.match_seq([node], results)
 
-    def match_seq(self, nodes, results=None) -> bool:
+    def match_seq(self, nodes, results=None) -> bool:  # noqa: ANN001
         """Does this pattern exactly match a sequence of nodes?"""
         for c, r in self.generate_matches(nodes):
             if c == len(nodes):
@@ -836,7 +819,7 @@ class WildcardPattern(BasePattern):
                 return True
         return False
 
-    def generate_matches(self, nodes) -> Iterator[Tuple[int, _Results]]:
+    def generate_matches(self, nodes) -> Iterator[tuple[int, _Results]]:  # noqa: ANN001
         """
         Generator yielding matches for a sequence of nodes.
 
@@ -881,7 +864,7 @@ class WildcardPattern(BasePattern):
                 if hasattr(sys, "getrefcount"):
                     sys.stderr = save_stderr
 
-    def _iterative_matches(self, nodes) -> Iterator[Tuple[int, _Results]]:
+    def _iterative_matches(self, nodes) -> Iterator[tuple[int, _Results]]:  # noqa: ANN001
         """Helper to iteratively yield the matches."""
         nodelen = len(nodes)
         if 0 >= self.min:
@@ -910,7 +893,7 @@ class WildcardPattern(BasePattern):
                                 new_results.append((c0 + c1, r))
             results = new_results
 
-    def _bare_name_matches(self, nodes) -> Tuple[int, _Results]:
+    def _bare_name_matches(self, nodes) -> tuple[int, _Results]:  # noqa: ANN001
         """Special optimized matcher for bare_name."""
         count = 0
         r = {}  # type: _Results
@@ -928,8 +911,10 @@ class WildcardPattern(BasePattern):
         return count, r
 
     def _recursive_matches(
-        self, nodes, count
-    ) -> Iterator[Tuple[int, _Results]]:
+        self,
+        nodes,  # noqa: ANN001
+        count,  # noqa: ANN001
+    ) -> Iterator[tuple[int, _Results]]:
         """Helper to recursively yield the matches."""
         assert self.content is not None
         if count >= self.min:
@@ -947,7 +932,7 @@ class WildcardPattern(BasePattern):
 
 
 class NegatedPattern(BasePattern):
-    def __init__(self, content: Optional[BasePattern] = None) -> None:
+    def __init__(self, content: BasePattern | None = None) -> None:
         """
         Initializer.
 
@@ -960,31 +945,31 @@ class NegatedPattern(BasePattern):
             assert isinstance(content, BasePattern), repr(content)
         self.content = content
 
-    def match(self, node, results=None) -> bool:
+    def match(self, node, results=None) -> bool:  # noqa: ANN001
         # We never match a node in its entirety
         return False
 
-    def match_seq(self, nodes, results=None) -> bool:
+    def match_seq(self, nodes, results=None) -> bool:  # noqa: ANN001
         # We only match an empty sequence of nodes in its entirety
         return len(nodes) == 0
 
     def generate_matches(
-        self, nodes: List[NL]
-    ) -> Iterator[Tuple[int, _Results]]:
+        self, nodes: list[NL]
+    ) -> Iterator[tuple[int, _Results]]:
         if self.content is None:
             # Return a match if there is an empty sequence
             if len(nodes) == 0:
                 yield 0, {}
         else:
             # Return a match if the argument pattern has no matches
-            for c, r in self.content.generate_matches(nodes):
+            for _c, _r in self.content.generate_matches(nodes):
                 return
             yield 0, {}
 
 
 def generate_matches(
-    patterns: List[BasePattern], nodes: List[NL]
-) -> Iterator[Tuple[int, _Results]]:
+    patterns: list[BasePattern], nodes: list[NL]
+) -> Iterator[tuple[int, _Results]]:
     """
     Generator yielding matches for a sequence of patterns and nodes.
 
