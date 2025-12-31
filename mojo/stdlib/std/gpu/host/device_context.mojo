@@ -843,27 +843,11 @@ struct DeviceBuffer[dtype: DType](
         var cpp_handle: _DeviceBufferPtr = {}
         var device_ptr: Self._DevicePtr = {}
 
-        if mode == _DeviceBufferMode._SYNC:
-            # const char *AsyncRT_DeviceContext_createBuffer_sync(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
-            _checked(
-                external_call[
-                    "AsyncRT_DeviceContext_createBuffer_sync",
-                    _ConstCharPtr,
-                    UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
-                    UnsafePointer[Self._DevicePtr, origin_of(device_ptr)],
-                    _DeviceContextPtr,
-                    _SizeT,
-                    _SizeT,
-                ](
-                    UnsafePointer(to=cpp_handle),
-                    UnsafePointer(to=device_ptr),
-                    ctx._handle,
-                    UInt(size),
-                    UInt(elem_size),
-                ),
-                location=__call_location(),
-            )
-        elif mode == _DeviceBufferMode._ASYNC:
+        # TODO: Remove this if statement.
+        # As of GEX-3005, Driver only supports async allocation. For
+        # sync allocation, we need to explicitly synchronize after this step.
+        # See DeviceContext.create_buffer_sync() for example.
+        if mode == _DeviceBufferMode._ASYNC:
             # const char *AsyncRT_DeviceContext_createBuffer_async(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
             _checked(
                 external_call[
@@ -3620,7 +3604,7 @@ struct DeviceContext(ImplicitlyCopyable):
         Raises:
             If the operation fails.
         """
-        var result = DeviceBuffer[dtype](self, size, _DeviceBufferMode._SYNC)
+        var result = DeviceBuffer[dtype](self, size, _DeviceBufferMode._ASYNC)
         self.synchronize()
         return result
 
