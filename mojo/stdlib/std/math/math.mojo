@@ -2003,6 +2003,7 @@ fn cosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `cosh` of the input.
     """
+
     @parameter
     if is_gpu():
         return (exp(x) + exp(-x)) * 0.5
@@ -2031,6 +2032,7 @@ fn sinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `sinh` of the input.
     """
+
     @parameter
     if is_gpu():
         return (exp(x) - exp(-x)) * 0.5
