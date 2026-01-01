@@ -14,7 +14,9 @@
 from layout import *
 from layout.int_tuple import product
 from layout.layout_tensor import *
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal
 
 

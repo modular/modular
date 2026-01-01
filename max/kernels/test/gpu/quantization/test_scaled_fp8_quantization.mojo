@@ -20,7 +20,9 @@ from linalg.fp8_quantization import (
     quantize_static_scaled_fp8,
     batched_quantize_dynamic_scaled_fp8,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal
 
 from utils import IndexList

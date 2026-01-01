@@ -26,10 +26,12 @@ from linalg.arch.cpu.vnni_intrinsics import (
 from linalg.matmul import elementwise_epilogue_type
 from linalg.utils import partition_work
 from memory import (
-    LegacyUnsafePointer as UnsafePointer,
+    LegacyUnsafePointer,
     bitcast,
     stack_allocation,
 )
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index

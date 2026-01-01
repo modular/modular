@@ -13,10 +13,12 @@
 #
 
 from complex import ComplexFloat32, ComplexFloat64
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from gpu.host._amdgpu_hip import hipStream_t
 
 from .types import (

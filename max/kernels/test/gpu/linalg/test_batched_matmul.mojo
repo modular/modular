@@ -21,7 +21,9 @@ from gpu.host import DeviceContext, get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.bmm import _batched_matmul_gpu
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_almost_equal
 
 from utils import Index, IndexList

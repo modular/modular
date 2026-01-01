@@ -31,7 +31,9 @@ from linalg.matmul.gpu.sm100.blockwise_fp8 import (
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.utils import elementwise_epilogue_type
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList

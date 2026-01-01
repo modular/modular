@@ -13,7 +13,9 @@
 
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from os import abort
 from sys import align_of, simd_width_of
 from sys.info import CompilationTarget

@@ -20,7 +20,9 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple

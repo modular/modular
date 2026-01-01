@@ -17,10 +17,14 @@ from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import (
-    LegacyUnsafePointer as UnsafePointer,
-    LegacyOpaquePointer as OpaquePointer,
     UnsafePointer as UnsafePointerV2,
 )
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from testing import assert_equal
 
 
@@ -154,7 +158,7 @@ def test_print(ctx: DeviceContext):
 
 @fieldwise_init
 struct ToLegacyUnsafePointer(Copyable, DevicePassable):
-    comptime device_type: AnyType = LegacyUnsafePointer[Float32]
+    comptime device_type: AnyType = LegacyUnsafePointer[mut=True, Float32]
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = Self.device_type()
@@ -186,7 +190,7 @@ struct ToUnsafePointer(Copyable, DevicePassable):
 
 def test_kernel_pointer_conversions(ctx: DeviceContext):
     fn kernel(
-        legacy: LegacyUnsafePointer[Float32],
+        legacy: LegacyUnsafePointer[mut=True, Float32],
         unsafe_pointer: UnsafePointerV2[Float32, MutAnyOrigin],
     ):
         pass
