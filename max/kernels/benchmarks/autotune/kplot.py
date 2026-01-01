@@ -13,6 +13,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,17 @@ MARKER_COLORS = [
     "magneta",
 ]
 
+# Conversion factors: multiply by this value to convert from the unit to seconds.
+# Order matters: descending magnitude for auto-selection algorithm.
+TIME_UNIT_SECONDS = {
+    "s": 1.0,
+    "ms": 1e-3,
+    "us": 1e-6,
+    "ns": 1e-9,
+}
+TIME_UNITS = tuple(TIME_UNIT_SECONDS.keys())
+_VALID_UNITS = frozenset(TIME_UNIT_SECONDS.keys()) | {"auto"}
+
 
 def _get_max_groups_per_chart(x_labels, width_px, font_size_pt):  # noqa: ANN001, ANN202
     x_labels_len = [
@@ -64,6 +76,7 @@ class PlotConfig:
     prec: FP rounding precision of values
     bgcolor: Background color
     ytext: Print value on top of the bar
+    ytext_unit: Unit for ytext (auto/s/ms/us/ns)
     font_family: Font family
     barmode: Bar mode ["group", "stacked"]
     groups_per_chart: ["all"=-1 (default), "auto"=0, int]
@@ -78,10 +91,99 @@ class PlotConfig:
     prec: int = 3
     bgcolor: str = "#ffffff"
     y_text: bool = True  # Print value on top of the bar
+    ytext_unit: str = "auto"
     barmode: str = "group"  # ["group", "stacked"]
     font_family: str = "Courier New"
     title_font_family: str = "Times New Roman"
     groups_per_chart: int = 0
+
+
+def _replace_time_unit(label: str, base_unit: str, target_unit: str) -> str:
+    """Replace time unit in a label: 'met (s)' with target='us' -> 'met (us)'."""
+    if base_unit == target_unit:
+        return label
+    pattern = rf"\({re.escape(base_unit)}\)"
+    return re.sub(
+        pattern, f"({target_unit})", label, count=1, flags=re.IGNORECASE
+    )
+
+
+def _resolve_ytext_unit(
+    y_title: str, y_values: np.ndarray, requested_unit: str
+) -> tuple[str, float, str, str | None]:
+    """Resolve the target time unit and compute the scaling factor.
+
+    Returns:
+        (updated_y_title, scale_factor, unit_suffix, base_unit)
+        - scale_factor: multiply original values by this to get target unit
+        - unit_suffix: string to append to bar labels (e.g., 'us')
+        - base_unit: original unit parsed from y_title, or None
+    """
+    unit = requested_unit.lower()
+    if unit not in _VALID_UNITS:
+        raise ValueError(f"Unsupported ytext unit '{requested_unit}'.")
+
+    # Parse base unit from y_title (e.g., 'met (s)' -> 's')
+    if match := re.search(r"\(([^)]+)\)", y_title):
+        parsed = match.group(1).strip().lower()
+        base_unit = parsed if parsed in TIME_UNIT_SECONDS else None
+    else:
+        base_unit = None
+
+    if base_unit is None:
+        if unit == "auto":
+            return y_title, 1.0, "", None
+        raise ValueError(
+            "ytext-unit requires a time axis label like 'met (s)'."
+        )
+
+    # Auto-select unit based on data magnitude
+    if unit == "auto":
+        # Compute max absolute value, ignoring NaN/Inf
+        arr = np.asarray(y_values, dtype=float).ravel()
+        finite = arr[np.isfinite(arr)] if arr.size > 0 else arr
+        max_val = float(np.max(np.abs(finite))) if finite.size > 0 else 0.0
+        max_seconds = max_val * TIME_UNIT_SECONDS[base_unit]
+
+        # Select largest unit where value >= 1 in that unit
+        unit = base_unit
+        if max_seconds > 0:
+            for u, threshold in list(TIME_UNIT_SECONDS.items())[:-1]:  # skip ns
+                if max_seconds >= threshold:
+                    unit = u
+                    break
+            else:
+                unit = "ns"
+
+    # Compute scale: e.g., s->us means scale = 1.0 / 1e-6 = 1e6
+    scale = TIME_UNIT_SECONDS[base_unit] / TIME_UNIT_SECONDS[unit]
+    y_title = _replace_time_unit(y_title, base_unit, unit)
+    return y_title, scale, unit, base_unit
+
+
+def _apply_time_unit(
+    y_title: str,
+    y_names: Sequence[str],
+    y_values: np.ndarray,
+    requested_unit: str,
+) -> tuple[str, list[str], np.ndarray, str]:
+    """Apply time unit conversion to title, legend names, and values.
+
+    Ensures consistent units across the entire chart (axis, legend, bar labels).
+    """
+    y_title, scale, unit, base_unit = _resolve_ytext_unit(
+        y_title=y_title,
+        y_values=y_values,
+        requested_unit=requested_unit,
+    )
+    # Update legend names to reflect the new unit
+    if base_unit is not None:
+        y_names = [
+            _replace_time_unit(name, base_unit, unit) for name in y_names
+        ]
+    if scale != 1.0:
+        y_values = y_values * scale
+    return y_title, list(y_names), y_values, unit
 
 
 def draw_plot(
@@ -112,6 +214,14 @@ def draw_plot(
     prec = cfg.prec
     bgcolor = cfg.bgcolor
 
+    # Convert to a human-readable time unit (e.g., seconds -> microseconds)
+    y_title, y_names, y_list, unit_suffix = _apply_time_unit(
+        y_title=y_title,
+        y_names=y_names,
+        y_values=y_list,
+        requested_unit=cfg.ytext_unit,
+    )
+
     layout = go.Layout(autosize=False, width=width_px, height=height_px)
 
     def plot_draw(xs: Sequence[str], ys_list: np.ndarray, name: str) -> None:
@@ -130,13 +240,25 @@ def draw_plot(
                 orientation="h",
             )
         )
+
         for i, ys in enumerate(ys_list):
+            # Format bar labels: round values and append unit suffix (e.g., '10.6us')
+            if cfg.y_text:
+                rounded = np.round(ys, prec)
+                text = (
+                    [f"{v}{unit_suffix}" for v in rounded]
+                    if unit_suffix
+                    else rounded
+                )
+            else:
+                text = None
+
             fig.add_trace(
                 go.Bar(
                     x=xs,
                     y=ys,
                     name=y_names[i],
-                    text=np.round(ys, prec) if cfg.y_text else None,
+                    text=text,
                     textposition="outside",
                     textangle=0,
                     marker_color=MARKER_COLORS[i % len(MARKER_COLORS)],
@@ -444,6 +566,12 @@ def parse_and_plot(
     help="Print bar values (default=True)",
 )
 @click.option(
+    "--ytext-unit",
+    default="auto",
+    type=click.Choice(["auto", *TIME_UNITS], case_sensitive=False),
+    help="Ytext/axis unit for time metrics (auto/s/ms/us/ns)",
+)
+@click.option(
     "--groups-per-chart",
     "-g",
     default=0,
@@ -475,6 +603,7 @@ def cli(
     scale: float,
     prec: int,
     ytext: bool,
+    ytext_unit: str,
     groups_per_chart: int,
     force: bool,
     verbose: bool,
@@ -505,6 +634,7 @@ def cli(
         scale=scale,
         prec=prec,
         y_text=ytext,
+        ytext_unit=ytext_unit.lower(),
         groups_per_chart=groups_per_chart,
     )
 
