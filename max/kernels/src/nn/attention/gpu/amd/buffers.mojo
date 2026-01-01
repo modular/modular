@@ -13,7 +13,9 @@
 
 from collections import OptionalReg
 from math import ceildiv, recip
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
 

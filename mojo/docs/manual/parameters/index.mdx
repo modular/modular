@@ -181,7 +181,7 @@ build generic collections. For example, a generic array type might include code
 like this:
 
 ```mojo
-struct GenericArray[ElementType: Copyable]:
+struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
     var data: UnsafePointer[Self.ElementType, MutOrigin.external]
     var size: Int
 
@@ -239,7 +239,7 @@ could add a static factory method to `GenericArray` with the following
 signature:
 
 ```mojo
-struct GenericArray[ElementType: Copyable]:
+struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
     ...
 
     @staticmethod
@@ -958,7 +958,7 @@ values to express new types:
 comptime TwoOfAKind[dt: DType] = SIMD[dt, 2]
 twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
 
-comptime StringKeyDict[ValueType: Copyable] = Dict[String, ValueType]
+comptime StringKeyDict[ValueType: Copyable & ImplicitlyDestructible] = Dict[String, ValueType]
 var b: StringKeyDict[UInt8] = {"answer": 42}
 ```
 

@@ -14,6 +14,7 @@
 
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast
+from builtin.variadics import Variadic
 from os import abort
 from sys.intrinsics import _type_is_eq
 
@@ -121,6 +122,10 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         Ts: The possible types that this variant can hold. All types must
             implement `Copyable`.
     """
+
+    comptime __del__is_trivial = _all_trivial_del[*Self.Ts]()
+    comptime __copyinit__is_trivial = _all_trivial_copyinit[*Self.Ts]()
+    comptime __moveinit__is_trivial = _all_trivial_moveinit[*Self.Ts]()
 
     # Fields
     comptime _sentinel: Int = -1
@@ -271,7 +276,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type = __mlir_type.`!kgen.pointer<scalar<ui8>>`
         ](ptr)
-        return UnsafePointer(discr_ptr).bitcast[UInt8]()[]
+        return UnsafePointer[mut=True](discr_ptr).bitcast[UInt8]()[]
 
     @always_inline
     fn take[T: Movable](deinit self) -> T:
@@ -482,3 +487,48 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         var ptr = self._get_ptr[T]()
 
         ptr.destroy_pointee_with(destroy_func)
+
+
+# ===-------------------------------------------------------------------===#
+# Helper functions
+# ===-------------------------------------------------------------------===#
+
+
+fn _all_trivial_del[*Ts: AnyType]() -> Bool:
+    @parameter
+    for i in range(Variadic.size(Ts)):
+
+        @parameter
+        if conforms_to(Ts[i], ImplicitlyDestructible):
+            if not downcast[ImplicitlyDestructible, Ts[i]].__del__is_trivial:
+                return False
+        else:
+            return False
+    return True
+
+
+fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
+    @parameter
+    for i in range(Variadic.size(Ts)):
+
+        @parameter
+        if conforms_to(Ts[i], Copyable):
+            if not downcast[Copyable, Ts[i]].__copyinit__is_trivial:
+                return False
+        else:
+            return False
+
+    return True
+
+
+fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
+    @parameter
+    for i in range(Variadic.size(Ts)):
+
+        @parameter
+        if conforms_to(Ts[i], Movable):
+            if not downcast[Movable, Ts[i]].__moveinit__is_trivial:
+                return False
+        else:
+            return False
+    return True

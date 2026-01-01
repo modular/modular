@@ -15,7 +15,9 @@ import time
 
 from gpu import memory, sync, thread_idx
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 fn copy_via_shared(

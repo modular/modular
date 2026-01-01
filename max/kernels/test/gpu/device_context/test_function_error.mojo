@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer, OwnedPointer
+from memory import LegacyUnsafePointer, OwnedPointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import *
 
 
@@ -37,10 +39,13 @@ def test_function_error(ctx: DeviceContext):
             res_host, block_dim=(1), grid_dim=(1)
         )
         ctx.synchronize()
+
+        # Don't allow early dealloc.
+        _ = res_ptr_owned
     except e:
         # This error should occur at the synchronize call as the kernel launches
         # async by default.
-        # CHECK: max/kernels/test/gpu/device_context/test_function_error.mojo:39:24
+        # CHECK: max/kernels/test/gpu/device_context/test_function_error.mojo:41:24
         print(e)
 
 

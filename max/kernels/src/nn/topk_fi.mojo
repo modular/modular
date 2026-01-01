@@ -37,7 +37,9 @@ from layout import (
 )
 from math import ceildiv, gcd, exp
 from memory import stack_allocation
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from os import Atomic
 from random import Random
 from sys import align_of, bit_width_of, simd_width_of, size_of
