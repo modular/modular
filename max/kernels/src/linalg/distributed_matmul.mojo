@@ -22,7 +22,9 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from utils import IndexList
 from .matmul.gpu import _matmul_gpu
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 comptime elementwise_epilogue_type = fn[
     input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int

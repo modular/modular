@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.string.string_slice import get_static_string
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
@@ -454,7 +456,7 @@ fn rocshmem_put_nbi[
 
 fn rocshmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int):
+](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int,):
     comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_p"]()
 
     @parameter

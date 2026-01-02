@@ -383,13 +383,19 @@ fn apple_matmul[
             alpha,
             beta,
             rebind[
-                LegacyUnsafePointer[Float32, address_space = c.address_space]
+                LegacyUnsafePointer[
+                    mut=True, Float32, address_space = c.address_space
+                ]
             ](c.data),
             rebind[
-                LegacyUnsafePointer[Float32, address_space = a.address_space]
+                LegacyUnsafePointer[
+                    mut=True, Float32, address_space = a.address_space
+                ]
             ](a.data),
             rebind[
-                LegacyUnsafePointer[Float32, address_space = b.address_space]
+                LegacyUnsafePointer[
+                    mut=True, Float32, address_space = b.address_space
+                ]
             ](b.data),
         )
 

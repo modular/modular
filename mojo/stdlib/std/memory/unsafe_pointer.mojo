@@ -475,7 +475,6 @@ struct UnsafePointer[
         out self,
         other: LegacyUnsafePointer[
             Self.type,
-            mut = Self.mut,
             origin = Self.origin,
             address_space = Self.address_space,
         ],
@@ -530,19 +529,17 @@ struct UnsafePointer[
         self,
         out result: LegacyUnsafePointer[
             Self.type,
-            mut = Self.mut,
             origin = Self.origin,
             address_space = Self.address_space,
         ],
     ):
-        result = LegacyUnsafePointer(self.address)
+        result = type_of(result)(self.address)
 
     @always_inline("builtin")
     fn as_legacy_pointer(
         self,
         out result: LegacyUnsafePointer[
             Self.type,
-            mut = Self.mut,
             origin = Self.origin,
             address_space = Self.address_space,
         ],
@@ -873,14 +870,12 @@ struct UnsafePointer[
         other_type: type_of(
             LegacyUnsafePointer[
                 Self.type,
-                mut=_,
                 origin=_,
                 address_space = Self.address_space,
             ]
         ),
     ](self) -> LegacyUnsafePointer[
         type = Self.type,
-        mut = Self.mut & other_type.origin.mut,
         origin = origin_of(Self.origin, other_type.origin),
         address_space = Self.address_space,
     ]:
@@ -936,7 +931,6 @@ struct UnsafePointer[
 
     comptime _LegacyPointerType = LegacyUnsafePointer[
         Self.type,
-        mut = Self.mut,
         origin = Self.origin,
         address_space = Self.address_space,
     ]
