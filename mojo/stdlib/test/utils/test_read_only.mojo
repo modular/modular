@@ -11,24 +11,40 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_true
-from time import perf_counter_ns
+from testing import TestSuite, assert_equal
 from utils import ReadOnly
 
 
-@fieldwise_init
-struct TimeHolder(ImplicitlyCopyable):
-    var time: UInt
+fn get_runtime_value() -> String:
+    # simulate a function that gets a runtime value
+    return "user input"
 
 
-def test_read_only():
-    var current_time = TimeHolder(perf_counter_ns())
-    ref start_time = ReadOnly(current_time)[]
-    current_time.time = 0  # does not affect start_time
-    # start_time.time = 0  # compile error
-    assert_true(
-        start_time.time > 0,
+def test_read_only_default_usage():
+    ref value = ReadOnly(get_runtime_value())[]
+    # value = ""  # compile-time error
+
+    assert_equal(
+        value,
+        "user input",
         msg="failed to use runtime constant value",
+    )
+
+
+def test_read_only_non_mutable():
+    var runtime_value = get_runtime_value()
+    ref value = ReadOnly(runtime_value)[]
+    runtime_value = ""  # does not affect value
+    # value = ""  # compile-time error
+
+    assert_equal(
+        value,
+        "user input",
+        msg="failed to use runtime constant value",
+    )
+    assert_equal(
+        runtime_value,
+        "",
     )
 
 

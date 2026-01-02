@@ -13,7 +13,7 @@
 """Implements the ReadOnly datatype."""
 
 
-struct ReadOnly[T: Movable & ImplicitlyDestructible]:
+struct ReadOnly[T: Movable & ImplicitlyDestructible](Movable):
     """A wrapper type to provide a runtime read-only value.
 
     `ReadOnly` wraps a value that is initialized at runtime and can't be
