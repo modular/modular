@@ -15,6 +15,7 @@
 from hashlib import Hasher, default_hasher
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
+from builtin.constrained import _constrained_conforms_to
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
@@ -24,7 +25,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     Hashable,
     Iterable,
     KeyElement,
+    Representable,
     Sized,
+    Stringable,
+    Writable,
 ):
     """A set data type.
 
@@ -296,12 +300,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         hasher.update(hash_value)
 
     @no_inline
-    fn __str__[U: KeyElement & Representable, //](self: Set[U]) -> String:
+    fn __str__(self) -> String:
         """Returns the string representation of the set.
-
-        Parameters:
-            U: The type of the List elements. Must implement the `Representable`
-                and `KeyElement` traits.
 
         Returns:
             The string representation of the set.
@@ -311,34 +311,36 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         return output
 
     @no_inline
-    fn __repr__[U: KeyElement & Representable, //](self: Set[U]) -> String:
+    fn __repr__(self) -> String:
         """Returns the string representation of the set.
-
-        Parameters:
-            U: The type of the List elements. Must implement the `Representable`
-                and `KeyElement` traits.
 
         Returns:
             The string representation of the set.
         """
         return self.__str__()
 
-    fn write_to[
-        U: KeyElement & Representable, //
-    ](self: Set[U], mut writer: Some[Writer]):
+    fn write_to(self, mut writer: Some[Writer]):
         """Write Set string representation to a `Writer`.
 
-        Parameters:
-            U: The type of the List elements. Must implement the `Representable`
-                and `KeyElement` traits.
+        Constraints:
+            T must conform to `Representable`.
 
         Args:
             writer: The object to write to.
         """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Representable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Stringable",
+            ElementConformsTo="Representable",
+        ]()
+
         writer.write("{")
         var written = 0
         for item in self:
-            writer.write(repr(item))
+            ref representable_item = trait_downcast[Representable](item)
+            writer.write(repr(representable_item))
             if written < len(self) - 1:
                 writer.write(", ")
             written += 1
