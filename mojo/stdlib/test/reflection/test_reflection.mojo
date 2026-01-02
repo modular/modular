@@ -179,6 +179,166 @@ def test_get_type_name_unprintable():
     assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
 
 
+# ===----------------------------------------------------------------------=== #
+# Nested Parametric Type Tests (Issue #5723)
+# ===----------------------------------------------------------------------=== #
+
+
+# Generic struct for testing nested parametric types
+struct GenericWrapper[T: AnyType]:
+    pass
+
+
+# Struct with nested parametric type fields for issue #5723 regression tests
+struct NestedParametricStruct:
+    var simple: GenericWrapper[String]
+    var nested: GenericWrapper[List[String]]
+
+
+# More deeply nested parametric types
+struct DeeplyNestedStruct:
+    var single: GenericWrapper[Int]
+    var double: GenericWrapper[GenericWrapper[Int]]
+
+
+def test_get_type_name_nested_parametric_from_field_types():
+    """Test that get_type_name doesn't crash with nested parametric types from struct_field_types.
+
+    This is a regression test for issue #5723 where using get_type_name on
+    nested parametric types (like GenericWrapper[List[String]]) extracted via
+    struct_field_types would cause a compiler crash.
+
+    The fix makes these print "<unprintable>" for the type parameter
+    instead of crashing. Note that type parameters from struct_field_types
+    may not fully resolve, so we expect <unprintable> for the inner type.
+    """
+    # Both fields should not crash - they print <unprintable> for the type parameter
+    comptime types = struct_field_types[NestedParametricStruct]()
+    var name0 = get_type_name[types[0]]()
+    assert_equal(name0, "test_reflection.GenericWrapper[<unprintable>]")
+
+    # Nested parametric type should not crash either
+    var name1 = get_type_name[types[1]]()
+    assert_equal(name1, "test_reflection.GenericWrapper[<unprintable>]")
+
+
+def test_get_type_name_deeply_nested_parametric_from_field_types():
+    """Test deeply nested parametric types from struct_field_types don't crash.
+
+    This tests the case where we have GenericWrapper[GenericWrapper[T]] - both
+    single and double nested types should not crash when accessed via struct_field_types.
+    """
+    comptime types = struct_field_types[DeeplyNestedStruct]()
+
+    # Single level parametric from struct_field_types - should not crash
+    var name0 = get_type_name[types[0]]()
+    assert_equal(name0, "test_reflection.GenericWrapper[<unprintable>]")
+
+    # Double nested should not crash either
+    var name1 = get_type_name[types[1]]()
+    assert_equal(name1, "test_reflection.GenericWrapper[<unprintable>]")
+
+
+def test_get_type_name_nested_parametric_direct():
+    """Test that directly using nested parametric types works (not from struct_field_types).
+
+    This demonstrates that the issue is specifically with types extracted via
+    struct_field_types, not with nested parametric types in general.
+    """
+    # Direct usage works fine
+    var name = get_type_name[GenericWrapper[List[String]]]()
+    assert_equal(name, "test_reflection.GenericWrapper[List[String]]")
+
+    # Deeply nested direct usage also works
+    name = get_type_name[GenericWrapper[GenericWrapper[Int]]]()
+    assert_equal(
+        name,
+        "test_reflection.GenericWrapper[test_reflection.GenericWrapper[Int]]",
+    )
+
+
+# Additional edge case structs for issue #5723
+struct Pair[T: AnyType, U: AnyType]:
+    """Struct with multiple type parameters."""
+
+    pass
+
+
+struct StructWithMultipleParametricFields:
+    """Struct with multiple different parametric field types."""
+
+    var list_field: List[Int]
+    var optional_field: Optional[String]
+    var simd_field: SIMD[DType.float32, 4]
+
+
+struct StructWithPair:
+    """Struct with a field that has multiple type parameters."""
+
+    var pair: Pair[String, List[Int]]
+
+
+struct TripleNested:
+    """Struct with three levels of nesting."""
+
+    var triple: GenericWrapper[GenericWrapper[GenericWrapper[Int]]]
+
+
+def test_get_type_name_multiple_type_params_from_field_types():
+    """Test parametric types with multiple type parameters from struct_field_types.
+    """
+    comptime types = struct_field_types[StructWithPair]()
+    var name = get_type_name[types[0]]()
+    # Should not crash - inner types show as <unprintable>
+    assert_equal(name, "test_reflection.Pair[<unprintable>, <unprintable>]")
+
+
+def test_get_type_name_various_stdlib_parametric_from_field_types():
+    """Test various stdlib parametric types (List, Optional, SIMD) from struct_field_types.
+    """
+    comptime types = struct_field_types[StructWithMultipleParametricFields]()
+
+    # List[Int] - should not crash (type parameter shows as <unprintable>)
+    var name0 = get_type_name[types[0]]()
+    assert_equal(name0, "List[<unprintable>]")
+
+    # Optional[String] - should not crash (type parameter shows as <unprintable>)
+    var name1 = get_type_name[types[1]]()
+    assert_equal(name1, "std.collections.optional.Optional[<unprintable>]")
+
+    # SIMD[DType.float32, 4] - value parameters (not type parameters) print correctly
+    var name2 = get_type_name[types[2]]()
+    assert_equal(name2, "SIMD[DType.float32, 4]")
+
+
+def test_get_type_name_triple_nested_from_field_types():
+    """Test three levels of nesting from struct_field_types."""
+    comptime types = struct_field_types[TripleNested]()
+    var name = get_type_name[types[0]]()
+    # Should not crash - deeply nested types show <unprintable>
+    assert_equal(name, "test_reflection.GenericWrapper[<unprintable>]")
+
+
+def test_iterate_parametric_field_types_no_crash():
+    """Test that iterating over parametric field types in a loop doesn't crash.
+
+    This tests the common pattern of using struct_field_types in a @parameter for loop.
+    """
+    var count = 0
+
+    @parameter
+    for i in range(struct_field_count[StructWithMultipleParametricFields]()):
+        comptime field_type = struct_field_types[
+            StructWithMultipleParametricFields
+        ]()[i]
+        # Getting type name in a loop should not crash
+        var name = get_type_name[field_type]()
+        _ = name
+        count += 1
+
+    assert_equal(count, 3)
+
+
 def test_get_type_name_alias():
     comptime T = Bar[5]
     var name = get_type_name[T]()
