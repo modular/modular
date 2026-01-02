@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import (
+    acos,
     align_down,
     align_up,
-    acos,
     asin,
     atanh,
     cbrt,
@@ -23,7 +23,9 @@ from math import (
     clamp,
     copysign,
     cos,
+    cosh,
     erfc,
+    expm1,
     exp2,
     factorial,
     floor,
@@ -31,16 +33,17 @@ from math import (
     gcd,
     iota,
     isclose,
-    rsqrt,
     lcm,
     log,
     log1p,
     log2,
+    pi,
+    rsqrt,
     sin,
+    sinh,
     sqrt,
     trunc,
     ulp,
-    pi,
 )
 from math.math import _call_libm
 from sys import CompilationTarget
@@ -685,6 +688,39 @@ def test_atanh():
         Float32(-1.65625),
         msg="atanh(-0.9297103072)",
     )
+
+
+def test_sinh():
+    comptime n = 1_000
+    for i in range(n):
+        var val = Float32(i) / (n * 2) - 1
+        assert_almost_equal(
+            sinh(val),
+            _call_libm["sinh"](val),
+            msg=String("mismatch for the value = ", val),
+        )
+
+
+def test_cosh():
+    comptime n = 1_000
+    for i in range(n):
+        var val = Float32(i) / (n * 2) - 1
+        assert_almost_equal(
+            cosh(val),
+            _call_libm["cosh"](val),
+            msg=String("mismatch for the value = ", val),
+        )
+
+
+def test_expm1():
+    comptime n = 1_000
+    for i in range(n):
+        var val = Float32(i) / (n * 2) - 1
+        assert_almost_equal(
+            expm1(val),
+            _call_libm["expm1"](val),
+            msg=String("mismatch for the value = ", val),
+        )
 
 
 def test_asin():

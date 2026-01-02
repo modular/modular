@@ -2003,7 +2003,19 @@ fn cosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `cosh` of the input.
     """
-    return _call_libm["cosh"](x)
+
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
+    # Compute exponential of absolute value: e^|x|
+    # Using |x| exploits the even symmetry of cosh
+    var e = exp(abs(x))
+
+    # Compute cosh(x) = (e^|x| + e^-|x|) / 2
+    # Rearranged as: 0.5 * e^|x| + 0.5 / e^|x|
+    # This form is more efficient than (e + 1/e) / 2
+    return 0.5 * e + 0.5 / e
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2027,12 +2039,85 @@ fn sinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `sinh` of the input.
     """
-    return _call_libm["sinh"](x)
+
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
+    # Compute e = expm1(|x|) = e^|x| - 1
+    # Using |x| since we'll apply sign later (sinh is odd)
+    # expm1 is more accurate than exp(x) - 1 for small x
+    var e = expm1(abs(x))
+
+    # Compute sinh(|x|) using the formula: e * (e+2) / (2(e+1))
+    # This is derived from sinh(x) = (e^x - e^-x) / 2
+    # Step 1: Compute (e + 2) / (e + 1)
+    var y = (e + 2.0) / (e + 1.0)
+
+    # Step 2: Multiply by 0.5 * e to complete the formula
+    y = y * 0.5 * e
+
+    # Apply the sign of the original input
+    # sinh is an odd function: sinh(-x) = -sinh(x)
+    y = copysign(y, x)
+
+    return y
 
 
 # ===----------------------------------------------------------------------=== #
 # expm1
 # ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn _expm1_float32[width: Int, //](d: SIMD[DType.float32, width]) -> type_of(d):
+    # Constants for range reduction
+    # R_LN2f = 1/ln(2) for converting to base-2 exponent
+    comptime R_LN2f = 1.442695040888963407359924681  # 1/ln(2)
+
+    # ln(2) split into high and low parts for extra precision
+    # ln(2) = L2Uf + L2Lf where both are exactly representable
+    comptime L2Uf = 0.693145751953125  # High part of ln(2)
+    comptime L2Lf = 1.428606765330187045e-06  # Low part of ln(2)
+
+    # Step 1: Range reduction
+    # Compute q = round(d / ln(2)) to find the power-of-2 scale factor
+    var q = round(d * R_LN2f)
+
+    # Step 2: Compute remainder s = d - q*ln(2) using compensated summation
+    # Use high and low parts of ln(2) for accurate subtraction
+    # s = d - q*L2Uf - q*L2Lf
+    var s = d - q * L2Uf  # Subtract high part
+    s = s - q * L2Lf  # Subtract low part (FMA for accuracy)
+
+    # Now s is in approximately [-ln(2)/2, ln(2)/2] ≈ [-0.347, 0.347]
+
+    # Step 3: Evaluate polynomial approximation for e^s - 1
+    # Using Taylor series: e^s - 1 ≈ s + s²/2! + s³/3! + s⁴/4! + s⁵/5! + s⁶/6!
+    # Coefficients are: 1/2!, 1/3!, 1/4!, 1/5!, 1/6!
+
+    # When x is in the range [0, 0.5], we use a polynomial approximation.
+    # P(x) = x + x^3*(c[4] + x^2 * (c[3] + x^2 * (... x^2 * c[0]) ... )).
+    var u = polynomial_evaluate[
+        [
+            Float32(0.5),
+            0.166666671633720397949219,
+            0.0416664853692054748535156,
+            0.00833336077630519866943359,
+            0.00139304355252534151077271,
+            0.000198527617612853646278381,
+        ]
+    ](s)
+
+    # Finalize: u*s² + s gives the full polynomial
+    # This computes: s + s²/2 + s³/6 + s⁴/24 + s⁵/120 + s⁶/720
+    u = s * s * u + s
+
+    # Step 4: Reconstruct the result
+    # If q = 0: e^d - 1 = e^s - 1 ≈ u (return polynomial directly)
+    # If q ≠ 0: e^d - 1 = 2^q * e^s - 1 = 2^q * (1 + u) - 1
+
+    return q.eq(0).select(u, ldexp(u + 1.0, q.cast[DType.int32]()) - 1.0)
 
 
 @always_inline
@@ -2052,6 +2137,18 @@ fn expm1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `expm1` of the input.
     """
+
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
+    @parameter
+    if bit_width_of[dtype]() <= 32:
+        # We promote the input to float32 and then cast back to the original
+        # type. This is done to avoid precision issues that can occur when
+        # using the lower-precision floating-point types.
+        return _expm1_float32(x.cast[DType.float32]()).cast[dtype]()
+
     return _call_libm["expm1"](x)
 
 
