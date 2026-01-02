@@ -344,10 +344,11 @@ void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
       .Case<UnboundAttr>([&](auto unboundAttr) { os << "?"; })
       .Case<TypeParamAttr>([&](auto typeAttr) {
         if (auto typeValue = dyn_cast<TypeValueType>(typeAttr.getTypeValue())) {
-          auto instanceRef =
-              cast<TypeInstanceRefAttr>(typeValue.getTypeValue());
-          os << stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins);
-          return;
+          if (auto instanceRef =
+                  dyn_cast<TypeInstanceRefAttr>(typeValue.getTypeValue())) {
+            os << stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins);
+            return;
+          }
         }
 
         // We print a placeholder for anything we don't know how to print.
