@@ -109,7 +109,7 @@ fn test_list_literal():
     # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
     var c: IntList = []
 
-    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!AnyType !FloatDyn>
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!Copyable_ImplicitlyDestructible !FloatDyn>
     inspect([1.0, 2])
 
     # MOCO-2085: List comprehensive fails without explicit use of var
@@ -118,7 +118,7 @@ fn test_list_literal():
 
 # CHECK-LABEL: lit.fn @"test_list_comprehension
 fn test_list_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!AnyType !Int>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!Copyable_ImplicitlyDestructible !Int>
     # CHECK: lit.loop {
     # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK:      lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__call_error_tmp__, %i1)
@@ -130,7 +130,7 @@ fn test_list_comprehension():
     # CHECK: }
     var a_collection = [i1 * 2 for i1 in SimpleIntRange()]
 
-    # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!AnyType !Int>
+    # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!Copyable_ImplicitlyDestructible !Int>
     # CHECK: lit.loop {
     # CHECK: %i2 = lit.var.decl "i2"
     # CHECK:   lit.loop {
@@ -165,7 +165,7 @@ fn test_list_comprehension():
 # ===----------------------------------------------------------------------=== #
 
 
-struct MyDict[K: Movable, V: AnyType]:
+struct MyDict[K: Copyable&ImplicitlyDestructible, V: Copyable&ImplicitlyDestructible]:
     fn __init__(
         out self,
         var keys: List[Self.K],
@@ -202,7 +202,7 @@ fn test_dict_literal(aBool: Bool):
 
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
 fn test_dict_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType !Int, :!ImplicitlyCopyable !String>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!Copyable_ImplicitlyDestructible !Int, :!Copyable_ImplicitlyDestructible !String>
     # CHECK: lit.loop {
     # CHECK: %i = lit.var.decl "i"
     # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__

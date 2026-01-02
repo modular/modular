@@ -161,7 +161,7 @@ fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
 # CHECK-LABEL: lit.fn @"test_type_patterns
 fn test_type_patterns():
     # Implicitly declared variables go at the top.
-    # CHECK-NEXT: %c = lit.var.decl "c" imp : !lit.ref<!lit.struct<#List <:!AnyType !Int>>,
+    # CHECK-NEXT: %c = lit.var.decl "c" imp : !lit.ref<!lit.struct<#List <:!Copyable_ImplicitlyDestructible !Int>>,
     # CHECK-NEXT: %b = lit.var.decl "b" imp : !lit.ref<!UInt8,
 
     # CHECK-NEXT: lit.call {{.*}}marker
