@@ -19,6 +19,7 @@ import string
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 from click.core import Command
@@ -31,6 +32,7 @@ from kbench_model import (
     Scheduler,
     SupportedLangs,
 )
+from kplot import _resolve_ytext_unit
 from kplot import cli as kplot_cli
 from kprofile import cli as kprofile_cli
 from utils import check_valid_target_accelerator
@@ -169,6 +171,53 @@ def test_kplot() -> None:
 
     for p in path:
         assert p.exists()
+
+
+def test_kplot_ytext_units() -> None:
+    _invoke_cli(
+        kplot_cli,
+        test_cases=[
+            f"{kernel_benchmarks_root}/autotune/tests/baseline.csv "
+            f"-o {kernel_benchmarks_root}/autotune/tests/img_csv_us "
+            "--ytext True --ytext-unit us --prec 2",
+        ],
+    )
+
+    path = [
+        Path(f"{kernel_benchmarks_root}/autotune/tests/img_csv_us_0.png"),
+    ]
+
+    for p in path:
+        assert p.exists()
+
+
+@pytest.mark.parametrize(
+    ("y_title", "y_values", "requested_unit", "expected"),
+    [
+        # Explicit unit conversion: ms -> us
+        ("met (ms)", np.array([[1.0, 2.0]]), "us", ("us", 1e3, "ms")),
+        # Auto-selection based on magnitude: s with microsecond values -> us
+        ("met (s)", np.array([[1e-6, 2e-6]]), "auto", ("us", 1e6, "s")),
+    ],
+    ids=["explicit_ms_to_us", "auto_select_us"],
+)
+def test_resolve_ytext_unit(
+    y_title: str,
+    y_values: np.ndarray,
+    requested_unit: str,
+    expected: tuple[str, float, str],
+) -> None:
+    result_title, scale, suffix, base_unit = _resolve_ytext_unit(
+        y_title=y_title,
+        y_values=y_values,
+        requested_unit=requested_unit,
+    )
+    expected_suffix, expected_scale, expected_base = expected
+
+    assert result_title.endswith(f"({expected_suffix})")
+    assert suffix == expected_suffix
+    assert scale == pytest.approx(expected_scale)
+    assert base_unit == expected_base
 
 
 def test_kprofile() -> None:

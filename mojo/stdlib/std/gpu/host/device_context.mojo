@@ -5933,47 +5933,20 @@ struct DeviceContext(ImplicitlyCopyable):
         )
         return StreamPriorityRange(Int(least_priority), Int(greatest_priority))
 
-    fn create_stream(self, *, blocking: Bool = True) raises -> DeviceStream:
+    fn create_stream(self, *, priority: Int = 0) raises -> DeviceStream:
         """Creates a new stream associated with the given device context.
 
-        Args:
-            blocking: Whether the stream should be blocking.
-
-        Returns:
-            The newly created device stream.
-
-        Raises:
-            If stream creation fails.
-        """
-        var flags: c_uint = 0 if blocking else 1
-        var result = _DeviceStreamPtr()
-
-        # const char *AsyncRT_streamCreate(const DeviceStream **stream, const DeviceContext *ctx, unsigned int flags)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_streamCreate",
-                _ConstCharPtr,
-            ](UnsafePointer(to=result), self._handle, flags)
-        )
-        return DeviceStream(result)
-
-    fn create_stream(
-        self, *, priority: Int, blocking: Bool = True
-    ) raises -> DeviceStream:
-        """Creates a new stream associated with the given device context.
-
-        To create a non-blocking stream with the highest priority, use:
+        To create a stream with the highest priority, use:
 
         ```mojo
         from gpu.host import DeviceContext
         var ctx = DeviceContext()
         var priority = ctx.stream_priority_range().largest
-        var stream = ctx.create_stream(priority=priority, blocking=False)
+        var stream = ctx.create_stream(priority=priority)
         ```
 
         Args:
-            priority: The priority of the stream.
-            blocking: Whether the stream should be blocking.
+            priority: The priority of the stream (default: 0).
 
         Returns:
             The newly created device stream with the specified priority.
@@ -5981,15 +5954,14 @@ struct DeviceContext(ImplicitlyCopyable):
         Raises:
             If stream creation fails.
         """
-        var flags: c_uint = 0 if blocking else 1
         var result = _DeviceStreamPtr()
 
-        # const char *AsyncRT_streamCreateWithPriority(const DeviceStream **stream, unsigned int flags, int priority, const DeviceContext *ctx)
+        # const char *AsyncRT_streamCreate(const DeviceStream **stream, int priority, const DeviceContext *ctx)
         _checked(
             external_call[
-                "AsyncRT_DeviceContext_streamCreateWithPriority",
+                "AsyncRT_DeviceContext_streamCreate",
                 _ConstCharPtr,
-            ](UnsafePointer(to=result), flags, c_int(priority), self._handle)
+            ](UnsafePointer(to=result), c_int(priority), self._handle)
         )
         return DeviceStream(result)
 
