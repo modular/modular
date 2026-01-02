@@ -51,6 +51,38 @@ comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
 comptime field_type = struct_field_type_by_name[Point, "y"]()
 var value: field_type.T = 3.14  # field_type.T is Float64
 ```
+
+For accessing struct field values by index (returns a reference, not a copy):
+
+- `__struct_field_ref(idx, ref s)` - returns a reference to the field at index
+
+The `__struct_field_ref` magic function enables reflection-based utilities to work
+with non-copyable types by returning references instead of copies. It works with
+both literal indices and parametric indices (such as loop variables in
+`@parameter for` loops):
+
+```mojo
+struct Container:
+    var id: Int
+    var resource: NonCopyableResource
+
+fn inspect(ref c: Container):
+    # Get references to fields without copying
+    ref id_ref = __struct_field_ref(0, c)
+    ref resource_ref = __struct_field_ref(1, c)
+    print("id:", id_ref)
+    print("resource:", resource_ref.data)
+
+    # Mutation through reference also works
+    __struct_field_ref(0, c) = 42
+
+# Works in generic contexts with parameter indices
+fn print_all_fields[T: AnyType](ref s: T):
+    comptime names = struct_field_names[T]()
+    @parameter
+    for i in range(struct_field_count[T]()):
+        print(names[i], "=", __struct_field_ref(i, s))
+```
 """
 
 from sys.info import _current_target, _TargetType

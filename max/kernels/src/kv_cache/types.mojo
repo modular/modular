@@ -27,10 +27,12 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, IntTuple
 from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import SplitLastDimTMATensorTile, create_split_tma
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 
 from utils import Index, IndexList
 from builtin.device_passable import DevicePassable

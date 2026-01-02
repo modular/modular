@@ -33,7 +33,9 @@ The kernel implements a warp-specialized architecture:
 
 from collections import OptionalReg
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import align_of, simd_width_of, size_of
 
 from gpu import WARP_SIZE, barrier, warp_id

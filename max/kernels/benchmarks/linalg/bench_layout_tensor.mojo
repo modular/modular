@@ -21,7 +21,9 @@ from algorithm import Static2DTileUnitFunc as Tile2DFunc
 from algorithm import sync_parallelize, vectorize
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
+from memory import LegacyUnsafePointer, memset_zero
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from python import Python
 
 comptime M = 512  # rows of A and C

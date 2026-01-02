@@ -11,10 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from pathlib import Path
 from os import getenv, abort
 from sys.ffi import (
@@ -97,7 +99,8 @@ fn MPI_Init(mut argc: Int, mut argv: VariadicList[StaticString]) raises:
     var result = _get_mpi_function[
         "MPI_Init",
         fn (
-            UnsafePointer[Int], UnsafePointer[VariadicList[StaticString]]
+            UnsafePointer[Int],
+            UnsafePointer[VariadicList[StaticString]],
         ) -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
     if result != 0:
@@ -135,7 +138,10 @@ fn MPI_Finalize() raises:
 
 
 fn MPI_Comm_split(
-    comm: MPIComm, color: c_int, key: c_int, newcomm: UnsafePointer[MPIComm]
+    comm: MPIComm,
+    color: c_int,
+    key: c_int,
+    newcomm: UnsafePointer[MPIComm],
 ) raises:
     """Split a communicator into multiple subcommunicators."""
     var result = _get_mpi_function[

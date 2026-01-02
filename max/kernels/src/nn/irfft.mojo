@@ -13,10 +13,15 @@
 """Inverse real FFT kernel using cuFFT."""
 
 from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
     UnsafePointer as UnsafePointerV2,
 )
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
+
 from sys.ffi import external_call
 
 from _cufft.cufft import (

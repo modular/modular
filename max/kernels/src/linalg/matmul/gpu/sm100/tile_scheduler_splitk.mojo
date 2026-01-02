@@ -23,7 +23,9 @@ from gpu import NamedBarrierSemaphore, WARP_SIZE
 from gpu.globals import WARPGROUP_SIZE
 from gpu.tcgen05 import *
 from gpu.sync import named_barrier
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from std.bit import prev_power_of_two
 
 
