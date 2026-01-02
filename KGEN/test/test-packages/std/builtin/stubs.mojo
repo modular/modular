@@ -78,6 +78,15 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]]:
     ]
 
 
+trait Iterable:
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        ...
+
+
 # ===----------------------------------------------------------------------=== #
 # Builtin Types
 # ===----------------------------------------------------------------------=== #
@@ -703,7 +712,34 @@ struct Slice:
         pass
 
 
-struct List[T: AnyType](Copyable):
+@fieldwise_init
+struct _ListIter[
+    mut: Bool,
+    //,
+    T: Copyable & ImplicitlyDestructible,
+    origin: Origin[mut=mut],
+    forward: Bool = True,
+](ImplicitlyCopyable, Iterable, Iterator):
+    comptime Element = Self.T  # FIXME(MOCO-2068): shouldn't be needed.
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var index: Int
+    var src: Pointer[List[Self.Element], Self.origin]
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> ref [Self.origin] Self.Element:
+        abort()
+
+
+struct List[T: Copyable & ImplicitlyDestructible](Copyable, Iterable):
     fn __init__(out self, *elements: Self.T, __list_literal__: () = ()):
         pass
 
@@ -712,6 +748,13 @@ struct List[T: AnyType](Copyable):
 
     fn __getitem__(ref self, idx: Int) -> ref [self] Self.T:
         pass
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = _ListIter[Self.T, iterable_origin, True]
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        abort()
 
 
 struct Set[T: AnyType]:
@@ -722,7 +765,9 @@ struct Set[T: AnyType]:
         pass
 
 
-struct Dict[K: AnyType, V: ImplicitlyCopyable]:
+struct Dict[
+    K: Copyable & ImplicitlyDestructible, V: Copyable & ImplicitlyDestructible
+]:
     fn __init__(out self):
         pass
 
