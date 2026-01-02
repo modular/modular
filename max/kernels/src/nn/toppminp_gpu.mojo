@@ -13,7 +13,9 @@
 
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import align_of, bit_width_of
 
 from builtin.dtype import _uint_type_of_width

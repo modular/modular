@@ -39,7 +39,9 @@ from gpu.host import (
 )
 from gpu.grid_controls import PDLLevel
 from internal_utils import InitializationType, arg_parse
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_almost_equal, assert_true
 from algorithm import sync_parallelize
 

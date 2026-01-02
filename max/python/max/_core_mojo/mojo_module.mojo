@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from os import abort
 from sys import size_of
 
@@ -109,9 +111,9 @@ fn mojo_block_hasher(
     parent_hash_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int64], **_](
-        unchecked_downcast_value=py_array_object
-    )
+    var py_array_object_ptr = LegacyUnsafePointer[
+        PyArrayObject[DType.int64], **_
+    ](unchecked_downcast_value=py_array_object)
 
     # Parse other arguments
     var block_size = Int(block_size_obj)

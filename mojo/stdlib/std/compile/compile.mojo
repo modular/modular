@@ -43,7 +43,7 @@ from os import PathLike
 from pathlib import Path
 from sys.info import CompilationTarget, _current_target, _TargetType
 
-from .reflection import get_linkage_name
+from reflection import get_linkage_name
 
 # ===-----------------------------------------------------------------------===#
 # compile_info

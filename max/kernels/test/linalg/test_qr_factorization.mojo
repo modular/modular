@@ -17,7 +17,9 @@ from random import rand, seed
 import internal_utils
 from layout.layout_tensor import UNKNOWN_VALUE, Layout, LayoutTensor
 from linalg.qr_factorization import form_q, qr_factorization
-from memory import LegacyUnsafePointer as UnsafePointer, memcpy
+from memory import LegacyUnsafePointer, memcpy
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_almost_equal
 
 
