@@ -536,7 +536,29 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     return targetMetaTp;
   };
 
-  if (failed(matchTypes(actualAttr.getType(), expectedAttr.getType()))) {
+  // Figure out how to realign the types of the actual/expected attrs.
+  if (isEqualCanon(actualAttr.getType(), expectedAttr.getType())) {
+    // If the types of both attributes are the same, no adjustment is needed.
+  } else if (succeeded(
+                 matchTypes(actualAttr.getType(), expectedAttr.getType()))) {
+    auto expectedType = evaluator.getReboundType(expectedAttr.getType());
+    // If they are different types but compatible then upcast actualAttr to the
+    // expected type.
+    IREmitter emitter(declScope, EC_TypeParamValue);
+    SyntheticNode node(declScope.getLoc());
+    // FIXME: We are running into problems because we have Actual values of
+    // "FnTypeGeneratorType" that have named parameters in them, but expected
+    // values that want index-based ones.  matchFunctionTypes should convert
+    // the former to the later and we should remove this redundant check for
+    // implicit convertibility.
+    if (IREmitter::canImplicitlyConvertToType({actualAttr, node}, expectedType,
+                                              emitter.getDeclScope())) {
+      actualAttr = emitter.emitPValue({actualAttr, node}, EC_TypeParamValue,
+                                      expectedType);
+      assert(actualAttr && "conversion is double checked");
+    }
+
+  } else {
     // If this is a type expression, try align the type (if possible) before
     // concluding type inconvertibility. This turns things like:
     // #kgen.type<!Int> : !lit.trait<!AnyType> to
