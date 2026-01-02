@@ -22,7 +22,9 @@ from gpu.memory import (
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal
 
 

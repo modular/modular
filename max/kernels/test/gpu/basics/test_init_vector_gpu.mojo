@@ -19,7 +19,9 @@ from gpu import *
 from gpu.host import DeviceContext
 from internal_utils import InitializationType, Timer, init_vector_launch
 from internal_utils._utils import initialize
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal
 
 

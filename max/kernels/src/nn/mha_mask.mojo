@@ -17,7 +17,11 @@ from math import iota, ceildiv
 from sys import is_nvidia_gpu
 
 from layout import LayoutTensor, Layout, UNKNOWN_VALUE
-from memory import LegacyOpaquePointer as OpaquePointer
+from memory import LegacyUnsafePointer
+
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 
 from utils.index import IndexList, Index
 from builtin.device_passable import DevicePassable

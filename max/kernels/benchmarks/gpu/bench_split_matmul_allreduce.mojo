@@ -22,7 +22,9 @@ from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, initialize, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from utils import IndexList, StaticTuple
 
 

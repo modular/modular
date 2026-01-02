@@ -24,7 +24,9 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from layout.int_tuple import fill_like
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 

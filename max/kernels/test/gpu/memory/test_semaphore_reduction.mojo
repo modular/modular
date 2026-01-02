@@ -16,7 +16,9 @@ from random import rand
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
 from gpu.semaphore import Semaphore
-from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
+from memory import LegacyUnsafePointer, memset_zero
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal
 
 

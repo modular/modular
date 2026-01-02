@@ -22,7 +22,9 @@ from layout import (
     RuntimeTuple,
 )
 from layout.int_tuple import fill_like
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from testing import assert_equal

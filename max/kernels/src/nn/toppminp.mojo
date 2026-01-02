@@ -13,7 +13,9 @@
 
 
 from math import iota
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from random import random_float64
 
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
