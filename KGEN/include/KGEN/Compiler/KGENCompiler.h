@@ -89,9 +89,6 @@ std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT();
 std::unique_ptr<Pass>
 createElaborateGeneratorsWithDefaultJIT(const std::string &name);
 
-/// Return size of the \p type in bytes.
-int64_t getTypeSizeInBytes(TargetInfoAttr target, Type type);
-
 } // namespace M::KGEN
 
 #endif // KGEN_COMPILER_KGENCOMPILER_H
