@@ -400,6 +400,9 @@ fn exp2[
         Vector containing $2^n$ computed elementwise, where n is an element in
         the input SIMD vector.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if is_nvidia_gpu():
@@ -558,6 +561,10 @@ fn ldexp[
     Returns:
         Vector containing elementwise result of ldexp on x and exp.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _ldexp_impl(x, exp.cast[dtype]())
 
 
@@ -629,6 +636,7 @@ fn exp[
     __comptime_assert (
         dtype.is_floating_point()
     ), "must be a floating point value"
+
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
 
     @parameter
@@ -858,6 +866,7 @@ fn frexp[
     __comptime_assert (
         dtype.is_floating_point()
     ), "must be a floating point value"
+
     comptime T = SIMD[dtype, width]
     comptime zero = T(0)
     # Add one to the resulting exponent up by subtracting 1 from the bias
@@ -955,6 +964,9 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         Vector containing result of performing natural log base E on x.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -995,6 +1007,9 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         Vector containing result of performing log base 2 on x.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     if is_compile_time():
 
@@ -1087,6 +1102,7 @@ fn erf[
     __comptime_assert (
         dtype.is_floating_point()
     ), "must be a floating point value"
+
     var x_abs = abs(x)
 
     var r_large = polynomial_evaluate[
@@ -1257,6 +1273,7 @@ fn isclose[
     __comptime_assert (
         a.dtype.is_floating_point()
     ), "isclose only supports floating-point types"
+
     comptime T = type_of(a)
 
     var check_nan = isnan(a) & isnan(b)
@@ -1691,6 +1708,10 @@ fn atan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `atan` of the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["atan"](x)
 
 
@@ -1718,6 +1739,9 @@ fn atan2[
     Returns:
         The `atan2` of the inputs.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -1767,6 +1791,9 @@ fn cos[
     Returns:
         The `cos` of the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -1809,6 +1836,9 @@ fn sin[
     Returns:
         The `sin` of the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -1849,6 +1879,10 @@ fn tan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `tan` of the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["tan"](x)
 
 
@@ -1873,6 +1907,10 @@ fn acosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `acosh` of the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["acosh"](x)
 
 
@@ -1897,6 +1935,10 @@ fn asinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `asinh` of the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["asinh"](x)
 
 
@@ -2173,6 +2215,9 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `log10` of the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if is_nvidia_gpu():
@@ -2292,6 +2337,10 @@ fn logb[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `logb` of the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["logb"](x)
 
 
@@ -2522,6 +2571,9 @@ fn hypot[
     Returns:
         The `hypot` of the inputs.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -2731,6 +2783,10 @@ fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `lgamma` of the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["lgamma"](x)
 
 
@@ -2757,6 +2813,10 @@ fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The Gamma function evaluated at the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["tgamma"](x)
 
 
@@ -2784,6 +2844,10 @@ fn remainder[
     Returns:
         The `remainder` of the inputs.
     """
+
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -2835,6 +2899,10 @@ fn j0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         A vector containing the computed value for each value in the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["j0"](x)
 
 
@@ -2860,6 +2928,10 @@ fn j1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         A vector containing the computed value for each value in the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["j1"](x)
 
 
@@ -2885,6 +2957,10 @@ fn y0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         A vector containing the computed value for each value in the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["y0"](x)
 
 
@@ -2910,6 +2986,10 @@ fn y1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         A vector containing the computed value for each value in the input.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
     return _call_libm["y1"](x)
 
 
@@ -2937,6 +3017,9 @@ fn scalb[
     Returns:
         The `scalb` of the inputs.
     """
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
