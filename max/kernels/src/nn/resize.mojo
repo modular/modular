@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceil, floor
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index

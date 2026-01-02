@@ -16,7 +16,9 @@ from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul_vendor, naive_grouped_matmul
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_almost_equal
 
 from utils import IndexList

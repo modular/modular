@@ -19,7 +19,9 @@ from sys import align_of, simd_width_of
 import benchmark
 from buffer import NDBuffer
 from layout import *
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 comptime MR = 6
 comptime NR = 64

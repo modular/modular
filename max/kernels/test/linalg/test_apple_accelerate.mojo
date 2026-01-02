@@ -16,7 +16,9 @@ from linalg.matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     apple_matmul,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import *
 
 from utils.index import Index

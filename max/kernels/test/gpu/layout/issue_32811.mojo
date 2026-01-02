@@ -15,7 +15,9 @@ from gpu.host import DeviceContext
 from gpu import block_idx, thread_idx
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 fn gpu_kernel(

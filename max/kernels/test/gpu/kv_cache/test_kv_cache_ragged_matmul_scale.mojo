@@ -24,7 +24,9 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from memory import memcpy, LegacyUnsafePointer as UnsafePointer
+from memory import memcpy, legacy_unsafe_pointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from nn.kv_cache_ragged import (
     _matmul_k_cache_ragged_scale_impl,
 )

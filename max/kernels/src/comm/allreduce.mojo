@@ -122,9 +122,9 @@ from gpu.intrinsics import (
 )
 from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from gpu.memory import CacheOperation
-from memory import (
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type

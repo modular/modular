@@ -21,7 +21,9 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
 

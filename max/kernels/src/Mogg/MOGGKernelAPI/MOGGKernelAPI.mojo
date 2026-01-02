@@ -34,7 +34,9 @@ from math import (
     sqrt,
     tanh,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from random import randn, seed
 from sys import align_of, external_call, llvm_intrinsic
 from sys.info import simd_width_of, size_of, _current_target

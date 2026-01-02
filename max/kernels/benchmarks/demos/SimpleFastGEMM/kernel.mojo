@@ -18,7 +18,9 @@ from sys.intrinsics import PrefetchOptions
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 comptime mr = 6
 comptime nr = 64

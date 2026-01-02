@@ -19,10 +19,12 @@ from sys.ffi import _Global, OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#

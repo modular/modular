@@ -26,10 +26,12 @@ from linalg.arch.cpu.vnni_intrinsics import (
 from linalg.matmul import elementwise_epilogue_type
 from linalg.utils import partition_work
 from memory import (
-    LegacyUnsafePointer as UnsafePointer,
+    LegacyUnsafePointer,
     bitcast,
     stack_allocation,
 )
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -268,8 +270,8 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 fn _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
-](a: LayoutTensor[dtype, **_]) -> UnsafePointer[
-    _block_Q8_K_packed[group_size], mut = a.mut, origin = a.origin
+](a: LayoutTensor[dtype, **_]) -> LegacyUnsafePointer[
+    mut = a.mut, _block_Q8_K_packed[group_size], origin = a.origin
 ]:
     __comptime_assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k

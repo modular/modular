@@ -20,7 +20,9 @@ from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_almost_equal
 
 from utils import IndexList, StaticTuple

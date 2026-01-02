@@ -13,10 +13,13 @@
 
 from hashlib import default_comp_time_hasher
 from math import ceildiv
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
+
 from sys import size_of
 
 from buffer.buffer import NDBuffer
@@ -225,10 +228,10 @@ struct TMALoadOp[
 
     @always_inline
     fn __init__(out self, args: Self.args_type):
-        self.a_tma_ptr = UnsafePointer(
+        self.a_tma_ptr = LegacyUnsafePointer(
             to=rebind[Self.a_tma_type](args.a_tma_op)
         )
-        self.b_tma_ptr = UnsafePointer(
+        self.b_tma_ptr = LegacyUnsafePointer(
             to=rebind[Self.b_tma_type](args.b_tma_op)
         )
 

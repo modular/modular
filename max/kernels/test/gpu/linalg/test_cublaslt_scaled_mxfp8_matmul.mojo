@@ -15,7 +15,9 @@ from math import ceildiv
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from internal_utils import assert_almost_equal, random, zero, fill
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.vendor.blas import Backend, Handle, matmul

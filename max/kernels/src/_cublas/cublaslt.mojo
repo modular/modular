@@ -24,10 +24,12 @@ from utils import StaticTuple
 from .cublas import ComputeType
 from .dtype import DataType, Property
 from .result import Result
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 
 comptime Context = NoneType
 

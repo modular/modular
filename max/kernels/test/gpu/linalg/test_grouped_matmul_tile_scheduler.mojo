@@ -17,7 +17,9 @@ from gpu import block_idx
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 from utils.index import Index
 

@@ -20,7 +20,9 @@ from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_false
 
 from utils.index import IndexList

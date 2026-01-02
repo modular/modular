@@ -142,7 +142,12 @@ from builtin.value import (
     Movable,
     materialize,
 )
-from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
+from builtin.variadics import (
+    Variadic,
+    VariadicList,
+    VariadicListMem,
+    VariadicPack,
+)
 from documentation import doc_private
 from iter import (
     Iterable,

@@ -15,10 +15,12 @@ import time
 from collections import OptionalReg
 from io.io import _snprintf
 from math import ceildiv
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from random import rand, random_float64
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable

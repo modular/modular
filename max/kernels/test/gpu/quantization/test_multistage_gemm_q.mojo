@@ -40,7 +40,9 @@ from layout.layout import *
 from layout.layout_tensor import LayoutTensor, Layout, copy_dram_to_sram
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulKernels
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile

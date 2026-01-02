@@ -601,5 +601,154 @@ def test_conforms_to_generic_function():
     assert_equal(count_copyable_fields[Inner](), 2)
 
 
+# ===----------------------------------------------------------------------=== #
+# Struct Field Reference Tests (__struct_field_ref)
+# ===----------------------------------------------------------------------=== #
+
+
+# Non-copyable type for testing reference semantics
+struct NonCopyableValue:
+    """A type that cannot be copied - simulates complex resources."""
+
+    var data: Int
+
+    fn __init__(out self, data: Int):
+        self.data = data
+
+    fn __copyinit__(out self, other: Self):
+        # If this is called, we have a bug!
+        print("ERROR: NonCopyableValue was copied!")
+        self.data = other.data
+
+
+struct ContainerWithNonCopyable:
+    """A struct containing a non-copyable field."""
+
+    var id: Int
+    var resource: NonCopyableValue
+    var count: Int
+
+    fn __init__(out self, id: Int, value: Int, count: Int):
+        self.id = id
+        self.resource = NonCopyableValue(value)
+        self.count = count
+
+
+# Simple test struct for field reference tests
+struct PointForRef:
+    var x: Int
+    var y: Int
+
+    fn __init__(out self, x: Int, y: Int):
+        self.x = x
+        self.y = y
+
+
+def test___struct_field_ref_basic_read():
+    """Test reading struct fields through __struct_field_ref."""
+    var p = PointForRef(10, 20)
+
+    # Get references to fields by index
+    ref x_ref = __struct_field_ref(0, p)
+    ref y_ref = __struct_field_ref(1, p)
+
+    # Verify we can read the correct values
+    assert_equal(x_ref, 10)
+    assert_equal(y_ref, 20)
+
+
+def test___struct_field_ref_mutation():
+    """Test mutating struct fields through __struct_field_ref."""
+    var p = PointForRef(1, 2)
+
+    # Modify through __struct_field_ref directly
+    __struct_field_ref(0, p) = 100
+    __struct_field_ref(1, p) = 200
+
+    # Verify the original struct was modified
+    assert_equal(p.x, 100)
+    assert_equal(p.y, 200)
+
+    # Also test mutation through a locally-bound ref
+    var p2 = PointForRef(0, 0)
+    ref x = __struct_field_ref(0, p2)
+    ref y = __struct_field_ref(1, p2)
+    x = 42
+    y = 99
+    assert_equal(p2.x, 42)
+    assert_equal(p2.y, 99)
+
+
+def test___struct_field_ref_non_copyable():
+    """Test that __struct_field_ref doesn't copy non-copyable fields.
+
+    This is the key use case: accessing fields without copying them,
+    enabling reflection-based utilities for types with non-copyable fields.
+    """
+    var c = ContainerWithNonCopyable(42, 100, 5)
+
+    # Get references to fields - this should NOT trigger copies
+    ref id_ref = __struct_field_ref(0, c)
+    ref resource_ref = __struct_field_ref(1, c)
+    ref count_ref = __struct_field_ref(2, c)
+
+    # Read through references without copying
+    assert_equal(id_ref, 42)
+    assert_equal(resource_ref.data, 100)
+    assert_equal(count_ref, 5)
+
+    # Modify through reference
+    __struct_field_ref(1, c).data = 999
+    assert_equal(c.resource.data, 999)
+
+
+def test___struct_field_ref_with_names():
+    """Test combining __struct_field_ref with struct_field_names."""
+    var p = PointForRef(30, 40)
+    comptime names = struct_field_names[PointForRef]()
+
+    # Get field references and verify names match values
+    ref f0 = __struct_field_ref(0, p)
+    ref f1 = __struct_field_ref(1, p)
+
+    # Verify the names are correct
+    assert_equal(names[0], "x")
+    assert_equal(names[1], "y")
+
+    # Verify the values are correct
+    assert_equal(f0, 30)
+    assert_equal(f1, 40)
+
+
+fn print_struct_debug[T: AnyType](ref s: T):
+    """Example: A generic debug-print function using struct field reflection.
+
+    This demonstrates a common use case: implementing a Debug-like
+    trait that can iterate over struct fields without copying them.
+
+    Uses __struct_field_ref with parametric indices (the loop variable i).
+    """
+    comptime names = struct_field_names[T]()
+    comptime count = struct_field_count[T]()
+
+    # Test that __struct_field_ref works with parametric indices
+    @parameter
+    for i in range(count):
+        _ = names[i]
+        # Access the field by parametric index - this tests support for
+        # parametric indices in struct field reflection
+        _ = __struct_field_ref(i, s)
+
+
+def test___struct_field_ref_parametric_index():
+    """Test __struct_field_ref with parametric indices (loop variables)."""
+    var p = PointForRef(10, 20)
+    var c = ContainerWithNonCopyable(1, 2, 3)
+
+    # These should compile and work without copying
+    print_struct_debug(p)
+    print_struct_debug(c)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

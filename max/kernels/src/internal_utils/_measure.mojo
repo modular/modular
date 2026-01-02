@@ -18,7 +18,9 @@ from sys import simd_width_of
 from algorithm import elementwise, mean, sum, vectorize
 from algorithm.functional import unswitch
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from utils import IndexList
 
 # ===----------------------------------------------------------------------=== #
@@ -255,7 +257,7 @@ fn relative_difference[
     dtype: DType,
     //,
 ](
-    output: UnsafePointer[Scalar[dtype], mut=False],
+    output: LegacyUnsafePointer[mut=False, Scalar[dtype]],
     ref_out: type_of(output),
     len: Int,
 ) -> Float64:

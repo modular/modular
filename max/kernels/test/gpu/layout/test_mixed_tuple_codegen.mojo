@@ -16,7 +16,9 @@ import sys
 
 from gpu.host.compile import _compile_code, get_gpu_target
 from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_true
 
 

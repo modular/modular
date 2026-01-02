@@ -16,7 +16,9 @@ from math import ceildiv
 from gpu import block, global_idx, warp
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal
 
 comptime dtype = DType.uint64

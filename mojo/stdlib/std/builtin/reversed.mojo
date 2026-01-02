@@ -142,10 +142,11 @@ fn reversed[
 
 
 fn reversed[
+    dict_mutability: Bool,
+    //,
     K: KeyElement,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
-    dict_mutability: Bool,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictValueIter[K, V, H, dict_origin]) -> _DictValueIter[
     K, V, H, dict_origin, False
@@ -155,10 +156,10 @@ fn reversed[
     **Note**: iterators are currently non-raising.
 
     Parameters:
+        dict_mutability: Whether the reference to the dict values is mutable.
         K: The type of the keys in the dict.
         V: The type of the values in the dict.
         H: The type of the hasher in the dict.
-        dict_mutability: Whether the reference to the dict values is mutable.
         dict_origin: The origin of the dict values.
 
     Args:
@@ -171,10 +172,11 @@ fn reversed[
 
 
 fn reversed[
+    dict_mutability: Bool,
+    //,
     K: KeyElement,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
-    dict_mutability: Bool,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictEntryIter[K, V, H, dict_origin]) -> _DictEntryIter[
     K, V, H, dict_origin, False
@@ -184,10 +186,10 @@ fn reversed[
     **Note**: iterators are currently non-raising.
 
     Parameters:
+        dict_mutability: Whether the reference to the dict items is mutable.
         K: The type of the keys in the dict.
         V: The type of the values in the dict.
         H: The type of the hasher in the dict.
-        dict_mutability: Whether the reference to the dict items is mutable.
         dict_origin: The origin of the dict items.
 
     Args:

@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, isclose
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import argv
 
 from buffer import DimList, NDBuffer

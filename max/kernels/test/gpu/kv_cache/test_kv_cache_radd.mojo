@@ -21,7 +21,9 @@ from internal_utils import InitializationType
 from internal_utils._utils import initialize
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
 
 from utils import IndexList

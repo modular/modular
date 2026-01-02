@@ -21,7 +21,9 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 fn test[N: Int = 1024 * 1024]() -> UInt32:

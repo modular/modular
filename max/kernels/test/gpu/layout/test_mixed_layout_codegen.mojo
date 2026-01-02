@@ -21,7 +21,9 @@ from layout import Layout, RuntimeLayout
 from layout._mixed_layout import MixedLayout
 from layout._mixed_tuple import Idx, MixedTuple
 from layout.int_tuple import IntTuple
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal, assert_true
 
 

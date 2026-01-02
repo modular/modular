@@ -21,7 +21,9 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention

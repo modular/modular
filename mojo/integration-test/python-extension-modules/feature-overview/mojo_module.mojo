@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from os import abort
 
 from python import Python, PythonObject
@@ -154,7 +156,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
     fn change_name(
         self_: PythonObject, new_name: PythonObject
     ) raises -> PythonObject:
-        var self0 = UnsafePointer[Self, **_](
+        var self0 = LegacyUnsafePointer[Self, **_](
             unchecked_downcast_value=self_
         ).unsafe_mut_cast[True]()
 

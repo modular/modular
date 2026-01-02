@@ -28,7 +28,9 @@ from layout import (
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
 from memory import memcpy
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 from utils import IndexList, StaticTuple
 
@@ -666,7 +668,6 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         input_offset: Int,
         output: UnsafePointer[
             Scalar[Self.dtype],
-            mut=True,
             address_space = AddressSpace.GENERIC, **_,
         ],
         input: UnsafePointer[
@@ -704,7 +705,7 @@ fn _pad_reflect_axis[
     axis: Int,
 ](
     output: UnsafePointer[
-        Scalar[dtype], mut=True, address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
     ],
     input: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.GENERIC, **_
@@ -764,7 +765,7 @@ fn _pad_reflect_impl[
     paddings_type: DType,
 ](
     output: UnsafePointer[
-        Scalar[dtype], mut=True, address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
     ],
     input: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.GENERIC, **_

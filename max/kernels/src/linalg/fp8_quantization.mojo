@@ -27,7 +27,9 @@ from gpu.host.info import B200, H100
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
 from algorithm import elementwise

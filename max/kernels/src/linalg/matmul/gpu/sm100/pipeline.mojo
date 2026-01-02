@@ -15,7 +15,9 @@
 from sys import size_of
 
 from layout.tma_async import SharedMemBarrier
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 comptime MbarPtr = UnsafePointer[

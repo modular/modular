@@ -21,7 +21,9 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul.gpu import _matmul_gpu
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 from utils import IndexList
 

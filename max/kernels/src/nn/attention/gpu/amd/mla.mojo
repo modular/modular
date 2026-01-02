@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import simd_width_of
 
 from gpu import barrier, block_idx, lane_id

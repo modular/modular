@@ -19,7 +19,9 @@ from gpu.host.compile import _compile_code
 from gpu.host.info import MI355X
 from gpu.intrinsics import AMDBufferResource
 from gpu.memory import CacheOperation
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal, assert_true
 
 comptime size = 257

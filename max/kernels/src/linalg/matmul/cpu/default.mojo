@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
@@ -140,7 +142,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[LegacyUnsafePointer[Scalar[c.dtype]]](c_ptr),
+                    rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -159,7 +161,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                     Index(idx_n, idx_k),
                 )
             acc.store(
-                rebind[LegacyUnsafePointer[Scalar[c.dtype]]](c_ptr),
+                rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

@@ -17,7 +17,9 @@ from sys._assembly import inlined_assembly
 from gpu import barrier, thread_idx
 from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 fn kernel(x: Int) -> Int:

@@ -35,7 +35,7 @@ extend-exclude = [
   "*max/serve/schemas/openai.py", # Generated file
   "third-party",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
-  "utils/mblack",
+  "utils/mblack/tests",
 ]
 
 [tool.ruff.lint]

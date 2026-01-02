@@ -20,7 +20,9 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_false
 
 from utils.index import Index

@@ -29,7 +29,9 @@ from buffer import Dim, DimList, NDBuffer
 from gpu import global_idx, grid_dim, block_dim
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from random import Random
 from internal_utils._utils import (
     InitializationType,

@@ -21,7 +21,9 @@ from gpu.host import DeviceContext
 from internal_utils import assert_almost_equal, assert_with_measure, random
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 from utils.index import Index, IndexList
 

@@ -15,7 +15,11 @@ from math import exp2, iota
 
 from bit import prev_power_of_two
 
-from memory import LegacyOpaquePointer as OpaquePointer
+from memory import LegacyUnsafePointer
+
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from utils.index import IndexList
 from builtin.device_passable import DevicePassable
 

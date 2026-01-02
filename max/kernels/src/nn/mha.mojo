@@ -14,7 +14,9 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import (
     CompilationTarget,
     align_of,

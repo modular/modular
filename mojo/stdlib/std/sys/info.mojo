@@ -22,8 +22,6 @@ print(CompilationTarget.is_x86())
 """
 
 from collections.string.string_slice import _get_kgen_string
-from memory import LegacyOpaquePointer as OpaquePointer
-
 from .ffi import _external_call_const, external_call
 
 comptime _TargetType = __mlir_type.`!kgen.target`
@@ -1114,7 +1112,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
         osver.unsafe_ptr(),
         Pointer(to=buf_len),
-        OpaquePointer(),
+        OpaquePointer[origin=MutAnyOrigin](),
         Int(0),
     )
     if err:

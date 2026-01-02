@@ -29,7 +29,9 @@ from gpu.memory import AddressSpace
 from gpu.mma import mma
 from sys import llvm_intrinsic
 from gpu.sync import barrier, schedule_barrier, s_waitcnt
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from memory.unsafe import bitcast
 
 from utils import Index, IndexList, StaticTuple

@@ -32,7 +32,9 @@ from layout.int_tuple import (
 )
 from layout.tma_async import SharedMemBarrier
 from layout.layout import blocked_product, logical_product
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 
 
 struct ScatterGatherAmd[
@@ -255,10 +257,9 @@ struct SMemTileArrayType[
         mut: Bool, //, origin: Origin[mut=mut]
     ](
         out self,
-        unsafe_ptr: UnsafePointer[
+        unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
             address_space = AddressSpace.SHARED,
-            mut=mut,
             origin=origin,
         ],
     ):

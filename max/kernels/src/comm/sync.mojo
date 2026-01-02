@@ -25,11 +25,13 @@ from gpu.intrinsics import (
     load_acquire,
     store_release,
 )
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    UnsafePointer as UnsafePointerV2,
-)
+from memory import UnsafePointer as UnsafePointerV2
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 
 
 # No-op (currently) group operation functions (enables vendor_ccl drop in replacement)

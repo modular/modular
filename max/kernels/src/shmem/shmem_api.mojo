@@ -20,7 +20,9 @@ The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
 from collections.optional import OptionalReg
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from os import getenv, setenv
 from sys import (
     CompilationTarget,
@@ -343,7 +345,7 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
         ]()
-        return UnsafePointer[Scalar[dtype]]()
+        return {}
 
 
 fn shmem_calloc[
@@ -627,7 +629,7 @@ fn shmem_put_nbi[
 
 fn shmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int):
+](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int,):
     """Copies one data item to a remote PE.
 
     Very low latency put capability for single elements. As with shmem_put,
@@ -836,7 +838,10 @@ fn shmem_fence():
 
 
 fn shmem_signal_op(
-    sig_addr: UnsafePointer[UInt64], signal: UInt64, sig_op: c_int, pe: c_int
+    sig_addr: UnsafePointer[UInt64],
+    signal: UInt64,
+    sig_op: c_int,
+    pe: c_int,
 ):
     """The nvshmemx_signal_op operation atomically updates sig_addr with signal
     using operation sig_op on the specified PE. This operation can be used

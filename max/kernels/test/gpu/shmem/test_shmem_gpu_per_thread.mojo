@@ -22,7 +22,9 @@ using mpirun.
 # RUN: %mojo-build %s -o %t
 # RUN: %t
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal
 from shmem import *
 from shmem._nvshmem import *

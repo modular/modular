@@ -3729,14 +3729,26 @@ class StructExtractOp(max._core.Operation):
 
 class StructGepOp(max._core.Operation):
     """
-    The `kgen.struct.gep` operation takes a pointer to a `!kgen.struct` and a
-    constant index and returns a pointer to the struct element at that index.
+    The `kgen.struct.gep` operation takes a pointer to a `!kgen.struct` and an
+    index and returns a pointer to the struct element at that index. The index
+    can be either a constant integer or a parametric expression that is resolved
+    post-elaboration.
 
     Example:
 
     ```mlir
     %struct = pop.stack_allocation 1 : !kgen.struct<(i32, i64)>
+    // Constant index - result type is inferred
     %i64Ptr = kgen.struct.gep %struct[1] : <struct<(i32, i64)>>
+    ```
+
+    With a parametric index:
+
+    ```mlir
+    kgen.generator @example<I: index>(%struct: !kgen.pointer<struct<(i32, i64)>>) {
+      // Parametric index - result type must be specified
+      %ptr = kgen.struct.gep %struct[I] : <struct<(i32, i64)>> -> <i64>
+    }
     ```
 
     To get a pointer to a struct from a value-semantic struct, the struct value
@@ -3754,24 +3766,24 @@ class StructGepOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: PointerType,
-        container: max._core.Value[PointerType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        container: max._core.Value,
+        index: int,
     ) -> None: ...
     @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        container: max._core.Value[PointerType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        result_type: max._core.Type,
+        container: max._core.Value,
+        index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def container(self) -> max._core.Value[PointerType]: ...
     @property
-    def index(self) -> int: ...
+    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
     @index.setter
-    def index(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+    def index(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
 
 class StructGeneratorOp(max._core.Operation):
     """
