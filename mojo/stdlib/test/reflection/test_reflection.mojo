@@ -23,7 +23,7 @@ from reflection import (
     struct_field_names,
     struct_field_types,
 )
-from testing import assert_equal
+from testing import assert_equal, assert_true
 from testing import TestSuite
 
 
@@ -547,18 +547,10 @@ def test_conforms_to_with_field_types():
     comptime types = struct_field_types[TraitTestStruct]()
 
     # Int conforms to Copyable
-    @parameter
-    if conforms_to(types[0], Copyable):
-        pass  # Expected path
-    else:
-        assert_equal(True, False)
+    assert_true(comptime (conforms_to(types[0], Copyable)))
 
     # String conforms to Stringable
-    @parameter
-    if conforms_to(types[1], Stringable):
-        pass  # Expected path
-    else:
-        assert_equal(True, False)
+    assert_true(comptime (conforms_to(types[1], Stringable)))
 
 
 def test_conforms_to_field_iteration():

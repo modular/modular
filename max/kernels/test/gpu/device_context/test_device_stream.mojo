@@ -85,9 +85,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     ctx.synchronize()
 
     # Test with lowest priority stream
-    var low_priority_stream = ctx.create_stream(
-        priority=priority_range.least, blocking=True
-    )
+    var low_priority_stream = ctx.create_stream(priority=priority_range.least)
     var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
     low_priority_stream.enqueue_function_checked(
         func,
@@ -102,7 +100,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
 
     # Test with highest priority stream
     var high_priority_stream = ctx.create_stream(
-        priority=priority_range.greatest, blocking=False
+        priority=priority_range.greatest
     )
     high_priority_stream.enqueue_function_checked(
         func,
@@ -129,9 +127,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     # Test with middle priority (if range allows)
     if priority_range.least < priority_range.greatest:
         var mid_priority = (priority_range.least + priority_range.greatest) // 2
-        var mid_priority_stream = ctx.create_stream(
-            priority=mid_priority, blocking=True
-        )
+        var mid_priority_stream = ctx.create_stream(priority=mid_priority)
         var output_device_mid = ctx.enqueue_create_buffer[DType.float32](length)
         mid_priority_stream.enqueue_function_checked(
             func,
@@ -249,11 +245,9 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
 
     # Create high and low priority streams
     var high_priority_stream = ctx.create_stream(
-        priority=priority_range.greatest, blocking=False
+        priority=priority_range.greatest
     )
-    var low_priority_stream = ctx.create_stream(
-        priority=priority_range.least, blocking=False
-    )
+    var low_priority_stream = ctx.create_stream(priority=priority_range.least)
 
     var high_output_device = ctx.enqueue_create_buffer[DType.float32](length)
     var low_output_device = ctx.enqueue_create_buffer[DType.float32](length)

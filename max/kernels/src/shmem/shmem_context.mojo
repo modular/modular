@@ -185,9 +185,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         # Set up priority stream and events to be reused across collective launches
         var priority = self._ctx.stream_priority_range().greatest
-        self._priority_stream = self._ctx.create_stream(
-            priority=priority, blocking=False
-        )
+        self._priority_stream = self._ctx.create_stream(priority=priority)
         self._begin_event = self._ctx.create_event()
         self._end_event = self._ctx.create_event()
 
@@ -228,9 +226,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         # Set up priority stream and events to be reused across collective launches
         var priority = self._ctx.stream_priority_range().greatest
-        self._priority_stream = self._ctx.create_stream(
-            priority=priority, blocking=False
-        )
+        self._priority_stream = self._ctx.create_stream(priority=priority)
         self._begin_event = self._ctx.create_event()
         self._end_event = self._ctx.create_event()
 
