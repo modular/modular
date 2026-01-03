@@ -203,7 +203,10 @@ public:
   void appendIndexBinding(TypedAttr value) { indexBindings.push_back(value); }
   void overwriteIndexBinding(size_t idx, TypedAttr value) {
     assert(idx < indexBindings.size() && "invalid index");
-    indexBindings[idx] = value;
+    if (indexBindings[idx] != value) {
+      indexBindings[idx] = value;
+      clearCache();
+    }
   }
 
   /// Return the number of input parameter values that have been added.

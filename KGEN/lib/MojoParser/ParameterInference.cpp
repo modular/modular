@@ -704,13 +704,12 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       // If this is a new parameter we've inferred, huzzah, remember it.
       if (!inferredValue) {
         evaluator.overwriteIndexBinding(parameterIndex, actualAttr);
-        evaluator.clearCache();
         return success();
       }
 
       // If we saw this parameter before, make sure it is compatible with
       // (or more specific than) the other values we've inferred.
-      if (failed(matchParams(inferredValue, actualAttr))) {
+      if (!isEqualCanon(inferredValue, actualAttr)) {
         addFailure(parameterIndex, InferenceFailure::ValueConflictFailure{
                                        inferredValue, actualAttr});
         return failure();
@@ -1394,7 +1393,6 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments) {
         auto type = types[i];
         auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
         evaluator.overwriteIndexBinding(i, empty);
-        evaluator.clearCache();
       }
     }
   }
@@ -1614,7 +1612,6 @@ LogicalResult ParameterInferenceState::inferForCall(
       auto type = declaredParamTypes[i];
       auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
       evaluator.overwriteIndexBinding(i, empty);
-      evaluator.clearCache();
       break;
     }
   }
