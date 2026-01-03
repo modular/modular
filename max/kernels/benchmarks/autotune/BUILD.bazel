@@ -8,6 +8,7 @@ modular_py_binary(
         "__init__.py",
         "kbench.py",
         "kbench_model.py",
+        "terminal_viz.py",
         "utils.py",
     ],
     data = [

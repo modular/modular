@@ -17,6 +17,7 @@
 import os
 import string
 import tempfile
+from io import StringIO
 from pathlib import Path
 
 import numpy as np
@@ -35,6 +36,8 @@ from kbench_model import (
 from kplot import _resolve_ytext_unit
 from kplot import cli as kplot_cli
 from kprofile import cli as kprofile_cli
+from rich.console import Console
+from terminal_viz import render_results
 from utils import check_valid_target_accelerator
 
 
@@ -371,3 +374,44 @@ def test_param_define_variable() -> None:
     param = Param(name="$$a", value="test")
     result = param.define(lang=SupportedLangs.MOJO)
     assert result == ["--$a=test"]
+
+
+def test_terminal_viz_render() -> None:
+    """E2E test for terminal visualization output."""
+    # Synthetic benchmark data
+    df = pd.DataFrame(
+        {
+            "spec": [
+                "bench_kernel/$shape=1x1x4096",
+                "bench_kernel/$shape=1x512x4096",
+                "bench_kernel/$shape=1x1024x4096",
+            ],
+            "met (s)": [0.004, 0.006, 0.010],  # 4ms, 6ms, 10ms
+        }
+    )
+
+    # Test bars mode
+    output = StringIO()
+    console = Console(file=output, force_terminal=True, width=80)
+    render_results(df, mode="bars", console=console)
+    result = output.getvalue()
+
+    # Check that shape labels appear
+    assert "1x1x4096" in result
+    assert "1x512x4096" in result
+    # Check that bar characters present
+    assert "█" in result
+    # Check that time values present
+    assert "ms" in result
+
+    # Test table mode
+    output = StringIO()
+    console = Console(file=output, force_terminal=True, width=80)
+    render_results(df, mode="table", console=console)
+    result = output.getvalue()
+
+    # Check that table headers
+    assert "time/iter" in result
+    assert "vs base" in result
+    # Check that relative comparison shown
+    assert "1.00x" in result
