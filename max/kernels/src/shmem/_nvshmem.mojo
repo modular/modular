@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.string.string_slice import get_static_string
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
@@ -509,7 +511,7 @@ fn nvshmem_put_nbi[
 
 fn nvshmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int):
+](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int,):
     comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_p"]()
     external_call[symbol, NoneType](dest, value, pe)
 
@@ -561,7 +563,10 @@ fn nvshmem_g[
 
 @extern("nvshmemx_signal_op")
 fn nvshmemx_signal_op(
-    sig_addr: UnsafePointer[UInt64], signal: UInt64, sig_op: c_int, pe: c_int
+    sig_addr: UnsafePointer[UInt64],
+    signal: UInt64,
+    sig_op: c_int,
+    pe: c_int,
 ):
     ...
 

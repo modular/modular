@@ -15,7 +15,9 @@ from collections import OptionalReg
 
 from gpu.host.compile import _compile_code
 from gpu.memory import CacheEviction, CacheOperation, load
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from testing import assert_equal, assert_true
 
 

@@ -16,7 +16,9 @@
 from os import abort
 
 from gpu import block_dim, block_idx, global_idx
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from shmem import *
 from testing import assert_equal
 

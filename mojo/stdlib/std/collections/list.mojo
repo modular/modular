@@ -17,7 +17,7 @@ These APIs are imported automatically, just like builtins.
 
 
 from builtin.constrained import _constrained_conforms_to
-from compile.reflection import get_type_name
+from reflection import get_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
@@ -39,7 +39,7 @@ from .optional import Optional
 struct _ListIter[
     mut: Bool,
     //,
-    T: Copyable,
+    T: Copyable & ImplicitlyDestructible,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -93,7 +93,7 @@ struct _ListIter[
         return (iter_len, {iter_len})
 
 
-struct List[T: Copyable](
+struct List[T: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
     Defaultable,

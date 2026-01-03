@@ -33,7 +33,9 @@ from math import ceildiv
 from sys import simd_width_of
 
 from buffer import NDBuffer
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from gpu import WARP_SIZE, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 

@@ -81,7 +81,7 @@ fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
 
 
 fn reversed[
-    T: Copyable
+    T: Copyable & ImplicitlyDestructible
 ](ref value: List[T, *_]) -> _ListIter[T, origin_of(value), False]:
     """Get a reversed iterator of the input list.
 
@@ -100,7 +100,7 @@ fn reversed[
 
 
 fn reversed[
-    T: Copyable
+    T: Copyable & ImplicitlyDestructible
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     """Get a reversed iterator of the deque.
 
@@ -120,7 +120,7 @@ fn reversed[
 
 fn reversed[
     K: KeyElement,
-    V: Copyable,
+    V: Copyable & ImplicitlyDestructible,
     H: Hasher,
 ](ref value: Dict[K, V, H],) -> _DictKeyIter[K, V, H, origin_of(value), False]:
     """Get a reversed iterator of the input dict.
@@ -142,10 +142,11 @@ fn reversed[
 
 
 fn reversed[
-    K: KeyElement,
-    V: Copyable,
-    H: Hasher,
     dict_mutability: Bool,
+    //,
+    K: KeyElement,
+    V: Copyable & ImplicitlyDestructible,
+    H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictValueIter[K, V, H, dict_origin]) -> _DictValueIter[
     K, V, H, dict_origin, False
@@ -155,10 +156,10 @@ fn reversed[
     **Note**: iterators are currently non-raising.
 
     Parameters:
+        dict_mutability: Whether the reference to the dict values is mutable.
         K: The type of the keys in the dict.
         V: The type of the values in the dict.
         H: The type of the hasher in the dict.
-        dict_mutability: Whether the reference to the dict values is mutable.
         dict_origin: The origin of the dict values.
 
     Args:
@@ -171,10 +172,11 @@ fn reversed[
 
 
 fn reversed[
-    K: KeyElement,
-    V: Copyable,
-    H: Hasher,
     dict_mutability: Bool,
+    //,
+    K: KeyElement,
+    V: Copyable & ImplicitlyDestructible,
+    H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictEntryIter[K, V, H, dict_origin]) -> _DictEntryIter[
     K, V, H, dict_origin, False
@@ -184,10 +186,10 @@ fn reversed[
     **Note**: iterators are currently non-raising.
 
     Parameters:
+        dict_mutability: Whether the reference to the dict items is mutable.
         K: The type of the keys in the dict.
         V: The type of the values in the dict.
         H: The type of the hasher in the dict.
-        dict_mutability: Whether the reference to the dict items is mutable.
         dict_origin: The origin of the dict items.
 
     Args:
@@ -204,7 +206,7 @@ fn reversed[
 
 @always_inline
 fn reversed[
-    T: Copyable
+    T: Copyable & ImplicitlyDestructible
 ](value: Span[T]) -> _SpanIter[T, value.origin, forward=False]:
     """Get a reversed iterator of the input Span.
 
