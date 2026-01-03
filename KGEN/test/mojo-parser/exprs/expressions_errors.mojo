@@ -880,8 +880,8 @@ fn getSomeNonTrivRegPassable() -> SomeNonTrivRegPassable: pass
 # expected-note @below {{function declared here}}
 fn direct3830(ref a: SomeNonTrivRegPassable, ref[a] b: SomeNonTrivRegPassable): pass
 fn test3830():
-    # expected-error @below {{invalid call to 'direct3830': failed to infer parameter 'a_is_mut', it inferred to two different values: 'origin_of((muttoimm anonymous*))' and 'origin_of((muttoimm anonymous*))'}}
-    # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
+    # expected-error @below {{invalid call to 'direct3830': argument #1 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
+    # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'anonymous*'}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
 fn test3830_1[o: ImmutOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):

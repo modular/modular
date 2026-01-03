@@ -72,8 +72,8 @@ fn device_func(i: ZInt, j: ZInt):
     pass
 
 
-# expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
 fn test_infer_variadic():
+    # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
     # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes', it isn't used in any argument}}
     infer_variadic[device_func]()
 

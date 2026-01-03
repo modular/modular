@@ -216,8 +216,7 @@ fn badCalls(arg: Int):
   var z = ParameterizedStruct()
 
   # We can't infer `T` with two arguments of different types.
-  # expected-error @below {{invalid call to 'parameterizedVariadic': failed to infer parameter 'T', it inferred to two different values: 'Int' and 'FloatDyn'}}
-  # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
+  # expected-error @below {{argument #1 cannot be converted from 'FloatLiteral[2]' to 'Int'}}
   parameterizedVariadic(1, 2.0)
 
   # expected-error @below {{invalid call to 'test': failed to infer parameter 'j', it isn't used in any argument}}
