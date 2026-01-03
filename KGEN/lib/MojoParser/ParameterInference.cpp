@@ -30,7 +30,6 @@ using namespace M::KGEN::LIT;
 
 #define DEBUG_TYPE "LITEXPRCALLS"
 
-// TODO(MOCO-1106): Put this in a better place.
 extern bool checkConventionsConvertible(ArgConvention expectedConv,
                                         ArgConvention actualConv);
 
@@ -111,9 +110,10 @@ ParameterInferenceState::ParameterInferenceState(
     ArrayRef<TypedAttr> bindingsSoFar, ParameterInferenceDiagnostics &diags,
     bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
-      givenBindings(givenBindings), declaredParamTypes(declaredParamTypes),
-      declaredParamPogs(declaredParamPogs), evaluator(declScope.getShared()),
-      diags(diags), allowImplicitConversions(allowImplicitConversions) {
+      evaluator(declScope.getShared()), givenBindings(givenBindings),
+      declaredParamTypes(declaredParamTypes),
+      declaredParamPogs(declaredParamPogs), diags(diags),
+      allowImplicitConversions(allowImplicitConversions) {
 
   // Maintain the invariant that 'evaluator' has the full size of the set of
   // parameters we're trying to infer.  Add null entries for any uninferred
@@ -134,9 +134,104 @@ void ParameterInferenceState::dump() const {
   }
 }
 
-LogicalResult
-ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
-                                            FnTypeGeneratorType expected) {
+//===----------------------------------------------------------------------===//
+// ParamMatcher
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This class implements logic for match parameters between an actual value
+/// present at a call site, and expected value in the callee.  The former value
+/// is always concrete, but the later may contain symbolic parameters from the
+/// callees signature that we're trying to infer.  It is also possible this
+/// candidate is completely invalid!  The result of match is one of several
+/// cases:
+///
+/// - Match: the parameters match.
+/// - Error: the parameters do not match.  The error code is set to indicate
+///   the first reason.
+/// - Retry: the parameters matched and led to a parameter getting inferred! The
+///   parameter # is set to indicate which one.
+///
+/// You might wonder why we need to retry matching from a root when inferring a
+/// parameter.  It turns out that some values can only be matched after
+/// simplification.  Consider a situation like:
+///
+///    struct S[a: Int, b: Int]:
+///    fn take[v: Int](s: A[v, v+1]):
+///
+/// In this case, we *must* stop after inferring the value of `v`, backtrack
+/// up call call stack, and then substitute the value of `v` into the expected
+/// type.  If we don't do this, we won't be able to match calls that pass,
+/// A[1, 2] because the "v+1=2" knowledge can only be had by substituting which
+/// allows the Int addition to fold.
+class ParamMatcher {
+public:
+  ParamMatcher(const ExprNode *expr, ParameterInferenceState &state)
+      : expr(expr), state(state), shared(state.shared) {}
+  ~ParamMatcher() {}
+
+  // FIXME: Add a error reason, pulling it out of ParameterInferenceDiagnostics.
+
+  // This is set to the parameter index we successfully inferred.
+  ssize_t retryParamIdx = -1;
+
+  enum ResultCode { Match, Error, Retry };
+  ResultCode matchTypes(Type actualType, Type expectedType);
+  ResultCode matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+  ResultCode matchFunctionTypes(FnTypeGeneratorType actual,
+                                FnTypeGeneratorType expected);
+  ResultCode matchSingleEltStruct(TypedAttr actual, TypedAttr expected);
+
+  void resetError() {
+    /*TODO: Clear error info when ParamMatcher implements it.*/
+  }
+
+private:
+  // These are methods used by the recursive walker.
+  bool isUnset() const { return retryParamIdx == -1; }
+
+  ResultCode error() { return Error; }
+
+private:
+  /// This is how many signature types deep inference is inside parameter
+  /// expressions and determines which index references we match against.
+  ///
+  /// As we search for param-refs, recursively, we'll be recursing past
+  /// `FnTypeGeneratorType`s (and other `ParameterScopeTimeInterface`s),
+  /// which changes what param-ref depths we're watching for; the param-refs'
+  /// depths would be greater (have to reach further outward so to speak, past
+  /// more generator types) to reference param-decls in the
+  /// ParameterInferenceState's original scope. paramIndexRefDepth tracks that
+  /// number.
+  ///
+  /// In other words, these paramIndexRefDepth adjustments are for
+  /// depth-aware searching, see PSTIAIRAID.
+  size_t paramIndexRefDepth = 0;
+
+  /// This is the expression we're inferring within.
+  const ExprNode *const expr;
+  ParameterInferenceState &state;
+  SharedState &shared;
+};
+} // end anonymous namespace
+
+// This macro is used to propagate the non-success codes.
+#define PROP(EXPR)                                                             \
+  do {                                                                         \
+    auto _result = (EXPR);                                                     \
+    if (_result != Match)                                                      \
+      return _result;                                                          \
+  } while (0)
+
+ParamMatcher::ResultCode
+ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
+                                 FnTypeGeneratorType expected) {
+  // FIXME: "actual" ends up with parameter names sometimes, not always index
+  // references. If this happens we need to convert to make this work correctly.
+
+  // See paramIndexRefDepth's comments for what this increment is for.
+  // The increment was solely for the matchFunctionTypes call, so undo it.
+  llvm::SaveAndRestore depth(paramIndexRefDepth, paramIndexRefDepth + 1);
 
   // Functions with different parameterization cannot be converted between each
   // other. If the types are equal but the passing conventions are different,
@@ -144,16 +239,14 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
   // TODO: Consider default parameter values and enable parameter inference to
   // reconcile differences.
   if (actual.getInputParamTypes() != expected.getInputParamTypes())
-    return failure();
+    return error();
 
   // If the functions differ in return type conventions, check if the nominal
   // types are equal.
   bool actualMemResult = actual.hasMemoryOnlyResult();
   bool expectedMemResult = expected.hasMemoryOnlyResult();
   // TODO: We allow implicit conversions here.
-  if (failed(
-          matchTypes(actual.getUserResultType(), expected.getUserResultType())))
-    return failure();
+  PROP(matchTypes(actual.getUserResultType(), expected.getUserResultType()));
 
   ArrayRef<Type> actualArgTypes =
       actual.getArguments().drop_back(actualMemResult);
@@ -167,19 +260,24 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
   if (!actualEffects.isThrows() && expectedEffects.isThrows()) {
     // Match the expected error type to Never, but allow this to fail: it may
     // already be some concrete type like Error and that is ok.
-    (void)matchTypes(NeverType::get(expected.getContext()),
-                     expected.getUserThrownType());
+    switch (matchTypes(NeverType::get(expected.getContext()),
+                       expected.getUserThrownType())) {
+    case Retry:
+      return Retry;
+    case Error:
+      resetError();
+      break;
+    case Match:
+      break;
+    }
     expectedArgTypes = expectedArgTypes.drop_back();
     actualEffects.setThrows(true);
   }
 
   if (actualEffects != expectedEffects)
-    return failure();
+    return error();
 
-  if (failed(matchParams(actual.getCaptureOrigins(),
-                         expected.getCaptureOrigins()))) {
-    return failure();
-  }
+  PROP(matchParams(actual.getCaptureOrigins(), expected.getCaptureOrigins()));
 
   // Functions with an incompatible number of arguments cannot be converted
   // between each other. The number of arguments should be equal, unless the
@@ -191,12 +289,12 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
     size_t expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
     if (actualArgTypes.size() < expectedVariadicArgIndex) {
       // Caller didn't supply enough arguments.
-      return failure();
+      return error();
     }
   } else { // No variadic
     if (actualArgTypes.size() != expectedArgTypes.size()) {
       // Caller didn't supply the expected number of arguments.
-      return failure();
+      return error();
     }
   }
 
@@ -215,22 +313,21 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
 
   // Check all the normal args (which aren't going into a variadic arg).
   for (size_t actualArgIndex = 0; actualArgIndex < numNormalArgs;
-       actualArgIndex++) {
+       ++actualArgIndex) {
     auto actualConv = actual.getArgConvention(actualArgIndex);
     ArgConvention expectedConv = expected.getArgConvention(actualArgIndex);
     ASTType actualAstType = actualArgTypes[actualArgIndex];
     ASTType expectedAstType = expectedArgTypes[actualArgIndex];
 
     if (!checkConventionsConvertible(expectedConv, actualConv))
-      return failure();
+      return error();
 
     Type expectedValueAstType =
         RefType::stripRefConvention(expectedAstType, expectedConv);
     Type actualValueAstType =
         RefType::stripRefConvention(actualAstType, actualConv);
     // Now check that the argument types line up.
-    if (!succeeded(matchTypes(actualValueAstType, expectedValueAstType)))
-      return failure();
+    PROP(matchTypes(actualValueAstType, expectedValueAstType));
   }
 
   // If the expected fn has a variadic arg, check all the actual args that will
@@ -255,36 +352,41 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
     // As we do our checks, we'll also be calculating the actual kgen.variadic
     // parameter value.
     SmallVector<TypedAttr> elements;
-
     for (size_t actualArgIndex = numNormalArgs, e = actualArgTypes.size();
          actualArgIndex < e; ++actualArgIndex) {
       auto actualConv = actual.getArgConvention(actualArgIndex);
       ASTType actualAstType = actualArgTypes[actualArgIndex];
 
       if (!checkConventionsConvertible(expectedConv, actualConv))
-        return failure();
+        return error();
 
       Type actualValueAstType =
           RefType::stripRefConvention(actualAstType, actualConv);
 
       // If the argument types line up, then we can skip the rest of this.
-      if (succeeded(matchTypes(actualValueAstType, variadicElType.mlirType)))
+      switch (matchTypes(actualValueAstType, variadicElType)) {
+      case Match:
         continue;
+      case Error:
+        resetError();
+        break;
+      case Retry:
+        return Retry;
+      }
 
       // We can convert a more general `actual` function (that takes in a trait
       // argument) to a more specific `expected` function that takes in a struct
       // argument, as long as that struct conforms to that trait.
       // In other words, here we're handling function conversions with covariant
       // arguments (see TTSMFS).
-      IREmitter emitter(declScope, EC_TypeParamValue);
-      SyntheticNode synthNode(declScope.getLoc());
+      IREmitter emitter(state.declScope, EC_TypeParamValue);
       // Now, check if the actual arg can be converted to the expected trait.
       PValue actualAstTypeAsVariadicElTrait =
           emitter.emitMetaTypeToTraitConversion(
-              {CValue(actualValueAstType), synthNode}, expectedTraitType);
-      if (!actualAstTypeAsVariadicElTrait) {
-        return failure();
-      }
+              {CValue(actualValueAstType), expr}, expectedTraitType);
+      if (!actualAstTypeAsVariadicElTrait)
+        return error();
+
       // And since we have it, let's use it to build up a kgen.variadic
       // parameter value.
       elements.push_back(actualAstTypeAsVariadicElTrait);
@@ -294,20 +396,19 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
     // expected one.
     auto varType = VariadicType::get(variadicElType);
     auto variadicAttr = VariadicAttr::get(elements, varType);
-    if (failed(matchParams(variadicAttr, variadic))) {
-      return failure();
-    }
+    PROP(matchParams(variadicAttr, variadic));
   }
 
   // The function types are convertible.
-  return success();
+  return Match;
 }
 
-LogicalResult ParameterInferenceState::matchTypes(Type actualType,
+ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
                                                   Type expectedType) {
+  assert(isUnset() && "matching with a result set already");
   // If the types trivially match then there is no inference to do.
   if (isEqualCanon(actualType, expectedType))
-    return success();
+    return Match;
 
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
@@ -334,7 +435,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       auto expectedDRT = expectedMetaType.getType();
       // Ignore if these are two fundamentally different symbols.
       if (actualDRT.getSymbol() != expectedDRT.getSymbol())
-        return failure();
+        return error();
 
       // Fail if the parameter lists fundamentally mismatch.
       assert(actualDRT.getParamValues().size() ==
@@ -342,20 +443,20 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
              "two instances of same struct must have same length param lists");
 
       // Match up the parameter bindings.
-      for (auto [actual, expected] :
-           llvm::zip(actualDRT.getParamValues(), expectedDRT.getParamValues()))
-        if (failed(matchParams(actual, expected)))
-          return failure();
-      return success();
+      for (auto [actual, expected] : llvm::zip(actualDRT.getParamValues(),
+                                               expectedDRT.getParamValues())) {
+        PROP(matchParams(actual, expected));
+      }
+      return Match;
     }
   }
 
   // Handle when both are StructTypes.
-  if (auto actualDRT = dyn_cast<StructType>(actualType)) {
-    if (auto expectedDRT = dyn_cast<StructType>(expectedType)) {
+  if (auto actualDRT = dyn_cast<LIT::StructType>(actualType)) {
+    if (auto expectedDRT = dyn_cast<LIT::StructType>(expectedType)) {
       // Ignore if these are two fundamentally different symbols.
       if (actualDRT.getSymbol() != expectedDRT.getSymbol())
-        return failure();
+        return error();
 
       // Fail if the parameter lists fundamentally mismatch.
       assert(actualDRT.getParamValues().size() ==
@@ -363,40 +464,33 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
              "two instances of same struct must have same length param lists");
 
       // Match up the parameter bindings.
-      for (auto [actual, expected] :
-           llvm::zip(actualDRT.getParamValues(), expectedDRT.getParamValues()))
-        if (failed(matchParams(actual, expected)))
-          return failure();
-      return success();
+      for (auto [actual, expected] : llvm::zip(actualDRT.getParamValues(),
+                                               expectedDRT.getParamValues())) {
+        PROP(matchParams(actual, expected));
+      }
+      return Match;
     }
   }
 
   // Handle various common POP types for convenience, starting with SIMDType.
   if (auto actual = dyn_cast<POP::SIMDType>(actualType))
     if (auto expected = dyn_cast<POP::SIMDType>(expectedType)) {
-      if (failed(matchParams(actual.getSize(), expected.getSize())))
-        return failure();
+      PROP(matchParams(actual.getSize(), expected.getSize()));
       return matchParams(actual.getDType(), expected.getDType());
     }
 
   // POP::ArrayType.
   if (auto actual = dyn_cast<POP::ArrayType>(actualType))
     if (auto expected = dyn_cast<POP::ArrayType>(expectedType)) {
-      if (failed(matchParams(actual.getSize(), expected.getSize())))
-        return failure();
+      PROP(matchParams(actual.getSize(), expected.getSize()));
       return matchTypes(actual.getElementType(), expected.getElementType());
     }
 
   // Handle RefType.
   if (auto actual = dyn_cast<RefType>(actualType))
     if (auto expected = dyn_cast<RefType>(expectedType)) {
-      if (failed(
-              matchTypes(actual.getElementType(), expected.getElementType())))
-        return failure();
-      if (failed(
-              matchSingleEltStruct(actual.getOrigin(), expected.getOrigin())))
-        return failure();
-
+      PROP(matchTypes(actual.getElementType(), expected.getElementType()));
+      PROP(matchSingleEltStruct(actual.getOrigin(), expected.getOrigin()));
       return matchSingleEltStruct(actual.getAddressSpace(),
                                   expected.getAddressSpace());
     }
@@ -405,21 +499,27 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   if (auto actual = dyn_cast<OriginType>(actualType))
     if (auto expected = dyn_cast<OriginType>(expectedType)) {
       // Try to match up the types so we infer parameters properly.
-      if (succeeded(
-              matchSingleEltStruct(actual.isMutable(), expected.isMutable())))
-        return success();
+      switch (matchSingleEltStruct(actual.isMutable(), expected.isMutable())) {
+      case Match:
+        return Match;
+      case Retry:
+        return Retry;
+      case Error:
+        resetError();
+        break;
+      }
+
       // If that fails, check compatibility, actualType might be mutable=true,
       // and expected might be mutable=false, and this is fine.
-      return success(
-          IREmitter::canZeroCostConvert(actualType, expectedType, shared));
+      if (!IREmitter::canZeroCostConvert(actualType, expectedType, shared))
+        return error();
+      return Match;
     }
 
   // Handle PointerType.
   if (auto actual = dyn_cast<PointerType>(actualType))
     if (auto expected = dyn_cast<PointerType>(expectedType)) {
-      if (failed(
-              matchTypes(actual.getElementType(), expected.getElementType())))
-        return failure();
+      PROP(matchTypes(actual.getElementType(), expected.getElementType()));
       return matchSingleEltStruct(actual.getAddressSpace(),
                                   expected.getAddressSpace());
     }
@@ -432,22 +532,15 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   // Handle RefPackType.
   if (auto actual = dyn_cast<RefPackType>(actualType))
     if (auto expected = dyn_cast<RefPackType>(expectedType)) {
-      if (failed(matchParams(actual.getVariadic(), expected.getVariadic())) ||
-          failed(
-              matchSingleEltStruct(actual.getOrigin(), expected.getOrigin())))
-        return failure();
+      PROP(matchParams(actual.getVariadic(), expected.getVariadic()));
+      PROP(matchSingleEltStruct(actual.getOrigin(), expected.getOrigin()));
       return matchParams(actual.getAddressSpace(), expected.getAddressSpace());
     }
 
   // Handle FuncTypeGeneratorType
-  if (auto actual = dyn_cast<FnTypeGeneratorType>(actualType)) {
-    if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType)) {
-      // See paramIndexRefDepth's comments for what this increment is for.
-      // The increment was solely for the matchFunctionTypes call, so undo it.
-      llvm::SaveAndRestore depth(paramIndexRefDepth, paramIndexRefDepth + 1);
+  if (auto actual = dyn_cast<FnTypeGeneratorType>(actualType))
+    if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType))
       return matchFunctionTypes(actual, expected);
-    }
-  }
 
   // Handle GeneratorType
   if (auto actual = dyn_cast<GeneratorType>(actualType)) {
@@ -459,17 +552,17 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
         // Matching two FnTypeGeneratorType should have been handled above
         assert(!isa<FnType>(actual.getBody()) ||
                !isa<FnType>(expected.getBody()));
-        return failure();
+        return error();
       }
       // This a simple type generator, match the input parameter types and body
       // type.
       ArrayRef<Type> actInputs = actual.getInputParamTypes();
       ArrayRef<Type> expInputs = expected.getInputParamTypes();
       if (actInputs.size() != expInputs.size())
-        return failure();
-      for (auto [ai, ei] : llvm::zip_equal(actInputs, expInputs))
-        if (failed(matchTypes(ai, ei)))
-          return failure();
+        return error();
+      for (auto [ai, ei] : llvm::zip_equal(actInputs, expInputs)) {
+        PROP(matchTypes(ai, ei));
+      }
       return matchTypes(actual.getBody(), expected.getBody());
     }
   }
@@ -490,23 +583,24 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
 
   // Handle meta type upcasting.
   FailureOr<bool> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
-      shared, declScope.getLoc(), actualType, expectedType);
+      shared, state.declScope.getLoc(), actualType, expectedType);
   if (succeeded(typeUpCastable) && typeUpCastable.value())
-    return success();
+    return Match;
 
   // TODO: We're not handling a lot of important things, e.g., implicit
   // conversions that cause us to see i1->Bool and similar things here, etc. as
   // such, we can't treat conversion errors for unknown things as failures.
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN TYPES:\n"; actualType.dump();
              expectedType.dump(); llvm::errs() << "\n");
-  return failure();
+  return error();
 }
 
-LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
+ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
                                                    TypedAttr expectedAttr) {
+  assert(isUnset() && "matching with a result set already");
   // If the attrs trivial match then we're done and there is no inference to do.
   if (isEqualCanon(actualAttr, expectedAttr))
-    return success();
+    return Match;
 
   // Look through type upcasts to the more derived type.
   actualAttr = UpcastAttr::strip(actualAttr);
@@ -539,85 +633,98 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   // Figure out how to realign the types of the actual/expected attrs.
   if (isEqualCanon(actualAttr.getType(), expectedAttr.getType())) {
     // If the types of both attributes are the same, no adjustment is needed.
-  } else if (succeeded(
-                 matchTypes(actualAttr.getType(), expectedAttr.getType()))) {
-    auto expectedType = evaluator.getReboundType(expectedAttr.getType());
-    // If they are different types but compatible then upcast actualAttr to the
-    // expected type.
-    IREmitter emitter(declScope, EC_TypeParamValue);
-    SyntheticNode node(declScope.getLoc());
-    // FIXME: We are running into problems because we have Actual values of
-    // "FnTypeGeneratorType" that have named parameters in them, but expected
-    // values that want index-based ones.  matchFunctionTypes should convert
-    // the former to the later and we should remove this redundant check for
-    // implicit convertibility.
-    if (IREmitter::canImplicitlyConvertToType({actualAttr, node}, expectedType,
-                                              emitter.getDeclScope())) {
-      actualAttr = emitter.emitPValue({actualAttr, node}, EC_TypeParamValue,
-                                      expectedType);
-      assert(actualAttr && "conversion is double checked");
-    }
-
   } else {
-    // If this is a type expression, try align the type (if possible) before
-    // concluding type inconvertibility. This turns things like:
-    // #kgen.type<!Int> : !lit.trait<!AnyType> to
-    // #kgen.type<!Int> : !lit.trait<!Copyable>
-    // Then we can correctly check type value convertibility between
-    // #kgen.type<!Int> : !lit.trait<!AnyType> and
-    // #param.ref<....> : !lit.trait<!Copyable>
-    bool fixableByUpCast = false;
-    if (LIT::isTypeExpr(actualAttr) || LIT::isVariadicOfTypeExpr(actualAttr)) {
-      auto targetMT = getTargetMetaTypeForTypeValue(expectedAttr.getType());
-      ArrayRef<TypedAttr> toCheck(actualAttr);
-      if (auto va = sugarDynCast<VariadicAttr>(actualAttr))
-        toCheck = va.getValues();
+    auto result = matchTypes(actualAttr.getType(), expectedAttr.getType());
+    if (result == Retry)
+      return Retry;
+    if (result == Match) {
+      auto expectedType =
+          state.evaluator.getReboundType(expectedAttr.getType());
+      // If they are different types but compatible then upcast actualAttr to
+      // the expected type.
+      IREmitter emitter(state.declScope, EC_TypeParamValue);
 
-      fixableByUpCast = llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
-        assert(LIT::isTypeExpr(typeExpr));
-        // Try get the tightest possible metatype bound.
-        Type tightestBound = ASTType(typeExpr).getMetaType();
-        if (!tightestBound) {
-          // `struct __MLIRType` is the corner case here :(.
-          tightestBound = typeExpr.getType();
-        }
-        FailureOr<bool> upCastable = IREmitter::canMetaTypeUpCastTo(
-            shared, declScope.getLoc(), tightestBound, targetMT);
-        return succeeded(upCastable) && upCastable.value();
-      });
+      // FIXME: We are running into problems because we have Actual values of
+      // "FnTypeGeneratorType" that have named parameters in them, but expected
+      // values that want index-based ones.  matchFunctionTypes should convert
+      // the former to the later and we should remove this redundant check for
+      // implicit convertibility.
+      if (IREmitter::canImplicitlyConvertToType(
+              {actualAttr, expr}, expectedType, emitter.getDeclScope())) {
+        actualAttr = emitter.emitPValue({actualAttr, expr}, EC_TypeParamValue,
+                                        expectedType);
+        assert(actualAttr && "conversion is double checked");
 
-      if (fixableByUpCast) {
-        SmallVector<TypedAttr> casted =
-            llvm::map_to_vector(toCheck, [targetMT](TypedAttr toMap) {
-              return TypeParamAttr::get(ASTType(toMap), targetMT);
-            });
+        if (isEqualCanon(actualAttr, expectedAttr))
+          return Match;
+      }
+    } else {
+      // Ok something failed, swallow the error.
+      resetError();
 
+      // If this is a type expression, try align the type (if possible) before
+      // concluding type inconvertibility. This turns things like:
+      // #kgen.type<!Int> : !lit.trait<!AnyType> to
+      // #kgen.type<!Int> : !lit.trait<!Copyable>
+      // Then we can correctly check type value convertibility between
+      // #kgen.type<!Int> : !lit.trait<!AnyType> and
+      // #param.ref<....> : !lit.trait<!Copyable>
+      bool fixableByUpCast = false;
+      if (LIT::isTypeExpr(actualAttr) ||
+          LIT::isVariadicOfTypeExpr(actualAttr)) {
+        auto targetMT = getTargetMetaTypeForTypeValue(expectedAttr.getType());
+        ArrayRef<TypedAttr> toCheck(actualAttr);
         if (auto va = sugarDynCast<VariadicAttr>(actualAttr))
-          actualAttr = VariadicAttr::get(casted, VariadicType::get(targetMT));
-        else
-          actualAttr = casted.front();
+          toCheck = va.getValues();
 
-        LogicalResult matchFixed =
-            matchTypes(actualAttr.getType(), expectedAttr.getType());
-        assert(succeeded(matchFixed));
-        (void)matchFixed;
-      }
-    }
+        fixableByUpCast = llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
+          assert(LIT::isTypeExpr(typeExpr));
+          // Try get the tightest possible metatype bound.
+          Type tightestBound = ASTType(typeExpr).getMetaType();
+          if (!tightestBound) {
+            // `struct __MLIRType` is the corner case here :(.
+            tightestBound = typeExpr.getType();
+          }
+          FailureOr<bool> upCastable = IREmitter::canMetaTypeUpCastTo(
+              shared, state.declScope.getLoc(), tightestBound, targetMT);
+          return succeeded(upCastable) && upCastable.value();
+        });
 
-    if (!fixableByUpCast) {
-      if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
-        addFailure(ire.getIndex(),
-                   InferenceFailure::TypeConflictFailure{
-                       evaluator.getReboundType(expectedAttr.getType()),
-                       actualAttr.getType()});
+        if (fixableByUpCast) {
+          SmallVector<TypedAttr> casted =
+              llvm::map_to_vector(toCheck, [targetMT](TypedAttr toMap) {
+                return TypeParamAttr::get(ASTType(toMap), targetMT);
+              });
+
+          if (auto va = sugarDynCast<VariadicAttr>(actualAttr))
+            actualAttr = VariadicAttr::get(casted, VariadicType::get(targetMT));
+          else
+            actualAttr = casted.front();
+
+          auto matchFixed =
+              matchTypes(actualAttr.getType(), expectedAttr.getType());
+          assert(matchFixed != Error);
+          if (matchFixed == Retry)
+            return Retry;
+        }
       }
-      return failure();
+
+      if (!fixableByUpCast) {
+        if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
+          state.addFailure(
+              ire.getIndex(),
+              InferenceFailure::TypeConflictFailure{
+                  state.evaluator.getReboundType(expectedAttr.getType()),
+                  actualAttr.getType()});
+        }
+        return error();
+      }
     }
   }
 
   // If the actual value is a ? then we never bind to it.
   if (isa<UnboundAttr>(actualAttr))
-    return success();
+    return Match;
 
   // If we are dealing with two type constants, we match their values.
   auto actualTypeConst = dyn_cast<TypeParamAttr>(actualAttr);
@@ -633,10 +740,10 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       actualOp.getOpcode() == expectedOp.getOpcode() &&
       actualOp.getNumOperands() == expectedOp.getNumOperands()) {
     for (auto [a, b] :
-         llvm::zip(actualOp.getOperands(), expectedOp.getOperands()))
-      if (failed(matchParams(a, b)))
-        return failure();
-    return success();
+         llvm::zip(actualOp.getOperands(), expectedOp.getOperands())) {
+      PROP(matchParams(a, b));
+    }
+    return Match;
   }
 
   // If one or the other is a rebind, look through it if just processing sugar.
@@ -658,7 +765,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
               expectedGetWitness.getTraitName() ||
           actualGetWitness.getWitnessName() !=
               expectedGetWitness.getWitnessName())
-        return failure();
+        return error();
       return matchParams(actualGetWitness.getTypeValue(),
                          expectedGetWitness.getTypeValue());
     }
@@ -677,60 +784,60 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
         expectedType = adjuster.replace(expectedType);
       }
-      expectedType = evaluator.getReboundType(expectedType);
+      expectedType = state.evaluator.getReboundType(expectedType);
 
       // If the types don't agree, attempt an implicit conversion between the
       // actual value and the expected type.
       if (!isEqualCanon(actualAttr.getType(), expectedType)) {
         // We can only see subtypes in type values, all other values must be
         // aligned perfectly.
-        IREmitter emitter(declScope, EC_TypeParamValue);
-        SyntheticNode node(declScope.getLoc());
-        ASTExprAnd<CValue> toConvert = {actualAttr, node};
+        IREmitter emitter(state.declScope, EC_TypeParamValue);
+        ASTExprAnd<CValue> toConvert = {actualAttr, expr};
         actualAttr =
             emitter.emitPValue(toConvert, EC_TypeParamValue, expectedType);
         // FIXME: Figure out why this is happening in invalid code.  Something
         // else not propagating failures aggressively?
         if (!actualAttr)
-          return failure();
+          return error();
 
         assert(actualAttr && "Already checked implicit convertibility");
         assert(isEqualCanon(actualAttr.getType(), expectedType));
       }
 
       size_t parameterIndex = ire.getIndex();
-      TypedAttr inferredValue = evaluator.getIndexBindings()[parameterIndex];
+      TypedAttr inferredValue =
+          state.evaluator.getIndexBindings()[parameterIndex];
 
       // If this is a new parameter we've inferred, huzzah, remember it.
       if (!inferredValue) {
-        evaluator.overwriteIndexBinding(parameterIndex, actualAttr);
-        return success();
+        state.evaluator.overwriteIndexBinding(parameterIndex, actualAttr);
+        retryParamIdx = parameterIndex;
+        return Retry;
       }
 
       // If we saw this parameter before, make sure it is compatible with
       // (or more specific than) the other values we've inferred.
       if (!isEqualCanon(inferredValue, actualAttr)) {
-        addFailure(parameterIndex, InferenceFailure::ValueConflictFailure{
-                                       inferredValue, actualAttr});
-        return failure();
+        state.addFailure(parameterIndex, InferenceFailure::ValueConflictFailure{
+                                             inferredValue, actualAttr});
+        return error();
       }
-      return success();
+      return Match;
     }
     // If this is some parameter other than the one we're inferring, assume it
     // will work out.
-    return success();
+    return Match;
   }
 
   if (auto actualVar = dyn_cast<VariadicAttr>(actualAttr)) {
     if (auto expectedVar = dyn_cast<VariadicAttr>(expectedAttr)) {
       if (actualVar.getValues().size() != expectedVar.getValues().size())
-        return failure();
+        return error();
       for (auto [act, exp] :
            llvm::zip(actualVar.getValues(), expectedVar.getValues())) {
-        if (failed(matchParams(act, exp)))
-          return failure();
+        PROP(matchParams(act, exp));
       }
-      return success();
+      return Match;
     }
   }
 
@@ -739,13 +846,12 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       if (actualSym.getSymbol() != expectedSym.getSymbol() ||
           actualSym.getParamValues().size() !=
               expectedSym.getParamValues().size())
-        return failure();
+        return error();
       for (auto [act, exp] : llvm::zip(actualSym.getParamValues(),
                                        expectedSym.getParamValues())) {
-        if (failed(matchParams(act, exp)))
-          return failure();
+        PROP(matchParams(act, exp));
       }
-      return success();
+      return Match;
     }
   }
 
@@ -759,7 +865,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (auto actualExtract = dyn_cast<LIT::StructExtractAttr>(actualAttr)) {
     if (auto expectedExtract = dyn_cast<LIT::StructExtractAttr>(expectedAttr)) {
       if (actualExtract.getField() != expectedExtract.getField())
-        return failure();
+        return error();
       return matchParams(actualExtract.getStructValue(),
                          expectedExtract.getStructValue());
     }
@@ -771,15 +877,14 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       // This will go away when the default capturing syntax is changed to the
       // any set.
       if (expectedSet.getOperands().empty())
-        return success();
+        return Match;
       if (actualSet.getOperands().size() != expectedSet.getOperands().size())
-        return failure();
+        return error();
       for (auto [actual, expected] : llvm::zip_equal(
                actualSet.getOperands(), expectedSet.getOperands())) {
-        if (failed(matchParams(actual, expected)))
-          return failure();
+        PROP(matchParams(actual, expected));
       }
-      return success();
+      return Match;
     }
   }
 
@@ -793,10 +898,9 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         for (auto [act, exp] :
              llvm::zip(actualStruct.getValues(), expectedStruct.getValues())) {
           assert(std::get<0>(act) == std::get<0>(exp) && "field name mismatch");
-          if (failed(matchParams(std::get<1>(act), std::get<1>(exp))))
-            return failure();
+          PROP(matchParams(std::get<1>(act), std::get<1>(exp)));
         }
-        return success();
+        return Match;
       }
     }
   }
@@ -809,7 +913,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (actualSugar && expectedSugar &&
       expectedSugar.getKind() == SugarKind::AlwaysInlineBuiltin) {
     if (actualSugar.getCanonical() == expectedSugar.getCanonical())
-      return success();
+      return Match;
     return matchParams(actualSugar.getSugared(), expectedSugar.getSugared());
   }
   if (actualSugar)
@@ -819,7 +923,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << "\n");
-  return failure();
+  return error();
 }
 
 // Special Hack (tm) for matching mlir values for pointers and references to
@@ -841,14 +945,14 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 //
 // The "right" solution is to change pointer and reference to take an
 // AddressSpace directly.  Until then we do a special hack for these things.
-LogicalResult
-ParameterInferenceState::matchSingleEltStruct(TypedAttr actualOrig,
-                                              TypedAttr expectedOrig) {
+ParamMatcher::ResultCode
+ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
+                                   TypedAttr expectedOrig) {
   auto actual = ParamOperatorAttr::stripRebind(actualOrig);
   auto expected = ParamOperatorAttr::stripRebind(expectedOrig);
 
   if (actual == expected)
-    return success();
+    return Match;
 
   // If it is an extract from a known struct, then we know there is one field in
   // the struct - we can form a StructAttr around our actual value and recurse.
@@ -856,7 +960,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actualOrig,
     // If these are two lined up extracts, look through them.
     if (auto actExtract = sugarDynCast<LIT::StructExtractAttr>(actual)) {
       if (expExtract.getField() != actExtract.getField())
-        return failure();
+        return error();
       return matchSingleEltStruct(actExtract.getStructValue(),
                                   expExtract.getStructValue());
     }
@@ -866,8 +970,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actualOrig,
     if (actual.getType() != expected.getType()) {
       // See if we can infer anything from the types, this allows us to infer
       // 'is_mut' parameter from "origin<1>" and "origin<is_mut>".
-      if (failed(matchTypes(actual.getType(), expected.getType())))
-        return failure();
+      PROP(matchTypes(actual.getType(), expected.getType()));
     }
 
     // Ok, we have a struct that seems like it could line up.  See if we can
@@ -878,7 +981,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actualOrig,
     // argument value instead of an implicit conv.
     auto expStruct = expExtract.getStructValue();
     // Figure out if the struct is something we can handle.
-    auto expDRT = sugarCast<StructType>(expStruct.getType());
+    auto expDRT = sugarCast<LIT::StructType>(expStruct.getType());
 
     // Conservatively only handle the types we know have a single field.  We
     // special case these ones to avoid name lookup in common cases.
@@ -892,17 +995,17 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actualOrig,
       auto nonParamDRT =
           ASTType(expDRT).getWithUnknownParametersReplaced(shared);
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
-          nonParamDRT, CallOperands({{actual, curArgExpr}}), curArgExpr,
-          declScope, /*isImplicitConversion=*/true);
+          nonParamDRT, CallOperands({{actual, expr}}), expr, state.declScope,
+          /*isImplicitConversion=*/true);
       if (failed(pValue) || !pValue.value())
-        return failure();
+        return error();
 
       // If we succeeded, figure out what the concrete type being inferred would
       // be with any parameters bound.
       auto initSig = sugarCast<FnTypeGeneratorType>(pValue.value().getType());
       // The constructed type is the result of the initializer.
       assert(initSig.getNumArguments() != 0);
-      expDRT = sugarCast<StructType>(initSig.getUserResultType());
+      expDRT = sugarCast<LIT::StructType>(initSig.getUserResultType());
 
       // Finally, perform any implicit conversion of the actual value to
       // whatever the 'value' would provide.
@@ -926,6 +1029,10 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actualOrig,
   return matchParams(actualOrig, expectedOrig);
 }
 
+//===----------------------------------------------------------------------===//
+// ParameterInferenceState
+//===----------------------------------------------------------------------===//
+
 /// Try to infer parameters of Self from an initializer if specialized.
 ///
 /// Consider:
@@ -947,8 +1054,12 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actualOrig,
 /// argument.
 LogicalResult ParameterInferenceState::inferSelfFromInitResult(
     FnTypeGeneratorType signature) {
-  ASTType returnedType =
-      evaluator.getReboundType(signature.getUserResultType());
+  ASTType returnedType;
+
+  // When a parameter gets bound, we re-evaluate the result type to see the
+  // fully concretized parameters that the parameter may be computing.
+RetryLabel:
+  returnedType = evaluator.getReboundType(signature.getUserResultType());
 
   // Match up the parameter bindings if the 'actual' param is an UnboundAttr and
   // the expected has something more specific than a reference to the contextual
@@ -968,8 +1079,18 @@ LogicalResult ParameterInferenceState::inferSelfFromInitResult(
     //   struct X[A: AnyType]:
     //     fn __init__[T: Movable](arg: Int, out self: X[T]):
     // which gets used as X[String](42) inferring T and A.
+
+    // FIXME: Client should pass a real location.
+    SyntheticNode synthNode(declScope.getLoc());
+    ParamMatcher matcher(&synthNode, *this);
     if (selfParam) {
-      if (failed(matchParams(selfParam, retParam))) {
+      // TODO: Macro'ize this when error handling logic is fixed.
+      switch (matcher.matchParams(selfParam, retParam)) {
+      case ParamMatcher::Retry:
+        goto RetryLabel;
+      case ParamMatcher::Match:
+        break;
+      case ParamMatcher::Error:
         addFailure(idx,
                    InferenceFailure::ValueConflictFailure{selfParam, retParam});
         return failure();
@@ -982,7 +1103,12 @@ LogicalResult ParameterInferenceState::inferSelfFromInitResult(
       auto selfType =
           evaluator.getReboundType(signature.getInputParamTypes()[idx]);
       auto selfParam = ParamIndexRefAttr::get(/*depth*/ 0, idx, selfType);
-      if (failed(matchParams(retParam, selfParam))) {
+      switch (matcher.matchParams(retParam, selfParam)) {
+      case ParamMatcher::Retry:
+        goto RetryLabel;
+      case ParamMatcher::Match:
+        break;
+      case ParamMatcher::Error:
         addFailure(idx,
                    InferenceFailure::ValueConflictFailure{retParam, selfParam});
         return failure();
@@ -1021,17 +1147,23 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
 /// anything in recursive functiontype positions.
 LogicalResult
 ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
-                                         ASTType expectedType,
+                                         ASTType origExpectedType,
                                          ArgConvention expectedConvention) {
   // Early return if this operand will not help with inferring parameters. This
   // avoids unnecessary checks & dealing with errors unrelated to parameter
   // inference here. The only operands that can contribute to param inference
   // are either those whose expected types contain param references.
-  if (!paramFinder.hasReferences(expectedType.mlirType))
+  if (!paramFinder.hasReferences(origExpectedType.mlirType))
     return success();
+
+  // Whenever a parameter is bound, we need to re-evaluate the expected type and
+  // try again.
+RetryLabel:
+  ASTType expectedType = evaluator.getReboundType(origExpectedType);
 
   AnyValue value = operand.ir;
   curArgExpr = operand.expr;
+  ParamMatcher matcher(operand.expr, *this);
 
   auto resolveOperandCValue = [&](Type expectedTypeOfOperand) -> CValue {
     if (auto argVal = value.getIfCValue())
@@ -1085,10 +1217,15 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     CValue argVal = value.getIfCValue();
     if (!argVal)
       return failure();
-
-    // By-ref argument types must exactly match, no conversions are allowed.
-    return matchTypes(argVal.getRValueType(),
-                      expectedType.getReferenceElementType());
+    switch (matcher.matchTypes(argVal.getRValueType(),
+                               expectedType.getReferenceElementType())) {
+    case ParamMatcher::Retry:
+      goto RetryLabel;
+    case ParamMatcher::Match:
+      return success();
+    case ParamMatcher::Error:
+      return failure();
+    }
   }
 
   case ArgConvention::Ref:
@@ -1110,7 +1247,14 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
           !valueRefType.isMutableKnown(false))
         valueRefType = valueRefType.getWithMutability(false);
 
-      return matchTypes(valueRefType, expectedType);
+      switch (matcher.matchTypes(valueRefType, expectedType)) {
+      case ParamMatcher::Retry:
+        goto RetryLabel;
+      case ParamMatcher::Match:
+        return success();
+      case ParamMatcher::Error:
+        return failure();
+      }
     }
 
     // Otherwise, we'll need to drop this value into a temporary.  For now, we
@@ -1119,10 +1263,27 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     RefType valueRefType =
         RefType::getAnyOrigin(argVal.getRValueType(), /*isMut=*/false);
 
-    (void)matchSingleEltStruct(valueRefType.getOrigin(),
-                               expectedRef.getOrigin());
-    (void)matchSingleEltStruct(valueRefType.getAddressSpace(),
-                               expectedRef.getAddressSpace());
+    switch (matcher.matchSingleEltStruct(valueRefType.getOrigin(),
+                                         expectedRef.getOrigin())) {
+    case ParamMatcher::Retry:
+      goto RetryLabel;
+    case ParamMatcher::Match:
+      break;
+    case ParamMatcher::Error:
+      matcher.resetError();
+      break;
+    }
+
+    switch (matcher.matchSingleEltStruct(valueRefType.getAddressSpace(),
+                                         expectedRef.getAddressSpace())) {
+    case ParamMatcher::Retry:
+      goto RetryLabel;
+    case ParamMatcher::Match:
+      break;
+    case ParamMatcher::Error:
+      matcher.resetError();
+      break;
+    }
 
     // Handle the element type compatibility check below to allow implicit
     // conversions etc.
@@ -1162,10 +1323,15 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // declarations.
     if (!initType)
       return failure();
-    // If we found one, we recursively call inferOneOperand (but with implicit
-    // conversions disabled of course) to resolve our value as the init
-    // methods argument.  This allows us to infer parameters from it.
-    return matchTypes(initType, expectedType);
+    // If we found one, we resolve our value to the inferred type.
+    switch (matcher.matchTypes(initType, expectedType)) {
+    case ParamMatcher::Retry:
+      goto RetryLabel;
+    case ParamMatcher::Match:
+      return success();
+    case ParamMatcher::Error:
+      return failure();
+    }
   }
 
   // Okay, we got a normal value argument convention and stripped off any
@@ -1185,8 +1351,15 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   auto savedDiags = diags.saveDiags();
 
   // See if the types match with inference, if not, remember why.
-  if (succeeded(matchTypes(argType, expectedType)))
+  switch (matcher.matchTypes(argType, expectedType)) {
+  case ParamMatcher::Retry:
+    goto RetryLabel;
+  case ParamMatcher::Match:
     return success();
+  case ParamMatcher::Error:
+    matcher.resetError();
+    break;
+  }
 
   // Before we check with the implicit conversions, save any diagnostics
   // accumulated without it.  If both fail, we default to the non-implicit
@@ -1211,8 +1384,15 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
     // Infer the parameters of this overload candidate against the computed
     // result type of the initializer.
-    if (succeeded(matchTypes(nonmaterializableTarget, expectedType)))
+    switch (matcher.matchTypes(nonmaterializableTarget, expectedType)) {
+    case ParamMatcher::Retry:
+      goto RetryLabel;
+    case ParamMatcher::Match:
       return success();
+    case ParamMatcher::Error:
+      matcher.resetError();
+      break;
+    }
 
     // If that didn't work out, keep going, but with the original
     // diagnostics.
@@ -1236,7 +1416,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   ///     fn foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
   ///     Scalar[p.type.type]):
   /// where the type of 'v' depends on 'dt' being inferred.
-
   ASTType knownExpectedType = evaluator.getReboundType(expectedType);
   ASTDecl *expectedDecl = knownExpectedType.getDecl(shared);
   if (!allowImplicitConversions || !expectedDecl) {
@@ -1291,11 +1470,15 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
-  auto result = matchTypes(initSig.getUserResultType(), knownExpectedType);
-
-  // If the implicit conversion worked then we're good.
-  if (succeeded(result))
+  switch (matcher.matchTypes(initSig.getUserResultType(), knownExpectedType)) {
+  case ParamMatcher::Retry:
+    goto RetryLabel;
+  case ParamMatcher::Match:
     return success();
+  case ParamMatcher::Error:
+    matcher.resetError();
+    break;
+  }
 
   // Otherwise restore the diags from the non-implicit conversion path,
   // they'll be less confusing.
@@ -1493,6 +1676,8 @@ LogicalResult ParameterInferenceState::inferForCall(
     // their RValue types as bindings.
     if (ASTType variadicPackType =
             signature.getIfVariadicPack(expectedArgIdx)) {
+    RetryLabel:
+      variadicPackType = evaluator.getReboundType(variadicPackType);
       RefPackType packType = variadicPackType.getVariadicPackInfo(shared);
 
       // Figure out that the element type of the list is, e.g. AnyType or
@@ -1529,7 +1714,7 @@ LogicalResult ParameterInferenceState::inferForCall(
           // variadic type is due to a parameter mismatch, record it.
           if (auto ire =
                   sugarDynCast<ParamIndexRefAttr>(packType.getVariadic());
-              ire && ire.getDepth() == paramIndexRefDepth) {
+              ire && ire.getDepth() == 0) {
             // Otherwise, we failed to infer the parameter. Record this failure.
             addFailure(ire.getIndex(), InferenceFailure::TypeConflictFailure{
                                            elementType, actualAttr.getType()});
@@ -1548,10 +1733,17 @@ LogicalResult ParameterInferenceState::inferForCall(
       // Infer the value of type list from the types we have.
       auto variadicType =
           sugarCast<VariadicType>(packType.getVariadic().getType());
-      if (failed(matchParams(VariadicAttr::get(types, variadicType),
-                             packType.getVariadic())))
+
+      ParamMatcher matcher(curArgExpr, *this);
+      switch (matcher.matchParams(VariadicAttr::get(types, variadicType),
+                                  packType.getVariadic())) {
+      case ParamMatcher::Retry:
+        goto RetryLabel;
+      case ParamMatcher::Match:
+        continue;
+      case ParamMatcher::Error:
         return failure();
-      continue;
+      }
     }
 
     // Check for any more positional operands.

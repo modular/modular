@@ -73,7 +73,6 @@ fn testTestParamStruct(a: Parameterized[4]):
 comptime DType = __mlir_type.`!kgen.dtype`
 
 
-# expected-note @below {{struct declared here}}
 struct MySIMD[size: Int, type: DType]:
     # expected-note @below {{function declared here}}
     fn __add__(self, rhs: MySIMD[Self.size, Self.type]):
@@ -93,12 +92,10 @@ fn testSIMD(
 ):
     var x = a + a
     var y = b + b
-    # expected-error @below {{invalid call to '__add__': failed to infer parameter 'size' of parent struct 'MySIMD', it inferred to two different values: '2' and '1'}}
-    # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
+    # expected-error @below {{invalid call to '__add__': right side cannot be converted from 'MySIMD[1, float64]' to 'MySIMD[2, int32]'}}
     var z = b + a
 
-    # expected-error @below {{failed to infer parameter 'dt1', it inferred to two different values: '1' and '2'}}
-    # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
+    # expected-error @below {{invalid call to 'twoUses': failed to infer parameter 'dt2', it isn't used in any argument}}
     twoUses(a, b)
 
 
@@ -123,8 +120,7 @@ fn left_to_right_implicit_conversion(
     infer_then_convert(lhs, rhs)
     # This fails because 'a' and 'b' are inferred to '1' and '1', and 'lhs'
     # cannot implicit convert from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'.
-    # expected-error @below {{invalid call to 'infer_then_convert': failed to infer parameter 'a', it inferred to two different values: '1' and '2'}}
-    # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
+    # expected-error @below {{invalid call to 'infer_then_convert': argument #1 cannot be converted from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'}}
     infer_then_convert(rhs, lhs)
 
 

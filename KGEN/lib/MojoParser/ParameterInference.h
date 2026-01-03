@@ -124,13 +124,15 @@ public:
 
   void dump() const;
 
+  void addFailure(size_t parameterIndex, InferenceFailure &&info) {
+    diags.addFailure(parameterIndex, curArgExpr, std::move(info));
+  }
+
+  /// This is the evaluator instance parameter inference uses to progressively
+  /// refine dependent types as we infer parameters.
+  ParserParameterEvaluator evaluator;
+
 private:
-  LogicalResult matchTypes(Type actualType, Type expectedType);
-  LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
-  LogicalResult matchFunctionTypes(FnTypeGeneratorType actual,
-                                   FnTypeGeneratorType expected);
-  LogicalResult matchSingleEltStruct(TypedAttr actualAddrSpace,
-                                     TypedAttr expectedAddrSpace);
   LogicalResult inferSelfFromInitResult(FnTypeGeneratorType signature);
 
   /// Infer parameters from an operand being passed into this function. This is
@@ -139,10 +141,6 @@ private:
   LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand,
                                 ASTType expectedType,
                                 ArgConvention expectedConvention);
-  void addFailure(size_t parameterIndex, InferenceFailure &&info) {
-    diags.addFailure(parameterIndex, curArgExpr, std::move(info));
-  }
-
   /// Infer parameters from a single parameter binding.
   void inferOneParam(ASTExprAnd<AnyValue> binding, Type expectedType);
 
@@ -156,25 +154,6 @@ private:
 
   /// This describes the nature of the parameter list we're inferring for.
   PogListAttr declaredParamPogs;
-
-  /// This is the evaluator instance parameter inference uses to progressively
-  /// refine dependent types as we infer parameters.
-  ParserParameterEvaluator evaluator;
-
-  /// This is how many signature types deep inference is inside parameter
-  /// expressions and determines which index references we match against.
-  ///
-  /// As we search for param-refs, recursively, we'll be recursing past
-  /// `FnTypeGeneratorType`s (and other `ParameterScopeTimeInterface`s),
-  /// which changes what param-ref depths we're watching for; the param-refs'
-  /// depths would be greater (have to reach further outward so to speak, past
-  /// more generator types) to reference param-decls in the
-  /// ParameterInferenceState's original scope. paramIndexRefDepth tracks that
-  /// number.
-  ///
-  /// In other words, these paramIndexRefDepth adjustments are for
-  /// depth-aware searching, see PSTIAIRAID.
-  size_t paramIndexRefDepth = 0;
 
   /// The current set of parameter inference diagnostics.
   ParameterInferenceDiagnostics &diags;
