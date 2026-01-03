@@ -245,13 +245,25 @@ struct SMemTileArrayType[
         alignment = Self.alignment,
     ]
 
-    comptime storage_size = Self.layout.size() * size_of[
-        Self.dtype
-    ]() * Self.num_tiles
+    comptime num_elements = Self.layout.size() * Self.num_tiles
+
+    comptime storage_size = Self.num_elements * size_of[Self.dtype]()
+
+    comptime StorageType = InlineArray[Scalar[Self.dtype], Self.num_elements]
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype], address_space = AddressSpace.SHARED
     ]
+
+    fn __init__(
+        ref [AddressSpace.SHARED]storage: Self.StorageType,
+    ) -> Self:
+        """Initialize with StorageType.
+
+        Args:
+            storage: StorageType.
+        """
+        return Self(storage.unsafe_ptr())
 
     fn __init__[
         mut: Bool, //, origin: Origin[mut=mut]

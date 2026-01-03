@@ -414,44 +414,44 @@ struct B200MatmulSmem[
         alignment=128,
     ]
 
-    # Scalar types for storage
-    comptime AType = Scalar[Self.a_type]
-    comptime BType = Scalar[Self.b_type]
-    comptime CType = Scalar[Self.c_type]
-
-    # ========== Storage Size Constants ==========
-    comptime a_smem_size = Self.BM * Self.BK * Self.num_pipeline_stages
-    comptime b_smem_size = Self.BN * Self.BK * Self.num_pipeline_stages
-    comptime c_smem_size = Self.OutputM * Self.OutputN * Self.num_output_stages
-
     # ========== Storage Fields ==========
-    # Use InlineArray for bitcast-compatible memory layout
-    # AB pipelines
-    var a_smem: InlineArray[Self.AType, Self.a_smem_size]
-    var b_smem: InlineArray[Self.BType, Self.b_smem_size]
-    var c_smem: InlineArray[Self.CType, Self.c_smem_size]
-    var tma_mma_mbars: InlineArray[
+    # Tile storage sized to match tile array requirements
+    var a_tiles_storage: Self.ATileArray.StorageType
+    var b_tiles_storage: Self.BTileArray.StorageType
+    var c_tiles_storage: Self.CTileArray.StorageType
+
+    @always_inline
+    fn a_tiles(ref [AddressSpace.SHARED]self) -> Self.ATileArray:
+        return Self.ATileArray(self.a_tiles_storage)
+
+    @always_inline
+    fn b_tiles(ref [AddressSpace.SHARED]self) -> Self.BTileArray:
+        return Self.BTileArray(self.b_tiles_storage)
+
+    @always_inline
+    fn c_tiles(ref [AddressSpace.SHARED]self) -> Self.CTileArray:
+        return Self.CTileArray(self.c_tiles_storage)
+
+    # Input pipeline barriers (TMA→MMA synchronization)
+    var input_barriers: InlineArray[
         SharedMemBarrier, Self.num_group_pipeline_stages * 2
     ]
-    # ACCUM
-    var accum_mbars: InlineArray[
+
+    # Accumulator pipeline barriers (MMA→Epilogue synchronization)
+    var accum_barriers: InlineArray[
         SharedMemBarrier, Self.num_accum_pipeline_stages * 2
     ]
 
-    # CLC
-    var clc_mbars_full: InlineArray[
-        SharedMemBarrier, Self.num_clc_pipeline_stages
-    ]
-    var clc_mbars_empty: InlineArray[
-        SharedMemBarrier, Self.num_clc_pipeline_stages
-    ]
-    var clc_throttle_mbars: InlineArray[
+    # CLC (Cluster Launch Control) barriers and response
+    var clc_full: InlineArray[SharedMemBarrier, Self.num_clc_pipeline_stages]
+    var clc_empty: InlineArray[SharedMemBarrier, Self.num_clc_pipeline_stages]
+    var clc_throttle: InlineArray[
         SharedMemBarrier, Self.num_clc_pipeline_stages * 2
     ]
     var clc_response: InlineArray[UInt128, Self.num_clc_pipeline_stages]
 
-    # TMEM
-    var tmem_dealloc_mbar: InlineArray[SharedMemBarrier, 1]
+    # TMEM (Tensor Memory) management
+    var tmem_dealloc: InlineArray[SharedMemBarrier, 1]
     var tmem_addr: InlineArray[UInt32, 1]
 
     # ========== Size Calculations ==========
@@ -459,19 +459,19 @@ struct B200MatmulSmem[
     @staticmethod
     @always_inline
     fn ab_pipeline_size() -> Int:
-        """Calculate the total size of A+B tiles for all pipeline stages."""
-        return Self.a_smem_size + Self.b_smem_size
+        """Total size of A+B tiles for all pipeline stages (in elements)."""
+        return Self.ATileArray.num_elements + Self.BTileArray.num_elements
 
     @staticmethod
     @always_inline
     fn c_output_size() -> Int:
-        """Calculate the size of C tiles for all output stages."""
-        return Self.c_smem_size
+        """Size of C tiles for all output stages (in elements)."""
+        return Self.CTileArray.num_elements
 
     @staticmethod
     @always_inline
     fn total_tile_size() -> Int:
-        """Calculate the total tile storage size (A+B+C)."""
+        """Total tile storage size (A+B+C) in elements."""
         return Self.ab_pipeline_size() + Self.c_output_size()
 
 
@@ -922,50 +922,23 @@ struct BlackwellMatmulSM100Kernel[
         """Main kernel entry point for SM100 matrix multiplication."""
         Self.validate_constraints()
 
-        # Access shared memory via bitcast (preserves original layout)
-        ref smem_storage = external_memory[
+        # Access shared memory via bitcast
+        ref smem = external_memory[
             Scalar[DType.uint8],
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
-        # Get storage references from shared memory struct
-        ref a_smem_storage = smem_storage.a_smem
-        ref b_smem_storage = smem_storage.b_smem
-        ref c_smem_storage = smem_storage.c_smem
-        ref tma_mma_mbars_storage = smem_storage.tma_mma_mbars
-        ref accum_mbars_storage = smem_storage.accum_mbars
-        ref clc_mbars_full_storage = smem_storage.clc_mbars_full
-        ref clc_mbars_empty_storage = smem_storage.clc_mbars_empty
-        ref clc_response_storage = smem_storage.clc_response
-        ref clc_throttle_storage = smem_storage.clc_throttle_mbars
-        ref tmem_addr_storage = smem_storage.tmem_addr
-        ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
-
-        # Create typed tile arrays using centralized type aliases from SmemType
-        var a_smem = Self.SmemType.ATileArray(a_smem_storage.unsafe_ptr())
-        var b_smem = Self.SmemType.BTileArray(b_smem_storage.unsafe_ptr())
-        var c_smem_tiles = Self.SmemType.CTileArray(c_smem_storage.unsafe_ptr())
-
-        # Create ring buffer for TMA-MMA synchronization (Load→MMA pipeline)
-        var tma_mma_mbars_ptr = tma_mma_mbars_storage.unsafe_ptr()
+        # Create input pipeline for TMA→MMA synchronization
         var input_pipeline = Self.InputTilePipeline(
-            tma_mma_mbars_ptr, a_smem, b_smem
+            smem.input_barriers.unsafe_ptr(), smem.a_tiles(), smem.b_tiles()
         )
-
-        # Set up pointers for CLC and TMEM management
-        var clc_response = clc_response_storage.unsafe_ptr()
-        var clc_full_mbar = clc_mbars_full_storage.unsafe_ptr()
-        var clc_empty_mbar = clc_mbars_empty_storage.unsafe_ptr()
-        var clc_throttle_ptr = clc_throttle_storage.unsafe_ptr()
-        var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
-        var accum_mbars_ptr = accum_mbars_storage.unsafe_ptr()
 
         comptime accum_type = get_accum_type[Self.a_type]()
         comptime max_tmem_cols = 512
 
         # Create kernel context with election vars, CTA coords, and masks
-        var ctx = Self.Context(tmem_addr_storage.unsafe_ptr())
+        var ctx = Self.Context(smem.tmem_addr.unsafe_ptr())
 
         # Initialize all barriers (only elect_one_warp && elect_one_thread)
         Self.init_barriers(
@@ -973,12 +946,12 @@ struct BlackwellMatmulSM100Kernel[
             a_tma_op,
             b_tma_op,
             c_tma_op,
-            tma_mma_mbars_ptr,
-            accum_mbars_ptr,
-            clc_throttle_ptr,
-            clc_full_mbar,
-            clc_empty_mbar,
-            tmem_dealloc_mbar,
+            smem.input_barriers.unsafe_ptr(),
+            smem.accum_barriers.unsafe_ptr(),
+            smem.clc_throttle.unsafe_ptr(),
+            smem.clc_full.unsafe_ptr(),
+            smem.clc_empty.unsafe_ptr(),
+            smem.tmem_dealloc.unsafe_ptr(),
         )
 
         var mma_op = Self.MmaOp()
@@ -986,10 +959,10 @@ struct BlackwellMatmulSM100Kernel[
         # Scheduler owns CLC throttle pipeline internally
         var scheduler = Self.Scheduler(
             cluster_dim,
-            clc_response,
-            clc_full_mbar,
-            clc_empty_mbar,
-            clc_throttle_ptr,
+            smem.clc_response.unsafe_ptr(),
+            smem.clc_full.unsafe_ptr(),
+            smem.clc_empty.unsafe_ptr(),
+            smem.clc_throttle.unsafe_ptr(),
         )
 
         # Per-warp work iterator - owns work_info, pipeline state, and throttle
@@ -1082,9 +1055,11 @@ struct BlackwellMatmulSM100Kernel[
 
                 var tmem_addr = ctx.ptr_tmem_addr[0]
 
-                # Create output ring buffer for MMA→Epilogue synchronization
+                # Create output pipeline for MMA→Epilogue synchronization
                 var output_pipeline = Self.OutputPipeline(
-                    accum_mbars_ptr, tmem_addr, ctx.mma_complete_mask
+                    smem.accum_barriers.unsafe_ptr(),
+                    tmem_addr,
+                    ctx.mma_complete_mask,
                 )
 
                 while work_iter.has_work():
@@ -1114,7 +1089,7 @@ struct BlackwellMatmulSM100Kernel[
                 tcgen05_release_allocation_lock[Self.config.cta_group]()
 
                 # wait for epilogue to finish
-                tmem_dealloc_mbar[].wait()
+                smem.tmem_dealloc.unsafe_ptr()[].wait()
 
                 tcgen05_dealloc[Self.config.cta_group](tmem_addr, max_tmem_cols)
 
@@ -1122,9 +1097,11 @@ struct BlackwellMatmulSM100Kernel[
             named_barrier[Self.MMA_THREADS + Self.EPILOGUE_THREADS](1)
             var tmem_addr = ctx.ptr_tmem_addr[0]
 
-            # Create output ring buffer for MMA→Epilogue synchronization
+            # Create output pipeline for MMA→Epilogue synchronization
             var output_pipeline = Self.OutputPipeline(
-                accum_mbars_ptr, tmem_addr, ctx.mma_complete_mask
+                smem.accum_barriers.unsafe_ptr(),
+                tmem_addr,
+                ctx.mma_complete_mask,
             )
 
             var tile_idx = 0
@@ -1156,7 +1133,7 @@ struct BlackwellMatmulSM100Kernel[
                                 register_based_epilogue = Self.register_based_epilogue,
                                 transpose_c = Self.config.AB_swapped,
                             ](
-                                c_smem_tiles,
+                                smem.c_tiles(),
                                 c_tma_op,
                                 stage,  # Self-contained OutputStage
                                 work_tile_coord=(current.m, current.n),
@@ -1169,10 +1146,10 @@ struct BlackwellMatmulSM100Kernel[
 
             @parameter
             if Self.config.cta_group == 2:
-                _ = tmem_dealloc_mbar[].arrive_cluster(
+                _ = smem.tmem_dealloc.unsafe_ptr()[].arrive_cluster(
                     block_rank_in_cluster() ^ 1
                 )
-            _ = tmem_dealloc_mbar[].arrive()
+            _ = smem.tmem_dealloc.unsafe_ptr()[].arrive()
 
     @staticmethod
     @always_inline
@@ -1211,49 +1188,22 @@ struct BlackwellMatmulSM100Kernel[
         """
         Self.validate_constraints()
 
-        # Access shared memory via bitcast (preserves original layout)
-        ref smem_storage = external_memory[
+        # Access shared memory via bitcast
+        ref smem = external_memory[
             Scalar[DType.uint8],
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
-        # Get storage references from shared memory struct
-        ref a_smem_storage = smem_storage.a_smem
-        ref b_smem_storage = smem_storage.b_smem
-        ref c_smem_storage = smem_storage.c_smem
-        ref tma_mma_mbars_storage = smem_storage.tma_mma_mbars
-        ref clc_response_storage = smem_storage.clc_response
-        ref clc_mbars_full_storage = smem_storage.clc_mbars_full
-        ref clc_mbars_empty_storage = smem_storage.clc_mbars_empty
-        ref clc_throttle_storage = smem_storage.clc_throttle_mbars
-        ref accum_mbars_storage = smem_storage.accum_mbars
-        ref tmem_addr_storage = smem_storage.tmem_addr
-        ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
-
-        # Create typed tile arrays using centralized type aliases from SmemType
-        var a_smem = Self.SmemType.ATileArray(a_smem_storage.unsafe_ptr())
-        var b_smem = Self.SmemType.BTileArray(b_smem_storage.unsafe_ptr())
-        var c_smem_tiles = Self.SmemType.CTileArray(c_smem_storage.unsafe_ptr())
-
-        # Create ring buffer for TMA-MMA synchronization (Load→MMA pipeline)
-        var tma_mma_mbars_ptr = tma_mma_mbars_storage.unsafe_ptr()
+        # Create input pipeline for TMA→MMA synchronization
         var input_pipeline = Self.InputTilePipeline(
-            tma_mma_mbars_ptr, a_smem, b_smem
+            smem.input_barriers.unsafe_ptr(), smem.a_tiles(), smem.b_tiles()
         )
-
-        # Set up pointers for CLC and TMEM management
-        var clc_response = clc_response_storage.unsafe_ptr()
-        var clc_full_mbar = clc_mbars_full_storage.unsafe_ptr()
-        var clc_empty_mbar = clc_mbars_empty_storage.unsafe_ptr()
-        var clc_throttle_ptr = clc_throttle_storage.unsafe_ptr()
-        var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
-        var accum_mbars_ptr = accum_mbars_storage.unsafe_ptr()
 
         comptime max_tmem_cols = 512
 
         # Create kernel context with election vars, CTA coords, and masks
-        var ctx = Self.Context(tmem_addr_storage.unsafe_ptr())
+        var ctx = Self.Context(smem.tmem_addr.unsafe_ptr())
 
         # Initialize all barriers (only elect_one_warp && elect_one_thread)
         Self.init_barriers(
@@ -1261,12 +1211,12 @@ struct BlackwellMatmulSM100Kernel[
             a_tma_op,
             b_tma_op,
             c_tma_op,
-            tma_mma_mbars_ptr,
-            accum_mbars_ptr,
-            clc_throttle_ptr,
-            clc_full_mbar,
-            clc_empty_mbar,
-            tmem_dealloc_mbar,
+            smem.input_barriers.unsafe_ptr(),
+            smem.accum_barriers.unsafe_ptr(),
+            smem.clc_throttle.unsafe_ptr(),
+            smem.clc_full.unsafe_ptr(),
+            smem.clc_empty.unsafe_ptr(),
+            smem.tmem_dealloc.unsafe_ptr(),
         )
 
         var mma_op = MmaOpSM100_SS[
@@ -1298,10 +1248,10 @@ struct BlackwellMatmulSM100Kernel[
         ](
             cluster_dim,
             mnk,
-            clc_response,
-            clc_full_mbar,
-            clc_empty_mbar,
-            clc_throttle_ptr,
+            smem.clc_response.unsafe_ptr(),
+            smem.clc_full.unsafe_ptr(),
+            smem.clc_empty.unsafe_ptr(),
+            smem.clc_throttle.unsafe_ptr(),
             lock_ptr,
         )
 
@@ -1384,9 +1334,11 @@ struct BlackwellMatmulSM100Kernel[
 
                 var tmem_addr = ctx.ptr_tmem_addr[0]
 
-                # Create output ring buffer for MMA→Epilogue synchronization
+                # Create output pipeline for MMA→Epilogue synchronization
                 var output_pipeline = Self.OutputPipeline(
-                    accum_mbars_ptr, tmem_addr, ctx.mma_complete_mask
+                    smem.accum_barriers.unsafe_ptr(),
+                    tmem_addr,
+                    ctx.mma_complete_mask,
                 )
 
                 while work_iter.has_work():
@@ -1415,7 +1367,7 @@ struct BlackwellMatmulSM100Kernel[
                 tcgen05_release_allocation_lock[Self.config.cta_group]()
 
                 # wait for epilogue to finish
-                tmem_dealloc_mbar[].wait()
+                smem.tmem_dealloc.unsafe_ptr()[].wait()
 
                 tcgen05_dealloc[Self.config.cta_group](tmem_addr, max_tmem_cols)
 
@@ -1423,9 +1375,11 @@ struct BlackwellMatmulSM100Kernel[
             named_barrier[Self.MMA_THREADS + Self.EPILOGUE_THREADS](1)
             var tmem_addr = ctx.ptr_tmem_addr[0]
 
-            # Create output ring buffer for MMA→Epilogue synchronization
+            # Create output pipeline for MMA→Epilogue synchronization
             var output_pipeline = Self.OutputPipeline(
-                accum_mbars_ptr, tmem_addr, ctx.mma_complete_mask
+                smem.accum_barriers.unsafe_ptr(),
+                tmem_addr,
+                ctx.mma_complete_mask,
             )
 
             var tile_idx = 0
@@ -1453,7 +1407,7 @@ struct BlackwellMatmulSM100Kernel[
                             ](
                                 scheduler,
                                 reduction_tensor,
-                                c_smem_tiles,
+                                smem.c_tiles(),
                                 c_tma_op,
                                 stage,  # Self-contained OutputStage
                                 work_info=current,
@@ -1466,10 +1420,10 @@ struct BlackwellMatmulSM100Kernel[
 
             @parameter
             if Self.config.cta_group == 2:
-                _ = tmem_dealloc_mbar[].arrive_cluster(
+                _ = smem.tmem_dealloc.unsafe_ptr()[].arrive_cluster(
                     block_rank_in_cluster() ^ 1
                 )
-            _ = tmem_dealloc_mbar[].arrive()
+            _ = smem.tmem_dealloc.unsafe_ptr()[].arrive()
 
 
 # ============================================================================
