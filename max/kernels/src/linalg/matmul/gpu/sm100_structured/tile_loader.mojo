@@ -24,13 +24,13 @@ Usage:
     var loader = TileLoaderTMA[...](a_tma_op, b_tma_op, masks, peer_coord)
     loader.set_work_tile(m_coord, n_coord)
 
-    with producer.get_tiles() as tiles:
+    with producer.acquire() as tiles:
         loader.load_tiles(tiles, k_iter, elect_one_cta)
 """
 
 from gpu.cluster import elect_one_sync
 from layout.tma_async import TMATensorTile
-from .ring_buffer import ProducerTiles, MbarPtr
+from .tile_pipeline import ProducerStage
 
 
 # Partial Type Binding Pattern for Origin Inference
@@ -192,7 +192,7 @@ struct TileLoaderTMA[
         //,
     ](
         self,
-        tiles: ProducerTiles[
+        tiles: ProducerStage[
             tiles_origin,
             Self.a_type,
             Self.b_type,
@@ -208,15 +208,15 @@ struct TileLoaderTMA[
         """Load k_group_size A and B tiles using TMA.
 
         Args:
-            tiles: ProducerTiles context with stage, barrier, and tile arrays.
+            tiles: ProducerStage context with encapsulated tile access.
             iter_idx: K iteration index (base index, not multiplied).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        # Compute gmem slice coordinates accounting for peer CTA
-        var a_gmem_slice_coord = self.peer_m_rank * UInt(
+        # Global memory coordinates for A (M dimension) and B (N dimension)
+        var a_gmem_m_coord = self.peer_m_rank * UInt(
             Self.a_tma_rows
         ) + self.work_m_coord * UInt(Self.BM)
-        var b_gmem_slice_coord = (
+        var b_gmem_n_coord = (
             self.peer_rank_m * UInt(Self.b_tma_rows)
             + self.peer_rank_n * UInt(Self.BN)
             + self.work_n_coord * UInt(Self.MMA_N)
@@ -225,44 +225,33 @@ struct TileLoaderTMA[
         if elect_one_sync():
             # Set expected bytes ONCE for all k_group tiles
             if elect_one_cta:
-                tiles.barrier[0].expect_bytes(Self.expected_bytes)
+                tiles.expect_bytes(Self.expected_bytes)
 
-            # Load k_group_size tiles
+            # Get barrier for TMA multicast loads
+            var barrier = tiles.barrier()
+
             for j in range(Self.k_group_size):
-                var a_smem_tile = tiles.a_tiles[
-                    tiles.stage * Self.k_group_size + j
-                ]
-                var b_smem_tile = tiles.b_tiles[
-                    tiles.stage * Self.k_group_size + j
-                ]
+                var a_tile, b_tile = tiles.get_tile(j)
 
-                # Compute slice offset for peer CTA
-                var a_smem_slice = type_of(a_smem_tile)(
-                    a_smem_tile.ptr
-                    + self.peer_m_rank * UInt(Self.a_tma_load_size)
+                # Peer CTA slice offset within the tile
+                var a_peer_slice = type_of(a_tile)(
+                    a_tile.ptr + self.peer_m_rank * UInt(Self.a_tma_load_size)
                 )
-                var b_smem_slice = type_of(b_smem_tile)(
-                    b_smem_tile.ptr
-                    + self.peer_rank_m * UInt(Self.b_tma_load_size)
+                var b_peer_slice = type_of(b_tile)(
+                    b_tile.ptr + self.peer_rank_m * UInt(Self.b_tma_load_size)
                 )
 
-                # TMA multicast load
+                var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
+
                 self.a_tma_op[].async_multicast_load[Self.cta_group](
-                    a_smem_slice,
-                    tiles.barrier[0],
-                    (
-                        UInt(iter_idx + j) * UInt(Self.BK),
-                        UInt(a_gmem_slice_coord),
-                    ),
+                    a_peer_slice,
+                    barrier[0],
+                    (k_coord, UInt(a_gmem_m_coord)),
                     self.a_multicast_mask,
                 )
-
                 self.b_tma_op[].async_multicast_load[Self.cta_group](
-                    b_smem_slice,
-                    tiles.barrier[0],
-                    (
-                        UInt(iter_idx + j) * UInt(Self.BK),
-                        UInt(b_gmem_slice_coord),
-                    ),
+                    b_peer_slice,
+                    barrier[0],
+                    (k_coord, UInt(b_gmem_n_coord)),
                     self.b_multicast_mask,
                 )

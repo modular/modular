@@ -19,7 +19,6 @@ from sys import _RegisterPackType, size_of
 from sys._assembly import inlined_assembly
 
 from gpu.cluster import (
-    block_rank_in_cluster,
     clusterlaunchcontrol_query_cancel_get_first_ctaid_v4,
     clusterlaunchcontrol_query_cancel_is_canceled,
     clusterlaunchcontrol_try_cancel,

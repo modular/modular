@@ -36,7 +36,7 @@ from math import ceildiv
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
-from sys import align_of, simd_width_of, size_of
+from sys import align_of, size_of
 
 from gpu import WARP_SIZE, barrier, warp_id
 from gpu.cluster import (
@@ -74,7 +74,7 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from layout.tma_async import PipelineState, SharedMemBarrier, TMATensorTile
+from layout.tma_async import SharedMemBarrier, TMATensorTile
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -84,11 +84,11 @@ from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ..sm100.config import MatmulConfig
 from .pipeline import ProducerConsumerPipeline
-from .ring_buffer import (
-    RingBuffer,
-    ProducerTiles,
-    ConsumerTiles,
-    OutputRingBuffer,
+from .tile_pipeline import (
+    TilePipeline,
+    ProducerStage,
+    ConsumerStage,
+    OutputTilePipeline,
     OutputStage,
 )
 from .tile_loader import TileLoaderTMA
@@ -103,16 +103,12 @@ from .tile_writer import (
 )
 from ....structuring import (
     NVIDIASharedMemoryManager as SharedMemoryManager,
-    PipelineBarrier,
     SMemPtr,
     SMemTileType,
     SMemTileIter,
     SMemTileArrayType,
 )
-from ..profiler import (
-    MatmulProfileWarp,
-    MatmulWarpSpecializationWorkSpaceManager,
-)
+from ..profiler import MatmulProfileWarp
 
 # Import output pipeline functions from matmul_output module
 from .matmul_output import (
@@ -642,9 +638,9 @@ struct BlackwellMatmulSM100Kernel[
         rasterize_order = Self.config.raster_order,
     ]
 
-    # ========== Ring Buffer Type ==========
+    # ========== Tile Pipeline Type ==========
 
-    comptime RingBuffer = RingBuffer[
+    comptime InputTilePipeline = TilePipeline[
         Self.a_type,
         Self.b_type,
         Self.SmemType.a_smem_layout,
@@ -682,10 +678,10 @@ struct BlackwellMatmulSM100Kernel[
         False,  # transpose_c (default)
     ]
 
-    # ========== Output Ring Buffer Type ==========
+    # ========== Output Tile Pipeline Type ==========
     # Manages MMA→Epilogue pipeline for TMEM accumulator stages
 
-    comptime OutputRB = OutputRingBuffer[
+    comptime OutputPipeline = OutputTilePipeline[
         Int(Self.config.num_accum_pipeline_stages),
         Self.stage_stride_cols,
         Self.cta_group,
@@ -757,14 +753,14 @@ struct BlackwellMatmulSM100Kernel[
             c_tma_op.prefetch_descriptor()
 
             # Initialize pipeline barriers
-            Self.RingBuffer.init_barriers(
+            Self.InputTilePipeline.init_barriers(
                 tma_mma_mbars_ptr,
                 Int32(1),
                 Self.config.cluster_shape[0] // Self.config.cta_group
                 + Self.config.cluster_shape[1]
                 - 1,
             )
-            Self.OutputRB.init_barriers(
+            Self.OutputPipeline.init_barriers(
                 accum_mbars_ptr,
                 Self.accum_pipeline_producer_arv_count,
                 Self.accum_pipeline_consumer_arv_count,
@@ -797,7 +793,7 @@ struct BlackwellMatmulSM100Kernel[
     ](
         a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
         b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        tiles: ProducerTiles[
+        tiles: ProducerStage[
             tiles_origin,
             Self.a_type,
             Self.b_type,
@@ -814,7 +810,7 @@ struct BlackwellMatmulSM100Kernel[
         iter_idx: UInt32,
         elect_one_cta: Bool,
     ):
-        """Load A/B tiles via TMA multicast within producer tiles context."""
+        """Load A/B tiles via TMA multicast within producer stage context."""
         comptime a_expected_bytes = (
             Self.SmemType.a_smem_layout.size() * size_of[Self.a_type]()
         )
@@ -831,10 +827,11 @@ struct BlackwellMatmulSM100Kernel[
         comptime a_tma_rows = Self.a_desc_layout.shape[0].value()
         comptime b_tma_rows = Self.b_desc_layout.shape[0].value()
 
-        var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+        # Global memory row coordinates for TMA loads
+        var a_gmem_m_coord = peer_cta_coord[2] * UInt(
             a_tma_rows
         ) + work_tile_coord[0] * UInt(Self.BM)
-        var b_gmem_slice_coord = (
+        var b_gmem_n_coord = (
             peer_cta_coord[1] * UInt(b_tma_rows)
             + peer_cta_coord[0] * UInt(Self.BN)
             + work_tile_coord[1] * UInt(Self.config.mma_shape[1])
@@ -842,40 +839,32 @@ struct BlackwellMatmulSM100Kernel[
 
         if elect_one_sync():
             if elect_one_cta:
-                tiles.barrier[0].expect_bytes(expected_bytes)
+                tiles.expect_bytes(expected_bytes)
 
-            for j in range(Self.config.k_group_size):
-                var a_smem_tile = tiles.a_tiles[
-                    tiles.stage * Self.config.k_group_size + j
-                ]
-                var b_smem_tile = tiles.b_tiles[
-                    tiles.stage * Self.config.k_group_size + j
-                ]
+            var barrier = tiles.barrier()
 
-                var a_smem_slice = type_of(a_smem_tile)(
-                    a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
+            for j in range(Int(Self.config.k_group_size)):
+                var a_tile, b_tile = tiles.get_tile(j)
+
+                # Offset to peer CTA's portion within the tile
+                var a_peer_slice = type_of(a_tile)(
+                    a_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
                 )
-                var b_smem_slice = type_of(b_smem_tile)(
-                    b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
+                var b_peer_slice = type_of(b_tile)(
+                    b_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
                 )
 
                 a_tma_op.async_multicast_load[Self.config.cta_group](
-                    a_smem_slice,
-                    tiles.barrier[0],
-                    (
-                        UInt(iter_idx + j) * UInt(Self.BK),
-                        UInt(a_gmem_slice_coord),
-                    ),
+                    a_peer_slice,
+                    barrier[0],
+                    (UInt(iter_idx + j) * UInt(Self.BK), UInt(a_gmem_m_coord)),
                     a_multicast_mask,
                 )
 
                 b_tma_op.async_multicast_load[Self.config.cta_group](
-                    b_smem_slice,
-                    tiles.barrier[0],
-                    (
-                        UInt(iter_idx + j) * UInt(Self.BK),
-                        UInt(b_gmem_slice_coord),
-                    ),
+                    b_peer_slice,
+                    barrier[0],
+                    (UInt(iter_idx + j) * UInt(Self.BK), UInt(b_gmem_n_coord)),
                     b_multicast_mask,
                 )
 
@@ -883,7 +872,7 @@ struct BlackwellMatmulSM100Kernel[
     @always_inline
     fn mma(
         tmem_addr: UInt32,
-        tiles: ConsumerTiles,
+        tiles: ConsumerStage,
         mma_op: MmaOpSM100_SS,
         elect_one_warp: Bool,
         iter_idx: UInt32,
@@ -892,38 +881,25 @@ struct BlackwellMatmulSM100Kernel[
         """Execute MMA operations for one pipeline stage.
 
         This is the core MMA function designed to be called within a consumer
-        tiles context:
+        stage context:
 
-            with consumer.get_tiles() as tiles:
+            with consumer.acquire() as tiles:
                 Self.mma(tmem_addr, tiles, mma_op, ...)
 
         Args:
             tmem_addr: Tensor memory address for accumulators.
-            tiles: ConsumerTiles context with stage, mbar, and tile arrays.
+            tiles: ConsumerStage context with encapsulated tile access.
             mma_op: The MMA operation instance.
             elect_one_warp: Whether this warp should execute.
             iter_idx: K iteration index.
             k_start: Starting K iteration (for init_c determination).
         """
-        # Compose TMEM address: accum stage encoded in column field with stride
-        # in columns.
         if elect_one_sync():
-            for j in range(Self.config.k_group_size):
-                var a_smem_tile = tiles.a_tiles[
-                    tiles.stage * Self.config.k_group_size + j
-                ]
-                var b_smem_tile = tiles.b_tiles[
-                    tiles.stage * Self.config.k_group_size + j
-                ]
-                mma_op.mma(
-                    a_smem_tile,
-                    b_smem_tile,
-                    tmem_addr,
-                    init_c=(
-                        (iter_idx + j) == k_start
-                    ),  # Initialize C on first iteration
-                )
-            mma_op.commit(tiles.mbar)
+            for j in range(Int(Self.config.k_group_size)):
+                var a_tile, b_tile = tiles.get_tile(j)
+                var is_first_k = (iter_idx + j) == k_start
+                mma_op.mma(a_tile, b_tile, tmem_addr, init_c=is_first_k)
+            mma_op.commit(tiles.mbar())
 
     # ========== Kernel Entry Points ==========
     # Note: These delegate to the existing kernel functions for now.
@@ -973,7 +949,7 @@ struct BlackwellMatmulSM100Kernel[
 
         # Create ring buffer for TMA-MMA synchronization (Load→MMA pipeline)
         var tma_mma_mbars_ptr = tma_mma_mbars_storage.unsafe_ptr()
-        var load_mma_ring_buffer = Self.RingBuffer(
+        var input_pipeline = Self.InputTilePipeline(
             tma_mma_mbars_ptr, a_smem, b_smem
         )
 
@@ -1053,11 +1029,11 @@ struct BlackwellMatmulSM100Kernel[
 
                         # DO TMA LOAD for full K range: [0, num_iters)
                         # Pattern: for i in range(k_start, k_end, k_group_size)
-                        with load_mma_ring_buffer.producer() as producer:
+                        with input_pipeline.producer() as producer:
                             for i in range(
                                 0, num_iters, Self.config.k_group_size
                             ):
-                                with producer.get_tiles() as tiles:
+                                with producer.acquire() as tiles:
                                     tile_loader.load_tiles(
                                         tiles, i, ctx.elect_one_cta
                                     )
@@ -1066,7 +1042,7 @@ struct BlackwellMatmulSM100Kernel[
                         syncwarp()
 
                 # Prevent CTA from exiting while peer CTA is still working on MMA
-                with load_mma_ring_buffer.producer() as producer:
+                with input_pipeline.producer() as producer:
                     producer.drain()
 
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
@@ -1107,7 +1083,7 @@ struct BlackwellMatmulSM100Kernel[
                 var tmem_addr = ctx.ptr_tmem_addr[0]
 
                 # Create output ring buffer for MMA→Epilogue synchronization
-                var output_rb = Self.OutputRB(
+                var output_pipeline = Self.OutputPipeline(
                     accum_mbars_ptr, tmem_addr, ctx.mma_complete_mask
                 )
 
@@ -1116,12 +1092,12 @@ struct BlackwellMatmulSM100Kernel[
                     with work_iter.next_prefetch():
                         # DO MMA for full K range: [0, num_iters), init at k=0
                         if ctx.elect_one_cta:
-                            with output_rb.producer() as stage:
-                                with load_mma_ring_buffer.consumer() as consumer:
+                            with output_pipeline.producer() as stage:
+                                with input_pipeline.consumer() as consumer:
                                     for i in range(
                                         0, num_iters, Self.config.k_group_size
                                     ):
-                                        with consumer.get_tiles() as tiles:
+                                        with consumer.acquire() as tiles:
                                             Self.mma(
                                                 stage.tmem_offset,
                                                 tiles,
@@ -1147,7 +1123,7 @@ struct BlackwellMatmulSM100Kernel[
             var tmem_addr = ctx.ptr_tmem_addr[0]
 
             # Create output ring buffer for MMA→Epilogue synchronization
-            var output_rb = Self.OutputRB(
+            var output_pipeline = Self.OutputPipeline(
                 accum_mbars_ptr, tmem_addr, ctx.mma_complete_mask
             )
 
@@ -1157,7 +1133,7 @@ struct BlackwellMatmulSM100Kernel[
                 with work_iter.next() as current:
                     with MatmulProfilerType[3](workspace, tile_idx):
                         # WAIT FOR MMA TO FINISH AND STORE RESULT
-                        with output_rb.consumer() as stage:
+                        with output_pipeline.consumer() as stage:
                             multi_stage_store_C[
                                 Self.c_type,
                                 Self.SmemType.c_smem_layout,
@@ -1262,7 +1238,7 @@ struct BlackwellMatmulSM100Kernel[
 
         # Create ring buffer for TMA-MMA synchronization (Load→MMA pipeline)
         var tma_mma_mbars_ptr = tma_mma_mbars_storage.unsafe_ptr()
-        var load_mma_ring_buffer = Self.RingBuffer(
+        var input_pipeline = Self.InputTilePipeline(
             tma_mma_mbars_ptr, a_smem, b_smem
         )
 
@@ -1360,11 +1336,11 @@ struct BlackwellMatmulSM100Kernel[
                         # DO TMA LOAD for K slice: [k_start, k_start + num_k_tiles)
                         var k_start = current.k_start
                         var k_end = k_start + current.num_k_tiles
-                        with load_mma_ring_buffer.producer() as producer:
+                        with input_pipeline.producer() as producer:
                             for i in range(
                                 k_start, k_end, Self.config.k_group_size
                             ):
-                                with producer.get_tiles() as tiles:
+                                with producer.acquire() as tiles:
                                     tile_loader.load_tiles(
                                         tiles, i, ctx.elect_one_cta
                                     )
@@ -1373,7 +1349,7 @@ struct BlackwellMatmulSM100Kernel[
                         syncwarp()
 
                 # Prevent CTA from exiting while peer CTA is still working on MMA
-                with load_mma_ring_buffer.producer() as producer:
+                with input_pipeline.producer() as producer:
                     producer.drain()
 
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
@@ -1409,7 +1385,7 @@ struct BlackwellMatmulSM100Kernel[
                 var tmem_addr = ctx.ptr_tmem_addr[0]
 
                 # Create output ring buffer for MMA→Epilogue synchronization
-                var output_rb = Self.OutputRB(
+                var output_pipeline = Self.OutputPipeline(
                     accum_mbars_ptr, tmem_addr, ctx.mma_complete_mask
                 )
 
@@ -1419,14 +1395,14 @@ struct BlackwellMatmulSM100Kernel[
                         # DO MMA for K slice: [k_start, k_start + num_k_tiles)
                         # Init accumulator at k_start (first K of this split)
                         if ctx.elect_one_cta:
-                            with output_rb.producer() as stage:
+                            with output_pipeline.producer() as stage:
                                 var k_start = current.k_start
                                 var k_end = k_start + current.num_k_tiles
-                                with load_mma_ring_buffer.consumer() as consumer:
+                                with input_pipeline.consumer() as consumer:
                                     for i in range(
                                         k_start, k_end, Self.config.k_group_size
                                     ):
-                                        with consumer.get_tiles() as tiles:
+                                        with consumer.acquire() as tiles:
                                             Self.mma(
                                                 stage.tmem_offset,
                                                 tiles,
@@ -1448,7 +1424,7 @@ struct BlackwellMatmulSM100Kernel[
             var tmem_addr = ctx.ptr_tmem_addr[0]
 
             # Create output ring buffer for MMA→Epilogue synchronization
-            var output_rb = Self.OutputRB(
+            var output_pipeline = Self.OutputPipeline(
                 accum_mbars_ptr, tmem_addr, ctx.mma_complete_mask
             )
 
@@ -1458,7 +1434,7 @@ struct BlackwellMatmulSM100Kernel[
                 with work_iter.next() as current:
                     with MatmulProfilerType[3](workspace, tile_idx):
                         # WAIT FOR MMA TO FINISH AND STORE RESULT
-                        with output_rb.consumer() as stage:
+                        with output_pipeline.consumer() as stage:
                             multi_stage_store_C_split_k[
                                 input_type = Self.a_type,
                                 accum_type = Self.config.accum_type,

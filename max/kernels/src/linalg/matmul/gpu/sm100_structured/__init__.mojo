@@ -17,7 +17,7 @@ module, but with improved code organization:
 
 Key abstractions:
 - WorkIterator/SchedulerWorkIterator: Encapsulate work iteration and pipeline state
-- RingBuffer/OutputRingBuffer: Encapsulate producer-consumer synchronization
+- TilePipeline/OutputTilePipeline: Encapsulate producer-consumer synchronization
 - TileLoaderTMA: Encapsulate TMA tile loading logic
 - Context managers for cleaner acquire/release patterns
 

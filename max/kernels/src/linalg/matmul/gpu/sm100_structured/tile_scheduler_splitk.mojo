@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from gpu.memory import AddressSpace
-from layout.layout_tensor import LayoutTensorIter
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from ..tile_scheduler import RasterOrder

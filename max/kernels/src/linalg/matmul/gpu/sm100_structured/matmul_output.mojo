@@ -40,7 +40,7 @@ from utils.index import IndexList
 
 from ....utils import elementwise_compute_lambda_type
 from .pipeline import ProducerConsumerPipeline
-from .ring_buffer import OutputStage as OutputStageType
+from .tile_pipeline import OutputStage as OutputStageType
 from .tile_scheduler_splitk import (
     TileScheduler as TileSchedulerSplitK,
     WorkInfo as WorkInfoSplitK,
@@ -59,26 +59,12 @@ from .tile_writer import (
 from ....structuring import SMemTileArrayType
 
 
-# =============================================================================
-# accum_arrive - Signal accumulator arrival
-# =============================================================================
-
-
 @always_inline
 fn accum_arrive[
     cta_group: Int, num_stages: Int
 ](stage: OutputStageType[num_stages]):
-    """Signal accumulator arrival. Delegates to AccumBarrier.
-
-    Args:
-        stage: OutputStage containing pipeline and stage index.
-    """
+    """Signal accumulator arrival to unblock MMA pipeline."""
     AccumBarrier[cta_group].arrive(stage.pipeline, stage.stage)
-
-
-# =============================================================================
-# copy_accum_to_gmem - TMEM→SMEM→GMEM epilogue pipeline
-# =============================================================================
 
 
 @always_inline
@@ -322,11 +308,6 @@ fn copy_accum_to_gmem[
             named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
 
-# =============================================================================
-# multi_stage_store_C - Output pipeline orchestration
-# =============================================================================
-
-
 @always_inline
 fn multi_stage_store_C[
     c_type: DType,
@@ -428,11 +409,6 @@ fn multi_stage_store_C[
         work_tile_coord,
         (M, N),
     )
-
-
-# =============================================================================
-# multi_stage_store_C_split_k - Split-K output pipeline
-# =============================================================================
 
 
 @always_inline
