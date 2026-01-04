@@ -1,0 +1,41 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %parse-mojo-isolated %s -verify-diagnostics -o /dev/null
+
+
+# We should be able to infer something with a concrete origin even if it
+# requires an upcast.
+fn takeA[origin: Origin, T: AnyType](ref [origin]a: String, b: T):
+    pass
+
+
+fn infer_ref_argument():
+    var s: String
+    var t: String
+    takeA(s, t)  # Ok.
+    takeA[MutAnyOrigin](s, t)  # Ok.
+
+
+@fieldwise_init
+struct TwoIntParamStruct[a: Int, b: Int]:
+    pass
+
+
+# expected-note @below {{function declared here}}
+fn take_two_int_dep[x: Int](a: TwoIntParamStruct[x, x + 1]):
+    pass
+
+
+fn infer_two_param_dep_struct[y: Int]():
+    take_two_int_dep(TwoIntParamStruct[1, 2]())
+    # expected-error @+1 {{argument #0 cannot be converted from 'TwoIntParamStruct[2, 2]' to 'TwoIntParamStruct[2, 3]'}}
+    take_two_int_dep(TwoIntParamStruct[2, 2]())
+    take_two_int_dep(TwoIntParamStruct[b=2, a=1]())
+
+    take_two_int_dep(TwoIntParamStruct[y, y + 1]())
+    # expected-error @+1 {{argument #0 cannot be converted from 'TwoIntParamStruct[y, (y + 2)]' to 'TwoIntParamStruct[y, (y + 1)]'}}
+    take_two_int_dep(TwoIntParamStruct[y, y + 2]())
