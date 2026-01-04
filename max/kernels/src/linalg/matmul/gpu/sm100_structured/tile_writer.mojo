@@ -37,7 +37,7 @@ from gpu import WARP_SIZE, lane_id
 from gpu import warp_id as get_warp_id
 from gpu.memory import fence_async_view_proxy
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.sync import named_barrier
+from .barriers import WarpGroupBarrier
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE, RuntimeTuple
 from layout.int_tuple import IntTuple
 from layout.layout import blocked_product, zipped_divide, upcast
@@ -1791,6 +1791,7 @@ struct SMemEpilogueWriter[
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
     comptime data_paths = 16
     comptime barrier_threads = Self.num_output_warps * WARP_SIZE
+    comptime OutputSyncBarrier = WarpGroupBarrier[Self.barrier_threads]
     comptime Tile = AccumTile[Self.epilogue_dtype, Self.rep_frag_size]
     comptime CTileArray = SMemTileArrayType[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
@@ -1892,7 +1893,7 @@ struct SMemEpilogueWriter[
                 lower_frag, c_smem_warp_tile_lower, warp_offset
             )
 
-            named_barrier[Self.barrier_threads]()
+            Self.OutputSyncBarrier.sync()
 
             shared_memory_epilogue_transpose[
                 UInt(Self.stage),
@@ -1938,7 +1939,7 @@ struct SMemEpilogueWriter[
                 Self.swizzle, Int(Self.stageN), Self.transpose_c
             ](upper_frag, c_smem_warp_tile_upper, warp_offset)
 
-            named_barrier[Self.barrier_threads]()
+            Self.OutputSyncBarrier.sync()
 
             shared_memory_epilogue_transpose[
                 UInt(Self.stage),
@@ -1994,7 +1995,7 @@ struct SMemEpilogueWriter[
                 lower_frag, c_smem_warp_tile_lower
             )
 
-        named_barrier[Self.barrier_threads]()
+        Self.OutputSyncBarrier.sync()
 
         shared_memory_epilogue[
             UInt(Self.MMA_M),
@@ -2237,7 +2238,7 @@ fn shared_memory_epilogue_transpose[
                         )
                         ptr.store[width=simd_size, alignment=alignment](reg_val)
 
-    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+    WarpGroupBarrier[Int(num_output_warps) * WARP_SIZE].sync()
 
 
 @always_inline
@@ -2447,4 +2448,4 @@ fn shared_memory_epilogue[
         shared_memory_row_upper_half += UInt(distribute_rows)
         shared_memory_row_lower_half += UInt(distribute_rows)
 
-    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+    WarpGroupBarrier[Int(num_output_warps) * WARP_SIZE].sync()

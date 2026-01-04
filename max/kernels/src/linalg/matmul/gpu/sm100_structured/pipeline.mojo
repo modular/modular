@@ -16,7 +16,7 @@ from sys import size_of
 
 from layout.tma_async import SharedMemBarrier
 
-from ....structuring import SMemPtr
+from linalg.structuring import SMemPtr
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 

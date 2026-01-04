@@ -31,7 +31,7 @@ from gpu.tcgen05 import (
     tcgen05_store_wait,
 )
 
-from ....structuring import SMemArrayType, SMemPtr
+from linalg.structuring import SMemArrayType, SMemPtr
 
 
 @register_passable("trivial")
@@ -238,10 +238,9 @@ struct TmemStage[
     Used by OutputTilePipeline to manage MMA→Epilogue synchronization.
     MMA writes to one stage while epilogue reads from another.
 
-    Address accessors follow the same pattern as TmemAddress:
-      - offset(): Column address for this stage (used by MMA)
-      - upper_addr(): Address for rows 0-15
-      - lower_addr(): Address for rows 16-31
+    Wraps TmemAddress with stage-specific offset calculation:
+      - offset(): Column address for this stage (base + index * stride)
+      - address(): TmemAddress for this stage (for load/store ops)
 
     Parameters:
         num_stages: Pipeline stages (typically 2-4).
@@ -257,20 +256,12 @@ struct TmemStage[
         self.index = index
 
     fn offset(self) -> UInt32:
-        """TMEM column address for this stage.
-
-        Computes base_addr + index * stage_stride. This is the address
-        used by MMA operations to write accumulators.
-        """
+        """TMEM column address for this stage."""
         return self.base_addr + self.index * UInt32(Self.stage_stride)
 
-    fn upper_addr(self) -> UInt32:
-        """Raw address for upper fragment (rows 0-15)."""
-        return self.offset()
-
-    fn lower_addr(self) -> UInt32:
-        """Raw address for lower fragment (rows 16-31)."""
-        return self.offset() + TMEM_LOWER_ROW_OFFSET
+    fn address(self) -> TmemAddress:
+        """Get TmemAddress for this stage's offset."""
+        return TmemAddress(self.offset())
 
     fn load_upper[
         dtype: DType,
@@ -280,14 +271,9 @@ struct TmemStage[
         repeat: Int = 4,
     ](self) -> SIMD[dtype, frag_size]:
         """Load upper accumulator fragment (rows 0-15)."""
-        return tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=repeat,
-            dtype=dtype,
-            pack=False,
-            width=frag_size,
-        ](self.upper_addr())
+        return self.address().load_upper[
+            dtype, frag_size, data_paths, bits, repeat
+        ]()
 
     fn load_lower[
         dtype: DType,
@@ -297,15 +283,11 @@ struct TmemStage[
         repeat: Int = 4,
     ](self) -> SIMD[dtype, frag_size]:
         """Load lower accumulator fragment (rows 16-31)."""
-        return tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=repeat,
-            dtype=dtype,
-            pack=False,
-            width=frag_size,
-        ](self.lower_addr())
+        return self.address().load_lower[
+            dtype, frag_size, data_paths, bits, repeat
+        ]()
 
-    fn wait_load(self):
+    @staticmethod
+    fn wait_load():
         """Wait for TMEM load operations to complete."""
-        tcgen05_load_wait()
+        TmemAddress.wait_load()

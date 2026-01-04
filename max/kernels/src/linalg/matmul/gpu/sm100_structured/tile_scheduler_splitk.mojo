@@ -13,7 +13,7 @@
 from gpu.memory import AddressSpace
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
-from ..tile_scheduler import RasterOrder
+from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from layout.tma_async import SharedMemBarrier, PipelineState
 from utils.static_tuple import StaticTuple
 from gpu.id import grid_dim, thread_idx, lane_id
@@ -27,7 +27,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from std.bit import prev_power_of_two
 
-from ....structuring import SMemPtr
+from linalg.structuring import SMemPtr
 from .pipeline import ProducerConsumerPipeline
 
 

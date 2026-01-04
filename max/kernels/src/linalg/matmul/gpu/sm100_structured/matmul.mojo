@@ -36,13 +36,16 @@ from layout.tma_async import create_tma_tile
 from utils.index import Index
 from utils.static_tuple import StaticTuple
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from ..sm100.config import MatmulConfig
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
+from linalg.matmul.gpu.sm100.config import MatmulConfig
 from .tile_scheduler_splitk import (
     get_required_locks_buffer_size_bytes,
     get_num_tiles,
 )
-from ..profiler import MatmulWarpSpecializationWorkSpaceManager
+from linalg.matmul.gpu.profiler import MatmulWarpSpecializationWorkSpaceManager
 
 # Import kernel structs and GPU functions from matmul_kernels
 from .matmul_kernels import (

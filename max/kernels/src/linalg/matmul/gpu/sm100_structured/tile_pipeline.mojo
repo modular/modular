@@ -44,7 +44,7 @@ Usage:
 from layout.tma_async import SharedMemBarrier
 from .pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation, TmemStage
-from ....structuring import SMemPtr, SMemTileArrayType, SMemArrayType
+from linalg.structuring import SMemPtr, SMemTileArrayType, SMemArrayType
 
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
