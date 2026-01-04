@@ -334,6 +334,7 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
         Self.type, address_space = AddressSpace.SHARED
     ]
     comptime storage_size = Self.size * size_of[Self.type]()
+    comptime StorageType = InlineArray[Self.type, Self.size]
 
     var ptr: Self.ptr_type
 
@@ -348,6 +349,10 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
             unsafe_ptr: Shared memory pointer.
         """
         self.ptr = unsafe_ptr
+
+    fn __init__(ref [AddressSpace.SHARED]storage: Self.StorageType) -> Self:
+        """Initialize from StorageType."""
+        return Self(rebind[Self.ptr_type](storage.unsafe_ptr()))
 
     @always_inline
     fn __getitem__[T: Intable](self, index: T) -> Self.ptr_type:

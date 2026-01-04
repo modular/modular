@@ -374,13 +374,16 @@ struct TileScheduler[
     comptime ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
     comptime ThrottlePipeline = Self.UnderlyingScheduler.ThrottlePipeline
 
+    # Typed barrier array aliases (delegate to underlying scheduler)
+    comptime ClcResponseArray = Self.UnderlyingScheduler.ClcResponseArray
+    comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
+    comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
+
     var locks_ptr: UnsafePointer[Int32]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32
     var k_tiles_per_split: UInt32
     var throttle_pipeline: Self.ThrottlePipeline
-
-    # ========== Barrier Initialization (called once) ==========
 
     @staticmethod
     fn init_throttle_barriers(
@@ -394,30 +397,29 @@ struct TileScheduler[
             storage_ptr, producer_arv_count, consumer_arv_count
         )
 
-    # ========== Constructor ==========
-
     @always_inline
     fn __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        clc_response_ptr: SMemPtr[UInt128],
-        full_mbar_ptr: SMemPtr[SharedMemBarrier],
-        empty_mbar_ptr: SMemPtr[SharedMemBarrier],
-        throttle_storage_ptr: SMemPtr[SharedMemBarrier],
+        clc_response: Self.ClcResponseArray,
+        clc_full: Self.ClcBarrierArray,
+        clc_empty: Self.ClcBarrierArray,
+        clc_throttle: Self.ThrottleBarrierArray,
         locks_ptr: UnsafePointer[UInt8],
     ):
+        """Initialize from typed barrier arrays."""
         self.scheduler = Self.UnderlyingScheduler(
             cluster_dim,
-            clc_response_ptr,
-            full_mbar_ptr,
-            empty_mbar_ptr,
-            throttle_storage_ptr,
+            clc_response,
+            clc_full,
+            clc_empty,
+            clc_throttle,
         )
         self.total_k_tiles = ceildiv(mnk[2], Self.reduction_tile_shape[2])
         self.k_tiles_per_split = ceildiv(self.total_k_tiles, Self.num_split_k)
         self.locks_ptr = locks_ptr.bitcast[Int32]()
-        self.throttle_pipeline = Self.ThrottlePipeline(throttle_storage_ptr)
+        self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
 
     @always_inline
     fn convert_to_splitk_work_info(self, work_info: B200WorkInfo) -> WorkInfo:
@@ -663,10 +665,7 @@ struct TileScheduler[
         comptime widths_per_stage = Self._get_widths_per_stage[128]()
         comptime widths = widths_per_stage[0]
         comptime num_widths = widths_per_stage[1]
-
-        # comptime stage_rep = width_per_stage // 8
         comptime fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
-        # comptime stage_frag_size = stage_rep * fragment_size
 
         var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
 

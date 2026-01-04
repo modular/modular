@@ -41,13 +41,9 @@ Usage:
         # Automatically signals completion on exit
 """
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
-
 from layout.tma_async import SharedMemBarrier
 from .pipeline import ProducerConsumerPipeline
-from ....structuring import SMemPtr, SMemTileArrayType
+from ....structuring import SMemPtr, SMemTileArrayType, SMemArrayType
 
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
@@ -109,15 +105,19 @@ struct TilePipeline[
         var pipeline = Self.Pipeline(storage_ptr)
         pipeline.init_mbars(producer_arv_count, consumer_arv_count)
 
+    comptime BarrierArray = SMemArrayType[
+        SharedMemBarrier, Self.num_group_stages * 2
+    ]
+
     @always_inline
     fn __init__(
         out self,
-        storage_ptr: MbarPtr,
+        barriers: Self.BarrierArray,
         a_tiles: Self.ATileArray,
         b_tiles: Self.BTileArray,
     ):
-        """Initialize from barrier storage pointer and tile arrays."""
-        self.pipeline = Self.Pipeline(storage_ptr)
+        """Initialize from typed barrier array and tile arrays."""
+        self.pipeline = Self.Pipeline(barriers.ptr)
         self.a_tiles = a_tiles
         self.b_tiles = b_tiles
 
@@ -538,6 +538,7 @@ struct OutputTilePipeline[
     """Pipeline for MMA→Epilogue TMEM stage synchronization."""
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_stages]
+    comptime BarrierArray = SMemArrayType[SharedMemBarrier, Self.num_stages * 2]
 
     var pipeline: Self.Pipeline
     var tmem_base_addr: UInt32
@@ -556,13 +557,13 @@ struct OutputTilePipeline[
     @always_inline
     fn __init__(
         out self,
-        storage_ptr: MbarPtr,
+        barriers: Self.BarrierArray,
         tmem_base_addr: UInt32,
         mma_complete_mask: UInt16,
     ):
-        """Initialize from barrier storage, TMEM base address, and multicast mask.
+        """Initialize from typed barrier array, TMEM base address, and multicast mask.
         """
-        self.pipeline = Self.Pipeline(storage_ptr)
+        self.pipeline = Self.Pipeline(barriers.ptr)
         self.tmem_base_addr = tmem_base_addr
         self.mma_complete_mask = mma_complete_mask
 
