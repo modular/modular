@@ -52,7 +52,7 @@ public:
 
   /// Initialize ParamBindings with a declscope to perform lookups against
   /// and a notion of shared context.
-  ParamBindings(ASTDecl &declScope);
+  ParamBindings(ASTDecl &declScope, const ExprNode *expr);
   ParamBindings(const ParamBindings &) = default;
 
   /// Replace our bindings with another set.
@@ -70,8 +70,11 @@ public:
   /// Utility function to perform substitutions of the bindings into the symbol
   /// for the given function declaration. It returns the resultant
   /// SymbolConstantAttr or produces an error message and returns null.
-  TypedAttr getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
-                                 const ExprNode *expr) const;
+  TypedAttr getBoundConstAttrFor(FnOp funcOp, StringRef baseName) const;
+
+  /// The overall expression this was formed for.
+  const ExprNode *getExpr() const { return parameters.callExpr; }
+  SMLoc getExprLoc() const;
 
   /// Return whether there are any bindings given.
   bool empty() const { return parameters.empty(); }
@@ -165,14 +168,14 @@ public:
   /// match, diagnostics will be emitted using the struct's location and the
   /// given expression location.
   ParameterExprArrayAttr verifyBindings(StructDeclOp structOp,
-                                        TypeSignatureType sig, SMLoc exprLoc,
+                                        TypeSignatureType sig,
                                         bool partial) const;
 
   /// Verify the parameter bindings for the given generator. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
   /// locations.
   ParameterExprArrayAttr
-  verifyBindings(LITGeneratorType sig, StringRef baseName, SMLoc exprLoc,
+  verifyBindings(LITGeneratorType sig, StringRef baseName,
                  std::optional<Location> opLoc = std::nullopt) const;
 
   /// Check that our set of parameter bindings work with the specified input
@@ -183,8 +186,8 @@ public:
   /// work, this emits diagnostics using the locations and `baseName` provided.
   std::tuple<ParameterExprArrayAttr, Fitness, std::optional<MojoInflightDiag>>
   verifyBindings(ArrayRef<Type> expectedParamTypes, PogListAttr paramListAttr,
-                 const Twine &baseName, llvm::SMLoc exprLoc,
-                 std::optional<Location> opLoc, bool partial) const;
+                 const Twine &baseName, std::optional<Location> opLoc,
+                 bool partial) const;
 
   /// Method for debugging.
   LLVM_DUMP_METHOD void dump() const;

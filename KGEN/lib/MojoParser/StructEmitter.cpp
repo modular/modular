@@ -855,9 +855,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
 
         ValueDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
         SyntheticNode expr(location);
-        (void)emitter.emitNamedMethodCall("__copyinit__", {{{src, &expr}}},
-                                          dest, CallSyntax::kImplicitCopyInit,
-                                          &expr);
+        (void)emitter.emitNamedMethodCall("__copyinit__",
+                                          {&expr, {{src, &expr}}}, dest,
+                                          CallSyntax::kImplicitCopyInit);
         continue;
       }
     }

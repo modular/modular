@@ -1274,7 +1274,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   // Pass all the captured values into the initializer.  In the case of a move
   // capture, this will be an RValue for the thing captured, transferring to the
   // owned argument in the initializer.
-  CallOperands closureImplInitArgs;
+  CallOperands closureImplInitArgs(&node);
   for (const Capture &capture : captures)
     closureImplInitArgs.add({capture.getValue(), node});
 
@@ -1285,7 +1285,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
       paramCaptures, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
 
   CValue value = exprEmitter.emitConstructorCall(
-      ASTType(closureImplType), std::move(closureImplInitArgs), node,
+      ASTType(closureImplType), std::move(closureImplInitArgs),
       CallSyntax::kTypeCall, closureDest);
   if (!value)
     return {};
@@ -1296,7 +1296,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
       exprEmitter.translateLocation(loc), VarDeclKind::Var);
   ValueDest closureWrapperDest(var, EC_VarInit);
 
-  CallOperands closureWrapperInitArgs;
+  CallOperands closureWrapperInitArgs(&node);
   closureWrapperInitArgs.add({value, node});
 
   // Create the ClosureWrapper type by binding parent parameters to the
@@ -1307,7 +1307,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
           capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
 
   exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
-                                  std::move(closureWrapperInitArgs), node,
+                                  std::move(closureWrapperInitArgs),
                                   CallSyntax::kTypeCall, closureWrapperDest);
   return MLValue(var);
 }
@@ -1837,14 +1837,13 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
   // type checker will deduce all the parameters.
   ValueDest ctorDest(varDecl, EC_VarArgArgument);
-  CallOperands operands;
 
   // Expr to provide location information.
   SyntheticNode srcLocNode(loc);
+  CallOperands operands(&srcLocNode);
   operands.add({argValue, &srcLocNode});
-  CValue ctorResult =
-      emitter.emitConstructorCall(varListType, std::move(operands), &srcLocNode,
-                                  CallSyntax::kTypeCall, ctorDest);
+  CValue ctorResult = emitter.emitConstructorCall(
+      varListType, std::move(operands), CallSyntax::kTypeCall, ctorDest);
   if (!ctorResult) {
     ctorDest.resetForError(emitter);
     return {};

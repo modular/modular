@@ -61,14 +61,11 @@ public:
   // Positional operands (including self) for the setter/getter call.
   CallOperands operands;
 
-  const ExprNode *expr;
-
   /// Return true if this is a subscript, false if this is an attribute access.
   bool isSubscript() const;
 
   SubscriptDLValue(PValue getter, StringAttr setterValueName,
-                   CallOperands &&operands, ASTType elementType,
-                   const ExprNode *expr);
+                   CallOperands &&operands, ASTType elementType);
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;

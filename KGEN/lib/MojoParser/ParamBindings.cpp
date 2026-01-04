@@ -181,8 +181,8 @@ void LIT::emitConstraintInconclusive(DeclResolver &resolver,
 // ParamBindings
 //===----------------------------------------------------------------------===//
 
-ParamBindings::ParamBindings(ASTDecl &declScope)
-    : declScope(declScope), shared(declScope.getShared()) {}
+ParamBindings::ParamBindings(ASTDecl &declScope, const ExprNode *expr)
+    : declScope(declScope), shared(declScope.getShared()), parameters(expr) {}
 
 /// Replace our bindings with another set.  This can't be done with operator=
 /// because we have
@@ -196,6 +196,8 @@ void ParamBindings::operator=(ParamBindings &&other) {
   numPreTypeChecked = other.numPreTypeChecked;
 }
 
+SMLoc ParamBindings::getExprLoc() const { return getExpr()->getLoc(); }
+
 /// Create a (possibly partially unbound) set of bindings for the given type.
 /// This can be used to initialize the binding set for methods. If the given
 /// type is not a parametric user defined type, this returns empty bindings.
@@ -203,7 +205,7 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
                                                 ASTType type,
                                                 const ExprNode *expr,
                                                 Type optionalParentTraitType) {
-  ParamBindings paramBindings(declScope);
+  ParamBindings paramBindings(declScope, expr);
   // TODO: this will not work with arbitrary parametric ancestors.
   // Default params need to come from the original declaration, instead of
   // TypeSignatureType, as the latter won't contain the full defaults list if
@@ -357,7 +359,7 @@ ParamBindings::verifyBindingsImpl(
   // Check to see if we have *_ or **_ and filter them from the parameter list.
   bool unpackedPos = false;
   bool unpackedKw = false;
-  CallOperands operands;
+  CallOperands operands(origOperands.callExpr);
   for (auto [idx, binding] : llvm::enumerate(origOperands.values)) {
     auto unpacked = dyn_cast<UnpackedAttr>(binding.ir.getIfPValue().get());
     // Check if the unpacked value is an UnboundAttr.
@@ -861,16 +863,14 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
 
 ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
                                                      TypeSignatureType sig,
-                                                     SMLoc exprLoc,
                                                      bool partial) const {
-  auto [bindingValuesAttr, fitness, diag] =
-      verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
-                     Twine("'") + structOp.getName() + "'", exprLoc,
-                     structOp.getLoc(), partial);
+  auto [bindingValuesAttr, fitness, diag] = verifyBindings(
+      sig.getParamTypes(), sig.getParamListAttrs(),
+      Twine("'") + structOp.getName() + "'", structOp.getLoc(), partial);
   // Emit diagnostics for unprovable constraints if no other diagnostics were
   // emitted.
   if (!fitness.unprovableConstraints.empty() && !diag) {
-    emitUnprovableConstraintsFromFitness(fitness, shared, exprLoc,
+    emitUnprovableConstraintsFromFitness(fitness, shared, getExprLoc(),
                                          Twine("'") + structOp.getName() + "'",
                                          structOp.getLoc());
   }
@@ -879,17 +879,16 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
 
 ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITGeneratorType sig, StringRef baseName,
-                              SMLoc exprLoc,
                               std::optional<Location> opLoc) const {
   auto [newBindings, fitness, diag] = verifyBindings(
       sig.getInputParamTypes(), sig.getMetadata(),
-      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), exprLoc, opLoc,
+      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), opLoc,
       /*partial=*/true);
   // Emit diagnostics for unprovable constraints if no other diagnostics were
   // emitted.
   if (!fitness.unprovableConstraints.empty() && !diag) {
     emitUnprovableConstraintsFromFitness(
-        fitness, shared, exprLoc,
+        fitness, shared, getExprLoc(),
         opLoc ? Twine("'") + baseName + "'" : Twine(baseName), opLoc);
   }
   return newBindings;
@@ -899,7 +898,7 @@ std::tuple<ParameterExprArrayAttr, ParamBindings::Fitness,
            std::optional<MojoInflightDiag>>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               PogListAttr paramListAttr, const Twine &baseName,
-                              SMLoc exprLoc, std::optional<Location> opLoc,
+                              std::optional<Location> opLoc,
                               bool partial) const {
   size_t maxAllowed = expectedParamTypes.size() -
                       countNumImplicitKinds(paramListAttr) -
@@ -908,7 +907,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   std::optional<MojoInflightDiag> diag;
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
-        diag = shared.emitError(exprLoc, baseName);
+        diag = shared.emitError(getExprLoc(), baseName);
         if (posOnly) {
           emitWrongArgOrParamCount(*diag, countNumPosOnly(paramListAttr),
                                    countNumPositional(paramListAttr), numActual,
@@ -938,28 +937,28 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       },
       /*emitUnknownKeywords=*/
       [&](ArrayRef<StringAttr> unknownKeywords) {
-        diag = shared.emitError(exprLoc);
+        diag = shared.emitError(getExprLoc());
         emitUnknownKeywords(*diag, unknownKeywords, "parameter");
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitRedundantKeywords=*/
       [&](ArrayRef<StringAttr> names) {
-        diag = shared.emitError(exprLoc);
+        diag = shared.emitError(getExprLoc());
         emitByPosAndKw(*diag, names, "parameter");
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitPosOnlyPassedByKw=*/
       [&](ArrayRef<StringAttr> names) {
-        diag = shared.emitError(exprLoc);
+        diag = shared.emitError(getExprLoc());
         emitPosOnlyPassedByKw(*diag, names, "parameter");
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitOutOfOrderInferredKw=*/
       [&](ArrayRef<StringAttr> names) {
-        diag = shared.emitError(exprLoc);
+        diag = shared.emitError(getExprLoc());
         emitOutOfOrderInferredKw(*diag, names);
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
@@ -971,12 +970,12 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         // The parameter name is scoped to 'declScope'.
         DeclResolver::DeclScopeChanger x(&declScope);
         if (paramListAttr.getPassingKind(paramIdx) != PassingKind::Inferred) {
-          diag = shared.emitError(exprLoc, baseName)
+          diag = shared.emitError(getExprLoc(), baseName)
                  << " missing required parameter "
                  << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
                                           expectedParamTypes[paramIdx]);
         } else {
-          diag = shared.emitError(exprLoc)
+          diag = shared.emitError(getExprLoc())
                  << "failed to infer parameter "
                  << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
                                           expectedParamTypes[paramIdx]);
@@ -1002,14 +1001,14 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
-        diag = shared.emitError(exprLoc);
+        diag = shared.emitError(getExprLoc());
         emitMissing(*diag, names, kindStr + " parameter");
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitConstraintViolations=*/
       [&](ArrayRef<std::pair<size_t, ConstraintAttr>> constraints) {
-        diag = shared.emitError(exprLoc);
+        diag = shared.emitError(getExprLoc());
         *diag << "violated constraint" << plural(constraints.size());
         IndexToDeclRefRemapper remapper(paramListAttr);
         for (auto [_, constraint] : constraints) {
@@ -1020,7 +1019,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       },
   };
 
-  SyntheticNode errorLoc(exprLoc);
+  SyntheticNode errorLoc(getExprLoc());
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     ParameterInferenceState inference(declScope, getParameters(),
                                       expectedParamTypes, paramListAttr,
@@ -1046,8 +1045,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   return {bindings, fitness, std::move(diag)};
 }
 
-TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
-                                              const ExprNode *expr) const {
+TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp,
+                                              StringRef baseName) const {
   FnTypeGeneratorType signature = funcOp.getFullSignature();
 
   // If this is a global function or struct reference, bind it directly.
@@ -1060,7 +1059,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
 
     // Check that the signature can be rebound with our set of bindings.
     ParameterExprArrayAttr newBindings =
-        verifyBindings(signature, baseName, expr->getLoc(), funcOp.getLoc());
+        verifyBindings(signature, baseName, funcOp.getLoc());
     if (!newBindings)
       return {};
 
@@ -1093,7 +1092,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
 
   signature = signature.getSpecializedGenerator(
       paramValues, &shared.getEvaluationContext(), [&]() {
-        return mlir::emitError(shared.translateLocation(expr->getLoc()))
+        return mlir::emitError(shared.translateLocation(getExprLoc()))
                << "internal error: ";
       });
   assert(signature && "Error binding trait Self type");
@@ -1109,8 +1108,8 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
     return fnRef;
 
   // Attempt to partially bind the parameters to the signature of the function.
-  ParameterExprArrayAttr newBindings = bindings.verifyBindings(
-      signature, baseName, expr->getLoc(), funcOp.getLoc());
+  ParameterExprArrayAttr newBindings =
+      bindings.verifyBindings(signature, baseName, funcOp.getLoc());
   if (!newBindings)
     return {};
 

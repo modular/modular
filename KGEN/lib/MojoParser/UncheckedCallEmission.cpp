@@ -552,7 +552,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       // If this is a variadic keyword argument, we initialize a dictionary.
       ValueDest dictDest(ExprContext::EC_KWArgsArgument);
       auto dict = emitter.emitConstructorCall(
-          sugarCast<RefType>(expectedType).getElementType(), {}, callExpr,
+          sugarCast<RefType>(expectedType).getElementType(), {callExpr},
           CallSyntax::kTypeCall, dictDest);
       kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
       argumentValues.push_back({kwargsDict, callExpr});
@@ -603,9 +603,10 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     // Then we set the element with the given key and the operand as value.
     CallOperands insertOperands(
+        callExpr,
         {{MLValue(kwargsDict), callExpr}, {literalKey, operand.expr}, operand});
     emitter.emitNamedMethodCall("_insert", std::move(insertOperands),
-                                kwargsDest, CallSyntax::kMethodCall, callExpr);
+                                kwargsDest, CallSyntax::kMethodCall);
   }
 
   return std::make_pair(std::move(argumentValues), std::move(isDefaultMask));
@@ -1178,13 +1179,13 @@ static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   ASTType resultType = ASTType(sig.getUserResultType());
 
   // Bind the result type to the base coroutine type.
-  ParamBindings paramBinds(declScope);
+  ParamBindings paramBinds(declScope, expr);
   paramBinds.add(expr, PValue(resultType));
   paramBinds.add(expr, origin);
 
   auto structOp = cast<StructDeclOp>(decl->getIfOperation());
   ParameterExprArrayAttr bindings = paramBinds.verifyBindings(
-      structOp, structOp.getSignature(), expr->getLoc(), /*partial=*/false);
+      structOp, structOp.getSignature(), /*partial=*/false);
   if (!bindings)
     return {};
 
@@ -1705,8 +1706,8 @@ static TypedAttr computeArgumentsOrigin(AsyncCallOp call,
 
 CValue IREmitter::emitCallUnchecked(RValue callee,
                                     const CallOperands &callOperands,
-                                    ValueDest &dest, CallSyntax syntax,
-                                    const ExprNode *callExpr) {
+                                    ValueDest &dest, CallSyntax syntax) {
+  const ExprNode *callExpr = callOperands.callExpr;
   CallEmitter callEmitter(callee, callExpr, *this, dest);
   auto calleeSig = callEmitter.calleeSig;
 
@@ -1746,7 +1747,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                    errSlot.getRValueType(), getDeclScope())) {
 
       return emitIndirectCallInTryBlock(
-          callee, CallOperands(callOperands), dest, syntax, callExpr,
+          callee, CallOperands(callOperands), dest, syntax,
           [&](VarDeclOp errDecl) {
             // Move the error out of the temporary and into the overall error
             // slot, performing the implicit conversion.
@@ -2000,9 +2001,9 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       }
       // Emit the implicit conversion to Coroutine[T].  We emit into the call's
       // destination to avoid an extra copy/move of the Coroutine object.
-      callResult =
-          emitConstructorCall(coroType, {{{SRValue(call), callExpr}}}, callExpr,
-                              CallSyntax::kImplicitConvert, dest);
+      callResult = emitConstructorCall(
+          coroType, CallOperands{callExpr, {{SRValue(call), callExpr}}},
+          CallSyntax::kImplicitConvert, dest);
       if (!callResult) {
         dest.resetForError(*this);
         return {};

@@ -333,12 +333,9 @@ public:
     kSetInitLiteral, // {a=42, 17}
   } syntax;
 
-  const ExprNode *const expr;
-
   const CallOperands &get() const;
 
-  static InitializerUValue create(Syntax syntax, const ExprNode *expr,
-                                  CallOperands &&operands);
+  static InitializerUValue create(Syntax syntax, CallOperands &&operands);
 
   /// Given an inferred type for this initializer list, return the operands that
   /// we should use to try to construct it.
@@ -357,8 +354,7 @@ public:
 
 private:
   struct ImplWrapper;
-  InitializerUValue(Syntax syntax, const ExprNode *expr,
-                    RCRef<ImplWrapper> storage);
+  InitializerUValue(Syntax syntax, RCRef<ImplWrapper> storage);
   RCRef<ImplWrapper> storage;
 };
 raw_ostream &operator<<(raw_ostream &os, InitializerUValue value);
