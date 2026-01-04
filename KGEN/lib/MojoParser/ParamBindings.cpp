@@ -1035,8 +1035,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
     // If we succeeded inference but didn't get a value for this parameter, then
     // the parameter must not be present: complain.
-    inferenceDiags.addFailure(bindingsSoFar.size(), errorLoc,
-                              InferenceFailure::NotFoundFailure());
+    inferenceDiags.addFailure(
+        errorLoc, InferenceFailure::NotFoundFailure{bindingsSoFar.size()});
     return PValue();
   };
   auto [bindings, fitness] =
