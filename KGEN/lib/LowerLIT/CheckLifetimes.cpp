@@ -2300,7 +2300,10 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   }
 
   // Adjust element type sugar if needed.
-  // FIXME(MOCO-3006): Re-enable / adjust this assertion.
+  // FIXME(MOCO-3006): Re-enable / adjust this assertion: we need to compare the
+  // metatypes of the types, not the types themselves.  Metatype equivalence is
+  // how we can look through type parmaeters to see their trait bounds match
+  // correctly.  How do we do this in KGEN?
   // assert(isEqualCanon(delSelfTy.getElementType(), argRef.getElementType()));
   if (delSelfTy.getElementType() != argRef.getElementType()) {
     value = RebindOp::create(
