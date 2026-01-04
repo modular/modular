@@ -199,11 +199,11 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
     Value gep = POP::OffsetOp::create(
         b, argPtrPtrs, ParamConstantOp::create(b, b.getIndexAttr(i)));
     Value opaque = POP::PointerBitcastOp::create(b, nonePtr, ptr);
-    std::optional<int64_t> typeAllocSize =
-        DataLayoutInterface::getTypeAllocSize(target, type);
-    if (!typeAllocSize)
-      llvm_unreachable("unable to get the alloc size of the type");
-    typeSizes.push_back(*typeAllocSize);
+    std::optional<int64_t> typeStoreSize =
+        DataLayoutInterface::getTypeStoreSize(target, type);
+    if (!typeStoreSize)
+      llvm_unreachable("unable to get the size of the type");
+    typeSizes.push_back(*typeStoreSize);
     POP::StoreOp::create(b, opaque, gep);
   }
   ReturnOp::create(
