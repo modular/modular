@@ -635,8 +635,6 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
     if (result == Retry)
       return Retry;
     if (result == Match) {
-      auto expectedType =
-          state.evaluator.getReboundType(expectedAttr.getType());
       // If they are different types but compatible then upcast actualAttr to
       // the expected type.
       IREmitter emitter(state.declScope, EC_TypeParamValue);
@@ -646,6 +644,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       // values that want index-based ones.  matchFunctionTypes should convert
       // the former to the later and we should remove this redundant check for
       // implicit convertibility.
+      auto expectedType = expectedAttr.getType();
       if (IREmitter::canImplicitlyConvertToType(
               {actualAttr, expr}, expectedType, emitter.getDeclScope())) {
         actualAttr = emitter.emitPValue({actualAttr, expr}, EC_TypeParamValue,
@@ -778,7 +777,6 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
         IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
         expectedType = adjuster.replace(expectedType);
       }
-      expectedType = state.evaluator.getReboundType(expectedType);
 
       // If the types don't agree, attempt an implicit conversion between the
       // actual value and the expected type.
@@ -1073,8 +1071,6 @@ RetryLabel:
     //   struct X[A: AnyType]:
     //     fn __init__[T: Movable](arg: Int, out self: X[T]):
     // which gets used as X[String](42) inferring T and A.
-
-    // FIXME: Client should pass a real location.
     ParamMatcher matcher(givenBindings.callExpr, *this);
     if (selfParam) {
       // TODO: Macro'ize this when error handling logic is fixed.
@@ -1164,12 +1160,12 @@ RetryLabel:
 
     // Handle collection literals.
     if (auto init = value.getIfInitializer()) {
-      ASTType inferredType = evaluator.getReboundType(expectedTypeOfOperand);
       // If we have a type like List[$0] replace it with List[?] so we can
       // infer the unbound parameter.
-      inferredType = inferredType.getWithUnknownParametersReplaced(shared);
+      auto unbound =
+          expectedTypeOfOperand.getWithUnknownParametersReplaced(shared);
       Type initType =
-          inferInitializerType(declScope, &(*init), operand, inferredType);
+          inferInitializerType(declScope, &(*init), operand, unbound);
       // If we could not infer the type from the inferred type (in the case
       // where the inferred type is a parameter with trait metatype and no
       // initializer, try the default type.)
@@ -1299,12 +1295,11 @@ RetryLabel:
   // since those are what we're inferring from the arguments.  The result
   // 'actualType' will have those newly inferred parameters.
   if (auto initValue = operand.ir.getIfInitializer()) {
-    ASTType inferredType = evaluator.getReboundType(expectedType);
     // If we have a type like List[$0] replace it with List[?] so we can
     // infer the unbound parameter.
-    inferredType = inferredType.getWithUnknownParametersReplaced(shared);
+    auto unbound = expectedType.getWithUnknownParametersReplaced(shared);
     Type initType =
-        inferInitializerType(declScope, &(*initValue), operand, inferredType);
+        inferInitializerType(declScope, &(*initValue), operand, unbound);
     // If the literal cannot bind to the inferred type, try binding it to the
     // default literal type and matching the inferred type against that.
     if (!initType)
@@ -1409,8 +1404,7 @@ RetryLabel:
   ///     fn foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
   ///     Scalar[p.type.type]):
   /// where the type of 'v' depends on 'dt' being inferred.
-  ASTType knownExpectedType = evaluator.getReboundType(expectedType);
-  ASTDecl *expectedDecl = knownExpectedType.getDecl(shared);
+  ASTDecl *expectedDecl = expectedType.getDecl(shared);
   if (!allowImplicitConversions || !expectedDecl) {
     diags.resetDiags(std::move(noImplicitConversionDiags));
     return failure();
@@ -1433,7 +1427,7 @@ RetryLabel:
   // contain unbound parameters, replacing them with UnboundAttr so inference
   // can find them.
   auto nonParamType =
-      knownExpectedType.getWithUnknownParametersReplaced(emitter.shared);
+      expectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
       nonParamType, CallOperands(curArgExpr, {{argVal, curArgExpr}}),
       emitter.getDeclScope(), /*isImplicitConversion=*/true);
@@ -1463,7 +1457,7 @@ RetryLabel:
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
-  switch (matcher.matchTypes(initSig.getUserResultType(), knownExpectedType)) {
+  switch (matcher.matchTypes(initSig.getUserResultType(), expectedType)) {
   case ParamMatcher::Retry:
     goto RetryLabel;
   case ParamMatcher::Match:
@@ -1580,38 +1574,6 @@ LogicalResult ParameterInferenceState::inferForCall(
   // First try to infer parameters from the already provided bindings.
   inferFromParamList(/*hasArguments*/ true);
 
-  {
-    // Substitute the already inferred parameters into the signature, without
-    // removing their parameter decls.
-    //
-    // For example, if given this signature,
-    //     fn [N: Int, S: SIMD[DType.int8, N]]() -> ()
-    // and we know that N=1, it should become:
-    //     fn [N: Int, S: SIMD[DType.int8, 1]]() -> ()
-    // Note the N became a 1 right here ---^
-    //
-    // We can't use `getSpecializedGenerator` for this as it removes the
-    // parameter-decls. For example, giving `getSpecializedGenerator` this:
-    //     fn [N: Int, S: SIMD[DType.int8, N]]() -> ()
-    // and N=1, it would produce this signature:
-    //     fn [S: SIMD[DType.int8, 1]]() -> ()
-    // which we don't want, because the rest of the logic expects
-    // inputParamTypes to be intact.
-    //
-    // All this must be done by slicing out the nested types & attrs from the
-    // generator type so that the depths of index references are correct.
-    FnType bodyType = signature.getBody();
-    PogListAttr metadata = signature.getMetadata();
-    SmallVector<Type> paramTypes;
-    for (auto ty : signature.getInputParamTypes())
-      paramTypes.push_back(evaluator.getReboundType(ty));
-
-    bodyType = sugarCast<FnType>(evaluator.getReboundType(bodyType));
-    metadata = cast<PogListAttr>(evaluator.getReboundAttribute(metadata));
-    signature = sugarCast<FnTypeGeneratorType>(
-        GeneratorType::get(paramTypes, bodyType, metadata));
-  }
-
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
   // careful here!
@@ -1629,6 +1591,7 @@ LogicalResult ParameterInferenceState::inferForCall(
     // llvm::enumerate on the argument type list!
     Type expectedType = signature.getArgument(expectedArgIdx);
     if (signature.isKwVarArg(expectedArgIdx)) {
+      expectedType = evaluator.getReboundType(expectedType);
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
       for (auto operand : variadicKwOperands) {
@@ -1650,6 +1613,7 @@ LogicalResult ParameterInferenceState::inferForCall(
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
     if (signature.isPosVarArg(expectedArgIdx)) {
+      expectedType = evaluator.getReboundType(expectedType);
       auto expectedVariadic = sugarCast<VariadicType>(expectedType);
       auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numOperands) {
@@ -1742,6 +1706,9 @@ LogicalResult ParameterInferenceState::inferForCall(
     // Check for any more positional operands.
     while (posOperandIdx != numOperands && operands[posOperandIdx].keyword)
       ++posOperandIdx;
+
+    // FIXME: Why is this needed?
+    expectedType = evaluator.getReboundType(expectedType);
 
     // Handle positional arguments.
     if (posOperandIdx < numOperands) {
