@@ -951,8 +951,9 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
     // If we succeeded inference but didn't get a value for this parameter, then
     // the parameter must not be present: complain.
-    inferenceDiags.addFailure(bindingsSoFar.size(), callable.getExpr(),
-                              InferenceFailure::NotFoundFailure());
+    inferenceDiags.addFailure(
+        callable.getExpr(),
+        InferenceFailure::NotFoundFailure{bindingsSoFar.size()});
     return PValue();
   };
   auto [newBindings, bindingFitness] = callable.paramBindings.verifyBindings(

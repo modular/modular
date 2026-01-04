@@ -22,16 +22,20 @@ class ExprNode;
 struct InferenceFailure {
   /// This failure happens when a parameter is found of the wrong type.
   struct TypeConflictFailure {
+    size_t paramIdx; // TODO: Render this name.
     ASTType paramType, argParamType;
   };
 
   /// This failure happens when a parameter is inferred to two different values.
   struct ValueConflictFailure {
+    size_t paramIdx;
     TypedAttr v1, v2;
   };
 
   /// This failure happens when the parameter isn't found at all.
-  struct NotFoundFailure {};
+  struct NotFoundFailure {
+    size_t paramIdx;
+  };
 
   template <typename Failure>
   InferenceFailure(Failure info) : info(info) {}
@@ -51,9 +55,8 @@ class ParameterInferenceDiagnostics {
 public:
   /// Indicate that parameter inference failed to infer the parameter at
   /// `paramIdx` from the argument at `argPos`.
-  void addFailure(size_t paramIdx, const ExprNode *argExpr,
-                  InferenceFailure &&info) {
-    diags.push_back({paramIdx, argExpr, std::move(info)});
+  void addFailure(const ExprNode *argExpr, InferenceFailure &&info) {
+    diags.push_back({argExpr, std::move(info)});
   }
 
   void addExplanation(MojoInflightDiag &diag);
@@ -61,7 +64,6 @@ public:
   size_t getNumFailures() const { return diags.size(); }
 
   struct FailedInference {
-    size_t paramIdx;
     const ExprNode *argExpr;
     InferenceFailure info;
   };
@@ -124,8 +126,8 @@ public:
 
   void dump() const;
 
-  void addFailure(size_t parameterIndex, InferenceFailure &&info) {
-    diags.addFailure(parameterIndex, curArgExpr, std::move(info));
+  void addFailure(InferenceFailure &&info) {
+    diags.addFailure(curArgExpr, std::move(info));
   }
 
   /// This is the evaluator instance parameter inference uses to progressively

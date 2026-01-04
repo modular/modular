@@ -89,11 +89,8 @@ void ParameterInferenceDiagnostics::addExplanation(MojoInflightDiag &diag) {
     // we need a location.
     if (!failure.argExpr)
       continue;
-    // If we have a best match for an earlier parameter, ignore this one.
-    if (best && best->paramIdx <= failure.paramIdx)
-      continue;
-    // Otherwise this is the best we've found.
     best = &failure;
+    break;
   }
 
   if (best)
@@ -711,11 +708,8 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
 
       if (!fixableByUpCast) {
         if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
-          state.addFailure(
-              ire.getIndex(),
-              InferenceFailure::TypeConflictFailure{
-                  state.evaluator.getReboundType(expectedAttr.getType()),
-                  actualAttr.getType()});
+          state.addFailure(InferenceFailure::TypeConflictFailure{
+              ire.getIndex(), expectedAttr.getType(), actualAttr.getType()});
         }
         return error();
       }
@@ -818,8 +812,8 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       // If we saw this parameter before, make sure it is compatible with
       // (or more specific than) the other values we've inferred.
       if (!isEqualCanon(inferredValue, actualAttr)) {
-        state.addFailure(parameterIndex, InferenceFailure::ValueConflictFailure{
-                                             inferredValue, actualAttr});
+        state.addFailure(InferenceFailure::ValueConflictFailure{
+            parameterIndex, inferredValue, actualAttr});
         return error();
       }
       return Match;
@@ -1090,8 +1084,8 @@ RetryLabel:
       case ParamMatcher::Match:
         break;
       case ParamMatcher::Error:
-        addFailure(idx,
-                   InferenceFailure::ValueConflictFailure{selfParam, retParam});
+        addFailure(
+            InferenceFailure::ValueConflictFailure{idx, selfParam, retParam});
         return failure();
       }
     } else if (!paramFinder.hasReferences(retParam)) {
@@ -1108,8 +1102,8 @@ RetryLabel:
       case ParamMatcher::Match:
         break;
       case ParamMatcher::Error:
-        addFailure(idx,
-                   InferenceFailure::ValueConflictFailure{retParam, selfParam});
+        addFailure(
+            InferenceFailure::ValueConflictFailure{idx, retParam, selfParam});
         return failure();
       }
     }
@@ -1164,7 +1158,7 @@ RetryLabel:
   curArgExpr = operand.expr;
   ParamMatcher matcher(operand.expr, *this);
 
-  auto resolveOperandCValue = [&](Type expectedTypeOfOperand) -> CValue {
+  auto resolveOperandCValue = [&](ASTType expectedTypeOfOperand) -> CValue {
     if (auto argVal = value.getIfCValue())
       return argVal;
 
@@ -1178,7 +1172,7 @@ RetryLabel:
           inferInitializerType(declScope, &(*init), operand, inferredType);
       // If we could not infer the type from the inferred type (in the case
       // where the inferred type is a parameter with trait metatype and no
-      // initialier, try the default type.)
+      // initializer, try the default type.)
       if (!initType)
         initType =
             inferInitializerType(declScope, &(*init), operand,
@@ -1715,8 +1709,8 @@ LogicalResult ParameterInferenceState::inferForCall(
                   sugarDynCast<ParamIndexRefAttr>(packType.getVariadic());
               ire && ire.getDepth() == 0) {
             // Otherwise, we failed to infer the parameter. Record this failure.
-            addFailure(ire.getIndex(), InferenceFailure::TypeConflictFailure{
-                                           elementType, actualAttr.getType()});
+            addFailure(InferenceFailure::TypeConflictFailure{
+                ire.getIndex(), elementType, actualAttr.getType()});
           }
           return failure();
         }
