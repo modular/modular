@@ -37,12 +37,14 @@ using OperandValueList = SmallVector<OperandValue, 4>;
 class CallOperands {
 public:
   /// Initialize with some positional arguments.
-  CallOperands(ArrayRef<ASTExprAnd<AnyValue>> posOperands) {
+  CallOperands(const ExprNode *callExpr,
+               ArrayRef<ASTExprAnd<AnyValue>> posOperands)
+      : callExpr(callExpr) {
     for (const auto &operand : posOperands)
       values.emplace_back(StringAttr(), operand);
   }
 
-  CallOperands() = default;
+  CallOperands(const ExprNode *callExpr) : callExpr(callExpr) {}
   CallOperands(CallOperands &&) = default;
   explicit CallOperands(const CallOperands &) = default;
   CallOperands &operator=(CallOperands &&) = default;
@@ -68,6 +70,12 @@ public:
 
   /// Return the number of keyword operands.
   size_t getNumKwOperands() const { return values.size() - getNumPositional(); }
+
+  /// This is the expression representing the overall call.
+  const ExprNode *callExpr;
+
+  const ExprNode *getExpr() const { return callExpr; }
+  llvm::SMLoc getExprLoc() const;
 
   /// The values passed in.  The keyword field will be null for positional
   /// arguments and present for keyword operands.

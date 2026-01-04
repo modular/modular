@@ -615,7 +615,7 @@ static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
   type = litStruct.bindReference({value});
 
   // Create an instance of IntLiteral[val]()
-  return emitter.emitConstructorCall(type, CallOperands(), expr,
+  return emitter.emitConstructorCall(type, CallOperands(expr),
                                      CallSyntax::kTypeCall, dest);
 }
 
@@ -1001,7 +1001,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
           dyn_cast_or_null<FnOp>(decls[0]->getIfOperation())) {
     // Form an overload set value with all the candidates.
     auto result = OverloadSetUValue::create(
-        spelling, decls, ParamBindings(emitter.getDeclScope()), expr,
+        spelling, decls, ParamBindings(emitter.getDeclScope(), expr),
         CallSyntax::kDirectCall);
     return emitter.emitResult(result, expr, dest);
   }
@@ -1480,11 +1480,11 @@ bindParameterOperands(MutableArrayRef<InProgressBindings> bindables,
 /// Return a ParamBindings set for a list of PValue operands. If any operand
 /// fails be emitted as a PValue, the function returns null.
 static std::optional<ParamBindings> getBindingsForParameterOperands(
-    ArrayRef<Operand> operands, ArrayRef<Type> paramTypes,
+    const ExprNode *expr, ArrayRef<Operand> operands, ArrayRef<Type> paramTypes,
     PogListAttr paramList, IREmitter &emitter, ExprContext context) {
   InProgressBindings bindable(paramTypes, paramList);
   // Start with an empty binding set.
-  ParamBindings paramBindings(emitter.getDeclScope());
+  ParamBindings paramBindings(emitter.getDeclScope(), expr);
   if (failed(bindParameterOperands(bindable, operands, paramBindings, emitter,
                                    context)))
     return std::nullopt;
@@ -1494,8 +1494,8 @@ static std::optional<ParamBindings> getBindingsForParameterOperands(
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
 static PValue substituteParametersIntoUserDefinedType(
-    PValue typeValue, ArrayRef<Operand> operands, SMLoc loc, SMLoc lhsLoc,
-    SMLoc rhsLoc, IREmitter &emitter) {
+    PValue typeValue, const ExprNode *expr, ArrayRef<Operand> operands,
+    SMLoc lhsLoc, SMLoc rhsLoc, IREmitter &emitter) {
   auto metaType = sugarCast<StructMetaType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
   auto structOp = cast<StructDeclOp>(typeDecl->getIfOperation());
@@ -1506,7 +1506,7 @@ static PValue substituteParametersIntoUserDefinedType(
   // Build up a ParamBindings set to validate and check the bindings.
   TypeSignatureType sig = metaType.getSignature();
   std::optional<ParamBindings> paramBindings = getBindingsForParameterOperands(
-      operands, sig.getParamTypes(), sig.getParamListAttrs(), emitter,
+      expr, operands, sig.getParamTypes(), sig.getParamListAttrs(), emitter,
       EC_TypeParamValue);
   if (!paramBindings)
     return {};
@@ -1515,7 +1515,7 @@ static PValue substituteParametersIntoUserDefinedType(
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
   ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings->verifyBindings(structOp, sig, loc, /*partial=*/true);
+      paramBindings->verifyBindings(structOp, sig, /*partial=*/true);
   if (!bindingValuesAttr)
     return {};
 
@@ -1527,18 +1527,19 @@ static PValue substituteParametersIntoUserDefinedType(
 
 /// Bind parameter operands to a callable parameter.
 static PValue bindToGeneratorValue(PValue callable, LITGeneratorType sig,
+                                   const ExprNode *expr,
                                    ArrayRef<Operand> operands,
                                    IREmitter &emitter,
                                    const SourceRange &range) {
   // Build up a ParamBindings set to validate and check the bindings.
   std::optional<ParamBindings> paramBindings = getBindingsForParameterOperands(
-      operands, sig.getInputParamTypes(), sig.getParamListAttrs(), emitter,
-      EC_CallParamValue);
+      expr, operands, sig.getInputParamTypes(), sig.getParamListAttrs(),
+      emitter, EC_CallParamValue);
   if (!paramBindings)
     return {};
 
   ParameterExprArrayAttr newBindings =
-      paramBindings->verifyBindings(sig, "parametric value", range.getStart());
+      paramBindings->verifyBindings(sig, "parametric value");
   if (!newBindings)
     return {};
 
@@ -1640,7 +1641,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // Otherwise we'll be calling the getter and/or setter.  Let's emit any index
   // operands and determine whether they are arguments or parameters (e.g. for
   // indexing into Tuple with parameter for the index).
-  CallOperands operands;
+  CallOperands operands(node);
   operands.addSelf(base);
 
   // We look at one of the sets so we can detect whether we're emitting the
@@ -1816,7 +1817,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // Otherwise, this expression may be used as an LValue so form it.
   DLValue result(RCRef<SubscriptDLValue>::create(
-      getter, setterValueName, std::move(operands), elementType, node));
+      getter, setterValueName, std::move(operands), elementType));
   return emitter.emitResult(result, node, dest);
 }
 
@@ -2022,9 +2023,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // as it uses similar logic.
     auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
                                                       baseRVType, this);
-    auto result =
-        OverloadSetUValue::create(spelling, memberDecls, std::move(bindings),
-                                  this, CallSyntax::kDirectCall);
+    auto result = OverloadSetUValue::create(
+        spelling, memberDecls, std::move(bindings), CallSyntax::kDirectCall);
 
     // If the callee is a static method, we can directly reference it
     // without binding a self parameter.  If this is an instance method, we
@@ -2574,10 +2574,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // Construct the Tuple type without parameters so we infer them.
   tupleType = tupleType.getWithoutParameters(emitter.shared);
 
-  CallOperands operands;
+  CallOperands operands(&call);
   for (OpResult opResult : resultOp->getResults())
     operands.add({SRValue(opResult), &call});
-  return emitter.emitConstructorCall(tupleType, std::move(operands), &call,
+  return emitter.emitConstructorCall(tupleType, std::move(operands),
                                      CallSyntax::kTypeCall, dest);
 }
 
@@ -2594,7 +2594,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   }
 
   /// Emit all the operands that we'll need.
-  CallOperands operandsList;
+  CallOperands operandsList(this);
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
       auto diag = emitter.emitError(operand.getLoc());
@@ -2633,21 +2633,20 @@ AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 
     // Check to see if we can invoke an __init__ method to convert it.
     return emitter.emitConstructorCall(calledType, std::move(operandsList),
-                                       this, CallSyntax::kTypeCall, dest);
+                                       CallSyntax::kTypeCall, dest);
   }
 
   // If this is an overloaded operand, resolve it and call the result.
   if (auto overloads = calleeVal.getIfOverloadSet()) {
     emitter.shared.notifyListenerOnCall(overloads->fnDecls, rparenLoc,
                                         overloads->syntax, operandsList);
-    overloads->expr = this;
     return overloads->emitCall(std::move(operandsList), dest, emitter);
   }
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
   if (auto crVal = calleeVal.getIfCValue())
     return emitter.emitIndirectCall(crVal, std::move(operandsList), dest,
-                                    CallSyntax::kIndirectCall, this);
+                                    CallSyntax::kIndirectCall);
 
   emitter.emitError(getLoc(), "cannot call this unresolved expression");
   return {};
@@ -2664,7 +2663,7 @@ AnyValue SliceNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 
   // TODO: Generalize to more than 3 operands.  We might also want to turn this
   // into a well-known static method instead of overloading onto constructor.
-  CallOperands operands;
+  CallOperands operands(this);
   operands.add(getOperand(lower));
   operands.add(getOperand(upper));
   operands.add(getOperand(stride));
@@ -2672,8 +2671,8 @@ AnyValue SliceNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       !operands.values[2].ir)
     return {};
 
-  auto result = InitializerUValue::create(InitializerUValue::kSlice, this,
-                                          std::move(operands));
+  auto result =
+      InitializerUValue::create(InitializerUValue::kSlice, std::move(operands));
   return emitter.emitResult(result, this, dest);
 }
 
@@ -2752,8 +2751,8 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // If this is a parametric PValue, this is binding parameter values to the
     // generator value.
     if (auto sig = sugarDynCast<LITGeneratorType>(baseType)) {
-      PValue result =
-          bindToGeneratorValue(value, sig, operands, emitter, getIndexRange());
+      PValue result = bindToGeneratorValue(value, sig, this, operands, emitter,
+                                           getIndexRange());
       if (!result)
         return {};
       return emitter.emitResult(result, this, dest);
@@ -2763,7 +2762,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // user-defined types and custom MLIR types.
     if (baseValue.getIfTypeValue() && sugarIsa<StructMetaType>(baseType)) {
       PValue result = substituteParametersIntoUserDefinedType(
-          value, operands, getLoc(), lsquareLoc, rsquareLoc, emitter);
+          value, this, operands, lsquareLoc, rsquareLoc, emitter);
       return emitter.emitResult(result, this, dest);
     }
   }
@@ -2871,14 +2870,14 @@ AnyValue ParenNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 static AnyValue emitListLiteral(const ExprNode *expr,
                                 ArrayRef<ExprNode *> elements,
                                 IREmitter &emitter) {
-  CallOperands operands;
+  CallOperands operands(expr);
   for (ExprNode *expr : elements) {
     auto value = emitter.emitExpr(expr, EC_CollectionLiteral);
     if (!value)
       return {};
     operands.add({value, expr});
   }
-  return InitializerUValue::create(InitializerUValue::kListLiteral, expr,
+  return InitializerUValue::create(InitializerUValue::kListLiteral,
                                    std::move(operands));
 }
 
@@ -2913,10 +2912,10 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return {};
 
   // Form the initializer list for the dictionary literal.
-  CallOperands operands;
+  CallOperands operands(this);
   operands.add({keysListValue, this});
   operands.add({valuesListValue, this});
-  auto result = InitializerUValue::create(InitializerUValue::kDictLiteral, this,
+  auto result = InitializerUValue::create(InitializerUValue::kDictLiteral,
                                           std::move(operands));
   return emitter.emitResult(result, this, dest);
 }
@@ -2924,7 +2923,7 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 AnyValue SetInitLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // We emit this as a simple initializer list directly, but resolution of the
   // UValue detects when this should be a set initializer and handles that.
-  CallOperands operands;
+  CallOperands operands(this);
   for (auto [keyExpr, valueExpr] : values) {
     StringAttr keyName;
     // The key needs to be an identifier, which gets parsed as a DeclRefNode.
@@ -2942,7 +2941,7 @@ AnyValue SetInitLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   }
 
   auto result = InitializerUValue::create(InitializerUValue::kSetInitLiteral,
-                                          this, std::move(operands));
+                                          std::move(operands));
   return emitter.emitResult(result, this, dest);
 }
 
@@ -3000,7 +2999,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // and forth.  Resolving a set can mutate the argument list (e.g. emitting
   // PValues to dynamic values) even if the lookup fails and we don't want to
   // materialize them multiple times
-  CallOperands operands({lhs, rhs});
+  CallOperands operands(callExpr, {lhs, rhs});
 
   // `a in b` => `b.__contains__(a)` and there is no reversed form.
   if (kind == ExprNode::Kind::kCmpIn)
@@ -3010,10 +3009,10 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // receiver.
   if (auto lhsCV = lhs.ir.getIfCValue()) {
     if (PValue callee = OverloadSet::lookupAndResolve(
-            lhsCV.getRValueType(), specialFnInfo.name, operands, callExpr,
+            lhsCV.getRValueType(), specialFnInfo.name, operands,
             CallSyntax::kOperator, emitter))
       return emitter.emitIndirectCall(callee, std::move(operands), dest,
-                                      CallSyntax::kOperator, callExpr);
+                                      CallSyntax::kOperator);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -3023,10 +3022,10 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     std::swap(operands[0], operands[1]);
     if (auto rhsCV = rhs.ir.getIfCValue()) {
       if (PValue callee = OverloadSet::lookupAndResolve(
-              rhsCV.getRValueType(), reversedFnInfo.name, operands, callExpr,
+              rhsCV.getRValueType(), reversedFnInfo.name, operands,
               CallSyntax::kReversedOperator, emitter))
         return emitter.emitIndirectCall(callee, std::move(operands), dest,
-                                        CallSyntax::kOperator, callExpr);
+                                        CallSyntax::kOperator);
     }
 
     // Swap these back so we emit the right error.
@@ -3035,7 +3034,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // Emit an error complaining about the forward version of the operator.
   return emitter.emitNamedMethodCall(specialFnInfo.name, std::move(operands),
-                                     dest, CallSyntax::kOperator, callExpr);
+                                     dest, CallSyntax::kOperator);
 }
 
 /// Emit a simple assignment statement.
@@ -3586,8 +3585,8 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
     // Turn this into a call to __bool__.
     ValueDest subDest(EC_OperatorOperandValue);
     argValue.ir =
-        emitter.emitNamedMethodCall("__bool__", CallOperands(argValue), subDest,
-                                    CallSyntax::kMethodCall, expr);
+        emitter.emitNamedMethodCall("__bool__", CallOperands(expr, argValue),
+                                    subDest, CallSyntax::kMethodCall);
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -3599,8 +3598,9 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
   assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitNamedMethodCall(specialFnInfo.name, CallOperands(argValue),
-                                     dest, CallSyntax::kOperator, expr);
+  return emitter.emitNamedMethodCall(specialFnInfo.name,
+                                     CallOperands(expr, argValue), dest,
+                                     CallSyntax::kOperator);
 }
 
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
@@ -4249,9 +4249,9 @@ AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
       emitter.shared.getBuiltinOriginType(emitter.declScope, getLoc());
   if (sugarIsa<TypeCheckErrorType>(type))
     return {}; // Sanity check the returned declaration.
-  return emitter.emitConstructorCall(type,
-                                     CallOperands({{PValue(result), this}}),
-                                     this, CallSyntax::kTypeCall, dest);
+  return emitter.emitConstructorCall(
+      type, CallOperands(this, {{PValue(result), this}}), CallSyntax::kTypeCall,
+      dest);
 }
 
 AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
@@ -4398,10 +4398,10 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
         // To handle overloads, we form a singleton overload set (since we have
         // the ASTDecl for each overload), emit it, and wrap the result in a
         // SyntheticNode, which will be passed to the `Tuple` constructor.
-        auto singletonOverloadSet =
-            OverloadSetUValue::create(name.strref(), ArrayRef<ASTDecl *>{decl},
-                                      ParamBindings(emitter.getDeclScope()),
-                                      this, CallSyntax::kDirectCall);
+        auto singletonOverloadSet = OverloadSetUValue::create(
+            name.strref(), ArrayRef<ASTDecl *>{decl},
+            ParamBindings(emitter.getDeclScope(), this),
+            CallSyntax::kDirectCall);
         auto funcValue = emitter.emitResult(singletonOverloadSet, this, dest);
         funcValues.emplace_back(SyntheticNode(getLoc(), funcValue));
       }
@@ -4981,6 +4981,6 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  return emitter.emitConstructorCall(tupleType, CallOperands(elements), this,
+  return emitter.emitConstructorCall(tupleType, CallOperands(this, elements),
                                      CallSyntax::kTypeCall, dest);
 }

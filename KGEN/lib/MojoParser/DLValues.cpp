@@ -155,15 +155,13 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 //===----------------------------------------------------------------------===//
 
 SubscriptDLValue::SubscriptDLValue(PValue getter, StringAttr setterValueName,
-                                   CallOperands &&operands, ASTType elementType,
-                                   const ExprNode *expr)
+                                   CallOperands &&operands, ASTType elementType)
     : BaseDLValue(elementType), getter(getter),
-      setterValueName(setterValueName), operands(std::move(operands)),
-      expr(expr) {}
+      setterValueName(setterValueName), operands(std::move(operands)) {}
 
 /// Return true if this is a subscript, false if this is an attribute access.
 bool SubscriptDLValue::isSubscript() const {
-  return expr->kind == ExprNode::kSubscript;
+  return operands.callExpr->kind == ExprNode::kSubscript;
 }
 
 void SubscriptDLValue::print(raw_ostream &os) const {
@@ -174,14 +172,14 @@ void SubscriptDLValue::print(raw_ostream &os) const {
 CValue SubscriptDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
   // We got an elementType, so we know it has at least a getter or a setter.
   if (!getter) {
-    emitter.emitError(expr->getLoc(),
+    emitter.emitError(operands.callExpr->getLoc(),
                       "cannot read from set-only value of type ")
-        << elementType << expr->getRange();
+        << elementType << operands.callExpr->getRange();
     return {};
   }
 
   return emitter.emitIndirectCall(getter, CallOperands(operands), dest,
-                                  CallSyntax::kMethodCall, expr);
+                                  CallSyntax::kMethodCall);
 }
 
 CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
@@ -199,7 +197,7 @@ CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // if (!setter) {
   StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
   return emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
-                                     storeDest, CallSyntax::kMethodCall, expr);
+                                     storeDest, CallSyntax::kMethodCall);
 }
 
 //===----------------------------------------------------------------------===//
@@ -221,8 +219,8 @@ void TupleDLValue::print(raw_ostream &os) const {
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.
 CValue TupleDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
   // Emit a call to the tuple type constructor as an explicit construction.
-  return emitter.emitConstructorCall(elementType, CallOperands(eltLValues),
-                                     expr, CallSyntax::kTypeCall, dest);
+  return emitter.emitConstructorCall(
+      elementType, CallOperands(expr, eltLValues), CallSyntax::kTypeCall, dest);
 }
 
 // TODO: Move this somewhere common like IREmitter

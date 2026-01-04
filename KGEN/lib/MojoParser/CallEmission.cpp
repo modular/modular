@@ -103,26 +103,27 @@ raw_ostream &LIT::operator<<(raw_ostream &os, CallSyntax val) {
 //===----------------------------------------------------------------------===//
 
 OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                         ParamBindings &&paramBindings, const ExprNode *expr,
-                         CallSyntax syntax, bool erroneous)
+                         ParamBindings &&paramBindings, CallSyntax syntax,
+                         bool erroneous)
     : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()),
-      paramBindings(std::move(paramBindings)), expr(expr), syntax(syntax),
+      paramBindings(std::move(paramBindings)), syntax(syntax),
       erroneous(erroneous) {}
+
+SMLoc OverloadSet::getExprLoc() const { return getExpr()->getLoc(); }
 
 /// Resolve the callee into a single PValue callee.
 static PValue getCallee(ASTDecl *fnDecl, StringRef baseName,
-                        const ParamBindings &paramBindings,
-                        const ExprNode *expr) {
+                        const ParamBindings &paramBindings) {
   auto funcOp = cast<FnOp>(fnDecl->getIfOperation());
   // Check if the function overload set resolved to a deprecated overload.
   if (StringAttr warning = funcOp.getDeprecationWarningAttr()) {
-    auto diag =
-        paramBindings.shared.emitWarning(expr->getLoc(), warning.getValue())
-        << expr->getRange();
+    auto diag = paramBindings.shared.emitWarning(paramBindings.getExprLoc(),
+                                                 warning.getValue())
+                << paramBindings.getExpr()->getRange();
     diag.attachNote(fnDecl->getLoc())
         << "'" << *funcOp.getSourceName() << "' declared here";
   }
-  return paramBindings.getBoundConstAttrFor(funcOp, baseName, expr);
+  return paramBindings.getBoundConstAttrFor(funcOp, baseName);
 }
 
 /// Return if the given fitness is valid or function constraint inconclusive,
@@ -386,7 +387,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   // Check for param constraint inconclusiveness - if ANY candidate has this,
   // fail the entire overload resolution immediately.
   if (anyParamConstraintInconclusive) {
-    emitInconclusiveCandidatesError(getShared(), expr, baseName,
+    emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
                                     /*isCall=*/false,
                                     /*isParamConstraint=*/true, evaluations);
     return {};
@@ -397,9 +398,9 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
     if (isErroneous())
       return {};
     auto diag = getShared().emitError(
-                    expr->getLoc(),
+                    getExprLoc(),
                     "cannot form a reference to overloaded declaration of '")
-                << baseName << "'" << expr->getRange();
+                << baseName << "'" << getExpr()->getRange();
     for (auto &[candidate, eval] : evaluations) {
       diag.attachNote(candidate->getLoc())
           << "candidate not viable: " << eval.takeDiag();
@@ -418,7 +419,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   // If any of the top candidates are inconclusive (function constraints),
   // report the result specially.
   if (hasInconclusiveCandidates) {
-    emitInconclusiveCandidatesError(getShared(), expr, baseName,
+    emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
                                     /*isCall=*/true,
                                     /*isParamConstraint=*/false, evaluations);
     return {};
@@ -432,26 +433,26 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
            "No arguments to require re-emission");
 
     // On success, wrap things up into one callee.
-    ParamBindings newBindings(paramBindings.declScope);
+    ParamBindings newBindings(paramBindings.declScope, getExpr());
     for (TypedAttr bind : bestFitness.getParamBindings())
-      newBindings.addPrechecked(expr, bind);
-    return getCallee(selectedDecl, baseName, newBindings, expr);
+      newBindings.addPrechecked(getExpr(), bind);
+    return getCallee(selectedDecl, baseName, newBindings);
   }
   if (isErroneous())
     return {};
 
   // Otherwise, we couldn't use the parameters to resolve the overload set.
   // We probably forgot to call it, which would provide arguments to resolve it.
-  auto diag = getShared().emitError(expr->getLoc());
+  auto diag = getShared().emitError(getExprLoc());
   diag << "cannot form a reference to overloaded declaration of '" << baseName
-       << "'" << expr->getRange();
+       << "'" << getExpr()->getRange();
 
   if (size_t minConversions = bestFitness.getNumImplicitConversions() / 2)
     diag << ", each candidate requires " << minConversions
          << " implicit conversion" << plural(minConversions)
-         << ", disambiguate with an explicit cast" << expr->getRange();
+         << ", disambiguate with an explicit cast" << getExpr()->getRange();
   else
-    diag.attachNote(expr->getLoc()) << "did you mean to call it?";
+    diag.attachNote(getExprLoc()) << "did you mean to call it?";
   for (auto &[candidate, eval] : evaluations) {
     auto func = cast<FnOp>(candidate->getIfOperation());
     MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
@@ -546,7 +547,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // itself an implicit conversion.  We don't want to allow A->B->C conversions.
   bool allowImplicitConversions = syntax != CallSyntax::kImplicitConvert;
 
-  CallOperands scratchOperands;
+  CallOperands scratchOperands(operands.callExpr);
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<std::pair<ASTDecl *, OverloadFitness>> evaluations;
   bool allInvalid = true;
@@ -580,7 +581,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // fail the entire overload resolution immediately.
   if (anyParamConstraintInconclusive) {
     if (emitDiagnosticOnFailure && !isErroneous()) {
-      emitInconclusiveCandidatesError(getShared(), expr, baseName,
+      emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
                                       /*isCall=*/true,
                                       /*isParamConstraint=*/true, evaluations);
     }
@@ -592,7 +593,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     if (!emitDiagnosticOnFailure || isErroneous())
       return {};
 
-    auto diag = getShared().emitError(expr->getLoc()) << expr->getRange();
+    auto diag = getShared().emitError(getExprLoc()) << getExpr()->getRange();
 
     // Diagnose the case when there are no candidates found by lookup.
     if (fnDecls.empty()) {
@@ -620,8 +621,9 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // Reject Int(x) where x is already an Int with an error + fixit.
     if (syntax == CallSyntax::kTypeCall && singleOperandType && initResType &&
-        singleOperandType.isEqualCanon(initResType) && isa<CallNode>(expr)) {
-      const CallNode &callNode = *cast<CallNode>(expr);
+        singleOperandType.isEqualCanon(initResType) &&
+        isa<CallNode>(getExpr())) {
+      const CallNode &callNode = *cast<CallNode>(getExpr());
       // This removes the constructor call, but does not remove the parens
       // because we don't want to introduce precedence problems.
       diag << "cannot construct " << initResType
@@ -641,10 +643,10 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
         diag << "cannot implicitly convert " << initResType
              << " type as a value to an instance of " << initResType
              << "; did you mean to instantiate " << initResType << "?"
-             << expr->getRange();
+             << getExpr()->getRange();
       } else {
         diag << "cannot implicitly convert " << singleOperandType
-             << " value to " << initResType << expr->getRange();
+             << " value to " << initResType << getExpr()->getRange();
       }
 
       return {};
@@ -707,14 +709,14 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // invalid candidates have been filtered out.
   if (!evaluations.empty()) {
     SmallVector<ASTDecl *> bestDecls(llvm::make_first_range(evaluations));
-    getShared().notifyListenerOnRef(bestDecls, baseName, expr, syntax);
+    getShared().notifyListenerOnRef(bestDecls, baseName, getExpr(), syntax);
   }
 
   // If any of the top candidates are inconclusive (function constraints),
   // report the result specially.
   if (hasInconclusiveCandidates) {
     if (emitDiagnosticOnFailure && !isErroneous()) {
-      emitInconclusiveCandidatesError(getShared(), expr, baseName,
+      emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
                                       /*isCall=*/true,
                                       /*isParamConstraint=*/false, evaluations);
     }
@@ -737,10 +739,10 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // Finally, wrap things up into one callee, resolving it to a PValue with
     // the parameters bound and substituted into its signature.
     auto newBindings = [&](OverloadFitness &fitness) -> PValue {
-      ParamBindings newBindings(paramBindings.declScope);
+      ParamBindings newBindings(paramBindings.declScope, getExpr());
       for (TypedAttr bind : fitness.getParamBindings())
-        newBindings.addPrechecked(expr, bind);
-      return getCallee(selectedDecl, baseName, newBindings, expr);
+        newBindings.addPrechecked(getExpr(), bind);
+      return getCallee(selectedDecl, baseName, newBindings);
     };
 
     PValue boundFunction = newBindings(bestFitness);
@@ -748,17 +750,18 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
         selectedFunc.getImplicitConversion() ==
             ImplicitConversionKind::Deprecated) {
-      auto diag = emitter.emitWarning(expr->getLoc(),
+      auto diag = emitter.emitWarning(getExprLoc(),
                                       "deprecated implicit conversion from ")
                   << operands[0].ir.getRValueTypeIfResolvable() << " to "
-                  << selfResultType << expr->getRange();
+                  << selfResultType << getExpr()->getRange();
       std::string resTypeStr = selfResultType.getAsString(&emitter.shared);
-      diag.attachNote(expr->getLoc())
+      diag.attachNote(getExprLoc())
           << "call '" << resTypeStr + "(...)' explicitly"
-          << FixIt::insertBeforeToken(expr->getRangeStart(), resTypeStr + "(")
-          << FixIt::insertAfterToken(expr->getRangeEnd(), ")",
+          << FixIt::insertBeforeToken(getExpr()->getRangeStart(),
+                                      resTypeStr + "(")
+          << FixIt::insertAfterToken(getExpr()->getRangeEnd(), ")",
                                      emitter.shared.diags)
-          << expr->getRange();
+          << getExpr()->getRange();
       diag.attachNote(selectedDecl->getLoc())
           << "implicit constructor for " << selfResultType << " declared here";
     }
@@ -790,8 +793,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
   if (emitDiagnosticOnFailure && !isErroneous()) {
-    auto diag = getShared().emitError(expr->getLoc(), "ambiguous call to '")
-                << baseName << "'" << expr->getRange();
+    auto diag = getShared().emitError(getExprLoc(), "ambiguous call to '")
+                << baseName << "'" << getExpr()->getRange();
     if (size_t minConversions =
             evaluations[0].second.getNumImplicitConversions() / 2) {
       diag << ", each candidate requires " << minConversions
@@ -835,7 +838,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   // reported another way.
   if (!sugarIsa<FnTypeGeneratorType>(functionType)) {
     if (emitError && !sugarIsa<TypeCheckErrorType>(functionType)) {
-      auto &diag = emitError(expr->getLoc())
+      auto &diag = emitError(getExprLoc())
                    << "cannot convert function to non-function type "
                    << functionType;
       for (ASTDecl *candidate : fnDecls)
@@ -883,7 +886,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     // This candidate is valid if it can be implicitly converted to the required
     // function type.
     if (IREmitter::canImplicitlyConvertToType(
-            {UnboundAttr::get(boundCandidateType), expr}, functionType,
+            {UnboundAttr::get(boundCandidateType), getExpr()}, functionType,
             declScope))
       return newBindings;
     return {};
@@ -909,35 +912,36 @@ PValue OverloadSet::filterOverloadSetForValueType(
   // Notify the listener of the updated decl references for the call now that
   // invalid candidates have been filtered out.
   if (!validCandidates.empty())
-    getShared().notifyListenerOnRef(validCandidates, baseName, expr, syntax);
+    getShared().notifyListenerOnRef(validCandidates, baseName, getExpr(),
+                                    syntax);
 
   // If we have exactly one viable candidate, then we succeed.
   if (validCandidates.size() == 1) {
-    ParamBindings newBindings(paramBindings.declScope);
+    ParamBindings newBindings(paramBindings.declScope, getExpr());
     for (TypedAttr bind : candidateBindings.front())
-      newBindings.addPrechecked(expr, bind);
+      newBindings.addPrechecked(getExpr(), bind);
 
     // Use an emitter with invalid context, since errors aren't expected.
     IREmitter emitter(declScope, EC_InvalidContext);
-    PValue callee =
-        getCallee(validCandidates.front(), baseName, newBindings, expr);
-    return emitter.emitPValue({callee, expr}, EC_InvalidContext, functionType);
+    PValue callee = getCallee(validCandidates.front(), baseName, newBindings);
+    return emitter.emitPValue({callee, getExpr()}, EC_InvalidContext,
+                              functionType);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
   if (!emitError)
     return {};
 
-  MojoInflightDiag &diag = emitError(expr->getLoc());
+  MojoInflightDiag &diag = emitError(getExprLoc());
 
   ArrayRef<ASTDecl *> declsToReport;
   if (validCandidates.empty()) {
     diag << "no '" << baseName << "' candidates have type " << functionType
-         << expr->getRange();
+         << getExpr()->getRange();
     declsToReport = fnDecls;
   } else {
     diag << "ambiguous use of '" << baseName << "' as type " << functionType
-         << expr->getRange();
+         << getExpr()->getRange();
     declsToReport = validCandidates;
   }
 
@@ -972,15 +976,15 @@ PValue OverloadSet::filterOverloadSetForValueType(
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {
   if (fnDecls.size() == 1)
-    return getCallee(fnDecls[0], baseName, paramBindings, expr);
+    return getCallee(fnDecls[0], baseName, paramBindings);
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");
   auto diag = getShared().emitError(
-                  expr->getLoc(),
+                  getExprLoc(),
                   "cannot form a reference to overloaded declaration of '")
-              << baseName << "'" << expr->getRange();
-  diag.attachNote(expr->getLoc()) << "did you mean to call it?";
+              << baseName << "'" << getExpr()->getRange();
+  diag.attachNote(getExprLoc()) << "did you mean to call it?";
 
   for (ASTDecl *candidate : fnDecls) {
     auto func = cast<FnOp>(candidate->getIfOperation());
@@ -1128,11 +1132,11 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
 /// list.
 PValue OverloadSet::lookupAndResolve(
     ASTType type, StringRef methodName, CallOperands &callOperands,
-    const ExprNode *callExpr, CallSyntax syntax,
-    function_ref<void()> lookupFailureErrorHandler,
+    CallSyntax syntax, function_ref<void()> lookupFailureErrorHandler,
     bool shouldPrintOverloadErrors, IREmitter &emitter) {
   auto ovSet = OverloadSet::lookup(emitter.getDeclScope(), type, methodName,
-                                   callExpr, syntax, lookupFailureErrorHandler);
+                                   callOperands.callExpr, syntax,
+                                   lookupFailureErrorHandler);
 
   // If the core lookup failed, don't filter.
   if (ovSet.isNull())
@@ -1190,7 +1194,7 @@ PValue OverloadSet::getIfPValue() const {
     return {};
 
   return paramBindings.getBoundConstAttrFor(
-      cast<FnOp>(fnDecls.front()->getIfOperation()), baseName, expr);
+      cast<FnOp>(fnDecls.front()->getIfOperation()), baseName);
 }
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity
@@ -1200,7 +1204,7 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
   // this as a RValue.  Try to resolve it based on the destination's type.
   ASTType expectedType;
   if (fnDecls.size() > 1) {
-    expectedType = dest.resolveImpliedType(expr->getLoc(),
+    expectedType = dest.resolveImpliedType(getExprLoc(),
                                            /*no implied type*/ Type(), emitter);
   }
 
@@ -1214,7 +1218,7 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
 
   // If we have no base value, then we are just a symbol, return it.
   if (!baseValue)
-    return emitter.emitCResult(directSymbolAttr, expr, dest);
+    return emitter.emitCResult(directSymbolAttr, getExpr(), dest);
 
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
@@ -1227,7 +1231,7 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
 
   // TODO: Need to emit a closure instance that partially applies the 'self'
   // argument here.
-  auto loc = expr->getLoc();
+  auto loc = getExprLoc();
   auto diag = emitter.emitError(loc, "cannot emit closure for method '")
               << baseName << "'";
   diag.attachNote(loc)
@@ -1249,11 +1253,11 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
 /// This emits an error and returns null on failure.
 CValue IREmitter::emitIndirectCallInTryBlock(
     CValue callee, CallOperands &&operands, ValueDest &dest, CallSyntax syntax,
-    const ExprNode *callExpr,
     std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
   ValueDest throwDest(dest.getContext());
 
   auto calleeSig = sugarCast<FnTypeGeneratorType>(callee.getRValueType());
+  auto callExpr = operands.callExpr;
   auto loc = translateLocation(callExpr->getLoc());
 
   // If the ValueDest is a lazy materialized vardecl, we need to materialize
@@ -1294,8 +1298,8 @@ CValue IREmitter::emitIndirectCallInTryBlock(
   // Emit this call into the try region.
   builder->createBlock(&tryOp.getTryRegion());
 
-  CValue result = emitIndirectCall(callee, std::move(operands), throwDest,
-                                   syntax, callExpr);
+  CValue result =
+      emitIndirectCall(callee, std::move(operands), throwDest, syntax);
   if (!result) {
     throwDest.resetForError(*this);
     dest.resetForError(*this);
@@ -1357,19 +1361,18 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
     return {};
   }
 
-  return emitter.emitCallUnchecked(callee, operands, dest, syntax, expr);
+  return emitter.emitCallUnchecked(callee, operands, dest, syntax);
 }
 
 CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
-                                   ValueDest &dest, CallSyntax syntax,
-                                   const ExprNode *callExpr) {
+                                   ValueDest &dest, CallSyntax syntax) {
+  auto callExpr = operands.callExpr;
   auto calleeSig = sugarDynCast<FuncTypeGeneratorType>(callee.getRValueType());
   if (!calleeSig) {
     // If we are invoking something other than a FuncTypeGeneratorType, try to
     // invoke its `__call__` method.
     operands.addSelf({callee, callExpr});
-    return emitNamedMethodCall("__call__", std::move(operands), dest, syntax,
-                               callExpr);
+    return emitNamedMethodCall("__call__", std::move(operands), dest, syntax);
   }
 
   // If we have a function pointer, resolve it to an RValue.
@@ -1380,8 +1383,8 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
   }
 
   // Check to see if we can apply these operands to the callee signature.
-  OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindings(getDeclScope()),
-                       callExpr, syntax};
+  OverloadSet bindings{"callee", /*fnDecls=*/{},
+                       ParamBindings(getDeclScope(), callExpr), syntax};
   auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
                                            bindings, operands,
                                            /*allowImplicitConversions=*/true);
@@ -1436,18 +1439,16 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     // Now that we mutated the operand list by introducing some new memory
     // types to provide origins, try again.  This will re-evaluate parameter
     // bindings and either succeed or fail based on the new information.
-    return emitIndirectCall(calleeRV, std::move(operands), dest, syntax,
-                            callExpr);
+    return emitIndirectCall(calleeRV, std::move(operands), dest, syntax);
   }
 
   // Otherwise, we resolved the callee correctly, emit the call.
-  return emitCallUnchecked(boundCalleeRV, operands, dest, syntax, callExpr);
+  return emitCallUnchecked(boundCalleeRV, operands, dest, syntax);
 }
 
 CValue IREmitter::emitNamedMethodCall(StringRef methodName,
                                       CallOperands &&operands, ValueDest &dest,
-                                      CallSyntax syntax,
-                                      const ExprNode *callNode) {
+                                      CallSyntax syntax) {
   assert(!operands.values.empty() &&
          "Cannot emit a method call without a receiver!");
 
@@ -1466,7 +1467,7 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
   ASTType type = selfVal.getRValueType();
 
   auto emitNoMethodError = [&]() {
-    auto diag = emitError(callNode->getLoc(), "")
+    auto diag = emitError(operands.getExprLoc(), "")
                 << type << " does not implement the '" << methodName
                 << "' method";
     switch (syntax) {
@@ -1485,23 +1486,21 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
   };
 
   // If the type doesn't have the specified method, emit an error.
-  PValue callee =
-      OverloadSet::lookupAndResolve(type, methodName, operands, callNode,
-                                    syntax, emitNoMethodError, true, *this);
+  PValue callee = OverloadSet::lookupAndResolve(
+      type, methodName, operands, syntax, emitNoMethodError, true, *this);
   if (!callee) {
     dest.resetForError(*this);
     return {};
   }
 
-  return emitIndirectCall(callee, std::move(operands), dest, syntax, callNode);
+  return emitIndirectCall(callee, std::move(operands), dest, syntax);
 }
 
 /// Emit a call to __init__, returning an instance of the specified type.  If
 /// `allowImplicitConversion` is true, the provided args are allowed to
 /// implicitly convert to the expectations of the constructor signatures.
 CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
-                                      const ExprNode *expr, CallSyntax syntax,
-                                      ValueDest &dest) {
+                                      CallSyntax syntax, ValueDest &dest) {
   // If the dest type is invalid, then an error has already been reported.
   if (type.isTypeCheckErrorType()) {
     dest.resetForError(*this);
@@ -1509,6 +1508,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
   }
 
   // Check to see if we can invoke an __init__ method to convert it.
+  const ExprNode *expr = callOperands.getExpr();
   OverloadSet callee =
       OverloadSet::lookup(getDeclScope(), type, "__init__", expr, syntax);
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
@@ -1587,7 +1587,6 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
 /// any error reporting. This does not generate any IR.
 FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
                                                 CallOperands &&operands,
-                                                const ExprNode *expr,
                                                 ASTDecl &declScope,
                                                 bool isImplicitConversion) {
 
@@ -1595,9 +1594,9 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   // method on the expected type.
   auto syntax = isImplicitConversion ? CallSyntax::kImplicitConvert
                                      : CallSyntax::kTypeCall;
-  OverloadSet callee =
-      OverloadSet::lookup(declScope, requiredType, "__init__", expr, syntax,
-                          /*no error emission on failure */ {});
+  OverloadSet callee = OverloadSet::lookup(
+      declScope, requiredType, "__init__", operands.getExpr(), syntax,
+      /*no error emission on failure */ {});
 
   // If there are no viable candidates for the construction, we fail.
   if (!callee)
@@ -1605,8 +1604,8 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
 
   // Install the Self type parameters on the callee directly, since they cannot
   // be inferred from the result.
-  callee.paramBindings =
-      ParamBindings::getForDeclaredType(declScope, requiredType, expr);
+  callee.paramBindings = ParamBindings::getForDeclaredType(
+      declScope, requiredType, operands.getExpr());
 
   // Determine if we can emit this using an IREmitter in the parameter domain.
   // This ensures we don't emit any code converting parameters to MValues etc.

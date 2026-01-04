@@ -71,11 +71,10 @@ public:
   /// The function overload set that may be called directly.
   SmallVector<ASTDecl *, 1> fnDecls;
 
-  /// Any bound parameters.
+  /// Any bound parameters as well as the callExpr overall this represents.
   ParamBindings paramBindings;
 
-  /// This is information about where this overload set was formed.
-  const ExprNode *expr;
+  /// This is syntax how this overload set was formed.
   CallSyntax syntax;
 
   /// If this is a constructor call like T[1](x), this contains the type being
@@ -94,8 +93,8 @@ public:
   /// Form an overload set with the specified function overloads and the given
   /// parameter bindings. The parameter bindings are taken ownership of.
   OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-              ParamBindings &&paramBindings, const ExprNode *expr,
-              CallSyntax syntax, bool erroneous = false);
+              ParamBindings &&paramBindings, CallSyntax syntax,
+              bool erroneous = false);
 
   /// Form an OverloadSet with a lookup of a named method on the specified type,
   /// but without the candidate set filtered with operands.   If successful,
@@ -120,19 +119,17 @@ public:
   /// parameter context. The actual emission needs to use the updated argument
   /// list.
   static PValue lookupAndResolve(ASTType type, StringRef methodName,
-                                 CallOperands &operands,
-                                 const ExprNode *callExpr, CallSyntax syntax,
+                                 CallOperands &operands, CallSyntax syntax,
                                  function_ref<void()> lookupFailureErrorHandler,
                                  bool shouldPrintOverloadErrors,
                                  IREmitter &emitter);
 
   /// Same as the above but a convenience when never emitting an error.
   static PValue lookupAndResolve(ASTType type, StringRef methodName,
-                                 CallOperands &operands,
-                                 const ExprNode *callExpr, CallSyntax syntax,
+                                 CallOperands &operands, CallSyntax syntax,
                                  IREmitter &emitter) {
-    return lookupAndResolve(type, methodName, operands, callExpr, syntax, {},
-                            false, emitter);
+    return lookupAndResolve(type, methodName, operands, syntax, {}, false,
+                            emitter);
   }
 
   bool isNull() const { return fnDecls.empty(); }
@@ -146,6 +143,8 @@ public:
 
   ASTDecl &getDeclScope() const { return paramBindings.declScope; }
   SharedState &getShared() const { return paramBindings.shared; }
+  const ExprNode *getExpr() const { return paramBindings.getExpr(); }
+  SMLoc getExprLoc() const;
 
   /// Perform substitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
@@ -215,7 +214,6 @@ public:
   /// any error reporting. This does not generate any IR.
   static FailureOr<PValue> canConstructType(ASTType requiredType,
                                             CallOperands &&operands,
-                                            const ExprNode *expr,
                                             ASTDecl &declScope,
                                             bool isImplicitConversion);
 
@@ -224,8 +222,7 @@ public:
 private:
   OverloadSet(ASTDecl &declScope, const ExprNode *expr, CallSyntax syntax,
               bool erroneous)
-      : paramBindings(declScope), expr(expr), syntax(syntax),
-        erroneous(erroneous) {}
+      : paramBindings(declScope, expr), syntax(syntax), erroneous(erroneous) {}
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,

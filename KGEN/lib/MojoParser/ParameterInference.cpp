@@ -995,7 +995,7 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
       auto nonParamDRT =
           ASTType(expDRT).getWithUnknownParametersReplaced(shared);
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
-          nonParamDRT, CallOperands({{actual, expr}}), expr, state.declScope,
+          nonParamDRT, CallOperands(expr, {{actual, expr}}), state.declScope,
           /*isImplicitConversion=*/true);
       if (failed(pValue) || !pValue.value())
         return error();
@@ -1081,8 +1081,7 @@ RetryLabel:
     // which gets used as X[String](42) inferring T and A.
 
     // FIXME: Client should pass a real location.
-    SyntheticNode synthNode(declScope.getLoc());
-    ParamMatcher matcher(&synthNode, *this);
+    ParamMatcher matcher(givenBindings.callExpr, *this);
     if (selfParam) {
       // TODO: Macro'ize this when error handling logic is fixed.
       switch (matcher.matchParams(selfParam, retParam)) {
@@ -1134,7 +1133,7 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
   FailureOr<PValue> initFn = OverloadSet::canConstructType(
-      inferredType, std::move(operands), operand.expr, declScope,
+      inferredType, std::move(operands), declScope,
       /*isImplicitConversion=*/false);
   if (failed(initFn) || !initFn.value())
     return {};
@@ -1442,7 +1441,7 @@ RetryLabel:
   auto nonParamType =
       knownExpectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
-      nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
+      nonParamType, CallOperands(curArgExpr, {{argVal, curArgExpr}}),
       emitter.getDeclScope(), /*isImplicitConversion=*/true);
   if (llvm::failed(pValue))
     return success(); // Issue already diagnosed.

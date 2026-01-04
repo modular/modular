@@ -1288,7 +1288,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (shared.diBuilder)
       diScopeGuard = shared.diBuilder->pushScopeGuard(initFunc.getLocScope());
-    emitter.emitConstructorCall(clType, {}, loc, CallSyntax::kDirectCall, dest);
+    emitter.emitConstructorCall(clType, CallOperands{&loc},
+                                CallSyntax::kDirectCall, dest);
   }
 
   // Populate the body of the call op.
@@ -1314,8 +1315,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     Value target = RefStructGEROp::create(builder, selfArg, paramField);
     emitter.builder = builder;
     ValueDest dest(EC_Assignment);
-    emitter.emitNamedMethodCall("expand", {{{MBValue(target), loc}}}, dest,
-                                CallSyntax::kMethodCall, loc);
+    emitter.emitNamedMethodCall("expand",
+                                CallOperands{loc, {{MBValue(target), loc}}},
+                                dest, CallSyntax::kMethodCall);
   }
   for (auto [capture, fieldOp] :
        llvm::zip(captures, llvm::drop_begin(declOp.getFieldDecls(),
@@ -2389,7 +2391,7 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
       callFunction, structSelfType.mlirType, *shared.declResolver);
   auto bindings = ParamBindings::getForDeclaredType(
       emitter.getDeclScope(), structSelfType, syntheticNode);
-  OverloadSet ov(name, callDecls, std::move(bindings), syntheticNode,
+  OverloadSet ov(name, callDecls, std::move(bindings),
                  CallSyntax::kMethodCallSynthetic);
   /// Perform rebind on method that implements the trait function but with
   /// different argument names.
@@ -2545,17 +2547,17 @@ void ClosureEmitter::addConformanceToDevicePassable(
         Type boundStrLitType = strLitDecl.bindReference({closureStr});
         ValueDest litDest(EC_CallArgValue);
         CValue literalValue = emitter.emitConstructorCall(
-            ASTType(boundStrLitType), CallOperands(), &loc,
-            CallSyntax::kTypeCall, litDest);
+            ASTType(boundStrLitType), CallOperands(&loc), CallSyntax::kTypeCall,
+            litDest);
 
         // Call String.__init__(literal) into the byref result slot.
         ASTType stringType =
             shared.getBuiltinStringType(structDecl, structDecl.getLoc());
         ValueDest resultDest(MLValue(block.getArguments().back()),
                              EC_ReturnValue);
-        CallOperands ctorOperands;
+        CallOperands ctorOperands(&loc);
         ctorOperands.add(ASTExprAnd<CValue>{literalValue, &loc});
-        emitter.emitConstructorCall(stringType, std::move(ctorOperands), &loc,
+        emitter.emitConstructorCall(stringType, std::move(ctorOperands),
                                     CallSyntax::kTypeCall, resultDest);
         auto noneAttr = KGEN::ParamConstantOp::create(
             b, KGEN::NoneAttr::get(b.getContext()));

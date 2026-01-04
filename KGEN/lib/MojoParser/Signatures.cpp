@@ -1460,7 +1460,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr, param.get());
 
   ParameterExprArrayAttr bindingValuesAttr = bindings.verifyBindings(
-      packStruct, typeSig, arg.typeExpr->getLoc(), /*partial=*/false);
+      packStruct, typeSig, /*disableDiags=*/false, /*partial=*/false);
   if (!bindingValuesAttr)
     return {};
   LIT::StructType boundType =

@@ -554,7 +554,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
 
         // Initializer lists are good if we can construct the expected type.
         FailureOr<PValue> initFn = OverloadSet::canConstructType(
-            expectedRVType, std::move(operands), operand.expr, declScope,
+            expectedRVType, std::move(operands), declScope,
             /*isImplicitConversion=*/false);
         // If there were declaration errors, assume construction is possible
         // to avoid spurious errors.
@@ -686,8 +686,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
 
   auto [bindings, fitness, diag] = callable.paramBindings.verifyBindings(
       signature.getInputParamTypes(), signature.getMetadata(),
-      callable.baseName, callable.expr->getLoc(),
-      /*opLoc=*/{}, /*partial=*/true);
+      callable.baseName, /*opLoc=*/{}, /*partial=*/true);
   if (!bindings) {
     // If no diagnostics were emitted, this must be an inconclusive fitness.
     if (!diag) {
@@ -719,7 +718,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   size_t numPosOperands = operands.getNumPositional();
   size_t numOperands = operands.size();
 
-  SMLoc callLoc = callable.expr->getLoc();
+  SMLoc callLoc = callable.getExpr()->getLoc();
   SharedState &shared = callable.getShared();
   DiagEmitter emitDiagFor(shared, callLoc, operands.size(), callable.syntax);
 
@@ -952,7 +951,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
     // If we succeeded inference but didn't get a value for this parameter, then
     // the parameter must not be present: complain.
-    inferenceDiags.addFailure(bindingsSoFar.size(), callable.expr,
+    inferenceDiags.addFailure(bindingsSoFar.size(), callable.getExpr(),
                               InferenceFailure::NotFoundFailure());
     return PValue();
   };
@@ -1002,7 +1001,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                                              numPosOperands);
   }
 
-  SMLoc loc = callable.expr->getLoc();
+  SMLoc loc = callable.getExpr()->getLoc();
 
   // As we walk through the values provided as part of the argument list, we
   // match them up against arguments expected by the signature of the callee,

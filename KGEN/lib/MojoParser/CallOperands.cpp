@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/CallOperands.h"
+#include "KGEN/MojoParser/ExprNode.h"
 #include "MojoUtils.h"
 
 #include "KGEN/LITDialect/LITAttrs.h"
@@ -19,6 +20,8 @@
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
+
+llvm::SMLoc CallOperands::getExprLoc() const { return callExpr->getLoc(); }
 
 void CallOperands::dump() const { llvm::errs() << *this << '\n'; }
 

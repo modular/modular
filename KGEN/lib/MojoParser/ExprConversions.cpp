@@ -450,8 +450,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   IREmitter emitter(*thunkDecl, b);
 
   // Construct the call operands from the function block arguments.
-  CallOperands operands;
   SyntheticNode node(thunkDecl->getLoc());
+  CallOperands operands(&node);
 
   std::optional<size_t> thunkVariadicArgIndexOpt =
       thunkSignature.findPackVarArgIndex();
@@ -513,7 +513,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
       // Call the_pack.__getitem__[index]()
       CallOperands getItemOperands(
-          {ASTExprAnd<MBValue>{packRefMBValue, &node}});
+          &node, {ASTExprAnd<MBValue>{packRefMBValue, &node}});
       CValue getItemResult =
           getItemOv.emitCall(std::move(getItemOperands), eltDest, emitter);
       if (!getItemResult) {
@@ -610,23 +610,22 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
     needsExplicitCopyOut = true;
   }
 
-  CValue callResult =
-      emitter.emitIndirectCall(PValue(calleeParam), std::move(operands), dest,
-                               CallSyntax::kMethodCall, node);
+  CValue callResult = emitter.emitIndirectCall(
+      PValue(calleeParam), std::move(operands), dest, CallSyntax::kMethodCall);
   // If we need an explicit copy out, emit a call to .copy() on the result into
   // the ultimate dest.
   if (needsExplicitCopyOut) {
     callResult = emitter.emitNamedMethodCall(
-        "copy", CallOperands({{callResult, node}}), explicitCopyOutDest,
-        CallSyntax::kMethodCall, node);
+        "copy", CallOperands(&node, {{callResult, node}}), explicitCopyOutDest,
+        CallSyntax::kMethodCall);
   }
 
   // If the callee is async, we got a coroutine. Now await it into the result.
   if (thunkSignature.isAsync()) {
     ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
     if (!emitter.emitNamedMethodCall("__await__",
-                                     CallOperands({{callResult, node}}), dest,
-                                     CallSyntax::kMethodCall, node))
+                                     CallOperands(&node, {{callResult, node}}),
+                                     dest, CallSyntax::kMethodCall))
       return {};
   }
 
@@ -1119,7 +1118,7 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
                             srcValue.expr, CallSyntax::kMethodCall);
     os.paramBindings.add(srcValue.expr, PValue(otherType),
                          StringAttr::get(emitter.getContext(), "other_type"));
-    CallOperands operands({srcValue});
+    CallOperands operands(srcValue.expr, {srcValue});
     auto res = os.filterOverloadSet(operands, /*emitDiag*/ false, emitter);
     if (!res)
       return {{}, {}};
@@ -1271,14 +1270,14 @@ ParseResult IREmitter::coerceTypesToEachOther(
   if (lhsMWPV) {
     configEmitter(/*isLHS*/ true);
     ValueDest dest(EC_MergeWith);
-    lhs = emitIndirectCall(lhsMWPV, CallOperands({{lhs, lhsExpr}}), dest,
-                           CallSyntax::kMethodCall, lhsExpr);
+    lhs = emitIndirectCall(lhsMWPV, CallOperands(lhsExpr, {{lhs, lhsExpr}}),
+                           dest, CallSyntax::kMethodCall);
   }
   if (rhsMWPV) {
     configEmitter(/*isLHS*/ false);
     ValueDest dest(EC_MergeWith);
-    rhs = emitIndirectCall(rhsMWPV, CallOperands({{rhs, rhsExpr}}), dest,
-                           CallSyntax::kMethodCall, rhsExpr);
+    rhs = emitIndirectCall(rhsMWPV, CallOperands(rhsExpr, {{rhs, rhsExpr}}),
+                           dest, CallSyntax::kMethodCall);
   }
 
   // Next apply any implicit conversions that may be needed.
@@ -1637,7 +1636,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // We can implicitly convert to the specified type if we can construct it with
   // the value as an implicit conversion.
   FailureOr<PValue> result = OverloadSet::canConstructType(
-      requiredType, {{value}}, value.expr, declScope,
+      requiredType, CallOperands{value.expr, {value}}, declScope,
       /*isImplicitConversion=*/true);
   bool isConvertible = succeeded(result) && result.value();
   // Must cache the overall value type, not just its stripped down rvType.
@@ -1815,6 +1814,6 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
   // We disable implicit conversions to prevent converting T -> S -> U in
   // one step, and to avoid infinite conversion cycles.
-  return emitConstructorCall(requiredType, CallOperands({valueExpr}), expr,
+  return emitConstructorCall(requiredType, CallOperands(expr, {valueExpr}),
                              CallSyntax::kImplicitConvert, dest);
 }

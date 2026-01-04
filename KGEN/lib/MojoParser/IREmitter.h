@@ -454,8 +454,7 @@ public:
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
   CValue emitIndirectCall(CValue callee, CallOperands &&operands,
-                          ValueDest &dest, CallSyntax syntax,
-                          const ExprNode *callExpr);
+                          ValueDest &dest, CallSyntax syntax);
 
   /// Emit an indirect call to a resolved value in a try block, invoking a
   /// callback to generate logic in the 'catch' block that is wrapped around the
@@ -465,8 +464,7 @@ public:
   /// This emits an error and returns null on failure.
   CValue emitIndirectCallInTryBlock(
       CValue callee, CallOperands &&operands, ValueDest &dest,
-      CallSyntax syntax, const ExprNode *callExpr,
-      std::function<void(VarDeclOp errDecl)> emitCatchLogic);
+      CallSyntax syntax, std::function<void(VarDeclOp errDecl)> emitCatchLogic);
 
   /// This helper emits a named method call with the provided `operands`,
   /// where the first positional operand is the receiver of the call. This emits
@@ -478,15 +476,13 @@ public:
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
   CValue emitNamedMethodCall(StringRef methodName, CallOperands &&operands,
-                             ValueDest &dest, CallSyntax syntax,
-                             const ExprNode *callNode);
+                             ValueDest &dest, CallSyntax syntax);
 
   /// Emit a call to __new__ or __init__, returning an instance of the specified
   /// type.  If `allowImplicitConversion` is true, the provided args are allowed
   /// to implicitly convert to the expectations of the constructor signatures.
   CValue emitConstructorCall(ASTType type, CallOperands &&operands,
-                             const ExprNode *expr, CallSyntax syntax,
-                             ValueDest &dest);
+                             CallSyntax syntax, ValueDest &dest);
 
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.
@@ -670,8 +666,7 @@ public:
   /// In case customOpName is provided, emit a custom MLIR operation instead
   /// with the given name for the given custom op definition struct type.
   CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
-                           ValueDest &dest, CallSyntax syntax,
-                           const ExprNode *callExpr);
+                           ValueDest &dest, CallSyntax syntax);
 };
 
 } // namespace M::KGEN::LIT

@@ -841,7 +841,7 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
 
       ValueDest dest(EC_ComptimeAssert);
       messageVal = paramEmitter.emitConstructorCall(
-          stringSliceType, {{{messageVal, messageExpr}}}, expr,
+          stringSliceType, CallOperands{expr, {{messageVal, messageExpr}}},
           CallSyntax::kTypeCall, dest);
     }
     auto messagePVal =
@@ -1081,17 +1081,17 @@ static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
                                                  IREmitter &emitter,
                                                  ASTDecl &declContext,
                                                  llvm::SMLoc loc,
-                                                 ExprNode *node) {
+                                                 const ExprNode *node) {
   ArrayRef<ASTDecl *> raiseHookFns = shared.getBuiltinFunction(
       declContext, "builtin.error", "__mojo_debugger_raise_hook", loc);
   if (raiseHookFns.empty())
     return failure();
 
-  ParamBindings bindings(declContext);
+  ParamBindings bindings(declContext, node);
   OverloadSet call("__mojo_debugger_raise_hook", raiseHookFns,
-                   std::move(bindings), node, CallSyntax::kDirectCall);
+                   std::move(bindings), CallSyntax::kDirectCall);
   ValueDest raiseHookDest(EC_RaiseValue);
-  call.emitCall({}, raiseHookDest, emitter);
+  call.emitCall(CallOperands{node, {}}, raiseHookDest, emitter);
 
   // Emit a LineTableLocOp after the call to ensure the instruction after the
   // call has the correct debug location. This is needed for ARM where StepOut()
@@ -1399,26 +1399,27 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
       prefixEmitter.emitVarDecl("$ITER", UnresolvedType::get(getContext()),
                                 forLocation, VarDeclKind::Synthesized);
   ValueDest rangeDest(iterVar, EC_ForIterator);
-  if (!prefixEmitter.emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
-                                         CallSyntax::kMethodCall, seqExpr))
+  if (!prefixEmitter.emitNamedMethodCall("__iter__",
+                                         CallOperands{seqExpr, {loadedSeq}},
+                                         rangeDest, CallSyntax::kMethodCall))
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
   // Now that we have the iterator (and its type), find the  __next__ method to
   // know what we're dealing with.
-  CallOperands nextOperands({{MLValue(iterVar), seqExpr}});
+  CallOperands nextOperands(seqExpr, {{MLValue(iterVar), seqExpr}});
   ASTType iterType = iterVar.getType().getElementType();
 
   // HORRIBLE HACK: See if the type has a __next_old__ member.  If so, ignore
   // the iterator traits and use it + __has_next__.  This is to work around a
   // GPU codegen pessimization.  Remove this when we figure it out.
-  PValue nextFn = OverloadSet::lookupAndResolve(
-      iterType, "__next_old__", nextOperands, seqExpr, CallSyntax::kMethodCall,
-      prefixEmitter);
+  PValue nextFn =
+      OverloadSet::lookupAndResolve(iterType, "__next_old__", nextOperands,
+                                    CallSyntax::kMethodCall, prefixEmitter);
 
   if (!nextFn) {
-    nextFn = OverloadSet::lookupAndResolve(iterType, "__next__", nextOperands,
-                                           seqExpr, CallSyntax::kMethodCall,
-                                           prefixEmitter);
+    nextFn =
+        OverloadSet::lookupAndResolve(iterType, "__next__", nextOperands,
+                                      CallSyntax::kMethodCall, prefixEmitter);
     if (!nextFn) {
       emitError(seqExpr->getLoc())
           << iterType
@@ -1462,7 +1463,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     // Call __next__.  If it throws then break to the else block.
     if (!emitter.emitIndirectCallInTryBlock(
             nextFn, std::move(nextOperands), indvarDest,
-            CallSyntax::kMethodCall, seqExpr, [&](VarDeclOp errDecl) {
+            CallSyntax::kMethodCall, [&](VarDeclOp errDecl) {
               // Just break on error.  We ignore the actual error value.
               LoopBreakElseOp::create(*emitter.builder, loopOp.getLoc());
             })) {
@@ -1472,8 +1473,8 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   } else {
     ValueDest lengthDest(EC_ForIterator);
     CValue hasNextBool = emitter.emitNamedMethodCall(
-        "__has_next__", CallOperands({{MLValue(iterVar), seqExpr}}), lengthDest,
-        CallSyntax::kMethodCall, seqExpr);
+        "__has_next__", CallOperands(seqExpr, {{MLValue(iterVar), seqExpr}}),
+        lengthDest, CallSyntax::kMethodCall);
     CValue hasNext = emitter.emitI1({hasNextBool, seqExpr}, EC_ForIterator);
     SRValue shouldContinue =
         emitter.emitSRValue({hasNext, seqExpr}, EC_ForIterator);
@@ -1494,7 +1495,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
 
     // Emit the call to __next__ now that we know there is an element.
     if (!emitter.emitIndirectCall(nextFn, std::move(nextOperands), indvarDest,
-                                  CallSyntax::kMethodCall, seqExpr)) {
+                                  CallSyntax::kMethodCall)) {
       indvarDest.resetForError(emitter);
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     }
@@ -1571,12 +1572,12 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   if (!seqValue)
     return failure();
   ValueDest rangeDest(EC_ForIterator);
-  PValue initialIterVal =
-      emitter.emitPValue({emitter.emitNamedMethodCall(
-                              "__iter__", CallOperands({{seqValue, seqExpr}}),
-                              rangeDest, CallSyntax::kMethodCall, seqExpr),
-                          seqExpr},
-                         EC_ForIterator);
+  PValue initialIterVal = emitter.emitPValue(
+      {emitter.emitNamedMethodCall("__iter__",
+                                   CallOperands(seqExpr, {{seqValue, seqExpr}}),
+                                   rangeDest, CallSyntax::kMethodCall),
+       seqExpr},
+      EC_ForIterator);
   if (!initialIterVal)
     return failure();
 
@@ -1594,11 +1595,11 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
     // Resolve the overload with the sequence's type. This succeeds if the
     // iterator type is currently supported.
-    ParamBindings bindings(scope);
+    ParamBindings bindings(scope, seqExpr);
     bindings.add(seqExpr, PValue(iterType));
     // We use paramfor_next_iter as a wrapper because the elaborator doesn't
     // have a strong enough memory model to handle "mut" arguments to next.
-    OverloadSet call(name, paramForImpl, std::move(bindings), seqExpr,
+    OverloadSet call(name, paramForImpl, std::move(bindings),
                      CallSyntax::kDirectCall);
     return call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
   };
@@ -1627,9 +1628,9 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   // expression.
   auto iterValue = PValue(ParamDeclRefAttr::get(iterDecl));
   ValueDest hasNextDest(EC_ForIterator);
-  CValue hasNextRes =
-      emitter.emitIndirectCall(hasNext, CallOperands({{iterValue, seqExpr}}),
-                               hasNextDest, CallSyntax::kMethodCall, seqExpr);
+  CValue hasNextRes = emitter.emitIndirectCall(
+      hasNext, CallOperands(seqExpr, {{iterValue, seqExpr}}), hasNextDest,
+      CallSyntax::kMethodCall);
   auto hasNextI1 = emitter.emitI1({hasNextRes, seqExpr}, EC_ForIterator);
   if (!hasNextI1)
     return failure();
@@ -1652,8 +1653,8 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   // to the target by calling the paramfor_next_iter "next_value" function.
   ValueDest getNextValueDest(EC_ForIterator);
   auto nextValue = emitter.emitIndirectCall(
-      getNextValue, CallOperands({{iterValue, seqExpr}}), getNextValueDest,
-      CallSyntax::kDirectCall, seqExpr);
+      getNextValue, CallOperands(seqExpr, {{iterValue, seqExpr}}),
+      getNextValueDest, CallSyntax::kDirectCall);
   if (!nextValue)
     return failure();
   assert(nextValue.getIfPValue() && "expected PValue in param context");
@@ -2034,12 +2035,12 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // Interrogate the caller to see what convention the first argument to the
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
-  CallOperands enterOperands;
+  CallOperands enterOperands(contextExp);
   enterOperands.addSelf({contextVal, contextExp});
   auto enterEmitter = getEmitter();
   if (PValue enterMethod = OverloadSet::lookupAndResolve(
-          contextRVType, "__enter__", enterOperands, contextExp,
-          CallSyntax::kMethodCall, enterEmitter)) {
+          contextRVType, "__enter__", enterOperands, CallSyntax::kMethodCall,
+          enterEmitter)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self 'mut'.
     auto signature = sugarDynCast<FuncTypeGeneratorType>(enterMethod.getType());
@@ -2089,9 +2090,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
   // result to a named TARGET vardecl, inferring its type.
-  CValue enterResult = getEmitter().emitNamedMethodCall(
-      "__enter__", std::move(enterOperands), enterDest, CallSyntax::kMethodCall,
-      contextExp);
+  CValue enterResult =
+      getEmitter().emitNamedMethodCall("__enter__", std::move(enterOperands),
+                                       enterDest, CallSyntax::kMethodCall);
 
   // Create the temporary error decl for any value thrown out of this scope.
   VarDeclOp errDecl = getEmitter().emitVarDecl(
@@ -2135,7 +2136,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   TryOp nestedTryOp;
   VarDeclOp nestedErrDecl;
   if (inExceptRegion && hasExitMethod) {
-    CallOperands exitCallOperands;
+    CallOperands exitCallOperands(contextExp);
     exitCallOperands.addSelf({contextVal, contextExp});
     // We allow any error type for this lookup so we use
     // NameLookupArgWildcardType.
@@ -2147,8 +2148,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
     IREmitter exitEmitter = getEmitter();
     PValue conditionalExit = OverloadSet::lookupAndResolve(
-        contextRVType, "__exit__", exitCallOperands, contextExp,
-        CallSyntax::kMethodCall, exitEmitter);
+        contextRVType, "__exit__", exitCallOperands, CallSyntax::kMethodCall,
+        exitEmitter);
 
     if (conditionalExit) {
       // Insert the flag ahead of our try and initialize it to 'True'.
@@ -2254,11 +2255,11 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // pass in an RValue for it so it can consume the context manager.
     AnyValue contextVal = MLValue(contextMgrDecl);
     auto exitEmitter = getEmitter();
-    CallOperands operands;
+    CallOperands operands(contextExp);
     operands.addSelf({contextVal, contextExp});
     if (PValue exitMethod = OverloadSet::lookupAndResolve(
-            contextRVType, "__exit__", operands, contextExp,
-            CallSyntax::kMethodCall, exitEmitter)) {
+            contextRVType, "__exit__", operands, CallSyntax::kMethodCall,
+            exitEmitter)) {
       // Pass the argument as an RValue so the exit method can consume the
       // value... unless it takes self 'mut'.
       auto signature = sugarCast<FuncTypeGeneratorType>(exitMethod.getType());
@@ -2271,8 +2272,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // Ok, emit the call the __exit__.
     ValueDest exitDest(EC_WithExitResult);
     (void)getEmitter().emitNamedMethodCall(
-        "__exit__", CallOperands({{contextVal, contextExp}}), exitDest,
-        CallSyntax::kMethodCall, contextExp);
+        "__exit__", CallOperands(contextExp, {{contextVal, contextExp}}),
+        exitDest, CallSyntax::kMethodCall);
   };
 
   // If the body of this try can throw, then the "except" block in it needs to
@@ -2344,11 +2345,12 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // overloading though and this is going to be way better for anything real
     // that wants to implement this. We can support both styles when we need to.
     ValueDest exitResultDest(EC_WithExitResult);
-    CallOperands exitOperandList({{MLValue(contextMgrDecl), contextExp},
+    CallOperands exitOperandList(contextExp,
+                                 {{MLValue(contextMgrDecl), contextExp},
                                   {MBValue(nestedErrDecl), contextExp}});
     CValue exitResult = getEmitter().emitNamedMethodCall(
         "__exit__", std::move(exitOperandList), exitResultDest,
-        CallSyntax::kMethodCall, contextExp);
+        CallSyntax::kMethodCall);
     RValue exitI1RVal =
         getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
     SRValue exitI1Val =
@@ -3706,21 +3708,21 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
 
     // Use dict.__setitem__(key, value) for dict comprehensions.
     if (node->kind == ExprNode::kDictComprehension) {
-      CallOperands operands({{collectionMLValue, &exprNode},
-                             {elementExpr, &exprNode},
-                             {valueExpr, &exprNode}});
+      CallOperands operands(&exprNode, {{collectionMLValue, &exprNode},
+                                        {elementExpr, &exprNode},
+                                        {valueExpr, &exprNode}});
       operands.hasSelfOperand = true;
       emitter.emitNamedMethodCall("__setitem__", std::move(operands), dest,
-                                  CallSyntax::kMethodCall, &exprNode);
+                                  CallSyntax::kMethodCall);
     } else {
       // Use list.append(elt) or set.add(elt) for list and set comprehensions.
-      CallOperands operands(
-          {{collectionMLValue, &exprNode}, {elementExpr, &exprNode}});
+      CallOperands operands(&exprNode, {{collectionMLValue, &exprNode},
+                                        {elementExpr, &exprNode}});
       operands.hasSelfOperand = true;
       const char *name =
           node->kind == ExprNode::kListComprehension ? "append" : "add";
       emitter.emitNamedMethodCall(name, std::move(operands), dest,
-                                  CallSyntax::kMethodCall, &exprNode);
+                                  CallSyntax::kMethodCall);
     }
 
     return success();
@@ -3736,7 +3738,7 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   // initializer at the cursor.
   ValueDest ctorDest(collectionMLValue, EC_CollectionCompElt);
   cursorEmitter.emitConstructorCall(collectionMLValue.getRValueType(),
-                                    CallOperands(), &exprNode,
+                                    CallOperands(&exprNode),
                                     CallSyntax::kTypeCall, ctorDest);
 
   // Finally, we can nuke the cursor.

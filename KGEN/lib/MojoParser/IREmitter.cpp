@@ -597,7 +597,7 @@ CValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   // return an rvalue. Use it first which may avoid a copy of a value.
   if (auto knownDestType = dest.getExpectedTypeIfSpecified()) {
     if (!cValue.getRValueType().isEqualCanon(knownDestType)) {
-      return emitConstructorCall(knownDestType, CallOperands(value), value.expr,
+      return emitConstructorCall(knownDestType, CallOperands(value.expr, value),
                                  CallSyntax::kImplicitConvert, dest);
     }
   }
@@ -809,7 +809,7 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
     if (!signature.getInputParamTypes().empty()) {
-      ParamBindings paramBindings(getDeclScope());
+      ParamBindings paramBindings(getDeclScope(), expr);
       // Try to fully bind the signature, in case it can be made concrete with
       // default values, etc.
       ParameterExprArrayAttr bindingAttr =
@@ -1415,8 +1415,8 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   }
 
   // __copyinit__ has signature: `(existing: Self) -> Self`.
-  return emitNamedMethodCall("__copyinit__", {{value}}, dest,
-                             CallSyntax::kImplicitCopyInit, value.expr);
+  return emitNamedMethodCall("__copyinit__", CallOperands{value.expr, {value}},
+                             dest, CallSyntax::kImplicitCopyInit);
 }
 
 CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
@@ -1429,7 +1429,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       // materialize directly into it and return instead of allocating a
       // temporary if the conversion constructor requires one.
       ValueDest nmConversionDest(destLV, context);
-      return emitConstructorCall(nmTarget, CallOperands({value}), value.expr,
+      return emitConstructorCall(nmTarget, CallOperands(value.expr, {value}),
                                  CallSyntax::kTypeCall, nmConversionDest);
     }
   }
@@ -1547,8 +1547,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   if (shared.typeHasMember(valueType, "__moveinit__", value.expr->getLoc())) {
     // `__moveinit__(owned existing: Self) -> Self`.
     ValueDest moveDest(destRef, context);
-    if (!emitNamedMethodCall("__moveinit__", {{value}}, moveDest,
-                             CallSyntax::kImplicitMoveInit, value.expr))
+    if (!emitNamedMethodCall("__moveinit__", CallOperands{value.expr, {value}},
+                             moveDest, CallSyntax::kImplicitMoveInit))
       return {};
     return MBValue(destRef);
   }
@@ -1678,7 +1678,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
 
   // Build up a ParamBindings set to validate and check the bindings. Skip
   // unbound values.
-  ParamBindings paramBindings(getDeclScope());
+  ParamBindings paramBindings(getDeclScope(), value.expr);
   for (TypedAttr binding : type.getParamBindings())
     paramBindings.addPrechecked(value.expr, binding);
 
@@ -1686,7 +1686,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   // sure it is fully bound.
   ParameterExprArrayAttr bindingValuesAttr =
       paramBindings.verifyBindings(structDecl, structDecl.getSignature(),
-                                   value.expr->getLoc(), /*partial=*/false);
+                                   /*partial=*/false);
   if (!bindingValuesAttr)
     return {};
 
@@ -1718,16 +1718,16 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __mlir_i1__.
     ValueDest boolDest(context);
-    value.ir =
-        emitNamedMethodCall("__bool__", {{{value.ir, value.expr}}}, boolDest,
-                            CallSyntax::kMethodCall, value.expr);
+    value.ir = emitNamedMethodCall(
+        "__bool__", CallOperands{value.expr, {{value.ir, value.expr}}},
+        boolDest, CallSyntax::kMethodCall);
   }
 
   // Then we use __mlir_i1__ to convert to an i1 value.
   ValueDest boolDest(context);
-  CValue litBoolCall =
-      emitNamedMethodCall("__mlir_i1__", {{{value.ir, value.expr}}}, boolDest,
-                          CallSyntax::kMethodCall, value.expr);
+  CValue litBoolCall = emitNamedMethodCall(
+      "__mlir_i1__", CallOperands{value.expr, {{value.ir, value.expr}}},
+      boolDest, CallSyntax::kMethodCall);
 
   // If we got back a sugared PValue call to the method, then drop the sugar.
   // This reduces the size of the printed IR, making it easier to read, and the
@@ -1751,8 +1751,9 @@ CValue IREmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
       return cvalue;
 
   ValueDest dest(context);
-  auto result = emitNamedMethodCall("__mlir_index__", {value}, dest,
-                                    CallSyntax::kMethodCall, value.expr);
+  auto result =
+      emitNamedMethodCall("__mlir_index__", CallOperands{value.expr, {value}},
+                          dest, CallSyntax::kMethodCall);
 
   // If we got back a sugared PValue call to the method, then drop the sugar.
   // This reduces the size of the printed IR, making it easier to read, and the
@@ -1771,7 +1772,7 @@ CValue IREmitter::emitIndex(const ExprNode *expr, ExprContext context) {
 
 CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {
   ASTType boolType = shared.getBuiltinBoolType(declScope, value.expr->getLoc());
-  return emitConstructorCall(boolType, CallOperands({value}), value.expr,
+  return emitConstructorCall(boolType, CallOperands(value.expr, {value}),
                              CallSyntax::kImplicitConvert, dest);
 }
 
@@ -1785,10 +1786,10 @@ CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue, ValueDest &dest) {
                                              indexValue.expr->getLoc());
 
   // Build Int from __mlir_type.index explicitly: Int.__init__(*, mlir_value=…)
-  CallOperands intCtorOperands;
+  CallOperands intCtorOperands(indexValue.expr);
   intCtorOperands.add(StringAttr::get(getContext(), "mlir_value"), indexValue);
   return emitConstructorCall(intType, std::move(intCtorOperands),
-                             indexValue.expr, CallSyntax::kTypeCall, dest);
+                             CallSyntax::kTypeCall, dest);
 }
 
 CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue,
@@ -1812,14 +1813,14 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   }
 
   SyntheticNode tmpExpr(loc);
-  ParamBindings bindings(getDeclScope());
+  ParamBindings bindings(getDeclScope(), &tmpExpr);
   for (ASTType elt : elements)
     bindings.add(&tmpExpr, PValue(elt));
 
   // Check the bindings.
   auto metaType = cast<StructMetaType>(tupleType.getMetaType());
   auto bindingsAttr = bindings.verifyBindings(structOp, metaType.getSignature(),
-                                              loc, /*partial=*/false);
+                                              /*partial=*/false);
   if (!bindingsAttr)
     return {};
 

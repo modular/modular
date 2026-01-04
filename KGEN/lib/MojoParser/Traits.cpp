@@ -141,7 +141,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
       if (isInheritedFnOp(possibleImpl))
         continue;
 
-      OverloadSet ov(name, possibleOverloads, std::move(bindings), node,
+      OverloadSet ov(name, possibleOverloads, std::move(bindings),
                      CallSyntax::kMethodCallSynthetic);
 
       // We can't just directly compare signatures because we may be in a
@@ -483,7 +483,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
     // Match against the transformed calling convention if the struct is
     // register-passable.
-    OverloadSet ov(name, decls, std::move(bindings), syntheticNode,
+    OverloadSet ov(name, decls, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic);
     PValue result = ov.filterOverloadSetForValueType(
         traitSignature, emitter.getDeclScope(),
