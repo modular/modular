@@ -64,7 +64,7 @@ fn accum_arrive[
     cta_group: Int, num_stages: Int
 ](stage: OutputStageType[num_stages]):
     """Signal accumulator arrival to unblock MMA pipeline."""
-    AccumBarrier[cta_group].arrive(stage.pipeline, stage.stage)
+    AccumBarrier[cta_group].arrive(stage.pipeline, stage.index)
 
 
 @always_inline
@@ -112,7 +112,7 @@ fn copy_accum_to_gmem[
         c_shape: (M, N) matrix dimensions.
     """
     # Extract from self-contained OutputStage
-    var tmem_offset = output_stage.tmem_offset
+    var tmem_offset = output_stage.tmem_offset()
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime MMA_M = mma_shape[0]
@@ -490,7 +490,7 @@ fn multi_stage_store_C_split_k[
 
     var is_last_split = scheduler.reduction(
         reduction_tensor,
-        stage.tmem_offset,
+        stage.tmem_offset(),
         epilogue_thread_idx,
         work_info,
     )

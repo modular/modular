@@ -43,6 +43,7 @@ Usage:
 
 from layout.tma_async import SharedMemBarrier
 from .pipeline import ProducerConsumerPipeline
+from .tmem import TmemAllocation, TmemStage
 from ....structuring import SMemPtr, SMemTileArrayType, SMemArrayType
 
 
@@ -511,22 +512,36 @@ struct TileConsumer[
 
 
 @register_passable("trivial")
-struct OutputStage[num_stages: Int]:
-    """Self-contained stage info with index, TMEM offset, and pipeline ref."""
+struct OutputStage[
+    num_stages: Int,
+    stage_stride: Int,
+    cta_group: Int,
+]:
+    """Acquired output stage with TMEM handle and pipeline reference."""
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_stages]
+    comptime Tmem = TmemStage[
+        Self.num_stages, Self.stage_stride, Self.cta_group
+    ]
 
-    var stage: UInt32
-    var tmem_offset: UInt32
+    var index: UInt32
+    var tmem: Self.Tmem
     var pipeline: Self.Pipeline
 
     @always_inline
     fn __init__(
-        out self, stage: UInt32, tmem_offset: UInt32, pipeline: Self.Pipeline
+        out self,
+        index: UInt32,
+        tmem: Self.Tmem,
+        pipeline: Self.Pipeline,
     ):
-        self.stage = stage
-        self.tmem_offset = tmem_offset
+        self.index = index
+        self.tmem = tmem
         self.pipeline = pipeline
+
+    fn tmem_offset(self) -> UInt32:
+        """TMEM address offset for this stage."""
+        return self.tmem.offset()
 
 
 @register_passable("trivial")
@@ -539,9 +554,13 @@ struct OutputTilePipeline[
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_stages]
     comptime BarrierArray = SMemArrayType[SharedMemBarrier, Self.num_stages * 2]
+    comptime Tmem = TmemAllocation[Self.cta_group]
+    comptime Stage = OutputStage[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
 
     var pipeline: Self.Pipeline
-    var tmem_base_addr: UInt32
+    var tmem: Self.Tmem
     var mma_complete_mask: UInt16
 
     @staticmethod
@@ -558,26 +577,22 @@ struct OutputTilePipeline[
     fn __init__(
         out self,
         barriers: Self.BarrierArray,
-        tmem_base_addr: UInt32,
+        tmem: Self.Tmem,
         mma_complete_mask: UInt16,
     ):
-        """Initialize from typed barrier array, TMEM base address, and multicast mask.
+        """Initialize from barrier array, TMEM allocation, and multicast mask.
         """
         self.pipeline = Self.Pipeline(barriers.ptr)
-        self.tmem_base_addr = tmem_base_addr
+        self.tmem = tmem
         self.mma_complete_mask = mma_complete_mask
-
-    comptime Stage = OutputStage[Self.num_stages]
 
     @always_inline
     fn acquire_for_mma(self) -> Self.Stage:
         """Acquire stage for MMA, waiting for epilogue to finish."""
-        var stage = self.pipeline.producer_stage()
+        var idx = self.pipeline.producer_stage()
         self.pipeline.wait_consumer()
-        var tmem_offset = self.tmem_base_addr + stage * UInt32(
-            Self.stage_stride_cols
-        )
-        return Self.Stage(stage, tmem_offset, self.pipeline)
+        var tmem = Self.Stage.Tmem(self.tmem.addr, idx)
+        return Self.Stage(idx, tmem, self.pipeline)
 
     @always_inline
     fn release_from_mma(mut self, stage: Self.Stage):
@@ -590,11 +605,11 @@ struct OutputTilePipeline[
             @parameter
             if Self.cta_group == 1:
                 mma_arrive[Self.cta_group](
-                    self.pipeline.producer_mbar(stage.stage)
+                    self.pipeline.producer_mbar(stage.index)
                 )
             else:
                 mma_arrive_multicast[Self.cta_group](
-                    self.pipeline.producer_mbar(stage.stage),
+                    self.pipeline.producer_mbar(stage.index),
                     self.mma_complete_mask,
                 )
         self.pipeline.producer_step()
@@ -602,12 +617,10 @@ struct OutputTilePipeline[
     @always_inline
     fn acquire_for_epilogue(self) -> Self.Stage:
         """Acquire stage for epilogue, waiting for MMA to complete."""
-        var stage = self.pipeline.consumer_stage()
+        var idx = self.pipeline.consumer_stage()
         self.pipeline.wait_producer()
-        var tmem_offset = self.tmem_base_addr + stage * UInt32(
-            Self.stage_stride_cols
-        )
-        return Self.Stage(stage, tmem_offset, self.pipeline)
+        var tmem = Self.Stage.Tmem(self.tmem.addr, idx)
+        return Self.Stage(idx, tmem, self.pipeline)
 
     @always_inline
     fn release_from_epilogue(mut self):
@@ -650,7 +663,9 @@ struct OutputProducerContext[
     comptime TilePipelineType = OutputTilePipeline[
         Self.num_stages, Self.stage_stride_cols, Self.cta_group
     ]
-    comptime Stage = OutputStage[Self.num_stages]
+    comptime Stage = OutputStage[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
 
     var pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
     var stage: Self.Stage
@@ -661,8 +676,11 @@ struct OutputProducerContext[
     ):
         self.pipeline_ptr = pipeline_ptr
         # Placeholder stage - set properly in __enter__
+        var placeholder_tmem = Self.Stage.Tmem(0, 0)
         self.stage = Self.Stage(
-            0, 0, ProducerConsumerPipeline[Self.num_stages](MbarPtr())
+            0,
+            placeholder_tmem,
+            ProducerConsumerPipeline[Self.num_stages](MbarPtr()),
         )
 
     @always_inline
@@ -687,7 +705,9 @@ struct OutputConsumerContext[
     comptime TilePipelineType = OutputTilePipeline[
         Self.num_stages, Self.stage_stride_cols, Self.cta_group
     ]
-    comptime Stage = OutputStage[Self.num_stages]
+    comptime Stage = OutputStage[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
 
     var pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
 

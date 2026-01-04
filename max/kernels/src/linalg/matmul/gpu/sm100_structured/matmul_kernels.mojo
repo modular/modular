@@ -91,6 +91,7 @@ from .tile_pipeline import (
     OutputTilePipeline,
     OutputStage,
 )
+from .tmem import TmemAllocation
 from .tile_loader import TileLoaderTMA
 from .tile_scheduler import TileScheduler
 from .tile_scheduler_splitk import (
@@ -715,6 +716,11 @@ struct BlackwellMatmulSM100Kernel[
         False,  # transpose_c (default)
     ]
 
+    # ========== Tensor Memory Type ==========
+    # Opaque TMEM allocation for MMA accumulators
+
+    comptime Tmem = TmemAllocation[Self.cta_group]
+
     # ========== Output Tile Pipeline Type ==========
     # Manages MMA→Epilogue pipeline for TMEM accumulator stages
 
@@ -908,7 +914,7 @@ struct BlackwellMatmulSM100Kernel[
     @staticmethod
     @always_inline
     fn mma(
-        tmem_addr: UInt32,
+        tmem_stage: Self.OutputPipeline.Stage.Tmem,
         tiles: ConsumerStage,
         mma_op: MmaOpSM100_SS,
         elect_one_warp: Bool,
@@ -921,10 +927,10 @@ struct BlackwellMatmulSM100Kernel[
         stage context:
 
             with consumer.acquire() as tiles:
-                Self.mma(tmem_addr, tiles, mma_op, ...)
+                Self.mma(stage.tmem, tiles, mma_op, ...)
 
         Args:
-            tmem_addr: Tensor memory address for accumulators.
+            tmem_stage: TMEM stage for accumulators.
             tiles: ConsumerStage context with encapsulated tile access.
             mma_op: The MMA operation instance.
             elect_one_warp: Whether this warp should execute.
@@ -935,7 +941,9 @@ struct BlackwellMatmulSM100Kernel[
             for j in range(Int(Self.config.k_group_size)):
                 var a_tile, b_tile = tiles.get_tile(j)
                 var is_first_k = (iter_idx + j) == k_start
-                mma_op.mma(a_tile, b_tile, tmem_addr, init_c=is_first_k)
+                mma_op.mma(
+                    a_tile, b_tile, tmem_stage.offset(), init_c=is_first_k
+                )
             mma_op.commit(tiles.mbar())
 
     # ========== Kernel Entry Points ==========
@@ -1081,21 +1089,18 @@ struct BlackwellMatmulSM100Kernel[
 
         if WarpRole.is_mma():
             with MatmulProfilerType[2](workspace, 0):
-                tcgen05_alloc[Self.config.cta_group](
-                    ctx.ptr_tmem_addr, max_tmem_cols
-                )
-                syncwarp()
+                # Allocate TMEM using structured abstraction
+                var tmem = Self.Tmem.allocate(smem.tmem_addr())
+
                 # non blocking, arrives and proceeds
                 named_barrier_arrive[Self.MMA_THREADS + Self.EPILOGUE_THREADS](
                     1
                 )
 
-                var tmem_addr = ctx.ptr_tmem_addr[0]
-
                 # Create output pipeline for MMA→Epilogue synchronization
                 var output_pipeline = Self.OutputPipeline(
                     smem.accum_barriers(),
-                    tmem_addr,
+                    tmem,
                     ctx.mma_complete_mask,
                 )
 
@@ -1111,7 +1116,7 @@ struct BlackwellMatmulSM100Kernel[
                                     ):
                                         with consumer.acquire() as tiles:
                                             Self.mma(
-                                                stage.tmem_offset,
+                                                stage.tmem,
                                                 tiles,
                                                 mma_op,
                                                 ctx.elect_one_warp,
@@ -1123,21 +1128,21 @@ struct BlackwellMatmulSM100Kernel[
                 if Self.pdl_level > PDLLevel.OFF:
                     launch_dependent_grids()
 
-                tcgen05_release_allocation_lock[Self.config.cta_group]()
-
-                # wait for epilogue to finish
+                # Release lock and wait for epilogue
+                tmem.release_lock()
                 smem.tmem_dealloc().ptr[].wait()
-
-                tcgen05_dealloc[Self.config.cta_group](tmem_addr, max_tmem_cols)
+                tmem.deallocate()
 
         if WarpRole.is_epilogue():
             named_barrier[Self.MMA_THREADS + Self.EPILOGUE_THREADS](1)
-            var tmem_addr = ctx.ptr_tmem_addr[0]
+
+            # Get TMEM handle from shared memory (allocated by MMA warp)
+            var tmem = Self.Tmem.from_shared(smem.tmem_addr())
 
             # Create output pipeline for MMA→Epilogue synchronization
             var output_pipeline = Self.OutputPipeline(
                 smem.accum_barriers(),
-                tmem_addr,
+                tmem,
                 ctx.mma_complete_mask,
             )
 
@@ -1362,21 +1367,18 @@ struct BlackwellMatmulSM100Kernel[
 
         if WarpRole.is_mma():
             with MatmulProfilerType[2](workspace, 0):
-                tcgen05_alloc[Self.config.cta_group](
-                    ctx.ptr_tmem_addr, max_tmem_cols
-                )
-                syncwarp()
+                # Allocate TMEM using structured abstraction
+                var tmem = Self.Tmem.allocate(smem.tmem_addr())
+
                 # non blocking, arrives and proceeds
                 named_barrier_arrive[Self.MMA_THREADS + Self.EPILOGUE_THREADS](
                     1
                 )
 
-                var tmem_addr = ctx.ptr_tmem_addr[0]
-
                 # Create output pipeline for MMA→Epilogue synchronization
                 var output_pipeline = Self.OutputPipeline(
                     smem.accum_barriers(),
-                    tmem_addr,
+                    tmem,
                     ctx.mma_complete_mask,
                 )
 
@@ -1395,7 +1397,7 @@ struct BlackwellMatmulSM100Kernel[
                                     ):
                                         with consumer.acquire() as tiles:
                                             Self.mma(
-                                                stage.tmem_offset,
+                                                stage.tmem,
                                                 tiles,
                                                 mma_op,
                                                 ctx.elect_one_warp,
@@ -1403,21 +1405,21 @@ struct BlackwellMatmulSM100Kernel[
                                                 k_start,  # init at k_start for split-K
                                             )
 
-                tcgen05_release_allocation_lock[Self.config.cta_group]()
-
-                # wait for epilogue to finish
+                # Release lock and wait for epilogue
+                tmem.release_lock()
                 smem.tmem_dealloc().ptr[].wait()
-
-                tcgen05_dealloc[Self.config.cta_group](tmem_addr, max_tmem_cols)
+                tmem.deallocate()
 
         if WarpRole.is_epilogue():
             named_barrier[Self.MMA_THREADS + Self.EPILOGUE_THREADS](1)
-            var tmem_addr = ctx.ptr_tmem_addr[0]
+
+            # Get TMEM handle from shared memory (allocated by MMA warp)
+            var tmem = Self.Tmem.from_shared(smem.tmem_addr())
 
             # Create output pipeline for MMA→Epilogue synchronization
             var output_pipeline = Self.OutputPipeline(
                 smem.accum_barriers(),
-                tmem_addr,
+                tmem,
                 ctx.mma_complete_mask,
             )
 
