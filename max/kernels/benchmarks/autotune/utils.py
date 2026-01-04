@@ -158,3 +158,22 @@ def get_target_accelerator_helpstr() -> str:
 
 def check_valid_target_accelerator(target_accelerator: str) -> bool:
     return target_accelerator in flatten(target_accelerator_values.values())
+
+
+def format_time(ms: float) -> str:
+    """Format time in human-readable units.
+
+    Args:
+        ms: Time in milliseconds.
+
+    Returns:
+        Human-readable time string with appropriate units (ns/µs/ms/s).
+    """
+    if ms < 0.001:  # < 1µs
+        return f"{ms * 1e6:.0f} ns"
+    elif ms < 1:  # < 1ms
+        return f"{ms * 1e3:.1f} µs"
+    elif ms < 1000:  # < 1s
+        return f"{ms:.1f} ms"
+    else:
+        return f"{ms / 1000:.2f} s"
