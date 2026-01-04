@@ -22,45 +22,96 @@ eager execution of tensor operations, complementing the graph-based execution
 model provided by :obj:`~max.graph`. The tensor operations automatically compile
 and execute using the MAX runtime.
 
+:class:`~max.experimental.Tensor` is designed to be a high-performance NumPy
+replacement for programming accelerators. It implements numerics through
+high-performance Mojo kernels JIT-compiled for the hardware available, including
+state-of-the-art optimizations like automatic kernel fusion. It is intended as
+a building block for programming large, heterogeneous clusters of accelerators.
+
 **Key Features:**
 
-- **Eager execution**: Operations execute immediately rather than building a graph.
+- **Eager semantics**: Operations give immediate results for quick iteration and feedback.
+- **High performance**: All operations use high-performance Mojo implementations
+    compiled specifically for the available hardware.
 - **Automatic compilation**: Tensors are compiled and optimized automatically.
+    Operations may be easily fused into larger graphs to take advantage of
+    the graph compiler's automatic fusions.
 - **Lazy evaluation**: Tensors may be computed lazily until their values are needed.
 - **NumPy compatibility**: Supports common NumPy-like operations and indexing.
+- **Device management**: Supports common NumPy-like operations and indexing.
 
 Create and manipulate tensors with automatic compilation and optimization:
 
 .. code-block:: python
 
-    from max.experimental import tensor
+    from max.experimental import Tensor
     from max.driver import CPU
     from max.dtype import DType
 
     # Create and operate on tensors
-    x = tensor.Tensor.ones((2, 3), dtype=DType.float32, device=CPU())
-    y = tensor.Tensor.zeros((2, 3), dtype=DType.float32, device=CPU())
+    x = Tensor.ones((2, 3), dtype=DType.float32, device=CPU())
+    y = Tensor.zeros_like(x)
     result = x + y  # Eager execution with automatic compilation
+
+Operations may be combined into a single execution graph to take advantage
+of automatic kernel fusion:
+
+.. code-block:: python
+
+    from max.experimental import functional as F
+
+    @F.functional
+    def linear(x: Tensor, weight: Tensor, bias: Tensor) -> Tensor:
+        return x @ weight.T + bias
+
+    # Create and operate on tensors
+    x = Tensor.ones([2, 3])
+    weight = Tensor.ones([6, 3])
+    bias = Tensor.ones([6])
+
+    # Eager execution with a single fused graph
+    result = linear(x, weight, bias)
+
+Users may opt in to lazy execution. This is primarily useful for
+1. Operations which may never execute, for instance creating modules
+  with randomly initialized weights before loading weights
+2. Combining many operations into a single execution
+
+.. code-block:: python
+
+    from max.nn.module_v3 import Linear
+
+    with F.lazy():
+        model = Linear(2, 3)
+
+    print(model)  # Lazy weights not initialized
+
+    # Load pretrained weights
+    weights =  {
+        "weight": Tensor.zeros([3, 2]),
+        "bias": Tensor.zeros([3]),
+    }
+    model.load_state_dict(weights)
+
+    # Or compile directly without ever initializing weights
+    from max.graph import TensorType
+    input_type = TensorType(DType.float32, ["batch", 2], CPU())
+    model = model.compile(input_type, weights=weights)
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import gc
-import sys
-import warnings
-import weakref
 from collections.abc import Generator
-from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
-from typing import Any, TypeVar
+from dataclasses import dataclass
+from typing import Any, Protocol, TypeAlias
 
 from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
 
-from .. import _core, driver, engine, graph, mlir
-from .._core.dialects import builtin
+from .. import driver, graph
 from ..driver import (
     CPU,
     Accelerator,
@@ -76,24 +127,153 @@ from ..graph import (
     ops,
 )
 from ..graph.ops.constant import NestedArray, Number
-from . import _passes
 from . import functional as F
+from .support import contextvar_context, driver_tensor_type
 
-_SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
+GraphValue: TypeAlias = graph.BufferValue | graph.TensorValue
+
+_CONTEXT: ContextVar[RealizationContext] = ContextVar("_CONTEXT")
 _DEFAULT_DEVICE: ContextVar[Device] = ContextVar("_DEFAULT_DEVICE")
 _DEFAULT_DTYPE: ContextVar[DType] = ContextVar("_DEFAULT_DTYPE")
 
+current_realization_context = _CONTEXT.get
 
-T = TypeVar("T")
+
+def realization_context(
+    ctx: RealizationContext,
+) -> contextlib.AbstractContextManager[RealizationContext]:
+    """Sets the current realization context, within a context manager.
+
+    New tensors created within this block will use the given realization
+    context to execute.
+
+    See :class:`~max.experimental.tensor.RealizationContext`.
+
+    Args:
+        ctx: The realization context to set as the current context.
+
+    Returns:
+        A context manager. When the context manager is entered, it will
+        set `ctx` as the current realization context. When exited the
+        current realization context will be reset to its previous value.
+    """
+    return contextvar_context(_CONTEXT, ctx)
 
 
-@contextlib.contextmanager
-def contextvar_context(var: ContextVar[T], value: T):  # noqa: ANN201
-    token = var.set(value)
-    try:
-        yield
-    finally:
-        var.reset(token)
+@dataclass
+class RealizationState:
+    """State for an unrealized tensor.
+
+    See :class:`~max.experimental.tensor.RealizationContext`.
+    """
+
+    #: The symbolic value representing the computation backing this tensor.
+    value: GraphValue
+    #: The realization context used to create this tensor. This context
+    #: is responsible for realizing the tensor to a real value.
+    ctx: RealizationContext
+
+
+class RealizationContext(Protocol, contextlib.AbstractContextManager):
+    """Implements a way to realize unrealized tensors.
+
+    Most users should never have to think about the existance of this type.
+    It exists to facilitate optimizations around where and when tensor
+    operations are executed.
+
+    - Each tensor is either `real` or associated with a RealizationContext.
+    - If a tensor is not `real`, ie. "unrealized", then it is backed by some
+      symbolic computation.
+    - The RealizationContext is responsible for tracking this symbolic
+      omputation and "realizing" the tensor (executing the computation and
+      acking the tensor with real data) if and when it is asked to do so.
+    - A RealizationContext can only realize tensors associated with it.
+
+    RealizationContext abstracts over various semantics of tensor construction.
+
+    **"Eager" execution**: tensors are realized as soon as the realization context
+    exits. This is the default behavior.
+
+    This has a huge concrete advantage over eagerly executing one operation
+    at a time: by controlling the boundary of where the eager context starts
+    and ends, we can give advanced users a tool to _enable fine-grained
+    bounds for automatic fusion_!
+
+    In practice the easiest way to do this is to mark a function as
+    `F.functional`. This function is then assumed to be "atomic" for the
+    purposes of eager execution. All ops within the function execute as
+    part of the same graph, meaning the compiler is free to fuse operations
+    and generate fused kernels within this region.
+
+    **"Lazy" execution**: tensors are realized only when code later tries to use
+    them.
+
+    This enables a class of interface design common in the ML world, in
+    which layers are constructed with randomized weights which are never
+    used. Lazy execution neatly allows constructing entire models,
+    only performing the weight initialization and allocating memory for
+    them if and when those weights are actually used.
+
+    **Graph compilation**: tensors may never be realized.
+
+    This allows tensor operations to be composed with direct usage of
+    the Graph API, for instance `Module.compile`, or using `F.*` operations
+    in another Graph API usage.
+
+    **Async execution**: Tensors are realized as `async` functions,
+    allowing clean integration in async systems like web services.
+    """
+
+    # NB: Ideally `graph` should not be required. There are 3 types of context
+    #   managers used to manage the active realization context, and they're
+    #   all subtly different. This complexity in the implementation is
+    #   annoying and can probably be simplified, but works well when
+    #   held correctly.
+    #   - The "current" realization context ContextVar -- Operations on
+    #     tensors are executed within this context.
+    #     - Invariant: the "current" realization context should always also
+    #       be "active", ie. entered but not exited.
+    #   - The realization context as a context manager -- This communicates
+    #       to the realization context when it may think about itself
+    #       as activated and complete.
+    #   - The compute graph associated with a realization context being
+    #     `Graph.current`.
+    #     - Invariant: the "current" realization context, if any, should
+    #       always match Graph.current.
+    #     - Complexity: there isn't always a "current" realization context,
+    #       in particular when using the Graph API directly. As such
+    #       tensors look at `Graph.current` to understand when they may
+    #       be passed between realization contexts.
+    #: The graph used by the realization context.
+    graph: graph.Graph
+
+    async def realize_all(self) -> list[Tensor]:
+        """Realizes all unrealized tensors associated with this context."""
+
+    def add_source(self, tensor: Tensor) -> RealizationState:
+        """Adds a realized tensor as a "source" of the realization state,
+        ie. one on whose values unrealized tensors depend.
+
+        Args:
+            tensor: The realized tensor to add as a source to the computation.
+
+        Returns:
+            A realization state for the tensor. This may be used to compute
+            downstream unrealized values. _If it is used in any mutating
+            operations, it should be assigned to `tensor.state` to mark
+            the tensor as having been mutated_.
+        """
+
+    def create_unrealized(self, value: GraphValue) -> Tensor:
+        """Registers an unrealized graph value with the realization context
+        and returns it as an unrealized tensor.
+
+        Args:
+            value: The graph value representing the result of a computation.
+
+        Returns:
+            A new tensor associated with the unrealized value.
+        """
 
 
 def _default_dtype(device: Device) -> DType:
@@ -218,29 +398,6 @@ def defaults_like(like: Tensor | TensorType) -> Generator[None]:
         yield
 
 
-def _session() -> engine.api.InferenceSession:
-    """A single global inference session for compiling and running kernels on tensors."""
-    device_specs = driver.scan_available_devices()
-    if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
-        device_specs.append(cpu)
-    devices = driver.load_devices(device_specs)
-    if not (session := _SESSION.get(None)):
-        _SESSION.set(session := engine.api.InferenceSession(devices=devices))
-    return session
-
-
-def _in_running_loop() -> bool:
-    """Check whether the caller is inside a running event loop."""
-    # - asyncio.get_event_loop().is_running() works in most scenarios
-    # - asyncio.get_event_loop() raises in some environments
-    # - use asyncio.get_running_loop() and check if it fails instead
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return False
-    return True
-
-
 class Tensor(DLPackArray, HasTensorValue):
     """A multi-dimensional array with eager execution and automatic compilation.
 
@@ -283,8 +440,8 @@ class Tensor(DLPackArray, HasTensorValue):
 
     Tensors use lazy evaluation internally - they don't always hold concrete
     data in memory. A tensor may be "unrealized" (not yet computed) until its
-    value is actually needed (e.g., when printing, converting to other formats,
-    or calling :meth:`item`). This allows the runtime to optimize sequences of
+    value is actually needed (e.g., when converting to other formats or calling
+    :meth:`item`). This allows the runtime to optimize sequences of
     operations efficiently.
 
     Operations on tensors build a computation graph behind the scenes, which is
@@ -299,31 +456,22 @@ class Tensor(DLPackArray, HasTensorValue):
     """
 
     #: Underlying memory for a realized tensor.
+    #: If the tensor is used in any mutating operations that have
+    #: not been realized, this holds the state before any updates.
     storage: driver.Tensor | None
-    #: - For a (used) realized tensor this is a graph input BufferValue
-    #: - For an unrealized tensor this is a value in the graph
-    _value: graph.BufferValue | graph.TensorValue | None
-    _real: bool = False
+    #: State for realizing an unrealized tensor.
+    state: RealizationState | None
 
     def __init__(
         self,
         *,
         storage: driver.Tensor | None = None,
-        value: graph.BufferValue | graph.TensorValue | None = None,
+        state: RealizationState | None = None,
     ):
-        assert storage is not None or value is not None
+        if (storage is None) == (state is None):
+            raise TypeError("Must supply exactly one of storage and state.")
         self.storage = storage
-        self._value = value
-        self.real = storage is not None
-
-    @property
-    def _backing_value(
-        self,
-    ) -> driver.Tensor | graph.BufferValue | graph.TensorValue:
-        if self.storage is not None:
-            return self.storage
-        assert self._value is not None
-        return self._value
+        self.state = state
 
     @classmethod
     def from_graph_value(cls, value: graph.Value) -> Tensor:
@@ -331,8 +479,9 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Constructs a tensor from an existing graph value, which can be either
         a :obj:`~max.graph.TensorValue` or :obj:`~max.graph.BufferValue`. This
-        is useful for converting graph level values into tensor objects for
-        eager execution.
+        is used for converting graph level values into tensor objects.
+        The new tensor is registered as unrealized, backed by the current
+        realization context.
 
         Args:
             value: The graph value to wrap. Can be either a TensorValue or
@@ -341,9 +490,9 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A new tensor backed by the provided graph value.
         """
-        if not isinstance(value, (graph.TensorValue, graph.BufferValue)):
+        if not isinstance(value, GraphValue):
             raise TypeError(f"{value=} must be a tensor or buffer value")
-        return cls(value=value)
+        return current_realization_context().create_unrealized(value)
 
     @classmethod
     def from_dlpack(cls, array: DLPackArray) -> Tensor:
@@ -758,6 +907,31 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.broadcast_to(range, type.shape)
 
     @property
+    def real(self) -> bool:
+        return self.state is None
+
+    @property
+    def _backing_value(self) -> driver.Tensor | GraphValue:
+        return self.driver_tensor if self.real else self._graph_value
+
+    @property
+    def _graph_value(self) -> GraphValue:
+        if self.real:
+            raise TypeError("Can't get symbolic value for real tensor.")
+        assert self.state
+        return self.state.value
+
+    @property
+    def driver_tensor(self) -> driver.Tensor:
+        """A pointer to the underlying memory.
+
+        Raises if the tensor is unrealized.
+        """
+        if (storage := self.storage) is None:
+            raise TypeError("Can't get driver tensor for symbolic tensor")
+        return storage
+
+    @property
     def type(self) -> graph.TensorType:
         """Gets the tensor type information.
 
@@ -768,11 +942,10 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             TensorType: The type information for the tensor.
         """
-        value = self._backing_value
         type = (
-            driver_tensor_type(value)
-            if isinstance(value, driver.Tensor)
-            else value.type
+            driver_tensor_type(self.driver_tensor)
+            if self.real
+            else self._graph_value.type
         )
         return type.as_tensor() if isinstance(type, graph.BufferType) else type
 
@@ -825,25 +998,22 @@ class Tensor(DLPackArray, HasTensorValue):
         device = self._backing_value.device
         return device if isinstance(device, Device) else device.to_device()
 
-    @property
-    def driver_tensor(self) -> driver.Tensor:
-        """A pointer to the underlying memory.
-
-        Raises if the tensor is unrealized.
-        """
-        if (storage := self.storage) is None:
-            raise TypeError("Can't get driver tensor for symbolic tensor")
-        return storage
+    def __await__(self):
+        """Force the tensor to realize if it is not already."""
+        if not self.real:
+            assert self.state is not None
+            yield from asyncio.create_task(self.state.ctx.realize_all())
+            assert self.real
+        return self
 
     @property
-    def real(self) -> bool:
-        return self._real
+    async def realize(self) -> Tensor:
+        """Force the tensor to realize if it is not already."""
+        return await self
 
-    @real.setter
-    def real(self, real: bool) -> None:
-        if not real and self._in_global_compute_graph:
-            GRAPH.add_unrealized(self)
-        self._real = real
+    def _sync_realize(self) -> None:
+        if not self.real:
+            F._run(self.realize)
 
     def __tensorvalue__(self) -> graph.TensorValue:
         """Gets a TensorValue for the underlying data.
@@ -851,14 +1021,23 @@ class Tensor(DLPackArray, HasTensorValue):
         If the tensor is backed by a BufferValue, calls `ops.buffer_load`.
         The load is for ordering mutable operations and will be optimized away.
         """
-        if self._value is None:
-            # This is a realized tensor that hasn't been used in the global
-            # compute graph yet, add it so it isn't freed before use.
-            GRAPH.add_source(self)
-        if isinstance(self._value, graph.BufferValue):
-            return self._value[...]
-        assert isinstance(self._value, graph.TensorValue)
-        return self._value
+        if not self.real:
+            assert self.state
+            if graph.Graph.current != self.state.ctx.graph:
+                # Can't pass unrealized tensors between graphs
+                self._sync_realize()
+
+        if self.real:
+            state = current_realization_context().add_source(self)
+            value = state.value
+        else:
+            assert self.state
+            value = self.state.value
+
+        if isinstance(value, graph.BufferValue):
+            return value[...]
+        assert isinstance(value, graph.TensorValue)
+        return value
 
     def __buffervalue__(self) -> graph.BufferValue:
         """Gets a BufferValue for the underlying data.
@@ -874,74 +1053,28 @@ class Tensor(DLPackArray, HasTensorValue):
             - further ops on the same tensor will then load from the
             buffer to ensure proper sequencing with mutation
         """
-        self.real = False
+        if not self.real:
+            assert self.state
+            if graph.Graph.current != self.state.ctx.graph:
+                # Can't pass unrealized tensors between graphs
+                self._sync_realize()
 
-        if self._value is None:
-            # This is a realized tensor that hasn't been used in the global
-            # compute graph yet, add it so it isn't freed before use.
-            GRAPH.add_source(self)
-        if isinstance(self._value, graph.BufferValue):
-            return self._value
-        assert isinstance(self._value, graph.TensorValue)
-        tensor = self._value
-        self._value = buffer = ops.buffer_create(tensor.type.as_buffer())
+        if self.real:
+            # This is a realized tensor that may not have been used in the
+            # realization context yet, add it so it isn't freed before use.
+            # Adding sources is idempotent, so safe to do more than once.
+            self.state = current_realization_context().add_source(self)
+
+        if isinstance(value := self._backing_value, graph.BufferValue):
+            return value
+
+        # This tensor is currently backed by an unrealized TensorValue.
+        # Create a BufferValue and assign the current value to it
+        tensor = self.__tensorvalue__()
+        assert self.state is not None
+        self.state.value = buffer = ops.buffer_create(tensor.type.as_buffer())
         buffer[...] = tensor
         return buffer
-
-    @property
-    def _in_global_compute_graph(self) -> bool:
-        if self._value is None:
-            return True
-        mlir_value = self._value.to_mlir()
-        graph_op = mlir_value.owner.parent_op
-        return graph_op == _core.Operation._from_cmlir(GRAPH.graph._mlir_op)
-
-    def __await__(self):
-        """Force the tensor to realize if it is not already."""
-        yield from asyncio.create_task(GRAPH.evaluate(self))
-        assert self.real
-        return self
-
-    @property
-    async def realize(self):  # noqa: ANN201
-        """Force the tensor to realize if it is not already."""
-        return await self
-
-    def _sync_realize(self) -> Tensor:
-        if self.real:
-            return self
-
-        if not self._in_global_compute_graph:
-            raise TypeError(
-                "Can't realize symbolic tensors in graph compilation."
-            )
-
-        # If there's no running loop, just use asyncio.run
-        if not _in_running_loop():
-            return asyncio.run(self.realize)
-
-        # If there is a running loop, execute using a ThreadPoolExecutor
-        # - This is a common case inside a Jupyter notebook, eg.
-        #   printing a tensor.
-        # - Otherwise, this is probably accidental. The code is running
-        #   inside an async environment, but for some reason is trying
-        #   to synchronously await. Check for this case explicitly and warn.
-        def is_interactive() -> bool:
-            import __main__ as main
-
-            return not hasattr(main, "__file__")
-
-        if not is_interactive():
-            warnings.warn(
-                "Use of synchronous tensor method inside another event loop. "
-                "Use `await tensor`."
-            )
-
-        # Run self.realize in another thread
-        loop = asyncio.new_event_loop()
-        with ThreadPoolExecutor() as pool:
-            fut = pool.submit(loop.run_until_complete, self.realize)
-        return fut.result()
 
     def __bool__(self) -> bool:
         return bool(self.item())
@@ -966,15 +1099,16 @@ class Tensor(DLPackArray, HasTensorValue):
         return self.storage.__dlpack_device__()
 
     def __rich_repr__(self):
+        yield "<unrealized>"
         yield "shape", self.shape
         yield "dtype", self.dtype
         yield "device", self.device
 
     def __repr__(self):
-        if not self._in_global_compute_graph:
-            return pretty_repr(self)
         # Janky repr for bootstrapping, we can do much better.
-        return f"{self.type}: [{', '.join(str(v) for v in self._values())}]"
+        if self.real:
+            return f"{self.type}: [{', '.join(str(v) for v in self._values())}]"
+        return pretty_repr(self)
 
     def __deepcopy__(self, memo: object) -> Tensor:
         # Tensors are value-semantic
@@ -1386,151 +1520,3 @@ class Tensor(DLPackArray, HasTensorValue):
 
     def __invert__(self) -> Tensor:
         return F.logical_not(self)
-
-
-_SEED: ContextVar[Tensor] = ContextVar("_SEED")
-
-
-def seed() -> Tensor:
-    if (seed := _SEED.get()) is None:
-        seed = driver.Tensor(ops.random.SeedType)
-        seed[0] = 0
-        _SEED.set(Tensor(storage=seed))
-    return seed
-
-
-class ComputeGraph:
-    """Computation graph for managing tensor operations.
-
-    This class manages the directed acyclic graph (DAG) of tensor operations
-    for lazy evaluation and optimization. It tracks both realized tensors
-    (with concrete data in memory) and unrealized tensors (pending computations)
-    to enable efficient batch compilation and execution.
-    """
-
-    graph: graph.Graph
-    #: Keeps a strong reference to tensor data that we need to compute graph values
-    sources: dict[_core.Value[Any], Tensor]
-    #: Keeps weak references to intermediate unrealized tensor values, which may
-    #: never need to be realized.
-    unrealized: weakref.WeakValueDictionary[int, Tensor]
-
-    def __init__(self, context: mlir.Context | None = None, seed: int = 0):
-        self.context = context or mlir.Context()
-        self.sources = {}
-
-        self.unrealized = weakref.WeakValueDictionary()
-        self.graph = graph.Graph("main", input_types=[], context=self.context)
-
-        with self.graph:
-            ops.random.set_seed(seed)
-
-    async def evaluate(self, tensor: Tensor) -> None:
-        """Evaluates and realizes the specified tensor.
-
-        Compiles and executes the computation graph to produce concrete values
-        for the input tensor and any other pending computations. This triggers
-        lazy evaluation, converting unrealized tensors into realized ones with
-        data in memory.
-
-        Args:
-            tensor: The tensor to realize. This triggers evaluation of its
-                computation and any dependencies.
-        """
-        # Single-global-graph is (unsurprisingly) causing the spooky action at a distance :(
-        # - Specifically, bad things give a nice compiler error!
-        #   ... but then the exception hangs around, which holds a traceback
-        #   which holds the call frame which holds the tensors that caused the error.
-        # - Since these tensors don't get garbage collected they survive as unrealized
-        # - Then the next evaluate call tries to realize again and necessarily
-        #   will have the same error.
-        # - HACK/workaround: running tensor evaluation clears the last exception.
-        # This also means a user needs to explicitly drop any references to the
-        # offending tensors. Ultimately this feels like a strong case for only
-        # running partial graphs.
-        sys.last_value = None
-        sys.last_traceback = None
-        gc.collect()
-
-        # create strong references during execution
-        unrealized = list(self.unrealized.values())
-        with self.graph:
-            # peek rather than next! If the seed is rotated but compilation
-            # or execute fails, we need the seed to not rotate.
-            self.graph.output(
-                ops.random._peek_seed(), *map(graph.TensorValue, unrealized)
-            )
-        # Remove dead values and inputs
-        module: builtin.ModuleOp = _core.Operation._from_cmlir(
-            self.graph._module.operation
-        )  # type: ignore
-        # Remove sources that no longer exist from the graph
-        _core.lower(module, [builtin.passes.RemoveDeadValues()])
-        # The graph symbol is public, so RemoveDeadValues won't remove
-        # unused arguments. Do that explicitly.
-        _passes.remove_unused_arguments(self.graph)
-        inputs = [
-            self.sources[input._mlir_value] for input in self.graph.inputs
-        ]
-
-        try:
-            model = _session().load(self.graph)
-            # This will become an await when `model` supports it
-            seed, *results = model(*(input.driver_tensor for input in inputs))
-            assert isinstance(seed, driver.Tensor)
-        except BaseException as e:
-            # If we've tried and failed to compile the graph, remove its
-            # terminator so future ops can modify the graph.
-            #  - Can failed lowerings leave the module in a partially lowered state?
-            self.graph._erase_output_if_present()
-            raise RuntimeError(
-                "Failed to compile and execute graph! Please file an issue. "
-                "This error should have been caught at op creation time."
-            ) from e
-
-        for tensor, storage in zip(unrealized, results, strict=True):
-            # This will eventually support Mojo values also.
-            assert isinstance(storage, driver.Tensor)
-            tensor.storage = storage
-            tensor.real = True
-            tensor._value = None
-
-        # Remove any references to values in the old graph
-        for tensor in self.sources.values():
-            tensor._value = None
-
-        # Reset the graph to a new empty graph with only inputs
-        ComputeGraph.__init__(
-            self, context=self.graph._context, seed=seed.item()
-        )
-
-    def add_source(self, tensor: Tensor) -> None:
-        if tensor.storage is None:
-            raise TypeError("Only realized tensors may be graph sources.")
-
-        type = driver_tensor_type(tensor.storage).as_buffer()
-        value = _passes.add_input(self.graph, type)
-        assert isinstance(value, graph.BufferValue)
-        tensor._value = value
-        self.sources[value._mlir_value] = tensor
-
-    def add_unrealized(self, tensor: Tensor) -> None:
-        self.unrealized[id(tensor)] = tensor
-
-
-def driver_tensor_type(t: driver.Tensor) -> TensorType:
-    """Converts a driver tensor to a :obj:TensorType.
-
-    Creates a TensorType instance from a driver-level tensor by extracting
-    its dtype, shape, and device information.
-
-    Args:
-        t: The driver tensor to convert.
-
-    Returns:
-        TensorType: A tensor type representing the driver tensor's properties.
-    """
-    return TensorType(t.dtype, t.shape, graph.DeviceRef.from_device(t.device))
-
-
-GRAPH = ComputeGraph()

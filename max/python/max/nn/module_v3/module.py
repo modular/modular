@@ -24,7 +24,11 @@ from typing import TYPE_CHECKING, Any
 from max import graph
 from max.driver import CPU, Device, DLPackArray
 from max.experimental import functional as F
-from max.experimental.tensor import Tensor, _session
+from max.experimental.realization_context import (
+    GraphRealizationContext,
+    _session,
+)
+from max.experimental.tensor import Tensor, realization_context
 from max.graph import Graph, TensorType
 from rich.pretty import pretty_repr
 from typing_extensions import Self, dataclass_transform
@@ -497,15 +501,9 @@ class Module:
                 Each should be a :obj:`max.graph.Type` (typically
                 :obj:`TensorType`) describing the shape and dtype.
             weights: Mapping of parameter names to weight data. Weights should
-                be on CPU and will be transfered to the target device as part
+                be on CPU and will be transferred to the target device as part
                 of model initialization. If not passed, the model's parameters
                 will be used as the weights.
-
-                XXX: We could just separate compilation from loading model
-                loading :/
-                Yeah that's definitely the right fix. We can do this temporarily
-                to unblock but absolutely the root cause of this whole problem
-                is the fact that we combine compilation and loading into one step.
 
         Returns:
             Callable[..., Any]
@@ -520,7 +518,8 @@ class Module:
             RuntimeError: If graph construction fails due to incompatible
                 operations or parameter access issues.
         """
-        with Graph(type(self).__qualname__, input_types=input_types) as graph:
+        graph = Graph(type(self).__qualname__, input_types=input_types)
+        with realization_context(GraphRealizationContext(graph)) as ctx, ctx:
             # Wrap the graph inputs in Tensors
             inputs = [Tensor.from_graph_value(input) for input in graph.inputs]
 

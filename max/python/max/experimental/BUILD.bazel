@@ -9,6 +9,8 @@ modular_py_library(
         "_passes.py",
         "functional.py",
         "random.py",
+        "realization_context.py",
+        "support.py",
         "tensor.py",
     ],
     deps = [

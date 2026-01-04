@@ -20,6 +20,7 @@ import weakref
 import pytest
 from max import driver
 from max.driver import CPU, Accelerator, accelerator_count
+from max.experimental import functional as F
 from max.experimental import random
 from max.experimental.tensor import Tensor, TensorType, defaults
 from max.nn.module_v3.module import Module, module_dataclass
@@ -50,7 +51,19 @@ class SuperModule(Module):
 
 @pytest.fixture
 def test_module():  # noqa: ANN201
-    return TestModule(a=Tensor.constant(1), sub=SubModule(b=Tensor.constant(2)))
+    return TestModule(
+        a=Tensor.constant(1),
+        sub=SubModule(b=Tensor.constant(2)),
+    )
+
+
+@pytest.fixture
+def lazy_test_module():  # noqa: ANN201
+    with F.lazy():
+        return TestModule(
+            a=Tensor.constant(1),
+            sub=SubModule(b=Tensor.constant(2)),
+        )
 
 
 @pytest.fixture
@@ -282,7 +295,8 @@ def test_compile(test_module: TestModule) -> None:
     assert all((result_eager == result_compiled)._values())
 
 
-def test_compile_with_weights(test_module: TestModule) -> None:
+def test_compile_with_weights(lazy_test_module: TestModule) -> None:
+    test_module = lazy_test_module
     dtype, device = defaults()
     type = TensorType(dtype, ["batch", "n"], device=device)
 
@@ -310,8 +324,10 @@ def test_compile_with_weights(test_module: TestModule) -> None:
     assert not any(param.real for _, param in test_module.parameters)
 
 
-@pytest.mark.skip("TODO(XFN-32): never realize module weights if not needed")
-def test_compile_with_weights_never_realized(test_module: TestModule) -> None:
+def test_compile_with_weights_never_realized(
+    lazy_test_module: TestModule,
+) -> None:
+    test_module = lazy_test_module
     dtype, device = defaults()
     type = TensorType(dtype, ["batch", "n"], device=device)
 

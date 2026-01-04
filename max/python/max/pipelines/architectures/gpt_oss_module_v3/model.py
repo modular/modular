@@ -22,6 +22,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental import functional as F
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
@@ -260,8 +261,9 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
-        nn_model = GptOss(model_config, self.kv_manager)
-        nn_model.to(self.devices[0])
+        with F.lazy():
+            nn_model = GptOss(model_config, self.kv_manager)
+            nn_model.to(self.devices[0])
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
         flattened_kv_types = [

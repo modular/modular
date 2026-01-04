@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from ...experimental import functional as F
 from ...experimental import random
 from ...experimental.tensor import Tensor
 from ...graph import Dim, DimLike
@@ -82,6 +83,7 @@ class Linear(Module):
         yield "out_dim", self.out_dim
         yield "bias", isinstance(self.bias, Tensor), True
 
+    @F.functional
     def __call__(self, x: Tensor) -> Tensor:
         """Applies a linear transformation to the input tensor.
 
