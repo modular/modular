@@ -1138,17 +1138,18 @@ LogicalResult
 ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
                                          ASTType origExpectedType,
                                          ArgConvention expectedConvention) {
-  // Early return if this operand will not help with inferring parameters. This
-  // avoids unnecessary checks & dealing with errors unrelated to parameter
-  // inference here. The only operands that can contribute to param inference
-  // are either those whose expected types contain param references.
-  if (!paramFinder.hasReferences(origExpectedType.mlirType))
-    return success();
-
   // Whenever a parameter is bound, we need to re-evaluate the expected type and
   // try again.
 RetryLabel:
   ASTType expectedType = evaluator.getReboundType(origExpectedType);
+
+  // Early return if this operand will not help with inferring parameters. This
+  // avoids unnecessary checks & dealing with errors unrelated to parameter
+  // inference here. The only operands that can contribute to param inference
+  // are either those whose expected types contain param references.
+  // FIXME: This is just covering up for a bunch of bugs.  Remove.
+  if (!paramFinder.hasReferences(expectedType))
+    return success();
 
   AnyValue value = operand.ir;
   curArgExpr = operand.expr;
@@ -1236,6 +1237,18 @@ RetryLabel:
           !valueRefType.isMutableKnown(false))
         valueRefType = valueRefType.getWithMutability(false);
 
+      // If the origin is already specified, allow implicit conversions,
+      // allowing you to pass a concrete origin to something expecting a union
+      // or AnyOrigin.  This check happens here (instead of in matchTypes)
+      // because function arguments can be rebound when origins disagree, but
+      // this isn't correct/possible in arbitrary nested positions.
+      if (!paramFinder.hasReferences(expectedType)) {
+        if (IREmitter::canZeroCostConvert(valueRefType, expectedType, shared))
+          return success();
+        return failure();
+      }
+
+      // Otherwise, match the origins up to infer from the value.
       switch (matcher.matchTypes(valueRefType, expectedType)) {
       case ParamMatcher::Retry:
         goto RetryLabel;
@@ -1706,9 +1719,6 @@ LogicalResult ParameterInferenceState::inferForCall(
     // Check for any more positional operands.
     while (posOperandIdx != numOperands && operands[posOperandIdx].keyword)
       ++posOperandIdx;
-
-    // FIXME: Why is this needed?
-    expectedType = evaluator.getReboundType(expectedType);
 
     // Handle positional arguments.
     if (posOperandIdx < numOperands) {
