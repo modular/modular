@@ -111,8 +111,8 @@ fn copy_accum_to_gmem[
         c_coord: (M, N) tile coordinates.
         c_shape: (M, N) matrix dimensions.
     """
-    # Extract from self-contained OutputStage
-    var tmem_offset = output_stage.tmem_offset()
+    # Extract TMEM offset from self-contained OutputStage
+    var tmem_offset = output_stage.tmem.offset()
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime MMA_M = mma_shape[0]
@@ -490,7 +490,7 @@ fn multi_stage_store_C_split_k[
 
     var is_last_split = scheduler.reduction(
         reduction_tensor,
-        stage.tmem_offset(),
+        stage.tmem.offset(),
         epilogue_thread_idx,
         work_info,
     )

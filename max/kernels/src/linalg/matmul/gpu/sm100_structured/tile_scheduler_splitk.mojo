@@ -679,12 +679,14 @@ struct TileScheduler[
         var warp_id_x = local_warp_id if Self.BM == 128 else local_warp_id % 2
         var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
 
+        from .tmem import TmemAddress
+
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
             Int(warp_id_x), Int(warp_id_y)
         )
         var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](0, 0)
         var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](1, 0)
-        var stage_tmem_addr = tmem_addr
+        var tmem = TmemAddress(tmem_addr)
 
         @parameter
         for stage in range(num_widths):
@@ -692,24 +694,13 @@ struct TileScheduler[
             comptime stage_rep = stage_width // 8
             comptime stage_frag_size = stage_rep * fragment_size
 
-            var stage_frag_upper = tcgen05_ld[
-                datapaths=data_paths,
-                bits=bits,
-                repeat=stage_rep,
-                dtype=accum_type,
-                pack=False,
-                width=stage_frag_size,
-            ](stage_tmem_addr)
-
-            var stage_frag_lower = tcgen05_ld[
-                datapaths=data_paths,
-                bits=bits,
-                repeat=stage_rep,
-                dtype=accum_type,
-                pack=False,
-                width=stage_frag_size,
-            ](stage_tmem_addr + (16 << 16))
-            tcgen05_load_wait()
+            var stage_frag_upper = tmem.load_upper[
+                accum_type, stage_frag_size, data_paths, bits, stage_rep
+            ]()
+            var stage_frag_lower = tmem.load_lower[
+                accum_type, stage_frag_size, data_paths, bits, stage_rep
+            ]()
+            TmemAddress.wait_load()
 
             var reduction_upper_subtile = Self._to_next_subtile[
                 widths=widths, curr_stage=stage
@@ -762,24 +753,18 @@ struct TileScheduler[
                         stage_frag_lower[2 * i] = v2_lower[0]
                         stage_frag_lower[2 * i + 1] = v2_lower[1]
 
-            # we can't hold all accumulators in registers, so we need to store to TMEM
+            # Can't hold all accumulators in registers, store back to TMEM.
             @parameter
             if not write_back:
-                tcgen05_st[
-                    datapaths=data_paths,
-                    bits=bits,
-                    repeat=stage_rep,
-                    pack=False,
-                ](stage_tmem_addr, stage_frag_upper)
-                tcgen05_st[
-                    datapaths=data_paths,
-                    bits=bits,
-                    repeat=stage_rep,
-                    pack=False,
-                ](stage_tmem_addr + (16 << 16), stage_frag_lower)
-                tcgen05_store_wait()
+                tmem.store_upper[
+                    data_paths=data_paths, bits=bits, repeat=stage_rep
+                ](stage_frag_upper)
+                tmem.store_lower[
+                    data_paths=data_paths, bits=bits, repeat=stage_rep
+                ](stage_frag_lower)
+                TmemAddress.wait_store()
 
-            stage_tmem_addr += stage_width
+            tmem = tmem + stage_width
 
     @always_inline
     fn reduction[

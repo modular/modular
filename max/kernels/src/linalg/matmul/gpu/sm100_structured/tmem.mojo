@@ -17,6 +17,7 @@ shared memory. This module provides type-safe abstractions:
 
 - TmemAllocation: Manages TMEM lifecycle (alloc/dealloc)
 - TmemStage: Represents a pipeline stage for accumulator buffering
+- TmemAddress: Simple address wrapper for TMEM load operations
 """
 
 from gpu import syncwarp
@@ -26,6 +27,8 @@ from gpu.tcgen05 import (
     tcgen05_ld,
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
+    tcgen05_st,
+    tcgen05_store_wait,
 )
 
 from ....structuring import SMemArrayType, SMemPtr
@@ -75,6 +78,155 @@ struct TmemAllocation[
         tcgen05_dealloc[Self.cta_group](self.addr, Self.max_cols)
 
 
+# TMEM Address Encoding (SM100 Blackwell)
+# =========================================
+# TMEM addresses encode row and column offsets in a packed format:
+#
+#   Address = [row_offset : 16 bits] [column_offset : 16 bits]
+#
+# SM100 MMA accumulators span 32 rows × N columns per tile:
+#   - Upper fragment: rows 0-15  (accessed at base address)
+#   - Lower fragment: rows 16-31 (accessed at base + TMEM_LOWER_ROW_OFFSET)
+#
+# The value 16 << 16 encodes "row 16, column 0" as the starting offset
+# for the lower half of the accumulator.
+comptime TMEM_LOWER_ROW_OFFSET: UInt32 = 16 << 16
+
+
+@register_passable("trivial")
+struct TmemAddress:
+    """Simple TMEM address wrapper for load/store operations.
+
+    Encapsulates TMEM address encoding for accumulator fragment access.
+    SM100 MMA accumulators are organized as 32 rows, split into:
+      - Upper fragment (rows 0-15): accessed via upper_addr()
+      - Lower fragment (rows 16-31): accessed via lower_addr()
+
+    The lower fragment address adds TMEM_LOWER_ROW_OFFSET (16 << 16) to
+    encode the row offset in the upper 16 bits of the address.
+
+    Usage:
+        var tmem = TmemAddress(base_offset)
+
+        # Load operations
+        var upper = tmem.load_upper[dtype, size]()
+        var lower = tmem.load_lower[dtype, size]()
+        TmemAddress.wait_load()
+
+        # Store operations
+        tmem.store_upper[dtype, size](upper_frag)
+        tmem.store_lower[dtype, size](lower_frag)
+        TmemAddress.wait_store()
+
+        # Low-level address access for custom operations
+        raw_upper = tmem.upper_addr()
+        raw_lower = tmem.lower_addr()
+    """
+
+    var addr: UInt32
+
+    fn __init__(out self, addr: UInt32):
+        self.addr = addr
+
+    fn __add__(self, offset: UInt32) -> Self:
+        """Create new TmemAddress with column offset added."""
+        return Self(self.addr + offset)
+
+    fn __add__(self, offset: Int) -> Self:
+        """Create new TmemAddress with column offset added."""
+        return Self(self.addr + UInt32(offset))
+
+    fn upper_addr(self) -> UInt32:
+        """Raw address for upper fragment (rows 0-15).
+
+        Use for direct tcgen05_ld/tcgen05_st calls when load_upper/load_lower
+        don't fit your use case.
+        """
+        return self.addr
+
+    fn lower_addr(self) -> UInt32:
+        """Raw address for lower fragment (rows 16-31).
+
+        Adds TMEM_LOWER_ROW_OFFSET to encode row 16 in the address.
+        Use for direct tcgen05_ld/tcgen05_st calls.
+        """
+        return self.addr + TMEM_LOWER_ROW_OFFSET
+
+    fn load_upper[
+        dtype: DType,
+        width: Int,
+        data_paths: Int = 16,
+        bits: Int = 256,
+        repeat: Int = 1,
+    ](self) -> SIMD[dtype, width]:
+        """Load upper accumulator fragment (rows 0-15)."""
+        return tcgen05_ld[
+            datapaths=data_paths,
+            bits=bits,
+            repeat=repeat,
+            dtype=dtype,
+            pack=False,
+            width=width,
+        ](self.upper_addr())
+
+    fn load_lower[
+        dtype: DType,
+        width: Int,
+        data_paths: Int = 16,
+        bits: Int = 256,
+        repeat: Int = 1,
+    ](self) -> SIMD[dtype, width]:
+        """Load lower accumulator fragment (rows 16-31)."""
+        return tcgen05_ld[
+            datapaths=data_paths,
+            bits=bits,
+            repeat=repeat,
+            dtype=dtype,
+            pack=False,
+            width=width,
+        ](self.lower_addr())
+
+    fn store_upper[
+        dtype: DType,
+        width: Int,
+        data_paths: Int = 16,
+        bits: Int = 256,
+        repeat: Int = 1,
+    ](self, data: SIMD[dtype, width]):
+        """Store upper accumulator fragment (rows 0-15)."""
+        tcgen05_st[
+            datapaths=data_paths,
+            bits=bits,
+            repeat=repeat,
+            pack=False,
+        ](self.upper_addr(), data)
+
+    fn store_lower[
+        dtype: DType,
+        width: Int,
+        data_paths: Int = 16,
+        bits: Int = 256,
+        repeat: Int = 1,
+    ](self, data: SIMD[dtype, width]):
+        """Store lower accumulator fragment (rows 16-31)."""
+        tcgen05_st[
+            datapaths=data_paths,
+            bits=bits,
+            repeat=repeat,
+            pack=False,
+        ](self.lower_addr(), data)
+
+    @staticmethod
+    fn wait_store():
+        """Wait for TMEM store operations to complete."""
+        tcgen05_store_wait()
+
+    @staticmethod
+    fn wait_load():
+        """Wait for TMEM load operations to complete."""
+        tcgen05_load_wait()
+
+
 @register_passable("trivial")
 struct TmemStage[
     num_stages: Int,
@@ -83,16 +235,19 @@ struct TmemStage[
 ]:
     """A pipeline stage within TMEM for accumulator buffering.
 
+    Used by OutputTilePipeline to manage MMA→Epilogue synchronization.
     MMA writes to one stage while epilogue reads from another.
+
+    Address accessors follow the same pattern as TmemAddress:
+      - offset(): Column address for this stage (used by MMA)
+      - upper_addr(): Address for rows 0-15
+      - lower_addr(): Address for rows 16-31
 
     Parameters:
         num_stages: Pipeline stages (typically 2-4).
-        stage_stride: Columns per stage.
+        stage_stride: Columns per stage (512 / num_stages).
         cta_group: Cooperating CTAs (1 or 2).
     """
-
-    # Row offset for lower fragment (rows 16-31)
-    comptime LOWER_ROW_OFFSET: UInt32 = 16 << 16
 
     var base_addr: UInt32
     var index: UInt32
@@ -102,8 +257,20 @@ struct TmemStage[
         self.index = index
 
     fn offset(self) -> UInt32:
-        """TMEM address offset for MMA operations."""
+        """TMEM column address for this stage.
+
+        Computes base_addr + index * stage_stride. This is the address
+        used by MMA operations to write accumulators.
+        """
         return self.base_addr + self.index * UInt32(Self.stage_stride)
+
+    fn upper_addr(self) -> UInt32:
+        """Raw address for upper fragment (rows 0-15)."""
+        return self.offset()
+
+    fn lower_addr(self) -> UInt32:
+        """Raw address for lower fragment (rows 16-31)."""
+        return self.offset() + TMEM_LOWER_ROW_OFFSET
 
     fn load_upper[
         dtype: DType,
@@ -120,7 +287,7 @@ struct TmemStage[
             dtype=dtype,
             pack=False,
             width=frag_size,
-        ](self.offset())
+        ](self.upper_addr())
 
     fn load_lower[
         dtype: DType,
@@ -137,7 +304,7 @@ struct TmemStage[
             dtype=dtype,
             pack=False,
             width=frag_size,
-        ](self.offset() + Self.LOWER_ROW_OFFSET)
+        ](self.lower_addr())
 
     fn wait_load(self):
         """Wait for TMEM load operations to complete."""

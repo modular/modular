@@ -270,7 +270,9 @@ struct KernelContext[
 # =============================================================================
 
 
-# NOTE: Used by warp_specialized_blockwise_fp8.mojo
+# DEPRECATED: Use TilePipeline with ConsumerStage and BlackwellMatmulSM100Kernel.mma()
+# instead. This legacy function uses raw SMemTileIter rather than encapsulated
+# ConsumerStage access. Kept for backward compatibility with external callers.
 @always_inline
 fn consumer_main_loop[
     accum_type: DType,
@@ -312,9 +314,10 @@ fn consumer_main_loop[
     iter_idx: UInt32,
     k_start: UInt32,
 ):
-    """Consume tiles from shared memory and execute MMA operations.
+    """DEPRECATED: Legacy MMA consumer loop for external callers.
 
-    This is the public API for external callers using SMemTileIter.
+    Use TilePipeline with ConsumerStage and BlackwellMatmulSM100Kernel.mma()
+    for new code. This function is kept for backward compatibility.
     """
     var stage = load_mma_pipeline.consumer_stage()
 
@@ -827,89 +830,6 @@ struct BlackwellMatmulSM100Kernel[
 
         fence_mbarrier_init()
         cluster_sync()
-
-    @staticmethod
-    @always_inline
-    fn _load_AB_tiles[
-        tiles_origin: MutOrigin,
-        //,
-    ](
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        tiles: ProducerStage[
-            tiles_origin,
-            Self.a_type,
-            Self.b_type,
-            Self.SmemType.a_smem_layout,
-            Self.SmemType.b_smem_layout,
-            Self.SmemType.num_pipeline_stages,
-            Self.SmemType.num_group_pipeline_stages,
-            Int(Self.config.k_group_size),
-        ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
-        work_tile_coord: Tuple[UInt, UInt],
-        a_multicast_mask: UInt16,
-        b_multicast_mask: UInt16,
-        iter_idx: UInt32,
-        elect_one_cta: Bool,
-    ):
-        """Load A/B tiles via TMA multicast within producer stage context."""
-        comptime a_expected_bytes = (
-            Self.SmemType.a_smem_layout.size() * size_of[Self.a_type]()
-        )
-        comptime b_expected_bytes = (
-            Self.SmemType.b_smem_layout.size() * size_of[Self.b_type]()
-        )
-        # Leader CTAs expect SMEM from itself and their peers
-        comptime expected_bytes = Self.config.cta_group * (
-            a_expected_bytes + b_expected_bytes
-        ) * Int(Self.config.k_group_size)
-
-        comptime a_tma_load_size = Self.a_desc_layout.size()
-        comptime b_tma_load_size = Self.b_desc_layout.size()
-        comptime a_tma_rows = Self.a_desc_layout.shape[0].value()
-        comptime b_tma_rows = Self.b_desc_layout.shape[0].value()
-
-        # Global memory row coordinates for TMA loads
-        var a_gmem_m_coord = peer_cta_coord[2] * UInt(
-            a_tma_rows
-        ) + work_tile_coord[0] * UInt(Self.BM)
-        var b_gmem_n_coord = (
-            peer_cta_coord[1] * UInt(b_tma_rows)
-            + peer_cta_coord[0] * UInt(Self.BN)
-            + work_tile_coord[1] * UInt(Self.config.mma_shape[1])
-        )
-
-        if elect_one_sync():
-            if elect_one_cta:
-                tiles.expect_bytes(expected_bytes)
-
-            var barrier = tiles.barrier()
-
-            for j in range(Int(Self.config.k_group_size)):
-                var a_tile, b_tile = tiles.get_tile(j)
-
-                # Offset to peer CTA's portion within the tile
-                var a_peer_slice = type_of(a_tile)(
-                    a_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
-                )
-                var b_peer_slice = type_of(b_tile)(
-                    b_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
-                )
-
-                a_tma_op.async_multicast_load[Self.config.cta_group](
-                    a_peer_slice,
-                    barrier[0],
-                    (UInt(iter_idx + j) * UInt(Self.BK), UInt(a_gmem_m_coord)),
-                    a_multicast_mask,
-                )
-
-                b_tma_op.async_multicast_load[Self.config.cta_group](
-                    b_peer_slice,
-                    barrier[0],
-                    (UInt(iter_idx + j) * UInt(Self.BK), UInt(b_gmem_n_coord)),
-                    b_multicast_mask,
-                )
 
     @staticmethod
     @always_inline
@@ -1682,16 +1602,13 @@ struct BlackwellMatmulSM100FallbackKernel[
             mma_phase ^= 1
 
         # Load accumulated result from tensor memory
-        c_frag = tcgen05_ld[
-            datapaths=16,
-            bits=256,
-            repeat = Self.BN // 8,
-            dtype = Self.accum_type,
-            pack=False,
-            width = Self.c_frag_size,
-        ](tmem_addr)
+        from .tmem import TmemAddress
 
-        tcgen05_load_wait()
+        var tmem = TmemAddress(tmem_addr)
+        c_frag = tmem.load_upper[
+            Self.accum_type, Self.c_frag_size, 16, 256, Self.BN // 8
+        ]()
+        TmemAddress.wait_load()
 
         if elect_one_warp:
             tcgen05_release_allocation_lock[1]()

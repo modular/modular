@@ -125,7 +125,7 @@ struct TilePipeline[
     @always_inline
     fn producer[
         origin: MutOrigin
-    ](ref [origin]self) -> TileProducer[
+    ](ref [origin]self) -> InputProducer[
         origin,
         Self.a_type,
         Self.b_type,
@@ -136,12 +136,12 @@ struct TilePipeline[
         Self.k_group_size,
     ]:
         """Get producer view for TMA Load warp."""
-        return TileProducer(pipeline_ptr=Pointer(to=self))
+        return InputProducer(pipeline_ptr=Pointer(to=self))
 
     @always_inline
     fn consumer[
         origin: MutOrigin
-    ](ref [origin]self) -> TileConsumer[
+    ](ref [origin]self) -> InputConsumer[
         origin,
         Self.a_type,
         Self.b_type,
@@ -152,7 +152,7 @@ struct TilePipeline[
         Self.k_group_size,
     ]:
         """Get consumer view for MMA warp."""
-        return TileConsumer(pipeline_ptr=Pointer(to=self))
+        return InputConsumer(pipeline_ptr=Pointer(to=self))
 
     @always_inline
     fn _acquire_producer_stage(
@@ -384,7 +384,7 @@ struct ConsumerStage[
 
 @fieldwise_init
 @register_passable("trivial")
-struct TileProducer[
+struct InputProducer[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
@@ -394,7 +394,7 @@ struct TileProducer[
     num_group_stages: Int,
     k_group_size: Int,
 ]:
-    """Producer view for TMA Load warp with acquire() API."""
+    """Producer view for TMA Load warp (input pipeline)."""
 
     comptime TilePipelineType = TilePipeline[
         Self.a_type,
@@ -453,7 +453,7 @@ struct TileProducer[
 
 @fieldwise_init
 @register_passable("trivial")
-struct TileConsumer[
+struct InputConsumer[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
@@ -463,7 +463,7 @@ struct TileConsumer[
     num_group_stages: Int,
     k_group_size: Int,
 ]:
-    """Consumer view for MMA warp with acquire() API."""
+    """Consumer view for MMA warp (input pipeline)."""
 
     comptime TilePipelineType = TilePipeline[
         Self.a_type,
@@ -538,10 +538,6 @@ struct OutputStage[
         self.index = index
         self.tmem = tmem
         self.pipeline = pipeline
-
-    fn tmem_offset(self) -> UInt32:
-        """TMEM address offset for this stage."""
-        return self.tmem.offset()
 
 
 @register_passable("trivial")
@@ -630,20 +626,20 @@ struct OutputTilePipeline[
     @always_inline
     fn producer[
         origin: MutOrigin, //
-    ](ref [origin]self) -> OutputProducerContext[
+    ](ref [origin]self) -> OutputProducer[
         origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
     ]:
-        """Get producer context for MMA warp."""
-        return OutputProducerContext(Pointer(to=self))
+        """Get producer view for MMA warp."""
+        return OutputProducer(Pointer(to=self))
 
     @always_inline
     fn consumer[
         origin: MutOrigin, //
-    ](ref [origin]self) -> OutputConsumerContext[
+    ](ref [origin]self) -> OutputConsumer[
         origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
     ]:
-        """Get consumer context for epilogue warp."""
-        return OutputConsumerContext(Pointer(to=self))
+        """Get consumer view for epilogue warp."""
+        return OutputConsumer(Pointer(to=self))
 
     @always_inline
     fn get_pipeline(self) -> Self.Pipeline:
@@ -652,13 +648,13 @@ struct OutputTilePipeline[
 
 
 @register_passable("trivial")
-struct OutputProducerContext[
+struct OutputProducer[
     origin: MutOrigin,
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
 ]:
-    """Context manager for MMA producer with automatic acquire/release."""
+    """Producer view for MMA warp (output pipeline)."""
 
     comptime TilePipelineType = OutputTilePipeline[
         Self.num_stages, Self.stage_stride_cols, Self.cta_group
@@ -694,13 +690,13 @@ struct OutputProducerContext[
 
 
 @register_passable("trivial")
-struct OutputConsumerContext[
+struct OutputConsumer[
     origin: MutOrigin,
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
 ]:
-    """Context manager for epilogue consumer with automatic acquire/release."""
+    """Consumer view for epilogue warp (output pipeline)."""
 
     comptime TilePipelineType = OutputTilePipeline[
         Self.num_stages, Self.stage_stride_cols, Self.cta_group

@@ -15,14 +15,10 @@
 from sys import size_of
 
 from layout.tma_async import SharedMemBarrier
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+from ....structuring import SMemPtr
 
-
-comptime MbarPtr = UnsafePointer[
-    SharedMemBarrier, address_space = AddressSpace.SHARED
-]
+comptime MbarPtr = SMemPtr[SharedMemBarrier]
 
 
 @register_passable("trivial")
