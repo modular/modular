@@ -14,7 +14,7 @@
 
 #include "BitcodeWriter17.h"
 #include "../Transforms/PointerRewriter.h"
-#include "MetalValueEnumerator.h"
+#include "ValueEnumerator17.h"
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
@@ -177,7 +177,7 @@ class ModuleBitcodeWriter : public BitcodeWriterBase {
   const Module &M;
 
   /// Enumerates ids for all values in the module.
-  M::KGEN::ValueEnumerator VE;
+  M::KGEN::ValueEnumerator17 VE;
 
   /// Optional per-module index to write for ThinLTO.
   const ModuleSummaryIndex *Index;
@@ -232,9 +232,9 @@ public:
 
     // Assign ValueIds to any callee values in the index that came from
     // indirect call profiles and were recorded as a GUID not a Value*
-    // (which would have been assigned an ID by the M::KGEN::ValueEnumerator).
+    // (which would have been assigned an ID by the M::KGEN::ValueEnumerator17).
     // The starting ValueId is just after the number of values in the
-    // M::KGEN::ValueEnumerator, so that they can be emitted in the VST.
+    // M::KGEN::ValueEnumerator17, so that they can be emitted in the VST.
     GlobalValueId = VE.getValues().size();
     if (!Index)
       return;
@@ -937,7 +937,7 @@ static void emitConstantRange(SmallVectorImpl<uint64_t> &Record,
 }
 
 void ModuleBitcodeWriter::writeAttributeGroupTable() {
-  const std::vector<M::KGEN::ValueEnumerator::IndexAndAttrSet> &AttrGrps =
+  const std::vector<M::KGEN::ValueEnumerator17::IndexAndAttrSet> &AttrGrps =
       VE.getAttributeGroups();
   if (AttrGrps.empty())
     return;
@@ -945,7 +945,7 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
   Stream.EnterSubblock(bitc::PARAMATTR_GROUP_BLOCK_ID, 3);
 
   SmallVector<uint64_t, 64> Record;
-  for (M::KGEN::ValueEnumerator::IndexAndAttrSet Pair : AttrGrps) {
+  for (M::KGEN::ValueEnumerator17::IndexAndAttrSet Pair : AttrGrps) {
     unsigned AttrListIndex = Pair.first;
     AttributeSet AS = Pair.second;
     Record.push_back(VE.getAttributeGroupID(Pair));
@@ -1032,7 +1032,7 @@ void ModuleBitcodeWriter::writeAttributeTable() {
 
 /// WriteTypeTable - Write out the type table for a module.
 void ModuleBitcodeWriter::writeTypeTable() {
-  const M::KGEN::ValueEnumerator::TypeList &TypeList = VE.getTypes();
+  const M::KGEN::ValueEnumerator17::TypeList &TypeList = VE.getTypes();
 
   Stream.EnterSubblock(bitc::TYPE_BLOCK_ID_NEW, 4 /*count from # abbrevs */);
   SmallVector<uint64_t, 64> TypeVals;
@@ -2797,7 +2797,7 @@ void ModuleBitcodeWriter::writeConstants(unsigned FirstVal, unsigned LastVal,
 
   SmallVector<uint64_t, 64> Record;
 
-  const M::KGEN::ValueEnumerator::ValueList &Vals = VE.getValues();
+  const M::KGEN::ValueEnumerator17::ValueList &Vals = VE.getValues();
   Type *LastTy = nullptr;
   for (unsigned i = FirstVal; i != LastVal; ++i) {
     const Value *V = Vals[i].first;
@@ -3055,13 +3055,13 @@ void ModuleBitcodeWriter::writeConstants(unsigned FirstVal, unsigned LastVal,
   }
 
   // Note: Dummy constants are now added automatically by
-  // M::KGEN::ValueEnumerator
+  // M::KGEN::ValueEnumerator17
 
   Stream.ExitBlock();
 }
 
 void ModuleBitcodeWriter::writeModuleConstants() {
-  const M::KGEN::ValueEnumerator::ValueList &Vals = VE.getValues();
+  const M::KGEN::ValueEnumerator17::ValueList &Vals = VE.getValues();
 
   // Find the first constant to emit, which is the first non-globalvalue
   // value. We know globalvalues have been emitted by WriteModuleInfo.
@@ -4335,7 +4335,7 @@ static void writeTypeIdSummaryRecord(SmallVector<uint64_t, 64> &NameVals,
 static void writeTypeIdCompatibleVtableSummaryRecord(
     SmallVector<uint64_t, 64> &NameVals, StringTableBuilder &StrtabBuilder,
     StringRef Id, const TypeIdCompatibleVtableInfo &Summary,
-    M::KGEN::ValueEnumerator &VE) {
+    M::KGEN::ValueEnumerator17 &VE) {
   NameVals.push_back(StrtabBuilder.add(Id));
   NameVals.push_back(Id.size());
 
