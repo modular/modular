@@ -77,6 +77,18 @@ def LIT_UnresolvedType : LITType<"Unresolved", "unresolved"> {
 }
 
 //===----------------------------------------------------------------------===//
+// EllipsisType
+//===----------------------------------------------------------------------===//
+
+def LIT_EllipsisType : LITType<"Ellipsis", "ellipsis"> {
+  let summary = "Type of the ... literal";
+  let description = [{
+    The "..." syntax in Mojo (and Python) is a general expression of Ellipsis
+    type.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ModuleType
 //===----------------------------------------------------------------------===//
 

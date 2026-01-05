@@ -56,7 +56,7 @@ fn takeIt[f: fn () unified -> None](impl: f):
     impl()
 
 
-fn captureIt(p: Parameter[**_]):
+fn captureIt(p: Parameter[...]):
     @no_inline
     fn closure() unified {read p}:
         p.useIt()

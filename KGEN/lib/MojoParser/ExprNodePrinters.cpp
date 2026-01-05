@@ -35,6 +35,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "BoolLiteral";
   case ExprNode::kSelfLiteral:
     return "SelfLiteral";
+  case ExprNode::kEllipsisLiteral:
+    return "EllipsisLiteral";
   case ExprNode::kStringLiteral:
     return "StringLiteral";
   case ExprNode::kNoneLiteral:

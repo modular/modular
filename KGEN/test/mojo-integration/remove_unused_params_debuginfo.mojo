@@ -7,7 +7,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # CHECK: define {{.*}}agnostic_user{{.*}} !dbg ![[SP:[0-9]+]]

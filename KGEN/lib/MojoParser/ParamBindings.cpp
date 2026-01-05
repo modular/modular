@@ -353,35 +353,14 @@ ParamBindings::verifyBindingsImpl(
   assert(parameterInferenceHook && "expected a parameter inference hook");
   Fitness fitness{{}};
 
-  // Check to see if we have *_ or **_ and filter them from the parameter list.
-  bool unpackedPos = false;
-  bool unpackedKw = false;
+  // Check to see if we have ... and remove it from the parameter list.
+  bool hasEllipsis = false;
   CallOperands operands(origOperands.callExpr);
   for (auto [idx, binding] : llvm::enumerate(origOperands.values)) {
-    auto unpacked = dyn_cast<UnpackedAttr>(binding.ir.getIfPValue().get());
-    // Check if the unpacked value is an UnboundAttr.
-    if (!unpacked || !isa<UnboundAttr>(unpacked.getValue())) {
+    if (isa<EllipsisAttr>(binding.ir.getIfPValue().get()))
+      hasEllipsis = true;
+    else
       operands.values.push_back(binding);
-      continue;
-    }
-    if (unpacked.getKwOnly()) {
-      unpackedKw = true;
-      // Verify that **_ is the last keyword parameter.
-      if (idx != origOperands.values.size() - 1) {
-        if (diagEmitter)
-          diagEmitter->emitUnpackedNotAtEnd(binding.expr, /*kw=*/true);
-        return {{}, fitness};
-      }
-    } else {
-      // Verify that *_ is the last positionally-passed parameter.
-      if (idx != origOperands.values.size() - 1 &&
-          !origOperands.values[idx + 1].keyword) {
-        if (diagEmitter)
-          diagEmitter->emitUnpackedNotAtEnd(binding.expr, /*kw=*/false);
-        return {{}, fitness};
-      }
-      unpackedPos = true;
-    }
   }
 
   // With that out of the way, we can now get onto normal type checking of
@@ -492,11 +471,7 @@ ParamBindings::verifyBindingsImpl(
       return value;
 
     // Unbind the parameters if those of this passing kind were unbound.
-    if ((((kind == PassingKind::PosOnly || kind == PassingKind::PosOrKw) &&
-          unpackedPos) ||
-         ((kind == PassingKind::PosOrKw || kind == PassingKind::KwOnly) &&
-          unpackedKw)) &&
-        partial)
+    if (hasEllipsis && partial)
       return UnboundAttr::get(requestedType);
 
     // If the parameter decl is a variadic parameter list, and do not have
@@ -981,15 +956,6 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         diag = shared.emitError(expr->getLoc());
         *diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
                  "parameter";
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitUnpackedNotAtEnd=*/
-      [&](const ExprNode *expr, bool kw) {
-        diag = shared.emitError(expr->getLoc());
-        *diag << "unbound pack `" << (kw ? "**_" : "*_")
-              << "` must be the last " << (kw ? "keyword" : "positional")
-              << " parameter" << expr->getRange();
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },

@@ -126,8 +126,6 @@ public:
     std::function<void(size_t)> emitInferenceFailure;
     /// Emit diagnostics when an unbound (i.e. `_`) is passed to a variadic.
     std::function<void(const ExprNode *)> emitUnboundInVariadic;
-    /// Emit diagnostics when an unpacked unbind isn't the last parameter.
-    std::function<void(const ExprNode *, bool)> emitUnpackedNotAtEnd;
     /// Emit diagnostics for missing parameters (specified by their names).
     std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
     /// Emit diagnostics for constraint violations.

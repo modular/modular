@@ -548,6 +548,10 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (kind == kNoneLiteral)
     return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
 
+  if (kind == kEllipsisLiteral)
+    return emitter.emitResult(EllipsisAttr::get(emitter.getContext()), this,
+                              dest);
+
   if (kind == kDiscardLiteral) {
     ASTType initializerType = dest.getIfInitializerType();
     // The discard pattern can only be used in case where we have an inferred
@@ -1311,6 +1315,9 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
   // Unpacked operands don't have expected types.
   if (operand.isUnpacked())
     return {};
+  // ... doesn't have an expected type.
+  if (operand.expr->kind == ExprNode::kEllipsisLiteral)
+    return {};
 
   // Identify which parameter type corresponds to this operand.
   // FIXME: This function doesn't emit any diagnostics, and simply fails to
@@ -1377,7 +1384,11 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
   // infer-only parameter and the incoming expression.
   if (paramList.hasInferredParams() || operand.isKeyword()) {
     mlir::AttrTypeWalker walker;
-    walker.addWalk([](UnboundAttr) { return WalkResult::interrupt(); });
+    walker.addWalk([](TypedAttr attr) {
+      if (isa<UnboundAttr, EllipsisAttr>(attr))
+        return WalkResult::interrupt();
+      return WalkResult::advance();
+    });
     if (walker.walk(nextType).wasInterrupted())
       return {};
   }
@@ -1391,18 +1402,18 @@ static TypedAttr emitSingleParamBinding(const Operand &operand,
                                         ASTType expectedType) {
   MLIRContext *ctx = emitter.getContext();
 
-  // _, *_, and **_ in parameter expressions are magically treated as special
-  // syntax for unbound values, which get a special representation in a
-  // parameter list. They are not general expressions, so don't emit them as
-  // such.
-
-  // Handle `**_` or `_` syntax, based on the operand passing kind.
+  // Handle `_` syntax as an unbound parameter.
   if (operand.expr->kind == ExprNode::kDiscardLiteral) {
-    TypedAttr value = UnboundAttr::get(UnresolvedType::get(ctx));
+    // FIXME: Remove *_ in preference for ... in parameter lists.
     if (operand.isUnpackedKeyword())
-      value = UnpackedAttr::get(value, /*kwOnly=*/true, value.getType());
-    return value;
+      return EllipsisAttr::get(emitter.getContext());
+    return UnboundAttr::get(UnresolvedType::get(ctx));
   }
+
+  // When emitting a "..." into a parameter list, it doesn't fulfill a parameter
+  // so ignore the type.
+  if (operand.expr->kind == ExprNode::kEllipsisLiteral)
+    expectedType = {};
 
   // Handle unpacked variadics in the form of `*x`.
   if (operand.expr->kind == ExprNode::kUnpack) {
@@ -1410,11 +1421,9 @@ static TypedAttr emitSingleParamBinding(const Operand &operand,
 
     // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
     // specially.
-    if (unpackExpr->subExpr->kind == ExprNode::kDiscardLiteral) {
-      auto unresolved = UnresolvedType::get(ctx);
-      return UnpackedAttr::get(UnboundAttr::get(unresolved),
-                               /*kwOnly=*/false, unresolved);
-    }
+    // FIXME: Remove this syntax in favor of ...
+    if (unpackExpr->subExpr->kind == ExprNode::kDiscardLiteral)
+      return EllipsisAttr::get(ctx);
 
     // Only variadic-typed parameters can be unpacked. Emit the subexpression.
     // `expectedType` isn't needed here, because a variadic value would have

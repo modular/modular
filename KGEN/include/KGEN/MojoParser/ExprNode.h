@@ -59,6 +59,7 @@ public:
     kStringLiteral,     // "Hello"
     kNoneLiteral,       // None
     kDiscardLiteral,    // _
+    kEllipsisLiteral,   // ...
     kDeclRef,           // x
     kAttributeRef,      // x.y
     kParen,             // (x+y)

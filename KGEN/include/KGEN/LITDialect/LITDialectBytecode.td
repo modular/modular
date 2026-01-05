@@ -17,6 +17,8 @@ def TypeCheckErrorType : DialectType<(type)>;
 
 def UnresolvedType : DialectType<(type)>;
 
+def EllipsisType : DialectType<(type)>;
+
 def ModuleType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol
 )>;
@@ -76,6 +78,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
   let elems = [
     TypeCheckErrorType,
     UnresolvedType,
+    EllipsisType,
     TypeSignatureType,
     StructType,
     TraitType,
@@ -131,6 +134,8 @@ def DocStringAttr : DialectAttribute<(attr
   StringAttr:$string,
   OptionalAttribute<"FileLineColLoc">:$location
 )>;
+
+def EllipsisAttr : DialectAttribute<(attr)>;
 
 def UnboundMLIROperationAttr : DialectAttribute<(attr
   StringAttr:$name,
@@ -228,6 +233,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     SymbolAttr,
     PogMetadataAttr,
     PogListAttr,
+    EllipsisAttr,
     FnMetadataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,

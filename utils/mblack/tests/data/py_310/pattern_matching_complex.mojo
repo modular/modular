@@ -39,7 +39,7 @@ match x:
         y = 0
 # case black_check_sequence_then_mapping
 match x:
-    case [*_]:
+    case [...]:
         return "seq"
     case {}:
         return "map"
@@ -77,7 +77,7 @@ match x:
         y = 2
 # case black_test_patma_185
 match Seq():
-    case [*_]:
+    case [...]:
         y = 0
 # case black_test_patma_063
 match x:
@@ -103,7 +103,7 @@ match x:
         y = 2
 # case black_test_patma_191
 match w:
-    case [x, y, *_]:
+    case [x, y, ...]:
         z = 0
 # case black_test_patma_110
 match x:
