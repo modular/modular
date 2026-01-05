@@ -8,7 +8,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 struct my_iter:

@@ -123,7 +123,7 @@ struct SimpleLiteralNode final : public ExprNode {
 
   static bool classof(Kind kind) {
     return kind == kSelfLiteral || kind == kNoneLiteral ||
-           kind == kDiscardLiteral;
+           kind == kDiscardLiteral || kind == kEllipsisLiteral;
   }
 
   SMLoc getLoc() const override { return loc; }

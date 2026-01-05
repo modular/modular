@@ -394,10 +394,9 @@ def UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//
 
 def LIT_UnpackedAttr : LITTypedAttr<"Unpacked", "unpacked"> {
-  let summary = "An attribute representing a `*_` value";
+  let summary = "An attribute representing a `*x` or `**x` value in param list";
   let description = [{
-    Represents *_ expressions which are magic expressions that can appear in
-    parameter lists that autoparameterize the containing declaration.
+    Represents *x and **x expressions that unpack a variadic list.
   }];
 
   let parameters = (ins "TypedAttr":$value, "bool":$kwOnly,
@@ -413,6 +412,24 @@ def LIT_UnpackedAttr : LITTypedAttr<"Unpacked", "unpacked"> {
     }]>
   ];
 }
+
+//===----------------------------------------------------------------------===//
+// EllipsisAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_EllipsisAttr : LITTypedAttr<"Ellipsis", "ellipsis"> {
+  let summary = "An attribute representing a `...` value";
+  let description = [{
+    Represents ... value, a general literal expression in Mojo.  It also occurs
+    in a parameter list, indicating that default parameter values should not be
+    bound.
+  }];
+
+  let parameters = (ins);
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
 
 //===----------------------------------------------------------------------===//
 // ModuleAttr

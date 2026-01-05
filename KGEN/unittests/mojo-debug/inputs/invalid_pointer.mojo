@@ -7,7 +7,7 @@
 from debug_test_utils import keep_alive
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn main():

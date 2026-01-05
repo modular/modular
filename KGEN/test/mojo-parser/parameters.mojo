@@ -1186,7 +1186,7 @@ struct DependentParam[x: Int, y: ParamType[x]]:
 
 # CHECK-LABEL: lit.fn @"auto_param_dependent
 # CHECK-SAME: <?, [[Y0:.*]]: !Int, [[Y1:.*]]: {{.*}}#ParamType <:!Int [[Y0]]>>
-fn auto_param_dependent(value: DependentParam[*_]):
+fn auto_param_dependent(value: DependentParam[...]):
     # CHECK-NEXT: ParamType <:!Int [[Y0]]>> = <*"value.y`1">
     comptime param = value.y
 
@@ -1544,7 +1544,7 @@ struct AutoParamDefault[value: Int, param: Int, default: Int = param]:
     fn __init__(out self, ptr: ParamType[Self.value]): pass
     fn __init__(out self, *, other: Self): pass
     fn method(self, other: ParamType[Self.value]): pass
-    fn method(self, other: AutoParamDefault[Self.value, *_]): pass
+    fn method(self, other: AutoParamDefault[Self.value, ...]): pass
 
 # CHECK-LABEL: lit.fn @"implicit_conversion_overload
 fn implicit_conversion_overload(x: AutoParamDefault[1], ptr: ParamType[1]):

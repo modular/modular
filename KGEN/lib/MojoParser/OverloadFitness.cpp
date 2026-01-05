@@ -861,12 +861,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                      "parameter"
                   << expr->getRange();
       },
-      /*emitUnpackedNotAtEnd=*/
-      [&](const ExprNode *expr, bool kw) {
-        getDiag() << "unbound pack `" << (kw ? "**_" : "*_")
-                  << "` must be the last " << (kw ? "keyword" : "positional")
-                  << " parameter" << expr->getRange();
-      },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
         emitMissing(getDiag(), names, kindStr + " parameter");

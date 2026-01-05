@@ -6,7 +6,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 @export("my_add_one")

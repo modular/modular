@@ -616,3 +616,13 @@ fn take_a_4(a: TakeAnything[4]): pass
 fn pass_it(x: String):
   # expected-error @+1 {{cannot be converted from 'TakeAnything[origin_of(x)]' to 'TakeAnything[4]'}}
   take_a_4(TakeAnything[origin_of(x)]())
+
+fn test_unbound_pack_arg():
+    # expected-error @+1 {{unbound packs not supported yet in runtime arguments}}
+    test_unbound_pack_arg(*_)
+
+fn test_unpack(d: Int):
+    # expected-error @+1 {{unpacked arguments are not supported yet}}
+    test_unpack(**d)
+    # expected-error @+1 {{unpacked arguments are not supported yet}}
+    test_unpack(*d)

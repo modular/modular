@@ -12,7 +12,7 @@
 from compile import compile_info
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def main():

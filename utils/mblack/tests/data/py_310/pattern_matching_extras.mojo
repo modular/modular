@@ -61,7 +61,7 @@ match more := (than, one), indeed,:
 
 
 match a, *b, c:
-    case [*_]:
+    case [...]:
         assert "seq" == _
     case {}:
         assert "map" == b

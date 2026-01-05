@@ -388,6 +388,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_True:
   case Token::kw_Self:
   case Token::kw__:
+  case Token::dot_dot_dot:
   case Token::float_num:
   case Token::string:
   case Token::kw_None:
@@ -533,6 +534,11 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     consumeToken(Token::kw__);
     result =
         alloc<SimpleLiteralNode>(ExprNode::kDiscardLiteral, startTok.getLoc());
+    break;
+  case Token::dot_dot_dot:
+    consumeToken(Token::dot_dot_dot);
+    result =
+        alloc<SimpleLiteralNode>(ExprNode::kEllipsisLiteral, startTok.getLoc());
     break;
   case Token::float_num: // primary -> literal -> floatnumber
     consumeToken(Token::float_num);
