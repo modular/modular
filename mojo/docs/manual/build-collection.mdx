@@ -90,9 +90,7 @@ struct SlidingWindow:
     var slots: List[Int] # This is your backing store
 
     fn __init__(out self, capacity: Int):
-        self.slots = List[Int](length=Self.Capacity, fill=0)
-        for _ in range(capacity):
-            self.slots.append(0)
+        self.slots = List[Int](length=capacity, fill=0)
 
     fn push(mut self, value: Int):
         _ = self.slots.pop(0)  # Remove oldest
