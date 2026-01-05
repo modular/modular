@@ -74,7 +74,7 @@ of automatic kernel fusion:
 
 Users may opt in to lazy execution. This is primarily useful for
 1. Operations which may never execute, for instance creating modules
-  with randomly initialized weights before loading weights
+with randomly initialized weights before loading weights
 2. Combining many operations into a single execution
 
 .. code-block:: python
@@ -197,7 +197,7 @@ class RealizationContext(Protocol, contextlib.AbstractContextManager):
     This has a huge concrete advantage over eagerly executing one operation
     at a time: by controlling the boundary of where the eager context starts
     and ends, we can give advanced users a tool to _enable fine-grained
-    bounds for automatic fusion_!
+    bounds for automatic fusion!
 
     In practice the easiest way to do this is to mark a function as
     `F.functional`. This function is then assumed to be "atomic" for the
@@ -261,7 +261,7 @@ class RealizationContext(Protocol, contextlib.AbstractContextManager):
             A realization state for the tensor. This may be used to compute
             downstream unrealized values. _If it is used in any mutating
             operations, it should be assigned to `tensor.state` to mark
-            the tensor as having been mutated_.
+            the tensor as having been mutated.
         """
 
     def create_unrealized(self, value: GraphValue) -> Tensor:
