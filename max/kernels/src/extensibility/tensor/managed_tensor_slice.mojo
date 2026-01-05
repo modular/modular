@@ -1339,7 +1339,7 @@ fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
     return True
 
 
-# TODO: Move to open-source/max/mojo/stdlib/stdlib/runtime/tracing.mojo and
+# TODO: Move to oss/modular/mojo/stdlib/stdlib/runtime/tracing.mojo and
 # rename to trace_arg
 @always_inline
 fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:

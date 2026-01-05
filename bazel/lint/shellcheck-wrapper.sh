@@ -27,7 +27,7 @@ cd "$BUILD_WORKSPACE_DIRECTORY"
 # https://github.com/koalaman/shellcheck/issues/143
 no_extension_files=(
   bazelw
-  open-source/max/tools/bazel
+  oss/modular/tools/bazel
   tools/bazel
   utils/benchmarking/tmp-tuning-utils/bbench
   utils/benchmarking/tmp-tuning-utils/nohup-kbench

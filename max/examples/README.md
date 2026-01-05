@@ -126,7 +126,7 @@ You can run it directly to confirm it works like this (but notice this example
 requires a GPU):
 
 ```sh
-bt //open-source/max/mojo/examples/gpu-intro:vector_addition_test
+bt //oss/modular/mojo/examples/gpu-intro:vector_addition_test
 ```
 
 With this, we can now be sure that the code runs under specific build

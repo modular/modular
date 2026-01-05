@@ -94,7 +94,7 @@ convention = "google"
 # Slow rollout of pydocstyle lint:
 # Enable docstring checks only for SDK modules in SDK/lib/API/python/ that currently pass all D rules.
 # To add more modules to this list, test them with:
-#   ./bazelw run //open-source/max/bazel/lint:ruff.check -- --select=D --no-cache <file>
+#   ./bazelw run //oss/modular/bazel/lint:ruff.check -- --select=D --no-cache <file>
 # and verify no errors are reported for that specific file.
 "!max/python/max/{driver/__init__.py,driver/driver.py,driver/tensor.py,dtype/__init__.py,engine/__init__.py,engine/api.py,experimental/__init__.py,experimental/random.py,graph/__init__.py,graph/quantization.py,graph/weight.py,interfaces/context.py,interfaces/status.py,nn/embedding.py,nn/float8_config.py,nn/linear.py}" = ["D"]
 # Ignore ANN001 (function argument missing type annotation) for auto-generated

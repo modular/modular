@@ -26,7 +26,7 @@ from max._core.profiler import Trace, is_profiling_enabled
 _FuncType = TypeVar("_FuncType", bound=Callable[..., Any])
 
 # For the list of valid colors, take a look at the struct `Color` in:
-# `open-source/max/mojo/stdlib/stdlib/gpu/host/_tracing.mojo`
+# `oss/modular/mojo/stdlib/stdlib/gpu/host/_tracing.mojo`
 
 
 @overload

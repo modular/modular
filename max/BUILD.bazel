@@ -17,8 +17,8 @@ package_group(
         "//docs/...",
         "//examples/...",  # OSS only
         "//max/...",
-        "//open-source/...",
-        "//open-source/max/max/...",
+        "//oss/...",
+        "//oss/modular/max/...",
         "//utils/...",
     ],
 )
@@ -64,6 +64,6 @@ filegroup(
     srcs = glob(["include/max/c/*.h"]),
     visibility = [
         "//max/internal/include/max/API/max/c/docs:__pkg__",
-        "//open-source/max/max/internal/include/max/API/max/c/docs:__pkg__",
+        "//oss/modular/max/internal/include/max/API/max/c/docs:__pkg__",
     ],
 )

@@ -22,7 +22,7 @@ set -euo pipefail
 # - py_binary: //max/python/max/entrypoints:pipelines -- generate --model modularai/Llama-3.1-8B-Instruct-GGUF --prompt "I believe the meaning of life is" --max-new-tokens 8 --max-batch-size 4 --cache-strategy=continuous --quantization-encoding float32
 # - py_test: Support/python:unittests
 # - mojo_binary: Kernels/test/gpu-query
-# - mojo_test: open-source/max/mojo/stdlib/test:builtin/test_math.mojo.test
+# - mojo_test: oss/modular/mojo/stdlib/test:builtin/test_math.mojo.test
 # - arg parsing: --config=debug-bazel Support/python:unittests --config=debug-bazel -- other args
 
 target=""

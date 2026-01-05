@@ -178,7 +178,7 @@ mojo/stdlib/std/builtin/string_literal.mojo:156:45: note: see https://github.com
                                             ^
 Included from mojo/stdlib/std/prelude/__init__.mojo:1:
 Included from mojo/stdlib/std/prelude/__init__.mojo:102:
-/Users/clattner/Projects/modular/open-source/max/mojo/stdlib/std/builtin/string_literal.mojo:156:45: error: failed to legalize operation 'pop.string.concat' that was explicitly marked illegal
+/Users/clattner/Projects/modular/oss/modular/mojo/stdlib/std/builtin/string_literal.mojo:156:45: error: failed to legalize operation 'pop.string.concat' that was explicitly marked illegal
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
 x.mojo:6:11: note: called from
