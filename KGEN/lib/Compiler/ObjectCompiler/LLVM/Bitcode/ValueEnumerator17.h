@@ -22,7 +22,7 @@ namespace M::KGEN {
 // Import LLVM namespace for convenience
 using namespace llvm;
 
-class ValueEnumerator {
+class ValueEnumerator17 {
 public:
   using TypeList = std::vector<Type *>;
 
@@ -123,9 +123,9 @@ private:
   unsigned FirstInstID;
 
 public:
-  ValueEnumerator(const Module &M, bool ShouldPreserveUseListOrder);
-  ValueEnumerator(const ValueEnumerator &) = delete;
-  void operator=(const ValueEnumerator &) = delete;
+  ValueEnumerator17(const Module &M, bool ShouldPreserveUseListOrder);
+  ValueEnumerator17(const ValueEnumerator17 &) = delete;
+  void operator=(const ValueEnumerator17 &) = delete;
 
   //! signals that an attribute group id is invalid / should not be used
   static constexpr const uint32_t invalid_attribute_group_id = 0x7FFF'FFFFu;
@@ -151,7 +151,7 @@ public:
   unsigned getTypeID(Type *T) const {
     TypeMapType::const_iterator I = TypeMap.find(T);
 
-    assert(I != TypeMap.end() && "Type not in ValueEnumerator!");
+    assert(I != TypeMap.end() && "Type not in ValueEnumerator17!");
     return I->second - 1;
   }
 
@@ -162,7 +162,8 @@ public:
     if (PAL.isEmpty())
       return 0; // Null maps to zero.
     AttributeListMapType::const_iterator I = AttributeListMap.find(PAL);
-    assert(I != AttributeListMap.end() && "Attribute not in ValueEnumerator!");
+    assert(I != AttributeListMap.end() &&
+           "Attribute not in ValueEnumerator17!");
     return I->second;
   }
 
@@ -170,7 +171,8 @@ public:
     if (!Group.second.hasAttributes())
       return 0; // Null maps to zero.
     AttributeGroupMapType::const_iterator I = AttributeGroupMap.find(Group);
-    assert(I != AttributeGroupMap.end() && "Attribute not in ValueEnumerator!");
+    assert(I != AttributeGroupMap.end() &&
+           "Attribute not in ValueEnumerator17!");
     return I->second;
   }
 
@@ -225,7 +227,7 @@ public:
   unsigned getGlobalBasicBlockID(const BasicBlock *BB) const;
 
   /// incorporateFunction/purgeFunction - If you'd like to deal with a function,
-  /// use these two methods to get its data into the ValueEnumerator!
+  /// use these two methods to get its data into the ValueEnumerator17!
   ///
   void incorporateFunction(const Function &F);
   void purgeFunction();

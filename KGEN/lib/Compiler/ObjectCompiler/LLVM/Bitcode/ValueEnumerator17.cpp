@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MetalValueEnumerator.h"
+#include "ValueEnumerator17.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/IR/Argument.h"
@@ -89,8 +89,8 @@ static void orderValue(const Value *V, OrderMap &OM) {
 
 static OrderMap orderModule(const Module &M) {
   // This needs to match the order used by
-  // ValueEnumerator::ValueEnumerator() and
-  // ValueEnumerator::incorporateFunction().
+  // ValueEnumerator17::ValueEnumerator17() and
+  // ValueEnumerator17::incorporateFunction().
   OrderMap OM;
 
   // In the reader, initializers of GlobalValues are set *after* all the
@@ -117,7 +117,7 @@ static OrderMap orderModule(const Module &M) {
 
   // Initializers of GlobalValues are processed in
   // BitcodeReader::ResolveGlobalAndAliasInits().  Match the order there rather
-  // than ValueEnumerator, and match the code in
+  // than ValueEnumerator17, and match the code in
   // predictValueUseListOrderImpl() by giving IDs in reverse order.
   //
   // Since GlobalValues never reference each other directly (just through
@@ -142,7 +142,7 @@ static OrderMap orderModule(const Module &M) {
     if (F.isDeclaration())
       continue;
     // Here we need to match the union of
-    // ValueEnumerator::incorporateFunction() and WriteFunction().  Basic
+    // ValueEnumerator17::incorporateFunction() and WriteFunction().  Basic
     // blocks are implicitly declared before anything else (by declaring their
     // size).
     for (const BasicBlock &BB : F)
@@ -357,8 +357,8 @@ static bool isIntOrIntVectorValue(const std::pair<const Value *, unsigned> &V) {
   return V.first->getType()->isIntOrIntVectorTy();
 }
 
-ValueEnumerator::ValueEnumerator(const Module &M,
-                                 bool ShouldPreserveUseListOrder)
+ValueEnumerator17::ValueEnumerator17(const Module &M,
+                                     bool ShouldPreserveUseListOrder)
     : ShouldPreserveUseListOrder(ShouldPreserveUseListOrder) {
   if (ShouldPreserveUseListOrder)
     UseListOrders = predictUseListOrder(M);
@@ -418,7 +418,7 @@ ValueEnumerator::ValueEnumerator(const Module &M,
 
   // Enumerate the metadata type.
   //
-  // TODO: Move this to ValueEnumerator::EnumerateOperandType() once bitcode
+  // TODO: Move this to ValueEnumerator17::EnumerateOperandType() once bitcode
   // only encodes the metadata type when it's used as a value.
   EnumerateType(Type::getMetadataTy(M.getContext()));
 
@@ -510,23 +510,23 @@ ValueEnumerator::ValueEnumerator(const Module &M,
   organizeMetadata();
 }
 
-unsigned ValueEnumerator::getInstructionID(const Instruction *Inst) const {
+unsigned ValueEnumerator17::getInstructionID(const Instruction *Inst) const {
   InstructionMapType::const_iterator I = InstructionMap.find(Inst);
   assert(I != InstructionMap.end() && "Instruction is not mapped!");
   return I->second;
 }
 
-unsigned ValueEnumerator::getComdatID(const Comdat *C) const {
+unsigned ValueEnumerator17::getComdatID(const Comdat *C) const {
   unsigned ComdatID = Comdats.idFor(C);
   assert(ComdatID && "Comdat not found!");
   return ComdatID;
 }
 
-void ValueEnumerator::setInstructionID(const Instruction *I) {
+void ValueEnumerator17::setInstructionID(const Instruction *I) {
   InstructionMap[I] = InstructionCount++;
 }
 
-unsigned ValueEnumerator::getValueID(const Value *V) const {
+unsigned ValueEnumerator17::getValueID(const Value *V) const {
   if (auto *MD = dyn_cast<MetadataAsValue>(V))
     return getMetadataID(MD->getMetadata());
 
@@ -536,7 +536,7 @@ unsigned ValueEnumerator::getValueID(const Value *V) const {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void ValueEnumerator::dump() const {
+LLVM_DUMP_METHOD void ValueEnumerator17::dump() const {
   print(dbgs(), ValueMap, "Default");
   dbgs() << '\n';
   print(dbgs(), MetadataMap, "MetaData");
@@ -544,8 +544,8 @@ LLVM_DUMP_METHOD void ValueEnumerator::dump() const {
 }
 #endif
 
-void ValueEnumerator::print(raw_ostream &OS, const ValueMapType &Map,
-                            const char *Name) const {
+void ValueEnumerator17::print(raw_ostream &OS, const ValueMapType &Map,
+                              const char *Name) const {
 
   OS << "Map Name: " << Name << "\n";
   OS << "Size: " << Map.size() << "\n";
@@ -571,8 +571,8 @@ void ValueEnumerator::print(raw_ostream &OS, const ValueMapType &Map,
   }
 }
 
-void ValueEnumerator::print(raw_ostream &OS, const MetadataMapType &Map,
-                            const char *Name) const {
+void ValueEnumerator17::print(raw_ostream &OS, const MetadataMapType &Map,
+                              const char *Name) const {
 
   OS << "Map Name: " << Name << "\n";
   OS << "Size: " << Map.size() << "\n";
@@ -586,7 +586,7 @@ void ValueEnumerator::print(raw_ostream &OS, const MetadataMapType &Map,
 }
 
 /// OptimizeConstants - Reorder constant pool for denser encoding.
-void ValueEnumerator::OptimizeConstants(unsigned CstStart, unsigned CstEnd) {
+void ValueEnumerator17::OptimizeConstants(unsigned CstStart, unsigned CstEnd) {
   if (CstStart == CstEnd || CstStart + 1 == CstEnd)
     return;
 
@@ -619,7 +619,7 @@ void ValueEnumerator::OptimizeConstants(unsigned CstStart, unsigned CstEnd) {
 
 /// EnumerateValueSymbolTable - Insert all of the values in the specified symbol
 /// table into the values table.
-void ValueEnumerator::EnumerateValueSymbolTable(const ValueSymbolTable &VST) {
+void ValueEnumerator17::EnumerateValueSymbolTable(const ValueSymbolTable &VST) {
   for (ValueSymbolTable::const_iterator VI = VST.begin(), VE = VST.end();
        VI != VE; ++VI)
     EnumerateValue(VI->getValue());
@@ -627,30 +627,31 @@ void ValueEnumerator::EnumerateValueSymbolTable(const ValueSymbolTable &VST) {
 
 /// Insert all of the values referenced by named metadata in the specified
 /// module.
-void ValueEnumerator::EnumerateNamedMetadata(const Module &M) {
+void ValueEnumerator17::EnumerateNamedMetadata(const Module &M) {
   for (const auto &I : M.named_metadata())
     EnumerateNamedMDNode(&I);
 }
 
-void ValueEnumerator::EnumerateNamedMDNode(const NamedMDNode *MD) {
+void ValueEnumerator17::EnumerateNamedMDNode(const NamedMDNode *MD) {
   for (const MDNode *N : MD->operands())
     EnumerateMetadata(nullptr, N);
 }
 
-unsigned ValueEnumerator::getMetadataFunctionID(const Function *F) const {
+unsigned ValueEnumerator17::getMetadataFunctionID(const Function *F) const {
   return F ? getValueID(F) + 1 : 0;
 }
 
-void ValueEnumerator::EnumerateMetadata(const Function *F, const Metadata *MD) {
+void ValueEnumerator17::EnumerateMetadata(const Function *F,
+                                          const Metadata *MD) {
   EnumerateMetadata(getMetadataFunctionID(F), MD);
 }
 
-void ValueEnumerator::EnumerateFunctionLocalMetadata(
+void ValueEnumerator17::EnumerateFunctionLocalMetadata(
     const Function &F, const LocalAsMetadata *Local) {
   EnumerateFunctionLocalMetadata(getMetadataFunctionID(&F), Local);
 }
 
-void ValueEnumerator::dropFunctionFromMetadata(
+void ValueEnumerator17::dropFunctionFromMetadata(
     MetadataMapType::value_type &FirstMD) {
   SmallVector<const MDNode *, 64> Worklist;
   auto push = [&Worklist](MetadataMapType::value_type &MD) {
@@ -680,7 +681,7 @@ void ValueEnumerator::dropFunctionFromMetadata(
     }
 }
 
-void ValueEnumerator::EnumerateMetadata(unsigned F, const Metadata *MD) {
+void ValueEnumerator17::EnumerateMetadata(unsigned F, const Metadata *MD) {
   // It's vital for reader efficiency that uniqued subgraphs are done in
   // post-order; it's expensive when their operands have forward references.
   // If a distinct node is referenced from a uniqued node, it'll be delayed
@@ -728,8 +729,8 @@ void ValueEnumerator::EnumerateMetadata(unsigned F, const Metadata *MD) {
   }
 }
 
-const MDNode *ValueEnumerator::enumerateMetadataImpl(unsigned F,
-                                                     const Metadata *MD) {
+const MDNode *ValueEnumerator17::enumerateMetadataImpl(unsigned F,
+                                                       const Metadata *MD) {
   if (!MD)
     return nullptr;
 
@@ -763,7 +764,7 @@ const MDNode *ValueEnumerator::enumerateMetadataImpl(unsigned F,
 
 /// EnumerateFunctionLocalMetadataa - Incorporate function-local metadata
 /// information reachable from the metadata.
-void ValueEnumerator::EnumerateFunctionLocalMetadata(
+void ValueEnumerator17::EnumerateFunctionLocalMetadata(
     unsigned F, const LocalAsMetadata *Local) {
   assert(F && "Expected a function");
 
@@ -797,7 +798,7 @@ static unsigned getMetadataTypeOrder(const Metadata *MD) {
   return N->isDistinct() ? 2 : 3;
 }
 
-void ValueEnumerator::organizeMetadata() {
+void ValueEnumerator17::organizeMetadata() {
   assert(MetadataMap.size() == MDs.size() &&
          "Metadata map and vector out of sync");
 
@@ -867,7 +868,7 @@ void ValueEnumerator::organizeMetadata() {
   FunctionMDInfo[PrevF] = R;
 }
 
-void ValueEnumerator::incorporateFunctionMetadata(const Function &F) {
+void ValueEnumerator17::incorporateFunctionMetadata(const Function &F) {
   NumModuleMDs = MDs.size();
 
   auto R = FunctionMDInfo.lookup(getValueID(&F) + 1);
@@ -876,7 +877,7 @@ void ValueEnumerator::incorporateFunctionMetadata(const Function &F) {
              FunctionMDs.begin() + R.Last);
 }
 
-void ValueEnumerator::EnumerateValue(const Value *V) {
+void ValueEnumerator17::EnumerateValue(const Value *V) {
   assert(!V->getType()->isVoidTy() && "Can't insert void values!");
   assert(!isa<MetadataAsValue>(V) && "EnumerateValue doesn't handle Metadata!");
 
@@ -950,7 +951,7 @@ void ValueEnumerator::EnumerateValue(const Value *V) {
   ValueID = Values.size();
 }
 
-void ValueEnumerator::EnumerateType(Type *Ty) {
+void ValueEnumerator17::EnumerateType(Type *Ty) {
   // DISABLED: Metal supports i64 operations natively - no type conversion
   // needed
   Type *OriginalTy = Ty;
@@ -1004,7 +1005,7 @@ void ValueEnumerator::EnumerateType(Type *Ty) {
 
 // Enumerate the types for the specified value.  If the value is a constant,
 // walk through it, enumerating the types of the constant.
-void ValueEnumerator::EnumerateOperandType(const Value *V) {
+void ValueEnumerator17::EnumerateOperandType(const Value *V) {
   EnumerateType(V->getType());
 
   assert(!isa<MetadataAsValue>(V) && "Unexpected metadata operand");
@@ -1037,7 +1038,7 @@ void ValueEnumerator::EnumerateOperandType(const Value *V) {
 }
 
 extern uint64_t getAttrKindEncoding50(Attribute::AttrKind Kind);
-void ValueEnumerator::EnumerateAttributes(AttributeList PAL) {
+void ValueEnumerator17::EnumerateAttributes(AttributeList PAL) {
   if (PAL.isEmpty())
     return; // null is always 0.
 
@@ -1069,7 +1070,7 @@ void ValueEnumerator::EnumerateAttributes(AttributeList PAL) {
   }
 }
 
-void ValueEnumerator::incorporateFunction(const Function &F) {
+void ValueEnumerator17::incorporateFunction(const Function &F) {
   InstructionCount = 0;
   NumModuleValues = Values.size();
 
@@ -1166,7 +1167,7 @@ void ValueEnumerator::incorporateFunction(const Function &F) {
   }
 }
 
-void ValueEnumerator::purgeFunction() {
+void ValueEnumerator17::purgeFunction() {
   /// Remove purged values from the ValueMap.
   for (const auto &V : llvm::drop_begin(Values, NumModuleValues))
     ValueMap.erase(V.first);
@@ -1191,7 +1192,7 @@ static void IncorporateFunctionInfoGlobalBBIDs(
 /// getGlobalBasicBlockID - This returns the function-specific ID for the
 /// specified basic block.  This is relatively expensive information, so it
 /// should only be used by rare constructs such as address-of-label.
-unsigned ValueEnumerator::getGlobalBasicBlockID(const BasicBlock *BB) const {
+unsigned ValueEnumerator17::getGlobalBasicBlockID(const BasicBlock *BB) const {
   unsigned &Idx = GlobalBasicBlockIDs[BB];
   if (Idx != 0)
     return Idx - 1;
@@ -1200,6 +1201,6 @@ unsigned ValueEnumerator::getGlobalBasicBlockID(const BasicBlock *BB) const {
   return getGlobalBasicBlockID(BB);
 }
 
-uint64_t ValueEnumerator::computeBitsRequiredForTypeIndices() const {
+uint64_t ValueEnumerator17::computeBitsRequiredForTypeIndices() const {
   return Log2_32_Ceil(getTypes().size() + 1);
 }
