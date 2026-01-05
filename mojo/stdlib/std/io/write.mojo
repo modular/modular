@@ -191,8 +191,7 @@ struct _WriteBufferHeap(Writable, Writer):
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
-            # TODO(MSTDL-2072): This should be an abort, but it breaks ptxas.
-            return
+            abort()
         memcpy(
             dest=self._data + self._pos, src=bytes.unsafe_ptr(), count=len_bytes
         )
@@ -207,9 +206,7 @@ struct _WriteBufferHeap(Writable, Writer):
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
-            # TODO(MSTDL-2072): This should be an abort, but it breaks ptxas.
-            self._data[self._pos - 1] = 0
-            return
+            abort()
         self._data[self._pos] = 0
         self._pos += 1
 

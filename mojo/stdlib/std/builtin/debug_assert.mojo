@@ -452,10 +452,4 @@ fn _debug_assert_msg(
 
     @parameter
     if ASSERT_MODE != "warn":
-        # TODO(MSTDL-2072): Work around PTXAS bug where abort() causes a compile
-        # error.
-        @parameter
-        if is_nvidia_gpu():
-            __mlir_op.`llvm.intr.trap`()
-        else:
-            abort()
+        abort()
