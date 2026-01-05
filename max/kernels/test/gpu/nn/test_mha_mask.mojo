@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 from sys.info import CompilationTarget
 
@@ -157,7 +159,7 @@ def test_sliding_window_causal_mask():
 
     @always_inline
     def check_status(
-        offset: IndexList[2, **_],
+        offset: IndexList[2, ...],
         size: type_of(offset),
         expected: TileMaskStatus,
     ):

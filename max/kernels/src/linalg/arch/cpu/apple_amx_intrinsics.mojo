@@ -22,11 +22,14 @@ from sys._assembly import inlined_assembly
 from buffer import DimList
 from layout import Layout, LayoutTensor
 from memory import (
-    LegacyUnsafePointer as UnsafePointer,
+    LegacyUnsafePointer,
     memcpy,
     memset_zero,
     stack_allocation,
 )
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+
 
 # All AMX instructions are of the form
 # `0x00201000 | ((op & 0x1F) << 5) | (operand & 0x1F)`
@@ -487,7 +490,7 @@ fn dot_at_b_impl(
 
 
 @always_inline
-fn dot_at_b(c: LayoutTensor[mut=True, *_, **_], a: type_of(c), b: type_of(c)):
+fn dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
     __comptime_assert (
         c.dtype is DType.float32 or c.dtype is DType.float16
     ), "the buffer dtype must be float32 or float16"

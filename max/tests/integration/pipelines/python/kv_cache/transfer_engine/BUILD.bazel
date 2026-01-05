@@ -3,7 +3,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 [
@@ -44,14 +44,7 @@ package(default_visibility = [
         ] + (
             # FIXME: SERVOPT-867 - test times out in CI
             ["@platforms//:incompatible"] if src == "test_send_recv_concurrent_gpu.py" else []
-        ) + select({
-            "//:a10_gpu": ["@platforms//:incompatible"] if src in [
-                "test_send_recv_multi_process_gpu.py",
-                "test_send_recv_multi_tensor_multi_process_gpu.py",
-                "test_send_recv_dp2_tp2_gpu.py",
-            ] else [],
-            "//conditions:default": [],
-        }) + (
+        ) + (
             ["//:has_4_gpus"] if src in [
                 "test_send_recv_multi_tensor_threaded_gpu.py",
                 "test_send_recv_multi_tensor_multi_process_gpu.py",

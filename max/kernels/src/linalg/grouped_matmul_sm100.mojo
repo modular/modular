@@ -13,7 +13,9 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from bit import next_power_of_two, prev_power_of_two
@@ -317,7 +319,7 @@ fn stsm_helper[
     transpose_c: Bool = False,
 ](
     vec: SIMD[_, _],
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
@@ -373,7 +375,8 @@ fn stsm_helper[
             dst.dtype
         ]()
         st_matrix[simd_width=4, transpose=transpose_c](
-            dst.ptr + offset, bitcast[DType.float32, 4](v)
+            dst.ptr.unsafe_mut_cast[True]() + offset,
+            bitcast[DType.float32, 4](v),
         )
 
 
@@ -1266,10 +1269,10 @@ fn _grouped_matmul_sm100_persistent[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
     expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
-    b_device: LayoutTensor[b_type, b_layout, *_, **_],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     b_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,

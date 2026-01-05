@@ -115,9 +115,9 @@ fn gather_reduce[
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
-    indices: LayoutTensor[DType.int32, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
+    indices: LayoutTensor[DType.int32, ...],
     reduce_init: Scalar[dtype],
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
@@ -280,9 +280,9 @@ fn gather[
     axis: Int,
     target: StaticString = "cpu",
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
-    indices: LayoutTensor[indices_type, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
+    indices: LayoutTensor[indices_type, ...],
     *,
     context: DeviceContext,
 ) raises:
@@ -378,9 +378,9 @@ fn gather[
     axis: Int,
     target: StaticString = "cpu",
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
-    indices: LayoutTensor[indices_type, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
+    indices: LayoutTensor[indices_type, ...],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -531,7 +531,7 @@ fn gather_elementwise_fn_wrapper[
     @always_inline
     fn gather_elementwise_fn[
         simd_width: Int, rank: Int
-    ](idx: IndexList[rank, **_]):
+    ](idx: IndexList[rank, ...]):
         # out_coords consists of 3 chunks:
         #   out_coords[0:axis] = input coords[0:axis]
         #   out_coords[axis:axis+indices_rank] = indices_coords
@@ -850,15 +850,15 @@ fn scatter_nd_generator[
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
-    data: LayoutTensor[output_type, address_space = AddressSpace.GENERIC, **_],
+    data: LayoutTensor[output_type, address_space = AddressSpace.GENERIC, ...],
     indices: LayoutTensor[
-        indices_type, address_space = AddressSpace.GENERIC, **_
+        indices_type, address_space = AddressSpace.GENERIC, ...
     ],
     updates: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, **_
+        output_type, address_space = AddressSpace.GENERIC, ...
     ],
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, **_
+        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1079,15 +1079,15 @@ fn scatter_nd[
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
 ](
-    data: LayoutTensor[output_type, address_space = AddressSpace.GENERIC, **_],
+    data: LayoutTensor[output_type, address_space = AddressSpace.GENERIC, ...],
     indices: LayoutTensor[
-        indices_type, address_space = AddressSpace.GENERIC, **_
+        indices_type, address_space = AddressSpace.GENERIC, ...
     ],
     updates: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, **_
+        output_type, address_space = AddressSpace.GENERIC, ...
     ],
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, **_
+        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1107,9 +1107,9 @@ fn scatter_nd_shape[
     indices_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: LayoutTensor[input_type, **_],
-    updates: LayoutTensor[input_type, **_],
-    indices: LayoutTensor[indices_type, **_],
+    input: LayoutTensor[input_type, ...],
+    updates: LayoutTensor[input_type, ...],
+    indices: LayoutTensor[indices_type, ...],
 ) raises -> IndexList[input.rank]:
     """
     Compute the output shape of a `scatter_nd` operation, and assert the
@@ -1177,8 +1177,8 @@ fn gather_shape[
     indices_type: DType,
     single_thread_blocking_override: Bool = False,
 ](
-    input_buf: LayoutTensor[input_type, **_],
-    indices_buf: LayoutTensor[indices_type, **_],
+    input_buf: LayoutTensor[input_type, ...],
+    indices_buf: LayoutTensor[indices_type, ...],
     axis: Int,
 ) raises -> IndexList[output_rank]:
     """
@@ -1307,9 +1307,9 @@ fn scatter_elements_shape[
     *,
     single_thread_blocking_override: Bool,
 ](
-    input: LayoutTensor[input_type, **_],
-    updates: LayoutTensor[input_type, **_],
-    indices: LayoutTensor[indices_type, **_],
+    input: LayoutTensor[input_type, ...],
+    updates: LayoutTensor[input_type, ...],
+    indices: LayoutTensor[indices_type, ...],
     axis: Int,
 ) raises -> IndexList[input.rank]:
     """
@@ -1366,10 +1366,10 @@ fn gather_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: LayoutTensor[input_type, **_],
-    indices: LayoutTensor[indices_type, **_],
+    input: LayoutTensor[input_type, ...],
+    indices: LayoutTensor[indices_type, ...],
     _axis: Int,
-    output: LayoutTensor[mut=True, input_type, **_],
+    output: LayoutTensor[mut=True, input_type, ...],
 ) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
@@ -1428,8 +1428,8 @@ fn gather_nd_shape[
     batch_dims: Int,
     single_thread_blocking_override: Bool = True,
 ](
-    input_buf: LayoutTensor[input_type, **_],
-    indices_buf: LayoutTensor[indices_type, **_],
+    input_buf: LayoutTensor[input_type, ...],
+    indices_buf: LayoutTensor[indices_type, ...],
 ) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
@@ -1498,9 +1498,9 @@ fn gather_nd[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: LayoutTensor[dtype, **_],
-    indices: LayoutTensor[indices_type, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    data: LayoutTensor[dtype, ...],
+    indices: LayoutTensor[indices_type, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -1549,9 +1549,9 @@ fn _gather_nd_impl[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: LayoutTensor[dtype, **_],
-    indices: LayoutTensor[indices_type, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    data: LayoutTensor[dtype, ...],
+    indices: LayoutTensor[indices_type, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     __comptime_assert (
@@ -1682,8 +1682,8 @@ fn scatter_set_constant[
     target: StaticString,
     single_thread_blocking_override: Bool = False,
 ](
-    data: LayoutTensor[mut=True, data_type, **_],
-    indices: LayoutTensor[index_type, **_],
+    data: LayoutTensor[mut=True, data_type, ...],
+    indices: LayoutTensor[index_type, ...],
     fill_value: Scalar[data_type],
     ctx: DeviceContextPtr,
 ) raises:

@@ -246,7 +246,7 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 @always_inline
 fn ld_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
-](ptr: UnsafePointer[mut=False, Scalar[dtype], **_]) -> SIMD[dtype, simd_width]:
+](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> SIMD[dtype, simd_width]:
     """Loads a matrix from shared memory into registers in a format suitable for tensor core operations.
 
     This function performs a warp-synchronized load from shared memory to registers, formatting the data
@@ -517,7 +517,8 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
     ](
         smem_ptr: UnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED, **_,
+            address_space = AddressSpace.SHARED,
+            ...,
         ],
     ) -> Self:
         """Create a descriptor for shared memory operand.

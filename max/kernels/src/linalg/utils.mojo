@@ -22,7 +22,9 @@ from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList
 
 comptime elementwise_epilogue_type = fn[
@@ -90,9 +92,9 @@ struct GemmShape(ImplicitlyCopyable):
     fn get[
         transpose_b: Bool,
     ](
-        c: NDBuffer[rank=2, *_, **_],
-        a: NDBuffer[rank=2, *_, **_],
-        b: NDBuffer[rank=2, *_, **_],
+        c: NDBuffer[rank=2, ...],
+        a: NDBuffer[rank=2, ...],
+        b: NDBuffer[rank=2, ...],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -114,9 +116,9 @@ struct GemmShape(ImplicitlyCopyable):
         layout_a: Layout,
         layout_b: Layout,
     ](
-        c: LayoutTensor[_, layout_c, _, **_],
-        a: LayoutTensor[_, layout_a, _, **_],
-        b: LayoutTensor[_, layout_b, _, **_],
+        c: LayoutTensor[_, layout_c, _, ...],
+        a: LayoutTensor[_, layout_a, _, ...],
+        b: LayoutTensor[_, layout_b, _, ...],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -284,7 +286,7 @@ fn _get_tile_n_k[
     kernel_cols: Int,
     transpose_b: Bool,
     layout: Layout,
-](b: LayoutTensor[b_type, layout, _, **_]) -> IndexList[2]:
+](b: LayoutTensor[b_type, layout, _, ...]) -> IndexList[2]:
     __comptime_assert b.rank == 2
     var tile_n_k: IndexList[2]
 

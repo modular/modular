@@ -32,15 +32,15 @@ from gpu import WARP_SIZE, thread_idx
 from gpu import lane_id
 from gpu import warp_id as get_warp_id
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.sync import named_barrier
+from .barriers import WarpGroupBarrier
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile
 
 from utils.index import IndexList
 
-from ....utils import elementwise_compute_lambda_type
+from linalg.utils import elementwise_compute_lambda_type
 from .pipeline import ProducerConsumerPipeline
-from .ring_buffer import OutputStage as OutputStageType
+from .tile_pipeline import OutputStage as OutputStageType
 from .tile_scheduler_splitk import (
     TileScheduler as TileSchedulerSplitK,
     WorkInfo as WorkInfoSplitK,
@@ -56,29 +56,15 @@ from .tile_writer import (
     load_tmem_fragments,
     tma_wait_pipelined,
 )
-from ....structuring import SMemTileArrayType
-
-
-# =============================================================================
-# accum_arrive - Signal accumulator arrival
-# =============================================================================
+from linalg.structuring import SMemTileArrayType
 
 
 @always_inline
 fn accum_arrive[
     cta_group: Int, num_stages: Int
 ](stage: OutputStageType[num_stages]):
-    """Signal accumulator arrival. Delegates to AccumBarrier.
-
-    Args:
-        stage: OutputStage containing pipeline and stage index.
-    """
-    AccumBarrier[cta_group].arrive(stage.pipeline, stage.stage)
-
-
-# =============================================================================
-# copy_accum_to_gmem - TMEM→SMEM→GMEM epilogue pipeline
-# =============================================================================
+    """Signal accumulator arrival to unblock MMA pipeline."""
+    AccumBarrier[cta_group].arrive(stage.pipeline, stage.index)
 
 
 @always_inline
@@ -125,8 +111,8 @@ fn copy_accum_to_gmem[
         c_coord: (M, N) tile coordinates.
         c_shape: (M, N) matrix dimensions.
     """
-    # Extract from self-contained OutputStage
-    var tmem_offset = output_stage.tmem_offset
+    # Extract TMEM offset from self-contained OutputStage
+    var tmem_offset = output_stage.tmem.offset()
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime MMA_M = mma_shape[0]
@@ -271,7 +257,7 @@ fn copy_accum_to_gmem[
                 ),
                 c_smem_tile,
             )
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            WarpGroupBarrier[Int(num_output_warps) * WARP_SIZE].sync()
         else:
             # SMEM epilogue path: create stage-specific writer
             var writer = SMemEpilogueWriter[
@@ -319,12 +305,7 @@ fn copy_accum_to_gmem[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
-
-
-# =============================================================================
-# multi_stage_store_C - Output pipeline orchestration
-# =============================================================================
+            WarpGroupBarrier[Int(num_output_warps) * WARP_SIZE].sync()
 
 
 @always_inline
@@ -430,11 +411,6 @@ fn multi_stage_store_C[
     )
 
 
-# =============================================================================
-# multi_stage_store_C_split_k - Split-K output pipeline
-# =============================================================================
-
-
 @always_inline
 fn multi_stage_store_C_split_k[
     c_type: DType,
@@ -514,7 +490,7 @@ fn multi_stage_store_C_split_k[
 
     var is_last_split = scheduler.reduction(
         reduction_tensor,
-        stage.tmem_offset,
+        stage.tmem.offset(),
         epilogue_thread_idx,
         work_info,
     )

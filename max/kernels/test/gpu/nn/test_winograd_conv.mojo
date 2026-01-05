@@ -107,10 +107,10 @@ fn matmul[
     s_type: DType = get_accum_type[c_type](),
 ](
     C: LayoutTensor[
-        mut=True, c_type, c_layout, element_layout=element_layout, **_
+        mut=True, c_type, c_layout, element_layout=element_layout, ...
     ],
-    A: LayoutTensor[a_type, a_layout, element_layout=element_layout, **_],
-    B: LayoutTensor[b_type, b_layout, element_layout=element_layout, **_],
+    A: LayoutTensor[a_type, a_layout, element_layout=element_layout, ...],
+    B: LayoutTensor[b_type, b_layout, element_layout=element_layout, ...],
 ):
     comptime M = Int(c_layout.shape[0])
     comptime N = Int(c_layout.shape[1])
@@ -139,7 +139,7 @@ fn matmul[
 fn get_tile[
     dtype: DType, //, tile_size: Int
 ](
-    input_tensor: LayoutTensor[dtype, **_],
+    input_tensor: LayoutTensor[dtype, ...],
     n: Int,
     h: Int,
     w: Int,
@@ -329,10 +329,10 @@ fn winograd_conv2d_gpu_launcher[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, element_layout=element_layout, **_],
-    filter: LayoutTensor[filter_type, element_layout=element_layout, **_],
+    input: LayoutTensor[input_type, element_layout=element_layout, ...],
+    filter: LayoutTensor[filter_type, element_layout=element_layout, ...],
     output: LayoutTensor[
-        mut=True, output_type, element_layout=element_layout, **_
+        mut=True, output_type, element_layout=element_layout, ...
     ],
     stride: IndexList[2],
     dilation: IndexList[2],

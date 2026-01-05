@@ -23,7 +23,9 @@ from gpu import NamedBarrierSemaphore, WARP_SIZE
 from gpu.globals import WARPGROUP_SIZE
 from gpu.tcgen05 import *
 from gpu.sync import named_barrier
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.bit import prev_power_of_two
 
 
@@ -227,7 +229,7 @@ struct TileScheduler[
         widths: InlineArray[Int, 4],
         curr_stage: Int,
     ](
-        tensor: LayoutTensor[accum_type, layout, MutAnyOrigin, **_],
+        tensor: LayoutTensor[accum_type, layout, MutAnyOrigin, ...],
         out result: LayoutTensor[
             accum_type,
             Self._get_new_layout[layout, widths[curr_stage]](),

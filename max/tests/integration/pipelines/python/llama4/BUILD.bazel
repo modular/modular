@@ -3,7 +3,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
@@ -29,7 +29,6 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
-        "//:a10_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2564
         "//conditions:default": [],
     }),
     tags = [

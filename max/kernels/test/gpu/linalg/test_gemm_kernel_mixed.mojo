@@ -609,7 +609,7 @@ fn outer_product_acc[
         shape_types = Variadic.types[
             T=MixedTupleLike, ComptimeInt[M], ComptimeInt[N]
         ],
-        **_,
+        ...,
     ],
     lhs: MixedLayoutTensor,
     rhs: MixedLayoutTensor,

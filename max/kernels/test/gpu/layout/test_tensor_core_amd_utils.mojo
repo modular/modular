@@ -18,7 +18,9 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout.tensor_core import TensorCore
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList
 
 comptime fp8_dtype = (
@@ -118,7 +120,7 @@ fn test_mma_op[
     mma.store_d(d, d_reg)
 
 
-fn _arange(tensor: LayoutTensor[mut=True, **_]):
+fn _arange(tensor: LayoutTensor[mut=True, ...]):
     # use custom arange and the current arange does not work with fp8
     @parameter
     if tensor.dtype in (DType.bfloat16, DType.float16, DType.float32):

@@ -13,7 +13,9 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from bit import next_power_of_two, prev_power_of_two
@@ -219,7 +221,7 @@ fn copy_sf_tmem[
     TILE_MN: Int,
     cta_group: Int,
 ](
-    sf_smem: LayoutTensor[address_space = AddressSpace.SHARED, *_, **_],
+    sf_smem: LayoutTensor[address_space = AddressSpace.SHARED, ...],
     sf_tmem: UInt32,
 ):
     comptime sf_smem_size = sf_smem_layout.size()
@@ -1081,7 +1083,7 @@ fn _convert_input_to_batched_tensor[
     layout: Layout,
     reshape_layout: Layout = _reshape_to_3d[layout](),
 ](
-    tensor: LayoutTensor[dtype, layout, *_, **_],
+    tensor: LayoutTensor[dtype, layout, ...],
 ) -> LayoutTensor[
     tensor.dtype,
     reshape_layout,
@@ -1128,9 +1130,9 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
-    c_tensor: LayoutTensor[c_type, c_layout, *_, **_],
-    a_tensor: LayoutTensor[a_type, a_layout, *_, **_],
-    b_tensor: LayoutTensor[b_type, b_layout, *_, **_],
+    c_tensor: LayoutTensor[c_type, c_layout, ...],
+    a_tensor: LayoutTensor[a_type, a_layout, ...],
+    b_tensor: LayoutTensor[b_type, b_layout, ...],
     a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
     ctx: DeviceContext,

@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Defines the Identifiable trait for identity-based comparisons.
+
+This module provides the `Identifiable` trait, which enables types to support
+identity comparison using the `is` and `is not` operators. Identity comparison
+checks if two values refer to the same object, distinct from equality
+comparison which checks if two values have the same content.
+"""
 
 
 trait Identifiable:

@@ -14,7 +14,9 @@
 
 from layout import LayoutTensor
 from memory import memcpy
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 # ===-----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis
@@ -24,8 +26,8 @@ from memory import LegacyUnsafePointer as UnsafePointer
 fn _get_rightmost_broadcast_axis[
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
 ) -> Int:
     """
     Return the rightmost position (largest axis) at which the dimensions of
@@ -54,9 +56,9 @@ fn broadcast[
     dtype: DType,
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
 ):
     """
     For each axis of `input`, if the dimension is 1, duplicate the data at
@@ -104,9 +106,9 @@ fn broadcast_impl[
 ](
     axis: Int,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
     # dim[axis+1](), which requires more `constrained` to keep in bound
     input_prev_axis_stride: Int,
@@ -187,11 +189,12 @@ fn _tile_1d[
     init_dst_ptr: UnsafePointer[
         Scalar[dtype],
         address_space = AddressSpace.GENERIC,
-        mut=True, **_,
+        ...,
     ],
     src_ptr: UnsafePointer[
         Scalar[dtype],
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     tile_num_elems: Int,
     n: Int,

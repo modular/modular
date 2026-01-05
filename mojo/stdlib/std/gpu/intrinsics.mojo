@@ -735,7 +735,7 @@ fn store_release[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], value: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
     """Performs an atomic store with release memory ordering semantics.
 
     This function provides a memory barrier that ensures all previous memory operations
@@ -815,7 +815,7 @@ fn store_relaxed[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], value: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
     """Performs an atomic store with relaxed memory ordering semantics.
 
     On NVIDIA, maps to PTX st.relaxed; on AMD, maps to POP atomic store with MONOTONIC ordering.
@@ -867,7 +867,7 @@ fn load_acquire[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_]) -> Scalar[dtype]:
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]) -> Scalar[dtype]:
     """Performs an atomic load operation with acquire memory ordering semantics.
 
     This function provides a memory barrier that ensures no subsequent memory operations
@@ -950,7 +950,7 @@ fn load_relaxed[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_]) -> Scalar[dtype]:
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]) -> Scalar[dtype]:
     """Performs an atomic load with relaxed memory ordering semantics.
 
     On NVIDIA, maps to PTX ld.relaxed; on AMD, maps to POP atomic load with MONOTONIC ordering.
@@ -1000,7 +1000,7 @@ fn load_relaxed[
 @always_inline
 fn store_volatile[
     dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], value: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
     """Performs a volatile store operation that cannot be optimized away.
 
     This function guarantees that the store operation will be performed exactly as
@@ -1038,7 +1038,7 @@ fn store_volatile[
 @always_inline
 fn load_volatile[
     dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[mut=False, Scalar[dtype], **_]) -> Scalar[dtype]:
+](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> Scalar[dtype]:
     """Performs a volatile load operation that cannot be optimized away.
 
     This function guarantees that the load operation will be performed exactly as
@@ -1092,7 +1092,7 @@ struct AMDBufferResource:
         out self,
         # TODO: This should propagate mutability correctly.
         # E.g. only allow AMDBufferResource.store when mutable.
-        gds_ptr: UnsafePointer[Scalar[dtype], **_],
+        gds_ptr: UnsafePointer[Scalar[dtype], ...],
         num_records: Int = Int(UInt32.MAX),
     ):
         """Constructs an AMD buffer resource descriptor.

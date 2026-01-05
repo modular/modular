@@ -33,10 +33,6 @@ Key Components:
 """
 
 from math import ceildiv, log2
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from sys._assembly import inlined_assembly
 
@@ -178,7 +174,9 @@ struct SharedMemBarrier(ImplicitlyCopyable):
     """
 
     @always_inline("nodebug")
-    fn init(ref [AddressSpace.SHARED]self, num_threads: Int32 = 1):
+    fn init[
+        o: MutOrigin
+    ](ref [o, AddressSpace.SHARED]self, num_threads: Int32 = 1):
         """Initialize the barrier state with the expected number of threads.
 
         Sets up the barrier to expect arrivals from the specified number of threads
@@ -188,11 +186,16 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         Args:
             num_threads: Number of threads that must arrive at the barrier
                          before it is satisfied. Defaults to 1.
+
+        Parameters:
+            o: Origin of self.
         """
         mbarrier_init(self.unsafe_ptr(), num_threads)
 
     @always_inline
-    fn expect_bytes(ref [AddressSpace.SHARED]self, bytes: Int32):
+    fn expect_bytes[
+        o: MutOrigin
+    ](ref [o, AddressSpace.SHARED]self, bytes: Int32):
         """Configure the barrier to expect a specific number of bytes to be transferred.
 
         Used with TMA operations to indicate the expected size of data transfer.
@@ -201,13 +204,16 @@ struct SharedMemBarrier(ImplicitlyCopyable):
 
         Args:
             bytes: Number of bytes expected to be transferred.
+
+        Parameters:
+            o: Origin of self.
         """
         mbarrier_arrive_expect_tx_shared(self.unsafe_ptr(), bytes)
 
     @always_inline
-    fn expect_bytes_relaxed(
-        ref [AddressSpace.SHARED]self, bytes: Int32
-    ) -> UInt64:
+    fn expect_bytes_relaxed[
+        o: MutOrigin
+    ](ref [o, AddressSpace.SHARED]self, bytes: Int32) -> UInt64:
         """Configure the barrier to expect a specific number of bytes to be transferred.
 
         Used with TMA operations to indicate the expected size of data transfer.
@@ -216,6 +222,9 @@ struct SharedMemBarrier(ImplicitlyCopyable):
 
         Args:
             bytes: Number of bytes expected to be transferred.
+
+        Parameters:
+            o: Origin of self.
 
         Returns:
             The state.
@@ -223,8 +232,10 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         return mbarrier_arrive_expect_tx_relaxed(self.unsafe_ptr(), bytes)
 
     @always_inline
-    fn arrive_and_expect_bytes(
-        ref [AddressSpace.SHARED]self,
+    fn arrive_and_expect_bytes[
+        o: MutOrigin
+    ](
+        ref [o, AddressSpace.SHARED]self,
         bytes: Int32,
         cta_id: UInt32,
         pred: UInt32,
@@ -240,6 +251,9 @@ struct SharedMemBarrier(ImplicitlyCopyable):
             bytes: Number of bytes expected to be transferred.
             cta_id: The CTA ID in a cluster to configure an arrival.
             pred: Predication on the arrival configuration instruction. Use UInt32 to match `selp.u32` in ptx.
+
+        Parameters:
+            o: Origin of self.
         """
 
         comptime asm = """
@@ -395,16 +409,13 @@ struct SharedMemBarrier(ImplicitlyCopyable):
 
     @always_inline
     fn unsafe_ptr[
-        mut: Bool,
-        //,
-        origin: Origin[mut=mut],
+        origin: Origin
     ](
         ref [origin, AddressSpace.SHARED]self,
     ) -> UnsafePointer[
         Int64,
-        address_space = AddressSpace.SHARED,
-        mut=mut,
         origin=origin,
+        address_space = AddressSpace.SHARED,
     ]:
         """Get an unsafe pointer to the barrier's memory location.
 
@@ -413,18 +424,13 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         direct access to the underlying memory.
 
         Parameters:
-            mut: Mutability of self.
             origin: Origin of self.
 
         Returns:
             An unsafe pointer to the barrier's memory location in shared memory,
             properly typed and aligned for barrier operations.
         """
-        return (
-            UnsafePointer(to=self.mbar)
-            .mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
-        )
+        return UnsafePointer(to=self.mbar).unsafe_origin_cast[origin]()
 
     @always_inline
     fn arrive_cluster(
@@ -450,7 +456,7 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         )
 
     @always_inline("nodebug")
-    fn arrive(ref [AddressSpace.SHARED]self) -> Int:
+    fn arrive[o: MutOrigin](ref [o, AddressSpace.SHARED]self) -> Int:
         """Signal arrival at the barrier and return the arrival count.
 
         This method increments the arrival count at the barrier and returns
@@ -459,6 +465,9 @@ struct SharedMemBarrier(ImplicitlyCopyable):
 
         Returns:
             The updated arrival count after this thread's arrival.
+
+        Parameters:
+            o: Origin of self.
         """
         return mbarrier_arrive(self.unsafe_ptr())
 
@@ -718,7 +727,7 @@ struct TMATensorTile[
         cta_group: Int = 1
     ](
         self,
-        dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+        dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -808,7 +817,7 @@ struct TMATensorTile[
     fn async_copy_3d(
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt],
@@ -895,7 +904,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt, UInt],
@@ -989,7 +998,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt, UInt, UInt],
@@ -1099,7 +1108,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: StaticTuple[UInt32, rank],
@@ -1169,7 +1178,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: StaticTuple[UInt32, rank],
     ):
@@ -1231,7 +1240,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
@@ -1302,7 +1311,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt],
@@ -1406,7 +1415,7 @@ struct TMATensorTile[
             _,
             address_space = AddressSpace.SHARED,
             alignment=128,
-            *_, **_,
+            ...,
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         rank: UInt,
@@ -1456,7 +1465,7 @@ struct TMATensorTile[
     fn async_store(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt],
     ):
@@ -1513,7 +1522,7 @@ struct TMATensorTile[
     fn async_store_3d(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt, UInt],
     ):
@@ -1594,7 +1603,7 @@ struct TMATensorTile[
     fn async_store_4d(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt, UInt, UInt],
     ):
@@ -1675,7 +1684,7 @@ struct TMATensorTile[
     fn async_store_5d(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt, UInt, UInt, UInt],
     ):
@@ -1774,7 +1783,7 @@ struct TMATensorTile[
     ](
         self,
         src: LayoutTensor[
-            Self.dtype, Self.layout, address_space = AddressSpace.SHARED, **_
+            Self.dtype, Self.layout, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt],
     ):
@@ -1834,7 +1843,7 @@ struct TMATensorTile[
     fn smem_tensormap_init(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED
+            TMADescriptor, _, address_space = AddressSpace.SHARED
         ],
     ):
         """
@@ -1860,7 +1869,9 @@ struct TMATensorTile[
             .bitcast[UInt8]()
             .address_space_cast[AddressSpace.GLOBAL]()
         )
-        var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]()
+        var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]().unsafe_mut_cast[
+            True
+        ]()
 
         comptime simd_width = simd_width_of[DType.uint8]()
         comptime src_align = align_of[SIMD[DType.uint8, simd_width]]()
@@ -1878,7 +1889,7 @@ struct TMATensorTile[
     @always_inline
     fn replace_tensormap_global_address_in_gmem[
         _dtype: DType,
-    ](self, src_ptr: UnsafePointer[Scalar[_dtype],],):
+    ](self, src_ptr: UnsafePointer[Scalar[_dtype], _],):
         """
         Replaces the global memory address in the TMA descriptor stored in global memory.
 
@@ -1968,9 +1979,11 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED, **_
+            TMADescriptor,
+            _,
+            address_space = AddressSpace.SHARED,
         ],
-        src_ptr: UnsafePointer[Scalar[_dtype],],
+        src_ptr: UnsafePointer[Scalar[_dtype], _],
     ):
         """
         Replaces the global memory address in the TMA descriptor stored in shared memory.
@@ -2069,7 +2082,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, ...
         ],
         gmem_dims: IndexList[rank],
         gmem_strides: IndexList[rank],
@@ -2147,7 +2160,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, ...
         ],
         dim_value: UInt32,
         dim_stride: Optional[UInt64] = None,
@@ -2286,7 +2299,7 @@ def _create_tma_descriptor_helper[
     //,
     desc_index_list: IndexList[rank],
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[dtype, *_, **_]) -> TMADescriptor:
+](ctx: DeviceContext, tensor: LayoutTensor[dtype, ...]) -> TMADescriptor:
     """
     Helper function to create a TMA descriptor from a global memory layout tensor.
 
@@ -2374,7 +2387,7 @@ def create_tma_tile[
     __desc_layout: Layout = _tma_desc_tile_layout[
         dtype, rank, tile_shape, swizzle_mode
     ](),
-](ctx: DeviceContext, tensor: LayoutTensor[dtype, *_, **_]) -> TMATensorTile[
+](ctx: DeviceContext, tensor: LayoutTensor[dtype, ...]) -> TMATensorTile[
     dtype,
     __tile_layout,
     __desc_layout,
@@ -2408,7 +2421,7 @@ def create_tma_tile[
     Args:
         ctx: DeviceContext
             The CUDA device context used to create the TMA descriptor.
-        tensor: LayoutTensor[dtype, *_, **_]
+        tensor: LayoutTensor[dtype, ...]
             The source tensor from which data will be transferred. This defines the
             global memory layout and must match the specified data type.
 
@@ -2722,7 +2735,7 @@ fn _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     dim0: Int,
     out ret: LayoutTensor[
         dtype,
@@ -2749,7 +2762,7 @@ fn _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     dim0: Int,
     dim1: Int,
     out ret: LayoutTensor[
@@ -2794,7 +2807,7 @@ fn create_split_tma[
     swizzle_mode: TensorMapSwizzle,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     runtime_dim0: Int,
     out res: SplitLastDimTMATensorTile[
         dtype,
@@ -2847,7 +2860,7 @@ fn create_split_tma[
     swizzle_mode: TensorMapSwizzle,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     runtime_dim0: Int,
     runtime_dim1: Int,
     out res: SplitLastDimTMATensorTile[
@@ -2963,7 +2976,7 @@ struct TMATensorTileArray[
             to accommodate hardware requirements like WGMMA.
     """
 
-    var tensormaps_ptr: UnsafePointer[UInt8]
+    var tensormaps_ptr: UnsafePointer[UInt8, MutAnyOrigin]
     """A static tuple of pointers to TMA descriptors.
 
     This field stores an array of pointers to `TMATensorTile` instances, where each pointer
@@ -3036,12 +3049,11 @@ struct TMATensorTileArray[
 
     @always_inline
     fn __getitem__(
-        self,
-        index: Int,
-        out result: UnsafePointer[
-            TMATensorTile[Self.dtype, Self.cta_tile_layout, Self.desc_layout]
-        ],
-    ):
+        self, index: Int
+    ) -> UnsafePointer[
+        TMATensorTile[Self.dtype, Self.cta_tile_layout, Self.desc_layout],
+        MutAnyOrigin,
+    ]:
         """
         Retrieve a TMA descriptor.
 
@@ -3051,7 +3063,7 @@ struct TMATensorTileArray[
         Returns:
             `UnsafePointer` to the `TMATensorTile` at the specified index.
         """
-        return UnsafePointer[UInt8](
+        return UnsafePointer[UInt8, MutAnyOrigin](
             self.tensormaps_ptr + index * self.descriptor_bytes
         ).bitcast[
             TMATensorTile[Self.dtype, Self.cta_tile_layout, Self.desc_layout]
@@ -3291,7 +3303,10 @@ struct RaggedTensorMap[
 
         var decremented_ptr = global_ptr - (ragged_stride * max_length)
         var global_tensor = GlobalTensorType(
-            decremented_ptr, global_runtime_layout
+            decremented_ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
+                MutAnyOrigin
+            ](),
+            global_runtime_layout,
         )
 
         self.descriptor = _create_tma_descriptor_helper[
@@ -3306,8 +3321,13 @@ struct RaggedTensorMap[
         self.global_stride = global_stride
 
     @always_inline
-    fn _get_descriptor_ptr(self) -> UnsafePointer[NoneType]:
-        return UnsafePointer(to=self.descriptor).bitcast[NoneType]()
+    fn _get_descriptor_ptr(self) -> UnsafePointer[NoneType, MutAnyOrigin]:
+        return (
+            UnsafePointer(to=self.descriptor)
+            .bitcast[NoneType]()
+            .unsafe_mut_cast[True]()
+            .unsafe_origin_cast[MutAnyOrigin]()
+        )
 
     @always_inline
     fn store_ragged_tile[
@@ -3323,7 +3343,8 @@ struct RaggedTensorMap[
             Self.dtype,
             _,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED, **_,
+            address_space = AddressSpace.SHARED,
+            ...,
         ],
     ):
         """

@@ -13,10 +13,13 @@
 
 from hashlib.hasher import Hasher
 from math import ceildiv
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
+
 from sys import env_get_int, has_nvidia_gpu_accelerator, size_of
 from sys.ffi import external_call
 
@@ -36,7 +39,7 @@ from utils.numerics import get_accum_type
 
 
 fn block_swizzle(
-    block_idx: IndexList[2, **_], grid_dim: type_of(block_idx)
+    block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)
 ) -> type_of(block_idx):
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
@@ -44,7 +47,7 @@ fn block_swizzle(
 @always_inline
 fn _block_swizzle_by_scale[
     scale0: UInt
-](block_idx: IndexList[2, **_], grid_dim: type_of(block_idx)) -> type_of(
+](block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)) -> type_of(
     block_idx
 ):
     """

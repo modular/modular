@@ -32,7 +32,9 @@ from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from logger import Logger
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -569,11 +571,11 @@ fn matmul_sm100_blockwise_scaled_fp8[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, *_, **_],
-    a: LayoutTensor[a_type, a_layout, *_, **_],
-    b: LayoutTensor[b_type, b_layout, *_, **_],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
     constrained[

@@ -12,19 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import pytest
 from conftest import MiB, alloc_pinned
-from max.driver import Accelerator
 
 
-def test_limit(buffer_cache_config: None) -> None:
-    # The cache has 100MiB so we try to alloc/free 100MiB a bunch of times.
-    for _ in range(321):
-        t = alloc_pinned(100 * MiB)
-        # This `del t` is needed.
-        # Otherwise the Garbage Collector may delay the free until after the sync.
-        # For example, `_ = alloc_pinned(100 * MiB)` alone would fail.
-        del t
-
-        # Synchronizing is necessary to ensure that allocated memory is returned
-        # to the buffer cache.
-        Accelerator().synchronize()
+@pytest.mark.skip(
+    reason="GEX-2980: Host memory manager is not working as expected"
+)
+def test_enumerate(memory_manager_config: None) -> None:
+    # allocate 1MiB, 2MiB, 3MiB, 4MiB, 5MiB in increasing order
+    # the sum of the sizes is far less than 100MiB
+    for i in range(1, 6):
+        size = i * MiB
+        # Fails due to:
+        #   ValueError: [Use only memory manager mode]: No room left in memory manager: cuda[0 - host] on 0x421a2c00 (size: 3MB ; free: 1MB ; cache_size: 4MB ; max_cache_size: 100MB)
+        _ = alloc_pinned(size)

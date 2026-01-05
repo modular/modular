@@ -114,7 +114,7 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet]:
         ](self._handle)
 
     @always_inline
-    fn _set_result_slot(self, slot: UnsafePointer[mut=True, Self.type, **_]):
+    fn _set_result_slot(self, slot: UnsafePointer[mut=True, Self.type, ...]):
         __mlir_op.`co.set_byref_error_result`(self._handle, slot.address)
 
     @always_inline
@@ -201,8 +201,8 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
     @always_inline
     fn _set_result_slot(
         self,
-        slot: UnsafePointer[mut=True, Self.type, **_],
-        err: UnsafePointer[mut=False, Error, **_],
+        slot: UnsafePointer[mut=True, Self.type, ...],
+        err: UnsafePointer[mut=False, Error, ...],
     ):
         __mlir_op.`co.set_byref_error_result`(
             self._handle, slot.address, err.address

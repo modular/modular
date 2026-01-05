@@ -24,7 +24,9 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200
 from internal_utils import arg_parse, parse_shape
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import IndexList
 from utils.index import product
 
@@ -83,7 +85,7 @@ fn simd_load[
 fn simd_store[
     simd_width: Int
 ](
-    buffer: NDBuffer[mut=True, *_, **_],
+    buffer: NDBuffer[mut=True, ...],
     index: IndexList[buffer.rank],
     val: SIMD[buffer.type, simd_width],
 ):

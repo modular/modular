@@ -10,6 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides iterator utilities for common iteration patterns.
+
+This module includes functions for creating specialized iterators:
+
+- `count()` - Creates an infinite counter with customizable start and step values
+- `product()` - Computes the Cartesian product of two, three, or four iterables
+- `repeat()` - Repeats an element a specified number of times
+
+These utilities enable functional-style iteration patterns and composable iterator
+operations.
+"""
+
 # ===-----------------------------------------------------------------------===#
 # count
 # ===-----------------------------------------------------------------------===#
@@ -490,7 +502,9 @@ fn product[
 
 
 @fieldwise_init
-struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
+struct _RepeatIterator[ElementType: Copyable & ImplicitlyDestructible](
+    Copyable, Iterable, Iterator
+):
     """Iterator that repeats an element a specified number of times.
 
     Parameters:
@@ -523,7 +537,7 @@ struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
 
 @always_inline
 fn repeat[
-    ElementType: Copyable
+    ElementType: Copyable & ImplicitlyDestructible
 ](element: ElementType, *, times: Int) -> _RepeatIterator[ElementType]:
     """Constructs an iterator that repeats the given element a specified number of times.
 

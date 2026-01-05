@@ -25,7 +25,7 @@ from utils.index import IndexList
 
 @always_inline
 fn outer_product_acc(
-    res: LayoutTensor[mut=True, *_, **_],
+    res: LayoutTensor[mut=True, ...],
     lhs: LayoutTensor,
     rhs: LayoutTensor,
 ):
@@ -81,7 +81,7 @@ fn _reduce[
     func: fn[dtype: DType, width: Int] (
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
-](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
+](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     __comptime_assert (
         inp.layout.known_shape() and outp.layout.known_shape()
     ), "_reduce expects inputs with statically know shapes"
@@ -146,7 +146,7 @@ fn _reduce[
 
 
 @always_inline
-fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
+fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     """Computes sum reduction along specified axis.
 
     Reduces the input tensor by summing elements along the specified axis
@@ -200,7 +200,7 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
 
 
 @always_inline
-fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
+fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     """Computes maximum reduction along specified axis.
 
     Reduces the input tensor by taking maximum elements along the specified
@@ -285,7 +285,7 @@ fn max[
 fn max[
     dtype: DType, layout: Layout
 ](
-    x: LayoutTensor[dtype, layout, **_], y: LayoutTensor[dtype, layout, **_]
+    x: LayoutTensor[dtype, layout, ...], y: LayoutTensor[dtype, layout, ...]
 ) -> type_of(x).MutableAnyType:
     """Computes element-wise maximum of two tensors.
 
@@ -360,7 +360,7 @@ fn sum[
     return res_tensor
 
 
-fn mean(src: LayoutTensor[**_]) raises -> Scalar[src.dtype]:
+fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -391,7 +391,7 @@ fn mean(src: LayoutTensor[**_]) raises -> Scalar[src.dtype]:
 
 fn mean[
     reduce_axis: Int
-](src: LayoutTensor[**_], dst: LayoutTensor[mut=True, src.dtype, **_]) raises:
+](src: LayoutTensor[...], dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
     """Computes the mean across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -452,7 +452,7 @@ fn mean[
 
 
 fn variance(
-    src: LayoutTensor[**_], correction: Int = 1
+    src: LayoutTensor[...], correction: Int = 1
 ) raises -> Scalar[src.dtype]:
     """Computes the variance value of the elements in a buffer.
 

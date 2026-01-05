@@ -33,8 +33,8 @@ style guide.
 
 ### Code in text
 
-Use code font for all API names (structs, functions, attributes, argument and
-parameter names, etc.).
+Use code font for all API names (structs, traits, functions, fields,
+argument/parameter names, etc.).
 
 - Create code font with backticks (\`Int\`).
 
@@ -51,6 +51,24 @@ parameter names, etc.).
 
   - If you know the power at compile time, you can use the `pow[n](x)` version
     of this function.
+
+## Packages/Modules
+
+- Every package/module should have a one-sentence description at the top that
+  concisely summarizes the contents (for examples, see the
+  [std package summaries](https://docs.modular.com/mojo/std/)).
+
+  Keep the first line of the package description to 100 characters or fewer
+  so it won't be truncated on the index page.
+
+- Don't repeat the package/module name in the first sentence.
+
+- To write a more detailed description, follow the first sentence with
+  a blank line.
+
+- Avoid writing API usage docs in the package description (in the
+  `__init__.mojo` file) when you can instead put it in the API source
+  file (the module file, where it's more likely to get updated).
 
 ## Functions/Methods
 

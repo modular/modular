@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements test suite infrastructure for organizing and running tests.
+
+This module provides the `TestSuite` type for collecting, filtering, and
+executing unit tests with automatic discovery, command-line filtering, and
+formatted reporting. It includes support for colored output, timing statistics,
+and flexible test selection via CLI arguments.
+"""
 
 from math import ceil, floor
 from os import sep
@@ -18,7 +25,7 @@ from utils._ansi import Color, Text
 from collections import Set
 
 from builtin._location import __call_location, _SourceLocation
-from compile.reflection import get_function_name
+from reflection import get_function_name
 from sys.intrinsics import _type_is_eq
 from sys import argv
 

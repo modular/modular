@@ -20,11 +20,12 @@ from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    memcpy,
-)
+from memory import memcpy, LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from nn.concat import concat
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
@@ -85,7 +86,7 @@ struct StateContext:
 
 fn pack_string_res(str_ptr: UnsafePointer[Byte], str_len: Int) raises -> String:
     var span = Span[Byte, ImmutAnyOrigin](
-        ptr=str_ptr,
+        ptr=LegacyUnsafePointer[Byte, origin=ImmutAnyOrigin](str_ptr),
         length=Int(str_len),
     )
     # We can not free the resource ptr embedded in MEF, create a copy
@@ -182,7 +183,7 @@ fn create_non_tracked_tensor_async[
         buffer.data,
         bytecount_with_dtype[dtype](buffer.dynamic_shape),
         tensor_rank,
-        UnsafePointer(to=buffer.dynamic_shape.data),
+        LegacyUnsafePointer(to=buffer.dynamic_shape.data),
         dtype,
         async_ptr,
     )
@@ -247,7 +248,7 @@ fn create_tensor_async[
         buffer.data,
         bytecount_with_dtype[dtype](buffer.dynamic_shape),
         tensor_rank,
-        UnsafePointer(to=buffer.dynamic_shape.data),
+        LegacyUnsafePointer(to=buffer.dynamic_shape.data),
         dtype,
         async_to_borrow,
         borrowee_type,
@@ -346,7 +347,7 @@ fn unpack_device_ctx(
         OpaquePointer,
     ](async_ptr)
 
-    return DeviceContextPtr(ptr)
+    return DeviceContextPtr(ptr.unsafe_origin_cast[MutOrigin.external]())
 
 
 @register_internal("builtin.unpack_buffer_ref")
@@ -358,7 +359,7 @@ fn unpack_buffer_ref(
     var data_ptr = external_call[
         "MGP_RT_GetDataFromBuffer",
         OpaquePointer,
-    ](async_ptr, UnsafePointer(to=size))
+    ](async_ptr, LegacyUnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
     return NDBuffer[DType.int8, 1](data_ptr.bitcast[Int8](), shape)
 
@@ -382,7 +383,7 @@ fn unpack_tensor[
         "MGP_RT_GetShapeAndDataFromTensor",
         OpaquePointer,
     ](
-        UnsafePointer(to=shapes.data),
+        LegacyUnsafePointer(to=shapes.data),
         tensor_async_ptr,
     )
 
@@ -425,7 +426,7 @@ fn unpack_context(
     var ctx_ptr: OpaquePointer = external_call[
         "MGP_RT_GetContextAndSizeFromAsync",
         OpaquePointer,
-    ](UnsafePointer(to=num_slots), async_ptr)
+    ](LegacyUnsafePointer(to=num_slots), async_ptr)
     return StateContext(Int(num_slots), ctx_ptr)
 
 
@@ -638,7 +639,7 @@ fn mgp_buffer_concat[
     bDevice: StaticString
 ](
     output: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], *_],
+    inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], ...],
     call_ctx: DeviceContextPtr,
 ) raises:
     comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
@@ -764,7 +765,7 @@ fn mgp_buffer_get_cached(
     ](
         Int(buffer_slot),
         ctx.ctx_ptr,
-        UnsafePointer(to=buffer_size),
+        LegacyUnsafePointer(to=buffer_size),
         storage_ref_addr,
     )
 
@@ -878,7 +879,7 @@ fn mgp_debug_tensor_print[
         label_ptr,
         UInt(label_len),
         dtype,
-        UnsafePointer(to=shape.data),
+        LegacyUnsafePointer(to=shape.data),
         spec_rank,
         buffer.data,
         len(buffer),
@@ -1568,7 +1569,7 @@ fn mogg_async_pack_borrow_v2[
             buffer.data,
             bytecount_with_dtype[dtype](buffer.dynamic_shape),
             spec_rank,
-            UnsafePointer(to=buffer.dynamic_shape.data),
+            LegacyUnsafePointer(to=buffer.dynamic_shape.data),
             dtype,
             mem,
         )
@@ -1719,8 +1720,8 @@ fn tmp_mgp_buffer_get_cached(
     ](
         buffer_slot,
         ctx,
-        UnsafePointer(to=buffer_size),
-        UnsafePointer(to=buffer_data),
+        LegacyUnsafePointer(to=buffer_size),
+        LegacyUnsafePointer(to=buffer_data),
     )
 
     var buffer = NDBuffer[DType.int8, 1](
