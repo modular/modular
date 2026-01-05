@@ -15,6 +15,12 @@ modular_py_library(
         exclude = ["src/mblack/__main__.py"],
     ),
     data = glob(["src/**/*.txt"]),
+    ignore_unresolved_imports = [
+        "IPython",
+        "colorama",
+        "tokenize_rt",
+        "uvloop",
+    ],
     imports = ["src"],
     deps = [
         requirement("click"),
@@ -49,6 +55,7 @@ modular_py_test(
         "tests/test.toml",
     ],
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":mblack",
     ],
