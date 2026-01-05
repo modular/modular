@@ -12,7 +12,7 @@ struct Matrix[T: CollectionElement]:
 
     fn __init__(out self, width: Int, height: Int, depth: Int, *, fill: Self.T):
         self.width, self.height, self.depth = width, height, depth
-        self._store = List[Self.T](length=width * height, fill=fill)
+        self._store = List[Self.T](length=width * height * depth, fill=fill)
 
     fn __getitem__(self, x: Int, y: Int, z: Int) -> Self.T:
         return self._store[self.idx(x, y, z)].copy()
