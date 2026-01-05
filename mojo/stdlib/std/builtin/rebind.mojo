@@ -107,21 +107,21 @@ fn rebind_var[
 
 
 comptime downcast[
-    _Trait: type_of(AnyType),
     T: AnyType,
+    _Trait: type_of(AnyType),
 ] = __mlir_attr[`#kgen.downcast<`, T, `> : `, _Trait]
 """Type alias for downcasting a type to conform to a trait.
 
 Parameters:
-    _Trait: The trait type to downcast to.
     T: The type to downcast.
+    _Trait: The trait type to downcast to.
 """
 
 
 @always_inline
 fn trait_downcast[
     T: AnyTrivialRegType, //, Trait: type_of(AnyType)
-](var src: T) -> downcast[Trait, T]:
+](var src: T) -> downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
     to a concrete type, does not actually conform to `Trait`, a compilation
@@ -137,14 +137,14 @@ fn trait_downcast[
     Returns:
         The downcasted value.
     """
-    return rebind[downcast[Trait, T]](src)
+    return rebind[downcast[T, Trait]](src)
 
 
 fn trait_downcast_var[
     T: Movable,
     //,
     Trait: type_of(Movable),
-](var src: T) -> downcast[Trait, T]:
+](var src: T) -> downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms to the provided `Trait`. If `T`, after
     resolving to a concrete type, does not actually conform to `Trait`, a
@@ -160,13 +160,13 @@ fn trait_downcast_var[
     Returns:
         The downcasted value.
     """
-    return rebind_var[downcast[Trait, T]](src^)
+    return rebind_var[downcast[T, Trait]](src^)
 
 
 @always_inline
 fn trait_downcast[
     T: AnyType, //, Trait: type_of(AnyType)
-](ref src: T) -> ref [src] downcast[Trait, T]:
+](ref src: T) -> ref [src] downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
     to a concrete type, does not actually conform to `Trait`, a compilation
@@ -182,4 +182,4 @@ fn trait_downcast[
     Returns:
         The downcasted value.
     """
-    return rebind[downcast[Trait, T]](src)
+    return rebind[downcast[T, Trait]](src)

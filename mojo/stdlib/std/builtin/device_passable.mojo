@@ -28,7 +28,7 @@ trait DevicePassable:
             Self.device_type, DevicePassable
         ):
             return downcast[
-                DevicePassable, Self.device_type
+                Self.device_type, DevicePassable
             ]._is_convertible_to_device_type[T]()
         else:
             return _type_is_eq[T, Self.device_type]()

@@ -151,7 +151,7 @@ struct OwnedPointer[T: AnyType]:
             Element = Self.T,
             ParentConformsTo="ImplicitlyDestructible",
         ]()
-        comptime TDestructible = downcast[ImplicitlyDestructible, Self.T]
+        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
         self._inner.bitcast[TDestructible]().destroy_pointee()
         self._inner.free()

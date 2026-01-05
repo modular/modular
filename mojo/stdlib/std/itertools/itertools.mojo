@@ -173,7 +173,7 @@ fn product[
     IterableTypeA: Iterable, IterableTypeB: Iterable
 ](ref iterable_a: IterableTypeA, ref iterable_b: IterableTypeB) -> _Product2[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    downcast[Copyable & Iterator, type_of(iter(iterable_b))],
+    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables.
@@ -201,7 +201,7 @@ fn product[
     """
     return {
         iter(iterable_a),
-        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_b))]](
+        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
             iter(iterable_b)
         ),
     }
@@ -298,8 +298,8 @@ fn product[
     ref iterable_c: IterableTypeC,
 ) -> _Product3[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    downcast[Copyable & Iterator, type_of(iter(iterable_b))],
-    downcast[Copyable & Iterator, type_of(iter(iterable_c))],
+    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
+    downcast[type_of(iter(iterable_c)), Copyable & Iterator],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables.
@@ -330,10 +330,10 @@ fn product[
     """
     return {
         iter(iterable_a),
-        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_b))]](
+        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
             iter(iterable_b)
         ),
-        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_c))]](
+        rebind_var[downcast[type_of(iter(iterable_c)), Copyable & Iterator]](
             iter(iterable_c)
         ),
     }
@@ -448,9 +448,9 @@ fn product[
     ref iterable_d: IterableTypeD,
 ) -> _Product4[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    downcast[Copyable & Iterator, type_of(iter(iterable_b))],
-    downcast[Copyable & Iterator, type_of(iter(iterable_c))],
-    downcast[Copyable & Iterator, type_of(iter(iterable_d))],
+    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
+    downcast[type_of(iter(iterable_c)), Copyable & Iterator],
+    downcast[type_of(iter(iterable_d)), Copyable & Iterator],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables.
@@ -484,13 +484,13 @@ fn product[
     """
     return {
         iter(iterable_a),
-        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_b))]](
+        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
             iter(iterable_b)
         ),
-        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_c))]](
+        rebind_var[downcast[type_of(iter(iterable_c)), Copyable & Iterator]](
             iter(iterable_c)
         ),
-        rebind_var[downcast[Copyable & Iterator, type_of(iter(iterable_d))]](
+        rebind_var[downcast[type_of(iter(iterable_d)), Copyable & Iterator]](
             iter(iterable_d)
         ),
     }

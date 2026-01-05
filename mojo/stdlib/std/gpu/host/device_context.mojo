@@ -2524,7 +2524,7 @@ struct DeviceFunction[
                 @parameter
                 if conforms_to(declared_arg_type, DevicePassable):
                     return downcast[
-                        DevicePassable, declared_arg_type
+                        declared_arg_type, DevicePassable
                     ].get_type_name()
                 else:
                     return get_type_name[declared_arg_type]()

@@ -181,7 +181,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
                 Element=TUnknown,
                 ParentConformsTo="Copyable",
             ]()
-            comptime T = downcast[Copyable, TUnknown]
+            comptime T = downcast[TUnknown, Copyable]
 
             if self._get_discr() == i:
                 self._get_ptr[T]().init_pointee_copy(other._get_ptr[T]()[])
@@ -205,7 +205,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
                 Element=TUnknown,
                 ParentConformsTo="Movable",
             ]()
-            comptime T = downcast[Movable, TUnknown]
+            comptime T = downcast[TUnknown, Movable]
 
             if self._get_discr() == i:
                 # Calls the correct __moveinit__
@@ -224,7 +224,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
                 Element=TUnknown,
                 ParentConformsTo="ImplicitlyDestructible",
             ]()
-            comptime T = downcast[ImplicitlyDestructible, TUnknown]
+            comptime T = downcast[TUnknown, ImplicitlyDestructible]
 
             if self._get_discr() == i:
                 self._get_ptr[T]().destroy_pointee()
@@ -500,7 +500,7 @@ fn _all_trivial_del[*Ts: AnyType]() -> Bool:
 
         @parameter
         if conforms_to(Ts[i], ImplicitlyDestructible):
-            if not downcast[ImplicitlyDestructible, Ts[i]].__del__is_trivial:
+            if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
         else:
             return False
@@ -513,7 +513,7 @@ fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
         @parameter
         if conforms_to(Ts[i], Copyable):
-            if not downcast[Copyable, Ts[i]].__copyinit__is_trivial:
+            if not downcast[Ts[i], Copyable].__copyinit__is_trivial:
                 return False
         else:
             return False
@@ -527,7 +527,7 @@ fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
 
         @parameter
         if conforms_to(Ts[i], Movable):
-            if not downcast[Movable, Ts[i]].__moveinit__is_trivial:
+            if not downcast[Ts[i], Movable].__moveinit__is_trivial:
                 return False
         else:
             return False
