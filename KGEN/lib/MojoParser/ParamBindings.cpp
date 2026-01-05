@@ -292,17 +292,26 @@ void ParamBindings::add(const ExprNode *expr, PValue value, StringAttr name) {
 
 /// Helper function to emit diagnostics for unprovable constraints from a
 /// Fitness result.
-static void emitUnprovableConstraintsFromFitness(
-    const ParamBindings::Fitness &fitness, SharedState &shared, SMLoc exprLoc,
-    const Twine &baseName, std::optional<Location> opLoc = std::nullopt) {
+static void
+emitUnprovableConstraintsFromFitness(const ParamBindings::Fitness &fitness,
+                                     SharedState &shared, SMLoc exprLoc,
+                                     ASTDecl *declIfKnown) {
   if (fitness.unprovableConstraints.empty())
     return;
+
+  std::string baseName;
+  if (declIfKnown)
+    baseName = "'" + declIfKnown->getUserNameIfOperation()->str() + "'";
+  else
+    baseName = "parametric value";
+
   MojoInflightDiag diag = shared.emitError(exprLoc)
                           << "invalid bindings for " << baseName
                           << ": lacking evidence to prove correctness";
-  if (opLoc)
-    diag.attachNote(*opLoc) << "cannot prove constraint"
-                            << plural(fitness.unprovableConstraints.size());
+  if (declIfKnown)
+    diag.attachNote(declIfKnown->getLoc())
+        << "cannot prove constraint"
+        << plural(fitness.unprovableConstraints.size());
   for (auto constraint : fitness.unprovableConstraints)
     LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag, constraint);
 }
@@ -806,14 +815,8 @@ ParamBindings::verifyBindings(
 }
 
 ParameterExprArrayAttr
-ParamBindings::verifyBindings(LITGeneratorType sig) const {
-  return verifyBindings(sig.getInputParamTypes(), sig.getMetadata(),
-                        /*partial=*/true);
-}
-
-ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
-                                                     PogListAttr paramList,
-                                                     bool partial) const {
+ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
+                                 PogListAttr paramList, bool partial) const {
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     // The inference diagnostics will be unused.
     ParameterInferenceDiagnostics inferenceDiags;
@@ -830,45 +833,50 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
   return bindings;
 }
 
-ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
-                                                     TypeSignatureType sig,
-                                                     bool partial) const {
-  auto [bindingValuesAttr, fitness, diag] = verifyBindings(
-      sig.getParamTypes(), sig.getParamListAttrs(),
-      Twine("'") + structOp.getName() + "'", structOp.getLoc(), partial);
+ParameterExprArrayAttr
+ParamBindings::verifyStructBindings(ASTDecl &structDecl, TypeSignatureType sig,
+                                    bool partial) const {
+  auto [bindingValuesAttr, fitness, diag] = verifyBindingsWithDiag(
+      sig.getParamTypes(), sig.getParamListAttrs(), &structDecl, partial);
   // Emit diagnostics for unprovable constraints if no other diagnostics were
   // emitted.
   if (!fitness.unprovableConstraints.empty() && !diag) {
     emitUnprovableConstraintsFromFitness(fitness, shared, getExprLoc(),
-                                         Twine("'") + structOp.getName() + "'",
-                                         structOp.getLoc());
+                                         &structDecl);
   }
   return bindingValuesAttr;
 }
 
 ParameterExprArrayAttr
-ParamBindings::verifyBindings(LITGeneratorType sig, StringRef baseName,
-                              std::optional<Location> opLoc) const {
-  auto [newBindings, fitness, diag] = verifyBindings(
-      sig.getInputParamTypes(), sig.getMetadata(),
-      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), opLoc,
+ParamBindings::verifyBindings(LITGeneratorType sig,
+                              ASTDecl *declIfKnown) const {
+  auto [newBindings, fitness, diag] = verifyBindingsWithDiag(
+      sig.getInputParamTypes(), sig.getMetadata(), declIfKnown,
       /*partial=*/true);
   // Emit diagnostics for unprovable constraints if no other diagnostics were
   // emitted.
   if (!fitness.unprovableConstraints.empty() && !diag) {
-    emitUnprovableConstraintsFromFitness(
-        fitness, shared, getExprLoc(),
-        opLoc ? Twine("'") + baseName + "'" : Twine(baseName), opLoc);
+    emitUnprovableConstraintsFromFitness(fitness, shared, getExprLoc(),
+                                         declIfKnown);
   }
   return newBindings;
 }
 
 std::tuple<ParameterExprArrayAttr, ParamBindings::Fitness,
            std::optional<MojoInflightDiag>>
-ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
-                              PogListAttr paramListAttr, const Twine &baseName,
-                              std::optional<Location> opLoc,
-                              bool partial) const {
+ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
+                                      PogListAttr paramListAttr,
+                                      ASTDecl *declIfKnown,
+                                      bool partial) const {
+  std::string baseName;
+  std::optional<SMLoc> opLoc;
+  if (declIfKnown) {
+    baseName = "'" + declIfKnown->getUserNameIfOperation()->str() + "'";
+    opLoc = declIfKnown->getLoc();
+  } else {
+    baseName = "parametric value";
+  }
+
   size_t maxAllowed = expectedParamTypes.size() -
                       countNumImplicitKinds(paramListAttr) -
                       countNumInferredKinds(paramListAttr);
@@ -1005,8 +1013,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   return {bindings, fitness, std::move(diag)};
 }
 
-TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp,
-                                              StringRef baseName) const {
+TypedAttr ParamBindings::getBoundConstAttrForFn(ASTDecl &fnDecl) const {
+  auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
   FnTypeGeneratorType signature = funcOp.getFullSignature();
 
   // If this is a global function or struct reference, bind it directly.
@@ -1018,8 +1026,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp,
       return funcOp.getBoundReference(shared.getEvaluationContext());
 
     // Check that the signature can be rebound with our set of bindings.
-    ParameterExprArrayAttr newBindings =
-        verifyBindings(signature, baseName, funcOp.getLoc());
+    ParameterExprArrayAttr newBindings = verifyBindings(signature, &fnDecl);
     if (!newBindings)
       return {};
 
@@ -1069,7 +1076,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp,
 
   // Attempt to partially bind the parameters to the signature of the function.
   ParameterExprArrayAttr newBindings =
-      bindings.verifyBindings(signature, baseName, funcOp.getLoc());
+      bindings.verifyBindings(signature, &fnDecl);
   if (!newBindings)
     return {};
 

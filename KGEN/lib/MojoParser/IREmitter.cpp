@@ -812,8 +812,9 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       ParamBindings paramBindings(getDeclScope(), expr);
       // Try to fully bind the signature, in case it can be made concrete with
       // default values, etc.
-      ParameterExprArrayAttr bindingAttr =
-          paramBindings.verifyBindings(signature);
+      ParameterExprArrayAttr bindingAttr = paramBindings.tryVerifyBindings(
+          signature.getInputParamTypes(), signature.getMetadata(),
+          /*partial=*/true);
 
       // Notice if there are any unbound parameters.
       bool anyUnbound = true;
@@ -1685,8 +1686,8 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   // Check the existing bindings against the full signature of the type and make
   // sure it is fully bound.
   ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings.verifyBindings(structDecl, structDecl.getSignature(),
-                                   /*partial=*/false);
+      paramBindings.verifyStructBindings(*decl, structDecl.getSignature(),
+                                         /*partial=*/false);
   if (!bindingValuesAttr)
     return {};
 
@@ -1819,8 +1820,9 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 
   // Check the bindings.
   auto metaType = cast<StructMetaType>(tupleType.getMetaType());
-  auto bindingsAttr = bindings.verifyBindings(structOp, metaType.getSignature(),
-                                              /*partial=*/false);
+  auto bindingsAttr =
+      bindings.verifyStructBindings(*typeDecl, metaType.getSignature(),
+                                    /*partial=*/false);
   if (!bindingsAttr)
     return {};
 

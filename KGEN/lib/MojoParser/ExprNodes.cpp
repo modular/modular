@@ -1365,7 +1365,7 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
 
   // Attempt to apply the current binding set to the parameter list.
   ParameterExprArrayAttr bindings =
-      paramBindings.verifyBindings(paramTypes, paramList, /*partial=*/true);
+      paramBindings.tryVerifyBindings(paramTypes, paramList, /*partial=*/true);
   // If that failed, return
   if (!bindings)
     return {};
@@ -1507,7 +1507,6 @@ static PValue substituteParametersIntoUserDefinedType(
     SMLoc lhsLoc, SMLoc rhsLoc, IREmitter &emitter) {
   auto metaType = sugarCast<StructMetaType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
-  auto structOp = cast<StructDeclOp>(typeDecl->getIfOperation());
 
   // Notify the listener on the parameter binding.
   emitter.shared.notifyListenerOnParameterBinding(typeDecl, rhsLoc, operands);
@@ -1524,7 +1523,7 @@ static PValue substituteParametersIntoUserDefinedType(
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
   ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings->verifyBindings(structOp, sig, /*partial=*/true);
+      paramBindings->verifyStructBindings(*typeDecl, sig, /*partial=*/true);
   if (!bindingValuesAttr)
     return {};
 
@@ -1548,7 +1547,7 @@ static PValue bindToGeneratorValue(PValue callable, LITGeneratorType sig,
     return {};
 
   ParameterExprArrayAttr newBindings =
-      paramBindings->verifyBindings(sig, "parametric value");
+      paramBindings->verifyBindings(sig, /*declIfKnown=*/nullptr);
   if (!newBindings)
     return {};
 

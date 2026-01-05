@@ -70,7 +70,7 @@ public:
   /// Utility function to perform substitutions of the bindings into the symbol
   /// for the given function declaration. It returns the resultant
   /// SymbolConstantAttr or produces an error message and returns null.
-  TypedAttr getBoundConstAttrFor(FnOp funcOp, StringRef baseName) const;
+  TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl) const;
 
   /// The overall expression this was formed for.
   const ExprNode *getExpr() const { return parameters.callExpr; }
@@ -142,44 +142,37 @@ public:
   verifyBindings(LITGeneratorType sig, const DiagEmitter &diagEmitter,
                  ParameterInferenceHookTy parameterInferenceHook) const;
 
-  /// Attempt to bind the current set of parameters to the provided generator.
-  /// This applies parameter inference and any default values to form a full
-  /// binding set, which is returned along with the binding fitness. This will
-  /// form a partial binding of the signature.
-  ParameterExprArrayAttr verifyBindings(LITGeneratorType sig) const;
-
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
   /// form a full binding set, which is returned along with the binding fitness.
   /// If `partial` is true, this forms a partial binding list.
-  ParameterExprArrayAttr verifyBindings(ArrayRef<Type> paramTypes,
-                                        PogListAttr paramList,
-                                        bool partial) const;
+  ///
+  /// On failure, this returns null but does not emit a diagnostic.
+  ParameterExprArrayAttr tryVerifyBindings(ArrayRef<Type> paramTypes,
+                                           PogListAttr paramList,
+                                           bool partial) const;
 
   /// Verify the parameter bindings for the given struct. If the struct doesn't
   /// match, diagnostics will be emitted using the struct's location and the
   /// given expression location.
-  ParameterExprArrayAttr verifyBindings(StructDeclOp structOp,
-                                        TypeSignatureType sig,
-                                        bool partial) const;
+  ParameterExprArrayAttr verifyStructBindings(ASTDecl &structDecl,
+                                              TypeSignatureType sig,
+                                              bool partial) const;
 
   /// Verify the parameter bindings for the given generator. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
   /// locations.
-  ParameterExprArrayAttr
-  verifyBindings(LITGeneratorType sig, StringRef baseName,
-                 std::optional<Location> opLoc = std::nullopt) const;
+  ParameterExprArrayAttr verifyBindings(LITGeneratorType sig,
+                                        ASTDecl *declIfKnown) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
   /// information on how closely the bindings fit the parameters, or why
-  /// they don't. The setEvaluator hook is used to install the parameter value
-  /// in the evaluator used by the implementation. If the parameters do not
-  /// work, this emits diagnostics using the locations and `baseName` provided.
+  /// they don't.
   std::tuple<ParameterExprArrayAttr, Fitness, std::optional<MojoInflightDiag>>
-  verifyBindings(ArrayRef<Type> expectedParamTypes, PogListAttr paramListAttr,
-                 const Twine &baseName, std::optional<Location> opLoc,
-                 bool partial) const;
+  verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
+                         PogListAttr paramListAttr, ASTDecl *declIfKnown,
+                         bool partial) const;
 
   /// Method for debugging.
   LLVM_DUMP_METHOD void dump() const;
