@@ -42,7 +42,7 @@ modular_py_test(
     tags = ["external-exclusive"],  # FIXME: SDLC-2838
     deps = [
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration/tools:debug_model",
+        "//max/tests/integration/tools:debugging_utils",
         requirement("transformers"),
     ],
 )

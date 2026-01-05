@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import max.tests.integration.tools.debug_model as dbg
+import max.tests.integration.tools.debugging_utils as dbg
 import transformers
 from max.nn.layer import Module
 from max.pipelines.lib.model_config import MAXModelConfig
