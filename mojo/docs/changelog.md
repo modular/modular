@@ -180,6 +180,18 @@ what we publish.
       var f2 : fn (x: SomeType) -> Float64 = fn_returns_ref
   ```
 
+- Mojo now supports the `...` expression.  It is a logically empty value of
+  `EllipsisType`.  It can be used in overloaded functions (e.g. getitem calls),
+  e.g.:
+
+  ```mojo
+  struct YourType:
+    fn __getitem__(self, idx: Int) -> Int:
+      # ... behavior when passed x[i]
+    fn __getitem__(self, idx: EllipsisType) -> Int:
+      # ... behavior when passed x[...]
+  ```
+
 ### Language changes
 
 - The `*_` and `**_` syntax for explicitly unpacked parameters has been replaced
