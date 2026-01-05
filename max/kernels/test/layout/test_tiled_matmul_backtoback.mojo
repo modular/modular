@@ -915,7 +915,9 @@ fn bench_b2b[
 
     var flops = 2e-9 * (M * K * L + M * L * N)
     if do_benchmark:
-        var secs_tile = benchmark.run[test_tile_fn](max_runtime_secs=1.0).mean()
+        var secs_tile = benchmark.run[func3=test_tile_fn](
+            max_runtime_secs=1.0
+        ).mean()
         print("GFLOPS Tile: ", flops / secs_tile)
     else:
         test_tile_fn()
@@ -930,7 +932,7 @@ fn bench_b2b[
         )
 
     if do_benchmark:
-        var secs_tile_b2b = benchmark.run[test_tile_b2b_fn](
+        var secs_tile_b2b = benchmark.run[func3=test_tile_b2b_fn](
             max_runtime_secs=1.0
         ).mean()
         print("GFLOPS B2B:  ", flops / secs_tile_b2b)

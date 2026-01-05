@@ -233,7 +233,7 @@ def main():
         gemm(a.data, b2.data, c2.data, m, n, k, mc, nc, kc)
 
     var num_warmup: Int = 1
-    var time = benchmark.run[bench_gemm](num_warmup).mean()
+    var time = benchmark.run[func3=bench_gemm](num_warmup).mean()
     var flops = 2.0 * m * n * k / time / 1e9
     print(time, end="")
     print(" seconds")

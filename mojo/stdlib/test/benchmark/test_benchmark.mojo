@@ -37,7 +37,7 @@ def test_stopping_criteria():
     @__copy_capture(lb, ub)
     @parameter
     fn timer() raises:
-        var report = run[time_me](
+        var report = run[func4=time_me](
             max_iters=max_iters_1, min_runtime_secs=lb, max_runtime_secs=ub
         )
         assert_true(report.mean() > 0)
@@ -53,7 +53,7 @@ def test_stopping_criteria():
     @__copy_capture(ub_big, lb)
     @parameter
     fn timer2() raises:
-        var report = run[time_me](
+        var report = run[func4=time_me](
             max_iters=max_iters_2, min_runtime_secs=lb, max_runtime_secs=ub_big
         )
         assert_true(report.mean() > 0)
@@ -69,7 +69,7 @@ def test_stopping_criteria():
     @__copy_capture(ub_big)
     @parameter
     fn timer3() raises:
-        var report = run[time_me](
+        var report = run[func4=time_me](
             max_iters=max_iters_3, min_runtime_secs=0, max_runtime_secs=ub_big
         )
         assert_true(report.mean() > 0)
@@ -125,19 +125,19 @@ fn sleeper():
 
 
 def test_non_capturing():
-    var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     assert_true(report.mean() > 0.001)
 
 
 def test_change_units():
-    var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     assert_true(report.mean("ms") > 1.0)
     assert_true(report.mean("us") > 1_000)
     assert_true(report.mean("ns") > 1_000_000.0)
 
 
 def test_report():
-    var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
 
     var report_string = report.as_string()
     assert_true("Benchmark Report (s)" in report_string)

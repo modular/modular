@@ -229,6 +229,12 @@ what we publish.
   conversion from any origin to an immutable origin (`ImmutOrigin(x)`) and an
   explicit unsafe conversion (`SomeOrigin(unsafe_cast=x)`).
 
+- Mojo no longer supports overloading functions on parameters alone: it will not
+  try to disambiguate between `fn foo[a: Int8]():` and `fn foo[a: Int32]():` for
+  example.  Mojo never fully implemented the previous support in a reliable way,
+  and removing this simplifies the language.  It still supports overloading on
+  function arguments of course.
+
 ### Library changes
 
 - The `Iterator` trait and and for-each loop have removed the `__has_next__`

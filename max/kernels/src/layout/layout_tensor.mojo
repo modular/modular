@@ -3085,7 +3085,7 @@ struct LayoutTensor[
         return Layout(new_shape, src.stride)
 
     @staticmethod
-    fn _compute_tile_layout[tile_size: Int, axis: Int]() -> Layout:
+    fn _compute_tile_layout[*, tile_size: Int, axis: Int]() -> Layout:
         var tiler = LayoutList()
         var i = 0
         for dim in Self.layout.shape:
@@ -3570,7 +3570,7 @@ struct LayoutTensor[
     ] = LayoutTensor[
         Self.dtype,
         Self._compute_tile_layout[
-            Self.layout.shape[axis].value() // count, axis
+            tile_size = Self.layout.shape[axis].value() // count, axis=axis
         ]()[0],
         Self.origin,
         address_space = Self.address_space,
@@ -3639,7 +3639,8 @@ struct LayoutTensor[
             tiles[i] = LayoutTensor[
                 Self.dtype,
                 Self._compute_tile_layout[
-                    Self.layout.shape[axis].value() // count, axis
+                    tile_size = Self.layout.shape[axis].value() // count,
+                    axis=axis,
                 ]()[0],
                 Self.origin,
                 address_space = Self.address_space,

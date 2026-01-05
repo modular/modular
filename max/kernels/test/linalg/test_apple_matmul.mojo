@@ -48,7 +48,7 @@ comptime do_benchmarking = False
 fn bench_run[
     func: fn () raises capturing [_] -> None
 ]() raises -> benchmark.Report:
-    return benchmark.run[func](2, 1_000_000, 1, 3)
+    return benchmark.run[func3=func](2, 1_000_000, 1, 3)
 
 
 fn gemm_naive[
