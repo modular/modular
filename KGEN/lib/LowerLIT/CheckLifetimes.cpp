@@ -2221,7 +2221,11 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
         return;
       auto &diag = *diagOr;
 
-      diag << valueInfo.getName().str()
+      // FIXME(MOCO-3017): Provide a better name for the LHS in indirect
+      //   mutable assignments like `ptr[] = linear^`.
+      auto name = valueRef.valueId ? valueInfo.getName().str() : "<unknown>";
+
+      diag << name
            << "' abandoned without being explicitly destroyed: " << *errorMsg;
 
       // If the insertion point is on a mark_consumed op inserted as part of an
