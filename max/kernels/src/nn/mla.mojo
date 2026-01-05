@@ -1289,12 +1289,9 @@ fn flare_mla_prefill[
     score_mod_t: ScoreModTrait,
     dtype: DType,
     output_type: DType,
-    softmax_type: DType,
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
-    write_softmax_info: Bool = False,
-    use_cascade_attention: Bool = False,
     use_fa4: Bool = False,
 ](
     output: LayoutTensor[
@@ -1315,21 +1312,10 @@ fn flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    softmax_info: OptionalReg[
-        LayoutTensor[
-            mut=True, softmax_type, Layout.row_major[3](), MutAnyOrigin
-        ]
-    ] = None,
     cache_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
-    ] = None,
-    prev_output: OptionalReg[
-        LayoutTensor[output_type, Layout.row_major[rank](), MutAnyOrigin]
-    ] = None,
-    prev_softmax_info: OptionalReg[
-        LayoutTensor[softmax_type, Layout.row_major[3](), MutAnyOrigin]
     ] = None,
 ) raises:
     """MLA prefill kernel that would only be called in the optimized compute
@@ -1447,8 +1433,6 @@ fn flare_mla_prefill[
             q_depth=q_depth,
             cache_depth = Int(cache_depth),
             config=mha_config,
-            write_softmax_info=write_softmax_info,
-            use_cascade_attention=use_cascade_attention,
             use_fa4=use_fa4,
         ](
             output,
@@ -1462,10 +1446,7 @@ fn flare_mla_prefill[
             max_prompt_len,
             scale,
             ctx,
-            softmax_info,
             cache_offsets,
-            prev_output,
-            prev_softmax_info,
         )
 
 
@@ -1476,12 +1457,9 @@ fn flare_mla_prefill[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    softmax_type: DType,
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
-    write_softmax_info: Bool = False,
-    use_cascade_attention: Bool = False,
     use_fa4: Bool = False,  # TODO: remove this flag when we support ragged inputs
 ](
     output: LayoutTensor[
@@ -1502,11 +1480,6 @@ fn flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    softmax_info: OptionalReg[
-        LayoutTensor[
-            mut=True, softmax_type, Layout.row_major[3](), MutAnyOrigin
-        ]
-    ] = None,
     cache_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
@@ -1604,8 +1577,6 @@ fn flare_mla_prefill[
             q_depth=q_depth,
             cache_depth=cache_depth,
             config=mha_config,
-            write_softmax_info=write_softmax_info,
-            use_cascade_attention=use_cascade_attention,
             _ndbuffer_mha_operand=True,
             use_fa4=use_fa4,
         ](
@@ -1620,21 +1591,12 @@ fn flare_mla_prefill[
             max_prompt_len,
             scale,
             ctx,
-            softmax_info,
             cache_offsets,
-            LayoutTensor[output_type, Layout.row_major[rank](), MutAnyOrigin](
-                output.get_immutable().ptr,
-                RuntimeLayout[Layout.row_major[rank]()].row_major(
-                    output.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            softmax_info,
         )
 
 
 @always_inline
 fn flare_mla_prefill_dispatch[
-    rank: Int,
     k_t: MHAOperand,
     v_t: MHAOperand,
     k_rope_t: MHAOperand,
@@ -1642,13 +1604,10 @@ fn flare_mla_prefill_dispatch[
     score_mod_t: ScoreModTrait,
     dtype: DType,
     output_type: DType,
-    softmax_type: DType,
     q_layout: Layout,
     //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
-    write_softmax_info: Bool = False,
-    use_cascade_attention: Bool = False,
     q_depth: Int = 192,
     cache_depth: Int = 576,
     config: MHAConfig[dtype] = {
@@ -1673,26 +1632,16 @@ fn flare_mla_prefill_dispatch[
     max_prompt_len: Int,
     scale: Float32,
     ctx: DeviceContext,
-    softmax_info: OptionalReg[
-        LayoutTensor[
-            mut=True, softmax_type, Layout.row_major[3](), MutAnyOrigin
-        ]
-    ] = None,
     cache_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    prev_output: OptionalReg[
-        LayoutTensor[output_type, Layout.row_major[rank](), MutAnyOrigin]
-    ] = None,
-    prev_softmax_info: OptionalReg[
-        LayoutTensor[softmax_type, Layout.row_major[3](), MutAnyOrigin]
-    ] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
     comptime group = config.num_heads // UInt(kv_num_heads)
+    comptime rank = output.layout.rank()
 
     __comptime_assert q_depth == Int(q.layout.shape[rank - 1])
     __comptime_assert num_heads == UInt(Int(q.layout.shape[rank - 2]))
@@ -1719,47 +1668,15 @@ fn flare_mla_prefill_dispatch[
         size_of[config.dtype]()
     ) if has_nvidia_gpu_accelerator() else 0
 
-    var softmax_info_ptr = (
-        softmax_info.value().ptr if softmax_info else UnsafePointer[
-            Scalar[softmax_type]
-        ]()
-    )
-    var softmax_info_size = softmax_info.value().size() if softmax_info else 0
-    var prev_output_ptr = (
-        prev_output.value().ptr if prev_output else UnsafePointer[
-            Scalar[output_type]
-        ]()
-    )
-    var prev_output_size = prev_output.value().size() if prev_output else 0
-    var prev_softmax_info_ptr = (
-        prev_softmax_info.value().ptr if prev_softmax_info else UnsafePointer[
-            Scalar[softmax_type]
-        ]()
-    )
-    var prev_softmax_info_size = (
-        prev_softmax_info.value().size() if prev_softmax_info else 0
-    )
-
     var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
     var output_device = DeviceBuffer[output.dtype](
         ctx, output.ptr, output.size(), owning=False
-    )
-    var softmax_info_device = DeviceBuffer[softmax_type](
-        ctx, softmax_info_ptr, softmax_info_size, owning=False
-    )
-    var prev_output_device = DeviceBuffer[output_type](
-        ctx, prev_output_ptr, prev_output_size, owning=False
-    )
-    var prev_softmax_info_device = DeviceBuffer[softmax_type](
-        ctx, prev_softmax_info_ptr, prev_softmax_info_size, owning=False
     )
 
     comptime is_sm100_available = ctx.default_device_info == B200 and use_fa4
 
     @parameter
-    if is_sm100_available and (
-        not write_softmax_info and not use_cascade_attention
-    ):
+    if is_sm100_available:
         mla_sm100_prefill[
             config=config,
             group = Int(group),
@@ -1789,7 +1706,6 @@ fn flare_mla_prefill_dispatch[
             v_t,
             k_rope_t,
             output.dtype,
-            softmax_type,
             mask_t,
             score_mod_t,
             valid_length.layout,
@@ -1798,8 +1714,6 @@ fn flare_mla_prefill_dispatch[
             use_score_mod=use_score_mod,
             q_depth=q_depth,
             cache_depth=cache_depth,
-            write_softmax_info=write_softmax_info,
-            use_cascade_attention=use_cascade_attention,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ]
         var grid_dim = LaunchDim(
@@ -1817,9 +1731,6 @@ fn flare_mla_prefill_dispatch[
             v,
             k_rope,
             output_device,
-            softmax_info_device,
-            prev_output_device,
-            prev_softmax_info_device,
             scale,
             batch_size,
             max_prompt_len,
@@ -1845,7 +1756,6 @@ fn mla_prefill[
     v_t: MHAOperand,
     k_rope_t: MHAOperand,
     output_type: DType,
-    softmax_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     valid_layout: Layout,
@@ -1854,8 +1764,6 @@ fn mla_prefill[
     q_depth: Int = 192,
     cache_depth: Int = 576,
     use_score_mod: Bool = False,
-    write_softmax_info: Bool = False,  # Controls whether to write softmax stats for cascade attention
-    use_cascade_attention: Bool = False,  # Controls whether to use previous iteration's softmax stats
     _ndbuffer_mha_operand: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
@@ -1863,9 +1771,6 @@ fn mla_prefill[
     v: v_t,
     k_rope: k_rope_t,
     output_ptr: UnsafePointer[Scalar[output_type]],
-    softmax_info_ptr: UnsafePointer[Scalar[softmax_type]],
-    prev_output_ptr: UnsafePointer[Scalar[output_type]],
-    prev_softmax_info_ptr: UnsafePointer[Scalar[softmax_type]],
     scale: Float32,
     batch_size: Int,
     seq_len_arg: Int,
@@ -1892,16 +1797,6 @@ fn mla_prefill[
     var start_pos: UInt32 = 0
     var cache_start_pos: UInt32 = 0
     var total_seq_len: UInt32 = valid_length[batch_size][0]
-
-    __comptime_assert (
-        softmax_type == get_accum_type[q_type]()
-    ), "Softmax type should be the same as the accumulation type."
-    var softmax_info_accum_ptr = softmax_info_ptr.bitcast[
-        Scalar[get_accum_type[q_type]()]
-    ]()
-    var prev_softmax_info_accum_ptr = prev_softmax_info_ptr.bitcast[
-        Scalar[get_accum_type[q_type]()]
-    ]()
 
     # treat valid_lengths as a input_row_offsets
     start_of_seq = Int(valid_length[batch_idx])
@@ -1933,7 +1828,6 @@ fn mla_prefill[
 
     q_batch_offset = start_of_seq * q_depth * Int(config.num_heads)
     o_batch_offset = start_of_seq * Int(depth) * Int(config.num_heads)
-    softmax_info_offset = start_of_seq * 2 + total_seq_len * head_idx() * 2
 
     @parameter
     if is_nvidia_gpu():
@@ -1943,17 +1837,12 @@ fn mla_prefill[
             q_depth=q_depth,
             cache_depth=cache_depth,
             use_score_mod=use_score_mod,
-            write_softmax_info=write_softmax_info,
-            use_cascade_attention=use_cascade_attention,
         ](
             q_ptr.offset(q_batch_offset),
             k,
             v,
             k_rope,
             output_ptr.offset(o_batch_offset),
-            softmax_info_accum_ptr.offset(softmax_info_offset),
-            prev_output_ptr.offset(o_batch_offset),
-            prev_softmax_info_accum_ptr.offset(softmax_info_offset),
             scale,
             seq_len,
             max_seq_len,
@@ -2005,17 +1894,12 @@ fn mla_prefill_single_batch[
     q_depth: Int = 192,
     cache_depth: Int = 576,
     use_score_mod: Bool = False,
-    write_softmax_info: Bool = False,
-    use_cascade_attention: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
     output_ptr: UnsafePointer[Scalar[output_type]],
-    softmax_info_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
-    prev_output_ptr: UnsafePointer[Scalar[output_type]],
-    prev_softmax_info_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
@@ -2711,144 +2595,6 @@ fn mla_prefill_single_batch[
     var output_gmem_warp_tile = output_gmem_tile.tile[Int(WM), Int(WN_O)](
         Int(warp_y), Int(warp_x)
     )
-
-    var softmax_info_offset = 2 * (q_tile_idx * BM)
-    var softmax_info_gmem_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(Int(BM), 2),
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ](
-        softmax_info_ptr + Int(softmax_info_offset),
-    )
-
-    @parameter
-    if use_cascade_attention:
-        # load previous iteration's softmax stats, and previous attn output.
-        var prev_output_gmem_tile: type_of(output_gmem_tile) = {
-            prev_output_ptr + Int(output_offset),
-            output_gemm_runtime_layout,
-        }
-        prev_output_gemm_warp_tile = prev_output_gmem_tile.tile[
-            Int(WM), Int(WN_O)
-        ](Int(warp_y), Int(warp_x))
-
-        prev_softmax_info_gmem_tile: type_of(softmax_info_gmem_tile) = {
-            prev_softmax_info_ptr + Int(softmax_info_offset),
-        }
-
-        var prev_output_reg_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(Int(num_m_mmas * num_n_mmas_output), p_frag_size),
-            MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-
-        var softmax_info_smem_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(Int(BM), 2),
-            address_space = AddressSpace.SHARED,
-        ]((q_smem + BM * depth).bitcast[Scalar[accum_type]]())
-
-        if tid < Int(q_tile_num_rows):
-            softmax_info_smem_tile[tid, 0] = prev_softmax_info_gmem_tile[tid, 0]
-            softmax_info_smem_tile[tid, 1] = prev_softmax_info_gmem_tile[tid, 1]
-        barrier()
-
-        copy_dram_to_local[
-            src_thread_layout = Layout.row_major(8, 4),
-            thread_scope = ThreadScope.WARP,
-        ](
-            prev_output_reg_tile.vectorize[1, 2]().transpose(),
-            prev_output_gemm_warp_tile.vectorize[1, 2](),
-        )
-
-        # and add them together.
-        @parameter
-        for m_mma in range(num_m_mmas):
-            comptime row_0 = 2 * Int(m_mma)
-            comptime row_1 = 2 * Int(m_mma) + 1
-            var thd_row_ind = Int(lane // 4 + WM * warp_y)
-
-            var prev_rowmax_0 = rebind[Scalar[accum_type]](
-                softmax_info_smem_tile[thd_row_ind, 0]
-            )
-            var prev_rowmax_1 = rebind[Scalar[accum_type]](
-                softmax_info_smem_tile[thd_row_ind + 8, 0]
-            )
-            var prev_rowsum_0 = rebind[Scalar[accum_type]](
-                softmax_info_smem_tile[thd_row_ind, 1]
-            )
-            var prev_rowsum_1 = rebind[Scalar[accum_type]](
-                softmax_info_smem_tile[thd_row_ind + 8, 1]
-            )
-
-            var prev_corr_0: Scalar[accum_type]
-            var curr_corr_0: Scalar[accum_type]
-            var prev_corr_1: Scalar[accum_type]
-            var curr_corr_1: Scalar[accum_type]
-            comptime exp_func = _exp2_concrete
-
-            if prev_rowmax_0 < rowmax[row_0]:
-                prev_corr_0 = exp_func(prev_rowmax_0 - rowmax[row_0])
-                curr_corr_0 = 1.0
-            else:
-                prev_corr_0 = 1.0
-                curr_corr_0 = exp_func(rowmax[row_0] - prev_rowmax_0)
-
-            if prev_rowmax_1 < rowmax[row_1]:
-                prev_corr_1 = exp_func(prev_rowmax_1 - rowmax[row_1])
-                curr_corr_1 = 1.0
-            else:
-                prev_corr_1 = 1.0
-                curr_corr_1 = exp_func(rowmax[row_1] - prev_rowmax_1)
-
-            rowsum[row_0] = (
-                prev_corr_0 * prev_rowsum_0 + curr_corr_0 * rowsum[row_0]
-            )
-            rowsum[row_1] = (
-                prev_corr_1 * prev_rowsum_1 + curr_corr_1 * rowsum[row_1]
-            )
-            rowmax[row_0] = max(prev_rowmax_0, rowmax[row_0])
-            rowmax[row_1] = max(prev_rowmax_1, rowmax[row_1])
-
-            @parameter
-            for n_mma in range(num_n_mmas_output):
-                var mma_id = n_mma * num_m_mmas + m_mma
-
-                @parameter
-                for i in range(p_frag_size // 2):
-                    output_reg_tile[mma_id, i] = (
-                        prev_corr_0
-                        * prev_output_reg_tile[mma_id, i]
-                        * prev_rowsum_0
-                        + curr_corr_0 * output_reg_tile[mma_id, i]
-                    )
-                    output_reg_tile[mma_id, i + p_frag_size // 2] = (
-                        prev_corr_1
-                        * prev_output_reg_tile[mma_id, i + p_frag_size // 2]
-                        * prev_rowsum_1
-                        + curr_corr_1
-                        * output_reg_tile[mma_id, i + p_frag_size // 2]
-                    )
-
-    @parameter
-    if write_softmax_info:
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-            comptime row_0 = 2 * Int(m_mma)
-            comptime row_1 = 2 * Int(m_mma) + 1
-            var thd_row_ind = Int(lane // 4 + WM * warp_y)
-
-            if lane % 4 == 0:
-                if thd_row_ind < Int(q_tile_num_rows):
-                    softmax_info_gmem_tile[thd_row_ind, 0] = rowmax[row_0]
-                    softmax_info_gmem_tile[thd_row_ind, 1] = rowsum[row_0]
-
-                if thd_row_ind + 8 < Int(q_tile_num_rows):
-                    softmax_info_gmem_tile[thd_row_ind + 8, 0] = rowmax[row_1]
-                    softmax_info_gmem_tile[thd_row_ind + 8, 1] = rowsum[row_1]
 
     # Apply softmax denumerator.
     @parameter

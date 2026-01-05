@@ -2820,9 +2820,6 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
     collection_t: KVCollectionT,
     dtype: DType,
     //,
-    softmax_type: DType,
-    write_softmax_info: Bool,
-    use_cascade_attention: Bool,
     mask_str: StaticString,
     score_mod_str: StaticString,
     target: StaticString,
@@ -2846,16 +2843,7 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    softmax_info: LayoutTensor[
-        mut=True, softmax_type, address_space = AddressSpace.GENERIC, ...
-    ],
     context: DeviceContextPtr,
-    prev_output: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major[3](), MutAnyOrigin]
-    ] = None,
-    prev_softmax_info: OptionalReg[
-        LayoutTensor[softmax_type, Layout.row_major[3](), MutAnyOrigin]
-    ] = None,
 ) raises:
     @always_inline
     @parameter
@@ -2901,8 +2889,6 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
         task_id=Int(context.get_device_context().id()),
     ):
         return _flare_mla_prefill_kv_cache_ragged[
-            write_softmax_info=write_softmax_info,
-            use_cascade_attention=use_cascade_attention,
             mask_str=mask_str,
             score_mod_str=score_mod_str,
             target=target,
@@ -2918,10 +2904,7 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
             layer_idx,
             scale,
             output,
-            softmax_info,
             context,
-            prev_output,
-            prev_softmax_info,
         )
 
 
@@ -2930,11 +2913,8 @@ fn _flare_mla_prefill_kv_cache_ragged[
     dtype: DType,
     collection_t: KVCollectionT,
     //,
-    softmax_type: DType,
     mask_str: StaticString,
     score_mod_str: StaticString,
-    write_softmax_info: Bool,
-    use_cascade_attention: Bool,
     target: StaticString,
     local_window_size: Int = -1,
 ](
@@ -2956,16 +2936,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    softmax_info: LayoutTensor[
-        mut=True, softmax_type, address_space = AddressSpace.GENERIC, ...
-    ],
     context: DeviceContextPtr,
-    prev_output: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major[3](), MutAnyOrigin]
-    ] = None,
-    prev_softmax_info: OptionalReg[
-        LayoutTensor[softmax_type, Layout.row_major[3](), MutAnyOrigin]
-    ] = None,
 ) raises:
     """Performs MLA prefill.
 
@@ -2981,12 +2952,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
         scale: The scaled factor in scaled-dot product attention. Usually rsqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (total_seq_len, num_heads, kv_head_size).
-        softmax_info: NDBuffer with shape (total_seq_len, num_heads, 2).
         context: Pointer containing the runtime context for the target device.
-        prev_output: Optional tensor that stores the temporal results for the previous
-            prefill iteration.
-        prev_softmax_info: Optional tensor that stores the temporal softmax info for the
-            previous prefill iteration.
     """
     __comptime_assert is_gpu[target](), "MLA is only supported on GPU"
 
@@ -2998,11 +2964,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
     fn _mla_dispatch[
         mask_t: MHAMask, score_mod_t: ScoreModTrait
     ](mask: mask_t, score_mod: score_mod_t) raises:
-        flare_mla_prefill[
-            rank=3,
-            write_softmax_info=write_softmax_info,
-            use_cascade_attention=use_cascade_attention,
-        ](
+        flare_mla_prefill[rank=3,](
             output,
             q,
             k,
@@ -3014,14 +2976,6 @@ fn _flare_mla_prefill_kv_cache_ragged[
             buffer_row_offsets,
             scale,
             context.get_device_context(),
-            softmax_info=LayoutTensor[
-                softmax_type, Layout.row_major[3](), MutAnyOrigin
-            ](
-                softmax_info.ptr,
-                RuntimeLayout[Layout.row_major[3]()].row_major(
-                    softmax_info.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
             cache_offsets=LayoutTensor[
                 cache_offsets.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
@@ -3032,8 +2986,6 @@ fn _flare_mla_prefill_kv_cache_ragged[
                     cache_offsets.runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            prev_output=prev_output,
-            prev_softmax_info=prev_softmax_info,
         )
 
     dispatch_mask_and_score_mod[

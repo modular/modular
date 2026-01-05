@@ -6951,76 +6951,18 @@ struct Struct_mla_decode_ragged_paged:
         )
 
 
-@compiler.register("mo.mla.prefill.init.ragged.paged")
-struct Struct_mla_prefill_init_ragged_paged:
-    @always_inline
-    @staticmethod
-    fn execute[
-        dtype: DType,
-        softmax_type: DType,
-        //,
-        mask_str: StaticString,
-        score_mod_str: StaticString,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=3],
-        softmax_info: OutputTensor[dtype=softmax_type, rank=3],
-        q: InputTensor[dtype=dtype, rank=3],
-        k: InputTensor[dtype=dtype, rank=3],
-        v: InputTensor[dtype=dtype, rank=3],
-        buffer_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        cache_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
-        layer_idx: UInt32,
-        scale: Float32,
-        context: DeviceContextPtr,
-    ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            cache_lengths,
-            kv_lookup_table,
-            max_lengths,
-        )
-        generic_flare_mla_prefill_kv_cache_ragged[
-            write_softmax_info=True,
-            use_cascade_attention=False,
-            target=target,
-            mask_str=mask_str,
-            score_mod_str=score_mod_str,
-        ](
-            q.to_layout_tensor(),
-            k.to_layout_tensor(),
-            v.to_layout_tensor(),
-            buffer_row_offsets.to_layout_tensor(),
-            cache_offsets.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            kv_collection,
-            layer_idx,
-            scale,
-            output.to_layout_tensor(),
-            softmax_info.to_layout_tensor(),
-            context,
-        )
-
-
 @compiler.register("mo.mla.prefill.ragged.paged")
 struct Struct_mla_prefill_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
         dtype: DType,
-        softmax_type: DType,
         //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        softmax_info: OutputTensor[dtype=softmax_type, rank=3],
         q: InputTensor[dtype=dtype, rank=3],
         k: InputTensor[dtype=dtype, rank=3],
         v: InputTensor[dtype=dtype, rank=3],
@@ -7033,12 +6975,8 @@ struct Struct_mla_prefill_ragged_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
-        prev_output: InputTensor[dtype=dtype, rank=3],
-        prev_softmax_info: InputTensor[dtype=softmax_type, rank=3],
         context: DeviceContextPtr,
     ) raises:
-        var prev_output_nd = prev_output.to_layout_tensor()
-        var prev_softmax_info_nd = prev_softmax_info.to_layout_tensor()
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
@@ -7046,8 +6984,6 @@ struct Struct_mla_prefill_ragged_paged:
             max_lengths,
         )
         generic_flare_mla_prefill_kv_cache_ragged[
-            write_softmax_info=True,
-            use_cascade_attention=True,
             target=target,
             mask_str=mask_str,
             score_mod_str=score_mod_str,
@@ -7062,26 +6998,7 @@ struct Struct_mla_prefill_ragged_paged:
             layer_idx,
             scale,
             output.to_layout_tensor(),
-            softmax_info.to_layout_tensor(),
             context,
-            LayoutTensor[
-                prev_output_nd.dtype, Layout.row_major[3](), MutAnyOrigin
-            ](
-                prev_output_nd.ptr,
-                RuntimeLayout[Layout.row_major[3]()].row_major(
-                    prev_output_nd.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[
-                prev_softmax_info_nd.dtype,
-                Layout.row_major[3](),
-                MutAnyOrigin,
-            ](
-                prev_softmax_info_nd.ptr,
-                RuntimeLayout[Layout.row_major[3]()].row_major(
-                    prev_softmax_info_nd.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
         )
 
 

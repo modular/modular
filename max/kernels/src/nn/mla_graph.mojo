@@ -452,8 +452,6 @@ fn mla_prefill_branch_fp8[
     ](launch_shape, ctx)
 
     generic_flare_mla_prefill_kv_cache_ragged[
-        write_softmax_info=False,
-        use_cascade_attention=False,
         target=target,
         mask_str=mask_str,
         score_mod_str=score_mod_str,
@@ -468,9 +466,6 @@ fn mla_prefill_branch_fp8[
         layer_idx,
         scale,
         output,
-        LayoutTensor[DType.float32, Layout.row_major(1, 1, 1)](
-            UnsafePointer[Float32]()
-        ),
         ctx,
     )
 
