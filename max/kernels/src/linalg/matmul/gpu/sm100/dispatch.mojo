@@ -541,7 +541,7 @@ fn matmul_dispatch_sm100[
     # 2. Our GEMV matmul dosen't support float8 yet.
     # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
     @parameter
-    if a_type is DType.bfloat16:
+    if a_type == DType.bfloat16:
         if static_N == 1 or m == 1:
             logger.info("------ Executing GEMV Matmul------")
             gemv_gpu[

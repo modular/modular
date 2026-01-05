@@ -751,7 +751,7 @@ def main():
         comptime kernels = MatmulKernels[
             DType.bfloat16, DType.bfloat16, DType.bfloat16, False
         ]()
-        comptime config = kernels.ampere_256x128_3 if ctx.default_device_info is A100 else kernels.ampere_128x128_4
+        comptime config = kernels.ampere_256x128_3 if ctx.default_device_info == A100 else kernels.ampere_128x128_4
         run_matmul_split_k[DType.bfloat16, 512, 4096, 14336, config](
             ctx, atol=1.0, rng_width=1.0
         )

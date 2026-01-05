@@ -41,7 +41,7 @@ fn load_and_mma_16x8x32[
     mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
 ):
     __comptime_assert (
-        in_type is DType.float8_e4m3fn or in_type is DType.float8_e5m2
+        in_type == DType.float8_e4m3fn or in_type == DType.float8_e5m2
     ), "This kernel only supports E4M3 and E5M2 combinations"
 
     mma = TensorCore[DType.float32, in_type, IndexList[3](16, 8, 32), False]()

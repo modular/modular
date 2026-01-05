@@ -34,7 +34,6 @@ from memory import bitcast
 @register_passable("trivial")
 struct Consistency(
     Equatable,
-    Identifiable,
     ImplicitlyCopyable,
     Representable,
     Stringable,
@@ -83,7 +82,7 @@ struct Consistency(
         """
         self._value = value
 
-    @always_inline
+    @always_inline("builtin")
     fn __eq__(self, other: Self) -> Bool:
         """Compares two Consistency objects for equality.
 
@@ -106,18 +105,6 @@ struct Consistency(
             True if the objects are not equal, False otherwise.
         """
         return self._value != other._value
-
-    @always_inline
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if the Consistency object is the same as another.
-
-        Args:
-            other: The other Consistency object to compare with.
-
-        Returns:
-            True if the objects are the same, False otherwise.
-        """
-        return self == other
 
     fn __repr__(self) -> String:
         """Returns a string representation of a `Consistency`.
@@ -144,19 +131,19 @@ struct Consistency(
             A string slice representation of this consistency.
         """
 
-        if self is Self.NOT_ATOMIC:
+        if self == Self.NOT_ATOMIC:
             return "Consistency.NOT_ATOMIC"
-        if self is Self.UNORDERED:
+        if self == Self.UNORDERED:
             return "Consistency.UNORDERED"
-        if self is Self.MONOTONIC:
+        if self == Self.MONOTONIC:
             return "Consistency.MONOTONIC"
-        if self is Self.ACQUIRE:
+        if self == Self.ACQUIRE:
             return "Consistency.ACQUIRE"
-        if self is Self.RELEASE:
+        if self == Self.RELEASE:
             return "Consistency.RELEASE"
-        if self is Self.ACQUIRE_RELEASE:
+        if self == Self.ACQUIRE_RELEASE:
             return "Consistency.ACQUIRE_RELEASE"
-        if self is Self.SEQUENTIAL:
+        if self == Self.SEQUENTIAL:
             return "Consistency.SEQUENTIAL"
 
         return "Consistency.UNKNOWN"
@@ -168,19 +155,19 @@ struct Consistency(
         Returns:
             The MLIR attribute representation of the Consistency object.
         """
-        if self is Self.NOT_ATOMIC:
+        if self == Self.NOT_ATOMIC:
             return __mlir_attr.`#pop<atomic_ordering not_atomic>`
-        if self is Self.UNORDERED:
+        if self == Self.UNORDERED:
             return __mlir_attr.`#pop<atomic_ordering unordered>`
-        if self is Self.MONOTONIC:
+        if self == Self.MONOTONIC:
             return __mlir_attr.`#pop<atomic_ordering monotonic>`
-        if self is Self.ACQUIRE:
+        if self == Self.ACQUIRE:
             return __mlir_attr.`#pop<atomic_ordering acquire>`
-        if self is Self.RELEASE:
+        if self == Self.RELEASE:
             return __mlir_attr.`#pop<atomic_ordering release>`
-        if self is Self.ACQUIRE_RELEASE:
+        if self == Self.ACQUIRE_RELEASE:
             return __mlir_attr.`#pop<atomic_ordering acq_rel>`
-        if self is Self.SEQUENTIAL:
+        if self == Self.SEQUENTIAL:
             return __mlir_attr.`#pop<atomic_ordering seq_cst>`
 
         abort()

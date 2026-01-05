@@ -584,7 +584,7 @@ fn multi_stage_store_C[
     # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
     # We should remove this once GEX-2630 is fixed.
     comptime epilogue_dtype = (
-        c_type if input_type is DType.bfloat16 else DType.float32
+        c_type if input_type == DType.bfloat16 else DType.float32
     )
 
     comptime N_dim = 0 if transpose_c else 1
@@ -1510,7 +1510,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
-    __comptime_assert c_type is not DType.float32, "c_type cannot be float32"
+    __comptime_assert c_type != DType.float32, "c_type cannot be float32"
     __comptime_assert transpose_b, "only support k-major B"
 
     comptime num_output_warps = 4

@@ -41,7 +41,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     against golden values computed with PyTorch.
     """
     __comptime_assert (
-        dtype is DType.float32
+        dtype == DType.float32
     ), "goldens only for float32, currently"
 
     # Set up test hyperparameters.

@@ -251,7 +251,7 @@ def main():
     with DeviceContext() as ctx:
         # QKV perm dim test
 
-        comptime is_sm100_kernel_applicable = ctx.default_device_info is B200
+        comptime is_sm100_kernel_applicable = ctx.default_device_info == B200
 
         @parameter
         if not is_sm100_kernel_applicable:

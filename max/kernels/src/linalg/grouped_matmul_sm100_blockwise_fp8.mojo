@@ -530,7 +530,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     __comptime_assert config.transpose_b, "Only support transposed B"
 
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn for A and B"
 
     comptime accum_type = get_accum_type[a_type]()
@@ -2008,7 +2008,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     __comptime_assert transpose_b, "Only support transposed B"
 
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     __comptime_assert (
@@ -2259,7 +2259,7 @@ fn grouped_matmul_dynamic_scaled_fp8[
     ctx: DeviceContext,
 ) raises:
     __comptime_assert (
-        ctx.default_device_info is B200 or ctx.default_device_info is H100
+        ctx.default_device_info == B200 or ctx.default_device_info == H100
     ), "Only support SM100 or SM90"
     __comptime_assert (
         m_scale_granularity == 1
@@ -2302,7 +2302,7 @@ fn grouped_matmul_dynamic_scaled_fp8[
         return
 
     @parameter
-    if ctx.default_device_info is B200 and tokens_padded_per_expert:
+    if ctx.default_device_info == B200 and tokens_padded_per_expert:
         comptime umma_shape: IndexList[3] = Index(64, 64, 32)
 
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](

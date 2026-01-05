@@ -355,7 +355,7 @@ fn flare_mla_decoding_dispatch[
     __comptime_assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
-    comptime has_enough_smem = ctx.default_device_info is A100 or ctx.default_device_info is H100
+    comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
     __comptime_assert (
         depth == UInt(Int(q.layout.shape[q.rank - 1])) == 576
@@ -389,7 +389,7 @@ fn flare_mla_decoding_dispatch[
         return
 
     @parameter
-    if ctx.default_device_info is B200:
+    if ctx.default_device_info == B200:
         # For now, it is not partitioned for SM100
         # TODO: add partitioning for SM100
         var num_partitions_value: Int = 1
@@ -426,7 +426,7 @@ fn flare_mla_decoding_dispatch[
         )
     else:
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
-        comptime has_enough_smem = ctx.default_device_info is A100 or ctx.default_device_info is H100
+        comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
         comptime BM = 16 if (
             num_heads == 16 or not has_enough_smem or has_amd_gpu_accelerator()
@@ -1355,7 +1355,7 @@ fn flare_mla_prefill[
         q.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     __comptime_assert (
-        q.dtype is DType.float32 or q.dtype.is_half_float()
+        q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     @always_inline
@@ -1518,7 +1518,7 @@ fn flare_mla_prefill[
         q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     __comptime_assert (
-        q.dtype is DType.float32 or q.dtype.is_half_float()
+        q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     @always_inline
@@ -1754,7 +1754,7 @@ fn flare_mla_prefill_dispatch[
         ctx, prev_softmax_info_ptr, prev_softmax_info_size, owning=False
     )
 
-    comptime is_sm100_available = ctx.default_device_info is B200 and use_fa4
+    comptime is_sm100_available = ctx.default_device_info == B200 and use_fa4
 
     @parameter
     if is_sm100_available and (

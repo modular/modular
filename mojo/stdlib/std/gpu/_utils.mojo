@@ -128,25 +128,25 @@ comptime _dtype_to_llvm_type_f8[dtype: DType] = __mlir_type.`i8` if dtype in (
 
 comptime _dtype_to_llvm_type_bf16[
     dtype: DType
-] = __mlir_type.`bf16` if dtype is DType.bfloat16 else _dtype_to_llvm_type_f8[
+] = __mlir_type.`bf16` if dtype == DType.bfloat16 else _dtype_to_llvm_type_f8[
     dtype
 ]
 
 comptime _dtype_to_llvm_type_f16[
     dtype: DType
-] = __mlir_type.`f16` if dtype is DType.float16 else _dtype_to_llvm_type_bf16[
+] = __mlir_type.`f16` if dtype == DType.float16 else _dtype_to_llvm_type_bf16[
     dtype
 ]
 
 comptime _dtype_to_llvm_type_f32[
     dtype: DType
-] = __mlir_type.`f32` if dtype is DType.float32 else _dtype_to_llvm_type_f16[
+] = __mlir_type.`f32` if dtype == DType.float32 else _dtype_to_llvm_type_f16[
     dtype
 ]
 
 comptime _dtype_to_llvm_type_f64[
     dtype: DType
-] = __mlir_type.`f64` if dtype is DType.float64 else _dtype_to_llvm_type_f32[
+] = __mlir_type.`f64` if dtype == DType.float64 else _dtype_to_llvm_type_f32[
     dtype
 ]
 

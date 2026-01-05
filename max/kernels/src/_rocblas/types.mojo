@@ -152,13 +152,13 @@ struct DataType:
         self._value = value
 
     fn __init__(out self, dtype: DType) raises:
-        if dtype is DType.float16:
+        if dtype == DType.float16:
             self = Self.F16_R
-        elif dtype is DType.bfloat16:
+        elif dtype == DType.bfloat16:
             self = Self.BF16_R
-        elif dtype is DType.float32:
+        elif dtype == DType.float32:
             self = Self.F32_R
-        elif dtype is DType.float64:
+        elif dtype == DType.float64:
             self = Self.F64_R
         else:
             raise Error(

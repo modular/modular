@@ -336,7 +336,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
             self.num_queries_per_block = num_queries_per_block.or_else(
                 UInt(
                     32 if Self.dtype
-                    is DType.float32 else (
+                    == DType.float32 else (
                         (
                             256 if use_experimental_cdna4_kernel else 128
                         ) if has_amd_gpu_accelerator() else 64
@@ -344,17 +344,17 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
                 )
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
-            var bk_type_factor = 1 if Self.dtype is DType.float32 else 2
+            var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
             self.BK = BK.or_else(
                 UInt(16 * bk_arch_factor * bk_type_factor)
             ) if has_nvidia_gpu_accelerator() else 32
             self.WN = WN.or_else(
-                32 if Self.dtype is DType.float32 else self.num_keys_per_block
+                32 if Self.dtype == DType.float32 else self.num_keys_per_block
             )
         self.WM = WM.or_else(
             UInt(
                 32 if Self.dtype
-                is DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
+                == DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
             )
         )
 

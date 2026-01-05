@@ -460,7 +460,7 @@ fn matmul_dynamic_scaled_fp8[
         )
 
         @parameter
-        if ctx.default_device_info is B200:
+        if ctx.default_device_info == B200:
 
             @parameter
             @always_inline
@@ -1219,7 +1219,7 @@ fn blockwise_scaled_fp8_with_epilogue[
     # 1D/2D (1x128)x(128x128) blockwise scaling
     @parameter
     if (
-        ctx.default_device_info is B200
+        ctx.default_device_info == B200
         and transpose_b
         and c_type == DType.bfloat16
         and scales_granularity_mnk[0] == 1

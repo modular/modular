@@ -756,7 +756,7 @@ fn multistage_gemm_kernel[
         or (
             a_type in (DType.float8_e4m3fn, DType.float8_e5m2)
             and a_type == b_type
-            and c_type is DType.float32
+            and c_type == DType.float32
         ),
         "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma",
     ]()

@@ -511,8 +511,8 @@ fn test_winograd_conv_gpu[
     ctx.synchronize()
 
     # Verify results
-    comptime atol = 1e-06 if dtype is DType.float32 else 1e-1
-    comptime rtol = 1e-06 if dtype is DType.float32 else 1e-4
+    comptime atol = 1e-06 if dtype == DType.float32 else 1e-1
+    comptime rtol = 1e-06 if dtype == DType.float32 else 1e-4
 
     with output_device.map_to_host() as output_host:
         with output_ref_device.map_to_host() as output_ref_host:

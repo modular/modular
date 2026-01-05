@@ -840,7 +840,7 @@ struct HopperMatmulSM90Kernel[
 
             var output_reg_tile = (
                 final_c_reg_tile if Self.a_type
-                is DType.float8_e4m3fn else c_reg_tile
+                == DType.float8_e4m3fn else c_reg_tile
             )
 
             Self.consumer_output(
@@ -980,7 +980,7 @@ struct HopperMatmulSM90Kernel[
             var work_tile_info = scheduler.initial_work_tile_info()
 
             @parameter
-            if Self.a_type is DType.float8_e4m3fn:
+            if Self.a_type == DType.float8_e4m3fn:
                 _ = final_c_reg_tile.fill(0.0)
             else:
                 _ = c_reg_tile.fill(0.0)
@@ -1000,7 +1000,7 @@ struct HopperMatmulSM90Kernel[
 
                     var output_reg_tile = (
                         final_c_reg_tile if Self.a_type
-                        is DType.float8_e4m3fn else c_reg_tile
+                        == DType.float8_e4m3fn else c_reg_tile
                     )
 
                     scheduler.reduction(
@@ -1165,7 +1165,7 @@ struct HopperMatmulSM90Kernel[
 
             var output_reg_tile = (
                 final_c_reg_tile if Self.a_type
-                is DType.float8_e4m3fn else c_reg_tile
+                == DType.float8_e4m3fn else c_reg_tile
             )
 
             # C layout for current expert
@@ -1249,7 +1249,7 @@ struct HopperMatmulSM90Kernel[
         """
 
         @parameter
-        if Self.a_type is DType.float8_e4m3fn:
+        if Self.a_type == DType.float8_e4m3fn:
             _ = final_c_reg_tile.fill(0.0)
         else:
             _ = c_reg_tile.fill(0.0)
@@ -1290,7 +1290,7 @@ struct HopperMatmulSM90Kernel[
                         )
 
                 @parameter
-                if Self.a_type is DType.float8_e4m3fn:
+                if Self.a_type == DType.float8_e4m3fn:
                     fp8_promotion_iter += 1
                     if fp8_promotion_iter == Self.promotion_frequency:
                         Self.promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
@@ -1307,7 +1307,7 @@ struct HopperMatmulSM90Kernel[
 
         # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
         @parameter
-        if Self.a_type is DType.float8_e4m3fn:
+        if Self.a_type == DType.float8_e4m3fn:
             if fp8_promotion_iter != 0:
                 Self.promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
 
@@ -1363,7 +1363,7 @@ struct HopperMatmulSM90Kernel[
     ):
         warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
-        comptime scale_c = 0 if Self.a_type is DType.float8_e4m3fn else 1
+        comptime scale_c = 0 if Self.a_type == DType.float8_e4m3fn else 1
         wgmma_op.wgmma[Self.num_consumer, scale_c=scale_c](
             a_tile,
             b_tile,

@@ -95,7 +95,7 @@ struct TensorMapDataType:
         ), "Unsupported dtype"
 
         @parameter
-        if dtype is DType.float32:
+        if dtype == DType.float32:
             return Self.FLOAT32
         elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
             return Self.UINT8

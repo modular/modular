@@ -487,7 +487,7 @@ fn get_ib_sts() -> Int32:
 
 
 @fieldwise_init
-struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Writable):
+struct Scope(Equatable, ImplicitlyCopyable, Writable):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from
@@ -532,19 +532,6 @@ struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Writable):
         Returns:
             True if the instances are the same, False otherwise.
         """
-        return self is other
-
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if two `Scope` instances have the same value.
-
-        Compares the underlying integer values.
-
-        Args:
-            other: The other `Scope` instance to compare with.
-
-        Returns:
-            True if the values are the same, False otherwise.
-        """
         return self._value == other._value
 
     @no_inline
@@ -554,19 +541,19 @@ struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Writable):
         Args:
             w: The writer to write to.
         """
-        if self is Self.NONE:
+        if self == Self.NONE:
             return w.write("none")
-        if self is Self.THREAD:
+        if self == Self.THREAD:
             return w.write("thread")
-        if self is Self.WARP:
+        if self == Self.WARP:
             return w.write("warp")
-        if self is Self.BLOCK:
+        if self == Self.BLOCK:
             return w.write("block")
-        if self is Self.CLUSTER:
+        if self == Self.CLUSTER:
             return w.write("cluster")
-        if self is Self.GPU:
+        if self == Self.GPU:
             return w.write("gpu")
-        if self is Self.SYSTEM:
+        if self == Self.SYSTEM:
             return w.write("system")
 
         return w.write("<<unknown scope>>")
@@ -601,13 +588,13 @@ struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Writable):
         """
         if self in (Self.NONE, Self.THREAD, Self.WARP):
             return ""
-        if self is Self.BLOCK:
+        if self == Self.BLOCK:
             return "cta"
-        if self is Self.CLUSTER:
+        if self == Self.CLUSTER:
             return "cluster"
-        if self is Self.GPU:
+        if self == Self.GPU:
             return "gpu"
-        if self is Self.SYSTEM:
+        if self == Self.SYSTEM:
             return "sys"
         return "<<invalid scope>>"
 
@@ -641,7 +628,7 @@ fn threadfence[scope: Scope = Scope.GPU]():
         is_nvidia_gpu()
     ), "threadfence is only implemented on NVIDIA GPUs"
 
-    comptime suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
+    comptime suffix = "gl" if scope == Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
 
 
@@ -659,7 +646,7 @@ fn _get_type_suffix[dtype: DType]() -> StaticString:
 
 fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
     @parameter
-    if dtype is DType.float32:
+    if dtype == DType.float32:
         return "f32"
     elif dtype in (DType.int32, DType.uint32):
         return "i32"
@@ -673,7 +660,7 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
         "the _get_nvtx_register_constraint function is currently restricted"
         " to only be defined on NVIDIA GPUs"
     )
-    if dtype is DType.bool:
+    if dtype == DType.bool:
         return "b"
     if dtype.is_half_float():
         return "h"
@@ -685,9 +672,9 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
             return "r"
         if width == 64:
             return "l"
-    if dtype is DType.float32:
+    if dtype == DType.float32:
         return "f"
-    if dtype is DType.float64:
+    if dtype == DType.float64:
         return "d"
 
     return "<<unknown_register_constraint>>"
@@ -783,7 +770,7 @@ fn store_release[
         ](value, ptr.address)
     elif is_apple_gpu():
         comptime mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
-        comptime air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
+        comptime air_scope = _AirScope.Workgroup if scope == Scope.BLOCK else _AirScope.Device
         external_call["air.atomic.fence", NoneType](
             mem_flags,
             _AirMemOrder.SeqCst,
@@ -918,7 +905,7 @@ fn load_acquire[
     elif is_apple_gpu():
         comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
         comptime mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
-        comptime air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
+        comptime air_scope = _AirScope.Workgroup if scope == Scope.BLOCK else _AirScope.Device
         comptime load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
         comptime load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
             dtype
@@ -1328,17 +1315,17 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     """
 
     @parameter
-    if cache_policy is CacheOperation.ALWAYS:
+    if cache_policy == CacheOperation.ALWAYS:
         return 0x00  # SC=00, NT=0
-    elif cache_policy is CacheOperation.STREAMING:
+    elif cache_policy == CacheOperation.STREAMING:
         return 0x02  # SC=00, NT=1
-    elif cache_policy is CacheOperation.GLOBAL:
+    elif cache_policy == CacheOperation.GLOBAL:
         return 0x10  # SC=10, NT=0
-    elif cache_policy is CacheOperation.VOLATILE:
+    elif cache_policy == CacheOperation.VOLATILE:
         return 0x11  # SC=11, NT=0
-    elif cache_policy is CacheOperation.WORKGROUP | CacheOperation.STREAMING:
+    elif cache_policy == CacheOperation.WORKGROUP | CacheOperation.STREAMING:
         return 0x03  # SC=01, NT=1
-    elif cache_policy is CacheOperation.GLOBAL | CacheOperation.STREAMING:
+    elif cache_policy == CacheOperation.GLOBAL | CacheOperation.STREAMING:
         return 0x12  # SC=10, NT=1
     else:
         # Default to ALWAYS for unknown/unsupported operations

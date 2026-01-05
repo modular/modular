@@ -103,7 +103,7 @@ fn test[
     m: Int,
     n: Int,
     k: Int,
-    rtol: Float64 = 1e-3 if dtype is DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
     __comptime_assert Bool(N) and Bool(

@@ -48,7 +48,7 @@ fn _simd_load_internal[
     simd_width: Int
 ](buffer: NDBuffer, index: Int) -> SIMD[buffer.type, simd_width]:
     @parameter
-    if buffer.type is DType.bool:
+    if buffer.type == DType.bool:
         var v = buffer.data.bitcast[UInt8]().load[width=simd_width](index)
         return v.cast[buffer.type]()
     return buffer.data.load[width=simd_width](index)
@@ -72,7 +72,7 @@ fn simd_load[
     if stride == 0:
         return buffer.data.load(flat_index)
 
-    if buffer.type is DType.bool:
+    if buffer.type == DType.bool:
         var v = strided_load[simd_width](
             buffer.data.bitcast[UInt8]().offset(flat_index),
             stride,
@@ -93,7 +93,7 @@ fn simd_store[
 
     # We have to cast bools into their runtime storage type.
     @parameter
-    if buffer.type is DType.bool:
+    if buffer.type == DType.bool:
         buffer.data.bitcast[UInt8]().store(flat_index, val.cast[DType.uint8]())
     else:
         buffer.data.store(flat_index, val)
@@ -121,7 +121,7 @@ fn run_elementwise[
     # Blackwell support 32B ld/st, see KERN-2037
     comptime pack_size = 32 // size_of[
         dtype
-    ]() if ctx.default_device_info is B200 else simd_width_of[
+    ]() if ctx.default_device_info == B200 else simd_width_of[
         dtype, target = get_gpu_target()
     ]()
     comptime align = align_of[

@@ -62,7 +62,7 @@ fn test[
     m: Int,
     n: Int,
     k: Int,
-    rtol: Float64 = 1e-3 if dtype is DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
 ) raises:
     print(b, "x", m, "x", n, "x", k, "transpose_b", transpose_b)
 

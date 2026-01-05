@@ -411,7 +411,7 @@ fn test[
 fn test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     var depths = [64, 128]
 
-    if info is materialize[H100]() or info is materialize[B200]():
+    if info == materialize[H100]() or info == materialize[B200]():
         depths.append(80)
     return depths^
 
@@ -931,8 +931,8 @@ def main():
 
                 @parameter
                 if (
-                    ctx.default_device_info is A100
-                    or ctx.default_device_info is H100
+                    ctx.default_device_info == A100
+                    or ctx.default_device_info == H100
                 ):
                     test_decoding_large_group[batch_size, 1](ctx)
 

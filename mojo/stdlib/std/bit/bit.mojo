@@ -66,7 +66,7 @@ fn count_leading_zeros[
     __comptime_assert dtype.is_integral(), "must be integral"
 
     # HACK(#5003): remove this workaround
-    comptime d = dtype if dtype is not DType.int else (
+    comptime d = dtype if dtype != DType.int else (
         DType.int32 if size_of[dtype]() == 4 else DType.int64
     )
     return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](

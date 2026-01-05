@@ -103,7 +103,7 @@ fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
         return DType.int32
     else:
         var dtype = _get_index_type(address_space)
-        return DType.int32 if dtype is DType.int32 else DType.int64
+        return DType.int32 if dtype == DType.int32 else DType.int64
 
 
 fn _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:

@@ -219,7 +219,7 @@ fn get_mha_decoding_num_partitions[
 
 fn flash_attention_hw_supported[qkv_type: DType]() -> Bool:
     return has_nvidia_gpu_accelerator() or (
-        has_amd_gpu_accelerator() and qkv_type is DType.bfloat16
+        has_amd_gpu_accelerator() and qkv_type == DType.bfloat16
     )
 
 
@@ -229,10 +229,10 @@ fn depth_supported_by_gpu[
     config: MHAConfig,
     info: GPUInfo,
 ]() -> Bool:
-    comptime is_sm90or100 = (info is H100) or (info is B200)
+    comptime is_sm90or100 = (info == H100) or (info == B200)
     comptime head_depth_supported = depth == 128 or (
         depth == 64
-        and (is_sm90or100 or info is A100 or has_amd_gpu_accelerator())
+        and (is_sm90or100 or info == A100 or has_amd_gpu_accelerator())
     ) or (
         depth == 256
         and (
@@ -322,7 +322,7 @@ fn flash_attention[
         q.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     __comptime_assert (
-        q.dtype is DType.float32 or q.dtype.is_half_float()
+        q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     # TODO docstring
@@ -494,7 +494,7 @@ fn flash_attention_dispatch[
         batch_size = q.dim[0]()
 
     comptime q_half_float = dtype in (DType.float16, DType.bfloat16)
-    comptime q_half_float_or_fp32 = dtype is DType.float32 or q_half_float
+    comptime q_half_float_or_fp32 = dtype == DType.float32 or q_half_float
 
     var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
     var output_device = DeviceBuffer[output.dtype](
@@ -503,8 +503,8 @@ fn flash_attention_dispatch[
 
     @parameter
     if _is_flash_attention_applicable:
-        comptime is_sm90 = ctx.default_device_info is H100
-        comptime is_sm100 = ctx.default_device_info is B200
+        comptime is_sm90 = ctx.default_device_info == H100
+        comptime is_sm100 = ctx.default_device_info == B200
         if not is_token_generation:
             # TODO note that we have to handle mask tensor alignment here.
             # Choose matmul parameters based on dtype.
@@ -662,7 +662,7 @@ fn flash_attention_dispatch[
             comptime BM = 16
             comptime BN = depth
             comptime BK = 32 if has_amd_gpu_accelerator() else (
-                16 if q.dtype is DType.float32 else 32
+                16 if q.dtype == DType.float32 else 32
             )
             comptime WM = BM
             comptime WN = 32
@@ -1244,7 +1244,7 @@ fn flash_attention_ragged[
     ), "Q, K, V, output should have same type."
 
     __comptime_assert (
-        q.dtype is DType.float32 or q.dtype.is_half_float()
+        q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     # Runtime dimensions.

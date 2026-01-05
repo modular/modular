@@ -375,7 +375,7 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
             @parameter
             if _has_shape[(16, 16, 8, 8)](a.size, b.size, c.size, d.size):
-                comptime type_name = "f16" if a.dtype is DType.float16 else "bf16"
+                comptime type_name = "f16" if a.dtype == DType.float16 else "bf16"
                 return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
             else:
                 _unsupported_mma_op(d, a, b, c)
@@ -383,8 +383,8 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         elif (
             a.dtype.is_float8()
             and b.dtype.is_float8()
-            and c.dtype is DType.float32
-            and d.dtype is DType.float32
+            and c.dtype == DType.float32
+            and d.dtype == DType.float32
         ):
 
             @parameter
@@ -426,8 +426,8 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             _is_amd_rdna3()
             and a.dtype.is_float8()
             and b.dtype.is_float8()
-            and c.dtype is DType.float32
-            and d.dtype is DType.float32
+            and c.dtype == DType.float32
+            and d.dtype == DType.float32
         ):
 
             @parameter
@@ -441,10 +441,10 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 _unsupported_mma_op(d, a, b, c)
                 return ""
         elif (
-            (a.dtype is DType.int8 or a.dtype is DType.uint8)
-            and (b.dtype is DType.int8 or b.dtype is DType.uint8)
-            and c.dtype is DType.int32
-            and d.dtype is DType.int32
+            (a.dtype == DType.int8 or a.dtype == DType.uint8)
+            and (b.dtype == DType.int8 or b.dtype == DType.uint8)
+            and c.dtype == DType.int32
+            and d.dtype == DType.int32
         ):
 
             @parameter
@@ -460,10 +460,10 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 _unsupported_mma_op(d, a, b, c)
                 return ""
         elif (
-            a.dtype is DType._uint4
-            and b.dtype is DType._uint4
-            and c.dtype is DType.int32
-            and d.dtype is DType.int32
+            a.dtype == DType._uint4
+            and b.dtype == DType._uint4
+            and c.dtype == DType.int32
+            and d.dtype == DType.int32
         ):
 
             @parameter
@@ -485,10 +485,10 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     @parameter
     if _is_amd_rdna3() and a.dtype.is_float8():
         comptime target_dtype = DType.bfloat16 if (
-            a.dtype is DType.float8_e5m2 or a.dtype is DType.float8_e5m2fnuz
+            a.dtype == DType.float8_e5m2 or a.dtype == DType.float8_e5m2fnuz
         ) else DType.float16
         comptime intrinsic_suffix = "bf16" if (
-            a.dtype is DType.float8_e5m2 or a.dtype is DType.float8_e5m2fnuz
+            a.dtype == DType.float8_e5m2 or a.dtype == DType.float8_e5m2fnuz
         ) else "f16"
 
         @parameter
@@ -527,7 +527,7 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         comptime intrinsic_name = get_intrinsic_name()
 
         @parameter
-        if a.dtype is DType.bfloat16:
+        if a.dtype == DType.bfloat16:
             var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
                 bitcast[DType.int16, 16](a), bitcast[DType.int16, 16](b), c
             )
@@ -539,8 +539,8 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         @parameter
         if (
-            a.dtype is DType.int8 or a.dtype is DType.uint8
-        ) and c.dtype is DType.int32:
+            a.dtype == DType.int8 or a.dtype == DType.uint8
+        ) and c.dtype == DType.int32:
             # Cast inputs to int32 for WMMA intrinsic
             var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
                 bitcast[DType.int32, 1](a), bitcast[DType.int32, 1](b), c

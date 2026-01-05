@@ -1024,7 +1024,7 @@ fn dual_gemm[
         if (
             a_type == b_type
             and a_type.is_half_float()
-            and ctx.default_device_info is A100
+            and ctx.default_device_info == A100
             and transpose_b
         ):
             comptime static_K = a_shape.get[1]()

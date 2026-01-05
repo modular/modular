@@ -26,7 +26,7 @@ fn roundeven_to_int32[
     @parameter
     if (
         CompilationTarget.has_avx512f()
-        and dtype is DType.float32
+        and dtype == DType.float32
         and simd_width >= native_width
     ):
         var x_i32 = SIMD[DType.int32, simd_width]()
@@ -53,7 +53,7 @@ fn roundeven_to_int32[
     @parameter
     if (
         CompilationTarget.has_neon()
-        and dtype is DType.float32
+        and dtype == DType.float32
         and simd_width >= native_width
     ):
         var x_i32 = SIMD[DType.int32, simd_width]()

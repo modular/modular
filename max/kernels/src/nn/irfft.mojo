@@ -174,10 +174,10 @@ fn _irfft[
         input.rank == output.rank
     ), "Input and output must have the same rank"
     __comptime_assert (
-        input_type is DType.float32
+        input_type == DType.float32
     ), "Only Float32 is supported for IRFFT"
     __comptime_assert (
-        output_type is DType.float32
+        output_type == DType.float32
     ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might
     # not be exact.

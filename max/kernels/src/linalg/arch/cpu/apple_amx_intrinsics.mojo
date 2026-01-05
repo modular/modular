@@ -334,7 +334,7 @@ fn transpose_z_to_x_or_y[
     # The destination must be either "X" or "Y".
     __comptime_assert destination == "X" or destination == "Y"
     # The type must be Float32.
-    __comptime_assert dtype is DType.float32
+    __comptime_assert dtype == DType.float32
 
     # make the y offset field
     #  shift left by 6 to make this an offset in rows,
@@ -376,7 +376,7 @@ fn fma[
     # The mode must be either "TILE" or "ROW".
     __comptime_assert mode == "TILE" or mode == "ROW"
     # The type must be Float32.
-    __comptime_assert dtype is DType.float32
+    __comptime_assert dtype == DType.float32
 
     comptime is_row_mode = mode == "ROW"
 
@@ -492,11 +492,11 @@ fn dot_at_b_impl(
 @always_inline
 fn dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
     __comptime_assert (
-        c.dtype is DType.float32 or c.dtype is DType.float16
+        c.dtype == DType.float32 or c.dtype == DType.float16
     ), "the buffer dtype must be float32 or float16"
 
     @parameter
-    if c.dtype is DType.float32:
+    if c.dtype == DType.float32:
         comptime f32_tensor = LayoutTensor[
             DType.float32,
             Layout.row_major(16, 16),
@@ -507,7 +507,7 @@ fn dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
             rebind[f32_tensor[ImmutAnyOrigin]](a),
             rebind[f32_tensor[ImmutAnyOrigin]](b),
         )
-    elif c.dtype is DType.float16:
+    elif c.dtype == DType.float16:
         comptime f16_tensor = LayoutTensor[
             DType.float16,
             Layout.row_major(32, 32),

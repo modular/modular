@@ -764,7 +764,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             not has_zp.value()
         ), "Zero point is not supported for quantization."
         __comptime_assert (
-            weight_dtype is DType.uint8
+            weight_dtype == DType.uint8
         ), "Expect GPTQ weights in an uint8 tensor."
 
         _qmatmul_common[
@@ -898,7 +898,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             not has_zp.value()
         ), "Zero point is not supported for quantization."
         __comptime_assert (
-            weight_dtype is DType.uint8
+            weight_dtype == DType.uint8
         ), "Expect GPTQ weights to be a 'uint8' tensor."
 
         _qmatmul_common[

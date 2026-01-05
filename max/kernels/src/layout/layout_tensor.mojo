@@ -6945,7 +6945,7 @@ fn copy_sram_to_dram[
         dst_fragments.copy_from(src_fragments)
     else:
         __comptime_assert src.dtype == dst.dtype or (
-            src.dtype is DType.float32 and dst.dtype.is_half_float()
+            src.dtype == DType.float32 and dst.dtype.is_half_float()
         ), "Only support FP32 -> half precision downcast during copy."
 
         comptime simd_size = simd_width_of[dst.dtype]()
@@ -7819,7 +7819,7 @@ fn copy_local_to_shared[
             return
 
     __comptime_assert src.dtype == dst.dtype or (
-        src.dtype is DType.float32 and dst.dtype.is_half_float()
+        src.dtype == DType.float32 and dst.dtype.is_half_float()
     ), "Only support FP32 -> half precision downcast during copy."
     __comptime_assert (
         src.element_size == dst.element_size
@@ -7970,7 +7970,7 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     ), "src address space must be LOCAL."
 
     __comptime_assert (
-        dst.dtype.is_half_float() and src.dtype is DType.float32
+        dst.dtype.is_half_float() and src.dtype == DType.float32
     ), "Only support copy float32 to bfloat16 for now"
 
     __comptime_assert (

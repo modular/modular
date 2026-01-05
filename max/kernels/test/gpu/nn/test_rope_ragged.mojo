@@ -33,7 +33,7 @@ def test_rope_ragged_gpu[
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
     __comptime_assert (
-        dtype is DType.float32
+        dtype == DType.float32
     ), "goldens only for float32, currently"
 
     # Set up test hyperparameters - same as CPU test

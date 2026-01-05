@@ -153,7 +153,7 @@ fn top_k[
 
     Parameters:
         dtype: Data type of the input buffer.
-        out_idx_type: The data dtype of the output indices (default is DType.int64).
+        out_idx_type: The data dtype of the output indices (default == DType.int64).
         largest: Whether to find the maximum (top k) or minimum value (bottom k).
         target: The target to run on.
 
@@ -182,7 +182,7 @@ fn top_k[
     @parameter
     if is_cpu[target]():
         __comptime_assert (
-            out_idx_type is DType.int64
+            out_idx_type == DType.int64
         ), "out_idx_type must be int64 for cpu"
 
         comptime grain_size = 1000
@@ -405,7 +405,7 @@ fn fused_token_sampling_cpu[
     __comptime_assert (
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
-    __comptime_assert out_idx_type is DType.int64, "out_idx_type must be int64"
+    __comptime_assert out_idx_type == DType.int64, "out_idx_type must be int64"
 
     bound_max_k = 255 if max_k == -1 else max_k
 
@@ -1296,7 +1296,7 @@ fn _topk_gpu[
 
     Parameters:
         dtype: DType - The data dtype of the input tensor.
-        out_idx_type: DType - The data dtype of the output indices (default is DType.int).
+        out_idx_type: DType - The data dtype of the output indices (default == DType.int).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
         _force_old_impl: Bool - Whether to force use the old implementation.
@@ -1543,7 +1543,7 @@ fn topk_gpu[
 
     Parameters:
         dtype: DType - The data dtype of the input tensor.
-        out_idx_type: DType - The data dtype of the output indices (default is DType.int).
+        out_idx_type: DType - The data dtype of the output indices (default == DType.int).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
         _force_old_impl: Bool - Whether to force use the old implementation.

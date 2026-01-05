@@ -584,12 +584,12 @@ fn matmul_sm100_blockwise_scaled_fp8[
     ]()
 
     constrained[
-        a_type == b_type and a_type is DType.float8_e4m3fn,
+        a_type == b_type and a_type == DType.float8_e4m3fn,
         "Only support float8_e4m3fn",
     ]()
 
     constrained[
-        a_scales_type == b_scales_type and a_scales_type is DType.float32,
+        a_scales_type == b_scales_type and a_scales_type == DType.float32,
         "Only support float32 for scales",
     ]()
 

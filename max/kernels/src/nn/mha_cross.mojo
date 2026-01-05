@@ -261,7 +261,7 @@ fn mha_cross_gpu_naive[
         q.dtype == cache_t.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     __comptime_assert (
-        q.dtype is DType.float32 or q.dtype.is_half_float()
+        q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     comptime config = MHAConfig[dtype](

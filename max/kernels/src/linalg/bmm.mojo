@@ -1507,7 +1507,7 @@ fn batched_matmul_dynamic_scaled_fp8[
     ctx: DeviceContext,
 ) raises:
     __comptime_assert (
-        ctx.default_device_info is B200 or ctx.default_device_info is H100
+        ctx.default_device_info == B200 or ctx.default_device_info == H100
     ), "Only support SM100 or SM90"
     __comptime_assert (
         m_scale_granularity == 1
@@ -1527,7 +1527,7 @@ fn batched_matmul_dynamic_scaled_fp8[
     ), "Only support block-wise scale granularity"
 
     @parameter
-    if ctx.default_device_info is B200:
+    if ctx.default_device_info == B200:
         var a_tensor = from_ndbuffer_row_major(a)
         var b_tensor = from_ndbuffer_row_major(b)
         var c_tensor = from_ndbuffer_row_major(c)

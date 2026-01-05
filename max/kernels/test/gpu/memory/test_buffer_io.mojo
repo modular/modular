@@ -253,5 +253,5 @@ def main():
         test_buffer_lds[DType.float32, 1](ctx)
 
         @parameter
-        if ctx.default_device_info is MI355X:
+        if ctx.default_device_info == MI355X:
             test_buffer_lds[DType.bfloat16, 8](ctx)

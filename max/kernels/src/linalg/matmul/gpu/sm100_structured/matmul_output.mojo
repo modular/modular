@@ -368,7 +368,7 @@ fn multi_stage_store_C[
     constrained[num_m_mmas == 1 and num_n_mmas == 1]()
 
     # Epilogue dtype: use c_type for bf16, float32 for FP8 (GEX-2630 workaround)
-    comptime epilogue_dtype = c_type if input_type is DType.bfloat16 else DType.float32
+    comptime epilogue_dtype = c_type if input_type == DType.bfloat16 else DType.float32
 
     comptime N_dim = 0 if transpose_c else 1
     comptime stageN = c_smem_layout.shape[N_dim].value()
@@ -475,7 +475,7 @@ fn multi_stage_store_C_split_k[
 
     constrained[num_m_mmas == 1 and num_n_mmas == 1]()
 
-    comptime epilogue_dtype = c_type if input_type is DType.bfloat16 else DType.float32
+    comptime epilogue_dtype = c_type if input_type == DType.bfloat16 else DType.float32
 
     comptime N_dim = 0 if transpose_c else 1
     comptime stageN = c_smem_layout.shape[N_dim].value()

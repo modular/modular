@@ -209,11 +209,11 @@ struct Communicators(ImplicitlyCopyable):
 
 fn _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
     @parameter
-    if dtype is DType.float32:
+    if dtype == DType.float32:
         return ncclDataType_t.ncclFloat32
-    elif dtype is DType.bfloat16:
+    elif dtype == DType.bfloat16:
         return ncclDataType_t.ncclBfloat16
-    elif dtype is DType.float16:
+    elif dtype == DType.float16:
         return ncclDataType_t.ncclFloat16
 
     raise Error("vendor_ccl: dtype not supported: ", dtype)

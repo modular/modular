@@ -280,7 +280,7 @@ fn bench_topk_batched[
             )
 
             @parameter
-            if dtype is DType.float32:
+            if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -519,7 +519,7 @@ fn bench_topk_multi_rank[
             )
 
             @parameter
-            if dtype is DType.float32:
+            if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),

@@ -224,18 +224,18 @@ fn normalize(
     comptime dtype = value.dtype
 
     @parameter
-    if dtype is DType.int32:
+    if dtype == DType.int32:
         return normalize(rebind[Int32](value)).cast[result.dtype]()
-    elif dtype is DType.uint32:
+    elif dtype == DType.uint32:
         return normalize(rebind[UInt32](value)).cast[result.dtype]()
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return normalize(rebind[Float32](value)).cast[result.dtype]()
     # TODO: These below don't return uint32 so must generalize and fix
-    elif dtype is DType.uint16:
+    elif dtype == DType.uint16:
         return normalize(rebind[UInt16](value)).cast[result.dtype]()
-    elif dtype is DType.float16:
+    elif dtype == DType.float16:
         return normalize(rebind[Float16](value)).cast[result.dtype]()
-    elif dtype is DType.bfloat16:
+    elif dtype == DType.bfloat16:
         return normalize(rebind[BFloat16](value)).cast[result.dtype]()
     else:
         constrained[False, "unhandled normalize type"]()

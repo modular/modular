@@ -783,7 +783,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
 ):
-    __comptime_assert c_type is not DType.float32, "c_type cannot be float32"
+    __comptime_assert c_type != DType.float32, "c_type cannot be float32"
 
     comptime num_output_warps = 4
 

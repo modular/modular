@@ -238,7 +238,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
 
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():

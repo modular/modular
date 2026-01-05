@@ -1252,7 +1252,7 @@ fn scatter_elements[
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
     """
     __comptime_assert (
-        indices_type is DType.int32 or indices_type is DType.int64
+        indices_type == DType.int32 or indices_type == DType.int64
     ), "indices in scatter_elements must be int32 or int64"
 
     if input.shape() != output.shape():
@@ -1375,7 +1375,7 @@ fn gather_elements[
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
     """
     __comptime_assert (
-        indices_type is DType.int32 or indices_type is DType.int64
+        indices_type == DType.int32 or indices_type == DType.int64
     ), "indices in gather_elements must be int32 or int64"
 
     if rebind[IndexList[input.rank]](

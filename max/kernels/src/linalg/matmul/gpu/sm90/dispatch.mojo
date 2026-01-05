@@ -2157,7 +2157,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
-    comptime size_factor = 2 if a_type is DType.float32 else 1
+    comptime size_factor = 2 if a_type == DType.float32 else 1
     comptime mma_k = 16 // size_factor
     comptime BK = 64 // size_factor
 
@@ -2841,7 +2841,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # Fallback path with vectorized output and cp.async.ca load if K
     # is not multiple of 16B.
     @parameter
-    if a_type is DType.bfloat16 and BN != -1:
+    if a_type == DType.bfloat16 and BN != -1:
         if m <= 128:
             comptime default_bf16_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
@@ -2938,7 +2938,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
     # Fallback path, will use scalar 2B output and lots of OOB check.
     @parameter
-    if a_type is DType.bfloat16:
+    if a_type == DType.bfloat16:
         comptime BN = 256
         comptime default_bf16_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b

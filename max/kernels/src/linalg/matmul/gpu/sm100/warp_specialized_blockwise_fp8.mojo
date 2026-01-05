@@ -1336,7 +1336,7 @@ fn sm100_warp_specialized_blockwise_fp8[
     ]()
 
     constrained[
-        a_type == b_type and a_type is DType.float8_e4m3fn,
+        a_type == b_type and a_type == DType.float8_e4m3fn,
         "Only support float8_e4m3fn",
     ]()
 

@@ -254,6 +254,10 @@ what we publish.
 
 ### Library changes
 
+- We have removed `Identifiable` from enum-like types
+  (such as `DType` and `AddressSpace`). This change is
+  related to the idea that `Identifiable` is for comparing memory addresses.
+
 - The `Iterator` trait and and for-each loop have removed the `__has_next__`
   method and now using a `__next__` method that `raises StopIteration`. This
   follows Python precedent better, is more convenient to implement, and can be a
@@ -614,7 +618,7 @@ or removed in future releases.
 - Added support for `DType` expressions in `where` clauses:
 
   ```mojo
-  fn foo[dt: DType]() -> Int where dt is DType.int32:
+  fn foo[dt: DType]() -> Int where dt == DType.int32:
       return 42
   ```
 

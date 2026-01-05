@@ -424,7 +424,7 @@ struct MatmulTileWriter[
         # Check if st.matrix optimization can be used
         # fmt: off
         comptime can_use_stmatrix = (
-            accum_type is DType.float32 and Self.dtype is DType.bfloat16  # F32→BF16
+            accum_type == DType.float32 and Self.dtype == DType.bfloat16  # F32→BF16
             and Self.frag_size % 4 == 0                               # Register count
             and Self.BM % Self.wgmma_shape[0] == 0                              # M alignment
             and Self.WG_BN % 16 == 0                                  # Shared memory

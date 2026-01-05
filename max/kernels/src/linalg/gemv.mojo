@@ -879,7 +879,7 @@ fn gemv_gpu[
     if n == 1:
 
         @parameter
-        if a.type is DType.bfloat16:
+        if a.type == DType.bfloat16:
             if k % simd_width == 0:
                 kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
             else:
@@ -890,7 +890,7 @@ fn gemv_gpu[
     elif m == 1 and transpose_b == True:
 
         @parameter
-        if a.type is DType.bfloat16:
+        if a.type == DType.bfloat16:
             if k % simd_width == 0:
                 if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y

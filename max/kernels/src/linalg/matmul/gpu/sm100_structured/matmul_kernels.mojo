@@ -775,7 +775,7 @@ struct BlackwellMatmulSM100Kernel[
     fn validate_constraints():
         """Validate parameter constraints at compile time."""
         constrained[
-            Self.c_type is not DType.float32,
+            Self.c_type != DType.float32,
             "c_type cannot be float32",
         ]()
         constrained[

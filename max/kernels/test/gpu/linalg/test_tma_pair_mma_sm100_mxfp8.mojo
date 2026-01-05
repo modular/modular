@@ -572,7 +572,7 @@ fn sm100_blockscaled_mxfp8_cta_pair[
     __comptime_assert transpose_b, "Only support transposed B"
 
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     var M = c.dim(0)

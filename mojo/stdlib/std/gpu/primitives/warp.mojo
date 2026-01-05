@@ -82,7 +82,7 @@ fn _shuffle[
     ), "Unsupported simd_width"
 
     @parameter
-    if dtype is DType.float32:
+    if dtype == DType.float32:
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
@@ -118,7 +118,7 @@ fn _shuffle[
                 mask, packed_val, offset
             )
             return bitcast[dtype, simd_width](result_packed)
-    elif dtype is DType.bool:
+    elif dtype == DType.bool:
         __comptime_assert simd_width == 1, "unhandled simd width"
         return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val.cast[DType.int32](), offset
@@ -144,7 +144,7 @@ fn _shuffle_amd_helper[
         __comptime_assert simd_width == 1, "Unsupported simd width"
 
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
                 dtype
             ]()
@@ -203,12 +203,12 @@ fn _shuffle_apple_helper[
 
         var merged = s1.interleave(s2)
         return bitcast[dtype, simd_width](merged)
-    elif dtype is DType.bool:
+    elif dtype == DType.bool:
         var val1 = rebind[SIMD[DType.int32, 1]](val.cast[DType.int32]())
         var tmp = _shuffle_apple_helper[op, DType.int32, 1](mask, val1, offset)
         return tmp.cast[dtype]()
     elif (
-        dtype is DType.bfloat16
+        dtype == DType.bfloat16
     ):  # bfloat16 is declared in MSL but actually causes a backend error.
 
         @parameter
@@ -942,7 +942,7 @@ fn prefix_sum[
 
 @always_inline("nodebug")
 fn _has_redux_f32_support[dtype: DType, simd_width: Int]() -> Bool:
-    return _is_sm_100x_or_newer() and dtype is DType.float32 and simd_width == 1
+    return _is_sm_100x_or_newer() and dtype == DType.float32 and simd_width == 1
 
 
 @always_inline("nodebug")
@@ -1253,7 +1253,7 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
 
     @parameter
     if is_nvidia_gpu():
-        __comptime_assert ret_type is DType.uint32, "Unsupported return type"
+        __comptime_assert ret_type == DType.uint32, "Unsupported return type"
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():
         return _vote_amd_helper[ret_type](val)

@@ -432,7 +432,7 @@ fn select_config[
     # sm_80 is present in target.
     comptime _256x128_3 = Index(
         128, 256, 2 * _bk_base[a_type](), 3
-    ) if gpu_info is A100 else Index(1024, 1024, 1024, 1024)
+    ) if gpu_info == A100 else Index(1024, 1024, 1024, 1024)
 
     comptime opt_list = [_128x128_4, _256x64_4, _256x128_3]
 

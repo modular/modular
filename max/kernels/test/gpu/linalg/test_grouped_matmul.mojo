@@ -634,7 +634,7 @@ def main():
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         @parameter
-        if ctx.default_device_info is B200:
+        if ctx.default_device_info == B200:
             test[
                 DType.bfloat16,
                 DType.bfloat16,

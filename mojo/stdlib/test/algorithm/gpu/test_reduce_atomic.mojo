@@ -20,7 +20,7 @@ from testing import assert_equal, TestSuite
 
 
 @fieldwise_init
-struct FillStrategy(ImplicitlyCopyable):
+struct FillStrategy(Equatable, ImplicitlyCopyable):
     var value: Int
 
     comptime LINSPACE = Self(0)
@@ -29,7 +29,7 @@ struct FillStrategy(ImplicitlyCopyable):
     comptime ZEROS = Self(3)
     comptime ONES = Self(4)
 
-    fn __is__(self, other: Self) -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self.value == other.value
 
 
@@ -59,19 +59,19 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var stack = InlineArray[Float32, n](fill=0)
     var vec_host = Span(stack)
 
-    if fill_strategy is FillStrategy.LINSPACE:
+    if fill_strategy == FillStrategy.LINSPACE:
         for i in range(n):
             vec_host[i] = i
-    elif fill_strategy is FillStrategy.NEG_LINSPACE:
+    elif fill_strategy == FillStrategy.NEG_LINSPACE:
         for i in range(n):
             vec_host[i] = -i
-    elif fill_strategy is FillStrategy.SYMMETRIC_LINSPACE:
+    elif fill_strategy == FillStrategy.SYMMETRIC_LINSPACE:
         for i in range(n):
             vec_host[i] = i - n // 2
-    elif fill_strategy is FillStrategy.ZEROS:
+    elif fill_strategy == FillStrategy.ZEROS:
         for i in range(n):
             vec_host[i] = 0
-    elif fill_strategy is FillStrategy.ONES:
+    elif fill_strategy == FillStrategy.ONES:
         for i in range(n):
             vec_host[i] = 1
 
@@ -110,23 +110,23 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    if fill_strategy is FillStrategy.LINSPACE:
+    if fill_strategy == FillStrategy.LINSPACE:
         assert_equal(res, n * (n - 1) // 2)
         assert_equal(res_min, 0)
         assert_equal(res_max, n - 1)
-    elif fill_strategy is FillStrategy.NEG_LINSPACE:
+    elif fill_strategy == FillStrategy.NEG_LINSPACE:
         assert_equal(res, -n * (n - 1) // 2)
         assert_equal(res_min, -n + 1)
         assert_equal(res_max, 0)
-    elif fill_strategy is FillStrategy.SYMMETRIC_LINSPACE:
+    elif fill_strategy == FillStrategy.SYMMETRIC_LINSPACE:
         assert_equal(res, -n // 2)
         assert_equal(res_min, -n // 2)
         assert_equal(res_max, (n - 1) // 2)
-    elif fill_strategy is FillStrategy.ZEROS:
+    elif fill_strategy == FillStrategy.ZEROS:
         assert_equal(res, 0)
         assert_equal(res_min, 0)
         assert_equal(res_max, 0)
-    elif fill_strategy is FillStrategy.ONES:
+    elif fill_strategy == FillStrategy.ONES:
         assert_equal(res, n)
         assert_equal(res_min, 0)
         assert_equal(res_max, 1)

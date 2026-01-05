@@ -207,7 +207,7 @@ fn _sqrt_nvvm(x: SIMD, out res: type_of(x)):
         DType.float32,
         DType.float64,
     ), "must be f32 or f64 type"
-    comptime instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
+    comptime instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype == DType.float32 else "llvm.nvvm.sqrt.approx.d"
     res = {}
 
     @parameter
@@ -232,11 +232,11 @@ fn sqrt[
         The elementwise square root of x.
     """
     __comptime_assert (
-        dtype.is_numeric() or dtype is DType.bool
+        dtype.is_numeric() or dtype == DType.bool
     ), "type must be arithmetic or boolean"
 
     @parameter
-    if dtype is DType.bool:
+    if dtype == DType.bool:
         return x
     elif dtype.is_integral():
         var res = SIMD[dtype, width]()
@@ -269,7 +269,7 @@ fn _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
         DType.float64,
     ), "must be f32 or f64 type"
 
-    comptime instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
+    comptime instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype == DType.float32 else "llvm.nvvm.rsqrt.approx.d"
     res = {}
 
     @parameter
@@ -330,7 +330,7 @@ fn _recip_nvvm(x: SIMD, out res: type_of(x)):
         DType.float64,
     ), "must be f32 or f64 type"
 
-    comptime instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
+    comptime instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype == DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
     res = {}
 
     @parameter
@@ -408,7 +408,7 @@ fn exp2[
     if is_nvidia_gpu():
 
         @parameter
-        if dtype is DType.float16:
+        if dtype == DType.float16:
 
             @parameter
             if _is_sm_9x_or_newer():
@@ -422,14 +422,14 @@ fn exp2[
                 return _call_ptx_intrinsic[
                     instruction="ex2.approx.f16", constraints="=h,h"
                 ](x)
-        elif dtype is DType.bfloat16 and _is_sm_9x_or_newer():
+        elif dtype == DType.bfloat16 and _is_sm_9x_or_newer():
             return _call_ptx_intrinsic[
                 scalar_instruction="ex2.approx.ftz.bf16",
                 vector2_instruction="ex2.approx.ftz.bf16x2",
                 scalar_constraints="=h,h",
                 vector_constraints="=r,r",
             ](x)
-        elif dtype is DType.float32:
+        elif dtype == DType.float32:
             return _call_ptx_intrinsic[
                 instruction="ex2.approx.ftz.f32", constraints="=f,f"
             ](x)
@@ -445,9 +445,9 @@ fn exp2[
         return _llvm_unary_fn["llvm.air.exp2"](x)
 
     @parameter
-    if dtype is DType.float32:
+    if dtype == DType.float32:
         return _exp2_float32(x._refine[DType.float32]())._refine[dtype]()
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return 2**x
     else:
         return exp2(x.cast[DType.float32]()).cast[dtype]()
@@ -508,7 +508,7 @@ fn _ldexp_impl[
     @parameter
     if (
         CompilationTarget.has_avx512f()
-        and dtype is DType.float32
+        and dtype == DType.float32
         and width >= hardware_width
     ):
         var res: SIMD[dtype, width] = 0
@@ -605,7 +605,7 @@ fn _exp_taylor[
         2.0876756987868098979e-9,
     ]
     return polynomial_evaluate[
-        coefficients if dtype is DType.float64 else coefficients[:8],
+        coefficients if dtype == DType.float64 else coefficients[:8],
     ](x)
 
 
@@ -654,7 +654,7 @@ fn exp[
     var max_val: SIMD[dtype, width]
 
     @parameter
-    if dtype is DType.float64:
+    if dtype == DType.float64:
         min_val = -709.436139303
         max_val = 709.437
     else:
@@ -813,14 +813,14 @@ fn _frexp_mask1[
     dtype: DType, width: Int
 ]() -> SIMD[_integral_type_of[dtype](), width]:
     @parameter
-    if dtype is DType.float16:
+    if dtype == DType.float16:
         return 0x7C00
-    elif dtype is DType.bfloat16:
+    elif dtype == DType.bfloat16:
         return 0x7F80
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return 0x7F800000
     else:
-        __comptime_assert dtype is DType.float64, "unhandled fp type"
+        __comptime_assert dtype == DType.float64, "unhandled fp type"
         return 0x7FF0000000000000
 
 
@@ -829,14 +829,14 @@ fn _frexp_mask2[
     dtype: DType, width: Int
 ]() -> SIMD[_integral_type_of[dtype](), width]:
     @parameter
-    if dtype is DType.float16:
+    if dtype == DType.float16:
         return 0x3800
-    elif dtype is DType.bfloat16:
+    elif dtype == DType.bfloat16:
         return 0x3F00
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return 0x3F000000
     else:
-        __comptime_assert dtype is DType.float64, "unhandled fp type"
+        __comptime_assert dtype == DType.float64, "unhandled fp type"
         return 0x3FE0000000000000
 
 
@@ -976,7 +976,7 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         return _log_base[27](x)
 
     @parameter
-    if is_nvidia_gpu() and dtype is DType.float32:
+    if is_nvidia_gpu() and dtype == DType.float32:
         comptime ln2 = 0.69314718055966295651160180568695068359375
         return (
             _call_ptx_intrinsic[
@@ -1020,7 +1020,7 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         return _log_base[2](x)
 
     @parameter
-    if is_nvidia_gpu() and dtype is DType.float32:
+    if is_nvidia_gpu() and dtype == DType.float32:
         return _call_ptx_intrinsic[
             instruction="lg2.approx.f32", constraints="=f,f"
         ](x)
@@ -1165,7 +1165,7 @@ fn tanh[
         comptime instruction = "tanh.approx.f32"
 
         @parameter
-        if dtype is DType.float16:
+        if dtype == DType.float16:
             return _call_ptx_intrinsic[
                 scalar_instruction="tanh.approx.f16",
                 vector2_instruction="tanh.approx.f16x2",
@@ -1173,7 +1173,7 @@ fn tanh[
                 vector_constraints="=r,r",
             ](x)
 
-        elif dtype is DType.bfloat16:
+        elif dtype == DType.bfloat16:
 
             @parameter
             if _is_sm_9x_or_newer():
@@ -1188,7 +1188,7 @@ fn tanh[
                     instruction="tanh.approx.f32", constraints="=f,f"
                 ](x.cast[DType.float32]()).cast[dtype]()
 
-        elif dtype is DType.float32:
+        elif dtype == DType.float32:
             return _call_ptx_intrinsic[
                 instruction="tanh.approx.f32", constraints="=f,f"
             ](x)
@@ -1562,7 +1562,7 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
         return acos(x.cast[DType.float32]()).cast[dtype]()
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return _llvm_unary_fn["llvm.acos"](x)
 
     # For F32 types, use the Remez approximation found in Sleef with range
@@ -1642,7 +1642,7 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
         return asin(x.cast[DType.float32]()).cast[dtype]()
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return _llvm_unary_fn["llvm.asin"](x)
 
     # For F32 types, use the Remez approximation found in Sleef with range
@@ -1762,7 +1762,7 @@ fn atan2[
     ), "input type must be floating point"
 
     @parameter
-    if dtype is DType.float64:
+    if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](y, x)
     else:
         return _simd_apply[_float32_dispatch, result_dtype=dtype](y, x)
@@ -1803,7 +1803,7 @@ fn cos[
         return _llvm_unary_fn["llvm.cos"](x)
 
     @parameter
-    if is_nvidia_gpu() and dtype is DType.float32:
+    if is_nvidia_gpu() and dtype == DType.float32:
         return _call_ptx_intrinsic[
             instruction="cos.approx.ftz.f32", constraints="=f,f"
         ](x)
@@ -1848,7 +1848,7 @@ fn sin[
         return _llvm_unary_fn["llvm.sin"](x)
 
     @parameter
-    if is_nvidia_gpu() and dtype is DType.float32:
+    if is_nvidia_gpu() and dtype == DType.float32:
         return _call_ptx_intrinsic[
             instruction="sin.approx.ftz.f32", constraints="=f,f"
         ](x)
@@ -2017,7 +2017,7 @@ fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         # type. This is done to avoid precision issues that can occur when
         # using the lower-precision floating-point types.
         return _atanh_float32(x.cast[DType.float32]()).cast[dtype]()
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return _atanh_float32(x)
 
     # Otherwise, this is a double and we can just call the libm function.
@@ -2226,7 +2226,7 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         @parameter
         if size_of[dtype]() < size_of[DType.float32]():
             return log10(x.cast[DType.float32]()).cast[dtype]()
-        elif dtype is DType.float32:
+        elif dtype == DType.float32:
             return (
                 _call_ptx_intrinsic[
                     instruction="lg2.approx.f32", constraints="=f,f"
@@ -2535,7 +2535,7 @@ fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
         return cbrt(x.cast[DType.float32]()).cast[dtype]()
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return _call_libm["cbrt"](x)
 
     var result = SIMD[DType.float32, width]()
@@ -2594,7 +2594,7 @@ fn hypot[
     ), "input type must be floating point"
 
     @parameter
-    if dtype is DType.float64:
+    if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
     return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)
 
@@ -2751,7 +2751,7 @@ fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
         return erfc(x.cast[DType.float32]()).cast[dtype]()
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return _call_libm["erfc"](x)
 
     var result = SIMD[DType.float32, width]()
@@ -2872,7 +2872,7 @@ fn remainder[
     ), "input type must be floating point"
 
     @parameter
-    if dtype is DType.float64:
+    if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](x, y)
     return _simd_apply[_float32_dispatch, result_dtype=dtype](x, y)
 
@@ -3040,7 +3040,7 @@ fn scalb[
     ), "input type must be floating point"
 
     @parameter
-    if dtype is DType.float64:
+    if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
     return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)
 
@@ -3418,7 +3418,7 @@ fn _call_libm[
         var arg_f32 = arg.cast[DType.float32]()
         return _call_libm[func_name](arg_f32).cast[dtype]()
 
-    comptime libm_name = func_name + ("f" if dtype is DType.float32 else "")
+    comptime libm_name = func_name + ("f" if dtype == DType.float32 else "")
     var res = SIMD[dtype, width]()
 
     @parameter
@@ -3557,11 +3557,11 @@ fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
 @always_inline
 fn _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
     @parameter
-    if dtype is DType.float16:
+    if dtype == DType.float16:
         return "f16"
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return "f32"
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return "f64"
     else:
         constrained[False, "Extend to support additional dtypes."]()
