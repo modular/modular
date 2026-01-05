@@ -51,5 +51,8 @@ modular_py_library(
     data = [
         "//KGEN/tools/mojo-ipython-extension:IPythonExtension",
     ],
-    tags = [TOP_LEVEL_TAG],  # TODO: Remove once this target is used
+    tags = [
+        TOP_LEVEL_TAG,  # TODO: Remove once this target is used
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
 )
