@@ -53,10 +53,10 @@ lit_tests(
     # not require them
     srcs = glob(["*.test"]),
     data = [":fixtures"] + [
-        "//open-source/max/mojo/stdlib/std:std_srcs",
+        "//oss/modular/mojo/stdlib/std:std_srcs",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/mojo/stdlib/std:std_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //oss/modular/mojo/stdlib/std:std_srcs)",
     },
     mojo_deps = [
         "@mojo//:std",
