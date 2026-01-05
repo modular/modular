@@ -5956,10 +5956,10 @@ struct DeviceContext(ImplicitlyCopyable):
         """
         var result = _DeviceStreamPtr()
 
-        # const char *AsyncRT_streamCreate(const DeviceStream **stream, int priority, const DeviceContext *ctx)
+        # const char *AsyncRT_DeviceContext_createStream(const DeviceStream **stream, int priority, const DeviceContext *ctx)
         _checked(
             external_call[
-                "AsyncRT_DeviceContext_streamCreate",
+                "AsyncRT_DeviceContext_createStream",
                 _ConstCharPtr,
             ](UnsafePointer(to=result), c_int(priority), self._handle)
         )
