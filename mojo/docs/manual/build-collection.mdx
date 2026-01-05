@@ -1,0 +1,972 @@
+---
+title: "Build a Mojo collection"
+description: "Develop a sliding-window collection type that stores recent items."
+sidebar_position: 5
+---
+
+# Build a sliding window collection in Mojo
+
+A collection holds values. It can be a list, a dictionary, a set, a bag, an Optional, or any of a very large family of "things that hold other things". Collections let you group and manage multiple subordinate values. They open the doors to efficient operations like adding, removing, indexing. You can build ways to access elements that are flexible and coherent.
+
+Collections can represent data structures that support efficient search or may let you evaluate data sets by how they structure values. They are versatile tangible abstractions, and are greatly loved by the developers who consume them in their day-to-day programming.
+
+## Is `Collection` a trait?
+
+In Mojo, traits express shared behavior. A [_trait_](/mojo/manual/traits) defines an interface: required methods and declarations, sometimes with default implementations. When a type conforms to a trait, it opts into a specific capability and can participate in generic code that expects that behavior. Collections often have overlapping interests including iteration, comparison, hashing, printing, mutation, and so forth. Given that, it’s natural to look for a `Collection` or `Collectable` trait.
+
+They don't exist. While collections overlap in behavior, they don't converge on a unified contract. Some rely on hashing to enforce uniqueness (like `Set` and `Dict`). Others focus on ordered iteration (`List`, `Deque`). Many manage owned values with a backing store. Some support mutation, sorting, or indexing. Many can write themselves to a `Writer`. Collections share behaviors, but they vary too widely for a single, unified contract.
+
+## Ownership
+
+Who owns the values you put into a collection?
+
+When you add something, does the collection take ownership—or does it make a copy? When the collection itself goes away, what happens to what it was holding? Are those values destroyed? Handed back? Shared with something else? And when you read a value out, are you looking at the original, or a copy made on the way?
+
+These questions matter. They shape how your code behaves, what performance costs you pay, and which bugs are even possible. If you care about memory management—or about not leaking data or duplicating it by accident—you can’t treat them as afterthoughts.
+
+This isn’t theoretical. These decisions show up the moment you need behavior that doesn’t quite match the defaults. When that happens, a custom collection can be a lifesaver. Building one in Mojo gives you control over how values move, how long they live, and where they end up.
+
+This tutorial takes those questions seriously. You're about to build a sliding window: a collection that keeps only the most recent values, shedding older ones as new values arrive. The type is small enough to understand end-to-end, but rich enough to force real choices about ownership, copying, and lifetimes—the same choices you’ll run into when working in Mojo.
+
+## Goals
+
+By the end of this tutorial, you'll understand:
+
+- How ownership transfer works when values enter and leave a collection
+- When copying is required and why Mojo makes it explicit
+- Why `Optional[T]` is useful for representing partially filled state
+- How to implement iteration without exposing internal structure or implementation details
+- How trait constraints help limit the types a collection should hold
+
+### Prerequisites
+
+You need Mojo installed via pixi and the code editor or IDE of your choice.
+
+You should understand:
+
+- Generic types conceptually (like `List[Int]`), so your collection can work with many types
+- What iterators do
+- Basic trait concepts
+
+### Build a file
+
+Start your project by creating `slidingwindow.mojo`:
+
+```bash
+touch slidingwindow.mojo
+```
+
+This is a one-file project, so you'll need a main function so it can compile and run.
+
+```mojo
+fn main():
+    pass
+```
+
+## Sliding windows
+
+Sliding windows aren’t a theoretical construct. This pattern shows up any time recent values matter more than long-term history.
+
+Common examples include:
+
+- clipboard history, which keeps the last _N_ items you copied
+- recently opened files menus, which keep a recency-ordered list without duplicates
+- rolling statistics over a fixed number of samples
+- bounded logs, where older events eventually stop being relevant
+
+What defines a sliding window is simple and strict: once the window reaches capacity, adding a new value evicts the oldest one. Nothing grows without bound, and nothing disappears silently—the outgoing value can be observed and handled.
+
+## Start with storage
+
+_In this step, you'll learn:_ How a collection takes ownership of a value.
+
+You'll start with a collection that holds integers. Add this code to your project.
+
+<details>
+  <summary>View sample code</summary>
+
+```mojo
+struct SlidingWindow:
+    var slots: List[Int] # This is your backing store
+
+    fn __init__(out self, capacity: Int):
+        self.slots = List[Int](length=Self.Capacity, fill=0)
+        for _ in range(capacity):
+            self.slots.append(0)
+
+    fn push(mut self, value: Int):
+        _ = self.slots.pop(0)  # Remove oldest
+        self.slots.append(value)  # Add newest
+
+fn main():
+    window = SlidingWindow(capacity=3)
+    window.push(1)
+    window.push(2)
+    window.push(3)
+    window.push(4)
+    print("Slots:", window.slots)
+```
+
+</details>
+
+Run it:
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Slots: [2, 3, 4]
+```
+
+This demonstrates the sliding behavior. The window holds 3 values, which is established in the loop in `__init__`. When you push the fourth value (4), the first value (1) is evicted.
+
+But there's a problem: this implementation can't distinguish between "slot is empty" and "slot contains zero." You need a better way to represent unfilled state.
+
+## Representing unfilled slots with Optional
+
+_In this step, you'll learn:_ Why `Optional[T]` matters for partially filled collections.
+
+Use `Optional[Int]` to distinguish empty (`None`)from filled (`Optional(value)`).
+
+<details>
+  <summary>View sample code</summary>
+
+```mojo
+struct SlidingWindow:
+    var slots: List[Optional[Int]]         # Updated list components
+
+    fn __init__(out self, capacity: Int):
+        self.slots = List[Optional[Int]]()
+        for _ in range(capacity):
+            self.slots.append(None)        # None is empty
+
+    fn push(mut self, value: Int) -> Optional[Int]:
+        evicted = self.slots.pop(0)        # Remove oldest
+        self.slots.append(Optional(value)) # Add newest
+        return evicted
+
+fn main():
+    window = SlidingWindow(capacity=3)
+
+    result = window.push(1)
+    print("Pushed 1, evicted:", result)
+
+    result = window.push(2)
+    print("Pushed 2, evicted:", result)
+
+    result = window.push(3)
+    print("Pushed 3, evicted:", result)
+
+    result = window.push(4)
+    print("Pushed 4, evicted:", result)
+```
+
+</details>
+
+Run it:
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Pushed 1, evicted: None
+Pushed 2, evicted: None
+Pushed 3, evicted: None
+Pushed 4, evicted: 1
+```
+
+Now the return value tells you what happened:
+
+- `None` means "filled an empty slot with a new value"
+- A value means "this value was evicted"
+
+The eviction semantics are explicit. Nothing disappears silently. If a value is removed, the caller receives it and decides what to do with it.
+
+## Making capacity be compile-time
+
+_In this step, you'll learn:_ Why compile-time parameters enable type safety and optimization.
+
+To make capacity a compile-time parameter, you declare it after the type in square brackets. Going forward you will specify the capacity in the instantiation code when you construct an instance, as you do in the first line of `main`.
+
+
+<details>
+  <summary>View sample code</summary>
+
+```mojo
+struct SlidingWindow[Capacity: Int]:
+    var slots: List[Optional[Int]]
+
+    fn __init__(out self):
+        self.slots = List[Optional[Int]]()
+        for _ in range(Self.Capacity):
+            self.slots.append(None)
+
+    fn push(mut self, value: Int) -> Optional[Int]:
+        evicted = self.slots.pop(0)
+        self.slots.append(Optional(value))
+        return evicted
+
+fn main():
+    window = SlidingWindow[3]()
+
+    _ = window.push(1)
+    _ = window.push(2)
+    _ = window.push(3)
+    result = window.push(4)
+
+    if result:
+        print("Evicted:", result.value())
+```
+
+</details>
+
+Run it:
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Evicted: 1
+```
+
+The syntax `SlidingWindow[Capacity: Int]` declares a struct parameter with compile-time specialization. Capacity is now part of the type: `SlidingWindow[3]` is different from `SlidingWindow[5]`. (This is called "monomorphization".) The compiler creates separate code versions for each combination of parameter values.
+
+_Note:_ The `value()` call on the result extracts a value from a non-null optional. In recent Mojo versions, print statements don't require this step to see the value within an Optional, but any code that uses this value will need the actual value extracted.
+
+Why compile-time?
+- The compiler can verify constraints, including what is needed for this type to run properly.
+- It enables optimizations (the compiler knows exact size needed to allocate).
+- Types are more precise for the use you'll be putting them to.
+
+## Adding a generic element
+
+_In this step, you'll learn:_ How to constrain what types your collection can hold.
+
+To make the sliding window work with any type that can be copied and cleaned up, you need to declare "traits". You'll do this in a way that helps Mojo to create specialized types at runtime. If your collection can work with any type that is both copyable and implicitly destructible, you allow sliding windows to extend beyond integers, to strings, floats, and many other types.
+
+_What can this collection hold?_ It holds things that have the _right traits_. Each collection instance picks a single type that _fits_.
+
+<details>
+  <summary>View sample code</summary>
+
+```mojo
+comptime CollectionElement = Copyable & ImplicitlyDestructible # The collection needs elements that fit this trait set
+
+struct SlidingWindow[T: CollectionElement, Capacity: Int]: # Use a type that fits CollectionElement
+    var slots: List[Optional[Self.T]]
+
+    fn __init__(out self):
+        self.slots = List[Optional[Self.T]]() # See how this mirrors `Optional[Int]`?
+        for _ in range(Self.Capacity):
+            self.slots.append(None)
+
+    fn push(mut self, var value: Self.T) -> Optional[Self.T]:
+        evicted = self.slots.pop(0)
+        self.slots.append(Optional(value^))
+        return evicted^
+
+fn main():
+    window = SlidingWindow[Int, 3]()
+
+    _ = window.push(1)
+    _ = window.push(2)
+    _ = window.push(3)
+    result = window.push(4)
+
+    if result:
+        print("Evicted:", result.value())
+```
+
+</details>
+
+Run it:
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Evicted: 1
+```
+
+_Key changes:_
+
+The `T: CollectionElement` constraint requires:
+
+- `Copyable` - values can be explicitly copied with `.copy()`
+- `ImplicitlyDestructible` - values clean up automatically when they go out of scope
+
+Why these constraints?
+- You'll need copying for iteration (reading without consuming)
+- You need automatic cleanup for evicted values
+
+_Ownership transfer:_ Notice `var value: Self.T` in the `push` function signature with
+its `^` suffix `append`? The `var` argument means this function takes ownership of that value.
+The `value^` syntax transfers ownership to the `Optional` constructor. After that point,
+the original `value` binding is invalidated.
+
+Similarly, `return evicted^` transfers ownership back to the caller.
+
+_Try some strings:_ Update this code to use string values and a `String` parameter
+in `main`. It will still work, even though you changed the collection type.
+
+## Tracking filled slots
+
+_In this step, you'll learn:_ Why keeping a count matters for usability and performance.
+
+Add a count field to track how many slots are filled.
+
+<details>
+  <summary>View sample code</summary>
+
+```mojo
+comptime CollectionElement = Copyable & ImplicitlyDestructible
+
+struct SlidingWindow[T: CollectionElement, Capacity: Int](Sized): # Adds conformance to "Sized"
+    var slots: List[Optional[Self.T]]
+    var count: Int # Here is the occupancy count
+
+    fn __init__(out self):
+        self.slots = List[Optional[Self.T]]()
+        for _ in range(Self.Capacity):
+            self.slots.append(None)
+        self.count = 0
+
+    fn push(mut self, var value: Self.T) -> Optional[Self.T]:
+        evicted = self.slots.pop(0)
+        self.slots.append(Optional(value^))
+
+        # If we evicted None, we filled a previously empty slot
+        if not evicted:
+            self.count += 1
+
+        return evicted^
+
+    # Adding this dunder method fulfills the requirements for the `Sized` trait.
+    # You can call `len(sliding_window_instance)` to determine how many elements it stores.
+    # See: https://docs.modular.com/mojo/manual/traits/#the-sized-trait
+    fn __len__(self) -> Int:
+        return self.count
+
+fn main():
+    window = SlidingWindow[Int, 3]()
+
+    print("Start, length:", len(window))
+    _ = window.push(1)
+    print("After push, length:", len(window))
+    _ = window.push(2)
+    print("After push, length:", len(window))
+    _ = window.push(3)
+    print("After push, length:", len(window))
+    _ = window.push(4)
+    print("After push, length:", len(window))
+```
+
+</details>
+
+Run it:
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Start, length: 0
+After push, length: 1
+After push, length: 2
+After push, length: 3
+After push, length: 3
+```
+
+The count tracks a key invariant: it always equals the number of non-None slots. This makes `len(window)` O(1) instead of requiring a scan through all slots.
+
+The `__len__()` method implements the `Sized` trait, allowing `len(window)` to work.
+
+_Note:_ This collection's length never decreases, and won't increase past its capacity. Try explaining why.
+
+## Reading without consuming
+
+_In this step, you'll learn:_ When and why copying is necessary.
+
+Add a method to read recent values without removing them. It's common to query collections about their contents.
+
+<details>
+  <summary>View sample code</summary>
+
+```mojo
+comptime CollectionElement = Copyable & ImplicitlyDestructible
+
+struct SlidingWindow[T: CollectionElement, Capacity: Int](Sized):
+    var slots: List[Optional[Self.T]]
+    var count: Int
+
+    fn __init__(out self):
+        self.slots = List[Optional[Self.T]]()
+        for _ in range(Self.Capacity):
+            self.slots.append(None)
+        self.count = 0
+
+    fn push(mut self, var value: Self.T) -> Optional[Self.T]:
+        evicted = self.slots.pop(0)
+        self.slots.append(Optional(value^))
+
+        if not evicted:
+            self.count += 1
+
+        return evicted^
+
+    fn __len__(self) -> Int:
+        return self.count
+
+    fn pull(self, request_count: Int) -> List[Self.T]:
+        """Read recent values without removing them."""
+        if request_count < 1:
+            return List[Self.T]()
+
+        # Clamp to actual count
+        actual = request_count if request_count <= self.count else self.count
+
+        result = List[Self.T]()
+        for i in range(actual):
+            # Newest values are at the end
+            index = Self.Capacity - (i + 1)
+            result.append(self.slots[index].value().copy())
+
+        return result^ # This list was constructed in this method. The collection is untouched.
+
+fn main():
+    window = SlidingWindow[Int, 5]()
+
+    _ = window.push(1)
+    _ = window.push(2)
+    _ = window.push(3)
+
+    recent = window.pull(2)
+    print("Most recent 2:", recent)
+    print("Window length:", len(window))
+```
+
+</details>
+
+Run it:
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Most recent 2: [3, 2]
+Window length: 3
+```
+
+_Why `.copy()` is required:_
+
+Look at this line:
+```mojo
+result.append(self.slots[index].value().copy())
+```
+
+The window owns the values in `self.slots`. You're creating a new `List` to return. That list needs its own copies of the values. Without `.copy()`, you'd be trying to put the same value in two places: still in the window's slots AND in the returned list. That's not allowed. Values can only have one owner.
+
+The `.value()` call extracts the value from `Optional[T]`. The `.copy()` call creates a duplicate that the returned list can own. This is why the `CollectionElement` constraint requires `Copyable`. Non-consuming reads require duplication.
+
+## Implementing iteration
+
+_In this step, you'll learn:_ How to implement iteration by materializing a snapshot.
+
+To use `for value in window:`, implement an iterator.
+
+<details>
+  <summary>View sample code</summary>
+
+```mojo
+comptime CollectionElement = Copyable & ImplicitlyDestructible
+
+
+struct _SlidingWindowIterator[T: CollectionElement]: # New type, specific to iteration
+    """Iterates over a snapshot of values."""
+    var _values: List[Self.T]
+    var _index: Int
+
+    fn __init__(out self, var values: List[Self.T]):
+        self._values = values^
+        self._index = 0
+
+    fn __has_next__(self) -> Bool:
+        return self._index < len(self._values)
+
+    fn __next__(mut self) -> Self.T:
+        value = self._values[self._index].copy()
+        self._index += 1
+        return value^
+
+    fn __len__(self) -> Int:
+        return len(self._values) - self._index
+
+
+struct SlidingWindow[T: CollectionElement, Capacity: Int](Sized):
+
+    var slots: List[Optional[Self.T]]
+    var count: Int
+
+    fn __init__(out self):
+        self.slots = List[Optional[Self.T]]()
+        for _ in range(Self.Capacity):
+            self.slots.append(None)
+        self.count = 0
+
+    fn push(mut self, var value: Self.T) -> Optional[Self.T]:
+        evicted = self.slots.pop(0)
+        self.slots.append(Optional(value^))
+
+        if not evicted:
+            self.count += 1
+
+        return evicted^
+
+    fn __len__(self) -> Int:
+        return self.count
+
+    fn pull(self, request_count: Int) -> List[Self.T]:
+        if request_count < 1:
+            return List[Self.T]()
+
+        actual = request_count if request_count <= self.count else self.count
+
+        result = List[Self.T]()
+        for i in range(actual):
+            index = Self.Capacity - (i + 1)
+            result.append(self.slots[index].value().copy())
+
+        return result^
+
+    fn __iter__(ref self) -> _SlidingWindowIterator[Self.T]:
+        """Iterate over current values, most recent first."""
+        values = self.pull(Self.Capacity)
+        return _SlidingWindowIterator(values^)
+
+fn main():
+    window = SlidingWindow[Int, 5]()
+
+    _ = window.push(1)
+    _ = window.push(2)
+    _ = window.push(3)
+    _ = window.push(4)
+    _ = window.push(5)
+    _ = window.push(6)
+    _ = window.push(7)
+
+    print("Iterating (most recent first):")
+    for value in window:
+        print("  ", value)
+```
+
+</details>
+
+Run it:
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Iterating (most recent first):
+   7
+   6
+   5
+   4
+   3
+```
+
+_How iteration works:_
+
+The `__iter__()` method creates an iterator by:
+1. Calling `pull()` to get a snapshot of current values
+2. Passing that list to `_SlidingWindowIterator`
+3. Returning the iterator
+
+The iterator operates on a plain `List[T]`, not `List[Optional[T]]`. This hides the internal representation, allowing callers to pull values in a way that is most useful.
+
+_Why materialization is necessary:_
+
+Creating a snapshot means:
+
+- Iteration doesn't lock the collection
+- The collection can be modified during iteration
+- The iterator is simple and self-contained
+
+The tradeoff: you're allocating a temporary list and copying values. For clarity in this tutorial, that's acceptable.
+
+_Explicit copying in the iterator:_
+
+```mojo
+value = self._values[self._index].copy()
+```
+
+Even though the iterator owns `_values`, it still copies when returning a value. Why? Because the list needs to keep its copy, and the caller gets their own copy. Ownership transfer would leave the list incomplete.
+
+## Adding multiple values at once
+
+_In this step, you'll learn:_ How variadic arguments work and why they require copying.
+
+Add a method to push several values at once.
+
+<details>
+  <summary>View sample code</summary>
+
+```mojo
+fn push_all(mut self, var *values: Self.T) -> List[Self.T]:
+    """Push multiple values, returning any evicted elements."""
+    evicted = List[Self.T]()
+    for value in values:
+        dropped = self.push(value.copy())
+        if dropped:
+            evicted.append(dropped.take())
+    return evicted^
+```
+
+Add this method to your `SlidingWindow` struct. Update `main()`:
+
+```mojo
+fn main():
+    window = SlidingWindow[Int, 3]()
+
+    evicted = window.push_all(1, 2, 3, 4, 5)
+    print("Evicted:", evicted)
+    print("Length:", len(window))
+
+    print("\nIterating:")
+    for value in window:
+        print("  ", value)
+```
+
+</details>
+
+Run it:
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Evicted: [1, 2]
+Length: 3
+
+Iterating:
+   5
+   4
+   3
+```
+
+_Why copy and take?_
+
+First copy:
+```mojo
+dropped = self.push(value.copy())
+```
+
+Varargs iteration provides borrowed access. The `value` binding doesn't own the value. To call `push()`, which takes ownership (`var value: Self.T`), you need to copy.
+
+Second take:
+```mojo
+evicted.append(dropped.take())
+```
+
+This transfers ownership of the `dropped` value and adds it to the `evicted` list.
+
+This sample makes ownership boundaries visible. You can see exactly where duplication and transfer take place.
+
+## Adding display support
+
+_In this step, you'll learn:_ How to make your type printable with the `Writable` trait.
+
+Make the window printable:
+
+```mojo
+struct SlidingWindow[T: CollectionElement, Capacity: Int](Sized, Writable):
+```
+
+Update the first line of your struct definition to include `(Sized, Writable)`. Then add this method:
+
+```mojo
+fn write_to[W: Writer](self, mut writer: W):
+    """Display the window's contents."""
+    writer.write("[")
+    for i in range(Self.Capacity - 1, -1, -1):
+        if self.slots[i]:
+            value = self.slots[i].value().copy()
+            ref element = trait_downcast[Representable](value)
+            writer.write(repr(element))
+        else:
+            writer.write("[-]")
+        if i > 0:
+            writer.write(", ")
+    writer.write("]")
+```
+
+Update `main()`:
+
+```mojo
+fn main():
+    window = SlidingWindow[Int, 5]()
+
+    print("Empty:", window)
+
+    _ = window.push(1)
+    print("After 1:", window)
+
+    _ = window.push_all(2, 3, 4, 5, 6, 7)
+    print("After more:", window)
+```
+
+Run it:
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Empty: [[-], [-], [-], [-], [-]]
+After 1: [1, [-], [-], [-], [-]]
+After more: [7, 6, 5, 4, 3]
+```
+
+The `write_to()` method implements `Writable`, allowing `print()` to display your type. It walks through slots from newest to oldest, showing filled values and empty slots.
+
+This visual representation helps debugging. You can see both what's stored and what's empty.
+
+## The Complete Implementation
+
+Your final `slidingwindow.mojo` should look like this:
+
+
+<details>
+  <summary>View full sample code</summary>
+
+```mojo
+comptime CollectionElement = Copyable & ImplicitlyDestructible
+
+
+struct _SlidingWindowIterator[T: CollectionElement]:
+    """Iterates over a snapshot of values."""
+    var _values: List[Self.T]
+    var _index: Int
+
+    fn __init__(out self, var values: List[Self.T]):
+        self._values = values^
+        self._index = 0
+
+    fn __has_next__(self) -> Bool:
+        return self._index < len(self._values)
+
+    fn __next__(mut self) -> Self.T:
+        value = self._values[self._index].copy()
+        self._index += 1
+        return value^
+
+    fn __len__(self) -> Int:
+        return len(self._values) - self._index
+
+
+struct SlidingWindow[T: CollectionElement, Capacity: Int](Sized, Writable):
+
+    var slots: List[Optional[Self.T]]
+    var count: Int
+
+    fn __init__(out self):
+        self.slots = List[Optional[Self.T]]()
+        for _ in range(Self.Capacity):
+            self.slots.append(None)
+        self.count = 0
+
+    fn push(mut self, var value: Self.T) -> Optional[Self.T]:
+        evicted = self.slots.pop(0)
+        self.slots.append(Optional(value^))
+
+        if not evicted:
+            self.count += 1
+
+        return evicted^
+
+    fn __len__(self) -> Int:
+        return self.count
+
+    fn pull(self, request_count: Int) -> List[Self.T]:
+        if request_count < 1:
+            return List[Self.T]()
+
+        actual = request_count if request_count <= self.count else self.count
+
+        result = List[Self.T]()
+        for i in range(actual):
+            index = Self.Capacity - (i + 1)
+            result.append(self.slots[index].value().copy())
+
+        return result^
+
+    fn push_all(mut self, var *values: Self.T) -> List[Self.T]:
+        """Push multiple values, returning any evicted elements."""
+        evicted = List[Self.T]()
+        for value in values:
+            dropped = self.push(value.copy())
+            if dropped:
+                evicted.append(dropped.take())
+        return evicted^
+
+    fn __iter__(ref self) -> _SlidingWindowIterator[Self.T]:
+        """Iterate over current values, most recent first."""
+        values = self.pull(Self.Capacity)
+        return _SlidingWindowIterator(values^)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """Display the window's contents."""
+        writer.write("[")
+        for i in range(Self.Capacity - 1, -1, -1):
+            if self.slots[i]:
+                value = self.slots[i].value().copy()
+                ref element = trait_downcast[Representable](value)
+                writer.write(repr(element))
+            else:
+                writer.write("[-]")
+            if i > 0:
+                writer.write(", ")
+        writer.write("]")
+
+
+fn main():
+    window = SlidingWindow[Int, 5]()
+    print("Empty:", window)
+
+    for value in range(1, 8):
+        evicted = window.push(value)
+        if evicted:
+            print("Pushed {}, evicted {}".format(value, evicted.value()))
+        else:
+            print("Pushed {}, nothing evicted".format(value))
+        print("Window:", window)
+
+    print("\nPulling values:")
+    for count in range(6):
+        values = window.pull(count)
+        print("Pull {}: {}".format(count, values))
+
+    print("\nIterating:")
+    for value in window:
+        print("  ", value)
+```
+
+</details>
+
+Test the complete program.
+
+```bash
+mojo slidingwindow.mojo
+```
+
+```
+Empty: [[-], [-], [-], [-], [-]]
+Pushed 1, nothing evicted
+Window: [1, [-], [-], [-], [-]]
+Pushed 2, nothing evicted
+Window: [2, 1, [-], [-], [-]]
+Pushed 3, nothing evicted
+Window: [3, 2, 1, [-], [-]]
+Pushed 4, nothing evicted
+Window: [4, 3, 2, 1, [-]]
+Pushed 5, nothing evicted
+Window: [5, 4, 3, 2, 1]
+Pushed 6, evicted 1
+Window: [6, 5, 4, 3, 2]
+Pushed 7, evicted 2
+Window: [7, 6, 5, 4, 3]
+
+Pulling values:
+Pull 0: []
+Pull 1: [7]
+Pull 2: [7, 6]
+Pull 3: [7, 6, 5]
+Pull 4: [7, 6, 5, 4]
+Pull 5: [7, 6, 5, 4, 3]
+
+Iterating:
+   7
+   6
+   5
+   4
+   3
+```
+
+## What you've learned
+
+Through building this collection, you've learned:
+
+_Ownership Transfer_
+- The `^` suffix makes a value transferable, allowing you to transfer ownership
+- `var` arguments accept transferable values and takes ownership
+- After transfer, the original binding becomes invalid
+- Eviction returns ownership to the caller
+- `Optional`'s `.take()` method transfers ownership of its value
+
+_When Copying Is Required_
+- Reading without consuming may require copying, especially when creating an iterator
+- Variadic arguments provide borrowed access, which can need copies
+- Iteration needs copies because values stay in the collection
+- `.copy()` makes duplication explicit and visible
+
+_Optional for Partial State_
+- `Optional[T]` represents "maybe has a value"
+- Useful for partially filled containers
+- Testing with `if optional_instance:` checks existence
+- Extracting with `.value()` gets the inner value, with `.take()` transfers ownership
+
+_Type Constraints_
+- Most `CollectionElement` implementations will require `Copyable` and `ImplicitlyDestructible`
+- Constraints are checked at compile time, so types that don't conform cannot be used in collections
+- Constraints make requirements explicit in the type signature
+
+_Compile-Time Parameters_
+- `[T: Trait, N: Int]` defines both type and value parameters
+- They're part of the type itself, which the compiler manifests as a unique version
+- Enable compile-time verification and optimization
+
+_Iterator Design_
+- Iterators are implemented separately from collections
+- They require `__has_next__()`, `__next__()`, and `__len__()`
+- Materializing a snapshot simplifies implementation
+- Hides internal representation details
+
+## Why this matters
+
+Building collections teaches you how Mojo's ownership model works. When you understand ownership transfer, copying requirements, and type constraints, you can:
+
+- Debug ownership errors more effectively
+- Make better decisions about when to copy versus transfer
+- Understand why the standard library collections work the way they do
+- Write code that's both safe and efficient
+
+The sliding window is small enough to understand completely, but demonstrates the patterns you'll use throughout Mojo development.
+
+## Next steps
+
+Now that you understand the basics, you can:
+
+_Explore different implementations:_
+- Replace the backing list with a ring buffer (more efficient)
+- Compare performance characteristics
+- Measure allocation overhead
+
+_Add more features:_
+- Indexed access (`window[i]`)
+- Consuming iteration (transfer values out)
+- Time-based eviction
+- Try out different eviction policies
+
+_Try different element types:_
+- Store `String` values
+- Experiment with types that can't be copied
+- Use `UnsafePointer[T]` for reference semantics
+
+Each experiment reinforces the same core concepts: explicit ownership, clear invariants, and intentional design.
