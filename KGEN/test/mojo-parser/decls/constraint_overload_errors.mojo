@@ -51,18 +51,18 @@ fn is_natural_number(x: Int) -> Bool:
 fn multi_param_one_inconclusive[
     # expected-note @below {{constraint declared here}}
     x: Int where is_prime(x),
-]():
+](a: UInt32):
     pass
 
 fn multi_param_one_inconclusive[
     x: Int where is_natural_number(x),
-]():
+](a: Int32):
     pass
 
 fn test_multi_param_one_inconclusive():
     # expected-error @below {{ambiguous call to 'multi_param_one_inconclusive': lacking evidence to select candidate}}
     # expected-note @below {{provide evidence for or against the constraints here to aid in candidate selection}}
-    multi_param_one_inconclusive[2]()
+    multi_param_one_inconclusive[2](1)
 
 
 ##===----------------------------------------------------------------------===##
@@ -73,20 +73,20 @@ fn test_multi_param_one_inconclusive():
 fn multi_param_multi_inconclusive[
     # expected-note @below {{constraint declared here}}
     x: Int where is_prime(x),
-]():
+](a: Int32):
     pass
 
 # expected-note @below {{cannot prove constraint for candidate}}
 fn multi_param_multi_inconclusive[
     # expected-note @below {{constraint declared here}}
     x: Int where is_square(x),
-]():
+](a: UInt32):
     pass
 
 fn test_multi_param_multi_inconclusive():
     # expected-error @below {{ambiguous call to 'multi_param_multi_inconclusive': lacking evidence to select candidate}}
     # expected-note @below {{provide evidence for or against the constraints here to aid in candidate selection}}
-    multi_param_multi_inconclusive[2]()
+    multi_param_multi_inconclusive[2](2)
 
 
 ##===----------------------------------------------------------------------===##
@@ -181,19 +181,19 @@ fn test_multi_fn_best_fitness_ok():
 ##===----------------------------------------------------------------------===##
 
 # expected-note @below {{cannot prove constraint}}
-fn multi_fn_best_fitness_inconclusive[x: IntLiteral]()
+fn multi_fn_best_fitness_inconclusive[x: Int](a: IntLiteral)
     # expected-note @below {{constraint declared here}}
     where is_prime(x):
     pass
 
-fn multi_fn_best_fitness_inconclusive[x: Int]()
+fn multi_fn_best_fitness_inconclusive[x: Int](a: Int)
     where x >= 0:
     pass
 
 fn test_multi_fn_best_fitness_inconclusive():
     # expected-error @below {{invalid call to 'multi_fn_best_fitness_inconclusive': lacking evidence to prove correctness}}
     # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
-    multi_fn_best_fitness_inconclusive[2]()
+    multi_fn_best_fitness_inconclusive[2](2)
 
 
 ##===----------------------------------------------------------------------===##
@@ -231,12 +231,12 @@ fn test_mixed_constraints():
 fn ref_to_overload[
     # expected-note @below {{constraint declared here}}
     x: Int where is_prime(x),
-]():
+](a: Int32):
     pass
 
 fn ref_to_overload[
     x: Int where x >= 0
-]():
+](a: UInt32):
     pass
 
 fn test_ref_to_overload():
@@ -272,18 +272,18 @@ fn provable_and_inconclusive[
     x: Int where x > 0,  # This is provable with literal 2
     # expected-note @below {{constraint declared here}}
     y: Int where is_prime(y),  # This is not provable
-]():
+](a: Int32):
     pass
 
 fn provable_and_inconclusive[
     x: Int where x < 0,
-]():
+](a: UInt32):
     pass
 
 fn test_provable_and_inconclusive():
     # expected-error @below {{invalid call to 'provable_and_inconclusive': lacking evidence to prove correctness}}
     # expected-note @below {{provide evidence for the constraints here to aid in candidate selection}}
-    provable_and_inconclusive[2, 2]()
+    provable_and_inconclusive[2, 2](4)
 
 
 ##===----------------------------------------------------------------------===##
@@ -293,7 +293,7 @@ fn test_provable_and_inconclusive():
 # This candidate has a violated constraint (should be rejected)
 fn violated_vs_inconclusive[
     x: Int where x > 10,  # Violated by x=2
-]():
+](a: Int32):
     pass
 
 # This candidate has an inconclusive constraint
@@ -301,7 +301,7 @@ fn violated_vs_inconclusive[
 fn violated_vs_inconclusive[
     # expected-note @below {{constraint declared here}}
     x: Int where is_prime(x),  # Inconclusive for x=2
-]():
+](a: UInt32):
     pass
 
 fn test_violated_vs_inconclusive():
@@ -309,4 +309,4 @@ fn test_violated_vs_inconclusive():
     # leaving only the inconclusive one which should error
     # expected-error @below {{invalid call to 'violated_vs_inconclusive': lacking evidence to prove correctness}}
     # expected-note @below {{provide evidence for the constraints here to aid in candidate selection}}
-    violated_vs_inconclusive[2]()
+    violated_vs_inconclusive[2](4)

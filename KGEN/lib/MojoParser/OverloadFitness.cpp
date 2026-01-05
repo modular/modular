@@ -697,10 +697,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
     return std::move(*diag);
   }
 
-  OverloadFitness result(bindings);
-  result.payload.numImplicitConversions = fitness.numImplicitConversions;
-  result.payload.hasVariadicParams = fitness.hasVariadicParams;
-  return result;
+  return OverloadFitness(bindings);
 }
 
 /// Determine whether the specified signature can be invoked with the
@@ -974,11 +971,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // This is the result we will return if we succeed.
   OverloadFitness result(newBindings);
-
-  // We will accumulate the implicit conversion in arguments to those counted
-  // for the parameter bindings.
-  result.payload.numImplicitConversions = bindingFitness.numImplicitConversions;
-  result.payload.hasVariadicParams = bindingFitness.hasVariadicParams;
 
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.

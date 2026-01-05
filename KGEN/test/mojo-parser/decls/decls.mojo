@@ -132,15 +132,6 @@ struct MyInt:
     fn __init__(out self, _a: Int):
         self.value = _a
 
-
-fn paramOverload[x: Int]():
-    pass
-
-
-fn paramOverload[x: Int, y: Int]():
-    pass
-
-
 fn paramOverload[*x: Int]():
     pass
 
@@ -157,29 +148,10 @@ fn paramOverload[*x: Int](y: Int):
     pass
 
 
-fn paramOverload2[*x: Int]():
-    pass
-
-
-fn paramOverload2[x: MyInt]():
-    pass
-
-
-fn paramOverload2[x: MyInt, y: MyInt]():
-    pass
-
-
-fn paramOverload2[*x: MyInt]():
-    pass
-
-
 # CHECK-LABEL: lit.fn @"callParametricOverload
 fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload[{{.*}}Int]()"
     paramOverload[a]()
-
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:!Int a, :!Int b>()
-    paramOverload[a, b]()
 
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:variadic<!Int> [a, b, c]>()
     paramOverload[a, b, c]()
@@ -187,27 +159,8 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload({{.*}}Int)"
     paramOverload(x)
 
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload[{{.*}}Int,AnyTrivialRegType]($1)"
-    paramOverload[a](x)
-
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:variadic<!Int> [a, b]>(%x)
     paramOverload[a, b](x)
-
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload2{{.*}}<:variadic<!Int> [a]>()
-    paramOverload2[a]()
-
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload2{{.*}}<:variadic<!Int> [a, b]>()
-    paramOverload2[a, b]()
-
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload2[decls::MyInt]()"
-    paramOverload2[MyInt(a)]()
-
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload2[decls::MyInt,decls::MyInt]()"
-    paramOverload2[MyInt(a), b]()
-
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload2[{{.*}}<:variadic<!MyInt>
-    paramOverload2[MyInt(a), b, c]()
-
 
 struct VariadicStruct[*Ts: AnyTrivialRegType]:
     fn __init__(out self):

@@ -310,9 +310,7 @@ static void emitUnprovableConstraintsFromFitness(
 /// Check a single binding and emit a parameter value if possible. If an
 /// implicit conversion is required, the provided counter is incremented.
 static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
-                                       ASTType expectedType,
-                                       size_t &numImplicitConversions,
-                                       IREmitter &emitter,
+                                       ASTType expectedType, IREmitter &emitter,
                                        ParserParameterEvaluator &evaluator) {
 
   PValue bindingVal = binding.ir.getIfPValue();
@@ -339,7 +337,6 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
   // If the parameter can be implicitly converted, do so.
   if (IREmitter::canImplicitlyConvertToType(
           {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
-    numImplicitConversions += 2;
     bindingVal = emitter.emitPValue(binding, EC_CallParamValue, expectedType);
     return bindingVal;
   }
@@ -354,7 +351,7 @@ ParamBindings::verifyBindingsImpl(
     PogListAttr paramListAttr, ParameterInferenceHookTy parameterInferenceHook,
     const DiagEmitter *diagEmitter, bool partial) const {
   assert(parameterInferenceHook && "expected a parameter inference hook");
-  Fitness fitness{{}, 0, false};
+  Fitness fitness{{}};
 
   // Check to see if we have *_ or **_ and filter them from the parameter list.
   bool unpackedPos = false;
@@ -617,9 +614,8 @@ ParamBindings::verifyBindingsImpl(
 
       // The param name matches this operand. Consume this operand.
       OperandValue &binding = operands[posBindingIdx];
-      PValue pValue = emitSingleParameterValue(binding, expectedType,
-                                               fitness.numImplicitConversions,
-                                               emitter, evaluator);
+      PValue pValue =
+          emitSingleParameterValue(binding, expectedType, emitter, evaluator);
       if (!pValue) {
         if (diagEmitter)
           diagEmitter->emitTypeMismatch(idx, binding, expectedType);
@@ -646,7 +642,6 @@ ParamBindings::verifyBindingsImpl(
         assert(passingKind != PassingKind::PosOnly);
 
         PValue pValue = emitSingleParameterValue(*binding, expectedType,
-                                                 fitness.numImplicitConversions,
                                                  emitter, evaluator);
         if (!pValue) {
           if (diagEmitter)
@@ -741,9 +736,8 @@ ParamBindings::verifyBindingsImpl(
         return {};
       }
 
-      PValue pValue = emitSingleParameterValue(binding, expectedType,
-                                               fitness.numImplicitConversions,
-                                               emitter, evaluator);
+      PValue pValue =
+          emitSingleParameterValue(binding, expectedType, emitter, evaluator);
       if (!pValue)
         if (diagEmitter)
           diagEmitter->emitTypeMismatch(index, binding, expectedType);
@@ -763,7 +757,7 @@ ParamBindings::verifyBindingsImpl(
 
     // If the parameter is a variadic list, it may consume many values, and they
     // all get packed up into a VariadicAttr.
-    fitness.hasVariadicParams = true;
+    // fitness.hasVariadicParams = true;
 
     // Unpacked variadics can be passed directly as a whole variadic parameter.
     if (auto unpacked =
