@@ -564,3 +564,16 @@ struct NotRuntimeMaterializable:
 fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
     # Ok to materialize an int.
     var b = comptime(nrm.method())
+
+
+##===----------------------------------------------------------------------===##
+# Ellipsis.
+##===----------------------------------------------------------------------===##
+
+fn test_ellipsis_overloading(a: Int): pass
+fn test_ellipsis_overloading(a: EllipsisType): pass
+
+fn test_ellipsis():
+    var x = ...
+    test_ellipsis_overloading(4)
+    test_ellipsis_overloading(...)

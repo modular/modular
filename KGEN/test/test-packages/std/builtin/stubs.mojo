@@ -25,6 +25,7 @@ comptime StaticConstantOrigin = Origin(
 
 comptime OriginSet = __mlir_type.`!lit.origin.set`
 comptime Never = __mlir_type.`!kgen.never`
+comptime EllipsisType = __mlir_type.`!lit.ellipsis`
 
 
 @register_passable("trivial")
