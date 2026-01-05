@@ -188,62 +188,6 @@ struct StructWithVariadic[*a: Int]:
 fn unbind_variadic(x: StructWithVariadic[_]):
     pass
 
-
-##===----------------------------------------------------------------------===##
-# Function Overloading on Parameters
-##===----------------------------------------------------------------------===##
-
-
-struct ConvertibleFromInt:
-    @implicit
-    fn __init__(out self, value: Int):
-        pass
-
-
-struct AlsoConvertibleFromInt:
-    @implicit
-    fn __init__(out self, value: Int):
-        pass
-
-
-struct NotConvertible:
-    pass
-
-
-# expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: parameter_overloading parameter 'param' has 'ConvertibleFromInt' type, but value has type 'NotConvertible'}}
-fn parameter_overloading[param: ConvertibleFromInt]():
-    pass
-
-
-# expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: parameter_overloading parameter 'param' has 'AlsoConvertibleFromInt' type, but value has type 'NotConvertible'}}
-fn parameter_overloading[param: AlsoConvertibleFromInt]():
-    pass
-
-
-# expected-note @below {{candidate declared here}}
-fn arg_overloading_with_param[param: Int]():
-    pass
-
-
-# expected-note @below {{candidate declared here}}
-fn arg_overloading_with_param[param: Int](a: Int):
-    pass
-
-
-fn form_reference_to_overloaded[value: NotConvertible]():
-    # expected-error @below {{cannot form a reference to overloaded declaration of 'parameter_overloading', each candidate requires 1 implicit conversion, disambiguate with an explicit cast}}
-    comptime ambiguous = parameter_overloading[1]
-    # expected-error @below {{cannot form a reference to overloaded declaration of 'parameter_overloading'}}
-    comptime none_valid = parameter_overloading[value]
-
-    # MOCO-1024: Bad error message with missing ()'s on UnsafePointer.load
-    # expected-error @below {{cannot form a reference to overloaded declaration of 'arg_overloading_with_param'}}
-    # expected-note @below {{did you mean to call it?}}
-    arg_overloading_with_param[1]
-
-
 ##===----------------------------------------------------------------------===##
 # Alias resolution
 ##===----------------------------------------------------------------------===##

@@ -103,12 +103,6 @@ public:
   struct Fitness {
     /// Any unprovable constraints encountered during verification.
     SmallVector<ConstraintAttr> unprovableConstraints;
-
-    /// The number of implicit conversion in the parameter bindings.
-    size_t numImplicitConversions;
-
-    /// Whether the bindings include variadic parameters.
-    bool hasVariadicParams;
   };
 
   /// Helper class to customizing diagnostic emission for verification. The

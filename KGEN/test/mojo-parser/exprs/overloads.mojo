@@ -16,25 +16,6 @@ struct MyInt:
     fn __init__(out self, v: Int):
         self.value = v
 
-
-fn overloaded_param[a: Int, b: MyInt]():
-    pass
-
-
-fn overloaded_param[a: Int, b: Int]():
-    pass
-
-
-# CHECK-LABEL: lit.fn @"test_kw_params_overload{{.*}}"<x: !Int, y: !Int>
-fn test_kw_params_overload[x: Int, y: Int]():
-    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<:!Int x, :!Int y>()
-    overloaded_param[b=y, a=x]()
-
-    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<:!Int x, :!MyInt apply(
-    # CHECK-SAME :!lit.generator<("v": Int) -> !MyInt> {{.*}}@MyInt::@"__init__{{.*}}", y)>()
-    overloaded_param[b = MyInt(y), a=x]()
-
-
 fn overloaded_arg(a: Int, b: MyInt):
     pass
 
