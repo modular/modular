@@ -355,10 +355,14 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       [=](ImplicitOriginRefAttr) { return emptyStruct; });
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](OriginSetAttr) { return emptyStruct; });
+  replacer.addInferredDomainNonRecursiveReplacement(
+      [=](EllipsisAttr) { return emptyStruct; });
 
   // !lit.origin -> !kgen.struct<()>
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](OriginType) { return emptyStructType; });
+  replacer.addInferredDomainNonRecursiveReplacement(
+      [=](EllipsisType) { return emptyStructType; });
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](OriginSetType) { return emptyStructType; });
 
