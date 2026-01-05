@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import iota
 from random import random_float64
 
@@ -70,7 +70,7 @@ fn time_kernel[
 
 
 @parameter
-fn fill_random[dtype: DType](mut buffer: LayoutTensor[mut=True, dtype, **_]):
+fn fill_random[dtype: DType](mut buffer: LayoutTensor[mut=True, dtype, ...]):
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.size()
@@ -80,13 +80,13 @@ fn fill_random[dtype: DType](mut buffer: LayoutTensor[mut=True, dtype, **_]):
 
 
 @parameter
-fn fill_iota[dtype: DType](mut buf: LayoutTensor[mut=True, dtype, **_]):
+fn fill_iota[dtype: DType](mut buf: LayoutTensor[mut=True, dtype, ...]):
     iota(buf.ptr, buf.size())
 
 
 fn test_is_sorted_descending[
     dtype: DType
-](mut buf: LayoutTensor[dtype, **_], vocab_size: Int) -> Bool:
+](mut buf: LayoutTensor[dtype, ...], vocab_size: Int) -> Bool:
     __comptime_assert buf.rank == 2, "rank must be 2"
     var batch_size = buf.size() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
@@ -154,7 +154,7 @@ fn print_test_case(test_case: TestCase):
 
 fn test_case_sampling[
     fill_fn: fn[dtype: DType] (
-        mut LayoutTensor[mut=True, dtype, **_]
+        mut LayoutTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ](test_case: TestCase) raises:
     print_test_case(test_case)
@@ -266,7 +266,7 @@ fn test_toppminp[
     dtype: DType,
     out_idx_type: DType,
     fill_fn: fn[dtype: DType] (
-        mut LayoutTensor[mut=True, dtype, **_]
+        mut LayoutTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ]() raises:
     comptime test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
@@ -290,7 +290,7 @@ fn test_toppminp[
 fn test_all_out_idx_types[
     dtype: DType,
     fill_fn: fn[dtype: DType] (
-        mut LayoutTensor[mut=True, dtype, **_]
+        mut LayoutTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ]() raises:
     test_toppminp[dtype, DType.int32, fill_fn]()
@@ -300,7 +300,7 @@ fn test_all_out_idx_types[
 
 fn test_all_types[
     fill_fn: fn[dtype: DType] (
-        mut LayoutTensor[mut=True, dtype, **_]
+        mut LayoutTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ]() raises:
     print("\n=== Testing Float32 ===")

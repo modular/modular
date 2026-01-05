@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort
 
 from python import Python, PythonObject
@@ -156,7 +156,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
     fn change_name(
         self_: PythonObject, new_name: PythonObject
     ) raises -> PythonObject:
-        var self0 = LegacyUnsafePointer[Self, **_](
+        var self0 = LegacyUnsafePointer[Self, ...](
             unchecked_downcast_value=self_
         ).unsafe_mut_cast[True]()
 

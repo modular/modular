@@ -50,7 +50,7 @@ from layout.tma_async import (
 )
 from memory import LegacyUnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -524,7 +524,7 @@ struct HopperMatmulSM90Kernel[
         ] = Self.elementwise_lambda_fn
     ](
         c_tma_op: TMATensorTile[Self.c_type, _, _],
-        c: LayoutTensor[Self.c_type, _, MutAnyOrigin, *_, **_],
+        c: LayoutTensor[Self.c_type, _, MutAnyOrigin, ...],
         c_tile: Self.SMem.CTile,
         output_reg_tile: Self.AccumRegTileType,
         warp_group_thread_idx: UInt,
@@ -1357,8 +1357,8 @@ struct HopperMatmulSM90Kernel[
     fn wgmma(
         wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: UInt,
-        a_tile: SMemTileType[Self.a_type, _, **_],
-        b_tile: SMemTileType[Self.b_type, _, **_],
+        a_tile: SMemTileType[Self.a_type, _, ...],
+        b_tile: SMemTileType[Self.b_type, _, ...],
         c_reg_tile: Self.AccumRegTileType,
     ):
         warpgroup_fence(c_reg_tile)

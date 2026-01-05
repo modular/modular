@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort
 
 from python import PythonObject
@@ -64,7 +64,7 @@ fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
 
     print("Hello from mojo_incr_np_array")
 
-    var py_array_object_ptr = LegacyUnsafePointer[PyArrayObject[dtype], **_](
+    var py_array_object_ptr = LegacyUnsafePointer[PyArrayObject[dtype], ...](
         unchecked_downcast_value=py_array_object
     )
 

@@ -24,7 +24,7 @@ from layout import (
 from layout.int_tuple import fill_like
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from testing import assert_equal
@@ -36,7 +36,7 @@ fn test_argmaxmin_gpu[
     dtype: DType,
     output_type: DType,
     fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, **_]
+        LayoutTensor[mut=True, dtype, ...]
     ) capturing [_] -> None,
     largest: Bool = True,
     rank: Int = 2,
@@ -156,7 +156,7 @@ fn test_argmaxmin_gpu[
 fn _test_argmaxmin_gpu_helper_2[
     idx_type: DType,
     fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, **_]
+        LayoutTensor[mut=True, dtype, ...]
     ) capturing [_] -> None,
     largest: Bool,
 ](ctx: DeviceContext) raises:
@@ -174,7 +174,7 @@ fn _test_argmaxmin_gpu_helper_2[
 fn test_argmaxmin_gpu_helper[
     idx_type: DType,
     fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, **_]
+        LayoutTensor[mut=True, dtype, ...]
     ) capturing [_] -> None,
 ](ctx: DeviceContext) raises:
     # argmax
@@ -188,7 +188,7 @@ def main():
     @parameter
     fn fill_random[
         rank: Int, dtype: DType
-    ](buffer: LayoutTensor[mut=True, dtype, **_]):
+    ](buffer: LayoutTensor[mut=True, dtype, ...]):
         comptime min_val = -1e9
         comptime max_val = 1e9
         var total_elements = buffer.size()

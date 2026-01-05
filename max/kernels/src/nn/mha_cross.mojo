@@ -14,7 +14,7 @@
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
@@ -221,13 +221,13 @@ fn mha_cross_gpu_naive[
     //,
     rank: Int,
 ](
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_input_row_offsets: LayoutTensor[DType.uint32, **_],
+    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_input_row_offsets: LayoutTensor[DType.uint32, ...],
     q_max_seq_len: Int,
     k: cache_t,
     v: cache_t,
-    kv_input_row_offsets: LayoutTensor[DType.uint32, **_],
+    kv_input_row_offsets: LayoutTensor[DType.uint32, ...],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,

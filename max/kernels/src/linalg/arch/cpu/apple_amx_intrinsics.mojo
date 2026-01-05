@@ -28,7 +28,7 @@ from memory import (
     stack_allocation,
 )
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # All AMX instructions are of the form
@@ -490,7 +490,7 @@ fn dot_at_b_impl(
 
 
 @always_inline
-fn dot_at_b(c: LayoutTensor[mut=True, *_, **_], a: type_of(c), b: type_of(c)):
+fn dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
     __comptime_assert (
         c.dtype is DType.float32 or c.dtype is DType.float16
     ), "the buffer dtype must be float32 or float16"

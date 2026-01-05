@@ -14,7 +14,7 @@
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 @parameter

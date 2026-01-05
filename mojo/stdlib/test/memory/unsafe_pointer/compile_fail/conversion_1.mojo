@@ -16,7 +16,7 @@
 
 fn test_cannot_cast_immutable_to_mutable[
     T: AnyType
-](p: UnsafePointer[mut=True, T, **_]):
+](p: UnsafePointer[mut=True, T, ...]):
     pass
 
 

@@ -66,8 +66,8 @@ fn rope_q_proj[
     *,
     interleaved: Bool,
 ](
-    q_proj: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    q_proj: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
@@ -153,14 +153,14 @@ fn fused_qk_rope[
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: LayoutTensor[dtype, **_],
+    q_proj: LayoutTensor[dtype, ...],
     kv_collection: collection_t,
-    freqs_cis: LayoutTensor[dtype, **_],
+    freqs_cis: LayoutTensor[dtype, ...],
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
     """Applies RoPE to query and key tensors.
@@ -276,15 +276,15 @@ fn fused_qk_rope_ragged[
     target: StaticString,
     mrope_section: Optional[IntTuple] = None,
 ](
-    q_proj: LayoutTensor[dtype, **_],
-    input_row_offsets: LayoutTensor[DType.uint32, **_],
+    q_proj: LayoutTensor[dtype, ...],
+    input_row_offsets: LayoutTensor[DType.uint32, ...],
     kv_collection: collection_t,
-    freqs_cis: LayoutTensor[freq_dtype, **_],
+    freqs_cis: LayoutTensor[freq_dtype, ...],
     position_ids: OptionalReg[
         LayoutTensor[DType.uint32, Layout.row_major[2](), MutAnyOrigin]
     ],
     layer_idx: UInt32,
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
     """Applies RoPE (Rotary Position Embedding) to query and key tensors.

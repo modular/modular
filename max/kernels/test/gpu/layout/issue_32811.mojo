@@ -17,7 +17,7 @@ from layout import *
 from layout.layout_tensor import LayoutTensor
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn gpu_kernel(

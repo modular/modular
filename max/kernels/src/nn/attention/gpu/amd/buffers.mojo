@@ -15,7 +15,7 @@ from collections import OptionalReg
 from math import ceildiv, recip
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
 
@@ -303,7 +303,8 @@ struct KVBufferImpl[
         num_b_rows: OptionalReg[Int],
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED, **_,
+            address_space = AddressSpace.SHARED,
+            ...,
         ],
     ):
         # __comptime_assert
@@ -565,7 +566,8 @@ struct VBufferTransposeLoads[
         global_tile: Self.GlobalTensorType,
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED, **_,
+            address_space = AddressSpace.SHARED,
+            ...,
         ],
     ):
         __comptime_assert Self.depth in (
@@ -802,7 +804,7 @@ struct QRegisterBuffer[
         return Self.reg_dtype
 
     @always_inline
-    fn __init__(out self, tensor: LayoutTensor[Self.dtype, **_]):
+    fn __init__(out self, tensor: LayoutTensor[Self.dtype, ...]):
         self.reg_tile = type_of(self.reg_tile).stack_allocation()
 
         comptime num_warps_n = Self.BN // Self.WN
@@ -885,7 +887,7 @@ struct OutputRegisterBuffer[
         return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
-    fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, **_]):
+    fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
         @parameter
         for m_mma in range(Self.num_m_mmas):
             var rowsum_inv = recip(rowsum[m_mma, 0])
@@ -971,7 +973,7 @@ struct PRegisterBuffer[
     fn __init__(
         out self,
         shared_ptr: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.SHARED, **_
+            Scalar[Self.dtype], address_space = AddressSpace.SHARED, ...
         ],
     ):
         self.reg_tile = Self.RegisterTileType_.stack_allocation()

@@ -113,7 +113,7 @@ fn tma_store_with_pipeline[
     is_last_stage: Bool,
 ](
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    src: SMemTileType[c_type, _, alignment=128, **_],
+    src: SMemTileType[c_type, _, alignment=128, ...],
     coords: Tuple[UInt, UInt],
 ):
     """Perform TMA store with pipelined commit and wait.
@@ -2261,8 +2261,8 @@ fn shared_memory_epilogue[
     N: UInt32,
     c_col: UInt,
     c_row: UInt,
-    c_smem_warp_tile_upper: SMemTileType[c_type, c_smem_upper_layout, *_, **_],
-    c_smem_warp_tile_lower: SMemTileType[c_type, c_smem_lower_layout, *_, **_],
+    c_smem_warp_tile_upper: SMemTileType[c_type, c_smem_upper_layout, ...],
+    c_smem_warp_tile_lower: SMemTileType[c_type, c_smem_lower_layout, ...],
 ):
     """Apply element-wise epilogue to non-transposed shared memory tile.
 

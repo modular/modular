@@ -687,7 +687,7 @@ struct _DLHandle(Boolable, Copyable):
 
 @always_inline
 fn _get_dylib_function[
-    dylib_global: _Global[StorageType=OwnedDLHandle, *_, **_],
+    dylib_global: _Global[StorageType=OwnedDLHandle, ...],
     func_name: StaticString,
     result_type: AnyTrivialRegType,
 ]() raises -> result_type:

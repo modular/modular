@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import isclose
 from random import rand
 
@@ -39,7 +39,7 @@ def build_ChunkedCausalMask[
     num_heads: Int,
     seq_len: Int,
     num_keys: Int,
-    mask: LayoutTensor[mut=True, mask_type, **_],
+    mask: LayoutTensor[mut=True, mask_type, ...],
 ):
     # Initialize causal mask.
     for b in range(batch_size):

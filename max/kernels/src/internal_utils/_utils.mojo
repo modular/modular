@@ -17,7 +17,7 @@ from io.io import _snprintf
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -111,7 +111,7 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
 
 
 fn initialize(
-    buffer: NDBuffer[mut=True, **_], init_type: InitializationType
+    buffer: NDBuffer[mut=True, ...], init_type: InitializationType
 ) raises:
     if init_type == InitializationType.zero:
         buffer.zero()
@@ -127,7 +127,7 @@ fn initialize(
 
 @parameter
 @always_inline
-fn arange(buffer: NDBuffer[mut=True, *_]):
+fn arange(buffer: NDBuffer[mut=True, ...]):
     @parameter
     if buffer.rank == 2:
         for i in range(buffer.dim[0]()):
@@ -138,11 +138,11 @@ fn arange(buffer: NDBuffer[mut=True, *_]):
             buffer.data[i] = i
 
 
-fn zero(buffer: NDBuffer[mut=True, *_, **_]):
+fn zero(buffer: NDBuffer[mut=True, ...]):
     buffer.zero()
 
 
-fn fill(buffer: NDBuffer[mut=True, *_], val: Scalar):
+fn fill(buffer: NDBuffer[mut=True, ...], val: Scalar):
     buffer.fill(val.cast[buffer.type]())
 
 
@@ -467,7 +467,7 @@ struct Mode(ImplicitlyCopyable, Stringable):
 
 fn random[
     dtype: DType
-](buffer: NDBuffer[mut=True, dtype, **_], min: Float64 = 0, max: Float64 = 1):
+](buffer: NDBuffer[mut=True, dtype, ...], min: Float64 = 0, max: Float64 = 1,):
     @parameter
     if dtype.is_float8():
         var size = buffer.num_elements()

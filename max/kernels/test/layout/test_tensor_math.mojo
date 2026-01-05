@@ -23,7 +23,7 @@ fn test_reduce_sum():
     print("== test_reduce_sum")
 
     # this also tests that ops works for abstract types
-    fn test_reduce_sum_impl(tensor: LayoutTensor[mut=True, **_]):
+    fn test_reduce_sum_impl(tensor: LayoutTensor[mut=True, ...]):
         arange(tensor)
         # CHECK: 6.0
         # CHECK: 22.0
@@ -49,7 +49,7 @@ fn test_reduce_sum():
 fn test_reduce_max():
     print("== test_reduce_max")
 
-    fn test_reduce_max_impl(tensor: LayoutTensor[mut=True, **_]):
+    fn test_reduce_max_impl(tensor: LayoutTensor[mut=True, ...]):
         arange(tensor)
         var tensor_4_0 = max[axis=0](tensor)
         # CHECK: 12.0

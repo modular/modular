@@ -16,7 +16,7 @@ from gpu import global_idx
 from gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import (
     assert_equal,
     assert_false,

@@ -18,7 +18,7 @@ from gpu.host.info import A100, MetalM4
 from gpu.intrinsics import *
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn kernel[

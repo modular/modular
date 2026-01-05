@@ -37,7 +37,7 @@ from layout.tma_async import TMATensorTile, create_tma_tile
 from logger import Logger
 from memory import LegacyUnsafePointer, memset_zero
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from gpu.host.info import B200, H100
@@ -89,7 +89,7 @@ comptime elementwise_epilogue_type = fn[
 @always_inline
 fn _get_batch_dims[
     rank: Int
-](flat_index: Int, shape: IndexList[rank, **_], out res: type_of(shape)):
+](flat_index: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
     res = {}
     var curr_index = flat_index
 
@@ -104,7 +104,7 @@ fn _get_batch_dims[
 # A utility to reshape NDBuffer with rank > 3 to rank-3.
 @always_inline
 fn _reshape_nd_buffer_with_batch_to_3d(
-    buffer: NDBuffer[*_, **_],
+    buffer: NDBuffer[...],
 ) -> NDBuffer[
     buffer.type,
     3,
@@ -174,7 +174,7 @@ fn _reshape_layout_tensor_with_batch_to_3d[
     c_layout: Layout,
     reshape_layout: Layout = _reshape_to_3d[c_layout](),
 ](
-    tensor: LayoutTensor[c_type, c_layout, *_, **_],
+    tensor: LayoutTensor[c_type, c_layout, ...],
 ) -> LayoutTensor[
     tensor.dtype,
     reshape_layout,
@@ -382,9 +382,9 @@ fn batched_matmul[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, *_],
-    a_buf: NDBuffer[a_type, rank, *_],
-    b_buf: NDBuffer[b_type, rank, *_],
+    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
+    a_buf: NDBuffer[a_type, rank, _, _, _],
+    b_buf: NDBuffer[b_type, rank, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -771,7 +771,7 @@ fn batched_matmul_kernel_gpu[
 @always_inline
 fn get_shape_index_list[
     rank: Int, dtype: DType, layout: Layout
-](tensor: LayoutTensor[dtype, layout, *_, **_]) -> IndexList[rank]:
+](tensor: LayoutTensor[dtype, layout, ...]) -> IndexList[rank]:
     var index_list = IndexList[rank](0)
 
     @parameter
@@ -791,9 +791,9 @@ fn _batched_matmul_gpu[
     transpose_b: Bool = False,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, *_, **_],
-    a_buf: NDBuffer[a_type, rank, *_, **_],
-    b_buf: NDBuffer[b_type, rank, *_, **_],
+    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
+    a_buf: NDBuffer[a_type, rank, _, _, _],
+    b_buf: NDBuffer[b_type, rank, _, _, _],
     ctx: DeviceContext,
 ) raises:
     var c_tensor = from_ndbuffer_row_major(c_buf)
@@ -1013,9 +1013,9 @@ fn batched_matmul[
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, *_],
-    a_buf: NDBuffer[a_type, rank, *_],
-    b_buf: NDBuffer[b_type, rank, *_],
+    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
+    a_buf: NDBuffer[a_type, rank, _, _, _],
+    b_buf: NDBuffer[b_type, rank, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1228,11 +1228,11 @@ fn bmm_sm100_blockwise_scaled_fp8[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, *_, **_],
-    a: LayoutTensor[a_type, a_layout, *_, **_],
-    b: LayoutTensor[b_type, b_layout, *_, **_],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert transpose_b, "Only support transposed B"

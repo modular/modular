@@ -19,7 +19,7 @@ from layout.layout import blocked_product
 from layout._fillers import arange
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 from utils.index import IndexList

@@ -1223,7 +1223,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
-](n: Int, shape: IndexList[rank, **_], out res: type_of(shape)):
+](n: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1291,7 +1291,7 @@ fn _get_start_indices_of_nth_subvolume_uint[
     rank: Int,
     //,
     subvolume_rank: UInt = 1,
-](n: UInt, shape: IndexList[rank, **_]) -> type_of(shape):
+](n: UInt, shape: IndexList[rank, ...]) -> type_of(shape):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1382,7 +1382,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-](shape: IndexList[rank, **_]) raises:
+](shape: IndexList[rank, ...]) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1462,7 +1462,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-](shape: IndexList[rank, **_], context: DeviceContext) raises:
+](shape: IndexList[rank, ...], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1500,7 +1500,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-](shape: IndexList[rank, **_], context: DeviceContextPtr) raises:
+](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1563,7 +1563,7 @@ fn _elementwise_impl[
     *,
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-](shape: IndexList[rank, **_], context: DeviceContext) raises:
+](shape: IndexList[rank, ...], context: DeviceContext) raises:
     @parameter
     if is_cpu[target]():
         _elementwise_impl_cpu[
@@ -1587,7 +1587,7 @@ fn _elementwise_impl_cpu[
     /,
     *,
     use_blocking_impl: Bool = False,
-](shape: IndexList[rank, **_]):
+](shape: IndexList[rank, ...]):
     comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
     impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
 
@@ -1602,7 +1602,7 @@ fn _elementwise_impl_cpu_1d[
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank, **_]):
+](shape: IndexList[rank, ...]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1664,7 +1664,7 @@ fn _elementwise_impl_cpu_nd[
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank, **_]):
+](shape: IndexList[rank, ...]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns
     when all sub-tasks have completed.
@@ -1758,7 +1758,7 @@ fn _elementwise_impl_gpu[
         IndexList[rank]
     ) capturing [_] -> None,
     simd_width: UInt,
-](shape: IndexList[rank, **_], ctx: DeviceContext) raises:
+](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
@@ -1945,27 +1945,27 @@ fn _stencil_impl_cpu[
     //,
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: IndexList[stencil_rank, **_],
+    stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> Tuple[
-        IndexList[stencil_rank, **_],
-        IndexList[stencil_rank, **_],
+    map_fn: fn (IndexList[stencil_rank, ...]) capturing [_] -> Tuple[
+        IndexList[stencil_rank, ...],
+        IndexList[stencil_rank, ...],
     ],
     map_strides: fn (dim: Int) capturing [_] -> Int,
     load_fn: fn[simd_width: Int, dtype: DType] (
-        IndexList[rank, **_]
+        IndexList[rank, ...]
     ) capturing [_] -> SIMD[dtype, simd_width],
     compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
         dtype, simd_width
     ],
     compute_fn: fn[simd_width: Int] (
-        IndexList[rank, **_],
+        IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) capturing [_] -> SIMD[dtype, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
-        IndexList[rank, **_], SIMD[dtype, simd_width]
+        IndexList[rank, ...], SIMD[dtype, simd_width]
     ) capturing [_] -> None,
 ](
     shape: IndexList[rank, element_type=shape_element_type],
@@ -2114,27 +2114,27 @@ fn _stencil_impl_gpu[
     //,
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: IndexList[stencil_rank, **_],
+    stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> Tuple[
-        IndexList[stencil_rank, **_],
-        IndexList[stencil_rank, **_],
+    map_fn: fn (IndexList[stencil_rank, ...]) capturing [_] -> Tuple[
+        IndexList[stencil_rank, ...],
+        IndexList[stencil_rank, ...],
     ],
     map_strides: fn (dim: Int) capturing [_] -> Int,
     load_fn: fn[simd_width: Int, dtype: DType] (
-        IndexList[rank, **_]
+        IndexList[rank, ...]
     ) capturing [_] -> SIMD[dtype, simd_width],
     compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
         dtype, simd_width
     ],
     compute_fn: fn[simd_width: Int] (
-        IndexList[rank, **_],
+        IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) capturing [_] -> SIMD[dtype, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
-        IndexList[rank, **_], SIMD[dtype, simd_width]
+        IndexList[rank, ...], SIMD[dtype, simd_width]
     ) capturing [_] -> None,
 ](
     ctx: DeviceContext,

@@ -43,7 +43,7 @@ from utils.numerics import get_accum_type, max_finite, min_finite
 from utils.static_tuple import StaticTuple
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import fill, zero, random, assert_almost_equal
 from math import ceildiv
 from builtin.simd import _convert_f32_to_float8_ue8m0

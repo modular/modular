@@ -23,8 +23,8 @@ fn cumsum[
     exclusive: Bool,
     reverse: Bool,
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
     axis: Int,
 ):
     """
@@ -70,13 +70,13 @@ fn cumsum[
         else:
             depth = shape[i]
 
-    var output_data = LayoutTensor[output.dtype, Layout.row_major[1](), **_](
+    var output_data = LayoutTensor[output.dtype, Layout.row_major[1](), ...](
         output.ptr,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](output.size())
         ),
     )
-    var input_data = LayoutTensor[input.dtype, Layout.row_major[1](), **_](
+    var input_data = LayoutTensor[input.dtype, Layout.row_major[1](), ...](
         input.ptr,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](input.size())

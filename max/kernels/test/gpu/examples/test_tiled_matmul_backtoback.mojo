@@ -620,7 +620,7 @@ fn multistage_b2b_gemm[
 
 
 fn matmul_naive(
-    C: LayoutTensor[mut=True, **_],
+    C: LayoutTensor[mut=True, ...],
     A: LayoutTensor,
     B: LayoutTensor,
 ):

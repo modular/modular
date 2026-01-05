@@ -15,7 +15,7 @@ from collections import OptionalReg
 from math import align_down, ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -93,9 +93,9 @@ from .conv_utils import (
 fn conv_transpose_naive[
     dtype: DType,
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
-    filter: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
+    filter: LayoutTensor[dtype, ...],
     stride: IndexList[3],
     dilation: IndexList[3],
     pad_d: IndexList[2],
@@ -191,12 +191,12 @@ fn conv_transpose_shape[
     output_pads_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: LayoutTensor[dtype, **_],
-    kernel: LayoutTensor[dtype, **_],
-    strides: LayoutTensor[strides_type, **_],
-    dilations: LayoutTensor[dilations_type, **_],
-    pads: LayoutTensor[pads_type, **_],
-    output_pads: LayoutTensor[output_pads_type, **_],
+    input: LayoutTensor[dtype, ...],
+    kernel: LayoutTensor[dtype, ...],
+    strides: LayoutTensor[strides_type, ...],
+    dilations: LayoutTensor[dilations_type, ...],
+    pads: LayoutTensor[pads_type, ...],
+    output_pads: LayoutTensor[output_pads_type, ...],
 ) raises -> IndexList[input.rank]:
     """
     Compute the output shape of a `conv-transpose` operation, and assert the
@@ -459,7 +459,8 @@ struct ConvTransposedPacked[
             layout_int_type = Self.output_layout_int_type,
             linear_idx_type = Self.output_linear_idx_type,
             masked = Self.output_masked,
-            alignment = Self.output_alignment, **_,
+            alignment = Self.output_alignment,
+            ...,
         ],
         input: LayoutTensor[
             Self.input_type,
@@ -470,7 +471,8 @@ struct ConvTransposedPacked[
             layout_int_type = Self.input_layout_int_type,
             linear_idx_type = Self.input_linear_idx_type,
             masked = Self.input_masked,
-            alignment = Self.input_alignment, **_,
+            alignment = Self.input_alignment,
+            ...,
         ],
         filter: LayoutTensor[
             Self.filter_type,
@@ -481,7 +483,8 @@ struct ConvTransposedPacked[
             layout_int_type = Self.filter_layout_int_type,
             linear_idx_type = Self.filter_linear_idx_type,
             masked = Self.filter_masked,
-            alignment = Self.filter_alignment, **_,
+            alignment = Self.filter_alignment,
+            ...,
         ],
         conv_shape: ConvShape[Self.input_layout.rank() - 2],
     ) raises:
@@ -1301,7 +1304,7 @@ fn pack_filter_shape(
 @always_inline
 fn pack_filter(
     filter: LayoutTensor,
-    packed_filter: LayoutTensor[mut=True, *_, **_],
+    packed_filter: LayoutTensor[mut=True, ...],
     num_groups: Int,
 ):
     """This packs the filter form RSFC to FRSCf."""
@@ -1430,16 +1433,18 @@ fn conv_transposed_cpu[
         mut=True,
         output_type,
         output_layout,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     input: LayoutTensor[
-        input_type, input_layout, address_space = AddressSpace.GENERIC, **_
+        input_type, input_layout, address_space = AddressSpace.GENERIC, ...
     ],
     filter: LayoutTensor[
         mut=True,
         filter_type,
         filter_layout,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
@@ -1583,10 +1588,11 @@ fn conv_transposed_gpu[
         mut=True,
         output_type,
         output_layout,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
-    input: LayoutTensor[input_type, input_layout, **_],
-    filter: LayoutTensor[mut=True, filter_type, filter_layout, **_],
+    input: LayoutTensor[input_type, input_layout, ...],
+    filter: LayoutTensor[mut=True, filter_type, filter_layout, ...],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
     padding: IndexList[input.rank - 2],
@@ -1651,9 +1657,9 @@ fn _conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, **_],
-    filter: LayoutTensor[filter_type, **_],
-    output: LayoutTensor[output_type, **_],
+    input: LayoutTensor[input_type, ...],
+    filter: LayoutTensor[filter_type, ...],
+    output: LayoutTensor[output_type, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -1756,9 +1762,9 @@ fn conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, **_],
-    filter: LayoutTensor[filter_type, **_],
-    output: LayoutTensor[output_type, **_],
+    input: LayoutTensor[input_type, ...],
+    filter: LayoutTensor[filter_type, ...],
+    output: LayoutTensor[output_type, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],

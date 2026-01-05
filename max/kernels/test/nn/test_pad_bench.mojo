@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort
 
 import benchmark
@@ -40,10 +40,11 @@ fn pad_constant_dispatch[
         mut=True,
         dtype,
         output_layout,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     input: LayoutTensor[
-        dtype, input_layout, address_space = AddressSpace.GENERIC, **_
+        dtype, input_layout, address_space = AddressSpace.GENERIC, ...
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[constant_type],
@@ -78,10 +79,10 @@ fn pad_constant_dispatch[
         @parameter
         fn pad_constant_wrapper(
             output: UnsafePointer[
-                Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+                Scalar[dtype], address_space = AddressSpace.GENERIC, ...
             ],
             input: UnsafePointer[
-                Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+                Scalar[dtype], address_space = AddressSpace.GENERIC, ...
             ],
             paddings: UnsafePointer[Scalar[paddings_type]],
             output_shape: IndexList[output_layout.rank()],
@@ -214,10 +215,11 @@ fn pad_reflect_dispatch[
         mut=True,
         dtype,
         output_layout,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     input: LayoutTensor[
-        dtype, input_layout, address_space = AddressSpace.GENERIC, **_
+        dtype, input_layout, address_space = AddressSpace.GENERIC, ...
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
@@ -251,10 +253,10 @@ fn pad_reflect_dispatch[
         @parameter
         fn pad_reflect_wrapper(
             output: UnsafePointer[
-                Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+                Scalar[dtype], address_space = AddressSpace.GENERIC, ...
             ],
             input: UnsafePointer[
-                Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+                Scalar[dtype], address_space = AddressSpace.GENERIC, ...
             ],
             paddings: UnsafePointer[Scalar[paddings_type]],
             output_shape: IndexList[output_layout.rank()],
@@ -554,7 +556,8 @@ fn test_pad_constant_nd[
     var output = LayoutTensor[
         DType.int,
         Layout.row_major(out_shape),
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ](
         output_ptr,
         RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),

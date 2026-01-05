@@ -144,7 +144,7 @@ struct RuntimeLayout[
     @always_inline
     fn __call__[
         t: IntTuple
-    ](self, idx: RuntimeTuple[t, **_]) -> Scalar[Self.linear_idx_type]:
+    ](self, idx: RuntimeTuple[t, ...]) -> Scalar[Self.linear_idx_type]:
         """Convert a multi-dimensional index to a flat linear index.
 
         Parameters:
@@ -163,7 +163,7 @@ struct RuntimeLayout[
     @always_inline("nodebug")
     fn idx2crd[
         t: IntTuple
-    ](self, idx: RuntimeTuple[t, **_]) -> RuntimeTuple[
+    ](self, idx: RuntimeTuple[t, ...]) -> RuntimeTuple[
         idx2crd_int_tuple(t, Self.layout.shape, Self.layout.stride),
         element_type = Self.element_type,
     ]:
@@ -247,7 +247,7 @@ struct RuntimeLayout[
     fn row_major[
         rank: Int, //
     ](
-        shape: IndexList[rank, **_],
+        shape: IndexList[rank, ...],
         out result: RuntimeLayout[
             Self.layout,
             element_type = Self.element_type,
@@ -284,7 +284,7 @@ struct RuntimeLayout[
     fn col_major[
         rank: Int, //
     ](
-        shape: IndexList[rank, **_],
+        shape: IndexList[rank, ...],
         out result: RuntimeLayout[
             Self.layout,
             element_type = Self.element_type,
@@ -387,7 +387,7 @@ fn coalesce[
     l: Layout,
     keep_rank: Bool = False,
 ](
-    layout: RuntimeLayout[l, **_],
+    layout: RuntimeLayout[l, ...],
     out result: RuntimeLayout[
         coalesce_layout(l, keep_rank),
         element_type = layout.element_type,
@@ -461,8 +461,8 @@ fn coalesce[
 fn make_layout[
     l1: Layout, l2: Layout, /, *, linear_idx_type: DType = DType.uint64
 ](
-    a: RuntimeLayout[l1, **_],
-    b: RuntimeLayout[l2, **_],
+    a: RuntimeLayout[l1, ...],
+    b: RuntimeLayout[l2, ...],
     out result: RuntimeLayout[
         make_layout_static(l1, l2),
         element_type = b.element_type,

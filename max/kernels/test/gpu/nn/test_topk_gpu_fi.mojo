@@ -39,7 +39,7 @@ comptime NUM_VALIDATION_TRIALS = 50
 @parameter
 fn fill_random_for_test[
     dtype: DType, normalized: Bool
-](buffer: LayoutTensor[mut=True, dtype, **_]):
+](buffer: LayoutTensor[mut=True, dtype, ...]):
     """Fill buffer with random values, optionally normalizing to probabilities.
 
     Parameters:
@@ -77,8 +77,8 @@ fn fill_random_for_test[
 fn compute_topk_mask[
     dtype: DType,
 ](
-    values: LayoutTensor[dtype, **_],
-    mask: LayoutTensor[mut=True, DType.bool, **_],
+    values: LayoutTensor[dtype, ...],
+    mask: LayoutTensor[mut=True, DType.bool, ...],
     K: Int,
     batch_size: Int,
     N: Int,
@@ -109,8 +109,8 @@ fn compute_topk_mask[
 fn validate_sampling_results[
     out_idx_type: DType,
 ](
-    sampled_idxs: LayoutTensor[out_idx_type, **_],
-    mask: LayoutTensor[DType.bool, **_],
+    sampled_idxs: LayoutTensor[out_idx_type, ...],
+    mask: LayoutTensor[DType.bool, ...],
     batch_size: Int,
     N: Int,
     trial_num: Int,
@@ -385,10 +385,10 @@ fn extract_topk_from_masked[
     dtype: DType,
     out_idx_type: DType,
 ](
-    masked_logits: LayoutTensor[dtype, **_],
+    masked_logits: LayoutTensor[dtype, ...],
     K: Int,
-    topk_vals_out: LayoutTensor[mut=True, dtype, **_],
-    topk_idxs_out: LayoutTensor[mut=True, out_idx_type, **_],
+    topk_vals_out: LayoutTensor[mut=True, dtype, ...],
+    topk_idxs_out: LayoutTensor[mut=True, out_idx_type, ...],
 ) raises:
     """Extract top-K values and indices from masked logits tensor.
 
@@ -442,7 +442,7 @@ fn extract_topk_from_masked[
 fn test_case_batched[
     dtype: DType,
     fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, **_]
+        LayoutTensor[mut=True, dtype, ...]
     ) capturing [_] -> None,
     out_idx_type: DType = DType.int,
 ](ctx: DeviceContext, test_case: TestCase) raises:
@@ -680,7 +680,7 @@ fn time_kernel[
 @parameter
 fn fill_random[
     rank: Int, dtype: DType
-](buffer: LayoutTensor[mut=True, dtype, **_]):
+](buffer: LayoutTensor[mut=True, dtype, ...]):
     comptime min_val = -1e9
     comptime max_val = 1e9
     var total_elements = buffer.size()

@@ -39,7 +39,7 @@ from math import ceildiv, gcd, exp
 from memory import stack_allocation
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import Atomic
 from random import Random
 from sys import align_of, bit_width_of, simd_width_of, size_of
@@ -260,8 +260,8 @@ fn topk_mask_logits[
     dtype: DType, out_idx_type: DType, block_size: Int = 1024
 ](
     ctx: DeviceContext,
-    logits: LayoutTensor[dtype, **_],
-    masked_logits: LayoutTensor[mut=True, dtype, **_],
+    logits: LayoutTensor[dtype, ...],
+    masked_logits: LayoutTensor[mut=True, dtype, ...],
     top_k_val: Int,
     top_k_arr: OptionalReg[
         LayoutTensor[
@@ -762,8 +762,8 @@ fn topk_sampling_from_prob[
     dtype: DType, out_idx_type: DType, block_size: Int = 1024
 ](
     ctx: DeviceContext,
-    probs: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, out_idx_type, **_],
+    probs: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     deterministic: Bool = False,
     rng_seed: UInt64 = 0,
@@ -1058,8 +1058,8 @@ fn topk_softmax_sample[
     dtype: DType, out_idx_type: DType, block_size: Int = 1024
 ](
     ctx: DeviceContext,
-    logits: LayoutTensor[dtype, **_],
-    sampled_indices: LayoutTensor[mut=True, out_idx_type, **_],
+    logits: LayoutTensor[dtype, ...],
+    sampled_indices: LayoutTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     temperature_val: Float32 = 1.0,
     seed_val: UInt64 = 0,

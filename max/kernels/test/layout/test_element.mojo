@@ -21,7 +21,7 @@ from layout.int_tuple import UNKNOWN_VALUE
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import IndexList
 
 

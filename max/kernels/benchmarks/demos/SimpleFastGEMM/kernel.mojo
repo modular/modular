@@ -20,7 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 comptime mr = 6
 comptime nr = 64

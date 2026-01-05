@@ -105,8 +105,8 @@ fn cubic_kernel(x: SIMD) -> type_of(x):
 
 
 fn cpu_bicubic_kernel(
-    output_host: LayoutTensor[mut=True, **_],
-    input_host: LayoutTensor[**_],
+    output_host: LayoutTensor[mut=True, ...],
+    input_host: LayoutTensor[...],
 ) -> None:
     """Perform bicubic interpolation on a LayoutTensor of form NCHW.
 
@@ -271,8 +271,8 @@ fn resize_bicubic[
     //,
     target: StaticString,
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """Perform bicubic interpolation.

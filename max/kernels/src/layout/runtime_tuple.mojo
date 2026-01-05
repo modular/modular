@@ -122,7 +122,7 @@ struct RuntimeTuple[
 
     @always_inline
     @implicit
-    fn __init__[l: Int](out self, values: IndexList[l, **_]):
+    fn __init__[l: Int](out self, values: IndexList[l, ...]):
         """Initialize a `RuntimeTuple` from an `IndexList`.
 
         Parameters:
@@ -371,7 +371,7 @@ struct RuntimeTuple[
         return self.value[0]
 
 
-fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
+fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Bool:
     """Determines if a `RuntimeTuple` represents a tuple rather than a scalar value.
 
     This function checks the structure of the underlying IntTuple to determine
@@ -389,7 +389,7 @@ fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
     return t.is_tuple()
 
 
-fn is_int[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
+fn is_int[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Bool:
     """Determines if a `RuntimeTuple` represents a scalar integer value.
 
     This function checks if the `RuntimeTuple` holds a single scalar value
@@ -410,7 +410,7 @@ fn is_int[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
 @always_inline
 fn prefix_product[
     t: IntTuple
-](tuple: RuntimeTuple[t, **_]) -> RuntimeTuple[prefix_product_int_tuple(t)]:
+](tuple: RuntimeTuple[t, ...]) -> RuntimeTuple[prefix_product_int_tuple(t)]:
     """Computes the prefix products of elements in the `RuntimeTuple`.
 
     This function calculates the running product of elements, where each
@@ -435,7 +435,7 @@ fn prefix_product[
 
 
 @always_inline
-fn product[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Int:
+fn product[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Int:
     """Computes the product of all elements in the `RuntimeTuple`.
 
     This function multiplies all scalar values in the tuple, including
@@ -465,9 +465,9 @@ fn idx2crd[
     shape_t: IntTuple,
     stride_t: IntTuple,
 ](
-    idx: RuntimeTuple[idx_t, **_],
-    shape: RuntimeTuple[shape_t, **_],
-    stride: RuntimeTuple[stride_t, **_],
+    idx: RuntimeTuple[idx_t, ...],
+    shape: RuntimeTuple[shape_t, ...],
+    stride: RuntimeTuple[stride_t, ...],
     out result: RuntimeTuple[
         idx2crd_int_tuple(idx_t, shape_t, stride_t),
         element_type = shape.element_type,
@@ -510,8 +510,8 @@ fn idx2crd[
     idx_t: IntTuple,
     shape_t: IntTuple,
 ](
-    idx: RuntimeTuple[idx_t, **_],
-    shape: RuntimeTuple[shape_t, **_],
+    idx: RuntimeTuple[idx_t, ...],
+    shape: RuntimeTuple[shape_t, ...],
 ) -> RuntimeTuple[
     idx2crd_int_tuple(idx_t, shape_t, prefix_product_int_tuple(shape_t)),
     element_type = shape.element_type,
@@ -542,9 +542,9 @@ fn crd2idx[
     stride_t: IntTuple,
     out_type: DType = DType.uint64,
 ](
-    crd: RuntimeTuple[crd_t, **_],
-    shape: RuntimeTuple[shape_t, **_],
-    stride: RuntimeTuple[stride_t, **_],
+    crd: RuntimeTuple[crd_t, ...],
+    shape: RuntimeTuple[shape_t, ...],
+    stride: RuntimeTuple[stride_t, ...],
 ) -> Scalar[out_type]:
     """Converts multi-dimensional coordinates to a linear index.
 
@@ -602,12 +602,12 @@ fn crd2idx[
             for i in range(last_elem_idx):
                 var divisor, quotient = divmod(Int(int_crd), product(shape[i]))
                 result += crd2idx[crd_t, out_type=out_type](
-                    RuntimeTuple[crd_t, **_](quotient), shape[i], stride[i]
+                    RuntimeTuple[crd_t, ...](quotient), shape[i], stride[i]
                 )
                 int_crd = divisor
             # FIXME(KERN-640): Replace with [-1], currently not giving correct result.
             return result + crd2idx[crd_t, out_type=out_type](
-                RuntimeTuple[crd_t, **_](Int(int_crd)),
+                RuntimeTuple[crd_t, ...](Int(int_crd)),
                 shape[last_elem_idx],
                 stride[last_elem_idx],
             )
@@ -637,8 +637,8 @@ fn signum(a: Int) -> Int:
 fn shape_div[
     a_t: IntTuple, b_t: IntTuple
 ](
-    a: RuntimeTuple[a_t, **_],
-    b: RuntimeTuple[b_t, **_],
+    a: RuntimeTuple[a_t, ...],
+    b: RuntimeTuple[b_t, ...],
     out result: RuntimeTuple[shape_div_int_tuple(a_t, b_t)],
 ):
     """Performs specialized shape division between `RuntimeTuple`s.
@@ -719,7 +719,7 @@ fn shape_div[
 
 fn to_index_list[
     rank: Int, t: IntTuple
-](tuple: RuntimeTuple[t, **_]) -> IndexList[rank]:
+](tuple: RuntimeTuple[t, ...]) -> IndexList[rank]:
     """
     Converts a RuntimeTuple to an IndexList with the same values.
 
@@ -760,7 +760,7 @@ fn _int_tuple_product_flatten[t: IntTuple]() -> IntTuple:
 fn coalesce_nested_tuple[
     t: IntTuple,
     out_t: IntTuple = _int_tuple_product_flatten[t](),
-](tuple: RuntimeTuple[t, **_]) -> RuntimeTuple[out_t, **_]:
+](tuple: RuntimeTuple[t, ...]) -> RuntimeTuple[out_t, ...]:
     """Coalesces a nested `RuntimeTuple` into a single-level `RuntimeTuple`, by multiplying all the
     values together.
 

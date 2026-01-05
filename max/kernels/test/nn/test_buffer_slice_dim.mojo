@@ -26,7 +26,7 @@ from nn.slice import slice_dim_as_view
 from utils.index import IndexList
 
 
-def print_elements[dtype: DType](tensor: LayoutTensor[dtype, **_]):
+def print_elements[dtype: DType](tensor: LayoutTensor[dtype, ...]):
     print("New shape:", tensor.runtime_layout.shape.value.canonicalize())
     print("New strides:", tensor.runtime_layout.stride.value.canonicalize())
 

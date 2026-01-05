@@ -36,7 +36,7 @@ from memory import bitcast
 # We have a hard code 2D path in `arange` and it's row-major.
 # Add the col-major version as a work-around. Generalizing the above
 # may touch too many places.
-fn _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, **_]):
+fn _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
     comptime layout = t.layout
     comptime size = layout.size()
 

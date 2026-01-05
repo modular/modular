@@ -477,7 +477,7 @@ struct List[T: Copyable & ImplicitlyDestructible](
     @always_inline
     fn __ne__[
         U: Equatable & Copyable, //
-    ](self: List[U, *_], other: List[U, *_]) -> Bool:
+    ](self: List[U, ...], other: List[U, ...]) -> Bool:
         """Checks if two lists are not equal.
 
         Parameters:
@@ -502,7 +502,7 @@ struct List[T: Copyable & ImplicitlyDestructible](
 
     fn __contains__[
         U: Equatable & Copyable, //
-    ](self: List[U, *_], value: U) -> Bool:
+    ](self: List[U, ...], value: U) -> Bool:
         """Verify if a given value is present in the list.
 
         Parameters:
@@ -764,7 +764,7 @@ struct List[T: Copyable & ImplicitlyDestructible](
             earlier_idx -= 1
             later_idx -= 1
 
-    fn extend(mut self, var other: List[Self.T, *_]):
+    fn extend(mut self, var other: List[Self.T, ...]):
         """Extends this list by consuming the elements of `other`.
 
         Args:
@@ -846,7 +846,7 @@ struct List[T: Copyable & ImplicitlyDestructible](
 
     fn extend[
         dtype: DType, //
-    ](mut self: List[Scalar[dtype], *_, **_], value: SIMD[dtype, _]):
+    ](mut self: List[Scalar[dtype], ...], value: SIMD[dtype, _]):
         """Extends this list with the elements of a vector.
 
         Parameters:
@@ -876,7 +876,7 @@ struct List[T: Copyable & ImplicitlyDestructible](
     fn extend[
         dtype: DType, //
     ](
-        mut self: List[Scalar[dtype], *_, **_],
+        mut self: List[Scalar[dtype], ...],
         value: SIMD[dtype, _],
         *,
         count: Int,
@@ -1085,7 +1085,7 @@ struct List[T: Copyable & ImplicitlyDestructible](
     fn index[
         C: Equatable & Copyable, //
     ](
-        ref self: List[C, *_],
+        ref self: List[C, ...],
         value: C,
         start: Int = 0,
         stop: Optional[Int] = None,
@@ -1299,7 +1299,7 @@ struct List[T: Copyable & ImplicitlyDestructible](
 
     fn count[
         _T: Equatable & Copyable, //
-    ](self: List[_T, *_], value: _T) -> Int:
+    ](self: List[_T, ...], value: _T) -> Int:
         """Counts the number of occurrences of a value in the list.
 
         Parameters:

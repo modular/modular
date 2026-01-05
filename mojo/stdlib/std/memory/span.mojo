@@ -200,7 +200,7 @@ struct Span[
 
     @always_inline
     @implicit
-    fn __init__(out self, ref [Self.origin]list: List[Self.T, *_]):
+    fn __init__(out self, ref [Self.origin]list: List[Self.T, ...]):
         """Construct a `Span` from a `List`.
 
         Args:
@@ -340,7 +340,7 @@ struct Span[
         return False
 
     @no_inline
-    fn __str__[U: Representable & Copyable, //](self: Span[U, *_]) -> String:
+    fn __str__[U: Representable & Copyable, //](self: Span[U, ...]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -373,7 +373,7 @@ struct Span[
     @no_inline
     fn write_to[
         U: Representable & Copyable, //
-    ](self: Span[U, *_], mut writer: Some[Writer]):
+    ](self: Span[U, ...], mut writer: Some[Writer]):
         """Write `my_span.__str__()` to a `Writer`.
 
         Parameters:
@@ -391,7 +391,7 @@ struct Span[
         writer.write("]")
 
     @no_inline
-    fn __repr__[U: Representable & Copyable, //](self: Span[U, *_]) -> String:
+    fn __repr__[U: Representable & Copyable, //](self: Span[U, ...]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -808,7 +808,7 @@ struct Span[
     fn _binary_search_index[
         dtype: DType,
         //,
-    ](self: Span[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
+    ](self: Span[Scalar[dtype], ...], needle: Scalar[dtype]) -> Optional[UInt]:
         """Finds the index of `needle` with binary search.
         Args:
             needle: The value to binary search for.

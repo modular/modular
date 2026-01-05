@@ -92,34 +92,39 @@ fn multistage_dual_mma[
         c_type,
         c_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL, **_,
+        address_space = AddressSpace.LOCAL,
+        ...,
     ],
     c1: LayoutTensor[
         c_type,
         c_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL, **_,
+        address_space = AddressSpace.LOCAL,
+        ...,
     ],
-    a_iter_arg: LayoutTensorIter[_, a_layout, MutAnyOrigin, **_],
-    b0_iter_arg: LayoutTensorIter[b_type, b_layout, MutAnyOrigin, **_],
-    b1_iter_arg: LayoutTensorIter[b_type, b_layout, MutAnyOrigin, **_],
+    a_iter_arg: LayoutTensorIter[_, a_layout, MutAnyOrigin, ...],
+    b0_iter_arg: LayoutTensorIter[b_type, b_layout, MutAnyOrigin, ...],
+    b1_iter_arg: LayoutTensorIter[b_type, b_layout, MutAnyOrigin, ...],
     a_smem_iter_arg: LayoutTensorIter[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED, **_,
+        address_space = AddressSpace.SHARED,
+        ...,
     ],
     mut b0_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED, **_,
+        address_space = AddressSpace.SHARED,
+        ...,
     ],
     mut b1_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED, **_,
+        address_space = AddressSpace.SHARED,
+        ...,
     ],
     num_iters: Int,
     /,
@@ -175,7 +180,7 @@ fn multistage_dual_mma[
     @always_inline
     @parameter
     fn _copy_single_tensor_to_sram(
-        dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor
+        dst: LayoutTensor[mut=True, ...], src: LayoutTensor
     ):
         copy_dram_to_sram_async[
             thread_layout=async_copy_a_layout,
@@ -188,8 +193,8 @@ fn multistage_dual_mma[
     @always_inline
     @parameter
     fn _copy_dual_tensor_to_sram(
-        b0_dst: LayoutTensor[mut=True, *_, **_],
-        b1_dst: LayoutTensor[mut=True, *_, **_],
+        b0_dst: LayoutTensor[mut=True, ...],
+        b1_dst: LayoutTensor[mut=True, ...],
         b0_src: LayoutTensor,
         b1_src: LayoutTensor,
     ):

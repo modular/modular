@@ -727,7 +727,7 @@ struct TMATensorTile[
         cta_group: Int = 1
     ](
         self,
-        dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+        dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -817,7 +817,7 @@ struct TMATensorTile[
     fn async_copy_3d(
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt],
@@ -904,7 +904,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt, UInt],
@@ -998,7 +998,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt, UInt, UInt],
@@ -1108,7 +1108,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: StaticTuple[UInt32, rank],
@@ -1178,7 +1178,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: StaticTuple[UInt32, rank],
     ):
@@ -1240,7 +1240,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
@@ -1311,7 +1311,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt],
@@ -1415,7 +1415,7 @@ struct TMATensorTile[
             _,
             address_space = AddressSpace.SHARED,
             alignment=128,
-            *_, **_,
+            ...,
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         rank: UInt,
@@ -1465,7 +1465,7 @@ struct TMATensorTile[
     fn async_store(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt],
     ):
@@ -1522,7 +1522,7 @@ struct TMATensorTile[
     fn async_store_3d(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt, UInt],
     ):
@@ -1603,7 +1603,7 @@ struct TMATensorTile[
     fn async_store_4d(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt, UInt, UInt],
     ):
@@ -1684,7 +1684,7 @@ struct TMATensorTile[
     fn async_store_5d(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt, UInt, UInt, UInt],
     ):
@@ -1783,7 +1783,7 @@ struct TMATensorTile[
     ](
         self,
         src: LayoutTensor[
-            Self.dtype, Self.layout, address_space = AddressSpace.SHARED, **_
+            Self.dtype, Self.layout, address_space = AddressSpace.SHARED, ...
         ],
         coords: Tuple[UInt, UInt],
     ):
@@ -2082,7 +2082,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, ...
         ],
         gmem_dims: IndexList[rank],
         gmem_strides: IndexList[rank],
@@ -2160,7 +2160,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, ...
         ],
         dim_value: UInt32,
         dim_stride: Optional[UInt64] = None,
@@ -2299,7 +2299,7 @@ def _create_tma_descriptor_helper[
     //,
     desc_index_list: IndexList[rank],
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[dtype, *_, **_]) -> TMADescriptor:
+](ctx: DeviceContext, tensor: LayoutTensor[dtype, ...]) -> TMADescriptor:
     """
     Helper function to create a TMA descriptor from a global memory layout tensor.
 
@@ -2387,7 +2387,7 @@ def create_tma_tile[
     __desc_layout: Layout = _tma_desc_tile_layout[
         dtype, rank, tile_shape, swizzle_mode
     ](),
-](ctx: DeviceContext, tensor: LayoutTensor[dtype, *_, **_]) -> TMATensorTile[
+](ctx: DeviceContext, tensor: LayoutTensor[dtype, ...]) -> TMATensorTile[
     dtype,
     __tile_layout,
     __desc_layout,
@@ -2421,7 +2421,7 @@ def create_tma_tile[
     Args:
         ctx: DeviceContext
             The CUDA device context used to create the TMA descriptor.
-        tensor: LayoutTensor[dtype, *_, **_]
+        tensor: LayoutTensor[dtype, ...]
             The source tensor from which data will be transferred. This defines the
             global memory layout and must match the specified data type.
 
@@ -3343,7 +3343,8 @@ struct RaggedTensorMap[
             Self.dtype,
             _,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED, **_,
+            address_space = AddressSpace.SHARED,
+            ...,
         ],
     ):
         """

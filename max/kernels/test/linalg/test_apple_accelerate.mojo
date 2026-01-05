@@ -18,7 +18,7 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import *
 
 from utils.index import Index
@@ -32,7 +32,7 @@ comptime c_type = DType.float32
 
 
 fn gemm_naive(
-    c: NDBuffer[mut=True, *_],
+    c: NDBuffer[mut=True, ...],
     a: NDBuffer,
     b: NDBuffer,
     m: Int,
@@ -48,9 +48,9 @@ fn gemm_naive(
 
 
 def test_matmul(
-    c: NDBuffer[mut=True, *_],
-    a: NDBuffer[mut=True, *_],
-    b: NDBuffer[mut=True, *_],
+    c: NDBuffer[mut=True, ...],
+    a: NDBuffer[mut=True, ...],
+    b: NDBuffer[mut=True, ...],
     m: Int,
     n: Int,
     k: Int,
@@ -129,7 +129,7 @@ def test_matmul():
 
 
 fn bmm_naive(
-    c: NDBuffer[mut=True, *_],
+    c: NDBuffer[mut=True, ...],
     a: NDBuffer,
     b: NDBuffer,
     batches: Int,
@@ -147,9 +147,9 @@ fn bmm_naive(
 
 
 def test_batched_matmul(
-    c: NDBuffer[mut=True, *_],
-    a: NDBuffer[mut=True, *_],
-    b: NDBuffer[mut=True, *_],
+    c: NDBuffer[mut=True, ...],
+    a: NDBuffer[mut=True, ...],
+    b: NDBuffer[mut=True, ...],
     batches: Int,
     m: Int,
     n: Int,

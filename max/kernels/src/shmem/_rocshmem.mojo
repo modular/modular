@@ -13,7 +13,7 @@
 from collections.string.string_slice import get_static_string
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of

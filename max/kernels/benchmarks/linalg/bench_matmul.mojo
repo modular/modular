@@ -22,14 +22,14 @@ from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils import IndexList
 from utils.index import Index
 
 
-fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, *_]):
+fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
     var m = c.get_shape()[0]
     var n = c.get_shape()[1]
     var k = a.get_shape()[1]

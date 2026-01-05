@@ -268,14 +268,14 @@ fn multi_stage_reg_epilogue[
         accum_layout,
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
-        *_, **_,
+        ...,
     ],
     c_lower_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
-        *_, **_,
+        ...,
     ],
     c_iter: LayoutTensorIter[
         c_type,
@@ -441,14 +441,14 @@ fn promote_accumulators[
         accum_layout,
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
-        *_, **_,
+        ...,
     ],
     c_lower_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
-        *_, **_,
+        ...,
     ],
     mma_output_pipeline: ProducerConsumerPipeline[
         Int(num_accum_pipeline_stages)
@@ -1323,11 +1323,11 @@ fn sm100_warp_specialized_blockwise_fp8[
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
 ](
-    c: LayoutTensor[c_type, c_layout, *_, **_],
-    a: LayoutTensor[a_type, a_layout, *_, **_],
-    b: LayoutTensor[b_type, b_layout, *_, **_],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
     constrained[

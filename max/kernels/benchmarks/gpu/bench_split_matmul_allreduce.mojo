@@ -24,7 +24,7 @@ from linalg.distributed_matmul import matmul_allreduce
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import IndexList, StaticTuple
 
 

@@ -175,9 +175,9 @@ fn _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: UnsafePointer[mut=True, Float32, **_],
-    a_ptr: UnsafePointer[Float32, **_],
-    b_ptr: UnsafePointer[Float32, **_],
+    c_ptr: UnsafePointer[mut=True, Float32, ...],
+    a_ptr: UnsafePointer[Float32, ...],
+    b_ptr: UnsafePointer[Float32, ...],
 ):
     cblas_gemm_fn(
         _CBLASOrder.ROW_MAJOR,
@@ -212,9 +212,9 @@ fn _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: UnsafePointer[mut=True, Float32, **_],
-    a_ptr: UnsafePointer[Float32, **_],
-    b_ptr: UnsafePointer[Float32, **_],
+    c_ptr: UnsafePointer[mut=True, Float32, ...],
+    a_ptr: UnsafePointer[Float32, ...],
+    b_ptr: UnsafePointer[Float32, ...],
 ) raises:
     var cblas_gemm = get_cblas_f32_function()
 
@@ -355,7 +355,7 @@ fn apple_matmul[
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
 ](
     cblas_gemm_fn: cblas_gemm_type,
-    c: NDBuffer[mut=True, *_, **_],
+    c: NDBuffer[mut=True, ...],
     a: NDBuffer,
     b: NDBuffer,
 ) raises:
@@ -427,7 +427,7 @@ fn apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
-](c: NDBuffer[mut=True, *_, **_], a: NDBuffer, b: NDBuffer) raises:
+](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
     @parameter
     if a.type == b.type == c.type is DType.float32:
         var cblas_gemm = get_cblas_f32_function()
@@ -453,7 +453,7 @@ fn apple_batched_matmul[
     elementwise_epilogue_fn: OptionalReg[
         batched_matmul_elementwise_epilogue_type
     ] = None,
-](c: NDBuffer[mut=True, *_, **_], a: NDBuffer, b: NDBuffer) raises:
+](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
     var c3 = _reshape_nd_buffer_with_batch_to_3d(c)
     var a3 = _reshape_nd_buffer_with_batch_to_3d(a)
     var b3 = _reshape_nd_buffer_with_batch_to_3d(b)

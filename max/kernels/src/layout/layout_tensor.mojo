@@ -42,7 +42,7 @@ from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from memory import stack_allocation, LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 """Legacy OpaquePointer migration helper."""
 comptime OpaquePointer = UnsafePointer[NoneType, origin=MutAnyOrigin]
 """Legacy OpaquePointer migration helper."""
@@ -471,7 +471,8 @@ struct LayoutTensor[
         out self: Self.GenericAddressSpaceLayoutTensor,
         span: Span[
             Scalar[Self.dtype],
-            Self.origin, **_,
+            Self.origin,
+            ...,
         ],
     ):
         """Create a `LayoutTensor` with a `Span`.
@@ -489,9 +490,10 @@ struct LayoutTensor[
         out self: Self.GenericAddressSpaceLayoutTensor,
         span: Span[
             Scalar[Self.dtype],
-            Self.origin, **_,
+            Self.origin,
+            ...,
         ],
-        runtime_layout: RuntimeLayout[Self.layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
         """Create a `LayoutTensor` with a `Span` and a runtime layout
         for the tensor. The runtime layout element type will be casted to the
@@ -513,10 +515,11 @@ struct LayoutTensor[
         out self: Self.GenericAddressSpaceLayoutTensor,
         span: Span[
             Scalar[Self.dtype],
-            Self.origin, **_,
+            Self.origin,
+            ...,
         ],
-        runtime_layout: RuntimeLayout[Self.layout, **_],
-        element_runtime_layout: RuntimeLayout[Self.element_layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
+        element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):
         """Create a `LayoutTensor` with a `Span`, a runtime layout of
         the tensor, and the runtime layout of each element. The runtime layout
@@ -541,7 +544,8 @@ struct LayoutTensor[
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
-            origin = Self.origin, **_,
+            origin = Self.origin,
+            ...,
         ],
     ):
         """Create a `LayoutTensor` with an `UnsafePointer`.
@@ -572,9 +576,10 @@ struct LayoutTensor[
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
-            origin = Self.origin, **_,
+            origin = Self.origin,
+            ...,
         ],
-        runtime_layout: RuntimeLayout[Self.layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
         """Create a `LayoutTensor` with an `UnsafePointer` and a runtime layout
         for the tensor. The runtime layout element type will be casted to the
@@ -604,10 +609,11 @@ struct LayoutTensor[
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
-            origin = Self.origin, **_,
+            origin = Self.origin,
+            ...,
         ],
-        runtime_layout: RuntimeLayout[Self.layout, **_],
-        element_runtime_layout: RuntimeLayout[Self.element_layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
+        element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):
         """Create a `LayoutTensor` with an `UnsafePointer`, a runtime layout for
         the tensor, and the runtime layout of each element. The runtime layout
@@ -733,7 +739,7 @@ struct LayoutTensor[
     fn __init__(
         out self: Self.GenericLayoutTensorType,
         ref [Self.origin]device_buffer: DeviceBuffer[Self.dtype],
-        runtime_layout: RuntimeLayout[Self.layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
         """Create a `LayoutTensor` from a `DeviceBuffer` and a runtime layout.
         The runtime layout element type will be casted to the layout tensor layout
@@ -759,7 +765,7 @@ struct LayoutTensor[
     fn __init__(
         out self: Self.GenericLayoutTensorType,
         ref [Self.origin]host_buffer: HostBuffer[Self.dtype],
-        runtime_layout: RuntimeLayout[Self.layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
         """Create a `LayoutTensor` from a `HostBuffer` and a runtime layout.
         The runtime layout element type will be casted to the layout tensor layout
@@ -785,8 +791,8 @@ struct LayoutTensor[
     fn __init__(
         out self: Self.GenericLayoutTensorType,
         ref [Self.origin]device_buffer: DeviceBuffer[Self.dtype],
-        runtime_layout: RuntimeLayout[Self.layout, **_],
-        element_runtime_layout: RuntimeLayout[Self.element_layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
+        element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):
         """Create a `LayoutTensor` from a `DeviceBuffer`, a runtime layout for
         the tensor, and the runtime layout of each element. The runtime layout
@@ -811,8 +817,8 @@ struct LayoutTensor[
     fn __init__(
         out self: Self.GenericLayoutTensorType,
         ref [Self.origin]host_buffer: HostBuffer[Self.dtype],
-        runtime_layout: RuntimeLayout[Self.layout, **_],
-        element_runtime_layout: RuntimeLayout[Self.element_layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
+        element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):
         """Create a `LayoutTensor` from a `HostBuffer`, a runtime layout for the
         tensor, and the runtime layout of each element. The runtime layout
@@ -979,7 +985,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn as_any_origin(
-        self: LayoutTensor[mut=False, *_, **_],
+        self: LayoutTensor[mut=False, ...],
     ) -> type_of(self).OriginCastType[False, ImmutAnyOrigin]:
         """Casts the origin of the immutable `LayoutTensor` to `ImmutAnyOrigin`.
 
@@ -999,7 +1005,7 @@ struct LayoutTensor[
 
     @doc_private
     fn as_any_origin(
-        self: LayoutTensor[*_, **_]
+        self: LayoutTensor[...],
     ) -> type_of(self).OriginCastType[False, ImmutAnyOrigin]:
         constrained[
             False,
@@ -1334,7 +1340,8 @@ struct LayoutTensor[
             Self.dtype,
             other_layout,
             address_space = Self.address_space,
-            element_layout = Self.element_layout, **_,
+            element_layout = Self.element_layout,
+            ...,
         ],
     ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Add another tensor to this tensor elementwise.
@@ -1382,7 +1389,8 @@ struct LayoutTensor[
             Self.dtype,
             other_layout,
             address_space = Self.address_space,
-            element_layout = Self.element_layout, **_,
+            element_layout = Self.element_layout,
+            ...,
         ],
     ):
         """Add another tensor to this tensor elementwise in-place.
@@ -1453,7 +1461,8 @@ struct LayoutTensor[
             Self.dtype,
             other_layout,
             address_space = Self.address_space,
-            element_layout = Self.element_layout, **_,
+            element_layout = Self.element_layout,
+            ...,
         ],
     ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Multiply this tensor with another tensor elementwise.
@@ -1527,7 +1536,8 @@ struct LayoutTensor[
             Self.dtype,
             other_layout,
             address_space = Self.address_space,
-            element_layout = Self.element_layout, **_,
+            element_layout = Self.element_layout,
+            ...,
         ],
     ):
         """Multiply this tensor with another tensor elementwise in-place.
@@ -1600,7 +1610,8 @@ struct LayoutTensor[
             Self.dtype,
             other_layout,
             address_space = Self.address_space,
-            element_layout = Self.element_layout, **_,
+            element_layout = Self.element_layout,
+            ...,
         ],
     ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Subtract another tensor from this tensor elementwise.
@@ -1670,7 +1681,8 @@ struct LayoutTensor[
             Self.dtype,
             other_layout,
             address_space = Self.address_space,
-            element_layout = Self.element_layout, **_,
+            element_layout = Self.element_layout,
+            ...,
         ],
     ):
         """Subtract another tensor from this tensor elementwise in-place.
@@ -1746,7 +1758,8 @@ struct LayoutTensor[
             Self.dtype,
             other_layout,
             address_space = Self.address_space,
-            element_layout = Self.element_layout, **_,
+            element_layout = Self.element_layout,
+            ...,
         ],
     ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Divide this tensor by another tensor elementwise.
@@ -1824,7 +1837,8 @@ struct LayoutTensor[
             Self.dtype,
             other_layout,
             address_space = Self.address_space,
-            element_layout = Self.element_layout, **_,
+            element_layout = Self.element_layout,
+            ...,
         ],
     ):
         """Divide this tensor by another tensor elementwise in-place.
@@ -2134,7 +2148,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn load[
         width: Int
-    ](self, coords: IndexList[**_]) -> SIMD[Self.dtype, width]:
+    ](self, coords: IndexList[...]) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified coordinates.
 
         Performs a vectorized load operation from the tensor's memory,
@@ -2287,7 +2301,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn aligned_load[
         width: Int
-    ](self, coords: IndexList[**_]) -> SIMD[Self.dtype, width]:
+    ](self, coords: IndexList[...]) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector with alignment guarantees from the tensor.
 
         Performs an aligned vectorized load operation from the tensor's memory,
@@ -2376,7 +2390,7 @@ struct LayoutTensor[
     fn store[
         width: Int
     ](
-        self, coords: IndexList[*_, **_], val: SIMD[Self.dtype, width]
+        self, coords: IndexList[...], val: SIMD[Self.dtype, width]
     ) where Self.mut:
         """Store a SIMD vector to the tensor at the specified ND coordinates.
 
@@ -2632,7 +2646,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn _get_rank_offset[
         num_strides: Int, rank: Int, //, rank_idx: Int
-    ](stride: IndexList[num_strides, **_], vals: IndexList[rank, **_]) -> Int:
+    ](stride: IndexList[num_strides, ...], vals: IndexList[rank, ...]) -> Int:
         comptime sub_layout = Self.layout[rank_idx]
         comptime stride_idx = Self._get_rank_stride_offset(rank_idx)
 
@@ -5163,7 +5177,7 @@ struct LayoutTensor[
     fn distance(
         self,
         addr: UnsafePointer[
-            Scalar[Self.dtype], address_space = Self.address_space, **_
+            Scalar[Self.dtype], address_space = Self.address_space, ...
         ],
     ) -> Scalar[Self.linear_idx_type]:
         """Calculate the element-wise distance between this tensor's pointer
@@ -5644,7 +5658,7 @@ struct LayoutTensor[
             not Self.layout.all_dims_known() or Self.layout.size() > BATCH_SIZE
         ),
     ](
-        self: LayoutTensor[mut=True, Self.dtype, **_], val: Scalar[Self.dtype]
+        self: LayoutTensor[mut=True, Self.dtype, ...], val: Scalar[Self.dtype]
     ) -> type_of(self):
         """Fill the entire tensor with a single value.
 
@@ -5851,7 +5865,7 @@ fn stack_allocation_like[
     address_space: AddressSpace,
     target_address_space: AddressSpace = AddressSpace.GENERIC,
 ](
-    in_tensor: LayoutTensor[dtype, layout, address_space=address_space, **_],
+    in_tensor: LayoutTensor[dtype, layout, address_space=address_space, ...],
 ) -> LayoutTensor[
     dtype,
     layout,
@@ -6078,7 +6092,7 @@ fn _get_worker_idx[
 
 @always_inline("nodebug")
 fn _copy_dram_to_sram_validate_args(
-    dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor
+    dst: LayoutTensor[mut=True, ...], src: LayoutTensor
 ):
     """Validate arguments for DRAM to SRAM copy operations.
 
@@ -6129,7 +6143,7 @@ fn copy_dram_to_sram[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Synchronously copy data from DRAM (global memory) to SRAM (shared memory)
     in a GPU context.
 
@@ -6281,7 +6295,7 @@ fn copy_dram_to_sram[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, *_, **_], src_iter: LayoutTensorIter, bound: Int):
+](dst: LayoutTensor[mut=True, ...], src_iter: LayoutTensorIter, bound: Int):
     """Efficiently copy data from global memory (DRAM) to shared memory (SRAM)
     on AMD GPUs.
 
@@ -6376,10 +6390,10 @@ fn cp_async_k_major[
         dtype,
         _,
         address_space = gpu_memory.AddressSpace.SHARED,
-        *_, **_,
+        ...,
     ],
     src: LayoutTensor[
-        dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
+        dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, ...
     ],
 ):
     """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory
@@ -6486,7 +6500,7 @@ fn copy_dram_to_sram[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, *_, **_], src_iter: LayoutTensorIter, bound: Int):
+](dst: LayoutTensor[mut=True, ...], src_iter: LayoutTensorIter, bound: Int):
     """Synchronously copy data from DRAM to SRAM using a unified thread layout
     for AMD GPUs.
 
@@ -6548,7 +6562,7 @@ fn copy_dram_to_sram[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Synchronously copy data from DRAM to SRAM using a unified thread layout.
 
     This is a convenience wrapper around the more general `copy_dram_to_sram()`
@@ -6612,7 +6626,7 @@ fn copy_dram_to_sram_async[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = src_thread_layout.size(),
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Asynchronously copy data from DRAM (global memory) to SRAM (shared
     memory) in a GPU context.
 
@@ -6783,7 +6797,7 @@ fn copy_dram_to_sram_async[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = thread_layout.size(),
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """
     Asynchronous copy from DRAM to SRAM with thread affinity mapping.
 
@@ -6848,7 +6862,7 @@ fn copy_sram_to_dram[
     num_threads: Int = thread_layout.size(),
     block_dim_count: Int = 1,
     binary_op: OptionalReg[binary_op_type] = None,
-](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Synchronously copy data from SRAM (shared memory) to DRAM (global
     memory).
 
@@ -7056,7 +7070,7 @@ fn copy_sram_to_dram[
 fn copy_sram_to_local[
     src_warp_layout: Layout,
     axis: OptionalReg[Int] = None,
-](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Synchronously copy data from SRAM (shared memory) to local memory.
 
     This function performs a synchronous memory transfer from SRAM (shared
@@ -7129,7 +7143,7 @@ fn copy_local_to_dram[
     num_threads: Int = dst_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Efficiently copy data from registers (LOCAL) to global memory (DRAM).
 
     This function implements a high-performance memory transfer operation from
@@ -7260,7 +7274,7 @@ fn _copy_local_to_dram[
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
 ](
-    dst: LayoutTensor[mut=True, *_, **_],
+    dst: LayoutTensor[mut=True, ...],
     src: LayoutTensor,
     buffer: AMDBufferResource,
 ):
@@ -7338,11 +7352,7 @@ fn copy_local_to_dram[
     num_threads: Int = dst_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](
-    dst: LayoutTensor[mut=True, *_, **_],
-    src: LayoutTensor,
-    dst_base: LayoutTensor,
-):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor, dst_base: LayoutTensor,):
     """Efficiently copy data from registers (LOCAL) to global memory (DRAM) on
     AMD GPUs.
 
@@ -7403,7 +7413,7 @@ fn _copy_dram_to_local[
     block_dim_count: Int = 1,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
-    dst: LayoutTensor[mut=True, *_, **_],
+    dst: LayoutTensor[mut=True, ...],
     src: LayoutTensor,
     buffer: AMDBufferResource,
     offset: OptionalReg[UInt] = None,
@@ -7476,7 +7486,7 @@ fn copy_dram_to_local[
     block_dim_count: Int = 1,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
-    dst: LayoutTensor[mut=True, *_, **_],
+    dst: LayoutTensor[mut=True, ...],
     src: LayoutTensor,
     src_base: LayoutTensor,
     offset: OptionalReg[UInt] = None,
@@ -7545,7 +7555,7 @@ fn _copy_dram_to_local[
     block_dim_count: Int = 1,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
-    dst: LayoutTensor[mut=True, *_, **_],
+    dst: LayoutTensor[mut=True, ...],
     src_iter: LayoutTensorIter,
     buffer: AMDBufferResource,
 ):
@@ -7573,7 +7583,7 @@ fn copy_dram_to_local[
     block_dim_count: Int = 1,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
-    dst: LayoutTensor[mut=True, *_, **_],
+    dst: LayoutTensor[mut=True, ...],
     src_iter: LayoutTensorIter,
     bounds: UInt32,
 ):
@@ -7633,7 +7643,7 @@ fn copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Efficiently copy data from global memory (DRAM) to registers.
 
     This function implements an optimized memory transfer operation from
@@ -7734,8 +7744,8 @@ fn copy_local_to_shared[
     *,
     row_major: Bool = False,
 ](
-    dst: LayoutTensor[mut=True, *_, address_space = AddressSpace.SHARED, **_],
-    src: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
+    dst: LayoutTensor[mut=True, address_space = AddressSpace.SHARED, ...],
+    src: LayoutTensor[address_space = AddressSpace.LOCAL, ...],
 ):
     """Synchronously copy data from local memory (registers) to SRAM (shared
     memory).
@@ -7881,7 +7891,7 @@ fn copy_local_to_shared[
 
 
 @always_inline
-fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+fn copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Synchronously copy data between local memory (register) tensors with type
     conversion.
 
@@ -8178,7 +8188,7 @@ struct LayoutTensorIter[
             origin = Self.origin,
         ],
         bound: Self.linear_uint_type,
-        runtime_layout: RuntimeLayout[Self.layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
         stride: Self.linear_uint_type = (
             Self.layout.size() if Self.layout.all_dims_known() else UNKNOWN_VALUE
         ),

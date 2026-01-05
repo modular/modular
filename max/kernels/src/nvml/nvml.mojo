@@ -20,7 +20,7 @@ from sys.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
 
 from memory import stack_allocation, LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]

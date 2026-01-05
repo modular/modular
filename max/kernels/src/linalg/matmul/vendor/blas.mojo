@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -405,9 +405,9 @@ fn matmul[
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
-    c_tensor: LayoutTensor[c_type, c_layout, *_],
-    a_tensor: LayoutTensor[a_type, a_layout, *_],
-    b_tensor: LayoutTensor[b_type, b_layout, *_],
+    c_tensor: LayoutTensor[c_type, c_layout, _],
+    a_tensor: LayoutTensor[a_type, a_layout, _],
+    b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
         LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
@@ -454,9 +454,9 @@ fn matmul[
 ](
     ctx: DeviceContext,
     handle: Handle,
-    c_tensor: LayoutTensor[c_type, c_layout, *_],
-    a_tensor: LayoutTensor[a_type, a_layout, *_],
-    b_tensor: LayoutTensor[b_type, b_layout, *_],
+    c_tensor: LayoutTensor[c_type, c_layout, _],
+    a_tensor: LayoutTensor[a_type, a_layout, _],
+    b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
         LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
@@ -588,9 +588,9 @@ fn _cublas_matmul[
 ](
     ctx: DeviceContext,
     handle: UnsafePointer[cublasContext],
-    c: LayoutTensor[c_type, c_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    c: LayoutTensor[c_type, c_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -743,9 +743,9 @@ fn _rocblas_matmul[
 ](
     ctx: DeviceContext,
     handle: _rocblas.Handle,
-    c: LayoutTensor[c_type, c_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    c: LayoutTensor[c_type, c_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -861,9 +861,9 @@ fn _cublasLt_matmul[
 ](
     ctx: DeviceContext,
     handle: UnsafePointer[Context],
-    d: LayoutTensor[d_type, d_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    d: LayoutTensor[d_type, d_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
         LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
@@ -1288,9 +1288,9 @@ fn _hipblasLt_matmul[
 ](
     ctx: DeviceContext,
     handle: hipblasLtHandle_t,
-    d: LayoutTensor[d_type, d_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    d: LayoutTensor[d_type, d_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     *,
     c_row_major: Bool = True,
     transpose_a: Bool = False,
@@ -1317,7 +1317,7 @@ fn _hipblasLt_matmul[
         buf_type: DType,
         buf_layout: Layout,
     ](
-        buf: LayoutTensor[buf_type, buf_layout, *_]
+        buf: LayoutTensor[buf_type, buf_layout, _]
     ) raises -> hipblasLtMatrixLayout_t:
         var _desc = hipblasLtMatrixLayout_t()
         _check_hipblas_error(

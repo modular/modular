@@ -63,7 +63,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
 from memory import LegacyUnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import IndexList
 from utils.index import Index
@@ -517,9 +517,9 @@ fn gemv_gpu_dispatch[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     kernel_func: GEMVAlgorithm,
-    c: NDBuffer[rank=2, *_, **_],
-    a: NDBuffer[rank=2, *_, **_],
-    b: NDBuffer[rank=2, *_, **_],
+    c: NDBuffer[rank=2, ...],
+    a: NDBuffer[rank=2, ...],
+    b: NDBuffer[rank=2, ...],
     ctx: DeviceContext,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
@@ -851,9 +851,9 @@ fn gemv_gpu[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[rank=2, *_, **_],
-    a: NDBuffer[rank=2, *_, **_],
-    b: NDBuffer[rank=2, *_, **_],
+    c: NDBuffer[rank=2, ...],
+    a: NDBuffer[rank=2, ...],
+    b: NDBuffer[rank=2, ...],
     ctx: DeviceContext,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)

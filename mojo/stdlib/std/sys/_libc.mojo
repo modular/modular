@@ -26,7 +26,7 @@ from sys.ffi import c_char, c_int, c_size_t, get_errno
 
 
 @always_inline
-fn free(ptr: UnsafePointer[mut=True, NoneType, **_]):
+fn free(ptr: UnsafePointer[mut=True, NoneType, ...]):
     # manually construct the call to free and attach the
     # correct attributes
     __mlir_op.`pop.external_call`[

@@ -16,7 +16,7 @@ from math import ceildiv, recip
 from math.constants import log2e
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import size_of, simd_width_of
 from sys.info import _cdna_4_or_newer
 from sys.intrinsics import _type_is_eq
@@ -140,7 +140,7 @@ fn _mask_apply[
     mask_warp_col: UInt32,
     scale: Scalar[accum_type],
     mask: mask_t,
-    p_reg_vectorized: LayoutTensor[mut=True, accum_type, **_],
+    p_reg_vectorized: LayoutTensor[mut=True, accum_type, ...],
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,
 ):

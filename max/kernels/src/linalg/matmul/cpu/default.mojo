@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
@@ -110,7 +110,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         simd_size: Int,
     ](
         self,
-        c: LayoutTensor[mut=True, **_],
+        c: LayoutTensor[mut=True, ...],
         a: LayoutTensor,
         b_packed: LayoutTensor,
         global_offset: GemmShape,

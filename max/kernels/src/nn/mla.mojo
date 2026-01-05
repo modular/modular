@@ -18,7 +18,7 @@ from nn.mha_utils import DynamicInt
 from math.constants import log2e
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     align_of,
     has_nvidia_gpu_accelerator,
@@ -135,14 +135,14 @@ fn flare_mla_decoding[
     decoding_warp_split_k: Bool = False,
 ](
     output: LayoutTensor[
-        mut=True, _, address_space = AddressSpace.GENERIC, **_
+        mut=True, _, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
     k: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -247,10 +247,10 @@ fn flare_mla_decoding[
     decoding_warp_split_k: Bool = False,
 ](
     output: LayoutTensor[
-        mut=True, _, address_space = AddressSpace.GENERIC, **_
+        mut=True, _, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     scale: Float32,
@@ -330,13 +330,13 @@ fn flare_mla_decoding_dispatch[
     _use_valid_length: Bool = True,
     decoding_warp_split_k: Bool = False,
 ](
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
+    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
     k: k_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     max_prompt_len: Int,
     max_cache_valid_length: Int,
@@ -1298,19 +1298,19 @@ fn flare_mla_prefill[
     use_fa4: Bool = False,
 ](
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, **_
+        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
-    k: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
-    v: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -1485,19 +1485,19 @@ fn flare_mla_prefill[
     use_fa4: Bool = False,  # TODO: remove this flag when we support ragged inputs
 ](
     output: LayoutTensor[
-        mut=True, _, address_space = AddressSpace.GENERIC, **_
+        mut=True, _, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
-    k: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
-    v: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
-    k_rope: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
+    k_rope: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -1659,16 +1659,16 @@ fn flare_mla_prefill_dispatch[
     use_fa4: Bool = False,
 ](
     output: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, **_
+        output_type, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     max_prompt_len: Int,
     scale: Float32,
@@ -2936,16 +2936,16 @@ fn mla_prefill_plan[
     cache_t: KVCacheT,
 ](
     buffer_row_offsets: LayoutTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, **_
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, **_
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_lengths: LayoutTensor[
-        mut=True, DType.int32, address_space = AddressSpace.GENERIC, **_
+        mut=True, DType.int32, address_space = AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
@@ -3099,15 +3099,15 @@ fn _k_cache_to_buffer[
     cache_t: KVCacheT,
 ](
     buffer_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     k_cache: cache_t,
     length: Int32,
     buffer: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContext,
 ) raises:

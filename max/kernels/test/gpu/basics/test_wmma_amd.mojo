@@ -22,7 +22,7 @@ from gpu.mma_util import load_matrix_b_amd as load_matrix_b
 from gpu.mma_util import store_matrix_d
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 

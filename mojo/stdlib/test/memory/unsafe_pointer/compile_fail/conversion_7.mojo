@@ -16,7 +16,7 @@
 
 fn test_cannot_cast_between_different_address_spaces[
     T: AnyType
-](p: UnsafePointer[T, address_space = AddressSpace(1), **_]):
+](p: UnsafePointer[T, address_space = AddressSpace(1), ...]):
     pass
 
 

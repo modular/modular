@@ -24,7 +24,7 @@ from memory import (
     stack_allocation,
 )
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from register import register_internal
 
 from utils.index import Index, IndexList

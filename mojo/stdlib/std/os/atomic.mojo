@@ -253,7 +253,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn load[
         *,
         ordering: Consistency = Consistency.SEQUENTIAL,
-    ](ptr: UnsafePointer[mut=False, Scalar[Self.dtype], **_]) -> Scalar[
+    ](ptr: UnsafePointer[mut=False, Scalar[Self.dtype], ...]) -> Scalar[
         Self.dtype
     ]:
         """Loads the current value from the atomic.
@@ -295,7 +295,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
     ) -> Scalar[Self.dtype]:
         """Performs atomic in-place add.
@@ -338,7 +338,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn _xchg[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
     ) -> Scalar[Self.dtype]:
         """Performs an atomic exchange.
@@ -377,7 +377,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn store[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
     ):
         """Performs atomic store.
@@ -503,7 +503,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         mut expected: Scalar[Self.dtype],
         desired: Scalar[Self.dtype],
     ) -> Bool:
@@ -597,7 +597,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn max[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
     ):
         """Performs atomic in-place max on the pointer.
@@ -653,7 +653,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn min[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
     ):
         """Performs atomic in-place min on the pointer.
@@ -721,8 +721,8 @@ fn _compare_exchange_integral_impl[
     failure_ordering: Consistency,
     success_ordering: Consistency,
 ](
-    atomic_ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
-    expected_ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    atomic_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    expected_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     desired: Scalar[dtype],
 ) -> Bool:
     __comptime_assert dtype.is_integral(), "the input type must be integral"
@@ -757,7 +757,7 @@ fn _compare_exchange_integral_impl[
 @always_inline
 fn _max_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Consistency
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], rhs: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op max>`,
@@ -770,7 +770,7 @@ fn _max_impl_base[
 @always_inline
 fn _min_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Consistency
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], rhs: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op min>`,
@@ -787,7 +787,7 @@ fn _max_impl[
     *,
     scope: StaticString,
     ordering: Consistency,
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], rhs: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()
@@ -814,7 +814,7 @@ fn _min_impl[
     *,
     scope: StaticString,
     ordering: Consistency,
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], rhs: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()

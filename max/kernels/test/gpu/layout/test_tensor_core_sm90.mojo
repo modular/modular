@@ -20,7 +20,7 @@ from layout.tensor_core import TensorCore
 from utils.index import IndexList
 
 
-fn arange(tensor: LayoutTensor[mut=True, **_]):
+fn arange(tensor: LayoutTensor[mut=True, ...]):
     @parameter
     for i in range(tensor.shape[0]()):
 

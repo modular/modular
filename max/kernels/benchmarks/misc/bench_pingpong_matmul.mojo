@@ -29,7 +29,7 @@ from gpu.host import DeviceContext
 from internal_utils import arg_parse
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils._utils import (
     InitializationType,
     ValOrDim,

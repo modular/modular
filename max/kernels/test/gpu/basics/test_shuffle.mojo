@@ -18,7 +18,7 @@ from gpu.host import DeviceContext
 from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 

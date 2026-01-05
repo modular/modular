@@ -19,7 +19,7 @@ from gpu import grid_dim
 from gpu.host import DeviceContext, FuncAttribute
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from internal_utils import assert_almost_equal, zero
 from layout._ndbuffer_stub import from_ndbuffer_row_major

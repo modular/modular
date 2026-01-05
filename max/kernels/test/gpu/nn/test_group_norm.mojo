@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import rsqrt
 from sys import simd_width_of
 
@@ -27,7 +27,7 @@ from utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: LayoutTensor[t, **_], size: Int, eps: Scalar[t]) -> Tuple[
+](vec: LayoutTensor[t, ...], size: Int, eps: Scalar[t]) -> Tuple[
     Scalar[t],
     Scalar[t],
 ]:

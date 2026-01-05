@@ -118,7 +118,7 @@ fn randint[
 fn rand[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     size: Int,
     /,
     *,
@@ -197,7 +197,7 @@ fn randn_float64(
 fn randn[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     size: Int,
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,

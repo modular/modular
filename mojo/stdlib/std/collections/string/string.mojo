@@ -269,7 +269,7 @@ struct String(
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
 
-    fn __init__(out self, *, bytes: Span[Byte, *_]):
+    fn __init__(out self, *, bytes: Span[Byte, ...]):
         """Construct a string by copying the data. This constructor is explicit
         because it can involve memory allocation.
 
@@ -1046,7 +1046,7 @@ struct String(
             Span(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
 
-    fn join[T: Copyable & Writable](self, elems: Span[T, *_]) -> String:
+    fn join[T: Copyable & Writable](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write

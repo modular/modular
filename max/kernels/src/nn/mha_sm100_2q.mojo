@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from collections import OptionalReg
 from math import ceildiv, exp2, recip, align_up, align_down, gcd, iota
 from math.constants import log2e
@@ -1156,7 +1156,7 @@ fn elect() -> Int32:
 fn elect_mma_arrive[
     cta_group: Int = 1
 ](
-    mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],
+    mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED, ...],
     elect: Int32,
 ):
     """Arrive at the mbar pointer for the MMA instruction.

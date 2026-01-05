@@ -31,7 +31,7 @@ from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from test_utils import ulp_distance
 from testing import assert_almost_equal
 

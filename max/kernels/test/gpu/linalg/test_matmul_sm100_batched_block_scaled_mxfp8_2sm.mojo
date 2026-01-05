@@ -21,7 +21,7 @@ from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal, random, zero, fill
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -423,7 +423,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         //,
         reshape_layout: Layout,
     ](
-        tensor: LayoutTensor[dtype, layout, *_, **_],
+        tensor: LayoutTensor[dtype, layout, ...],
         batch_idx: Int,
     ) -> LayoutTensor[
         tensor.dtype,

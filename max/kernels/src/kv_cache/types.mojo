@@ -29,7 +29,7 @@ from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import SplitLastDimTMATensorTile, create_split_tma
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -41,7 +41,7 @@ from builtin.device_passable import DevicePassable
 @always_inline
 fn _compute_kv_cache_dynamic_shape_strides[
     dtype: DType, //, kv_cache_rank: Int, drop_list: Tuple
-](blocks: LayoutTensor[dtype, **_]) -> Tuple[
+](blocks: LayoutTensor[dtype, ...]) -> Tuple[
     IndexList[kv_cache_rank],
     IndexList[kv_cache_rank],
 ]:
@@ -136,7 +136,7 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable):
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        val: SIMD[Self.dtype, *_],
+        val: SIMD[Self.dtype, ...],
     ):
         """Stores an element at the given index."""
         ...
@@ -351,7 +351,7 @@ struct ContinuousBatchingKVCache[
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        val: SIMD[Self.dtype, *_],
+        val: SIMD[Self.dtype, ...],
     ):
         debug_assert(
             bs < self._batch_size(),
@@ -660,7 +660,7 @@ struct PagedKVCache[
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        val: SIMD[Self.dtype, *_],
+        val: SIMD[Self.dtype, ...],
     ):
         """Stores an element at the given index."""
         var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)

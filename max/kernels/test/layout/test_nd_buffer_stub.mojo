@@ -37,7 +37,7 @@ from layout._ndbuffer_stub import (
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import Index, IndexList, StaticTuple
 
 

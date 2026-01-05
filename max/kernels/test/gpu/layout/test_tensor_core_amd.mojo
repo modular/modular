@@ -19,7 +19,7 @@ from layout._fillers import arange
 from layout.tensor_core import TensorCore, load_b_tr
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 from testing import assert_equal
 from utils.index import Index, IndexList

@@ -28,12 +28,12 @@ from utils import IndexList
 fn tile[
     dtype: DType, type_repeats: DType
 ](
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     repeats: LayoutTensor[
-        type_repeats, address_space = AddressSpace.GENERIC, **_
+        type_repeats, address_space = AddressSpace.GENERIC, ...
     ],
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ) raises:
     """
@@ -249,8 +249,8 @@ fn tile_shape[
     repeats_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: LayoutTensor[input_type, **_],
-    repeats_buf: LayoutTensor[repeats_type, **_],
+    input_buf: LayoutTensor[input_type, ...],
+    repeats_buf: LayoutTensor[repeats_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a `tile` operation, and assert the inputs are

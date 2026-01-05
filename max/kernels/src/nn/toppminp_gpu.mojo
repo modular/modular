@@ -15,7 +15,7 @@
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, bit_width_of
 
 from builtin.dtype import _uint_type_of_width
@@ -514,8 +514,8 @@ fn run_radix_sort_pairs_gpu[
     NUM_BITS_PER_PASS: Int = 4,
 ](
     ctx: DeviceContext,
-    mut keys: DoubleBuffer[dtype, **_],
-    mut key_ids: DoubleBuffer[out_idx_type, **_],
+    mut keys: DoubleBuffer[dtype, ...],
+    mut key_ids: DoubleBuffer[out_idx_type, ...],
     skip_sort: UnsafePointer[Scalar[DType.bool]],
     in_shape: IndexList,
 ) raises:
@@ -663,12 +663,12 @@ fn _topp_minp_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    p_thresholds: LayoutTensor[dtype, **_],
+    p_thresholds: LayoutTensor[dtype, ...],
     input_logits: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
     out_token_ids: LayoutTensor[
-        out_idx_type, address_space = AddressSpace.GENERIC, **_
+        out_idx_type, address_space = AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -853,12 +853,12 @@ fn top_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    top_ps: LayoutTensor[dtype, **_],
+    top_ps: LayoutTensor[dtype, ...],
     input_logits: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
     out_token_ids: LayoutTensor[
-        out_idx_type, address_space = AddressSpace.GENERIC, **_
+        out_idx_type, address_space = AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -885,12 +885,12 @@ fn min_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    min_ps: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    min_ps: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_logits: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
     out_token_ids: LayoutTensor[
-        out_idx_type, address_space = AddressSpace.GENERIC, **_
+        out_idx_type, address_space = AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:

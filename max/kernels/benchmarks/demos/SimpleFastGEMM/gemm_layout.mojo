@@ -21,7 +21,7 @@ from buffer import NDBuffer
 from layout import *
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 comptime MR = 6
 comptime NR = 64

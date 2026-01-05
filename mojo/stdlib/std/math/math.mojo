@@ -1362,7 +1362,7 @@ fn iota[
     vectorize[simd_width_of[dtype]()](len, fill)
 
 
-fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
+fn iota[dtype: DType, //](mut v: List[Scalar[dtype], ...], offset: Int = 0):
     """Fill a list with consecutive numbers starting from the specified offset.
 
     Parameters:
@@ -1375,7 +1375,7 @@ fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
     iota(v.unsafe_ptr(), len(v), offset)
 
 
-fn iota(mut v: List[Int, *_], offset: Int = 0):
+fn iota(mut v: List[Int, ...], offset: Int = 0):
     """Fill a list with consecutive numbers starting from the specified offset.
 
     Args:
@@ -3101,7 +3101,7 @@ fn gcd(s: Span[Int], /) -> Int:
 
 
 @always_inline
-fn gcd(l: List[Int, *_], /) -> Int:
+fn gcd(l: List[Int, ...], /) -> Int:
     """Computes the greatest common divisor of a list of integers.
 
     Args:
@@ -3172,7 +3172,7 @@ fn lcm(s: Span[Int], /) -> Int:
 
 
 @always_inline
-fn lcm(l: List[Int, *_], /) -> Int:
+fn lcm(l: List[Int, ...], /) -> Int:
     """Computes the least common multiple of a list of integers.
 
     Args:

@@ -18,7 +18,7 @@ from internal_utils._utils import initialize
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.slice import sliced_add
 
 from utils import IndexList

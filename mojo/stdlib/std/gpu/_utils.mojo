@@ -24,7 +24,7 @@ from utils import StaticTuple
 fn to_llvm_shared_cluster_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED_CLUSTER, **_]
+    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED_CLUSTER, ...]
 ) -> __mlir_type.`!llvm.ptr<7>`:
     """Cast shared cluster memory pointer to LLVMPointer Type.
 
@@ -40,7 +40,7 @@ fn to_llvm_shared_cluster_mem_ptr[
 fn to_llvm_shared_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED, **_]
+    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED, ...]
 ) -> __mlir_type.`!llvm.ptr<3>`:
     """Cast shared memory pointer to LLVMPointer Type.
 
@@ -58,7 +58,7 @@ fn to_llvm_shared_mem_ptr[
 @always_inline
 fn to_llvm_ptr[
     type: AnyType
-](ptr: UnsafePointer[type, **_]) -> __mlir_type.`!llvm.ptr`:
+](ptr: UnsafePointer[type, ...]) -> __mlir_type.`!llvm.ptr`:
     """Cast a pointer to LLVMPointer Type.
 
     Args:

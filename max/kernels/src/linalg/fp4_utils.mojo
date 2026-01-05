@@ -296,10 +296,10 @@ fn convert_ref_scales_to_mxfp8_format[
     m: ValOrDim,
     n: ValOrDim,
     k: ValOrDim,
-    ref_a_scales: NDBuffer[ref_scales_type, 2, *_],
-    ref_b_scales: NDBuffer[ref_scales_type, 2, *_],
-    a_scales: NDBuffer[mut=True, scales_type, 5, *_],
-    b_scales: NDBuffer[mut=True, scales_type, 5, *_],
+    ref_a_scales: NDBuffer[ref_scales_type, 2, _, _, _],
+    ref_b_scales: NDBuffer[ref_scales_type, 2, _, _, _],
+    a_scales: NDBuffer[mut=True, scales_type, 5, _, _, _],
+    b_scales: NDBuffer[mut=True, scales_type, 5, _, _, _],
 ):
     __comptime_assert (
         ref_scales_type == DType.float32

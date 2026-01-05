@@ -16,7 +16,7 @@
 
 fn test_mut_cast_fails_if_mutabilities_do_not_match[
     T: AnyType
-](p: UnsafePointer[T, **_]):
+](p: UnsafePointer[T, ...]):
     # CHECK: constraint failed: Cannot safely cast an immutable pointer to mutable
     var _p = p.mut_cast[True]()
 

@@ -185,7 +185,7 @@ fn fused_attention_cpu[
     Q: LayoutTensor,
     K: LayoutTensor,
     V: LayoutTensor,
-    O: LayoutTensor[mut=True, *_, **_],
+    O: LayoutTensor[mut=True, ...],
 ):
     comptime N = K.shape[0]()
     comptime D = K.shape[1]()

@@ -14,7 +14,7 @@
 from math import fma
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from layout import Layout, LayoutTensor, RuntimeTuple
 
@@ -112,7 +112,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         simd_size: Int,
     ](
         self,
-        c: LayoutTensor[mut=True, **_],
+        c: LayoutTensor[mut=True, ...],
         a: LayoutTensor,
         b_packed: LayoutTensor,
         global_offset: GemmShape,

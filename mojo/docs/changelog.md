@@ -182,6 +182,11 @@ what we publish.
 
 ### Language changes
 
+- The `*_` and `**_` syntax for explicitly unpacked parameters has been replaced
+  with a simplified `...` syntax.  Instead of `T[4, 5, *_, **_]` you can now use
+  `T[4, 5, ...]`.  The `...` delays binding of both keyword and non-keyword
+  parameters.
+
 - The compiler will now warn on unqualified access to struct parameters, e.g.
 
   ```mojo

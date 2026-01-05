@@ -35,7 +35,7 @@ from collections import OptionalReg
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, size_of
 
 from gpu import WARP_SIZE, barrier, warp_id

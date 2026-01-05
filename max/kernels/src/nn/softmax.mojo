@@ -15,7 +15,7 @@ from collections import OptionalReg
 from math import align_down, ceildiv, exp, exp2, log
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
 import gpu.warp as warp
@@ -118,7 +118,7 @@ fn _exp2_concrete(x: SIMD) -> type_of(x):
 fn _softmax_2_pass_step1[
     simd_width: Int,
     dtype: DType,
-](input: LayoutTensor[dtype, **_]) -> StaticTuple[Scalar[dtype], 2]:
+](input: LayoutTensor[dtype, ...]) -> StaticTuple[Scalar[dtype], 2]:
     __comptime_assert input.rank == 1
     # STEP 1: find the runningMax and runningSum in each batch.
     #   runningMax = -∞
@@ -170,8 +170,8 @@ fn _softmax_2_pass_step2[
     unroll_factor: Int,
     dtype: DType,
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
     running_max: Scalar[dtype],
     running_sum: Scalar[dtype],
 ):
@@ -200,7 +200,7 @@ fn _softmax_2_pass_step2[
 fn softmax_2_pass[
     simd_width: Int,
     dtype: DType,
-](output: LayoutTensor[mut=True, dtype, **_], input: LayoutTensor[dtype, **_],):
+](output: LayoutTensor[mut=True, dtype, ...], input: LayoutTensor[dtype, ...],):
     """Performs an unbatched softmax on an input tensor using the two-pass
     online algorithm.
 
@@ -264,7 +264,7 @@ fn _softmax_3_pass_step_2[
         dtype, width
     ],
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     max_val: Scalar[dtype],
 ) -> Scalar[dtype]:
     __comptime_assert output.rank == 1
@@ -305,7 +305,7 @@ fn _softmax_3_pass_step_3[
     accum_apply_func: fn[dtype: DType, width: Int] (
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-](output: LayoutTensor[mut=True, dtype, **_], accum: Scalar[dtype],):
+](output: LayoutTensor[mut=True, dtype, ...], accum: Scalar[dtype],):
     __comptime_assert output.rank == 1
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
@@ -342,7 +342,7 @@ fn _softmax_3_pass_base[
     step3_accum_apply_func: fn[dtype: DType, width: Int] (
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-](output: LayoutTensor[mut=True, dtype, **_]) raises:
+](output: LayoutTensor[mut=True, dtype, ...]) raises:
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
@@ -437,7 +437,7 @@ fn softmax_3_pass[
         dtype, _simd_width
     ],
     logsoftmax: Bool = False,
-](output: LayoutTensor[mut=True, dtype, **_]) raises:
+](output: LayoutTensor[mut=True, dtype, ...]) raises:
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
 
@@ -510,7 +510,7 @@ fn logsoftmax[
     target: StaticString = "cpu",
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -525,8 +525,8 @@ fn logsoftmax[
     rank: Int,
     target: StaticString = "cpu",
 ](
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -563,7 +563,7 @@ fn _softmax_cpu[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
 ) raises:
     # TODO: Add rowwise generator to de-duplicate partitioning logic between
@@ -626,8 +626,8 @@ fn softmax[
     simd_width: Int,
     rank: Int,
 ](
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
 ) raises:
     @parameter
@@ -791,7 +791,7 @@ fn _softmax_gpu[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
@@ -843,7 +843,7 @@ fn softmax[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1113,11 +1113,11 @@ fn _online_softmax_iter_for_mma_output[
         1, 2
     ) if is_nvidia_gpu() else Layout.row_major(4, 1),
 ](
-    output_reg_tile: LayoutTensor[mut=True, dtype, *_, **_],
-    score_reg_tile: LayoutTensor[mut=True, dtype, *_, **_],
-    warp_scratch: LayoutTensor[mut=True, dtype, *_, **_],
-    rowmax: UnsafePointer[Scalar[dtype], **_],
-    rowsum: UnsafePointer[Scalar[dtype], **_],
+    output_reg_tile: LayoutTensor[mut=True, dtype, ...],
+    score_reg_tile: LayoutTensor[mut=True, dtype, ...],
+    warp_scratch: LayoutTensor[mut=True, dtype, ...],
+    rowmax: UnsafePointer[Scalar[dtype], ...],
+    rowsum: UnsafePointer[Scalar[dtype], ...],
 ):
     comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
@@ -1523,17 +1523,17 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         mut=True,
         dtype,
         output_layout,
-        *_,
-        address_space = AddressSpace.LOCAL, **_,
+        address_space = AddressSpace.LOCAL,
+        ...,
     ],
     warp_scratch: LayoutTensor[
-        mut=True, dtype, *_, address_space = AddressSpace.SHARED, **_
+        mut=True, dtype, address_space = AddressSpace.SHARED, ...
     ],
     o_smem_ptr_base: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED, **_
+        Scalar[dtype], address_space = AddressSpace.SHARED, ...
     ],
-    rowmax: UnsafePointer[Scalar[dtype], **_],
-    rowsum: UnsafePointer[Scalar[dtype], **_],
+    rowmax: UnsafePointer[Scalar[dtype], ...],
+    rowsum: UnsafePointer[Scalar[dtype], ...],
 ):
     # Here, we use naming conventions aligning with MHA's
     comptime num_m_mmas = score_layout_by_mma_unit.shape[0].value()

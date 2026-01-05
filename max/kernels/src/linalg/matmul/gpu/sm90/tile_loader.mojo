@@ -52,7 +52,7 @@ trait TileLoader:
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128, **_],
+        dst: SMemTileType[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -125,7 +125,7 @@ struct TileLoaderTMA[
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128, **_],
+        dst: SMemTileType[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
         _coords: Tuple[UInt, UInt],
     ):
@@ -237,7 +237,7 @@ struct TileLoaderCPAsync[
 
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128, **_],
+        dst: SMemTileType[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -287,14 +287,14 @@ fn async_copy_with_bound_check[
         src_layout,
         MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
-        *_, **_,
+        ...,
     ],
     dst: LayoutTensor[
         dtype,
         dst_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
-        *_, **_,
+        ...,
     ],
 ):
     """Helper function for cp.async with boundary checking.

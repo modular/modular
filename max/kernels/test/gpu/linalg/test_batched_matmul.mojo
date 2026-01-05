@@ -23,7 +23,7 @@ from layout._fillers import random
 from linalg.bmm import _batched_matmul_gpu
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils import Index, IndexList

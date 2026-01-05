@@ -117,9 +117,9 @@ fn roi_align_nhwc[
     aligned: Bool,
     mode: StaticString = "AVG",
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout, **_],
-    input: LayoutTensor[dtype, input_layout, **_],
-    rois: LayoutTensor[dtype, roi_layout, **_],
+    output: LayoutTensor[mut=True, dtype, output_layout, ...],
+    input: LayoutTensor[dtype, input_layout, ...],
+    rois: LayoutTensor[dtype, roi_layout, ...],
     output_height: Int,
     output_width: Int,
     in_spatial_scale: Scalar,

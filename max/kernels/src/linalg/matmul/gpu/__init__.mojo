@@ -38,7 +38,7 @@ from layout.tensor_core import get_mma_shape
 from logger import Logger
 from memory import LegacyUnsafePointer, bitcast, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import Index, IndexList
 from utils.numerics import get_accum_type

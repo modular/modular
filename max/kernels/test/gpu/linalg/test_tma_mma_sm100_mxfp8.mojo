@@ -42,7 +42,7 @@ from buffer.dimlist import DimList, Dim
 from internal_utils._utils import ValOrDim, dynamic, static
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal, random, fill, zero
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger

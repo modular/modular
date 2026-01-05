@@ -28,7 +28,7 @@ from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
 from memory import memcpy, LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.kv_cache_ragged import (
     _fused_qkv_matmul_kv_cache_ragged_impl,
     _matmul_k_cache_ragged_impl,

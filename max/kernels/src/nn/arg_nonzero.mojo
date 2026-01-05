@@ -29,8 +29,8 @@ fn arg_nonzero[
     dtype: DType,
     output_type: DType,
 ](
-    input_buffer: LayoutTensor[dtype, **_],
-    output_buffer: LayoutTensor[mut=True, output_type, **_],
+    input_buffer: LayoutTensor[dtype, ...],
+    output_buffer: LayoutTensor[mut=True, output_type, ...],
 ) raises:
     """Gather the indices of all non-zero elements in input buffer storing
     the indices in the output_buffer.
@@ -85,7 +85,7 @@ fn arg_nonzero[
 fn arg_nonzero_shape[
     dtype: DType,
     single_thread_blocking_override: Bool,
-](input_buffer: LayoutTensor[dtype, **_]) -> IndexList[2]:
+](input_buffer: LayoutTensor[dtype, ...]) -> IndexList[2]:
     """Return [NumNonZeros, InputRank] where NumNonZeros are the number of
     non-zero elements in the input.
 

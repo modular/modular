@@ -27,11 +27,11 @@ def execute_index_tensor_test[
     batch_dims: Int,
 ](
     data_device: LayoutTensor[
-        data_type, *_, address_space = AddressSpace.GENERIC, **_
+        data_type, address_space = AddressSpace.GENERIC, ...
     ],
-    indices_device: LayoutTensor[*_, address_space = AddressSpace.GENERIC, **_],
+    indices_device: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
     expected_output_device: LayoutTensor[
-        data_type, *_, address_space = AddressSpace.GENERIC, **_
+        data_type, address_space = AddressSpace.GENERIC, ...
     ],
     expected_output_device_buffer: DeviceBuffer[data_type],
     ctx: DeviceContext,

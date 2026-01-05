@@ -32,8 +32,8 @@ fn index_tensor_shape[
     batch_dims: Int,
     single_thread_blocking_override: Bool = True,
 ](
-    input_buf: LayoutTensor[input_type, **_],
-    indices_buf: LayoutTensor[indices_type, **_],
+    input_buf: LayoutTensor[input_type, ...],
+    indices_buf: LayoutTensor[indices_type, ...],
 ) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `index_tensor` operation, and assert the
@@ -151,9 +151,9 @@ fn index_tensor[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: LayoutTensor[dtype, **_],
-    indices: LayoutTensor[indices_type, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    data: LayoutTensor[dtype, ...],
+    indices: LayoutTensor[indices_type, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -204,9 +204,9 @@ fn _index_tensor_1d[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: LayoutTensor[dtype, **_],
-    indices: LayoutTensor[indices_type, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    data: LayoutTensor[dtype, ...],
+    indices: LayoutTensor[indices_type, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     __comptime_assert (
@@ -294,9 +294,9 @@ fn _index_tensor_impl[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: LayoutTensor[dtype, **_],
-    indices: LayoutTensor[indices_type, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    data: LayoutTensor[dtype, ...],
+    indices: LayoutTensor[indices_type, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     __comptime_assert (
@@ -447,7 +447,7 @@ fn advanced_indexing_getitem[
         IndexList[index_rank]
     ) capturing -> Scalar[index_type],
 ](
-    out_tensor: LayoutTensor[mut=True, input_type, **_],
+    out_tensor: LayoutTensor[mut=True, input_type, ...],
     in_tensor_strides: IndexList[input_rank],
     ctx: DeviceContextPtr,
 ) raises:
@@ -637,7 +637,7 @@ fn advanced_indexing_setitem_inplace[
         IndexList[index_rank]
     ) capturing -> Scalar[index_type],
 ](
-    input_tensor: LayoutTensor[mut=True, input_type, **_],
+    input_tensor: LayoutTensor[mut=True, input_type, ...],
     index_tensor_shape: IndexList[index_rank],
     updates_tensor_strides: IndexList[updates_rank],
     ctx: DeviceContextPtr,

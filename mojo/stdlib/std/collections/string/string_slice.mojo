@@ -564,7 +564,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self = StaticString(lit.value)
 
     @always_inline("builtin")
-    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, Self.origin, **_]):
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, Self.origin, ...]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Args:
@@ -593,7 +593,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             mut = Self.mut,
             Byte,
             origin = Self.origin,
-            address_space = AddressSpace.GENERIC, **_,
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
     ):
         """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to
@@ -616,7 +617,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         self = Self(unsafe_from_utf8=byte_slice)
 
-    fn __init__(out self, *, from_utf8: Span[Byte, Self.origin, **_]) raises:
+    fn __init__(out self, *, from_utf8: Span[Byte, Self.origin, ...]) raises:
         """Construct a new `StringSlice` from a buffer containing UTF-8 encoded
         data.
 
@@ -639,7 +640,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             mut = Self.mut,
             c_char,
             origin = Self.origin,
-            address_space = AddressSpace.GENERIC, **_,
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
     ):
         """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing
@@ -664,7 +666,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             mut = Self.mut,
             Byte,
             origin = Self.origin,
-            address_space = AddressSpace.GENERIC, **_,
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
         length: Int,
     ):
@@ -2456,7 +2459,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     fn join[
         T: Copyable & Writable,
         //,
-    ](self, elems: Span[T, *_]) -> String:
+    ](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
@@ -2652,7 +2655,7 @@ fn _unsafe_strlen(
 fn _memchr[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], **_], char: Scalar[dtype]
+    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
 ) -> source.UnsafePointerType:
     if is_compile_time() or len(source) < simd_width_of[Scalar[dtype]]():
         var ptr = source.unsafe_ptr()
@@ -2669,7 +2672,7 @@ fn _memchr[
 fn _memchr_impl[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], **_],
+    source: Span[mut=False, Scalar[dtype], ...],
     char: Scalar[dtype],
     out output: source.UnsafePointerType,
 ):
@@ -2698,10 +2701,11 @@ fn _memchr_impl[
 fn _memmem[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], **_],
+    haystack_span: Span[mut=False, Scalar[dtype], ...],
     needle_span: Span[
         mut=False,
-        Scalar[dtype], **_,
+        Scalar[dtype],
+        ...,
     ],
 ) -> haystack_span.UnsafePointerType:
     if is_compile_time() or len(haystack_span) < simd_width_of[Scalar[dtype]]():
@@ -2726,10 +2730,11 @@ fn _memmem[
 fn _memmem_impl[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], **_],
+    haystack_span: Span[mut=False, Scalar[dtype], ...],
     needle_span: Span[
         mut=False,
-        Scalar[dtype], **_,
+        Scalar[dtype],
+        ...,
     ],
     out output: haystack_span.UnsafePointerType,
 ):

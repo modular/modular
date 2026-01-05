@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
@@ -611,8 +611,8 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
 fn assert_allclose[
     dtype: DType,
 ](
-    h_output_ref: LayoutTensor[dtype, **_],
-    h_output_gpu: LayoutTensor[dtype, **_],
+    h_output_ref: LayoutTensor[dtype, ...],
+    h_output_gpu: LayoutTensor[dtype, ...],
 ) raises:
     try:
         for i in range(h_output_ref.size()):

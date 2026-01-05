@@ -82,7 +82,7 @@ fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
 
 fn reversed[
     T: Copyable & ImplicitlyDestructible
-](ref value: List[T, *_]) -> _ListIter[T, origin_of(value), False]:
+](ref value: List[T, ...]) -> _ListIter[T, origin_of(value), False]:
     """Get a reversed iterator of the input list.
 
     **Note**: iterators are currently non-raising.

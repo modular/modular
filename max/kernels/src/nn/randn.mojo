@@ -20,7 +20,7 @@ fn random_normal[
     dtype: DType,
     mean: Float64,
     variance: Float64,
-](output: LayoutTensor[mut=True, dtype, *_, **_]):
+](output: LayoutTensor[mut=True, dtype, ...]):
     """
     Fill `output` with values generated from Normal(mean, variance) distribution.
 

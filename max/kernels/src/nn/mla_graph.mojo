@@ -16,7 +16,7 @@ from buffer import Dim, DimList, NDBuffer
 from math import align_up
 from memory import AddressSpace, LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of, size_of
 from utils.index import Index, IndexList
 
@@ -80,7 +80,8 @@ fn _layout_tensor_to_nd_buffer[
         dtype,
         layout,
         origin,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     out result: NDBuffer[
         dtype,
@@ -120,28 +121,28 @@ fn mla_prefill_branch_fp8[
     target: StaticString = "cpu",
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     buffer_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     kv_b_proj: LayoutTensor[
-        fp8_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     kv_b_proj_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -489,11 +490,11 @@ fn quantize_and_bmm_fp8_helper[
     k_scale_granularity: Int,
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     b_scales: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -579,10 +580,10 @@ fn transpose_helper[
     dtype: DType
 ](
     output_tensor: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_tensor: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -628,23 +629,23 @@ fn mla_decode_branch_fp8[
     target: StaticString = "cpu",
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     w_uk_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     w_uv_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -876,37 +877,37 @@ fn mla_prefill_decode_graph_fp8[
     target: StaticString = "cpu",
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     buffer_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     max_seq_len: Int,
     kv_b_proj: LayoutTensor[
-        fp8_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     kv_b_proj_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     w_uk_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     w_uv_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:

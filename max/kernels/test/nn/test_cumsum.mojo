@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import iota, isclose
 
 from layout import Layout, LayoutTensor, RuntimeLayout
@@ -59,7 +59,7 @@ fn test_cumsum_1d_precision():
     comptime size = 1024
 
     var f32_data = UnsafePointer[Float32].alloc(size)
-    var f32_matrix = LayoutTensor[DType.float32, Layout.row_major[1](), **_](
+    var f32_matrix = LayoutTensor[DType.float32, Layout.row_major[1](), ...](
         f32_data,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](size)),
     )
@@ -67,7 +67,7 @@ fn test_cumsum_1d_precision():
         f32_data[i] = 1.1
 
     var f64_data = UnsafePointer[Float64].alloc(size)
-    var f64_matrix = LayoutTensor[DType.float64, Layout.row_major[1](), **_](
+    var f64_matrix = LayoutTensor[DType.float64, Layout.row_major[1](), ...](
         f64_data,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](size)),
     )
@@ -76,14 +76,14 @@ fn test_cumsum_1d_precision():
 
     var cumsum_f32_stack = InlineArray[Float32, size](uninitialized=True)
     var cumsum_f32 = LayoutTensor[
-        mut=True, DType.float32, Layout.row_major[1](), **_
+        mut=True, DType.float32, Layout.row_major[1](), ...
     ](
         cumsum_f32_stack,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](size)),
     )
     var cumsum_f64_stack = InlineArray[Float64, size](uninitialized=True)
     var cumsum_f64 = LayoutTensor[
-        mut=True, DType.float64, Layout.row_major[1](), **_
+        mut=True, DType.float64, Layout.row_major[1](), ...
     ](
         cumsum_f64_stack,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](size)),
@@ -114,7 +114,7 @@ fn test_cumsum_1d_exclusive():
     var axis = 0
 
     var matrix_data = UnsafePointer[Float64].alloc(5)
-    var matrix = LayoutTensor[DType.float64, Layout.row_major[1](), **_](
+    var matrix = LayoutTensor[DType.float64, Layout.row_major[1](), ...](
         matrix_data,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](5)),
     )
@@ -123,7 +123,7 @@ fn test_cumsum_1d_exclusive():
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
     var cumsum_matrix = LayoutTensor[
-        mut=True, DType.float64, Layout.row_major[1](), **_
+        mut=True, DType.float64, Layout.row_major[1](), ...
     ](
         cumsum_stack,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](5)),
@@ -147,7 +147,7 @@ fn test_cumsum_1d_reverse():
     var axis = 0
 
     var matrix_data = UnsafePointer[Float64].alloc(5)
-    var matrix = LayoutTensor[DType.float64, Layout.row_major[1](), **_](
+    var matrix = LayoutTensor[DType.float64, Layout.row_major[1](), ...](
         matrix_data,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](5)),
     )
@@ -156,7 +156,7 @@ fn test_cumsum_1d_reverse():
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
     var cumsum_matrix = LayoutTensor[
-        mut=True, DType.float64, Layout.row_major[1](), **_
+        mut=True, DType.float64, Layout.row_major[1](), ...
     ](
         cumsum_stack,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](5)),
@@ -180,7 +180,7 @@ fn test_cumsum_1d_reverse_exclusive():
     var axis = 0
 
     var matrix_data = UnsafePointer[Float64].alloc(5)
-    var matrix = LayoutTensor[DType.float64, Layout.row_major[1](), **_](
+    var matrix = LayoutTensor[DType.float64, Layout.row_major[1](), ...](
         matrix_data,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](5)),
     )
@@ -189,7 +189,7 @@ fn test_cumsum_1d_reverse_exclusive():
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
     var cumsum_matrix = LayoutTensor[
-        mut=True, DType.float64, Layout.row_major[1](), **_
+        mut=True, DType.float64, Layout.row_major[1](), ...
     ](
         cumsum_stack,
         RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](5)),
@@ -213,7 +213,7 @@ fn test_cumsum_2d_axis_0():
     var axis = 0
 
     var matrix_data = UnsafePointer[Float64].alloc(6)
-    var matrix = LayoutTensor[DType.float64, Layout.row_major[2](), **_](
+    var matrix = LayoutTensor[DType.float64, Layout.row_major[2](), ...](
         matrix_data,
         RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](2, 3)),
     )
@@ -222,7 +222,7 @@ fn test_cumsum_2d_axis_0():
 
     var cumsum_stack = InlineArray[Float64, 6](uninitialized=True)
     var cumsum_matrix = LayoutTensor[
-        mut=True, DType.float64, Layout.row_major[2](), **_
+        mut=True, DType.float64, Layout.row_major[2](), ...
     ](
         cumsum_stack,
         RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](2, 3)),
@@ -247,7 +247,7 @@ fn test_cumsum_2d_axis_1():
     var axis = 1
 
     var matrix_data = UnsafePointer[Float64].alloc(6)
-    var matrix = LayoutTensor[DType.float64, Layout.row_major[2](), **_](
+    var matrix = LayoutTensor[DType.float64, Layout.row_major[2](), ...](
         matrix_data,
         RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](2, 3)),
     )
@@ -256,7 +256,7 @@ fn test_cumsum_2d_axis_1():
 
     var cumsum_stack = InlineArray[Float64, 6](uninitialized=True)
     var cumsum_matrix = LayoutTensor[
-        mut=True, DType.float64, Layout.row_major[2](), **_
+        mut=True, DType.float64, Layout.row_major[2](), ...
     ](
         cumsum_stack,
         RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](2, 3)),
@@ -281,7 +281,7 @@ fn test_cumsum_2d_negative_axis():
     var axis = -1
 
     var matrix_data = UnsafePointer[Float64].alloc(6)
-    var matrix = LayoutTensor[DType.float64, Layout.row_major[2](), **_](
+    var matrix = LayoutTensor[DType.float64, Layout.row_major[2](), ...](
         matrix_data,
         RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](2, 3)),
     )
@@ -290,7 +290,7 @@ fn test_cumsum_2d_negative_axis():
 
     var cumsum_stack = InlineArray[Float64, 6](uninitialized=True)
     var cumsum_matrix = LayoutTensor[
-        mut=True, DType.float64, Layout.row_major[2](), **_
+        mut=True, DType.float64, Layout.row_major[2](), ...
     ](
         cumsum_stack,
         RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](2, 3)),

@@ -15,7 +15,7 @@ from collections import OptionalReg
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     align_of,
     has_amd_gpu_accelerator,
@@ -98,10 +98,10 @@ fn warp_split_k_reduction[
 ](
     warp_k_part_id: Int,
     c_reg_tile: LayoutTensor[
-        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, **_
+        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, ...
     ],
     smem: UnsafePointer[
-        Scalar[c_type], address_space = AddressSpace.SHARED, **_
+        Scalar[c_type], address_space = AddressSpace.SHARED, ...
     ],
 ):
     comptime red_layout = Layout.row_major(1, num_threads_per_warp_k_part)
@@ -157,7 +157,7 @@ fn warp_split_k_reduction[
 ](
     warp_k_part_id: Int,
     c_reg_tile: LayoutTensor[
-        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, **_
+        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, ...
     ],
 ):
     comptime c_frag_size = c_layout.shape[1].value()
@@ -209,21 +209,23 @@ fn multistage_mma[
     k_group_size: UInt = 1,
 ](
     c: LayoutTensor[
-        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, **_
+        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, ...
     ],
-    a_iter_arg: LayoutTensorIter[_, a_layout, **_],
-    b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
+    a_iter_arg: LayoutTensorIter[_, a_layout, ...],
+    b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
     a_smem_iter_arg: LayoutTensorIter[
         mut=True,
         a_type,
         a_smem_layout,
-        address_space = AddressSpace.SHARED, **_,
+        address_space = AddressSpace.SHARED,
+        ...,
     ],
     mut b_smem_iter: LayoutTensorIter[
         mut=True,
         b_type,
         b_smem_layout,
-        address_space = AddressSpace.SHARED, **_,
+        address_space = AddressSpace.SHARED,
+        ...,
     ],
     num_iters: Int,
     /,
@@ -308,7 +310,7 @@ fn multistage_mma[
     @parameter
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+    ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
         @parameter
         if is_nvidia_gpu():
             copy_dram_to_sram_async[
@@ -723,7 +725,7 @@ fn multistage_gemm_kernel[
     c_linear_idx_type: DType,
     a_linear_idx_type: DType,
     b_linear_idx_type: DType,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b, **_],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b, ...],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[

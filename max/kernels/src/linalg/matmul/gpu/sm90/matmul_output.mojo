@@ -145,7 +145,7 @@ struct MatmulTileWriter[
         epilogue_fn: Self.lambda_type
     ](
         self,
-        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, *_, **_],
+        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, ...],
         tile_row_offset: Int,
         tile_col_offset: Int,
         max_row: UInt32,
@@ -253,7 +253,7 @@ struct MatmulTileWriter[
         self,
         tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],
         reg_tile: RegTileType[accum_type, reg_tile_layout],
-        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, *_, **_],
+        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, ...],
         tile_origin: Self.CTensorType.CornerCoordsType,
     ):
         """Use st.matrix instructions for optimized bf16 output."""

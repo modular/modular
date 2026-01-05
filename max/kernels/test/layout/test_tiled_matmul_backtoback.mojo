@@ -24,7 +24,7 @@ from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
 from memory import LegacyUnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_false
 
 from utils import StaticTuple
@@ -324,7 +324,7 @@ fn alloc_tensor[
 
 fn alloc_tensor[
     elt: DType, layout: Layout
-](rtlayout: RuntimeLayout[layout, **_]) -> LayoutTensor[
+](rtlayout: RuntimeLayout[layout, ...]) -> LayoutTensor[
     elt, layout, MutAnyOrigin
 ]:
     return LayoutTensor[elt, layout, MutAnyOrigin](

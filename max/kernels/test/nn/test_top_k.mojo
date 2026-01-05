@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from collections import OptionalReg
 from math import iota
 from random import rand, seed
@@ -57,7 +57,7 @@ fn test_case_sampling[
     rank: Int,
     dtype: DType,
     fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, **_]
+        LayoutTensor[mut=True, dtype, ...]
     ) capturing [_] -> None,
 ](
     K: Int,
@@ -162,7 +162,7 @@ fn test_case[
     rank: Int,
     dtype: DType,
     fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, **_]
+        LayoutTensor[mut=True, dtype, ...]
     ) capturing [_] -> None,
     largest: Bool = True,
 ](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True):
@@ -204,7 +204,7 @@ def main():
     @parameter
     fn fill_iota[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, **_]):
+    ](buf: LayoutTensor[mut=True, dtype, ...]):
         iota(
             buf.ptr,
             buf.runtime_layout.shape.value.canonicalize().flattened_length(),
@@ -213,7 +213,7 @@ def main():
     @parameter
     fn fill_rand[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, **_]):
+    ](buf: LayoutTensor[mut=True, dtype, ...]):
         rand(
             buf.ptr,
             buf.runtime_layout.shape.value.canonicalize().flattened_length(),
@@ -286,7 +286,7 @@ def main():
     @parameter
     fn fill_identical[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, **_]):
+    ](buf: LayoutTensor[mut=True, dtype, ...]):
         _ = buf.fill(1)
 
     fn test_identical():
@@ -319,7 +319,7 @@ def main():
     @parameter
     fn fill_custom[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, **_]):
+    ](buf: LayoutTensor[mut=True, dtype, ...]):
         var flat_buf = LayoutTensor[
             dtype,
             Layout.row_major(UNKNOWN_VALUE),
@@ -390,7 +390,7 @@ def main():
     test_3d_sorted_sampling()
 
     @parameter
-    fn ones[rank: Int, dtype: DType](buf: LayoutTensor[mut=True, dtype, **_]):
+    fn ones[rank: Int, dtype: DType](buf: LayoutTensor[mut=True, dtype, ...]):
         for i in range(
             buf.runtime_layout.shape.value.canonicalize().flattened_length()
         ):

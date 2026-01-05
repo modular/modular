@@ -34,7 +34,7 @@ from layout.tensor_core_async import (
 )
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import StaticTuple
 

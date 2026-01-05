@@ -14,7 +14,7 @@
 from math import sqrt
 from memory import LegacyUnsafePointer, bitcast
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas

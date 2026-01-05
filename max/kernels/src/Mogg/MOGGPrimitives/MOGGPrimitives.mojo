@@ -22,7 +22,7 @@ from gpu.host.info import is_cpu, is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from memory import memcpy, LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -639,7 +639,7 @@ fn mgp_buffer_concat[
     bDevice: StaticString
 ](
     output: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], *_],
+    inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], ...],
     call_ctx: DeviceContextPtr,
 ) raises:
     comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)

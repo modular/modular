@@ -16,7 +16,7 @@ from math import ceildiv, exp2, recip, align_up
 from math.constants import log2e
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from gpu import warp_id

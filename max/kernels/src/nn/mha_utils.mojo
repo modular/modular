@@ -16,7 +16,7 @@ from collections import OptionalReg
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     CompilationTarget,
     align_of,
@@ -380,7 +380,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
 fn _kernel_mask[
     dtype: DType, width: Int
 ](
-    coord: IndexList[2, **_], bound: IndexList[2, **_], vec: SIMD[dtype, width]
+    coord: IndexList[2, ...], bound: IndexList[2, ...], vec: SIMD[dtype, width]
 ) -> SIMD[dtype, width]:
     var masked_vec = SIMD[dtype, width]()
 
@@ -412,7 +412,7 @@ fn _copy_frag_to_smem_nvidia[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, **_
+        type0, layout0, address_space = AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, address_space = AddressSpace.LOCAL
@@ -504,7 +504,7 @@ fn _copy_frag_to_smem_amd[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, **_
+        type0, layout0, address_space = AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, address_space = AddressSpace.LOCAL
@@ -581,7 +581,7 @@ fn _copy_frag_to_smem[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, **_
+        type0, layout0, address_space = AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, address_space = AddressSpace.LOCAL

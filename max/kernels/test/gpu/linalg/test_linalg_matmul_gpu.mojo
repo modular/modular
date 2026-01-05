@@ -18,13 +18,13 @@ from linalg.matmul import matmul
 from linalg.matmul.gpu import _matmul_gpu
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils import IndexList
 
 
-fn _size[rank: Int](dims: IndexList[rank, **_]) -> Int:
+fn _size[rank: Int](dims: IndexList[rank, ...]) -> Int:
     var size = 1
 
     @parameter
@@ -49,7 +49,7 @@ fn _create_device_buffer[
 
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
-](dynamic_shape: IndexList[rank, **_]) raises -> NDBuffer[
+](dynamic_shape: IndexList[rank, ...]) raises -> NDBuffer[
     dtype, rank, MutAnyOrigin, shape
 ]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))

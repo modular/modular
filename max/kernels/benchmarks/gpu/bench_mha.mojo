@@ -23,7 +23,7 @@ from internal_utils import arg_parse
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod

@@ -92,7 +92,7 @@ struct _PrecompiledEntries[
     var format: StringSlice[Self.origin]
 
 
-comptime _FormatArgs = VariadicPack[element_trait=_CurlyEntryFormattable, *_]
+comptime _FormatArgs = VariadicPack[element_trait=_CurlyEntryFormattable, ...]
 
 
 struct _FormatUtils:

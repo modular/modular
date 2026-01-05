@@ -2538,7 +2538,7 @@ struct SIMD[dtype: DType, size: Int](
         return self._shuffle_variadic[*mask](other)
 
     @always_inline("nodebug")
-    fn shuffle[mask: IndexList[Self.size, **_]](self) -> Self:
+    fn shuffle[mask: IndexList[Self.size, ...]](self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
         values must be within `2 * len(self)`.
@@ -2553,7 +2553,7 @@ struct SIMD[dtype: DType, size: Int](
         return self._shuffle_list[Self.size, mask.as_tuple()](self)
 
     @always_inline("nodebug")
-    fn shuffle[mask: IndexList[Self.size, **_]](self, other: Self) -> Self:
+    fn shuffle[mask: IndexList[Self.size, ...]](self, other: Self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
         values must be within `2 * len(self)`.

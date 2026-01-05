@@ -83,7 +83,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             self.add(t)
 
     # TODO: Should take the list owned so we can transfer the elements out.
-    fn __init__(out self, elements: List[Self.T, *_]):
+    fn __init__(out self, elements: List[Self.T, ...]):
         """Construct a set from a List of elements.
 
         Args:

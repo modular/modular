@@ -16,7 +16,7 @@ from internal_utils._testing import _assert_with_measure_impl
 from itertools import product
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 

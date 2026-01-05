@@ -383,7 +383,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
 # TODO: we need this overload, because the Absable trait requires returning Self
 # dtype. We could maybe get rid of this if we had associated dtypes?
 @always_inline
-fn abs(x: ComplexSIMD[*_]) -> SIMD[x.dtype, x.size]:
+fn abs(x: ComplexSIMD[...]) -> SIMD[x.dtype, x.size]:
     """Performs elementwise abs (norm) on each element of the complex value.
 
     Args:

@@ -17,7 +17,7 @@ from gpu.host.compile import _compile_code
 from gpu.memory import external_memory
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # CHECK-LABEL: test_array_offset

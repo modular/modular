@@ -70,9 +70,7 @@ fn create_tma_descriptor[
     *,
     swizzle_mode: SwizzleMode = SwizzleMode.NONE,
 ](
-    gmem_tensor: LayoutTensor[
-        dtype, *_, address_space = AddressSpace.GENERIC, **_
-    ],
+    gmem_tensor: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises -> TMADescriptor[dtype, tile_shape, swizzle_mode]:
     """
@@ -255,8 +253,8 @@ fn copy[
     //,
     cta_group: Int = 1,
 ](
-    policy: TMALoad[*_],
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    policy: TMALoad[...],
+    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
     mbar_ptr: MBarPtr,
     coords: UInt32Indices[rank],
 ):

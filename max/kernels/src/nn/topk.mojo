@@ -15,7 +15,7 @@ from collections import OptionalReg
 from math import ceildiv, exp, iota
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of, env_get_bool
 
 import gpu.warp as warp
@@ -63,7 +63,7 @@ fn top_k_shape_impl[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
     max_k: Int,
     axis: Int,
 ) raises -> IndexList[
@@ -110,7 +110,7 @@ fn _adjust_top_p[
     T: DType
 ](
     top_p: Scalar[T],
-    values: UnsafePointer[Scalar[T], **_],
+    values: UnsafePointer[Scalar[T], ...],
     k: Int,
     total_sum: Scalar[T],
 ) -> Scalar[T]:
@@ -136,11 +136,11 @@ fn top_k[
     largest: Bool = True,
     target: StaticString = "cpu",
 ](
-    input: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
     max_k: Int,
     axis: Int,
-    out_vals: LayoutTensor[mut=True, dtype, **_],
-    out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
+    out_vals: LayoutTensor[mut=True, dtype, ...],
+    out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
     sorted: Bool,
     ctx: DeviceContextPtr,
     k: OptionalReg[
@@ -220,11 +220,11 @@ fn _top_k_cpu[
     out_idx_type: DType,
     largest: Bool,
 ](
-    input: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
     max_k: Int,
     axis: Int,
-    out_vals: LayoutTensor[mut=True, dtype, **_],
-    out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
+    out_vals: LayoutTensor[mut=True, dtype, ...],
+    out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
     k: OptionalReg[
@@ -363,8 +363,8 @@ fn fused_token_sampling_cpu[
     out_idx_type: DType,
 ](
     max_k: Int,
-    input: LayoutTensor[dtype, **_],
-    out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
+    input: LayoutTensor[dtype, ...],
+    out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
     k: OptionalReg[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
@@ -449,9 +449,9 @@ fn _top_k_sampling[
     dtype: DType,
 ](
     max_k: Int,
-    input: LayoutTensor[dtype, **_],
-    out_vals: LayoutTensor[mut=True, dtype, **_],
-    out_idxs: LayoutTensor[mut=True, DType.int64, **_],
+    input: LayoutTensor[dtype, ...],
+    out_vals: LayoutTensor[mut=True, dtype, ...],
+    out_idxs: LayoutTensor[mut=True, DType.int64, ...],
     k: OptionalReg[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
@@ -1262,11 +1262,11 @@ fn _topk_gpu[
 ](
     ctx: DeviceContext,
     max_k: Int,
-    input_buf: LayoutTensor[dtype, **_],
-    device_local_topk_vals: LayoutTensor[dtype, **_],
-    device_local_topk_idxs: LayoutTensor[out_idx_type, **_],
-    out_vals: LayoutTensor[mut=True, dtype, **_],
-    out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
+    input_buf: LayoutTensor[dtype, ...],
+    device_local_topk_vals: LayoutTensor[dtype, ...],
+    device_local_topk_idxs: LayoutTensor[out_idx_type, ...],
+    out_vals: LayoutTensor[mut=True, dtype, ...],
+    out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
     k: OptionalReg[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
@@ -1512,9 +1512,9 @@ fn topk_gpu[
 ](
     ctx: DeviceContext,
     max_k: Int,
-    input: LayoutTensor[dtype, **_],
-    out_vals: LayoutTensor[mut=True, dtype, **_],
-    out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
+    input: LayoutTensor[dtype, ...],
+    out_vals: LayoutTensor[mut=True, dtype, ...],
+    out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
     k: OptionalReg[
@@ -1747,8 +1747,8 @@ fn fused_token_sampling_gpu[
     ctx: DeviceContext,
     max_k: Int,
     min_top_p: Float32,
-    input: LayoutTensor[dtype, **_],
-    out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
+    input: LayoutTensor[dtype, ...],
+    out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
     k: OptionalReg[
@@ -1934,8 +1934,8 @@ fn gumbel_sampling_gpu[
     //,
 ](
     ctx: DeviceContext,
-    input: LayoutTensor[dtype, input_layout, **_],
-    out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
+    input: LayoutTensor[dtype, input_layout, ...],
+    out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
     temperature: OptionalReg[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin

@@ -32,7 +32,7 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
 from memory import LegacyUnsafePointer, memset_zero, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import *
 
 from utils.index import IndexList

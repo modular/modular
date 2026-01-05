@@ -30,7 +30,7 @@ fn polynomial_evaluate[
     dtype: DType,
     width: Int,
     //,
-    coefficients: Span[Scalar[dtype], *_],
+    coefficients: Span[Scalar[dtype], ...],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial.
 
@@ -59,7 +59,7 @@ fn _horner_evaluate[
     dtype: DType,
     width: Int,
     //,
-    coefficients: Span[Scalar[dtype], *_],
+    coefficients: Span[Scalar[dtype], ...],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial using the passed in value and the specified
     coefficients using the Horner scheme. The Horner scheme evaluates the

@@ -17,7 +17,7 @@ from gpu.host.compile import _compile_code, get_gpu_target
 from gpu.host.info import GPUInfo
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal, assert_true
 
 comptime _TargetType = __mlir_type.`!kgen.target`

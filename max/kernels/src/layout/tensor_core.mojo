@@ -736,9 +736,7 @@ struct TensorCore[
         return c_reg_tile
 
     @always_inline
-    fn store_d(
-        self, d_dst: LayoutTensor[mut=True, *_, **_], d_src: LayoutTensor
-    ):
+    fn store_d(self, d_dst: LayoutTensor[mut=True, ...], d_src: LayoutTensor):
         """
         Store matrix D to destination memory.
 
@@ -757,7 +755,7 @@ struct TensorCore[
 
     @always_inline
     fn _store_d_amd(
-        self, d_dst: LayoutTensor[mut=True, *_, **_], d_src: LayoutTensor
+        self, d_dst: LayoutTensor[mut=True, ...], d_src: LayoutTensor
     ):
         __comptime_assert (
             d_src.shape[0]() == Self.c_reg_tile_type.shape[0]()
@@ -794,7 +792,7 @@ struct TensorCore[
 
     @always_inline
     fn _store_d_nvidia(
-        self, d_dst: LayoutTensor[mut=True, *_, **_], d_src: LayoutTensor
+        self, d_dst: LayoutTensor[mut=True, ...], d_src: LayoutTensor
     ):
         __comptime_assert (
             d_dst.dtype == Self.out_type
@@ -868,7 +866,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor[mut=True, **_],
+        fragments: LayoutTensor[mut=True, ...],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         """
@@ -904,7 +902,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor[mut=True, **_],
+        fragments: LayoutTensor[mut=True, ...],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         comptime frag_type = fragments.element_type
@@ -931,7 +929,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor[mut=True, **_],
+        fragments: LayoutTensor[mut=True, ...],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         comptime frag_type = fragments.element_type
@@ -958,7 +956,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor[mut=True, **_],
+        fragments: LayoutTensor[mut=True, ...],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
@@ -1009,7 +1007,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor[mut=True, **_],
+        fragments: LayoutTensor[mut=True, ...],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
@@ -1046,7 +1044,7 @@ struct TensorCore[
     fn _load_b_nvidia(
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor[mut=True, **_],
+        fragments: LayoutTensor[mut=True, ...],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
@@ -1199,7 +1197,7 @@ struct TensorCore[
     fn load_b(
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor[mut=True, **_],
+        fragments: LayoutTensor[mut=True, ...],
         scales: LayoutTensor,
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
@@ -1287,7 +1285,7 @@ struct TensorCore[
         self,
         a_frag: LayoutTensor,
         b_frag: LayoutTensor,
-        c_frag: LayoutTensor[mut=True, **_],
+        c_frag: LayoutTensor[mut=True, ...],
     ):
         """Perform matrix multiply-accumulate operation using tensor cores.
 
@@ -1584,7 +1582,7 @@ struct TiledTensorCore[
     ](
         a_reg_tile: LayoutTensor,
         b_reg_tile: LayoutTensor,
-        c_reg_tile: LayoutTensor[mut=True, **_],
+        c_reg_tile: LayoutTensor[mut=True, ...],
     ):
         """Perform multiple matrix multiply-accumulate operations along the K dimension.
 
@@ -1628,7 +1626,7 @@ struct TiledTensorCore[
         fn _inner_loop(
             a_frag: LayoutTensor,
             b_frag: LayoutTensor,
-            c_frag: LayoutTensor[mut=True, **_],
+            c_frag: LayoutTensor[mut=True, ...],
         ):
             comptime num_m_mmas = a_frag.shape[0]()
             comptime num_n_mmas = b_frag.shape[0]()
@@ -1669,9 +1667,9 @@ struct TiledTensorCore[
 @always_inline
 fn _load_tr16_b64_row[
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
-](
-    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
-) -> SIMD[tile.dtype, 4]:
+](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+    tile.dtype, 4
+]:
     """Load a 4x16 tile using ds_read_tr16_b64 with optional swizzle.
 
     ds_read_tr16_b64 uses a set of 4x4 lanes (AMD calls 16 lanes a "row")
@@ -1720,9 +1718,9 @@ fn _load_tr16_b64_row[
 fn _load_tr16_b64_warp[
     mma_shape: IndexList[3],
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
-](
-    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
-) -> SIMD[tile.dtype, 4]:
+](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+    tile.dtype, 4
+]:
     # for 8x32 we need 2x2 distribution of rows (16 lanes), 2x2 x 4x16 = 8x32
     # for 16x16 we need 4x1 distribution of rows (16 lanes), 4x1 x 4x16 = 16x16
     comptime row_layout = Layout.row_major(2, 2) if mma_shape[
@@ -1757,9 +1755,9 @@ fn _load_tr16_b64_warp[
 fn load_b_tr[
     mma_shape: IndexList[3],
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
-](
-    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
-) -> SIMD[tile.dtype, 8]:
+](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+    tile.dtype, 8
+]:
     """Loads the b operand tile for AMD tensor core MFMA instructions using transposed memory access.
 
     This function supports double-rate MFMA shapes (32x32x16, 16x16x32) with bfloat16 input.
@@ -1829,9 +1827,9 @@ fn load_b_tr[
 fn load_b_nt[
     mma_shape: IndexList[3],
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
-](
-    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
-) -> SIMD[tile.dtype, 8]:
+](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+    tile.dtype, 8
+]:
     """Loads the b operand tile for AMD tensor core MFMA from (N, K) storage.
 
     This function supports double-rate MFMA shapes (32x32x16, 16x16x32) with bfloat16 input.
