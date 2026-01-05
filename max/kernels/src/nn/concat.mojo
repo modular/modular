@@ -666,7 +666,6 @@ fn concat[
                 LayoutTensor[dtype, inputs_layout, MutAnyOrigin]
             ](capacity=len(inputs))
 
-            @parameter
             for i in range(inputs.size):
                 inputVec.append(inputs[i])
 
