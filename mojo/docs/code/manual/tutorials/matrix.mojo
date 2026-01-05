@@ -22,6 +22,6 @@ struct Matrix[T: CollectionElement]:
 
 
 fn main():
-    var m = Matrix[Int](3, 2, 2, fill=0)  # 3 wide, 4 tall, 5 deep
+    var m = Matrix[Int](3, 2, 2, fill=0)  # 3 wide, 2 tall, 2 deep
     m[2, 1, 1] = 42
     print(m[2, 1, 1])  # prints 42
