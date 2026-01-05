@@ -918,7 +918,7 @@ _Optional for Partial State_
 - `Optional[T]` represents "maybe has a value"
 - Useful for partially filled containers
 - Testing with `if optional_instance:` checks existence
-- Extracting with `.value()` gets the inner value, with `.take()` transfers ownership
+- Extracting with `.value()` gets the inner value; `.take()` transfers ownership
 
 _Type Constraints_
 - Most `CollectionElement` implementations will require `Copyable` and `ImplicitlyDestructible`
