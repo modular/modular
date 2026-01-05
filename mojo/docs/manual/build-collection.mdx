@@ -117,7 +117,7 @@ mojo slidingwindow.mojo
 Slots: [2, 3, 4]
 ```
 
-This demonstrates the sliding behavior. The window holds 3 values, which is established in the loop in `__init__`. When you push the fourth value (4), the first value (1) is evicted.
+This demonstrates the sliding behavior. The window holds 3 values because `SlidingWindow` is created with `capacity=3`, and the `__init__` method uses that `capacity` to create three slots via the `for _ in range(capacity)` loop. When you push the fourth value (4), the first value (1) is evicted.
 
 But there's a problem: this implementation can't distinguish between "slot is empty" and "slot contains zero." You need a better way to represent unfilled state.
 
