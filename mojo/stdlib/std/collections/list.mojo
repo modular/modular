@@ -17,6 +17,7 @@ These APIs are imported automatically, just like builtins.
 
 
 from builtin.constrained import _constrained_conforms_to
+from builtin.rebind import downcast
 from reflection import get_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (
@@ -39,7 +40,7 @@ from .optional import Optional
 struct _ListIter[
     mut: Bool,
     //,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -93,7 +94,7 @@ struct _ListIter[
         return (iter_len, {iter_len})
 
 
-struct List[T: Copyable & ImplicitlyDestructible](
+struct List[T: Copyable](
     Boolable,
     Copyable,
     Defaultable,
@@ -335,7 +336,7 @@ struct List[T: Copyable & ImplicitlyDestructible](
             fill: The element to fill each element of the list.
         """
         self = Self()
-        self.resize(length, fill)
+        self._unchecked_grow(length, fill)
 
     @always_inline
     fn __init__(out self, var *values: Self.T, __list_literal__: ()):
@@ -423,10 +424,18 @@ struct List[T: Copyable & ImplicitlyDestructible](
     fn __del__(deinit self):
         """Destroy all elements in the list and free its memory."""
 
+        _constrained_conforms_to[
+            conforms_to(Self.T, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
+
         @parameter
-        if not Self.T.__del__is_trivial:
+        if not TDestructible.__del__is_trivial:
             for i in range(len(self)):
-                (self._data + i).destroy_pointee()
+                (self._data + i).bitcast[TDestructible]().destroy_pointee()
         self._annotate_delete()
         self._data.free()
 
@@ -527,8 +536,13 @@ struct List[T: Copyable & ImplicitlyDestructible](
                 return True
         return False
 
-    fn __mul__(self, x: Int) -> Self:
+    fn __mul__[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](self: List[_T], x: Int) -> List[_T]:
         """Multiplies the list by x and returns a new list.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Args:
             x: The multiplier number.
@@ -538,12 +552,14 @@ struct List[T: Copyable & ImplicitlyDestructible](
         """
         # avoid the copy since it would be cleared immediately anyways
         if x == 0:
-            return Self()
+            return List[_T]()
         var result = self.copy()
         result *= x
         return result^
 
-    fn __imul__(mut self, x: Int):
+    fn __imul__[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](mut self: List[_T], x: Int):
         """Appends the original elements of this list x-1 times or clears it if
         x is <= 0.
 
@@ -551,6 +567,9 @@ struct List[T: Copyable & ImplicitlyDestructible](
         var a = [1, 2]
         a *= 2 # a = [1, 2, 1, 2]
         ```
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Args:
             x: The multiplier number.
@@ -958,12 +977,17 @@ struct List[T: Copyable & ImplicitlyDestructible](
             return
         self._realloc(new_capacity)
 
-    fn resize(mut self, new_size: Int, value: Self.T):
+    fn resize[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](mut self: List[_T], new_size: Int, value: _T):
         """Resizes the list to the given new size.
 
         Args:
             new_size: The new size.
             value: The value to use to populate new elements.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Notes:
             If the new size is smaller than the current one, elements at the end
@@ -983,19 +1007,29 @@ struct List[T: Copyable & ImplicitlyDestructible](
         if new_size <= self._len:
             self.shrink(new_size)
         else:
-            self.reserve(new_size)
-            self._annotate_increase(new_size - self._len)
-            for i in range(self._len, new_size):
-                (self._data + i).init_pointee_copy(value)
-            self._len = new_size
+            self._unchecked_grow(new_size, value)
 
-    fn resize(mut self, *, unsafe_uninit_length: Int):
+    fn _unchecked_grow(mut self, new_size: Int, value: Self.T):
+        debug_assert(new_size >= self._len)
+
+        self.reserve(new_size)
+        self._annotate_increase(new_size - self._len)
+        for i in range(self._len, new_size):
+            (self._data + i).init_pointee_copy(value)
+        self._len = new_size
+
+    fn resize[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](mut self: List[_T], *, unsafe_uninit_length: Int):
         """Resizes the list to the given new size leaving any new elements
         uninitialized.
 
         If the new size is smaller than the current one, elements at the end
         are discarded. If the new size is larger than the current one, the
         list is extended and the new elements are left uninitialized.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Args:
             unsafe_uninit_length: The new size.
@@ -1017,8 +1051,13 @@ struct List[T: Copyable & ImplicitlyDestructible](
             self._annotate_increase(unsafe_uninit_length - self._len)
             self._len = unsafe_uninit_length
 
-    fn shrink(mut self, new_size: Int):
+    fn shrink[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](mut self: List[_T], new_size: Int):
         """Resizes to the given new size which must be <= the current size.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Args:
             new_size: The new size.
@@ -1044,7 +1083,7 @@ struct List[T: Copyable & ImplicitlyDestructible](
             )
 
         @parameter
-        if not Self.T.__del__is_trivial:
+        if not _T.__del__is_trivial:
             for i in range(new_size, len(self)):
                 (self._data + i).destroy_pointee()
         var old_size: Int = self._len
@@ -1139,8 +1178,11 @@ struct List[T: Copyable & ImplicitlyDestructible](
                 return i
         raise "ValueError: Given element is not in list"
 
-    fn clear(mut self):
+    fn clear[_T: Copyable & ImplicitlyDestructible, //](mut self: List[_T]):
         """Clears the elements in the list.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Examples:
 
@@ -1270,8 +1312,13 @@ struct List[T: Copyable & ImplicitlyDestructible](
         return (self._data + idx)[]
 
     @always_inline
-    fn unsafe_set(mut self, idx: Int, var value: Self.T):
+    fn unsafe_set[
+        _T: Copyable & ImplicitlyDestructible
+    ](mut self: List[_T], idx: Int, var value: _T):
         """Write a value to a given location without checking index bounds.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Args:
             idx: The index of the element to set.

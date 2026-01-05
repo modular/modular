@@ -2565,7 +2565,7 @@ fn _to_string_list[
     O: Origin,
     //,
     # TODO(MOCO-1446): Make `T` parameter inferred
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
