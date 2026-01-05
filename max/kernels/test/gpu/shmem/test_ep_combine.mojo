@@ -278,6 +278,7 @@ fn test_combine[
         n_ranks,
         combine_msg_bytes,
         n_tokens_per_rank,
+        1,  # p2p_world_size
     ]
     var func_combine = ctx.compile_function_checked[combine, combine]()
     shmem_module_init(func_combine)
@@ -347,13 +348,23 @@ fn test_combine[
     @always_inline
     @parameter
     fn run_combine(ctx: DeviceContext) raises:
+        # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
+        var combine_recv_buf_ptrs = InlineArray[
+            UnsafePointer[UInt8, MutAnyOrigin], 1
+        ](fill={})
+        var combine_recv_count_ptrs = InlineArray[
+            UnsafePointer[UInt64, MutAnyOrigin], 1
+        ](fill={})
+        combine_recv_buf_ptrs[0] = send_buf
+        combine_recv_count_ptrs[0] = recv_count
+
         ctx.enqueue_function_checked(
             func_combine,
             output_tensor,
             src_token_info_tensor,
             recv_buf,
-            send_buf,
-            recv_count,
+            combine_recv_buf_ptrs,
+            combine_recv_count_ptrs,
             atomic_counter,
             Int32(my_rank),
             grid_dim=hw_info.sm_count,

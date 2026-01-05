@@ -382,7 +382,7 @@ struct Struct_ep_dispatch:
                 unsafe_from_address=Int(send_ptrs[gpu_id])
             )
 
-            # Create inline arrays to store all the p2p accessable pointers
+            # Create inline arrays to store all the p2p accessible pointers
             var recv_ptrs_arr = InlineArray[
                 UnsafePointer[UInt8, MutOrigin.external], n_gpus_per_node
             ](fill={})
@@ -724,7 +724,7 @@ struct Struct_ep_dispatch_fp8:
                 DType.uint8
             ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
 
-            # Marshal signal buffers.
+            # Create inline arrays to store all the p2p accessible pointers
             var recv_ptrs_arr = InlineArray[
                 UnsafePointer[UInt8, MutOrigin.external], n_gpus_per_node
             ](fill={})
@@ -1014,6 +1014,7 @@ struct Struct_ep_combine:
             n_ranks,
             combine_msg_size,
             max_token_per_rank,
+            n_gpus_per_node,
         ]
 
         @always_inline
@@ -1053,23 +1054,35 @@ struct Struct_ep_combine:
             var send_ptr = UnsafePointer[UInt8, MutOrigin.external](
                 unsafe_from_address=Int(send_ptrs[gpu_id])
             )
-            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
-                unsafe_from_address=Int(recv_ptrs[gpu_id])
-            )
-            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
-                unsafe_from_address=Int(recv_count_ptrs[gpu_id])
-            )
+
+            # Create inline arrays to store all the p2p accessible pointers
+            var recv_ptrs_arr = InlineArray[
+                UnsafePointer[UInt8, MutOrigin.external], n_gpus_per_node
+            ](fill={})
+            var recv_count_ptrs_arr = InlineArray[
+                UnsafePointer[UInt64, MutOrigin.external], n_gpus_per_node
+            ](fill={})
+
             var atomic_counters_1_ptr = UnsafePointer[
                 Int32, MutOrigin.external
             ](atomic_counters_1._ptr)
+
+            @parameter
+            for i in range(n_gpus_per_node):
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutOrigin.external](
+                    unsafe_from_address=Int(recv_ptrs[i])
+                )
+                recv_count_ptrs_arr[i] = UnsafePointer[
+                    UInt64, MutOrigin.external
+                ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
             gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 src_info_tensor,
                 send_ptr,
-                recv_buf_ptr,
-                recv_count_ptr,
+                recv_ptrs_arr,
+                recv_count_ptrs_arr,
                 atomic_counters_1_ptr,
                 my_rank,
                 grid_dim=hw_info.sm_count,

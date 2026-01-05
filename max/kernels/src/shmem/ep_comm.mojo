@@ -60,6 +60,77 @@ comptime RtTuple_4 = RuntimeTuple[
 comptime EP_DATA_READY_FLAG = 1 << 10
 
 
+@always_inline
+fn block_memcpy[
+    num_bytes: Int, block_size: Int
+](
+    dst_p: UnsafePointer[mut=True, UInt8],
+    src_p: UnsafePointer[mut=False, UInt8],
+    thread_idx: UInt,
+) -> None:
+    """
+    Copies a memory area from source to destination. This function will use the
+    vectorized store and load instructions to copy the memory area. User should
+    make sure pointers are aligned to the simd width.
+    """
+    comptime simd_width = simd_width_of[DType.uint8]()
+    for i in range(thread_idx, num_bytes // simd_width, block_size):
+        dst_p.store[width=simd_width, alignment=simd_width](
+            i * simd_width,
+            src_p.load[
+                width=simd_width,
+                alignment=simd_width,
+                invariant=True,
+            ](i * simd_width),
+        )
+
+
+@always_inline
+@parameter
+fn ep_signal_completion[
+    p2p_world_size: Int, //, use_shmem: Bool
+](
+    my_rank: Int32,
+    dst_rank: Int32,
+    recv_count_ptrs: InlineArray[
+        UnsafePointer[UInt64, MutOrigin.external], p2p_world_size
+    ],
+    signal_offset: Int32,
+    signal: UInt64,
+) -> None:
+    """
+    Signals the completion of the communication by writing to the receive count
+    buffer. Will use direct memory access if the target device is on the same
+    node, and use the SHMEM API if the target device is on a different node.
+    """
+
+    var my_p2p_world, my_p2p_rank = divmod(my_rank, p2p_world_size)
+    var dst_p2p_world, dst_p2p_rank = divmod(dst_rank, p2p_world_size)
+
+    # If the target device is on the same node, we can directly write to its
+    # receive count buffer.
+    if my_p2p_world == dst_p2p_world:
+        var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank].offset(signal_offset)
+        store_release[scope = Scope.SYSTEM](
+            dst_p2p_ptr,
+            signal,
+        )
+    else:
+
+        @parameter
+        if use_shmem:
+            # This signal operation is sent using the same RC as the one used
+            # for token transfer. Since RC guarantees the message is delivered
+            # in order, the remote device can confirm all the tokens for the
+            # expert has been received once the signal operation is received.
+            shmem_signal_op(
+                recv_count_ptrs[my_p2p_rank].offset(signal_offset),
+                signal,
+                SHMEM_SIGNAL_SET,
+                dst_rank,
+            )
+
+
 @register_passable("trivial")
 trait TokenFormat(DevicePassable):
     comptime hid_dim: Int
@@ -105,11 +176,11 @@ trait TokenFormat(DevicePassable):
     @always_inline
     @staticmethod
     fn copy_token_to_send_buf[
-        src_type: DType
+        src_type: DType,
+        block_size: UInt,
     ](
         buf_p: UnsafePointer[mut=True, UInt8],
         src_p: UnsafePointer[mut=False, Scalar[src_type]],
-        block_size: UInt,
     ) -> None:
         "Copy the token to the send buffer. This function needs to be called by all threads in the block."
         ...
@@ -180,23 +251,17 @@ struct BF16TokenFormat[
     @always_inline
     @staticmethod
     fn copy_token_to_send_buf[
-        src_type: DType
+        src_type: DType,
+        block_size: UInt,
     ](
         buf_p: UnsafePointer[mut=True, UInt8],
         src_p: UnsafePointer[mut=False, Scalar[src_type]],
-        block_size: UInt,
     ) -> None:
-        comptime src_width = simd_width_of[src_type]()
-        comptime byte_width = src_width * size_of[BFloat16]()
-
-        for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
-            var loaded_vec = src_p.load[
-                width=src_width, alignment = Self.alignment, invariant=True
-            ](i * src_width).cast[DType.bfloat16]()
-
-            buf_p.store[width=byte_width, alignment = Self.alignment](
-                i * byte_width, bitcast[DType.uint8, byte_width](loaded_vec)
-            )
+        block_memcpy[Self.hid_dim * size_of[BFloat16](), Int(block_size)](
+            buf_p,
+            src_p.bitcast[UInt8](),
+            thread_idx.x,
+        )
 
     @always_inline
     fn copy_msg_to_output_tensor(
@@ -323,11 +388,11 @@ struct BlockwiseFP8TokenFormat[
     @always_inline
     @staticmethod
     fn copy_token_to_send_buf[
-        src_type: DType
+        src_type: DType,
+        block_size: UInt,
     ](
         buf_p: UnsafePointer[mut=True, UInt8],
         src_p: UnsafePointer[mut=False, Scalar[src_type]],
-        block_size: UInt,
     ) -> None:
         comptime src_width = simd_width_of[src_type]()
         comptime byte_width = src_width * size_of[Self.fp8_dtype]()
@@ -525,13 +590,6 @@ fn dispatch_kernel[
     var expert_reserved_counter = atomic_counter
     var expert_finished_counter = atomic_counter + n_experts
 
-    var topk_cache = stack_allocation[
-        top_k, DType.int32, address_space = AddressSpace.SHARED
-    ]()
-    var target_slots = stack_allocation[
-        top_k, DType.int32, address_space = AddressSpace.SHARED
-    ]()
-
     var my_p2p_world, my_p2p_rank = divmod(my_rank, p2p_world_size)
 
     # The auxiliary SMs are used for counting counting the number of tokens
@@ -560,38 +618,17 @@ fn dispatch_kernel[
 
                 var dst_rank = expert_idx // n_local_experts
                 var dst_expert_local_idx = expert_idx % n_local_experts
-
-                var dst_p2p_world, dst_p2p_rank = divmod(
-                    dst_rank, p2p_world_size
-                )
                 var signal_offset = recv_count_layout(
                     RtTuple_2(Int(dst_expert_local_idx), Int(my_rank))
                 )
 
-                # If the target device is on the same node, we can directly write to its
-                # receive count buffer.
-                if my_p2p_world == dst_p2p_world:
-                    var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank].offset(
-                        signal_offset
-                    )
-                    store_release[scope = Scope.SYSTEM](
-                        dst_p2p_ptr,
-                        UInt64(expert_count),
-                    )
-                else:
-
-                    @parameter
-                    if use_shmem:
-                        # This signal operation is sent using the same RC as the one used
-                        # for token transfer. Since RC guarantees the message is delivered
-                        # in order, the remote device can confirm all the tokens for the
-                        # expert has been received once the signal operation is received.
-                        shmem_signal_op(
-                            recv_count_ptrs[my_p2p_rank].offset(signal_offset),
-                            UInt64(expert_count),
-                            SHMEM_SIGNAL_SET,
-                            dst_rank,
-                        )
+                ep_signal_completion[use_shmem](
+                    my_rank,
+                    dst_rank,
+                    recv_count_ptrs,
+                    signal_offset,
+                    UInt64(expert_count),
+                )
 
                 expert_reserved_counter[expert_idx] = 0
                 expert_finished_counter[expert_idx] = 0
@@ -610,9 +647,9 @@ fn dispatch_kernel[
             var input_tensor_ptr = input_tokens.ptr.offset(
                 input_tokens._offset(token_idx, 0)
             )
-            token_fmt_type.copy_token_to_send_buf(
-                curr_send_buf_ptr, input_tensor_ptr, UInt(num_threads)
-            )
+            token_fmt_type.copy_token_to_send_buf[
+                input_type, UInt(num_threads)
+            ](curr_send_buf_ptr, input_tensor_ptr)
 
             if tid < UInt(top_k):
                 # Store all the top-k expert IDs in current token's message.
@@ -620,10 +657,6 @@ fn dispatch_kernel[
                 # top-k id.
                 # Cast the expert ID to a 16-bit integer to save space.
                 var top_k_idx = topk_ids.load[width=1](token_idx, Int(tid))
-                topk_cache[tid] = top_k_idx
-                target_slots[tid] = Atomic.fetch_add(
-                    expert_reserved_counter + top_k_idx, 1
-                )
                 curr_send_buf_ptr.store[
                     width = size_of[UInt16](),
                     alignment = align_of[DType.uint16](),
@@ -649,32 +682,8 @@ fn dispatch_kernel[
 
             # Try to copy the message to the target expert's recv_buf if the target device
             # is on the same node.
-            comptime align = token_fmt_type.alignment
-            comptime n_threads_per_token = align_up(
-                msg_bytes // align, WARP_SIZE
-            )
-            __comptime_assert (
-                n_threads_per_token <= num_threads
-            ), "n_threads is not enough to copy a single message"
-            comptime n_p2p_group = UInt(num_threads // n_threads_per_token)
-            var p2p_group_id, tid_in_p2p_group = divmod(
-                tid, UInt(n_threads_per_token)
-            )
-
-            @parameter
-            for round_i in range(ceildiv(UInt(top_k), n_p2p_group)):
-                var topk_idx = UInt(round_i) * n_p2p_group + p2p_group_id
-                # Skip copy for invalid p2p_group_id, topk_idx or tid_in_p2p_group.
-                if (
-                    p2p_group_id >= n_p2p_group
-                    or topk_idx >= UInt(top_k)
-                    or tid_in_p2p_group >= UInt(msg_bytes // align)
-                ):
-                    continue
-
-                var target_expert = topk_cache[topk_idx]
-                var slot_idx = target_slots[topk_idx]
-
+            for topk_idx in range(warp_id(), top_k, n_warps):
+                var target_expert = topk_ids.load[width=1](token_idx, topk_idx)
                 var dst_rank, dst_expert_local_idx = divmod(
                     target_expert, n_local_experts
                 )
@@ -682,29 +691,37 @@ fn dispatch_kernel[
                     dst_rank, p2p_world_size
                 )
 
-                # If the target device is not on the same node, we skip the copy.
-                if my_p2p_world != dst_p2p_world:
-                    continue
+                if my_p2p_world == dst_p2p_world:
+                    var slot_idx: Int32 = 0
+                    if lane_id() == 0:
+                        slot_idx = Atomic.fetch_add(
+                            expert_reserved_counter + target_expert, 1
+                        )
+                    slot_idx = warp.broadcast(slot_idx)
 
-                var dst_recv_buf_ptr = recv_buf_ptrs[dst_p2p_rank].offset(
-                    recv_buf_layout(
-                        RtTuple_4(
-                            Int(dst_expert_local_idx),
-                            Int(my_rank),
-                            Int(slot_idx),
-                            0,
+                    var dst_recv_buf_ptr = recv_buf_ptrs[dst_p2p_rank].offset(
+                        recv_buf_layout(
+                            RtTuple_4(
+                                Int(dst_expert_local_idx),
+                                Int(my_rank),
+                                Int(slot_idx),
+                                0,
+                            )
                         )
                     )
-                )
 
-                dst_recv_buf_ptr.store[width=align, alignment=align](
-                    tid_in_p2p_group * UInt(align),
-                    curr_send_buf_ptr.load[
-                        width=align,
-                        alignment=align,
-                        invariant=True,
-                    ](tid_in_p2p_group * UInt(align)),
-                )
+                    block_memcpy[msg_bytes, WARP_SIZE](
+                        dst_recv_buf_ptr,
+                        curr_send_buf_ptr,
+                        lane_id(),
+                    )
+
+                    syncwarp()
+
+                    if lane_id() == 0:
+                        _ = Atomic.fetch_add[ordering = Consistency.RELEASE](
+                            expert_finished_counter + target_expert, 1
+                        )
 
             # We set up `n_local_experts` Reliable Communications (RCs) for each remote
             # device. We would like to use the same RC for each expert. However, NVSHMEM
@@ -720,9 +737,9 @@ fn dispatch_kernel[
 
                 var topk_idx = lane_id()
                 if topk_idx < UInt(top_k) and warp_id() < UInt(n_local_experts):
-                    var target_expert = topk_cache[topk_idx]
-                    var slot_idx = target_slots[topk_idx]
-
+                    var target_expert = topk_ids.load[width=1](
+                        token_idx, Int(topk_idx)
+                    )
                     var dst_rank, dst_expert_local_idx = divmod(
                         target_expert, n_local_experts
                     )
@@ -731,6 +748,9 @@ fn dispatch_kernel[
                         rc_map_offset == dst_expert_local_idx
                         and my_p2p_world != dst_p2p_world
                     ):
+                        var slot_idx = Atomic.fetch_add(
+                            expert_reserved_counter + target_expert, 1
+                        )
                         var dst_recv_buf_ptr = recv_buf_ptrs[
                             my_p2p_rank
                         ].offset(
@@ -749,15 +769,10 @@ fn dispatch_kernel[
                             UInt(msg_bytes),
                             dst_rank,
                         )
-            # Wait until all the threads in the block have finished reading the shared memory
-            # and sent the message to the target expert's recv_buf.
-            barrier()
 
-            if tid < UInt(top_k):
-                var target_expert = topk_cache[tid]
-                _ = Atomic.fetch_add[ordering = Consistency.RELEASE](
-                    expert_finished_counter + target_expert, 1
-                )
+                        _ = Atomic.fetch_add[ordering = Consistency.RELEASE](
+                            expert_finished_counter + target_expert, 1
+                        )
 
 
 @__llvm_metadata(
@@ -1055,12 +1070,18 @@ fn combine_kernel[
     n_ranks: Int,
     msg_bytes: Int,
     max_tokens_per_rank: Int,
+    p2p_world_size: Int,
+    use_shmem: Bool = True,
 ](
     input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
     send_buf_p: UnsafePointer[UInt8, MutOrigin.external],
-    recv_buf_p: UnsafePointer[UInt8, MutOrigin.external],
-    recv_count_p: UnsafePointer[UInt64, MutOrigin.external],
+    recv_buf_ptrs: InlineArray[
+        UnsafePointer[UInt8, MutOrigin.external], p2p_world_size
+    ],
+    recv_count_ptrs: InlineArray[
+        UnsafePointer[UInt64, MutOrigin.external], p2p_world_size
+    ],
     atomic_counter: UnsafePointer[Int32, MutOrigin.external],
     my_rank: Int32,
 ):
@@ -1081,6 +1102,8 @@ fn combine_kernel[
         n_ranks: The number of all devices participating in the communication.
         msg_bytes: This is the total number of bytes we need to send for each token.
         max_tokens_per_rank: The maximum number of tokens per rank.
+        p2p_world_size: Size of a High-speed GPU interconnect group.
+        use_shmem: Whether to use the SHMEM API for the communication.
 
     Args:
         input_tokens: The tokens to be sent back to the original rank.
@@ -1089,13 +1112,14 @@ fn combine_kernel[
             column stores a token's position in the original rank's tensor, and
             the second column stores the top-k ID for the token.
         send_buf_p: The pointer to the send buffer. Need to be allocated using
-            `shmem_alloc`. The underlying buffer is of shape
-            `(n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes)`.
-        recv_buf_p: The pointer to the receive buffer. Need to be allocated using
-            `shmem_alloc`. The underlying buffer is of shape
-            `(max_tokens_per_rank, top_k, msg_bytes, msg_bytes)`.
-        recv_count_p: The pointer to the receive count buffer. Need to be allocated using
-            `shmem_alloc`. The underlying buffer is of shape
+            `shmem_alloc` if `use_shmem` is True. The underlying buffer is of
+            shape `(n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes)`.
+        recv_buf_ptrs: An array of pointers to the receive buffers for each
+            device in the p2p world. Each buffer is of shape
+            `(max_tokens_per_rank, top_k, msg_bytes)`. Need to be allocated using
+            `shmem_alloc` if `use_shmem` is True.
+        recv_count_ptrs: An array of pointers to the receive count buffers for
+            each device in the p2p world. Each buffer is of shape
             `(n_local_experts, n_ranks)`.
         atomic_counter: The pointer to the atomic counter.
         my_rank: The rank of the current device.
@@ -1142,6 +1166,7 @@ fn combine_kernel[
 
     var tid = Int(thread_idx.x)
     var sm_id = Int(block_idx.x)
+    var my_p2p_world, my_p2p_rank = divmod(my_rank, p2p_world_size)
 
     # Each rank holds `n_local_experts` experts, and for each expert, it needs to
     # send back different tokens to `n_ranks` remote ranks. We use one block
@@ -1152,10 +1177,7 @@ fn combine_kernel[
         var expert_rank_offset = recv_count_layout(
             RtTuple_2(Int(local_expert_id), Int(target_rank))
         )
-
-        # The tokens are sent back to the original rank using the same RC as the
-        # one they come from.
-        var rc_map_offset = (sm_id * n_warps + Int(warp_id())) % n_local_experts
+        var dst_p2p_world, dst_p2p_rank = divmod(target_rank, p2p_world_size)
 
         # Info for where the tokens for the current expert and rank start and end
         # are stored in the atomic counter by the `dispatch_cb_kernel`.
@@ -1168,68 +1190,113 @@ fn combine_kernel[
         var token_end = token_end_count[0] - DATA_READY_FLAG
         var token_start = token_end - token_end_count[1]
 
-        for token_idx in range(token_start, token_end):
-            var src_token_info = src_info.aligned_load[2](Int(token_idx), 0)
-            var src_idx = src_token_info[0]
-            var src_topk_idx = src_token_info[1]
+        # If the target device is on the same node, we can directly copy the tokens
+        # to the receive buffer, skipping the send buffer.
+        if Int32(dst_p2p_world) == my_p2p_world:
+            for token_idx in range(token_start + warp_id(), token_end, n_warps):
+                var src_token_info = src_info.aligned_load[2](Int(token_idx), 0)
+                var src_idx = src_token_info[0]
+                var src_topk_idx = src_token_info[1]
 
-            # First, all threads in the block copy the input token to the send buffer.
-            comptime _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
-            var curr_send_buf_ptr = send_buf_p.offset(
-                send_buf_layout(RtTuple_2(Int(token_idx), 0))
-            )
-
-            for i in range(tid, hid_dim // src_simd_width, num_threads):
-                curr_send_buf_ptr.store[
-                    width=byte_simd_width, alignment=_align
-                ](
-                    i * byte_simd_width,
-                    bitcast[DType.uint8, byte_simd_width](
-                        input_tokens.aligned_load[src_simd_width](
-                            Int(token_idx), i * src_simd_width
-                        )
-                    ),
+                var dst_recv_buf_ptr = recv_buf_ptrs[dst_p2p_rank].offset(
+                    recv_buf_layout(
+                        RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
+                    )
                 )
-            barrier()
-
-            # Send the token to the original rank.
-            var dst_recv_buf_ptr = recv_buf_p.offset(
-                recv_buf_layout(RtTuple_3(Int(src_idx), Int(src_topk_idx), 0))
-            )
-            if (
-                warp_id() < UInt(n_local_experts)
-                and local_expert_id == rc_map_offset
-            ):
-                shmem_put_nbi[kind = SHMEMScope.warp](
+                block_memcpy[hid_dim * size_of[input_type](), WARP_SIZE](
                     dst_recv_buf_ptr,
-                    curr_send_buf_ptr,
-                    UInt(msg_bytes),
-                    target_rank,
+                    input_tokens.ptr_at_offset(
+                        IndexList[2](Int(token_idx), 0)
+                    ).bitcast[UInt8](),
+                    lane_id(),
                 )
+
+        # If the target device is on a different node, we need to send the tokens
+        # to the target device using the SHMEM API.
+        else:
+
+            @parameter
+            if use_shmem:
+                # The tokens are sent back to the original rank using the same RC as the
+                # one they come from.
+                var rc_map_offset = (
+                    sm_id * n_warps + Int(warp_id())
+                ) % n_local_experts
+
+                var n_rounds = ceildiv(token_end - token_start, n_warps)
+                for round_i in range(n_rounds):
+                    var token_idx = token_start + round_i * n_warps + warp_id()
+                    if token_idx < token_end:
+                        var curr_send_buf_ptr = send_buf_p.offset(
+                            send_buf_layout(RtTuple_2(Int(token_idx), 0))
+                        )
+
+                        # To use SHMEM API, we need to copy the tokens to the
+                        # send buffer first.
+                        block_memcpy[
+                            hid_dim * size_of[input_type](), WARP_SIZE
+                        ](
+                            curr_send_buf_ptr,
+                            input_tokens.ptr_at_offset(
+                                IndexList[2](Int(token_idx), 0)
+                            ).bitcast[UInt8](),
+                            UInt(lane_id()),
+                        )
+
+                    barrier()
+
+                    if (
+                        warp_id() < UInt(n_local_experts)
+                        and local_expert_id == rc_map_offset
+                    ):
+                        var token_idx = (
+                            token_start + round_i * n_warps + lane_id()
+                        )
+                        if token_idx < token_end:
+                            var src_token_info = src_info.aligned_load[2](
+                                Int(token_idx), 0
+                            )
+                            var src_idx = src_token_info[0]
+                            var src_topk_idx = src_token_info[1]
+
+                            var curr_send_buf_ptr = send_buf_p.offset(
+                                send_buf_layout(RtTuple_2(Int(token_idx), 0))
+                            )
+                            var dst_recv_buf_ptr = recv_buf_ptrs[
+                                my_p2p_rank
+                            ].offset(
+                                recv_buf_layout(
+                                    RtTuple_3(
+                                        Int(src_idx), Int(src_topk_idx), 0
+                                    )
+                                )
+                            )
+
+                            shmem_put_nbi[kind = SHMEMScope.default](
+                                dst_recv_buf_ptr,
+                                curr_send_buf_ptr,
+                                UInt(msg_bytes),
+                                target_rank,
+                            )
+
         barrier()
 
         # Once all the tokens for the current expert and rank have been sent,
         # signal the completion of the communication.
+        var rc_map_offset = (sm_id * n_warps + Int(warp_id())) % n_local_experts
         if (
             warp_id() < UInt(n_local_experts)
             and local_expert_id == rc_map_offset
         ):
             if lane_id() == 0:
-                var global_expert_idx = (
-                    my_rank * n_local_experts + local_expert_id
-                )
+                var signal_offset = my_rank * n_local_experts + local_expert_id
 
-                # TODO(E2EOPT-767): Update to use `store_release`.
-                # When the target device is on the same node, shmem_signal_op is
-                # just a simple `st.global`. Use a membar to ensure that once a
-                # a remote device receives the signal, all transfers are complete.
-                threadfence[Scope.SYSTEM]()
-
-                shmem_signal_op(
-                    recv_count_p.offset(global_expert_idx),
-                    UInt64(token_end - token_start),
-                    SHMEM_SIGNAL_SET,
+                ep_signal_completion[use_shmem](
+                    my_rank,
                     target_rank,
+                    recv_count_ptrs,
+                    signal_offset,
+                    UInt64(token_end - token_start),
                 )
 
                 atomic_counter.store[
