@@ -673,7 +673,7 @@ Second take:
 evicted.append(dropped.take())
 ```
 
-This transfers ownership of the `dropped` value and adds it to the `evicted` list.
+Here, `dropped` is an `Optional`; calling `.take()` extracts its contained value while consuming the `Optional`, and that extracted value is then appended to the `evicted` list.
 
 This sample makes ownership boundaries visible. You can see exactly where duplication and transfer take place.
 
