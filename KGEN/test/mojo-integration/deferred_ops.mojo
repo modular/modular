@@ -61,7 +61,7 @@ fn test2[pred: StaticString](x: Int, y: Int) -> Bool:
 
 comptime dtype_to_llvm_type_i32[
     dtype: DType
-] = __mlir_type.`i32` if dtype is DType.int32 or dtype is DType.uint32 else __mlir_type.`!kgen.none`
+] = __mlir_type.`i32` if dtype == DType.int32 or dtype == DType.uint32 else __mlir_type.`!kgen.none`
 
 
 # Helper function to convert a SIMD to a kgen struct
