@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -27,6 +28,7 @@ modular_py_test(
     ],
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
         "resources:memory:35000",  # 35 GB
     ],
     target_compatible_with = select({

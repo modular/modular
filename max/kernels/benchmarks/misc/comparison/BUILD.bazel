@@ -31,6 +31,7 @@ modular_py_library(
     # nvidia-cutlass-dsl uses a .pth file which Bazel doesn't process.
     # Path is relative from _main/max/kernels/benchmarks/misc/comparison/ in runfiles:
     imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl@4.3.0/site-packages/nvidia_cutlass_dsl/python_packages"],
+    tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer, see import above
     deps = [
         blackwell_bench_wheel("flash-attn"),
         blackwell_bench_wheel("flashinfer"),
@@ -62,6 +63,7 @@ modular_py_library(
     name = "bench_decode_lib",
     srcs = ["bench_blackwell_decode.py"],
     imports = ["."],
+    tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer
     deps = [
         "//max/kernels/benchmarks/misc/utils:bench_utils",
         blackwell_bench_wheel("flashinfer"),
@@ -116,6 +118,9 @@ modular_py_binary(
 modular_py_binary(
     name = "bench_allreduce",
     srcs = ["bench_allreduce.py"],
+    ignore_unresolved_imports = [
+        "sglang",  # Not a hard failure if sglang is not installed
+    ],
     main = "bench_allreduce.py",
     tags = [
         "gpu",

@@ -5,12 +5,28 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "architectures",
     srcs = glob(["**/*.py"]),
+    ignore_extra_deps = [
+        # Hooks added for convenience for when we want to print the model layers
+        "//max/python/max/nn/hooks",
+    ],
+    ignore_unresolved_imports = [
+        # Comes from vendored qwen_vl_utils package, we cannot use this since it isn't in conda-forge
+        "decord",
+    ],
     deps = [
+        requirement("huggingface-hub"),  # For Mistral, should we be circumventing the cache here?
         requirement("numpy"),
         requirement("pillow"),
+        requirement("requests"),
         # TODO: These are required for the llama3.1 model. Remove them if
         # possible.
         requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/experimental",
+        "//max/python/max/interfaces",
+        "//max/python/max/kv_cache",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",

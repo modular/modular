@@ -9,6 +9,7 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -17,6 +18,7 @@ modular_py_library(
     name = "torch_utils",
     testonly = True,
     srcs = ["torch_utils.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/tests/integration/pipelines/python/test_common",
         requirement("numpy"),
@@ -55,6 +57,7 @@ modular_py_library(
         imports = ["."],
         tags = [
             "gpu",
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
             "no-sandbox",
         ],
         deps = [

@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -21,7 +22,9 @@ package(default_visibility = [
             "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
         },
         imports = ["../.."],
-        tags = ["external-exclusive"] if src == "test_reset_prefix_cache.py" else [],  # FIXME: SDLC-2838
+        tags = [
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ] + (["external-exclusive"] if src == "test_reset_prefix_cache.py" else []),  # FIXME: SDLC-2838
         target_compatible_with = select({
             "@platforms//os:macos": ["@platforms//:incompatible"],
             "//conditions:default": [],
@@ -70,6 +73,7 @@ modular_py_test(
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/serve/parser",
     ],

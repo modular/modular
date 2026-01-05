@@ -44,6 +44,7 @@ When you modify a .cpp file in the _core/src directory, you can run
     include_private = True,
     pattern_file = "//max/python/max/_core/internal:patterns.nb",
     pyi_srcs = glob(["**/*.pyi"]),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/_core_types",
         "//max/python/max/mlir",
@@ -54,6 +55,7 @@ When you modify a .cpp file in the _core/src directory, you can run
 modular_py_library(
     name = "max",
     srcs = [],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":_core",
         "//max/python/max/_core_mojo",

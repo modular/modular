@@ -6,6 +6,7 @@ modular_py_binary(
     name = "addition",
     srcs = ["addition.py"],
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/engine",
         "//max/python/max/graph",

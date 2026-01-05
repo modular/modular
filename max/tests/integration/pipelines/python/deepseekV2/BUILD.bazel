@@ -9,6 +9,7 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -21,7 +22,10 @@ modular_py_library(
         "torch_reference/modeling_deepseek.py",
     ],
     imports = ["."],
-    tags = ["no-mypy"],
+    tags = [
+        "no-mypy",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         requirement("torch"),
         requirement("transformers"),
@@ -53,6 +57,7 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
     ],
     deps = [
@@ -87,6 +92,7 @@ modular_py_test(
     gpu_constraints = ["//:has_4_gpus"],
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
     ],
     deps = [

@@ -13,6 +13,7 @@ modular_py_library(
     testonly = True,
     srcs = ["modular_test_format.py"],
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "@llvm-project//llvm:lit",
     ],

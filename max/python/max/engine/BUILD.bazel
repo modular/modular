@@ -8,7 +8,6 @@ modular_py_library(
     deps = [
         "//max/python/max:_core",
         "//max/python/max/driver",
-        "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/profiler",
         "@mojo//:python",

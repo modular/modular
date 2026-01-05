@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_t
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -27,7 +28,10 @@ modular_py_test(
     name = "test_debug_utils",
     size = "small",
     srcs = ["test_debug_utils.py"],
-    tags = ["external-exclusive"],  # FIXME: SDLC-2838
+    tags = [
+        "external-exclusive",  # FIXME: SDLC-2838
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         "//max/tests/integration/tools:debugging_utils",
         requirement("torch"),
@@ -39,7 +43,10 @@ modular_py_test(
     name = "test_debug_model",
     size = "small",
     srcs = ["test_debug_model.py"],
-    tags = ["external-exclusive"],  # FIXME: SDLC-2838
+    tags = [
+        "external-exclusive",  # FIXME: SDLC-2838
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:debugging_utils",
@@ -51,6 +58,7 @@ modular_py_test(
     name = "test_hf_config_overrides",
     size = "small",
     srcs = ["test_hf_config_overrides.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
@@ -64,7 +72,10 @@ modular_py_test(
     name = "test_hf_repo_lock",
     size = "small",
     srcs = ["test_hf_repo_lock.py"],
-    tags = ["external-exclusive"],  # FIXME: SDLC-2838
+    tags = [
+        "external-exclusive",  # FIXME: SDLC-2838
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         ":hf_repo_lock",
         "//max/tests/integration/pipelines/python/test_common",
@@ -82,6 +93,7 @@ modular_py_binary(
         ),
     },
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/tests/integration/pipelines/python/test_common",
         requirement("click"),
@@ -105,6 +117,7 @@ modular_py_binary(
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":verify",
         "//max/tests/integration/tools:generate_llm_logits",
@@ -120,6 +133,7 @@ modular_py_binary(
     data = glob([
         "smoke_tests/chartqa_modular/**",
     ]),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("click"),
         requirement("requests"),
@@ -157,6 +171,7 @@ modular_py_binary(
         ),
     },
     main = "verify_layers/cli.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":verify",
         "//max/tests/integration/pipelines/python/test_common",
@@ -177,6 +192,7 @@ modular_py_test(
         "PIPELINES_CUSTOM_ARCHITECTURE": "max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
     },
     tags = [
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
@@ -207,6 +223,7 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
@@ -234,6 +251,7 @@ modular_py_test(
         # should still run under a new generic pipeline that isn't presubmit
         # due to compilation times.
         "run-in-hf-workflow",
+        "no-pydeps",  # TODO: Fix and re-enable
         "gpu",
         "manual",
         "no-sandbox",
@@ -253,6 +271,7 @@ modular_py_test(
 modular_py_test(
     name = "test_pipelines_cli_help",
     srcs = ["test_pipelines_cli_help.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/entrypoints:pipelines",
         requirement("click"),
@@ -303,6 +322,7 @@ modular_py_binary(
     main = "run_lm_eval.py",
     deps = [
         requirement("lm-eval"),
+        requirement("aiohttp"),
     ],
 )
 
@@ -310,6 +330,7 @@ modular_py_binary(
     name = "mistral-eval",
     srcs = ["run_mistral_eval.py"],
     main = "run_mistral_eval.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "@mistral-evals//:evaluate",
         requirement("click"),
@@ -325,6 +346,7 @@ modular_py_binary(
         "//max/tests/integration/pipelines/python/eval_tasks",
     ],
     main = "pipelines_lm_eval.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":lm-eval",
         ":mistral-eval",
@@ -342,6 +364,7 @@ modular_py_test(
     size = "medium",
     srcs = ["test_pipelines_lm_eval.py"],
     tags = [
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
@@ -363,6 +386,7 @@ modular_py_binary(
     testonly = True,
     srcs = ["pipelines_mteb.py"],
     data = ["//max/python/max/entrypoints:pipelines"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",

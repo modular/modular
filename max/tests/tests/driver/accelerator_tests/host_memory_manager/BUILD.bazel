@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -18,7 +19,10 @@ package(default_visibility = [
             "//conditions:default": [],
         }),  # FIXME: MOCO-2411
         imports = ["."],
-        tags = ["gpu"],
+        tags = [
+            "gpu",
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ],
         deps = [
             "//max/python/max/engine",
             "//max/python/max/graph",

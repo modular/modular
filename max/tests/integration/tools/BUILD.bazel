@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement"
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -27,6 +28,7 @@ modular_py_library(
         "debugging_utils.py",
     ],
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":create_pipelines",
         ":hf_config_overrides",
@@ -66,6 +68,7 @@ modular_py_library(
     name = "create_pipelines",
     testonly = True,
     srcs = ["create_pipelines.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/pipelines/architectures",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
@@ -88,6 +91,7 @@ modular_py_library(
     testonly = True,
     srcs = ["run_models.py"],
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":create_pipelines",
         "//max/python/max/pipelines/architectures",
@@ -115,6 +119,7 @@ modular_py_binary(
     },
     imports = ["."],
     main = "generate_llm_logits.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":create_pipelines",
         ":run_models",
@@ -167,6 +172,7 @@ modular_py_binary(
     },
     imports = ["."],
     main = "debug_model.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":debugging_utils",
         ":hf_config_overrides",

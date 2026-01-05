@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "req
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -54,13 +55,24 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
     deps = [
         "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/entrypoints",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/mlir",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python/test_common",
+        requirement("click"),
         requirement("hypothesis"),
         requirement("safetensors"),
     ],
@@ -94,6 +106,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
@@ -120,7 +133,10 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2743
         "//conditions:default": [],
     }),
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/engine",
@@ -152,6 +168,7 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
@@ -184,6 +201,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
@@ -216,6 +234,7 @@ modular_py_test(
     tags = [
         "gpu",
         "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",
@@ -246,7 +265,10 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_multi_gpu"],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         "//max/python/max/engine",
         "//max/python/max/nn",
@@ -265,6 +287,7 @@ modular_py_test(
     env = {
         "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/engine",
         "//max/python/max/graph",

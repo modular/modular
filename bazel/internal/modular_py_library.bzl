@@ -1,6 +1,7 @@
 """Wrapper macro for py_library"""
 
 load("@rules_python//python:defs.bzl", "py_library")
+load("//bazel/pip/pydeps:pydeps_test.bzl", "pydeps_test")
 
 _MAX_PYTHON_ROOT = "max/python/max/"
 _IGNORED_PACKAGES = [
@@ -10,6 +11,8 @@ _IGNORED_PACKAGES = [
 def modular_py_library(
         name,
         visibility = None,
+        ignore_extra_deps = [],
+        ignore_unresolved_imports = [],
         imports = None,
         tags = [],
         **kwargs):
@@ -18,6 +21,8 @@ def modular_py_library(
     Args:
         name: The name of the underlying py_library
         visibility: The visibility of the target, defaults to public
+        ignore_extra_deps: Forwarded to pydeps_test
+        ignore_unresolved_imports: Forwarded to pydeps_test
         imports: The imports path. For max/python/max packages, this is
             automatically computed and should not be passed.
         tags: Tags to add to the target
@@ -46,3 +51,15 @@ def modular_py_library(
         tags = tags,
         **kwargs
     )
+
+    if "no-pydeps" not in tags:
+        pydeps_test(
+            name = name + ".pydeps_test",
+            deps = kwargs.get("deps", []),
+            data = kwargs.get("data", []),
+            ignore_extra_deps = ignore_extra_deps,
+            ignore_unresolved_imports = ignore_unresolved_imports,
+            imports = imports if imports != None else [],
+            srcs = kwargs.get("srcs", []),
+            tags = ["pydeps"],
+        )

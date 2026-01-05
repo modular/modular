@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -26,6 +27,7 @@ modular_py_library(
     testonly = True,
     srcs = ["modular_graph_test.py"],
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/driver",
         "//max/python/max/graph",
@@ -70,6 +72,7 @@ modular_py_test(
     ],
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
         ":modular_graph_test",
@@ -88,7 +91,10 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:nvidia_gpu"],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         ":modular_graph_test",
         "//max/python/max",
@@ -102,7 +108,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
         ":modular_graph_test",
@@ -119,6 +128,7 @@ modular_py_test(
         "test_matmul_packed.py",
         "test_reduce_add.py",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":modular_graph_test",
         "//max/python/max",

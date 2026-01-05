@@ -11,4 +11,5 @@ modular_py_library(
         "@mojo//:std",
     ],
     imports = [".."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )

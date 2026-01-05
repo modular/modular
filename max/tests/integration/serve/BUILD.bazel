@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -21,6 +22,7 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
     },
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -56,6 +58,7 @@ modular_py_test(
     },
     tags = [
         "manual",  # TODO(AITLIB-293)
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",
@@ -93,6 +96,7 @@ modular_py_test(
     tags = [
         "gpu",
         "manual",  # TODO(AITLIB-293)
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",
@@ -139,6 +143,7 @@ modular_py_test(
         "requires-network",
         # TODO(E2EOPT-239): Re-enable once less flaky
         "manual",
+        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
         "//max/python/max/engine",
@@ -165,6 +170,7 @@ modular_py_test(
     tags = [
         "AITLIB-293",
         "manual",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",

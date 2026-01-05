@@ -13,6 +13,7 @@ modular_py_library(
             "replay_recording.py",
         ],
     ),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/diagnostics",
         "//max/python/max/pipelines",
@@ -42,6 +43,7 @@ modular_py_library(
     srcs = [
         "pipelines.py",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max/interfaces",
@@ -80,6 +82,7 @@ modular_py_binary(
         "//:emit_mojo_enabled": PROD_MOJOPKGS,
         "//conditions:default": [],
     }),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":_pipelines",
         requirement("click"),

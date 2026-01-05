@@ -8,6 +8,7 @@ modular_py_library(
     data = glob(["datasets/packaged_data/**/*"]) + [
         "//max/python/max/benchmark:benchmark_config_yaml_files",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/config",
         "//max/python/max/pipelines/lib",

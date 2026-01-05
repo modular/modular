@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -10,6 +11,7 @@ modular_py_test(
     name = "pipelines",
     srcs = glob(["*.py"]),
     data = glob(["testdata/*"]),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],

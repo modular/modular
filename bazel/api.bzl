@@ -64,11 +64,12 @@ def modular_cc_binary(deps = [], **kwargs):
         **kwargs
     )
 
-def modular_generate_stubfiles(name, pyi_srcs, deps = [], **_kwargs):
+def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
     modular_py_library(
         name = name,
         pyi_srcs = pyi_srcs,
         deps = deps + ["@modular_wheel//:wheel"],
+        tags = tags + ["no-pydeps"],  # Pydeps works internally but not externally
     )
 
 # buildifier: disable=function-docstring

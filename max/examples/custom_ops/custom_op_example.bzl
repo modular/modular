@@ -24,12 +24,13 @@ def custom_op_example_py_binary(
         ],
         deps = [
             "//max/python/max/driver",
+            "//max/python/max/dtype",
             "//max/python/max/engine",
             "//max/python/max/graph",
-            "@mojo//:python",
             requirement("numpy"),
         ] + extra_deps,
         target_compatible_with = target_compatible_with,
+        tags = ["no-pydeps"],  # TODO: Fix and re-enable
     )
 
     # Run each example as a simple non-zero-exit-code test.

@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -11,6 +12,9 @@ package(default_visibility = [
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
         imports = ["."],
+        tags = [
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ],
         # UCX currently only supports x86_64 linux machines
         target_compatible_with = [
             "@platforms//cpu:x86_64",
@@ -52,9 +56,13 @@ package(default_visibility = [
             ] else []
         ),
         imports = ["."],
-        tags = ["gpu"],
+        tags = [
+            "gpu",
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ],
         deps = [
             "//max/python/max:_core",
+            "//max/python/max/driver",
             "//max/python/max/engine",
             "//max/python/max/kv_cache",
             "//max/python/max/nn",

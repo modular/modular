@@ -8,6 +8,7 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -36,9 +37,11 @@ package(default_visibility = [
         },
         imports = ["."],
         tags = [
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ] + ([
             "no-sandbox",
             "requires-network",
-        ] if src == "test_pipeline_batching.py" else [],
+        ] if src == "test_pipeline_batching.py" else []),
         target_compatible_with = select({
             "@platforms//os:macos": ["@platforms//:incompatible"],
             "//conditions:default": [],
@@ -97,20 +100,21 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/dataprocessing",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
         "//max/tests/integration/pipelines/python/test_common",
         requirement("hypothesis"),
-        requirement("py-cpuinfo"),
-        requirement("pytest-asyncio"),
         requirement("torch"),
         requirement("transformers"),
-        requirement("setuptools"),
     ],
 )

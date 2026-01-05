@@ -8,7 +8,6 @@ modular_py_library(
     deps = [
         "//max/python/max/interfaces",
         requirement("numpy"),
-        requirement("msgspec"),
         requirement("llguidance"),
     ],
 )

@@ -14,6 +14,7 @@ modular_py_library(
     data = [
         ":benchmark_config_yaml_files",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/diagnostics",
@@ -35,6 +36,7 @@ modular_py_binary(
     name = "benchmark_serving",
     srcs = ["benchmark_serving.py"],
     imports = ["../.."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/diagnostics",
@@ -55,6 +57,7 @@ modular_py_binary(
         ":yaml_files",
     ],
     imports = ["../.."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/engine",

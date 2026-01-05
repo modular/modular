@@ -9,6 +9,7 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -40,22 +41,10 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
         "//max/python/max/graph",
-        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/serve",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("pytest-asyncio"),
-        requirement("pytest-mock"),
-        requirement("requests"),
-        requirement("timm"),
         requirement("torch"),
-        requirement("torchvision"),
         requirement("transformers"),
-        requirement("opencv-python"),
     ],
 )
 
@@ -87,22 +76,15 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
         "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/serve",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:context_utils",
         requirement("numpy"),
-        requirement("pillow"),
-        requirement("pytest-asyncio"),
-        requirement("pytest-mock"),
-        requirement("requests"),
-        requirement("timm"),
         requirement("torch"),
-        requirement("torchvision"),
         requirement("transformers"),
-        requirement("opencv-python"),
     ],
 )
 
@@ -134,22 +116,10 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
         "//max/python/max/graph",
-        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/serve",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("pytest-asyncio"),
-        requirement("pytest-mock"),
-        requirement("requests"),
-        requirement("timm"),
         requirement("torch"),
-        requirement("torchvision"),
         requirement("transformers"),
-        requirement("opencv-python"),
     ],
 )
 
@@ -193,8 +163,9 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("pillow"),
         requirement("transformers"),
-        requirement("torchvision"),
     ],
 )
 
@@ -207,9 +178,10 @@ modular_py_test(
     ],
     deps = [
         ":utils",
+        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
         requirement("transformers"),
-        requirement("torchvision"),
     ],
 )
 
@@ -218,12 +190,9 @@ modular_py_library(
     testonly = True,
     srcs = ["generate_utils.py"],
     deps = [
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("requests"),
+        "//max/tests/integration/pipelines/python/test_common:test_data",
+        "//max/tests/integration/pipelines/python/test_common:torch_utils",
         requirement("torch"),
-        requirement("torchvision"),
         requirement("transformers"),
     ],
 )
