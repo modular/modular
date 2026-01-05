@@ -404,14 +404,14 @@ def test_bug_report_representative_case():
     """Test the representative case from the bug report (MOTO-1135)."""
     source = (
         "alias _dtype_to_llvm_type_f8[dtype: DType] = "
-        "__mlir_type.`i8` if dtype is DType.float8_e3m4 or "
-        "dtype is DType.float8_e4m3fn or dtype is DType.float8_e4m3fnuz or "
-        "dtype is DType.float8_e5m2 or dtype is DType.float8_e5m2fnuz else "
+        "__mlir_type.`i8` if dtype == DType.float8_e3m4 or "
+        "dtype == DType.float8_e4m3fn or dtype == DType.float8_e4m3fnuz or "
+        "dtype == DType.float8_e5m2 or dtype == DType.float8_e5m2fnuz else "
         "__mlir_type.`!kgen.none`"
     )
     expected = (
         "alias _dtype_to_llvm_type_f8[\n"
         "    dtype: DType\n"
-        "] = __mlir_type.`i8` if dtype is DType.float8_e3m4 or dtype is DType.float8_e4m3fn or dtype is DType.float8_e4m3fnuz or dtype is DType.float8_e5m2 or dtype is DType.float8_e5m2fnuz else __mlir_type.`!kgen.none`\n"
+        "] = __mlir_type.`i8` if dtype == DType.float8_e3m4 or dtype == DType.float8_e4m3fn or dtype == DType.float8_e4m3fnuz or dtype == DType.float8_e5m2 or dtype == DType.float8_e5m2fnuz else __mlir_type.`!kgen.none`\n"
     )
     assert_mojo_format(source, expected)

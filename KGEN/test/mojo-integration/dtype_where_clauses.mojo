@@ -19,16 +19,6 @@ fn dtype_where_clause_eq_ne[d: DType]() -> Int where d != DType.int32:
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_isnot[d: DType]() -> Int where d is DType.float32:
-    return 1
-
-
-@always_inline("builtin")
-fn dtype_where_clause_is_isnot[d: DType]() -> Int where d is not DType.float32:
-    return 2
-
-
-@always_inline("builtin")
 fn dtype_where_clause_is_signed[d: DType]() -> Int where d.is_signed():
     return 1
 
@@ -110,10 +100,6 @@ fn foo():
     comptime x = dtype_where_clause_eq_ne[DType.int32]()
     # CHECK: lit.alias.decl *"y`1": !Int = <{0}>
     comptime y = dtype_where_clause_eq_ne[DType.int64]()
-    # CHECK: lit.alias.decl *"a`2": !Int = <{1}>
-    comptime a = dtype_where_clause_is_isnot[DType.float32]()
-    # CHECK: lit.alias.decl *"b`3": !Int = <{2}>
-    comptime b = dtype_where_clause_is_isnot[DType.float64]()
 
     # CHECK: lit.alias.decl *"c`{{.*}}": !Int = <{1}>
     comptime c = dtype_where_clause_is_signed[DType.int32]()
