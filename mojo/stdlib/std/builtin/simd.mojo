@@ -72,7 +72,7 @@ from sys.intrinsics import _type_is_eq
 from bit import bit_width, byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
-from builtin.format_int import _try_write_int
+from builtin.format_int import _write_int
 from builtin.math import DivModable, Powable
 from documentation import doc_private
 from memory import bitcast, memcpy, pack_bits
@@ -4072,7 +4072,7 @@ fn _write_scalar[
 
     # TODO(MSTDL-1039): bring in performant integer to string formatter
     elif dtype.is_integral():
-        _ = _try_write_int(writer, value)
+        _ = _write_int(writer, value)
     else:
         constrained[
             False, "unable to write dtype, only integral/float/bool supported"
