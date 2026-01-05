@@ -684,9 +684,10 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
     }
   }
 
-  auto [bindings, fitness, diag] = callable.paramBindings.verifyBindings(
-      signature.getInputParamTypes(), signature.getMetadata(),
-      callable.baseName, /*opLoc=*/{}, /*partial=*/true);
+  auto [bindings, fitness, diag] =
+      callable.paramBindings.verifyBindingsWithDiag(
+          signature.getInputParamTypes(), signature.getMetadata(), candidate,
+          /*partial=*/true);
   if (!bindings) {
     // If no diagnostics were emitted, this must be an inconclusive fitness.
     if (!diag) {

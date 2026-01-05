@@ -112,8 +112,7 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
 SMLoc OverloadSet::getExprLoc() const { return getExpr()->getLoc(); }
 
 /// Resolve the callee into a single PValue callee.
-static PValue getCallee(ASTDecl *fnDecl, StringRef baseName,
-                        const ParamBindings &paramBindings) {
+static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings) {
   auto funcOp = cast<FnOp>(fnDecl->getIfOperation());
   // Check if the function overload set resolved to a deprecated overload.
   if (StringAttr warning = funcOp.getDeprecationWarningAttr()) {
@@ -123,7 +122,7 @@ static PValue getCallee(ASTDecl *fnDecl, StringRef baseName,
     diag.attachNote(fnDecl->getLoc())
         << "'" << *funcOp.getSourceName() << "' declared here";
   }
-  return paramBindings.getBoundConstAttrFor(funcOp, baseName);
+  return paramBindings.getBoundConstAttrForFn(*fnDecl);
 }
 
 /// Return if the given fitness is valid or function constraint inconclusive,
@@ -436,7 +435,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
     ParamBindings newBindings(paramBindings.declScope, getExpr());
     for (TypedAttr bind : bestFitness.getParamBindings())
       newBindings.addPrechecked(getExpr(), bind);
-    return getCallee(selectedDecl, baseName, newBindings);
+    return getCallee(selectedDecl, newBindings);
   }
   if (isErroneous())
     return {};
@@ -742,7 +741,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       ParamBindings newBindings(paramBindings.declScope, getExpr());
       for (TypedAttr bind : fitness.getParamBindings())
         newBindings.addPrechecked(getExpr(), bind);
-      return getCallee(selectedDecl, baseName, newBindings);
+      return getCallee(selectedDecl, newBindings);
     };
 
     PValue boundFunction = newBindings(bestFitness);
@@ -864,7 +863,9 @@ PValue OverloadSet::filterOverloadSetForValueType(
     // bindings present, because (unlike normal function calls) the result type
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
-    auto newBindings = paramBindings.verifyBindings(candidateType);
+    auto newBindings = paramBindings.tryVerifyBindings(
+        candidateType.getInputParamTypes(), candidateType.getMetadata(),
+        /*partial=*/true);
     if (!newBindings)
       return {nullptr, nullptr}; // If there is an error, return the problem.
 
@@ -923,7 +924,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
 
     // Use an emitter with invalid context, since errors aren't expected.
     IREmitter emitter(declScope, EC_InvalidContext);
-    PValue callee = getCallee(validCandidates.front(), baseName, newBindings);
+    PValue callee = getCallee(validCandidates.front(), newBindings);
     return emitter.emitPValue({callee, getExpr()}, EC_InvalidContext,
                               functionType);
   }
@@ -976,7 +977,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {
   if (fnDecls.size() == 1)
-    return getCallee(fnDecls[0], baseName, paramBindings);
+    return getCallee(fnDecls[0], paramBindings);
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");
@@ -1187,14 +1188,10 @@ PValue OverloadSet::getIfPValue() const {
   // Overload sets with base values cannot be emitted as PValues since they
   // depend on a dynamic value.
   // TODO: A conversion can be emitted if the base value is a PValue.
-  if (baseValue)
+  if (baseValue || fnDecls.size() != 1)
     return {};
 
-  if (fnDecls.size() != 1)
-    return {};
-
-  return paramBindings.getBoundConstAttrFor(
-      cast<FnOp>(fnDecls.front()->getIfOperation()), baseName);
+  return paramBindings.getBoundConstAttrForFn(*fnDecls.front());
 }
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity
