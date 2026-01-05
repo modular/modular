@@ -703,3 +703,35 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
   }
   // CHECK-DEBUG-INFO: #[[LOCATION]] = loc(unknown)
 }
+
+// -----
+
+// Test texture intrinsic lowering with special mangling (by data type, not all arg types)
+module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch = "", data_layout = "", simd_bit_width = 128>} {
+  // CHECK-LABEL: @test_air_read_texture_2d_v4f32
+  llvm.func @test_air_read_texture_2d_v4f32(%arg0: !llvm.struct<(ptr, vector<2 x i32>, i32, i32)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr, vector<2 x i32>, i32, i32)> to !kgen.struct<(pointer<scalar<f32>>, simd<2, ui32>, scalar<si32>, scalar<si32>)>
+    // Texture intrinsics should be mangled by data type only (v4f32 from result), not all arg types
+    // CHECK: llvm.call @air.read_texture_2d.v4f32
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.read_texture_2d", (%input) : (!kgen.struct<(pointer<scalar<f32>>, simd<2, ui32>, scalar<si32>, scalar<si32>)>) -> !kgen.struct<(simd<4, f32>, scalar<ui8>)>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_write_texture_2d_v4f32
+  llvm.func @test_air_write_texture_2d_v4f32(%arg0: !llvm.struct<(ptr, vector<2 x i32>, vector<4 x f32>, i32, i32)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr, vector<2 x i32>, vector<4 x f32>, i32, i32)> to !kgen.struct<(pointer<scalar<f32>>, simd<2, ui32>, simd<4, f32>, scalar<si32>, scalar<si32>)>
+    // Texture intrinsics should be mangled by data type (v4f32 from 3rd arg), not all arg types
+    // CHECK: llvm.call @air.write_texture_2d.v4f32
+    pop.call_llvm_intrinsic side_effecting<1> "llvm.air.write_texture_2d", (%input) : (!kgen.struct<(pointer<scalar<f32>>, simd<2, ui32>, simd<4, f32>, scalar<si32>, scalar<si32>)>) -> ()
+    llvm.return
+  }
+
+  // Test sample_texture intrinsic - mangled by data type
+  // CHECK-LABEL: @test_air_sample_texture_2d_v4f32
+  llvm.func @test_air_sample_texture_2d_v4f32(%arg0: !llvm.struct<(ptr, ptr, vector<2 x f32>, i32)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr, ptr, vector<2 x f32>, i32)> to !kgen.struct<(pointer<scalar<f32>>, pointer<scalar<f32>>, simd<2, f32>, scalar<si32>)>
+    // CHECK: llvm.call @air.sample_texture_2d.v4f32
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.sample_texture_2d", (%input) : (!kgen.struct<(pointer<scalar<f32>>, pointer<scalar<f32>>, simd<2, f32>, scalar<si32>)>) -> !kgen.struct<(simd<4, f32>, scalar<ui8>)>
+    llvm.return
+  }
+}

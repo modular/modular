@@ -2593,13 +2593,73 @@ struct ConvertPOPCallToAIRIntrinsic
     SmallVector<Value> newOperands =
         expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
 
-    AIRIntrinsicName airFunctionName(intrinsicName.drop_front(5).str());
+    // Handle texture intrinsics with special mangling based on data type.
+    // Texture intrinsics are mangled by the pixel data type only, not all args.
+    StringRef airName = intrinsicName.drop_front(5); // Drop "llvm."
+    if (airName.starts_with("air.read_texture_") ||
+        airName.starts_with("air.write_texture_") ||
+        airName.starts_with("air.sample_texture_")) {
+      LLVM::LLVMFuncOp func = createTextureAIRFunction(
+          rewriter, module, op.getLoc(), airName, newOperands, types);
+      rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, newOperands);
+      return success();
+    }
+
+    AIRIntrinsicName airFunctionName(airName.str());
     LLVM::LLVMFuncOp func = createAIRFunction(
         rewriter, module, op.getLoc(), airFunctionName, newOperands, types);
 
     // Replace the intrinsic call with a regular function call
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, newOperands);
     return success();
+  }
+
+private:
+  // Create AIR function for texture intrinsics with special mangling.
+  // Texture intrinsics are mangled by the pixel data type (vector float type),
+  // not by all argument types.
+  // For read_texture: mangle by the result type's vector element
+  // For write_texture: mangle by the data argument type (3rd operand)
+  LLVM::LLVMFuncOp createTextureAIRFunction(ConversionPatternRewriter &rewriter,
+                                            ModuleOp module, Location loc,
+                                            StringRef airName,
+                                            ValueRange operands,
+                                            TypeRange resultTypes) const {
+    SmallVector<Type> argTypes;
+    for (Value value : operands)
+      argTypes.push_back(value.getType());
+
+    // Determine the data type for mangling based on intrinsic type
+    Type dataType;
+    if (airName.starts_with("air.read_texture_") ||
+        airName.starts_with("air.sample_texture_")) {
+      // For read/sample: result is {<N x T>, i8}, mangle by the vector type
+      if (!resultTypes.empty()) {
+        Type resultType = resultTypes[0];
+        if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultType)) {
+          // Extract the vector type from the struct {<4 x float>, i8}
+          if (!structTy.getBody().empty())
+            dataType = structTy.getBody()[0];
+        } else {
+          dataType = resultType;
+        }
+      }
+    } else if (airName.starts_with("air.write_texture_")) {
+      // For write: data is the 3rd operand (index 2): ptr, coords, data, ...
+      if (operands.size() >= 3)
+        dataType = operands[2].getType();
+    }
+
+    // Build the mangled function name
+    std::string funcName = airName.str();
+    if (dataType) {
+      funcName += "." + mangleType(dataType);
+    }
+
+    AIRIntrinsicName airFunctionName(funcName, /*requiresMangling=*/false);
+    LLVM::LLVMFuncOp func = createAIRFunction(
+        rewriter, module, loc, airFunctionName, operands, resultTypes);
+    return func;
   }
 };
 
