@@ -1,0 +1,191 @@
+---
+title: Indexing
+sidebar_position: 99
+description: Add index access to custom types using subscripting
+---
+
+This write-up shows how you can add indexing to custom types with the `__getitem__`
+and `__setitem__` special methods.
+
+Learn to:
+
+- Create a backing store
+- Implement subscript read and write access with dunder methods
+- Translate multi-dimensional coordinates to flat storage
+- Understand ownership in getters and setters
+
+## Prerequisites
+
+Basic familiarity with Mojo structs and generic types.
+
+## A 3D `Matrix` type
+
+This example builds a three-dimensional `Matrix` type.
+It stores its elements in a flat `List` but provides intuitive `[x, y, z]` indexing.
+This allows users to access storage with a familiar row-major mental model,
+while hiding internal implementation details.
+
+```mojo
+comptime CollectionElement = Copyable & ImplicitlyDestructible
+
+struct Matrix[T: CollectionElement]:
+    var width: Int
+    var height: Int
+    var depth: Int
+    var _store: List[Self.T]
+
+    fn __init__(out self, width: Int, height: Int, depth: Int, *, fill: Self.T):
+        self.width, self.height, self.depth = width, height, depth
+        self._store = List[Self.T](length=width * height * depth, fill=fill)
+```
+
+The matrix stores its dimensional layout separately from the data. The `_store` field
+hosts all values in a single contiguous list.
+
+## Adding an index utility function
+
+Moving indexing math into one source of authority removes an entire class of
+potential errors. Only one function needs testing and maintenance.
+
+```mojo
+    fn idx(self, x: Int, y: Int, z: Int) -> Int:
+        return z * self.width * self.height + y * self.width + x
+```
+
+This implementation uses standard zero-indexed values. Index `0, 0, 0` is the
+start of the array and Index `width - 1, height - 1, depth - 1` is the final
+index.
+
+## Implement read access with `__getitem__`
+
+The `__getitem__` method enables subscript reads a single value from a `Matrix`
+instance. Supply the coordinates using index notation with square bracket
+subscripting. The dunder method returns the value.
+
+```mojo
+    fn __getitem__(self, x: Int, y: Int, z: Int) -> Self.T:
+        return self._store[self.idx(x, y, z)].copy()
+```
+
+Notice that this implementation is _unchecked_. It does not perform bounds
+testing and may error at runtime. A safer implementation would use assertions
+to find math errors before deploying this code to production.
+
+`__getitem__()` accepts coordinates as separate parameters and applies the
+`self.idx` method to convert the 3D coordinates into a 1D index.
+
+The method returns `.copy()` because it must give the caller a value it can
+own. The element lives inside the matrix's storage, so returning it directly
+would create a reference tied to the matrix's lifetime. Copying produces an
+independent value the caller owns and can use freely, as needed.
+
+Reading from the matrix:
+```mojo
+var m = Matrix[Int](3, 2, 2, fill=0)  # 3 wide, 2 tall, 2 deep
+print(m[2, 1, 1])  # reads element at x=2, y=1, z=1
+```
+
+## Implement write access with `__setitem__`
+
+The `__setitem__` method enables subscript writes:
+
+```mojo
+    fn __setitem__(mut self, x: Int, y: Int, z: Int, var value: Self.T):
+        self._store[self.idx(x, y, z)] = value^
+```
+
+The `mut self` parameter allows modification of the matrix. The method takes
+`var value` and uses the transfer operator `^` to move ownership into storage.
+
+Transfer is the opposite of copy: instead of duplicating the value, `^` moves
+it from the caller into the matrix. The caller gives up ownership, and the
+matrix takes it. This matters for types where copying is expensive—large
+strings, nested data structures, or types with custom copy logic.
+
+The same index calculation (`idx()`) ensures writes target the correct position.
+
+Writing to the matrix:
+```mojo
+m[2, 1, 1] = 42  # writes to element at x=2, y=1, z=1
+```
+
+After this call, the value `42` lives in the matrix's storage. The caller no longer owns it.
+
+## Complete example
+
+```mojo
+comptime CollectionElement = Copyable & ImplicitlyDestructible
+
+struct Matrix[T: CollectionElement]:
+    var width: Int
+    var height: Int
+    var depth: Int
+    var _store: List[Self.T]
+
+    fn __init__(out self, width: Int, height: Int, depth: Int, *, fill: Self.T):
+        self.width, self.height, self.depth = width, height, depth
+        self._store = List[Self.T](length=width * height * depth, fill=fill)
+
+    fn idx(self, x: Int, y: Int, z: Int) -> Int:
+        return z * self.width * self.height + y * self.width + x
+
+    fn __getitem__(self, x: Int, y: Int, z: Int) -> Self.T:
+        return self._store[self.idx(x, y, z)].copy()
+
+    fn __setitem__(mut self, x: Int, y: Int, z: Int, var value: Self.T):
+        self._store[self.idx(x, y, z)] = value^
+
+
+fn main():
+    var m = Matrix[Int](3, 2, 2, fill=0)  # 3 wide, 2 tall, 2 deep
+    m[2, 1, 1] = 42
+    print(m[2, 1, 1])  # prints: 42
+```
+
+Run the example:
+```bash
+mojo matrix.mojo
+```
+
+The output confirms the value was stored and retrieved correctly:
+```
+42
+```
+
+## Understanding the design
+
+**Enabling bracketed indexing**: Implementing `__getitem__` and `__setitem__`
+allow you to use bracketed indexing to set and retrieve values from your type.
+
+**Separate parameters**: The `[x, y, z]` syntax works because the coordinates
+appear as distinct parameters in the method signature. Mojo translates `m[2, 1, 1]`
+into a call to `__getitem__(m, 2, 1, 1)`.
+
+**Row-major layout**: The index calculation `z * width * height + y * width + x`
+stores each row contiguously in memory. This layout matches conventional 3D array storage.
+
+**Copy vs transfer**: `__getitem__` copies because the caller needs an
+independent value they own. `__setitem__` transfers because the matrix needs to
+take ownership of the incoming value. This asymmetry reflects the different
+ownership flows: reads produce new owned values, writes consume owned values.
+
+## What you've learned
+
+The `__getitem__` and `__setitem__` methods enable natural subscript syntax for
+custom types. The same pattern applies to other indexing schemes—1D vectors, 2D
+tensors, or sparse data structures all use these two methods to provide
+subscript access.
+
+## Next steps
+
+- Challenge yourself by adding bounds checking to this `Matrix` type.
+- Extend the `Matrix` to support slice notation like `m[1:3, 0:2, :]` by implementing
+  `__getitem__` with `Slice` parameters.
+- Add a `__str__` method to visualize the matrix contents in a readable format.
+- Implement iteration support with `__iter__` to enable `for element in matrix:` syntax.
+  Bonus challenge: add enumeration that returns an `(x, y, z, value)` tuple
+- Implement element-wise operations like `__add__` and `__mul__` to enable
+  `matrix1 + matrix2` syntax.
+- Create a `transpose()` method that swaps dimensions without copying the underlying data.
+- Build a 1D `Vector` type using the same pattern with single-parameter indexing.
+- Add an `at()` method that returns a reference instead of a copy for zero-cost element access.
