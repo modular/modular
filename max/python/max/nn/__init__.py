@@ -21,7 +21,7 @@ from .attention import (
 )
 from .clamp import clamp
 from .comm import Allreduce, Signals
-from .conv import Conv1D, Conv1DV1, Conv2d, Conv2dV1, Conv3D, Conv3DV1
+from .conv import Conv1D, Conv2d, Conv3D
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
 from .float8_config import (
@@ -81,11 +81,8 @@ __all__ = [
     "ColumnParallelLinear",
     "ConstantLayerNorm",
     "Conv1D",
-    "Conv1DV1",
     "Conv2d",
-    "Conv2dV1",
     "Conv3D",
-    "Conv3DV1",
     "ConvTranspose1d",
     "DistributedAttentionImpl",
     "DistributedTransformer",
