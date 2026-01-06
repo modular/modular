@@ -9,6 +9,7 @@ package(default_visibility = [
 
 modular_py_test(
     name = "module_v3",
+    timeout = "long",
     srcs = glob(["**/*.py"]),
     args = [
         "-n",
