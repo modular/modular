@@ -865,8 +865,6 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
     }
     // If the condition is always True, the assertion is redundant and adds no
     // useful constraint, so skip emitting IR entirely.
-    shared.emitWarning(smLoc)
-        << "redundant __comptime_assert: condition is always True";
     return success();
   }
 
