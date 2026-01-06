@@ -179,6 +179,73 @@ def test_get_type_name_unprintable():
     assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
 
 
+# Generic struct for testing types with constructor calls in parameters
+struct WrapperWithValue[T: AnyType, //, value: T]:
+    pass
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct SimpleParam:
+    var b: Bool
+
+
+@fieldwise_init
+struct MemoryOnlyParam:
+    var b: Bool
+
+
+# Struct with field that has a constructor call in type parameter
+struct StructWithCtorParam:
+    var field: WrapperWithValue[SimpleParam(True)]
+
+
+# Struct with memory-only type constructor in parameter
+struct StructWithMemoryOnlyCtorParam:
+    var field: WrapperWithValue[MemoryOnlyParam(True)]
+
+
+def test_get_type_name_ctor_param_from_field_types():
+    """Ensure get_type_name doesn't crash with constructor calls in type params.
+
+    Issue #5732: using get_type_name on types with constructor calls (like
+    A[B(True)]) extracted via struct_field_types would crash the compiler.
+    """
+    comptime types = struct_field_types[StructWithCtorParam]()
+    var name = get_type_name[types[0]]()
+    # Register-passable type: type is <unprintable> but Bool value can be evaluated
+    assert_equal(name, "test_reflection.WrapperWithValue[<unprintable>, True]")
+
+
+def test_get_type_name_memory_only_ctor_param_from_field_types():
+    """Ensure memory-only types with constructor calls don't crash.
+
+    Memory-only types use `apply_result_slot` instead of `apply`, which was also
+    affected by issue #5732. Both the type and value print as "<unprintable>"
+    since memory-only constructors can't be fully evaluated in this context.
+    """
+    comptime types = struct_field_types[StructWithMemoryOnlyCtorParam]()
+    var name = get_type_name[types[0]]()
+    # Memory-only type: both type and value are <unprintable>
+    assert_equal(
+        name, "test_reflection.WrapperWithValue[<unprintable>, <unprintable>]"
+    )
+
+
+def test_get_type_name_ctor_param_direct():
+    """Test that direct usage of types with constructor calls works.
+
+    This demonstrates that the issue is specifically with types extracted via
+    struct_field_types, not with constructor call parameters in general.
+    """
+    # Direct usage works fine - the constructor is evaluated
+    var name = get_type_name[WrapperWithValue[SimpleParam(True)]]()
+    assert_equal(
+        name,
+        "test_reflection.WrapperWithValue[test_reflection.SimpleParam, True]",
+    )
+
+
 # ===----------------------------------------------------------------------=== #
 # Nested Parametric Type Tests (Issue #5723)
 # ===----------------------------------------------------------------------=== #

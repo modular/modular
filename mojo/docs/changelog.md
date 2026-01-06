@@ -649,6 +649,9 @@ or removed in future releases.
 
 ### 🛠️ Fixed
 
+- [Issue #5732](https://github.com/modular/modular/issues/5732): Compiler
+  crash when using `get_type_name` with types containing constructor calls in
+  their parameters (like `A[B(True)]`) when extracted via `struct_field_types`.
 - [Issue #1850](https://github.com/modular/modular/issues/1850): Mojo assumes
   string literal at start of a function is a doc comment
 - [Issue #4501](https://github.com/modular/modular/issues/4501): Incorrect
