@@ -75,11 +75,5 @@ fn test_always_false_error_with_message():
     __comptime_assert False, "this message is ignored"
 
 
-fn test_always_true_warning():
-    # expected-warning @below {{redundant __comptime_assert: condition is always True}}
+fn test_always_true_no_warning():
     __comptime_assert 2 > 1
-
-
-fn test_always_true_warning_with_message():
-    # expected-warning @below {{redundant __comptime_assert: condition is always True}}
-    __comptime_assert True, "this message is also ignored"
