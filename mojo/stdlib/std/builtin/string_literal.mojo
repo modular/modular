@@ -738,7 +738,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             )
             return buffer^
 
-    fn join[T: Copyable & Writable, //](self, elems: Span[T, *_]) -> String:
+    fn join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write

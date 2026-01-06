@@ -31,7 +31,7 @@ from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -99,7 +99,7 @@ fn simd_store_into_managed_tensor_slice[
     @always_inline
     fn store_stride1():
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var v = value.cast[DType.uint8]()
             tensor._ptr.bitcast[UInt8]().store(flat_index, v)
         else:
@@ -110,7 +110,7 @@ fn simd_store_into_managed_tensor_slice[
     @always_inline
     fn store_strided(stride: Int):
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var v = value.cast[DType.uint8]()
             strided_store(
                 v,
@@ -262,7 +262,7 @@ fn simd_load_from_managed_tensor_slice[
     @always_inline
     fn load_stride1() -> SIMD[dtype, simd_width]:
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var v = tensor._ptr.bitcast[UInt8]().load[
                 width=simd_width,
                 invariant=invariant,
@@ -278,7 +278,7 @@ fn simd_load_from_managed_tensor_slice[
     @always_inline
     fn load_strided(stride: Int) -> SIMD[dtype, simd_width]:
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var v = strided_load[simd_width, invariant=invariant](
                 tensor._ptr.bitcast[UInt8]().offset(flat_index),
                 stride,
@@ -1339,7 +1339,7 @@ fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
     return True
 
 
-# TODO: Move to open-source/max/mojo/stdlib/stdlib/runtime/tracing.mojo and
+# TODO: Move to oss/modular/mojo/stdlib/stdlib/runtime/tracing.mojo and
 # rename to trace_arg
 @always_inline
 fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:

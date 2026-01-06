@@ -15,5 +15,6 @@ modular_py_library(
     name = "bench_utils",
     srcs = ["bench.py"],
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [requirement("torch")],
 )

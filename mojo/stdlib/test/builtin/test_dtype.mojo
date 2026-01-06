@@ -56,8 +56,8 @@ comptime all_dtypes = (
 fn test_equality() raises:
     assert_true(DType.float32 == DType.float32)
     assert_true(DType.float32 != DType.int32)
-    assert_true(DType.float32 is DType.float32)
-    assert_true(DType.float32 is not DType.int32)
+    assert_true(DType.float32 == DType.float32)
+    assert_true(DType.float32 != DType.int32)
 
 
 fn test_stringable() raises:

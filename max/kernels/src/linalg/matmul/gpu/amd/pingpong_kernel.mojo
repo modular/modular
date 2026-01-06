@@ -31,7 +31,7 @@ from sys import llvm_intrinsic
 from gpu.sync import barrier, schedule_barrier, s_waitcnt
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from memory.unsafe import bitcast
 
 from utils import Index, IndexList, StaticTuple
@@ -250,7 +250,7 @@ struct TileLoaderLDS[
         //,
     ](
         self,
-        dst: SMemTileType[Self.dtype, dst_layout, **_],
+        dst: SMemTileType[Self.dtype, dst_layout, ...],
         src_row: Int,
         src_col: Int,
     ):
@@ -426,10 +426,10 @@ fn load_lds_fragment[
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
 ](
     smem_tile: SMemTileType[
-        dtype, smem_layout, element_layout=smem_element_layout, **_
+        dtype, smem_layout, element_layout=smem_element_layout, ...
     ],
     reg_frag: RegTileType[
-        dtype, frag_layout, element_layout=frag_element_layout, **_
+        dtype, frag_layout, element_layout=frag_element_layout, ...
     ],
 ):
     """Load LDS → registers with MMA access pattern.
@@ -789,7 +789,7 @@ struct MmaOp[
         _ = self.out_reg_tile.fill(0)
 
     @always_inline
-    fn load_a[which: Int](self, smem_tile: SMemTileType[Self.in_type, **_]):
+    fn load_a[which: Int](self, smem_tile: SMemTileType[Self.in_type, ...]):
         """Load A[which] from LDS → registers.
 
         Accepts SMemTileType with matching dtype - layout compatibility validated
@@ -810,7 +810,7 @@ struct MmaOp[
         ](smem_frag, reg_frag)
 
     @always_inline
-    fn load_b[which: Int](self, smem_tile: SMemTileType[Self.in_type, **_]):
+    fn load_b[which: Int](self, smem_tile: SMemTileType[Self.in_type, ...]):
         """Load B[which] from LDS → registers.
 
         Accepts SMemTileType with matching dtype - layout compatibility validated
@@ -1056,8 +1056,8 @@ struct TileBuffers[
     @always_inline
     fn __init__(
         out self,
-        a: LayoutTensor[Self.in_type, Self.a_layout, *_, **_],
-        b: LayoutTensor[_, Self.b_layout, *_, **_],
+        a: LayoutTensor[Self.in_type, Self.a_layout, ...],
+        b: LayoutTensor[_, Self.b_layout, ...],
         block_row: Int,
         block_col: Int,
         warp_id: Int,

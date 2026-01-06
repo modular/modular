@@ -21,7 +21,7 @@ from gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 
 from utils import IndexList

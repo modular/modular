@@ -23,7 +23,7 @@ from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
 
@@ -55,7 +55,7 @@ fn time_kernel[
 
 fn test_case_batched[
     dtype: DType,
-    fill_fn: fn[dtype: DType] (LayoutTensor[mut=True, dtype, **_]) capturing [
+    fill_fn: fn[dtype: DType] (LayoutTensor[mut=True, dtype, ...]) capturing [
         _
     ] -> None,
     out_idx_type: DType = DType.int,
@@ -342,7 +342,7 @@ fn test_case_batched[
             )
 
             @parameter
-            if dtype is DType.float32:
+            if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -373,12 +373,12 @@ fn test_case_batched[
 
 fn test_case_multi_rank[
     dtype: DType,
-    fill_fn: fn[dtype: DType] (LayoutTensor[mut=True, dtype, **_]) capturing [
+    fill_fn: fn[dtype: DType] (LayoutTensor[mut=True, dtype, ...]) capturing [
         _
     ] -> None,
     rank: Int,
     out_idx_type: DType = DType.int,
-](ctx: DeviceContext, test_case: TestCaseMultiRank[rank=rank, *_]) raises:
+](ctx: DeviceContext, test_case: TestCaseMultiRank[rank=rank, ...]) raises:
     # Fetch arguments
     var input_shape = test_case.input_shape
     var K = test_case.K
@@ -562,7 +562,7 @@ fn test_case_multi_rank[
             )
 
             @parameter
-            if dtype is DType.float32:
+            if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -586,7 +586,7 @@ fn test_case_multi_rank[
 
 
 @parameter
-fn fill_random[dtype: DType](buffer: LayoutTensor[mut=True, dtype, **_]):
+fn fill_random[dtype: DType](buffer: LayoutTensor[mut=True, dtype, ...]):
     comptime min_val = -1e9
     comptime max_val = 1e9
     var total_elements = buffer.size()
@@ -596,7 +596,7 @@ fn fill_random[dtype: DType](buffer: LayoutTensor[mut=True, dtype, **_]):
 
 
 @parameter
-fn fill_constant[dtype: DType](buffer: LayoutTensor[mut=True, dtype, **_]):
+fn fill_constant[dtype: DType](buffer: LayoutTensor[mut=True, dtype, ...]):
     var total_elements = buffer.size()
     for i in range(total_elements):
         if i % 3 == 1:
@@ -606,7 +606,7 @@ fn fill_constant[dtype: DType](buffer: LayoutTensor[mut=True, dtype, **_]):
 
 
 @parameter
-fn fill_iota[dtype: DType](buf: LayoutTensor[mut=True, dtype, **_]):
+fn fill_iota[dtype: DType](buf: LayoutTensor[mut=True, dtype, ...]):
     iota(buf.ptr, buf.runtime_layout.shape.value.flattened_length())
 
 

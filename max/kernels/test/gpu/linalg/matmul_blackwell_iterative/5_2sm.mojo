@@ -30,7 +30,7 @@ from gpu.tcgen05 import *
 from internal_utils import assert_almost_equal
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,
@@ -736,7 +736,7 @@ def test_blackwell_kernel_5[
 
 
 fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], ...]
 ) -> Tuple[Int, Int, Int]:
     try:
         return dic_bro[index]

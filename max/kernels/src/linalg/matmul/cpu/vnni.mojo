@@ -14,7 +14,7 @@
 from math import align_down
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import prefetch
 from sys.info import CompilationTarget, align_of
 from sys.intrinsics import PrefetchOptions
@@ -186,7 +186,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         simd_size: Int,
     ](
         self,
-        c: LayoutTensor[mut=True, **_],
+        c: LayoutTensor[mut=True, ...],
         a: LayoutTensor,
         b_packed: LayoutTensor,
         global_offset: GemmShape,

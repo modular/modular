@@ -22,7 +22,7 @@ from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -251,7 +251,7 @@ def main():
     with DeviceContext() as ctx:
         # QKV perm dim test
 
-        comptime is_sm100_kernel_applicable = ctx.default_device_info is B200
+        comptime is_sm100_kernel_applicable = ctx.default_device_info == B200
 
         @parameter
         if not is_sm100_kernel_applicable:

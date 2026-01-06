@@ -31,7 +31,7 @@ from memory import (
     stack_allocation,
 )
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -95,7 +95,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     """
 
     @always_inline
-    fn _pack_int4(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
+    fn _pack_int4(mut self, var src_ptr: UnsafePointer[UInt8, ...]):
         __comptime_assert Self.bit_width == 4
         __comptime_assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
@@ -122,7 +122,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             src_ptr += Self._packed_stride
 
     @always_inline
-    fn _unpack_int4(mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
+    fn _unpack_int4(mut self, var dst_ptr: UnsafePointer[UInt8, ...]):
         __comptime_assert Self.bit_width == 4
         __comptime_assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
@@ -151,7 +151,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     #     [ d5 d6 c5 c4 c3 c2 c1 c0 ]
 
     @always_inline
-    fn _pack_int6(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
+    fn _pack_int6(mut self, var src_ptr: UnsafePointer[UInt8, ...]):
         __comptime_assert Self.bit_width == 6
         __comptime_assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
@@ -183,7 +183,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn _unpack_int6[
         zero_point: UInt8
-    ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
+    ](mut self, var dst_ptr: UnsafePointer[UInt8, ...]):
         __comptime_assert Self.bit_width == 6
         __comptime_assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
@@ -216,7 +216,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             dst_ptr += Self._packed_stride * 4
 
     @always_inline
-    fn pack(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
+    fn pack(mut self, var src_ptr: UnsafePointer[UInt8, ...]):
         """Packs the supplied external buffer to local storage."""
         __comptime_assert (Self._packed_stride % Self._simd_width) == 0
 
@@ -231,7 +231,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn unpack[
         *, zero_point: UInt8 = 0
-    ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
+    ](mut self, var dst_ptr: UnsafePointer[UInt8, ...]):
         """Unpacks the local storage to the supplied external buffer."""
         __comptime_assert (Self._packed_stride % Self._simd_width) == 0
 
@@ -270,7 +270,7 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 fn _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
-](a: LayoutTensor[dtype, **_]) -> LegacyUnsafePointer[
+](a: LayoutTensor[dtype, ...]) -> LegacyUnsafePointer[
     mut = a.mut, _block_Q8_K_packed[group_size], origin = a.origin
 ]:
     __comptime_assert a.rank == 2
@@ -351,8 +351,8 @@ fn _quantize_a_Q8_K[
 fn _expand_q_bits_lo[
     *, width: Int
 ](
-    var src_ptr: UnsafePointer[UInt8, **_],
-    var dst_ptr: UnsafePointer[UInt8, **_],
+    var src_ptr: UnsafePointer[UInt8, ...],
+    var dst_ptr: UnsafePointer[UInt8, ...],
 ):
     for _k in range(0, _block_QK_K.quantized_k // 2, width):
         var src_q_bits = src_ptr.load[width=width]()
@@ -367,8 +367,8 @@ fn _expand_q_bits_lo[
 fn _expand_and_merge_q_bits_hi[
     *, width: Int, bit_count: Int
 ](
-    var src_ptr: UnsafePointer[UInt8, **_],
-    var dst_ptr: UnsafePointer[UInt8, **_],
+    var src_ptr: UnsafePointer[UInt8, ...],
+    var dst_ptr: UnsafePointer[UInt8, ...],
 ):
     comptime values_per_byte = 8 // bit_count
     comptime bit_mask = (1 << bit_count) - 1
@@ -389,8 +389,8 @@ fn _expand_and_merge_q_bits_hi[
 fn _copy_column_q_bits_to_block[
     block_n: Int
 ](
-    var src_ptr: UnsafePointer[UInt8, **_],
-    var dst_ptr: UnsafePointer[UInt8, **_],
+    var src_ptr: UnsafePointer[UInt8, ...],
+    var dst_ptr: UnsafePointer[UInt8, ...],
 ):
     """Interleaves the linear source buffer to the blocked destination
     buffer.
@@ -568,10 +568,10 @@ fn _pack_block_Q6_K[
 
 fn matmul_Q4_K_pack_b(
     b: LayoutTensor[
-        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
     b_packed: LayoutTensor[
-        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     __comptime_assert b.rank == 2
@@ -600,10 +600,10 @@ fn matmul_Q4_K_pack_b(
 
 fn matmul_Q6_K_pack_b(
     b: LayoutTensor[
-        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
     b_packed: LayoutTensor[
-        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     __comptime_assert b.rank == 2
@@ -1497,9 +1497,9 @@ fn _matmul_Qb_K[
     interleave_group_sums: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
 ):
     __comptime_assert a.rank == 2
     __comptime_assert b.rank == 2
@@ -1582,9 +1582,9 @@ fn _matmul_Qb_K[
 fn matmul_Q4_K[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None
 ](
-    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
 ):
     __comptime_assert a.rank == 2
     __comptime_assert b.rank == 2
@@ -1601,9 +1601,9 @@ fn matmul_Q4_K[
 fn matmul_Q6_K[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None
 ](
-    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
 ):
     __comptime_assert a.rank == 2
     __comptime_assert b.rank == 2

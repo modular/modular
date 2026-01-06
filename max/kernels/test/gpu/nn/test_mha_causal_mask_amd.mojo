@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import isclose
 from random import rand
 from sys import argv, env_get_bool

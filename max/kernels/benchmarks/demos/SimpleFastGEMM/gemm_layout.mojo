@@ -21,7 +21,7 @@ from buffer import NDBuffer
 from layout import *
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 comptime MR = 6
 comptime NR = 64
@@ -230,7 +230,7 @@ fn main():
         gemm[N, K](c2, a, b_packed)
 
     var num_warmup: Int = 1
-    var time = benchmark.run[bench_gemm](num_warmup).mean()
+    var time = benchmark.run[func3=bench_gemm](num_warmup).mean()
     var flops = 2.0 * M * N * K / time / 1e9
     print(time, end="")
     print(" seconds")

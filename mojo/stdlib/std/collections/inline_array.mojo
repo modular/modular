@@ -36,6 +36,7 @@ import math
 from collections._index_normalization import normalize_index
 
 from builtin.device_passable import DevicePassable
+from builtin.rebind import downcast
 from builtin.constrained import _constrained_conforms_to
 from builtin.repr import repr
 from builtin.str import String
@@ -60,7 +61,7 @@ fn _inline_array_construction_checks[size: Int]():
     ), "number of elements in `InlineArray` must be >= 0"
 
 
-struct InlineArray[ElementType: Copyable & ImplicitlyDestructible, size: Int,](
+struct InlineArray[ElementType: Copyable, size: Int,](
     Defaultable,
     DevicePassable,
     ImplicitlyCopyable,
@@ -95,7 +96,9 @@ struct InlineArray[ElementType: Copyable & ImplicitlyDestructible, size: Int,](
     ```
     """
 
-    comptime __del__is_trivial: Bool = Self.ElementType.__del__is_trivial
+    comptime __del__is_trivial: Bool = downcast[
+        Self.ElementType, ImplicitlyDestructible
+    ].__del__is_trivial
     comptime __copyinit__is_trivial: Bool = Self.ElementType.__copyinit__is_trivial
     comptime __moveinit__is_trivial: Bool = Self.ElementType.__moveinit__is_trivial
 
@@ -385,13 +388,23 @@ struct InlineArray[ElementType: Copyable & ImplicitlyDestructible, size: Int,](
     fn __del__(deinit self):
         """Deallocates the array and destroys its elements."""
 
+        _constrained_conforms_to[
+            conforms_to(Self.ElementType, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.ElementType,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        comptime TDestructible = downcast[
+            Self.ElementType, ImplicitlyDestructible
+        ]
+
         @parameter
-        if not Bool(Self.ElementType.__del__is_trivial):
+        if not TDestructible.__del__is_trivial:
 
             @parameter
             for idx in range(Self.size):
                 var ptr = self.unsafe_ptr() + idx
-                ptr.destroy_pointee()
+                ptr.bitcast[TDestructible]().destroy_pointee()
 
     # ===------------------------------------------------------------------===#
     # Operator dunders

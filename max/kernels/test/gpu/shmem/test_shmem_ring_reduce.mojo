@@ -18,7 +18,7 @@ from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from math import iota
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort
 from shmem import *
 from sys.ffi import c_int

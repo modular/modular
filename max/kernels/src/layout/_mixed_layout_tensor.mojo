@@ -650,7 +650,7 @@ fn _tile[
     //,
 ](
     data_layout_tensor: MixedLayoutTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, **_
+        shape_types=shape_types, stride_types=stride_types, dtype, ...
     ],
     tile_shape: MixedTuple[*tile_shape_types],
     tile_coords: MixedTuple[*coord_types],

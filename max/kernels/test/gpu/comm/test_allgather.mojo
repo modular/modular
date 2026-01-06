@@ -22,7 +22,7 @@ import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal, assert_true
 
 

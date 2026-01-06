@@ -80,7 +80,7 @@ fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TraceCategory(Equatable, Identifiable, Intable):
+struct TraceCategory(Equatable, Intable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     comptime OTHER = Self(0)
@@ -123,18 +123,6 @@ struct TraceCategory(Equatable, Identifiable, Intable):
         return self.value != rhs.value
 
     @always_inline("nodebug")
-    fn __is__(self, rhs: Self) -> Bool:
-        """Compares for equality.
-
-        Args:
-            rhs: The value to compare.
-
-        Returns:
-            True if they are equal.
-        """
-        return self == rhs
-
-    @always_inline("nodebug")
     fn __int__(self) -> Int:
         """Converts the trace category to an integer.
 
@@ -150,7 +138,7 @@ struct TraceCategory(Equatable, Identifiable, Intable):
 
 
 @register_passable("trivial")
-struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable):
+struct TraceLevel(Comparable, ImplicitlyCopyable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
@@ -201,18 +189,6 @@ struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable):
             True if this value is less than to `rhs`.
         """
         return self.value < rhs.value
-
-    @always_inline("nodebug")
-    fn __is__(self, rhs: Self) -> Bool:
-        """Compares for equality.
-
-        Args:
-            rhs: The value to compare.
-
-        Returns:
-            True if they are equal.
-        """
-        return self == rhs
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:

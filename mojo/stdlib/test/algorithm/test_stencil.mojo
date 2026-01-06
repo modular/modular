@@ -29,7 +29,7 @@ comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
 
 fn _linear_index[
     rank: Int
-](coords: IndexList[rank, **_], shape: IndexList[rank]) -> Int:
+](coords: IndexList[rank, ...], shape: IndexList[rank]) -> Int:
     """Convert multi-dimensional coordinates to linear index (row-major)."""
     var linear_idx = 0
     var stride = 1
@@ -90,7 +90,7 @@ def test_stencil_avg_pool():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> Tuple[
+    ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ]:
@@ -105,7 +105,7 @@ def test_stencil_avg_pool():
     @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, **_]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         var linear_idx = _linear_index(point, input_shape)
         return (
             input.unsafe_ptr()
@@ -123,7 +123,7 @@ def test_stencil_avg_pool():
     fn avg_pool_compute[
         simd_width: Int
     ](
-        point: IndexList[rank, **_],
+        point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -139,7 +139,7 @@ def test_stencil_avg_pool():
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[rank, **_], val: SIMD[dtype, simd_width]):
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         var linear_idx = _linear_index(point, output_shape)
         output.unsafe_ptr().store(linear_idx, res)
@@ -212,7 +212,7 @@ def test_stencil_avg_pool_padded():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> Tuple[
+    ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ]:
@@ -229,7 +229,7 @@ def test_stencil_avg_pool_padded():
     @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, **_]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         var linear_idx = _linear_index(point, input_shape)
         return (
             input.unsafe_ptr()
@@ -247,7 +247,7 @@ def test_stencil_avg_pool_padded():
     fn avg_pool_compute[
         simd_width: Int
     ](
-        point: IndexList[rank, **_],
+        point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -258,7 +258,7 @@ def test_stencil_avg_pool_padded():
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[rank, **_], val: SIMD[dtype, simd_width]):
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         var linear_idx = _linear_index(point, output_shape)
         output.unsafe_ptr().store(linear_idx, res)
@@ -336,7 +336,7 @@ def test_stencil_avg_pool_stride_2():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> Tuple[
+    ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ]:
@@ -354,7 +354,7 @@ def test_stencil_avg_pool_stride_2():
     @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, **_]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         var linear_idx = _linear_index(point, input_shape)
         return (
             input.unsafe_ptr()
@@ -372,7 +372,7 @@ def test_stencil_avg_pool_stride_2():
     fn avg_pool_compute[
         simd_width: Int
     ](
-        point: IndexList[rank, **_],
+        point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -383,7 +383,7 @@ def test_stencil_avg_pool_stride_2():
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[rank, **_], val: SIMD[dtype, simd_width]):
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         var linear_idx = _linear_index(point, output_shape)
         output.unsafe_ptr().store(linear_idx, res)
@@ -463,7 +463,7 @@ def test_stencil_max_pool_dilation_2():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> Tuple[
+    ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ]:
@@ -481,7 +481,7 @@ def test_stencil_max_pool_dilation_2():
     @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, **_]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         var linear_idx = _linear_index(point, input_shape)
         return (
             input.unsafe_ptr()
@@ -499,7 +499,7 @@ def test_stencil_max_pool_dilation_2():
     fn max_pool_compute[
         simd_width: Int
     ](
-        point: IndexList[rank, **_],
+        point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -510,7 +510,7 @@ def test_stencil_max_pool_dilation_2():
     @parameter
     fn max_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[rank, **_], val: SIMD[dtype, simd_width]):
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var linear_idx = _linear_index(point, output_shape)
         output.unsafe_ptr().store(linear_idx, val)
 

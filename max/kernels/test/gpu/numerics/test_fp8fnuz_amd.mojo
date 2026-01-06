@@ -14,7 +14,7 @@
 from gpu.host import DeviceContext
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def test_fp8_constructor(ctx: DeviceContext):

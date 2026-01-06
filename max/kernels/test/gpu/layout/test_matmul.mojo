@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import has_nvidia_gpu_accelerator
 
 from benchmark import Bench

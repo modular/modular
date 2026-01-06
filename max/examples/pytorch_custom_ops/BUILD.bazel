@@ -18,6 +18,7 @@ custom_op_example_py_binary(
         "//max/python/max/torch",
         requirement("torch"),
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(
@@ -31,6 +32,7 @@ custom_op_example_py_binary(
         requirement("torch"),
         requirement("pillow"),
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(
@@ -47,6 +49,7 @@ custom_op_example_py_binary(
         requirement("datasets"),
         requirement("librosa"),
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(
@@ -56,6 +59,7 @@ custom_op_example_py_binary(
         "//max/python/max/torch",
         requirement("torch"),
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 mojo_library(

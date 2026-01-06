@@ -46,7 +46,7 @@ fn bin(num: Scalar, /, *, prefix: StaticString = "0b") -> String:
     Returns:
         The binary string representation of num.
     """
-    return _try_format_int(num, 2, prefix=prefix)
+    return _format_int[radix=2](num, prefix=prefix)
 
 
 # Need this until we have constraints to stop the compiler from matching this
@@ -100,7 +100,7 @@ fn hex(value: Scalar, /, *, prefix: StaticString = "0x") -> String:
     Returns:
         A string containing the hex representation of the given integer.
     """
-    return _try_format_int(value, 16, prefix=prefix)
+    return _format_int[radix=16](value, prefix=prefix)
 
 
 fn hex[T: Intable, //](value: T, /, *, prefix: StaticString = "0x") -> String:
@@ -162,7 +162,7 @@ fn oct(value: Scalar, /, *, prefix: StaticString = "0o") -> String:
     Returns:
         A string containing the octal representation of the given integer.
     """
-    return _try_format_int(value, 8, prefix=prefix)
+    return _format_int[radix=8](value, prefix=prefix)
 
 
 fn oct[T: Intable, //](value: T, /, *, prefix: StaticString = "0o") -> String:
@@ -209,71 +209,27 @@ fn oct(value: Scalar[DType.bool], /, *, prefix: StaticString = "0o") -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn _try_format_int(
-    value: Scalar[_],
-    /,
-    radix: Int = 10,
-    *,
-    prefix: StaticString = "",
-) -> String:
-    try:
-        return _format_int(value, radix, prefix=prefix)
-    except e:
-        # This should not be reachable as _format_int only throws if we pass
-        # incompatible radix and custom digit chars, which we aren't doing
-        # above.
-        abort(
-            String("unexpected exception formatting value as hexadecimal: ", e)
-        )
-
-
 fn _format_int[
-    dtype: DType
-](
-    value: Scalar[dtype],
-    radix: Int = 10,
+    dtype: DType,
     *,
+    radix: Int = 10,
     digit_chars: StaticString = _DEFAULT_DIGIT_CHARS,
-    prefix: StaticString = "",
-) raises -> String:
+](value: Scalar[dtype], *, prefix: StaticString = "",) -> String:
     var output = String()
-
-    _write_int(output, value, radix, digit_chars=digit_chars, prefix=prefix)
-
+    _write_int[radix=radix, digit_chars=digit_chars](
+        output, value, prefix=prefix
+    )
     return output^
 
 
 fn _write_int[
     dtype: DType,
     W: Writer,
-](
-    mut writer: W,
-    value: Scalar[dtype],
-    /,
-    radix: Int = 10,
+    //,
     *,
-    digit_chars: StaticString = _DEFAULT_DIGIT_CHARS,
-    prefix: StaticString = "",
-) raises:
-    var err = _try_write_int(
-        writer, value, radix, digit_chars=digit_chars, prefix=prefix
-    )
-    if err:
-        raise err.take()
-
-
-fn _try_write_int[
-    dtype: DType,
-    W: Writer,
-](
-    mut writer: W,
-    value: Scalar[dtype],
-    /,
     radix: Int = 10,
-    *,
     digit_chars: StaticString = _DEFAULT_DIGIT_CHARS,
-    prefix: StaticString = "",
-) -> Optional[Error]:
+](mut writer: W, value: Scalar[dtype], *, prefix: StaticString = "",):
     """Writes a formatted string representation of the given integer using the
     specified radix.
 
@@ -281,27 +237,22 @@ fn _try_write_int[
     provided.
     """
     __comptime_assert dtype.is_integral(), "Expected integral"
-
-    # Check that the radix and available digit characters are valid
-    if radix < 2:
-        return Error("Unable to format integer to string with radix < 2")
-
-    if radix > digit_chars.byte_length():
-        return Error(
-            "Unable to format integer to string when provided radix is larger "
-            "than length of available digit value characters"
-        )
-
-    if not digit_chars.byte_length() >= 2:
-        return Error(
-            "Unable to format integer to string when provided digit_chars"
-            " mapping len is not >= 2"
-        )
+    __comptime_assert (
+        radix >= 2
+    ), "Unable to format integer to string with radix < 2"
+    __comptime_assert radix <= digit_chars.byte_length(), (
+        "Unable to format integer to string when provided radix is larger than"
+        " length of available digit value characters"
+    )
+    __comptime_assert digit_chars.byte_length() >= 2, (
+        "Unable to format integer to string when provided digit_chars mapping"
+        " len is not >= 2"
+    )
 
     # Process the integer value into its corresponding digits
 
     # TODO(#26444, Unicode support): Get an array of Character, not bytes.
-    var digit_chars_array = digit_chars.unsafe_ptr()
+    var digit_chars_array = digit_chars.as_bytes()
 
     # Prefix a '-' if the original int was negative and make positive.
     if value < 0:
@@ -327,7 +278,7 @@ fn _try_write_int[
         # ptr=digit_chars_array,
         writer.write(StringSlice(ptr=zero_buf.unsafe_ptr(), length=1))
 
-        return None
+        return
 
     # Create a buffer to store the formatted value
 
@@ -355,9 +306,12 @@ fn _try_write_int[
     var remaining_int = value
 
     @parameter
-    fn process_digits[get_digit_value: fn () capturing [_] -> Scalar[dtype]]():
+    fn process_digits[
+        get_digit_value: fn (Scalar[dtype]) -> Scalar[dtype],
+        div_fn: fn (Scalar[dtype]) -> Scalar[dtype],
+    ]():
         while remaining_int:
-            var digit_value = get_digit_value()
+            var digit_value = get_digit_value(remaining_int)
 
             # Write the char representing the value of the least significant
             # digit.
@@ -368,40 +322,37 @@ fn _try_write_int[
             # Position the offset to write the next digit.
             offset -= 1
 
+            # TODO: (MOCO-3028)
+            # We should be able to simply do `remaining_int /= radix` here,
+            # however, there is a compiler bug when using `/` in parameter
+            # vs argument for signed SIMD values.
+            #
             # Drop the least significant digit
-            remaining_int /= radix
+            remaining_int = div_fn(remaining_int)
 
     if remaining_int >= 0:
 
-        @parameter
-        fn pos_digit_value() -> Scalar[dtype]:
-            return remaining_int % radix
+        fn pos_digit_value(value: Scalar[dtype]) -> Scalar[dtype]:
+            return value % radix
 
-        process_digits[pos_digit_value]()
+        fn floor_div(value: Scalar[dtype]) -> Scalar[dtype]:
+            return value / radix
+
+        process_digits[pos_digit_value, floor_div]()
     else:
 
-        @parameter
-        fn neg_digit_value() -> Scalar[dtype]:
-            return abs(remaining_int % -radix)
+        fn neg_digit_value(value: Scalar[dtype]) -> Scalar[dtype]:
+            return abs(value % -radix)
 
-        process_digits[neg_digit_value]()
+        fn ceil_div(value: Scalar[dtype]) -> Scalar[dtype]:
+            return value.__ceildiv__(radix)
 
-    _ = remaining_int
-    _ = digit_chars_array
+        process_digits[neg_digit_value, ceil_div]()
 
     # Re-add +1 byte since the loop ended so we didn't write another char.
     offset += 1
 
-    var buf_ptr = buf.unsafe_ptr() + offset
-
-    # Calculate the length of the buffer we've filled. This is the number of
-    # bytes from our final `buf_ptr` to the end of the buffer.
-    var len = (CAPACITY - offset) - 1  # -1 because NUL terminator
-
-    # SAFETY:
-    #   Create a slice to only those bytes in `buf` that have been initialized.
-    var str_slice = StringSlice[origin_of(buf)](ptr=buf_ptr, length=len)
-
-    writer.write(str_slice)
-
-    return None
+    # Create a span to only those bytes in `buf` that have been initialized.
+    # -1 because NUL terminator
+    var bytes = Span(buf)[offset : len(buf) - 1]
+    writer.write_bytes(bytes)

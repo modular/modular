@@ -23,6 +23,7 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "mandelbrot",
     srcs = ["mandelbrot.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(

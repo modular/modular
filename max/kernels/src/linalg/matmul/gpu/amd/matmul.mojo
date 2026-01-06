@@ -754,7 +754,7 @@ fn write_output_fragments[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c_reg_fragment: LayoutTensor,
-    c_gmem_fragment: LayoutTensor[mut=True, **_],
+    c_gmem_fragment: LayoutTensor[mut=True, ...],
     warp_tile_m: Int,
     warp_tile_n: Int,
     M: Int,

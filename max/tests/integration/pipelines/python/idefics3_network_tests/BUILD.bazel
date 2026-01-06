@@ -9,8 +9,9 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
@@ -26,10 +27,10 @@ modular_py_test(
         "run-in-hf-workflow",
     ],
     deps = [
-        "//max/python/max/engine",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
         requirement("pytest-asyncio"),
-        requirement("transformers"),
+        requirement("pillow"),
     ],
 )

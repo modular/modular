@@ -14,7 +14,7 @@
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import LegacyUnsafePointer, OwnedPointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import *
 
 

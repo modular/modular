@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout import Layout, LayoutTensor
 from nn.pad import pad_constant, pad_reflect, pad_repeat
 from testing import assert_equal

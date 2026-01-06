@@ -160,7 +160,7 @@ struct Element[
     @always_inline("nodebug")
     @staticmethod
     fn load(
-        ptr: UnsafePointer[Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
             element_type = DType.int32,
@@ -253,7 +253,7 @@ struct Element[
     @always_inline("nodebug")
     @staticmethod
     fn masked_load(
-        ptr: UnsafePointer[Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
             element_type = DType.int32,
@@ -399,7 +399,7 @@ struct Element[
         return Element(element_data, runtime_layout)
 
     @always_inline("nodebug")
-    fn store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], **_]):
+    fn store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
         """Stores element data to memory according to the specified layout.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -480,7 +480,7 @@ struct Element[
                 )
 
     @always_inline("nodebug")
-    fn masked_store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], **_]):
+    fn masked_store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
         """Stores element data to memory with masking for partial stores.
 
         This method performs a layout-aware store operation with boundary checking.
@@ -746,7 +746,7 @@ struct MemoryElement[
     @always_inline("nodebug")
     fn store(
         self: Self._AsMut,
-        src: Element[Self.dtype, Self.layout, **_],
+        src: Element[Self.dtype, Self.layout, ...],
     ):
         """Stores element data to the memory location of this MemoryElement.
 

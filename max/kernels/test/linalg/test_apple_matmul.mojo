@@ -34,7 +34,7 @@ from linalg.packing import (
 from linalg.utils import elementwise_epilogue_type
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 
 from utils.index import Index, IndexList
@@ -48,12 +48,12 @@ comptime do_benchmarking = False
 fn bench_run[
     func: fn () raises capturing [_] -> None
 ]() raises -> benchmark.Report:
-    return benchmark.run[func](2, 1_000_000, 1, 3)
+    return benchmark.run[func3=func](2, 1_000_000, 1, 3)
 
 
 fn gemm_naive[
     transpose_b: Bool
-](a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, *_], m: Int, n: Int, k: Int):
+](a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...], m: Int, n: Int, k: Int):
     for i in range(m):
         for p in range(k):
             for j in range(n):
@@ -71,7 +71,7 @@ fn gemm_naive_elementwise[
 ](
     a: NDBuffer,
     b: NDBuffer,
-    c: NDBuffer[mut=True, *_],
+    c: NDBuffer[mut=True, ...],
     m: Int,
     n: Int,
     k: Int,
@@ -455,7 +455,7 @@ def test_types[b_packed: Bool, mixed_kernels: Bool]():
 
 
 fn bmm_naive(
-    c: NDBuffer[mut=True, *_],
+    c: NDBuffer[mut=True, ...],
     a: NDBuffer,
     b: NDBuffer,
     batches: Int,

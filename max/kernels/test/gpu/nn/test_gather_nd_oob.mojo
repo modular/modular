@@ -15,7 +15,7 @@ from gpu.host import DeviceContext
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 
 from utils import IndexList

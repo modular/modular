@@ -33,7 +33,7 @@ from max.pipelines.architectures.llama_vision.positional_embedding import (
     PrecomputedPositionEmbedding,
 )
 from max.pipelines.architectures.llama_vision.vision_model import (
-    VisionConv2d,
+    PatchEmbeddingConv2d,
     VisionModel,
 )
 from test_common.distance_metrics import is_euclidean_distance_close
@@ -176,16 +176,17 @@ class WrappedVisionModel:
         )
 
         # patch_embedding filter has a shape of (1280, 3, 14, 14).
-        patch_embedding = VisionConv2d(
-            filter=Weight(
-                name="patch_embedding",
-                dtype=dtype,
-                shape=torch_vision_model.patch_embedding.weight.shape,
-                device=DeviceRef.CPU(),
-            ),
+        weight_shape = torch_vision_model.patch_embedding.weight.shape
+        patch_embedding = PatchEmbeddingConv2d(
+            kernel_size=(weight_shape[2], weight_shape[3]),
+            in_channels=weight_shape[1],
+            out_channels=weight_shape[0],
+            dtype=dtype,
             stride=patch_size,
-            padding=(0, 0, 0, 0),
-            bias=None,
+            padding=0,
+            device=DeviceRef.CPU(),
+            has_bias=False,
+            name="patch_embedding",
         )
 
         class_embedding = Weight(
