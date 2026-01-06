@@ -47,7 +47,7 @@ def main():
     for _ in range(benchmark_iterations):
         gridv1 = gridv1.evolve()
     stop_time = perf_counter_ns()
-    elapsed = round((stop_time - start_time) / 1e6, 3)
+    elapsed = round(Float64((stop_time - start_time) / 1e6), 3)
     print(
         benchmark_iterations,
         "evolutions of gridv1.Grid elapsed time: ",
@@ -59,7 +59,7 @@ def main():
     for _ in range(benchmark_iterations):
         gridv2 = gridv2.evolve()
     stop_time = perf_counter_ns()
-    elapsed = round((stop_time - start_time) / 1e6, 3)
+    elapsed = round(Float64((stop_time - start_time) / 1e6), 3)
     print(
         benchmark_iterations,
         "evolutions of gridv2.Grid elapsed time: ",
@@ -71,7 +71,7 @@ def main():
     for _ in range(benchmark_iterations):
         gridv3 = gridv3.evolve()
     stop_time = perf_counter_ns()
-    elapsed = round((stop_time - start_time) / 1e6, 3)
+    elapsed = round(Float64((stop_time - start_time) / 1e6), 3)
     print(
         benchmark_iterations,
         "evolutions of gridv3.Grid elapsed time: ",

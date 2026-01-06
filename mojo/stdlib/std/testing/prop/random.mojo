@@ -156,7 +156,11 @@ struct Rng(Movable):
         Raises:
             If the underlying random number generator raises an error.
         """
-        return UInt(self.rand_scalar[DType.uint](min=min, max=max))
+        return UInt(
+            self.rand_scalar[DType.uint](
+                min=Scalar[DType.uint](min), max=Scalar[DType.uint](max)
+            )
+        )
 
     # TODO (MSTDL-1185): Can remove when Int and SIMD are unified.
     fn rand_int(
