@@ -49,6 +49,9 @@ def modular_py_test(
         **kwargs: Extra arguments passed through to py_test
     """
 
+    if len(imports) > 1:
+        fail("modular_py_test only supports a single import path.")
+
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
         "//bazel/internal:current_gpu_toolchain",
