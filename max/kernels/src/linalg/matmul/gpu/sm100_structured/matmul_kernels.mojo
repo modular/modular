@@ -21,14 +21,14 @@ This module contains the GPU kernel structs for SM100 matmul:
 - BlackwellMatmulSM100FallbackKernel: Simple fallback kernel
 - consumer_main_loop: MMA consumer loop (for external callers)
 
-Output pipeline functions (copy_accum_to_gmem, multi_stage_store_C) are in
-matmul_output.mojo.
+Output pipeline (TileWriter, copy_accum_to_gmem) is in output_writer.mojo.
+Low-level epilogue components (TMAStoreExecutor, etc.) are in tile_writer.mojo.
 
 The kernel implements a warp-specialized architecture:
 - Scheduler warp: CLC-based tile scheduling
 - TMA Load warp: Async memory transfers
 - MMA warp: Tensor core operations with TMEM accumulators
-- Epilogue warps: Output from TMEM to GMEM (see matmul_output.mojo)
+- Epilogue warps: Output from TMEM to GMEM via TileWriter
 """
 
 from collections import OptionalReg
@@ -110,13 +110,8 @@ from linalg.structuring import (
 )
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
-# Import output pipeline functions from matmul_output module
-from .matmul_output import (
-    accum_arrive,
-    copy_accum_to_gmem,
-    multi_stage_store_C,
-    multi_stage_store_C_split_k,
-)
+# Import output pipeline from output_writer module
+from .output_writer import TileWriter
 
 
 # =============================================================================
@@ -721,6 +716,7 @@ struct BlackwellMatmulSM100Kernel[
     # ========== Tensor Memory Type ==========
     # Opaque TMEM allocation for MMA accumulators
 
+    comptime max_tmem_cols: UInt = 512
     comptime Tmem = TmemAllocation[Self.cta_group]
 
     # ========== Output Tile Pipeline Type ==========
@@ -756,6 +752,20 @@ struct BlackwellMatmulSM100Kernel[
         Self.cta_group,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
+    ]
+
+    # ========== Output Tile Writer ==========
+    # Instance-based TileWriter - config provides most params
+    # tma_origin, c_type, c_layout, c_desc_layout inferred from constructor arg
+    comptime TileWriterType = TileWriter[
+        config = Self.config,
+        c_smem_layout = Self.SmemType.c_smem_layout,
+        num_output_stages = Self.SmemType.num_output_stages,
+        stage_stride_cols = UInt(Self.stage_stride_cols),
+        num_output_warps = Self.num_output_warps,
+        max_tmem_cols = Self.max_tmem_cols,
+        elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
+        register_based_epilogue = Self.register_based_epilogue,
     ]
 
     # ========== Kernel Context Type ==========
@@ -1084,43 +1094,22 @@ struct BlackwellMatmulSM100Kernel[
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
 
+            # Create TileWriter - only TMA op stored, SMEM tiles passed per-call
+            var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
+
             with epi_ctx:
                 var tile_idx = 0
 
                 while work_iter.has_work():
                     with work_iter.next() as current:
                         with MatmulProfilerType[3](workspace, tile_idx):
-                            # WAIT FOR MMA TO FINISH AND STORE RESULT
                             with epi_ctx.output_pipeline.consumer() as stage:
-                                multi_stage_store_C[
-                                    Self.c_type,
-                                    Self.SmemType.c_smem_layout,
-                                    Self.c_layout,
-                                    Self.c_desc_layout,
-                                    Self.SmemType.num_accum_pipeline_stages,
-                                    Self.SmemType.num_output_stages,
-                                    input_type = Self.a_type,
-                                    accum_type=accum_type,
-                                    block_tile_shape = Self.config.block_tile_shape,
-                                    mma_shape = Self.config.mma_shape,
-                                    stage_stride_cols = UInt(
-                                        Self.stage_stride_cols
-                                    ),
-                                    c_swizzle = Self.config.c_swizzle,
-                                    cta_group = Self.config.cta_group,
-                                    num_output_warps = Self.num_output_warps,
-                                    max_tmem_cols=max_tmem_cols,
-                                    elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
-                                    register_based_epilogue = Self.register_based_epilogue,
-                                    transpose_c = Self.config.AB_swapped,
-                                ](
-                                    smem.c_tiles(),
-                                    c_tma_op,
-                                    stage,  # Self-contained OutputStage
-                                    work_tile_coord=(current.m, current.n),
-                                    elect_one_warp=ctx.elect_one_warp,
-                                    M=mnk[0],
-                                    N=mnk[1],
+                                tile_writer.write(
+                                    smem.c_tiles(),  # SMEM tiles passed per-call
+                                    stage,
+                                    (current.m, current.n),
+                                    (mnk[0], mnk[1]),
+                                    ctx.elect_one_warp,
                                 )
 
                     tile_idx += 1
@@ -1346,6 +1335,9 @@ struct BlackwellMatmulSM100Kernel[
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
 
+            # Create TileWriter - only TMA op stored, SMEM tiles passed per-call
+            var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
+
             with epi_ctx:
                 var tile_idx = 0
 
@@ -1353,31 +1345,14 @@ struct BlackwellMatmulSM100Kernel[
                     with work_iter.next() as current:
                         with MatmulProfilerType[3](workspace, tile_idx):
                             with epi_ctx.output_pipeline.consumer() as stage:
-                                multi_stage_store_C_split_k[
-                                    input_type = Self.a_type,
-                                    accum_type = Self.config.accum_type,
-                                    block_tile_shape = Self.config.block_tile_shape,
-                                    mma_shape = Self.config.mma_shape,
-                                    stage_stride_cols = UInt(
-                                        Self.stage_stride_cols
-                                    ),
-                                    c_swizzle = Self.config.c_swizzle,
-                                    cta_group = Self.config.cta_group,
-                                    num_output_warps = Self.num_output_warps,
-                                    max_tmem_cols=max_tmem_cols,
-                                    elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
-                                    register_based_epilogue = Self.register_based_epilogue,
-                                    transpose_c = Self.config.AB_swapped,
-                                ](
+                                tile_writer.write_splitk(
+                                    smem.c_tiles(),  # SMEM tiles passed per-call
+                                    stage,
                                     scheduler,
                                     reduction_tensor,
-                                    smem.c_tiles(),
-                                    c_tma_op,
-                                    stage,  # Self-contained OutputStage
-                                    work_info=current,
-                                    elect_one_warp=ctx.elect_one_warp,
-                                    M=mnk[0],
-                                    N=mnk[1],
+                                    current,
+                                    (mnk[0], mnk[1]),
+                                    ctx.elect_one_warp,
                                 )
 
                     tile_idx += 1

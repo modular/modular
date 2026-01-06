@@ -52,9 +52,7 @@ from .matmul_kernels import (
     B200MatmulSmem,
     BlackwellMatmulSM100Kernel,
     BlackwellMatmulSM100FallbackKernel,
-    # Re-export for backward compatibility (used by warp_specialized_blockwise_fp8)
     WarpRole,
-    accum_arrive,
     consumer_main_loop,
     stsm_helper,
 )
