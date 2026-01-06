@@ -99,8 +99,11 @@ public:
   /// infer the value of the next parameter. We only do this if there are any
   /// inferred parameters present.  The 'hasArguments' field specifies whether
   /// there are arguments that can be used to infer parameters from (which are
-  /// not handled by this call).
-  void inferFromParamList(bool hasArguments);
+  /// not handled by this call). When `installParam` is set, the parameter will
+  /// be installed into evaluator.
+  ///
+  /// TODO: remove `installParam` and make it always true.
+  void inferFromParamList(bool hasArguments, bool installParam = false);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the value of the next 'decl'
@@ -112,7 +115,7 @@ public:
   LogicalResult inferForCall(FnTypeGeneratorType signature,
                              const CallOperands &callOperands,
                              const OperandValueList &variadicKwOperands,
-                             bool returnsSelf);
+                             bool returnsSelf, bool hasCTADParams);
 
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
