@@ -6,6 +6,10 @@ modular_py_binary(
     name = "basic",
     srcs = ["basic.py"],
     imports = ["."],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines",

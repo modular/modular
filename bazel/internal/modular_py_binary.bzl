@@ -74,10 +74,7 @@ def modular_py_binary(
 
     mojo_test_environment(
         name = mojo_test_env_name,
-        data = mojo_deps + [transitive_mojo_deps] + select({
-            "@//:emit_mojo_enabled": ["@//max:MOGGKernelAPI"],
-            "//conditions:default": [],
-        }),
+        data = mojo_deps + [transitive_mojo_deps],
         short_path = True,
         testonly = testonly,
     )
