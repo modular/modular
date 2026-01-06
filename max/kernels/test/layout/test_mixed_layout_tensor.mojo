@@ -275,3 +275,100 @@ fn test_slice_3d() raises:
 #
 #     # Original[2][2] = 2*4 + 2 = 10
 #     assert_equal(sliced[(Idx(1), Idx(1))], Float32(10))
+
+
+fn test_vectorize() raises:
+    """Test tensor vectorization functionality."""
+    # Create a 16x16 tensor with row-major layout
+    var data = InlineArray[Int32, 256](uninitialized=True)
+
+    # Initialize with sequential values
+    for i in range(256):
+        data[i] = i
+
+    var tensor = MixedLayoutTensor[dtype = DType.int32](
+        data, row_major[16, 16]()
+    )
+
+    # Vectorize with 4x4 blocks
+    var vectorized = tensor.vectorize[4, 4]()
+
+    # Verify vectorized tensor shape: 16/4 x 16/4 = 4x4
+    assert_equal(vectorized.layout.shape[0].value(), 4)
+    assert_equal(vectorized.layout.shape[1].value(), 4)
+
+    # Verify vectorized tensor strides: original_stride * vector_shape
+    # Original row-major 16x16 has strides [16, 1]
+    # Vectorized strides should be [16*4, 1*4] = [64, 4]
+    assert_equal(vectorized.layout.stride[0].value(), 64)
+    assert_equal(vectorized.layout.stride[1].value(), 4)
+
+    # Verify that vectorized[i, j] points to the start of the (i,j) 4x4 block
+    # Block (0, 0) starts at element 0
+    assert_equal(vectorized[(Idx(0), Idx(0))], 0)
+
+    # Block (0, 1) starts at element 4 (column offset by vector width)
+    assert_equal(vectorized[(Idx(0), Idx(1))], 4)
+
+    # Block (1, 0) starts at element 64 (row offset by vector height * row stride)
+    assert_equal(vectorized[(Idx(1), Idx(0))], 64)
+
+    # Block (1, 1) starts at element 68
+    assert_equal(vectorized[(Idx(1), Idx(1))], 68)
+
+    # Block (3, 3) is the last block, starts at element 3*64 + 3*4 = 204
+    assert_equal(vectorized[(Idx(3), Idx(3))], 204)
+
+
+fn test_vectorize_non_square() raises:
+    """Test vectorization with non-square vector shapes."""
+    var data = InlineArray[Int32, 64](uninitialized=True)
+
+    for i in range(64):
+        data[i] = i
+
+    # Create 8x8 tensor
+    var tensor = MixedLayoutTensor[dtype = DType.int32](data, row_major[8, 8]())
+
+    # Vectorize with 2x4 blocks (different dimensions)
+    var vectorized = tensor.vectorize[2, 4]()
+
+    # Shape should be 8/2 x 8/4 = 4x2
+    assert_equal(vectorized.layout.shape[0].value(), 4)
+    assert_equal(vectorized.layout.shape[1].value(), 2)
+
+    # Strides should be [8*2, 1*4] = [16, 4]
+    assert_equal(vectorized.layout.stride[0].value(), 16)
+    assert_equal(vectorized.layout.stride[1].value(), 4)
+
+    # Verify block positions
+    assert_equal(vectorized[(Idx(0), Idx(0))], 0)  # Block (0,0) at element 0
+    assert_equal(vectorized[(Idx(0), Idx(1))], 4)  # Block (0,1) at element 4
+    assert_equal(vectorized[(Idx(1), Idx(0))], 16)  # Block (1,0) at element 16
+    assert_equal(vectorized[(Idx(3), Idx(1))], 52)  # Block (3,1) at element 52
+
+
+fn test_vectorize_1d() raises:
+    """Test vectorization of 1D tensor."""
+    var data = InlineArray[Int32, 16](uninitialized=True)
+
+    for i in range(16):
+        data[i] = i
+
+    # Create 16-element 1D tensor
+    var tensor = MixedLayoutTensor[dtype = DType.int32](data, row_major[16]())
+
+    # Vectorize with width 4
+    var vectorized = tensor.vectorize[4]()
+
+    # Shape should be 16/4 = 4
+    assert_equal(vectorized.layout.shape[0].value(), 4)
+
+    # Stride should be 1*4 = 4
+    assert_equal(vectorized.layout.stride[0].value(), 4)
+
+    # Verify block positions
+    assert_equal(vectorized[(Idx(0),)], 0)
+    assert_equal(vectorized[(Idx(1),)], 4)
+    assert_equal(vectorized[(Idx(2),)], 8)
+    assert_equal(vectorized[(Idx(3),)], 12)

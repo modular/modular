@@ -539,6 +539,90 @@ struct MixedLayoutTensor[
             linear_idx_type = Self.linear_idx_type,
         ](self.ptr.offset(offset), new_layout^)
 
+    # ===------------------------------------------------------------------=== #
+    # Vectorization
+    # ===------------------------------------------------------------------=== #
+
+    comptime VectorizedType[*vector_shape: Int] = MixedLayoutTensor[
+        shape_types = _CeilDiv[
+            Self.shape_types, _IntToComptimeInt[*vector_shape]
+        ],
+        stride_types = _Multiply[
+            Self.stride_types, _IntToComptimeInt[*vector_shape]
+        ],
+        dtype = Self.dtype,
+        origin = Self.origin,
+        address_space = Self.address_space,
+        linear_idx_type = Self.linear_idx_type,
+    ]
+    """Type alias for vectorized tensor types.
+
+    Parameters:
+        vector_shape: The shape of each vector unit along each axis.
+    """
+
+    comptime SIMDVectorizedType = Self.VectorizedType[
+        1, simd_width_of[Self.dtype]()
+    ]
+    """Result type for SIMD-width vectorization."""
+
+    @always_inline("nodebug")
+    fn vectorize[
+        *vector_shape: Int
+    ](self) -> Self.VectorizedType[*vector_shape] where Self.ALL_DIMS_KNOWN:
+        """Reshape a tensor into a vectorized form for efficient SIMD operations.
+
+        This method transforms the tensor's logical layout to enable efficient
+        vectorized processing, treating blocks of elements as vector units. The
+        transformation is particularly useful for SIMD (Single Instruction
+        Multiple Data) operations and hardware acceleration.
+
+        Unlike `LayoutTensor.vectorize`, this simplified implementation does not
+        track the vector shape in an `element_layout`. Users must manually handle
+        loading SIMD vectors from each logical element position.
+
+        Parameters:
+            vector_shape: The dimensions of each vector unit along each axis of
+                the tensor. For example, in a 2D tensor, `vectorize[4, 4]` treats
+                4x4 blocks as vector units.
+
+        Returns:
+            A view of the tensor with a vectorized layout, where each element in
+            the resulting tensor represents the start of a vector block from the
+            original tensor.
+
+        Constraints:
+            All dimensions must be statically known (`ALL_DIMS_KNOWN`).
+
+        Example:
+
+        For a 16x16 tensor, `vectorize[4, 4]` will produce a 4x4 tensor
+        where each element position is the starting point of a 4x4 block
+        from the original tensor. The strides are scaled by the vector shape
+        so that adjacent elements in the vectorized tensor are spaced apart
+        by the vector dimensions.
+
+        Performance:
+
+        - Creates a view without copying data, making it very efficient.
+        - Enables strided access patterns suitable for SIMD vector loads.
+        - Zero-cost abstraction at compile time when used with static shapes.
+        """
+        return _vectorize(self, mixed_tuple[*vector_shape]())
+
+    @always_inline("nodebug")
+    fn vectorize(self) -> Self.SIMDVectorizedType where Self.ALL_DIMS_KNOWN:
+        """Return a SIMD-width vectorized view of this tensor.
+
+        This is a convenience method that vectorizes along the last dimension
+        by the SIMD width for the tensor's dtype.
+
+        Returns:
+            A `Self.VectorizedType[1, simd_width_of[Self.dtype]()]` view whose
+            last dimension stride equals the SIMD width for the tensor's dtype.
+        """
+        return self.vectorize[1, simd_width_of[Self.dtype]()]()
+
 
 @always_inline("nodebug")
 fn stack_allocation[
@@ -720,6 +804,67 @@ fn _tile[
         UnsafePointer(to=data_layout_tensor.ptr[offset]),
         tile_layout,
     )
+
+
+@always_inline("nodebug")
+fn _vectorize[
+    dtype: DType,
+    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    vector_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    //,
+](
+    data_layout_tensor: MixedLayoutTensor[
+        shape_types=shape_types, stride_types=stride_types, dtype, ...
+    ],
+    vector_shape: MixedTuple[*vector_shape_types],
+) -> MixedLayoutTensor[
+    shape_types = _CeilDiv[shape_types, vector_shape_types],
+    stride_types = _Multiply[stride_types, vector_shape_types],
+    dtype,
+    data_layout_tensor.origin,
+    address_space = data_layout_tensor.address_space,
+    linear_idx_type = data_layout_tensor.linear_idx_type,
+]:
+    """Create a vectorized view of a MixedLayoutTensor.
+
+    This function creates a new view where the shape is divided by the vector
+    shape (ceiling division) and strides are multiplied by the vector shape.
+    This effectively groups elements into vector-sized blocks.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        shape_types: Shape types of the source tensor.
+        stride_types: Stride types of the source tensor.
+        vector_shape_types: Types of the vector shape dimensions.
+
+    Args:
+        data_layout_tensor: The source tensor to vectorize.
+        vector_shape: The shape of each vector unit as a MixedTuple.
+
+    Returns:
+        A MixedLayoutTensor representing a vectorized view. Each logical element
+        in the result corresponds to a vector block in the original tensor.
+    """
+    comptime NewShapeTypes = _CeilDiv[shape_types, vector_shape_types]
+    comptime NewStrideTypes = _Multiply[stride_types, vector_shape_types]
+
+    # Since ALL_DIMS_KNOWN is required, we can use compile-time values directly
+    __comptime_assert MixedTuple[*NewShapeTypes].ALL_DIMS_KNOWN
+    __comptime_assert MixedTuple[*NewStrideTypes].ALL_DIMS_KNOWN
+    var new_shape = MixedTuple[*NewShapeTypes]()
+    var new_stride = MixedTuple[*NewStrideTypes]()
+
+    var new_layout = MixedLayout(new_shape^, new_stride^)
+
+    return MixedLayoutTensor[
+        shape_types=NewShapeTypes,
+        stride_types=NewStrideTypes,
+        dtype,
+        data_layout_tensor.origin,
+        address_space = data_layout_tensor.address_space,
+        linear_idx_type = data_layout_tensor.linear_idx_type,
+    ](data_layout_tensor.ptr, new_layout^)
 
 
 struct MixedLayoutTensorIter[
@@ -1022,6 +1167,25 @@ comptime _Divide[
     To=MixedTupleLike,
     VariadicType=Lhs,
     Mapper = _DivideMapper[Rhs=Rhs],
+]
+
+comptime _CeilDivMapper[
+    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
+    element_types: Variadic.TypesOfTrait[MixedTupleLike],
+    idx: Int,
+] = ComptimeInt[
+    (element_types[idx].STATIC_VALUE + Rhs[idx].STATIC_VALUE - 1)
+    // Rhs[idx].STATIC_VALUE
+]
+
+
+comptime _CeilDiv[
+    Lhs: Variadic.TypesOfTrait[MixedTupleLike],
+    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
+] = _MapVariadicAndIdxToType[
+    To=MixedTupleLike,
+    VariadicType=Lhs,
+    Mapper = _CeilDivMapper[Rhs=Rhs],
 ]
 
 
