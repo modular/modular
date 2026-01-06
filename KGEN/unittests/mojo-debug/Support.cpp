@@ -53,22 +53,19 @@ MojoBinary::MojoBinary(const std::shared_ptr<MojoSource> &source,
     : source(source), outDir(createTempDir()),
       binPath(outDir.getPath() /
               (source->getFilesystemPath().filename().string() + ".exe")) {
-  ErrorOr<std::string> mojoOr =
-      toModularErrorOr(llvm::sys::findProgramByName("mojo"));
-  if (const char *mojoPath = std::getenv("MODULAR_MOJO_MAX_DRIVER_PATH"))
-    mojoOr = mojoPath;
 
-  if (failed(mojoOr))
-    llvm::report_fatal_error(mojoOr.getError());
+  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
+  if (failed(configOr))
+    llvm::report_fatal_error(configOr.getError());
 
+  StringRef mojo = configOr->getDriverPath();
   std::vector<std::optional<StringRef>> redirects;
   if (suppressBuildOutput) {
     for (size_t i = 0; i < 3; ++i)
       redirects.emplace_back("");
   }
   int ec = llvm::sys::ExecuteAndWait(
-      *mojoOr,
-      {*mojoOr, "build", "-g", "-O0", source->getPath(), "-o", binPath},
+      mojo, {mojo, "build", "-g", "-O0", source->getPath(), "-o", binPath},
       /*Env=*/std::nullopt, redirects);
   if (ec)
     llvm::report_fatal_error(
