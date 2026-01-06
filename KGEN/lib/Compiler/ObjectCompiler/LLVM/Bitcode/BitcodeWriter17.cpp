@@ -5135,14 +5135,15 @@ static void writeBitcodeHeader(BitstreamWriter &Stream) {
   Stream.Emit(0xD, 4);
 }
 
-BitcodeWriter::BitcodeWriter(SmallVectorImpl<char> &Buffer)
+BitcodeWriter17::BitcodeWriter17(SmallVectorImpl<char> &Buffer)
     : Stream(new BitstreamWriter(Buffer)) {
   writeBitcodeHeader(*Stream);
 }
 
-BitcodeWriter::~BitcodeWriter() { assert(WroteStrtab); }
+BitcodeWriter17::~BitcodeWriter17() { assert(WroteStrtab); }
 
-void BitcodeWriter::writeBlob(unsigned Block, unsigned Record, StringRef Blob) {
+void BitcodeWriter17::writeBlob(unsigned Block, unsigned Record,
+                                StringRef Blob) {
   Stream->EnterSubblock(Block, 3);
 
   auto Abbv = std::make_shared<BitCodeAbbrev>();
@@ -5155,7 +5156,7 @@ void BitcodeWriter::writeBlob(unsigned Block, unsigned Record, StringRef Blob) {
   Stream->ExitBlock();
 }
 
-void BitcodeWriter::writeSymtab() {
+void BitcodeWriter17::writeSymtab() {
   assert(!WroteStrtab && !WroteSymtab);
 
   // If any module has module-level inline asm, we will require a registered
@@ -5187,7 +5188,7 @@ void BitcodeWriter::writeSymtab() {
             {Symtab.data(), Symtab.size()});
 }
 
-void BitcodeWriter::writeStrtab() {
+void BitcodeWriter17::writeStrtab() {
   assert(!WroteStrtab);
 
   std::vector<char> Strtab;
@@ -5201,15 +5202,15 @@ void BitcodeWriter::writeStrtab() {
   WroteStrtab = true;
 }
 
-void BitcodeWriter::copyStrtab(StringRef Strtab) {
+void BitcodeWriter17::copyStrtab(StringRef Strtab) {
   writeBlob(bitc::STRTAB_BLOCK_ID, bitc::STRTAB_BLOB, Strtab);
   WroteStrtab = true;
 }
 
-void BitcodeWriter::writeModule(const Module &M,
-                                bool ShouldPreserveUseListOrder,
-                                const ModuleSummaryIndex *Index,
-                                bool GenerateHash, ModuleHash *ModHash) {
+void BitcodeWriter17::writeModule(const Module &M,
+                                  bool ShouldPreserveUseListOrder,
+                                  const ModuleSummaryIndex *Index,
+                                  bool GenerateHash, ModuleHash *ModHash) {
   assert(!WroteStrtab);
 
   // The Mods vector is used by irsymtab::build, which requires non-const
@@ -5225,8 +5226,8 @@ void BitcodeWriter::writeModule(const Module &M,
   ModuleWriter.write();
 }
 
-void BitcodeWriter::writeIndex(const ModuleSummaryIndex *Index,
-                               const void *ModuleToSummariesForIndex) {
+void BitcodeWriter17::writeIndex(const ModuleSummaryIndex *Index,
+                                 const void *ModuleToSummariesForIndex) {
   auto TypedModuleToSummariesForIndex =
       static_cast<const std::map<std::string, GVSummaryMapTy> *>(
           ModuleToSummariesForIndex);
@@ -5236,11 +5237,11 @@ void BitcodeWriter::writeIndex(const ModuleSummaryIndex *Index,
 }
 
 /// Write the specified module to the specified output stream.
-void WriteBitcodeToFile(const Module &M, raw_ostream &Out,
-                        bool ShouldPreserveUseListOrder,
-                        const ModuleSummaryIndex *Index, bool GenerateHash,
-                        ModuleHash *ModHash) {
-  auto Write = [&](BitcodeWriter &Writer) {
+static void WriteBitcodeToFile(const Module &M, raw_ostream &Out,
+                               bool ShouldPreserveUseListOrder,
+                               const ModuleSummaryIndex *Index,
+                               bool GenerateHash, ModuleHash *ModHash) {
+  auto Write = [&](BitcodeWriter17 &Writer) {
     Writer.writeModule(M, ShouldPreserveUseListOrder, Index, GenerateHash,
                        ModHash);
     Writer.writeSymtab();
@@ -5255,7 +5256,7 @@ void WriteBitcodeToFile(const Module &M, raw_ostream &Out,
     SmallVector<char, 0> Buffer;
     Buffer.reserve(256 * 1024);
     Buffer.insert(Buffer.begin(), BWH_HeaderSize, 0);
-    BitcodeWriter Writer(Buffer);
+    BitcodeWriter17 Writer(Buffer);
     Write(Writer);
     emitDarwinBCHeaderAndTrailer(Buffer, TT);
     Out.write(Buffer.data(), Buffer.size());
@@ -5283,13 +5284,13 @@ void IndexBitcodeWriter::write() {
 // map. M::KGEN namespace wrapper functions for Metal bitcode writing
 namespace M::KGEN::LLVM {
 
-void WriteIndexToFile(
+static void WriteIndexToFile(
     const ModuleSummaryIndex &Index, raw_ostream &Out,
     const std::map<std::string, GVSummaryMapTy> *ModuleToSummariesForIndex) {
   SmallVector<char, 0> Buffer;
   Buffer.reserve(256 * 1024);
 
-  BitcodeWriter Writer(Buffer);
+  BitcodeWriter17 Writer(Buffer);
   Writer.writeIndex(&Index, ModuleToSummariesForIndex);
   Writer.writeStrtab();
 
@@ -5304,9 +5305,9 @@ void WriteBitcode17ToFile(const llvm::Module &M, llvm::raw_ostream &Out,
                      ModHash);
 }
 
-void WriteIndexToFile(const llvm::ModuleSummaryIndex &Index,
-                      llvm::raw_ostream &Out,
-                      const void *ModuleToSummariesForIndex) {
+void WriteIndexToFile17(const llvm::ModuleSummaryIndex &Index,
+                        llvm::raw_ostream &Out,
+                        const void *ModuleToSummariesForIndex) {
   ::WriteIndexToFile(
       Index, Out,
       static_cast<const std::map<std::string, llvm::GVSummaryMapTy> *>(

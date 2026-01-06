@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_COMPILER_LLVMIR_BITCODE_METALBITCODEWRITER_H
-#define KGEN_COMPILER_LLVMIR_BITCODE_METALBITCODEWRITER_H
+#ifndef KGEN_COMPILER_LLVMIR_BITCODE_BITCODEWRITER17_H
+#define KGEN_COMPILER_LLVMIR_BITCODE_BITCODEWRITER17_H
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -28,10 +28,10 @@ class raw_ostream;
 
 namespace M::KGEN::LLVM {
 
-/// BitcodeWriter - Legacy bitcode writer for LLVM bitcode version 5.0
+/// BitcodeWriter17 - Legacy bitcode writer for LLVM bitcode version 5.0
 /// This class writes LLVM modules to bitcode format version 5.0, which is
 /// required for Metal compatibility.
-class BitcodeWriter {
+class BitcodeWriter17 {
 
   std::unique_ptr<llvm::BitstreamWriter> Stream;
 
@@ -48,11 +48,11 @@ class BitcodeWriter {
   std::vector<llvm::Module *> Mods;
 
 public:
-  /// Create a BitcodeWriter that writes to Buffer.
-  BitcodeWriter(llvm::SmallVectorImpl<char> &Buffer);
-  BitcodeWriter(llvm::raw_ostream &FS);
+  /// Create a BitcodeWriter17 that writes to Buffer.
+  BitcodeWriter17(llvm::SmallVectorImpl<char> &Buffer);
+  BitcodeWriter17(llvm::raw_ostream &FS);
 
-  ~BitcodeWriter();
+  ~BitcodeWriter17();
 
   /// Attempt to write a symbol table to the bitcode file. This must be called
   /// at most once after all modules have been written.
@@ -97,16 +97,14 @@ public:
 
   void writeIndex(const llvm::ModuleSummaryIndex *Index,
                   const void *ModuleToSummariesForIndex);
-
-  // static bool prepareModule(llvm::Module &M);
 };
 
 /// Write the specified module summary index to the given raw output stream
 /// using bitcode format version 5.0.
-void WriteIndexToFile(const llvm::ModuleSummaryIndex &Index,
-                      llvm::raw_ostream &Out,
-                      const void *ModuleToSummariesForIndex = nullptr);
+void WriteIndexToFile17(const llvm::ModuleSummaryIndex &Index,
+                        llvm::raw_ostream &Out,
+                        const void *ModuleToSummariesForIndex = nullptr);
 
 } // namespace M::KGEN::LLVM
 
-#endif // KGEN_COMPILER_LLVMIR_BITCODE_METALBITCODEWRITER_H
+#endif // KGEN_COMPILER_LLVMIR_BITCODE_BITCODEWRITER17_H
