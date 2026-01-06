@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -10,6 +10,10 @@ package(default_visibility = [
 modular_py_test(
     name = "max_tests",
     srcs = glob(["*.py"]),
+    args = [
+        "-n",
+        "auto",
+    ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -17,5 +21,6 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max",
+        requirement("pytest-xdist"),
     ],
 )
