@@ -75,7 +75,7 @@ public:
                               llvm::raw_pwrite_stream &os);
 
   /// Write bitcode representation of the llvmModule using correct
-  /// BitcodeWriter. For example, it will use custom BitcodeWriter 5.0 for Metal
+  /// BitcodeWriter, e.g. it uses custom BitcodeWriter17  for Metal
   /// target.
   static ErrorOrSuccess emitBitcode(llvm::Module &llvmModule,
                                     llvm::raw_pwrite_stream &os);
