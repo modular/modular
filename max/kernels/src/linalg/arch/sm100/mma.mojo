@@ -207,8 +207,8 @@ struct MmaOpSM100_SS[
             #             o x o o
             self.mask = (
                 dim0_mask
-                << (block_id_in_cluster.y * UInt(Self.cluster_shape[0]))
-            ) | (dim1_mask << block_id_in_cluster.x)
+                << UInt16((block_id_in_cluster.y * UInt(Self.cluster_shape[0])))
+            ) | (dim1_mask << UInt16(block_id_in_cluster.x))
 
             # Include peer cta's row
             # Example mask for cta (0, 1) is cluster (4,4)
@@ -218,7 +218,7 @@ struct MmaOpSM100_SS[
             #             o x o o
             @parameter
             if Self.cta_group == 2:
-                self.mask |= dim1_mask << (block_id_in_cluster.x ^ 1)
+                self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
     @always_inline
     fn mma(
@@ -374,8 +374,8 @@ struct MmaOpSM100_BlockScaled_SS[
             #             o x o o
             self.mask = (
                 dim0_mask
-                << (block_id_in_cluster.y * UInt(Self.cluster_shape[0]))
-            ) | (dim1_mask << block_id_in_cluster.x)
+                << UInt16((block_id_in_cluster.y * UInt(Self.cluster_shape[0])))
+            ) | (dim1_mask << UInt16(block_id_in_cluster.x))
 
             # Include peer cta's row
             # Example mask for cta (0, 1) is cluster (4,4)
@@ -385,7 +385,7 @@ struct MmaOpSM100_BlockScaled_SS[
             #             o x o o
             @parameter
             if Self.cta_group == 2:
-                self.mask |= dim1_mask << (block_id_in_cluster.x ^ 1)
+                self.mask |= dim1_mask << UInt16((block_id_in_cluster.x ^ 1))
 
     @always_inline
     fn mma(
