@@ -127,8 +127,15 @@ trait Writer:
 trait Writable:
     """The `Writable` trait describes how a type is written into a `Writer`.
 
-    You must implement `write_to` which takes `self` and a type conforming to
-    `Writer`:
+    The `Writable` trait is designed for efficient output operations. It
+    differs from [`Stringable`](/mojo/std/builtin/str/Stringable) in that
+    `Stringable` merely converts a type to a `String` type, whereas `Writable`
+    directly writes the type to an output stream—making it more efficient for
+    output operations like [`print()`](/mojo/std/io/io/print).
+
+    To make your type conform to `Writable`, you must implement `write_to()`
+    which takes `self` and a type conforming to
+    [`Writer`](/mojo/std/io/write/Writer):
 
     ```mojo
     struct Point(Writable):
@@ -147,6 +154,12 @@ trait Writable:
     fn write_to(self, mut writer: Some[Writer]):
         """
         Formats the string representation of this type to the provided Writer.
+
+        For example, when you pass your type to
+        [`print()`](/mojo/std/io/io/print/), it calls `write_to()` on your
+        type and the `writer` is the
+        [`FileDescriptor`](/mojo/std/io/file_descriptor/FileDescriptor/)
+        that `print()` is writing to.
 
         Args:
             writer: The type conforming to `Writable`.

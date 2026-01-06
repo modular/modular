@@ -23,17 +23,19 @@ These are Mojo built-ins, so you don't need to import them.
 trait Stringable:
     """
     The `Stringable` trait describes a type that can be converted to a
-    [`String`](/mojo/std/collections/string/String).
+    [`String`](/mojo/std/collections/string/string/String).
 
     Any type that conforms to `Stringable` or
     [`StringableRaising`](/mojo/std/builtin/str/StringableRaising) works
-    with the built-in [`print()`](/mojo/std/builtin/io/print) and
-    [`String()`](/mojo/std/builtin/str/str) functions.
+    with the built-in [`print()`](/mojo/std/io/io/print) function and
+    implicitly converts to a
+    [`String`](/mojo/std/collections/string/string/String).
 
     The `Stringable` trait requires the type to define the `__str__()` method.
     For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(Stringable):
         var s: String
 
@@ -59,9 +61,9 @@ trait Stringable:
 
     About the difference between `__repr__()` and `__str__()`:
     The method `__repr__` computes the "official" string representation of an object
-    while `__str__` computes the "informal" or nicely printable string representation of an object.
+    while `__str__()` computes the "informal" or nicely printable string representation of an object.
 
-    This method differs from `__repr__()` in that there is no expectation that `__str__()`
+    `__str__()` differs from `__repr__()` in that there is no expectation that `__str__()`
     return a valid Mojo expression: a more convenient or concise representation can be used.
     """
 

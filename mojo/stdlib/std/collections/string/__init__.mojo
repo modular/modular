@@ -10,19 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The string package provides comprehensive Unicode string handling functionality for Mojo.
+"""Provides comprehensive Unicode string functionality.
 
-This package implements Unicode-aware string types and operations, with UTF-8 support.
-It includes efficient implementations for string manipulation, formatting, and Unicode
-operations while maintaining memory safety and performance.
+Core features:
 
-Key Components:
-- `String`: The main string type supporting UTF-8 encoded text,
-- `StringSlice`: Memory-efficient string view type for zero-copy operations
-- `Codepoint`: Unicode code point handling and operations
-- Format: String formatting and interpolation utilities
-
-Core Features:
 - Unicode support with UTF-8 encoding
 - Efficient string slicing and views
 - String formatting and interpolation
@@ -30,30 +21,59 @@ Core Features:
 - Unicode case conversion
 - Unicode property lookups and validation
 
-Example:
-```mojo
-    # Basic string creation and manipulation
-    var s = "Hello, 世界" # runtime type is `String`
-    var slice = s[0:5] # "Hello"
+Key components:
 
-    # Unicode-aware operations
-    for c in s.codepoints():
-        if c.is_ascii_lower():
-            print(String(c).upper())
-        else:
-            print(c)
+- [`String`](/mojo/std/collections/string/string/String):
+  Mutable and owning string
 
-    # String formatting
-    var name = "Mojo"
-    var formatted = "Hello, {name}!"
-```
+  - Uses a smart three-mode allocation strategy: static memory
+  references for string literals, small string optimization (SSO) for strings
+  ≤23 bytes (stored directly within the `String` object with zero allocation
+  cost), and reference-counted heap allocation for larger strings. This design
+  makes the vast majority of real-world strings extremely fast.
 
-Note:
+  - Owns its data and manages memory automatically when heap-allocated.
+
+  - Mutable and grows dynamically as needed.
+
+- [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice):
+  Non-owning string view
+
+  - Performs zero heap allocations: stores only a pointer and length
+  that reference existing string data owned by another object.
+
+  - Does not own the data pointed to, so it can't outlive the data it
+  references.
+
+- [`StaticString`](/mojo/std/collections/string/string_slice/#staticstring):
+  Compile-time constant (immutable) string reference
+
+  - Performs zero heap allocations: stores a pointer and length to a
+  compile-time constant or static program memory.
+
+  - References data with a static lifetime that exists for the entire program
+  duration, unlike `StringSlice` which can reference temporary data.
+
+- [`Codepoint`](/mojo/std/collections/string/codepoint/Codepoint):
+  Unicode codepoint representation and operations
+
+  - Represents a single Unicode codepoint as a 32-bit value.
+
+  - Enables iteration over string contents at the Unicode codepoint level
+  rather than byte level for proper Unicode text processing.
+
+- [`format`](/mojo/std/collections/string/format/): Built-in string
+formatting and interpolation utilities.
+
+:::note Note
 
 String stores data using UTF-8, and all operations (unless clearly noted) are intended to
 be fully Unicode compliant and maintain correct UTF-8 encoded data.
 A handful of operations are known to not be Unicode / UTF-8 compliant yet, but will be
 fixed as time permits.
+
+:::
+
 """
 
 from .codepoint import Codepoint

@@ -10,68 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The core `String` type implementation for Mojo.
-
-This module provides the primary `String` type and its fundamental operations.
-The `String` type is a mutable string, and is designed to handle UTF-8 encoded
-text efficiently while providing a safe and ergonomic interface for string
-manipulation.
-
-Related types:
-
-- [`StringSlice`](/mojo/std/collections/string/string_slice/). A non-owning
-  view of string data, which can be either mutable or immutable.
-- [`StaticString`](/mojo/std/collections/string/string_slice/#comptime-values).
-  A `comptime` type alias for an immutable constant `StringSlice`.
-- [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/). A
-  string literal. String literals are compile-time values. For use at runtime,
-  you usually want wrap a `StringLiteral` in a `String` (for a mutable string)
-  or `StaticString` (for an immutable constant string).
-
-Key Features:
-- Short string optimization (SSO) and lazy copying of constant string data.
-- O(1) copy operation.
-- Memory-safe string operations.
-- Efficient string concatenation and slicing.
-- String-to-number conversions (
-  [`atof()`](/mojo/std/collections/string/string/atof),
-  [`atol()`](/mojo/std/collections/string/string/atol)).
-- Character code conversions (
-  [`chr()`](/mojo/std/collections/string/string/chr),
-  [`ord()`](/mojo/std/collections/string/string/ord)).
-- String formatting with
-  [`format()`](/mojo/std/collections/string/string/String/#format).
-
-The `String` type has Unicode support through UTF-8 encoding. A handful of
-operations are known to not be Unicode / UTF-8 compliant yet, but will be fixed
-as time permits.
-
-This type is in the prelude, so it is automatically imported into every Mojo
-program.
-
-Example:
-
-```mojo
-# String creation and basic operations
-var s1 = "Hello"
-var s2 = "World"
-var combined = s1 + " " + s2  # "Hello World"
-
-# String-to-number conversion
-var num = atof("3.14")
-var int_val = atol("42")
-
-# Character operations
-var char = chr(65)  # "A"
-var code = ord("A")  # 65
-
-# String formatting
-print("Codepoint {} is {}".format(code, char)) # Codepoint 65 is A
-
-# ASCII utilities
-var ascii_str = ascii("Hello")  # ASCII-only string
-```
-"""
+"""Implements the core `String` type and related utilities."""
 
 from collections import KeyElement
 from collections._index_normalization import normalize_index
@@ -121,8 +60,150 @@ struct String(
 ):
     """Represents a mutable string.
 
-    See the [`string` module](/mojo/std/collections/string/string/) for
-    more information and examples.
+    This is Mojo's primary text representation, designed to efficiently handle
+    UTF-8 encoded text while providing a safe and ergonomic interface for
+    string manipulation.
+
+    You can create a `String` by assigning a string literal to a variable or
+    with the `String` constructor:
+
+    ```mojo
+    # From string literals (String type is inferred)
+    var hello = "Hello"
+
+    # From String constructor
+    var world = String("World")
+    print(hello, world)    # "Hello World"
+    ```
+
+    You can convert many Mojo types to a `String` because it's common to
+    implement the [`Stringable`](/mojo/std/builtin/str/Stringable) trait:
+
+    ```mojo
+    var int : Int = 42
+    print(String(int))    # "42"
+    ```
+
+    If you have a custom type you want to convert to a string, you can implement
+    the [`Stringable`](/mojo/std/builtin/str/Stringable) trait like this:
+
+    ```mojo
+    @fieldwise_init
+    struct Person(Stringable):
+        var name: String
+        var age: Int
+
+        fn __str__(self) -> String:
+            return self.name + " (" + String(self.age) + ")"
+
+    var person = Person("Alice", 30)
+    print(String(person))      # => Alice (30)
+    ```
+
+    However, `print()` doesn't actually specify `String` as its argument type.
+    Instead, it accepts any type that conforms to the
+    [`Writable`](/mojo/std/io/write/Writable) trait (`String` conforms to
+    this trait, which is why you can pass it to `print()`). That means it's
+    actually more efficient to pass any type that implements `Writable`
+    directly to `print()` (instead of first converting it to `String`).
+    For example, float types are also writable:
+
+    ```mojo
+    var float : Float32 = 3.14
+    print(float)
+    ```
+
+    Be aware of the following characteristics when working with `String`:
+
+    - **UTF-8 encoding**: Strings store UTF-8 encoded text, so byte length may
+      differ from character count. Use `len(string.codepoints())` to get
+      the codepoint count:
+
+      ```mojo
+      var text = "café"                # 4 Unicode characters
+      print(len(text))                 # Prints 5 (é is 2 bytes in UTF-8)
+      print(len(text.codepoints()))    # Prints 4 (correct Unicode count)
+      ```
+
+    - **Always mutable**: You can modify strings in-place:
+
+      ```mojo
+      var message = "Hello"
+      message += " World"        # In-place concatenation
+      print(message)             # "Hello World"
+      ```
+
+      If you want a compile-time immutable string, use `comptime`:
+
+      ```mojo
+      comptime GREETING = "Immutable string"  # Fixed at compile time
+      GREETING = "Not gonna happen"        # error: expression must be mutable in assignment
+      ```
+
+    - **Value semantics**: String assignment creates a copy, but it's optimized
+    with copy-on-write so that the actual copying happens only if/when one of
+    the strings is modified.
+
+      ```mojo
+      var str1 = "Hello"
+      var str2 = str1            # Currently references the same data
+      str2 += " World"           # Now str2 becomes a copy of str1
+      print(str1)                # "Hello"
+      print(str2)                # "Hello World"
+      ```
+
+    More examples:
+
+    ```mojo
+    var text = "Hello"
+
+    # String properties and indexing
+    print(len(text))     # 5
+    print(text[1])       # e
+    print(text[-1])      # o
+
+    # In-place concatenation
+    text += " World"
+    print(text)
+
+    # Searching and checking
+    if "World" in text:
+        print("Found 'World' in text")
+
+    var pos = text.find("World")
+    if pos != -1:
+        print("'World' found at position:", pos)
+
+    # String replacement
+    var replaced = text.replace("Hello", "Hi")   # "Hi World"
+    print(replaced)
+
+    # String formatting
+    var name = "Alice"
+    var age = 30
+    var formatted = "{} is {} years old".format(name, age)
+    print(formatted)    # "Alice is 30 years old"
+    ```
+
+    Related functions:
+
+    - String-to-number conversions:
+      [`atof()`](/mojo/std/collections/string/string/atof),
+      [`atol()`](/mojo/std/collections/string/string/atol)).
+    - Character code conversions:
+      [`chr()`](/mojo/std/collections/string/string/chr),
+      [`ord()`](/mojo/std/collections/string/string/ord)).
+    - String formatting:
+      [`format()`](/mojo/std/collections/string/string/String/#format).
+
+    Related types:
+
+    - [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice): A non-owning
+      view of string data, which can be either mutable or immutable.
+    - [`StaticString`](/mojo/std/collections/string/string_slice/#StaticString): An
+      alias for an immutable constant `StringSlice`.
+    - [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/): A
+      string literal. String literals are compile-time values.
     """
 
     # Fields: String has two forms - the declared form here, and the "inline"
@@ -950,7 +1031,7 @@ struct String(
         Returns:
             The string length in bytes.
 
-        # Examples
+        Examples:
 
         Query the length of a string, in bytes and Unicode codepoints:
 
@@ -1080,7 +1161,7 @@ struct String(
             An iterator type that returns successive `Codepoint` values stored in
             this string slice.
 
-        # Examples
+        Examples:
 
         Print the characters in a string:
 
@@ -1125,7 +1206,7 @@ struct String(
         Returns:
             An iterator of references to the string elements.
 
-        # Examples
+        Examples:
 
         Iterate over the character slices in a string:
 
@@ -1405,6 +1486,7 @@ struct String(
             A List of Strings containing the input split by the separator.
 
         Examples:
+
         ```mojo
         # Splitting with maxsplit
         _ = StringSlice("1,2,3").split(",", maxsplit=1) # ['1', '2,3']

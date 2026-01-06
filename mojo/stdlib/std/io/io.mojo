@@ -363,6 +363,27 @@ fn print[
     """Prints elements to the text stream. Each element is separated by `sep`
     and followed by `end`.
 
+    This function accepts any number of values, but their types must implement
+    the [`Writable`](/mojo/std/io/write/Writable) trait. Most built-in types
+    (like `Int`, `Float64`, `Bool`, `String`) implement both
+    [`Stringable`](/mojo/std/builtin/str/Stringable/) and
+    [`Writable`](/mojo/std/io/write/Writable) traits. If a type only
+    implements `Stringable`, it can still be printed by first converting it to
+    `String`.
+
+    For string formatting, use the
+    [`format()`](/mojo/std/collections/string/string/String#format) function.
+
+    Examples:
+
+    ```mojo
+    print("Hello, World!")                   # Hello, World!
+
+    print("The answer is", 42)               # The answer is 42
+
+    print("{} is {}".format("Mojo", "🔥"))   # Mojo is 🔥
+    ```
+
     Parameters:
         Ts: The elements types.
 

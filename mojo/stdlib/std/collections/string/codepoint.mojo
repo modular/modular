@@ -14,30 +14,7 @@
 
 This module provides the `Codepoint` type for representing single Unicode scalar values.
 A codepoint represents a single Unicode character, restricted to valid Unicode scalar
-values in the ranges 0 to 0xD7FF and 0xE000 to 0x10FFFF inclusive.
-
-The `Codepoint` type provides functionality for:
-- Converting between codepoints and UTF-8 encoded bytes.
-- Testing character properties like ASCII, digits, whitespace etc.
-- Converting between codepoints and strings.
-- Safe construction from integers with validation.
-
-Example:
-
-```mojo
-from collections.string import Codepoint
-from testing import assert_true
-
-# Create a codepoint from a character
-var c = Codepoint.ord('A')
-
-# Check properties
-assert_true(c.is_ascii())
-assert_true(c.is_ascii_upper())
-
-# Convert to string
-var s = String(c)  # "A"
-```
+values in the ranges `0` to `0xD7FF` and `0xE000` to `0x10FFFF` inclusive.
 """
 
 
@@ -68,27 +45,49 @@ struct Codepoint(
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
-    This type is restricted to store a single Unicode [*scalar value*][1],
+    This type is restricted to store a single Unicode `[*scalar value*][1]`,
     typically encoding a single user-recognizable character.
 
-    All valid Unicode scalar values are in the range(s) 0 to 0xD7FF and
-    0xE000 to 0x10FFFF, inclusive. This type guarantees that the stored integer
+    All valid Unicode scalar values are in the range(s) `0` to `0xD7FF` and
+    `0xE000` to `0x10FFFF`, inclusive. This type guarantees that the stored integer
     value falls in these ranges.
+
+    The `Codepoint` type provides functionality for:
+    - Converting between codepoints and UTF-8 encoded bytes.
+    - Testing character properties like ASCII, digits, whitespace etc.
+    - Converting between codepoints and strings.
+    - Safe construction from integers with validation.
+
+    Example:
+
+    ```mojo
+    from collections.string import Codepoint
+    from testing import assert_true
+
+    # Create a codepoint from a character
+    var c = Codepoint.ord('A')
+
+    # Check properties
+    assert_true(c.is_ascii())
+    assert_true(c.is_ascii_upper())
+
+    # Convert to string
+    var s = String(c)  # "A"
+    ```
 
     [1]: https://www.unicode.org/glossary/#unicode_scalar_value
 
-    **Codepoints versus Scalar Values**
+    **Codepoints versus scalar values:**
 
-    Formally, Unicode defines a codespace of values in the range 0 to
-    0x10FFFF inclusive, and a
-    [Unicode codepoint](https://www.unicode.org/glossary/#code_point) is any
-    integer falling within that range. However, due to historical reasons,
-    it became necessary to "carve out" a subset of the codespace, excluding
-    codepoints in the range 0xD7FF–0xE000. That subset of codepoints excluding
-    that range are known as [Unicode scalar values][1]. The codepoints in the
-    range 0xD7FF-0xE000 are known as "surrogate" codepoints. The surrogate
-    codepoints will never be assigned a semantic meaning, and can only
-    validly appear in UTF-16 encoded text.
+    Formally, Unicode defines a codespace of values in the range `0` to
+    `0x10FFFF` (inclusive), and a [Unicode
+    codepoint](https://www.unicode.org/glossary/#code_point) is any integer
+    falling within that range. However, due to historical reasons, it became
+    necessary to "carve out" a subset of the codespace known as [Unicode scalar
+    values][1], that excludes codepoints in the range `0xD800` - `0xDFFF`. The
+    codepoints in the excluded range are known as "surrogate" codepoints and
+    will never be assigned a semantic meaning—they can only validly appear in
+    UTF-16 encoded text.
 
     The difference between codepoints and scalar values is a technical
     distinction related to the backwards-compatible workaround chosen to enable
@@ -401,12 +400,10 @@ struct Codepoint(
             True if this character is one of the whitespace characters listed
             above, otherwise False.
 
-        # Examples
-
-        Check if a string contains only whitespace:
+        For example, check if a string contains only whitespace:
 
         ```mojo
-        from testing import assert_true
+        from testing import assert_true, assert_false
 
         # ASCII space characters
         assert_true(Codepoint.ord(" ").is_python_space())
@@ -416,7 +413,7 @@ struct Codepoint(
         assert_true(Codepoint.from_u32(0x2029).value().is_python_space())
 
         # Letters are not space characters
-        assert_fales(Codepoint.ord("a").is_python_space())
+        assert_false(Codepoint.ord("a").is_python_space())
         ```
         """
 
