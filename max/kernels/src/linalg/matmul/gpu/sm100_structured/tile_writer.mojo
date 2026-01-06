@@ -646,7 +646,9 @@ fn store_fragment_to_smem[
         )
         stsm_lane_offset = UInt32(RLayout32Bits[trans_layout]()(Int(lane)))
     else:
-        stsm_lane_offset = (lane & 15) * UInt32(stride0) + (lane >> 4) * 8
+        stsm_lane_offset = (
+            UInt32(lane & 15) * UInt32(stride0) + UInt32(lane >> 4) * 8
+        )
 
     # Helper to slice SIMD vector
     @always_inline
@@ -864,13 +866,13 @@ struct TMAStoreCoords[
         )
 
         # N coordinate computation (stage offset is compile-time)
-        var coord_n_mma_m256 = c_coord[1] * UInt(Self.MMA_N) + UInt(
+        var coord_n_mma_m256 = c_coord[1] * UInt32(Self.MMA_N) + UInt32(
             Self.stage_n_offset
         )
         var coord_n_mma_m128 = (
-            c_coord[1] * UInt(Self.MMA_N)
-            + UInt(Self.stage_n_offset)
-            + UInt(Self.BN * Int(warp_id // 2))
+            c_coord[1] * UInt32(Self.MMA_N)
+            + UInt32(Self.stage_n_offset)
+            + UInt32(Self.BN * Int(warp_id // 2))
         )
 
         var cg2_coord_n = (
@@ -2161,8 +2163,8 @@ fn shared_memory_epilogue_transpose[
                     + swizzle(cj * swizzle_dim + ck)
                     + ci * swizzle_dim * Int(stageN)
                 )
-                var global_i = local_i + c_i
-                var global_j = local_j + c_j
+                var global_i = local_i + UInt32(c_i)
+                var global_j = local_j + UInt32(c_j)
                 if global_i < Int(M) and global_j < Int(N):
                     var val = ptr.load[width=simd_size, alignment=alignment]()
                     var reg_val = compute_lambda_fn[alignment=alignment](
@@ -2226,8 +2228,8 @@ fn shared_memory_epilogue_transpose[
 
                     # undo swizzle to get logical `c_smem[logical_crd]` value.
                     var ptr = c_smem.ptr + swizzle(offset)
-                    var global_i = local_i + c_i
-                    var global_j = local_j + c_j
+                    var global_i = local_i + UInt32(c_i)
+                    var global_j = local_j + UInt32(c_j)
                     if global_i < Int(M) and global_j < Int(N):
                         var val = ptr.load[
                             width=simd_size, alignment=alignment
@@ -2399,10 +2401,12 @@ fn shared_memory_epilogue[
             var col_offset_lower = lower_coord[1][0].get_int()
 
             shared_upper_col = (
-                section_offset_upper * (num_stages * stageN) + col_offset_upper
+                section_offset_upper * Int64(num_stages * stageN)
+                + col_offset_upper
             )
             shared_lower_col = (
-                section_offset_lower * (num_stages * stageN) + col_offset_lower
+                section_offset_lower * Int64(num_stages * stageN)
+                + col_offset_lower
             )
 
         else:
@@ -2423,10 +2427,10 @@ fn shared_memory_epilogue[
             shared_lower_col = offset_lower % Int(shared_n)
 
         # now we need to add the global tile offset
-        var global_upper_row = shared_upper_row + c_row
-        var global_upper_col = shared_upper_col + staged_c_col
-        var global_lower_row = shared_lower_row + c_row
-        var global_lower_col = shared_lower_col + staged_c_col
+        var global_upper_row = shared_upper_row + Int64(c_row)
+        var global_upper_col = shared_upper_col + Int64(staged_c_col)
+        var global_lower_row = shared_lower_row + Int64(c_row)
+        var global_lower_col = shared_lower_col + Int64(staged_c_col)
 
         if global_upper_row < Int(M) and global_upper_col < Int(N):
             var reg_val = compute_lambda_fn[alignment=alignment](

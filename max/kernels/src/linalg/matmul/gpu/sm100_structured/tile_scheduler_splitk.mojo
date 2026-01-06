@@ -555,7 +555,7 @@ struct TileScheduler[
 
     @always_inline
     fn output_tile_index(self, work_info: WorkInfo) -> UInt32:
-        return work_info.m * grid_dim.y + work_info.n
+        return work_info.m * UInt32(grid_dim.y) + work_info.n
 
     @always_inline
     fn _get_workspace_tile[

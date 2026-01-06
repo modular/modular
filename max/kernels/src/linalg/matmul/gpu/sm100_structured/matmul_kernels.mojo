@@ -133,7 +133,7 @@ struct WarpRole(ImplicitlyCopyable, Movable):
 
     @always_inline
     fn __eq__(self, other: UInt) -> Bool:
-        return self._role == other
+        return self._role == Int32(other)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -145,7 +145,7 @@ struct WarpRole(ImplicitlyCopyable, Movable):
 
     @always_inline
     fn __ge__(self, other: UInt) -> Bool:
-        return self._role >= other
+        return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
@@ -210,7 +210,7 @@ struct KernelContext[
     fn __init__(out self, ptr_tmem_addr: SMemPtr[UInt32]):
         """Initialize context from TMEM pointer; computes all derived state."""
         # Election variables
-        self.warp_id = get_warp_id()
+        self.warp_id = UInt32(get_warp_id())
         self.elect_one_warp = self.warp_id == 0
         self.elect_one_thread = elect_one_sync_with_mask()
         self.elect_one_cta = (
@@ -241,9 +241,9 @@ struct KernelContext[
         for i in range(Self.CLUSTER_M // Self.cta_group):
             self.b_multicast_mask |= 1 << (i * Self.cta_group)
 
-        self.a_multicast_mask <<= self.rank_m
-        self.b_multicast_mask <<= self.peer_cta_coord[0]
-        self.b_multicast_mask <<= self.rank_n * UInt(Self.CLUSTER_M)
+        self.a_multicast_mask <<= UInt16(self.rank_m)
+        self.b_multicast_mask <<= UInt16(self.peer_cta_coord[0])
+        self.b_multicast_mask <<= UInt16(self.rank_n * UInt(Self.CLUSTER_M))
 
         # MMA completion mask for barrier synchronization
         var self_mask = 1 << Int(block_rank_in_cluster())
@@ -319,13 +319,17 @@ fn consumer_main_loop[
 
     if elect_one_sync():
         for j in range(k_group_size):
-            var a_smem_tile = a_smem_iter.next(stage * k_group_size + j)[]
-            var b_smem_tile = b_smem_iter.next(stage * k_group_size + j)[]
+            var a_smem_tile = a_smem_iter.next(
+                stage * UInt32(k_group_size) + UInt32(j)
+            )[]
+            var b_smem_tile = b_smem_iter.next(
+                stage * UInt32(k_group_size) + UInt32(j)
+            )[]
             mma_op.mma(
                 a_smem_tile,
                 b_smem_tile,
                 tmem_addr,
-                init_c=((iter_idx + j) == k_start),
+                init_c=(iter_idx + UInt32(j) == k_start),
             )
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
