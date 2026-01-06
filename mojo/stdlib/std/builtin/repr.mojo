@@ -112,22 +112,6 @@ fn repr[U: Copyable & Writable](value: LinkedList[U]) -> String:
     return value.__repr__()
 
 
-fn repr[T: Representable & Copyable](value: Deque[T]) -> String:
-    """Returns the string representation of an `Deque[U]`.
-
-    Args:
-        value: A `Deque` of element type `U`.
-
-    Parameters:
-        T: A type that implements `Copyable` and `Representable`.
-
-    Returns:
-        The string representation of `Deque[U]`.
-    """
-    # TODO: remove when `Deque` can conform conditionally to `Representable`.
-    return value.__repr__()
-
-
 fn repr(value: None) -> String:
     """Returns the string representation of `None`.
 

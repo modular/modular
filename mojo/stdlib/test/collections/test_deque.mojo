@@ -1116,6 +1116,29 @@ def test_repr_wrap():
     assert_equal(repr(s), "Deque('a', 'b', 'c')")
 
 
+def test_write_to():
+    """Test Writable trait implementation."""
+    var deque = Deque[Int](10, 20, 30)
+    var output = String()
+    deque.write_to(output)
+
+    assert_equal(output, "Deque(10, 20, 30)")
+
+    # Test with different types
+    var string_deque = Deque[String]("hello", "world")
+    var string_output = String()
+    string_deque.write_to(string_output)
+
+    assert_equal(string_output, "Deque('hello', 'world')")
+
+    # Test empty deque
+    var empty_deque = Deque[Int]()
+    var empty_output = String()
+    empty_deque.write_to(empty_output)
+
+    assert_equal(empty_output, "Deque()")
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
