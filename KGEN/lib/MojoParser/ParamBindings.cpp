@@ -7,10 +7,8 @@
 #include "ParamBindings.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
-#include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoParser/SharedState.h"
 #include "MojoUtils.h"
-#include "ParameterInference.h"
+#include "ParamInf.h"
 #include "ParserEvaluationContext.h"
 #include "Traits.h"
 
@@ -20,6 +18,8 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/SharedState.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/STLExtras.h"
 
