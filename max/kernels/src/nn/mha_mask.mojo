@@ -746,7 +746,6 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
     fn mask[
         dtype: DType,
         width: Int,
-        //,
         *,
         element_type: DType = DType.uint32,
     ](

@@ -1185,7 +1185,6 @@ struct TileBuffers[
     @always_inline
     fn _load_tile_4warp[
         half_data_rows: Int,
-        //,
         which: Int,
     ](
         self,
