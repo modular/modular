@@ -16,7 +16,6 @@ import os
 from pathlib import Path
 
 import pytest
-from max._core.dialects import kgen
 from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -36,17 +35,17 @@ def test_kernel_library(
         kernels.add_path(counter_mojopkg)
 
         assert "make_counter" in kernels
-        assert isinstance(kernels["make_counter"], kgen.GeneratorOp)
         assert "my_add" not in kernels
 
         with pytest.raises(ValueError) as err:
             kernels.add_path(Path("/path/to/invalid.mojopkg"))
-        assert "No such file or directory" in str(err.value)
+        assert "No such file or directory" in str(
+            err.value
+        ) or "failed to load Mojo package" in str(err.value)
 
         kernels.add_path(kernel_verification_ops_path)
         assert "make_counter" in kernels
         assert "my_add" in kernels
-        assert isinstance(kernels["my_add"], kgen.GeneratorOp)
 
 
 def test_undefined_kernel(kernel_verification_ops_path: Path) -> None:

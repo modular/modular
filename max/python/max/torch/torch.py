@@ -22,9 +22,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any, overload
 
+import max._mlir.ir
 from max import mlir
-from max._core import Attribute
-from max._core.dialects import builtin, kgen
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
@@ -206,7 +205,7 @@ class CustomOp:
         return self._custom_op_def(*args, **kwargs)
 
     @property
-    def kernel(self) -> kgen.GeneratorOp:
+    def kernel(self) -> max._mlir.ir.Operation:
         """Retrieves the op definition MLIR from the custom op library."""
         analysis = self.library._kernel_library._analysis
         return analysis.kernel(self.name)
@@ -215,9 +214,9 @@ class CustomOp:
     def num_outputs(self) -> int:
         """Returns the number of outputs of the custom op."""
         # TODO(GEX-2219): support non-dps outputs
-        attrs = self.kernel.discardable_attributes
+        attrs = self.kernel.attributes
         num_dps_outputs = attrs["mogg.num_dps_outputs"]
-        assert isinstance(num_dps_outputs, builtin.IntegerAttr)
+        assert isinstance(num_dps_outputs, max._mlir.ir.IntegerAttr)
         return num_dps_outputs.value
 
     def op(self, *args: TensorValue, result_types: Sequence[TensorType]):  # noqa: ANN201
@@ -261,8 +260,8 @@ class CustomOp:
 
         # TODO(GEX-2223): Expose more of MojoLibraryAnalysis so we don't need to
         # hard code MLIR attributes.
-        arg_type_names = op.discardable_attributes["mogg.arg_type_names"]
-        assert isinstance(arg_type_names, builtin.ArrayAttr)
+        arg_type_names = op.attributes["mogg.arg_type_names"]
+        assert isinstance(arg_type_names, max._mlir.ir.ArrayAttr)
         io_specs = _mogg_annotations(arg_type_names)
 
         # Validate all argument types are supported
@@ -275,8 +274,8 @@ class CustomOp:
         }
         io_specs = [spec for spec in io_specs if spec in tensor_like_types]
 
-        arg_src_names = op.discardable_attributes["mogg.arg_src_names"]
-        assert isinstance(arg_src_names, builtin.ArrayAttr)
+        arg_src_names = op.attributes["mogg.arg_src_names"]
+        assert isinstance(arg_src_names, max._mlir.ir.ArrayAttr)
         arg_names = _mogg_annotations(arg_src_names)
 
         input_specs = io_specs[num_dps_outputs:]
@@ -651,14 +650,14 @@ def max_tensor_type(tensor: torch.Tensor) -> TensorType:
 ###############################################################################
 
 
-def _mogg_annotations(array_attr: builtin.ArrayAttr) -> list[str]:
-    def string_value(x: Attribute) -> str:
-        if isinstance(x, builtin.StringAttr):
+def _mogg_annotations(array_attr: max._mlir.ir.ArrayAttr) -> list[str]:
+    def string_value(x: max._mlir.ir.Attribute) -> str:
+        if isinstance(x, max._mlir.ir.StringAttr):
             return x.value
-        assert isinstance(x, builtin.UnitAttr)
+        assert isinstance(x, max._mlir.ir.UnitAttr)
         return ""
 
-    return [string_value(s) for s in array_attr.value]
+    return [string_value(s) for s in array_attr]
 
 
 def _validate_op_arg_types(io_specs: list[str], op_name: str) -> None:
