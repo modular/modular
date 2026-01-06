@@ -3975,7 +3975,9 @@ struct LayoutTensor[
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
                     shape_i
                 )
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += Scalar[Self.linear_idx_type](
+                    thread_coord_i * UInt(fragments_stride_i)
+                )
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -4040,7 +4042,9 @@ struct LayoutTensor[
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
                     shape_i
                 )
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += Scalar[Self.linear_idx_type](
+                    thread_coord_i * UInt(fragments_stride_i)
+                )
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -4150,7 +4154,9 @@ struct LayoutTensor[
                     shape_i
                 )
                 offset_coords[i] = Int(thread_coord_i)
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += Scalar[Self.linear_idx_type](
+                    thread_coord_i * UInt(fragments_stride_i)
+                )
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -4222,7 +4228,9 @@ struct LayoutTensor[
                     shape_i
                 )
                 offset_coords[i] = Int(thread_coord_i)
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += Scalar[Self.linear_idx_type](
+                    thread_coord_i * UInt(fragments_stride_i)
+                )
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -7449,7 +7457,8 @@ fn _copy_dram_to_local[
     @parameter
     fn offset_helper(offset_val: UInt):
         var src_frag_offset = Int32(
-            src_fragments.distance(src.ptr) + offset_val
+            src_fragments.distance(src.ptr)
+            + Scalar[src.linear_idx_type](offset_val)
         )
 
         # These loads need to be row-major for L1 cache performance
