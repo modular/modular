@@ -235,6 +235,9 @@ def dump_results(
         elif verdict.discrepancy_report.model_modality == Modality.EMBEDDING:
             any_embedding = True
 
+    if node := os.environ.get("NODE_NAME"):
+        to.write(f"\n\nRan on node: {node}")
+
     if any_failed:
         to.write("\n\n## Failed/Crashed Models\n")
         to.write("| Status | Model |\n")
