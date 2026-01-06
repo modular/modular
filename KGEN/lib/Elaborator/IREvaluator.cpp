@@ -386,23 +386,11 @@ IREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
 
 FailureOr<StructInstanceType>
 IREvaluator::resolveStructInstanceType(TypedAttr typeRef, StringRef funcName) {
-  // Resolve type reference to TypeInstanceRefAttr
-  if (!isa<TypeInstanceRefAttr>(typeRef)) {
-    if (auto typeParam = dyn_cast<TypeParamAttr>(typeRef))
-      typeRef = cast<TypeValueType>(typeParam.getTypeValue()).getTypeValue();
-    else {
-      emitError(
-          {*errorLoc, Twine(funcName) + " requires a concrete struct type"});
-      return failure();
-    }
-  }
-  // The type may still not be a TypeInstanceRefAttr after extraction from
-  // TypeParamAttr if it contains unevaluated parameter expressions.
-  // See https://github.com/modular/modular/issues/5732.
-  auto instanceRef = dyn_cast<TypeInstanceRefAttr>(typeRef);
+  // Unwrap the type reference to get to the underlying TypeInstanceRefAttr.
+  typeRef = getTypeRefForTypeValueIfResolved(typeRef);
+  auto instanceRef = dyn_cast_if_present<TypeInstanceRefAttr>(typeRef);
   if (!instanceRef) {
-    emitError(
-        {*errorLoc, Twine(funcName) + " requires a concrete struct type"});
+    emitError({*errorLoc, Twine(funcName) + " requires a struct type"});
     return failure();
   }
 

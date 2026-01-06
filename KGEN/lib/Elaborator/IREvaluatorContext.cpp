@@ -6,6 +6,7 @@
 
 #include "IREvaluatorContext.h"
 #include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/NameMangling.h"
@@ -112,21 +113,14 @@ IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
     return failure();
   }
 
-  // Find the struct generator for the instantiated type ref.
-  TypedAttr typeRef = getTypeNameAttr.getTypeValue();
-  if (!isa<TypeInstanceRefAttr>(typeRef)) {
-    if (auto typeParam = dyn_cast<TypeParamAttr>(typeRef)) {
-      typeRef = cast<TypeValueType>(typeParam.getTypeValue()).getTypeValue();
-    } else {
-      // This isn't a type at all.
-      emitError({*errorLoc,
-                 "'get_type_name' type parameter did not resolve to a "
-                 "concrete type"});
-      return failure();
-    }
+  // Unwrap the type reference to get to the underlying TypeInstanceRefAttr.
+  TypedAttr typeRef =
+      getTypeRefForTypeValueIfResolved(getTypeNameAttr.getTypeValue());
+  auto instanceRef = dyn_cast_if_present<TypeInstanceRefAttr>(typeRef);
+  if (!instanceRef) {
+    emitError({*errorLoc, "'get_type_name' requires a concrete type"});
+    return failure();
   }
-
-  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
   return {StringAttr::get(
       stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins.getValue()),
       getTypeNameAttr.getType())};
@@ -144,14 +138,21 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateTypeConformToTraitAttr(
     return failure();
   }
 
-  // Find the struct generator for the instantiated type ref.
-  TypedAttr typeRef = typeConformToTraitAttr.getTypeValue();
-  if (!isa<TypeInstanceRefAttr>(typeRef)) {
-    typeRef = cast<TypeValueType>(cast<TypeParamAttr>(typeRef).getTypeValue())
-                  .getTypeValue();
+  // Unwrap the type reference to get to the underlying TypeInstanceRefAttr.
+  TypedAttr typeRef =
+      getTypeRefForTypeValueIfResolved(typeConformToTraitAttr.getTypeValue());
+  auto instanceRef = dyn_cast_if_present<TypeInstanceRefAttr>(typeRef);
+  if (!instanceRef) {
+    emitError({*errorLoc, "'" + TypeConformsToTraitAttr::name +
+                              "' requires a struct type"});
+    return failure();
   }
-  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
   ParamNodeBase *genNode = lookupParamNodeBase(instanceRef.getSymbol());
+  if (!isa<StructGeneratorOp>(genNode->gen)) {
+    emitError({*errorLoc, "'" + TypeConformsToTraitAttr::name +
+                              "' requires a struct type"});
+    return failure();
+  }
   StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
 
   return typeConformToTraitAttr.simplify(SymbolTable(genOp));
