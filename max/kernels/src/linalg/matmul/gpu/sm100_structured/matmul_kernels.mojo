@@ -318,6 +318,8 @@ fn consumer_main_loop[
     load_mma_pipeline.wait_producer()
 
     if elect_one_sync():
+
+        @parameter
         for j in range(k_group_size):
             var a_smem_tile = a_smem_iter.next(
                 stage * UInt32(k_group_size) + UInt32(j)
@@ -689,21 +691,38 @@ struct BlackwellMatmulSM100Kernel[
         Int(Self.config.k_group_size),
     ]
 
-    # ========== Tile Loader Type ==========
-    # Partial comptime binding explicit params; Origins inferred from constructor args.
-    # See tile_loader.mojo for the partial type binding pattern explanation.
+    # ========== Tile Loader Types ==========
+    # Loaders wrapping TMA operations. Orchestration is in kernel.
+    # Origins inferred from constructor Pointer arguments.
 
-    comptime TileLoaderTMA = TileLoaderTMA[
-        Self.SmemType.a_smem_layout,
-        Self.SmemType.b_smem_layout,
-        Self.BM,
-        Self.BN,
-        Self.BK,
-        Self.MMA_N,
-        Self.cta_group,
-        Int(Self.config.k_group_size),
-        Self.SmemType.num_pipeline_stages,
-        Self.SmemType.num_group_pipeline_stages,
+    comptime ATileLoaderType = TileLoaderTMA[cta_group = Self.cta_group]
+    comptime BTileLoaderType = TileLoaderTMA[cta_group = Self.cta_group]
+
+    # Constants for TMA expected_bytes calculation
+    comptime a_expected_bytes = Self.SmemType.a_smem_layout.size() * size_of[
+        Self.a_type
+    ]()
+    comptime b_expected_bytes = Self.SmemType.b_smem_layout.size() * size_of[
+        Self.b_type
+    ]()
+    comptime input_expected_bytes = Self.cta_group * (
+        Self.a_expected_bytes + Self.b_expected_bytes
+    ) * Int(Self.config.k_group_size)
+
+    # TMA descriptor layout sizes for peer CTA slicing
+    comptime a_tma_load_size = Self.a_desc_layout.size()
+    comptime b_tma_load_size = Self.b_desc_layout.size()
+    comptime a_tma_rows = Self.a_desc_layout.shape[0].value()
+    comptime b_tma_rows = Self.b_desc_layout.shape[0].value()
+
+    # Peer tile types - each peer CTA loads a slice matching the TMA descriptor
+    # These have the correct shape (a_desc_layout, b_desc_layout) rather than
+    # the full SMEM tile shape (a_smem_layout, b_smem_layout)
+    comptime APeerTile = SMemTileType[
+        Self.a_type, Self.a_desc_layout, alignment=128
+    ]
+    comptime BPeerTile = SMemTileType[
+        Self.b_type, Self.b_desc_layout, alignment=128
     ]
 
     # ========== Epilogue Configuration ==========
@@ -897,6 +916,8 @@ struct BlackwellMatmulSM100Kernel[
             k_start: Starting K iteration (for init_c determination).
         """
         if elect_one_sync():
+
+            @parameter
             for j in range(Int(Self.config.k_group_size)):
                 var a_tile, b_tile = tiles.get_tile(j)
                 var is_first_k = (iter_idx + j) == k_start
@@ -905,9 +926,100 @@ struct BlackwellMatmulSM100Kernel[
                 )
             mma_op.commit(tiles.mbar())
 
-    # ========== Kernel Entry Points ==========
-    # Note: These delegate to the existing kernel functions for now.
-    # As refactoring progresses, the kernel body will move into these methods.
+    @staticmethod
+    @always_inline
+    fn load_input_tiles[
+        a_tma_origin: ImmutOrigin,
+        b_tma_origin: ImmutOrigin,
+        tiles_origin: MutOrigin,
+        //,
+    ](
+        a_loader: TileLoaderTMA[
+            a_tma_origin,
+            Self.a_type,
+            Self.a_layout,
+            Self.a_desc_layout,
+            cta_group = Self.cta_group,
+        ],
+        b_loader: TileLoaderTMA[
+            b_tma_origin,
+            Self.b_type,
+            Self.b_layout,
+            Self.b_desc_layout,
+            cta_group = Self.cta_group,
+        ],
+        tiles: ProducerStage[
+            tiles_origin,
+            Self.a_type,
+            Self.b_type,
+            Self.SmemType.a_smem_layout,
+            Self.SmemType.b_smem_layout,
+            Self.SmemType.num_pipeline_stages,
+            Self.SmemType.num_group_pipeline_stages,
+            Int(Self.config.k_group_size),
+        ],
+        iter_idx: UInt32,
+        work_m_coord: UInt,
+        work_n_coord: UInt,
+        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        elect_one_cta: Bool,
+    ):
+        """Load k_group_size A and B tiles using TMA.
+
+        Orchestrates the tile loading operation including:
+        - expect_bytes signaling
+        - k-group iteration
+        - Peer CTA slicing for 2-SM MMA
+
+        Args:
+            a_loader: TileLoaderTMA for A matrix.
+            b_loader: TileLoaderTMA for B matrix.
+            tiles: ProducerStage context with encapsulated tile access.
+            iter_idx: K iteration index (base index).
+            work_m_coord: M coordinate of the output tile.
+            work_n_coord: N coordinate of the output tile.
+            peer_cta_coord: Peer CTA coordinates (rank_n, rank_m, peer_m_rank).
+            elect_one_cta: True if this CTA should call expect_bytes.
+        """
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
+
+        # Global memory coordinates for A (M) and B (N)
+        var a_gmem_m_coord = peer_m_rank * UInt(
+            Self.a_tma_rows
+        ) + work_m_coord * UInt(Self.BM)
+        var b_gmem_n_coord = (
+            peer_rank_m * UInt(Self.b_tma_rows)
+            + peer_rank_n * UInt(Self.BN)
+            + work_n_coord * UInt(Self.MMA_N)
+        )
+
+        if elect_one_sync():
+            # Set expected bytes ONCE for all k_group tiles
+            if elect_one_cta:
+                tiles.expect_bytes(Self.input_expected_bytes)
+
+            # Get barrier for TMA multicast loads
+            var barrier = tiles.barrier()
+
+            @parameter
+            for j in range(Int(Self.config.k_group_size)):
+                var a_tile, b_tile = tiles.get_tile(j)
+
+                # Tile the full SMEM buffer to get peer CTA's slice.
+                # Each peer CTA loads (a_tma_rows × BK) for A, (b_tma_rows × BK) for B.
+                var a_peer_tile = a_tile.tile[Self.a_tma_rows, Self.BK](
+                    Int(peer_m_rank), 0
+                )
+                var b_peer_tile = b_tile.tile[Self.b_tma_rows, Self.BK](
+                    Int(peer_rank_m), 0
+                )
+
+                var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
+
+                a_loader.load(a_peer_tile, barrier[0], k_coord, a_gmem_m_coord)
+                b_loader.load(b_peer_tile, barrier[0], k_coord, b_gmem_n_coord)
 
     @staticmethod
     @always_inline
@@ -972,13 +1084,12 @@ struct BlackwellMatmulSM100Kernel[
         # Per-warp work iterator - owns work_info, pipeline state, and throttle
         var work_iter = scheduler.work_iterator()
 
-        # Create tile loader for TMA operations
-        var tile_loader = Self.TileLoaderTMA(
-            Pointer(to=a_tma_op),
-            Pointer(to=b_tma_op),
-            ctx.a_multicast_mask,
-            ctx.b_multicast_mask,
-            ctx.peer_cta_coord,
+        # Create tile loaders for A and B matrices
+        var a_loader = Self.ATileLoaderType(
+            Pointer(to=a_tma_op), ctx.a_multicast_mask
+        )
+        var b_loader = Self.BTileLoaderType(
+            Pointer(to=b_tma_op), ctx.b_multicast_mask
         )
 
         var num_iters: UInt32 = ceildiv(mnk[2], Self.BK)
@@ -999,20 +1110,21 @@ struct BlackwellMatmulSM100Kernel[
                         # CLC throttle prevents each CTA from going ahead
                         work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                        # Set work tile coordinates for this iteration
-                        tile_loader.set_work_tile(
-                            UInt(current.m), UInt(current.n)
-                        )
-
                         # DO TMA LOAD for full K range: [0, num_iters)
-                        # Pattern: for i in range(k_start, k_end, k_group_size)
                         with input_pipeline.producer() as producer:
                             for i in range(
                                 0, num_iters, Self.config.k_group_size
                             ):
                                 with producer.acquire() as tiles:
-                                    tile_loader.load_tiles(
-                                        tiles, i, ctx.elect_one_cta
+                                    Self.load_input_tiles(
+                                        a_loader,
+                                        b_loader,
+                                        tiles,
+                                        i,
+                                        UInt(current.m),
+                                        UInt(current.n),
+                                        ctx.peer_cta_coord,
+                                        ctx.elect_one_cta,
                                     )
 
                         # Ensure all TMA loads complete before advancing work
@@ -1225,13 +1337,12 @@ struct BlackwellMatmulSM100Kernel[
         # Per-warp work iterator - owns work_info, pipeline state, and throttle
         var work_iter = scheduler.work_iterator()
 
-        # Create tile loader for TMA operations
-        var tile_loader = Self.TileLoaderTMA(
-            Pointer(to=a_tma_op),
-            Pointer(to=b_tma_op),
-            ctx.a_multicast_mask,
-            ctx.b_multicast_mask,
-            ctx.peer_cta_coord,
+        # Create tile loaders for A and B matrices
+        var a_loader = Self.ATileLoaderType(
+            Pointer(to=a_tma_op), ctx.a_multicast_mask
+        )
+        var b_loader = Self.BTileLoaderType(
+            Pointer(to=b_tma_op), ctx.b_multicast_mask
         )
 
         comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
@@ -1245,11 +1356,6 @@ struct BlackwellMatmulSM100Kernel[
                         # CLC throttle prevents each CTA from going ahead
                         work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                        # Set work tile coordinates for this iteration
-                        tile_loader.set_work_tile(
-                            UInt(current.m), UInt(current.n)
-                        )
-
                         # DO TMA LOAD for K slice: [k_start, k_start + num_k_tiles)
                         var k_start = current.k_start
                         var k_end = k_start + current.num_k_tiles
@@ -1258,8 +1364,15 @@ struct BlackwellMatmulSM100Kernel[
                                 k_start, k_end, Self.config.k_group_size
                             ):
                                 with producer.acquire() as tiles:
-                                    tile_loader.load_tiles(
-                                        tiles, i, ctx.elect_one_cta
+                                    Self.load_input_tiles(
+                                        a_loader,
+                                        b_loader,
+                                        tiles,
+                                        i,
+                                        UInt(current.m),
+                                        UInt(current.n),
+                                        ctx.peer_cta_coord,
+                                        ctx.elect_one_cta,
                                     )
 
                         # Ensure all TMA loads complete before advancing work
