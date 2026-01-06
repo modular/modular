@@ -26,6 +26,7 @@ class PogListAttr;
 class PValue;
 class StructDeclOp;
 class TypeSignatureType;
+class ParameterInferenceDiagnostics;
 
 //===----------------------------------------------------------------------===//
 // ParamBindings
@@ -105,42 +106,15 @@ public:
     SmallVector<ConstraintAttr> unprovableConstraints;
   };
 
-  /// Helper class to customizing diagnostic emission for verification. The
-  /// default implementation suppresses all diagnostics.
-  struct DiagEmitter {
-    /// Emit diagnostics for incorrect parameter count given the actual
-    /// parameter count. The flag indicates if this is due to an insufficient
-    /// number of positional-only parameters.
-    std::function<void(size_t, bool)> emitParamCount;
-    /// Emit diagnostics for incorrect type in a positional parameter.
-    std::function<void(size_t, ASTExprAnd<AnyValue>, ASTType)> emitTypeMismatch;
-    /// Emit diagnostics for parameters specified by an unknown keyword.
-    std::function<void(ArrayRef<StringAttr>)> emitUnknownKeywords;
-    /// Emit diagnostics for a parameter specified both by position and keyword.
-    std::function<void(ArrayRef<StringAttr>)> emitRedundantKeywords;
-    /// Emit diagnostics for positional-only parameters specified by keyword.
-    std::function<void(ArrayRef<StringAttr>)> emitPosOnlyPassedByKw;
-    /// Emit diagnostics for out-of-order explicitly-specified inferred keyword.
-    std::function<void(ArrayRef<StringAttr>)> emitOutOfOrderInferredKw;
-    /// Emit diagnostics for failure to infer a parameter.
-    std::function<void(size_t)> emitInferenceFailure;
-    /// Emit diagnostics when an unbound (i.e. `_`) is passed to a variadic.
-    std::function<void(const ExprNode *)> emitUnboundInVariadic;
-    /// Emit diagnostics for missing parameters (specified by their names).
-    std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
-    /// Emit diagnostics for constraint violations.
-    /// Each failing constraint is paired with its index in the constraints list
-    /// for lookup by the diagEmitter.
-    std::function<void(ArrayRef<std::pair<size_t, ConstraintAttr>>)>
-        emitConstraintViolations;
-  };
-
   /// Verify the full parameter bindings for the given generator. If the
   /// signature doesn't match, the provided DiagEmitter will be used to emit
   /// diagnostics. A parameter inference must must be provided.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITGeneratorType sig, const DiagEmitter &diagEmitter,
-                 ParameterInferenceHookTy parameterInferenceHook) const;
+  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
+      LITGeneratorType sig,
+      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
+      ParameterInferenceHookTy parameterInferenceHook,
+      ParameterInferenceDiagnostics &inferenceDiags,
+      ASTDecl *declIfKnown) const;
 
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
@@ -182,14 +156,14 @@ private:
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
   /// information on how closely the bindings fit the parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
-  /// in the evaluator used by the implementation. This overload allows
-  /// customizing diagnostics by passing a custom DiagEmitter.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindingsImpl(const CallOperands &operands,
-                     ArrayRef<Type> expectedParamTypes,
-                     PogListAttr paramListAttr,
-                     ParameterInferenceHookTy parameterInferenceHook,
-                     const DiagEmitter *diagEmitter, bool partial) const;
+  /// in the evaluator used by the implementation.
+  std::pair<ParameterExprArrayAttr, Fitness> verifyBindingsImpl(
+      const CallOperands &operands, ArrayRef<Type> expectedParamTypes,
+      PogListAttr paramListAttr,
+      ParameterInferenceHookTy parameterInferenceHook,
+      ParameterInferenceDiagnostics &inferenceDiags,
+      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
+      bool partial, ASTDecl *declIfDirect) const;
 
   /// This contains the values that are bound into this parameter list.
   CallOperands parameters;
@@ -233,9 +207,10 @@ enum class ConstraintResult {
 /// unprovable constraints encountered. An optional ParameterEvaluator can be
 /// provided to substitute parameters into the constraints.
 ConstraintResult checkConstraints(
-    ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
-    llvm::function_ref<void(ArrayRef<std::pair<size_t, ConstraintAttr>>)>
-        emitConstraintViolations,
+    ASTDecl &declScope, PogListAttr paramListAttr,
+    ArrayRef<ConstraintAttr> constraints,
+    ArrayRef<ConstraintAttr> origConstraints,
+    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
     ParameterEvaluator *evaluator);
 

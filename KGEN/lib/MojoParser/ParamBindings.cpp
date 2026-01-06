@@ -76,9 +76,10 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
 }
 
 ConstraintResult LIT::checkConstraints(
-    ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
-    llvm::function_ref<void(ArrayRef<std::pair<size_t, ConstraintAttr>>)>
-        emitConstraintViolations,
+    ASTDecl &declScope, PogListAttr paramListAttr,
+    ArrayRef<ConstraintAttr> constraints,
+    ArrayRef<ConstraintAttr> origConstraints,
+    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
     ParameterEvaluator *evaluator) {
   if (constraints.empty())
@@ -129,8 +130,24 @@ ConstraintResult LIT::checkConstraints(
   }
 
   if (!failedConstraints.empty()) {
-    if (emitConstraintViolations)
-      emitConstraintViolations(failedConstraints);
+    MojoInflightDiag &diag = getDiag({});
+    diag << "violated constraint" << plural(failedConstraints.size());
+    // Use constraints from the original signature since the ones in
+    // `signature` have already been substituted with param bindings and
+    // will have already been folded into `False`.
+    IndexToDeclRefRemapper remapper(paramListAttr);
+    for (auto [idx, constraint] : failedConstraints) {
+      TypedAttr prop;
+      if (!origConstraints.empty())
+        prop = origConstraints[idx].getProposition();
+      else
+        prop = constraint.getProposition();
+
+      diag.attachNote(constraint.getLoc())
+          << "constraint declared here evaluated to False, expected "
+          << remapper.replace(prop);
+    }
+
     return ConstraintResult::Violated;
   }
 
@@ -358,7 +375,9 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(
     const CallOperands &origOperands, ArrayRef<Type> expectedParamTypes,
     PogListAttr paramListAttr, ParameterInferenceHookTy parameterInferenceHook,
-    const DiagEmitter *diagEmitter, bool partial) const {
+    ParameterInferenceDiagnostics &inferenceDiags,
+    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
+    bool partial, ASTDecl *declIfDirect) const {
   assert(parameterInferenceHook && "expected a parameter inference hook");
   Fitness fitness{{}};
 
@@ -380,22 +399,19 @@ ParamBindings::verifyBindingsImpl(
   auto [kwDiagRes, kwDiagNames] = operands.diagnoseKeywordOperands(
       paramListAttr, variadicKwOperands, /*allowMissingKwOnly=*/true);
   if (kwDiagRes != CallOperands::KwDiagResult::kValid) {
+    MojoInflightDiag &diag = getDiag({});
     switch (kwDiagRes) {
     case CallOperands::KwDiagResult::kMissingKwOnly:
-      if (diagEmitter)
-        diagEmitter->emitMissing(kwDiagNames, "keyword-only");
+      emitMissing(diag, kwDiagNames, "keyword-only parameter");
       break;
     case CallOperands::KwDiagResult::kOutOfOrderInferredKw:
-      if (diagEmitter)
-        diagEmitter->emitOutOfOrderInferredKw(kwDiagNames);
+      emitOutOfOrderInferredKw(diag, kwDiagNames);
       break;
     case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
-      if (diagEmitter)
-        diagEmitter->emitPosOnlyPassedByKw(kwDiagNames);
+      emitPosOnlyPassedByKw(diag, kwDiagNames, "parameter");
       break;
     case CallOperands::KwDiagResult::kUnknownKeywords:
-      if (diagEmitter)
-        diagEmitter->emitUnknownKeywords(kwDiagNames);
+      emitUnknownKeywords(diag, kwDiagNames, "parameter");
       break;
     default:
       llvm_unreachable("unknown KwDiagResult");
@@ -406,8 +422,7 @@ ParamBindings::verifyBindingsImpl(
   auto [posDiagRes, posDiagNames] =
       operands.diagnosePosOperands(paramListAttr, /*allowCountMismatch=*/true);
   if (posDiagRes == CallOperands::PosDiagResult::kByPosAndKw) {
-    if (diagEmitter)
-      diagEmitter->emitRedundantKeywords(posDiagNames);
+    emitByPosAndKw(getDiag({}), posDiagNames, "parameter");
     return {{}, fitness};
   }
 
@@ -451,8 +466,7 @@ ParamBindings::verifyBindingsImpl(
 
     // Verify all constraints are satisfied, collecting unprovable constraints.
     ConstraintResult result = checkConstraints(
-        declScope, constraints,
-        diagEmitter ? diagEmitter->emitConstraintViolations : nullptr,
+        declScope, paramListAttr, constraints, /*origConstraints=*/{}, getDiag,
         &fitness.unprovableConstraints, &evaluator);
     return success(result == ConstraintResult::Satisfied);
   };
@@ -526,6 +540,54 @@ ParamBindings::verifyBindingsImpl(
     return {};
   };
 
+  auto emitInferenceFailure = [&](size_t paramIdx) {
+    assert(!partial && "parameter deduction failure in a context that "
+                       "doesn't allow deduction");
+    MojoInflightDiag &diag = getDiag(getExprLoc());
+    if (declIfDirect && isa<StructDeclOp>(declIfDirect->getIfOperation()))
+      diag << "'" << *declIfDirect->getUserNameIfOperation() << "' ";
+
+    {
+      // The parameter name is scoped to 'declScope'.
+      DeclResolver::DeclScopeChanger x(&declScope);
+      diag << "failed to infer parameter "
+           << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
+                                    expectedParamTypes[paramIdx]);
+    }
+
+    // If this is a method on a struct and we couldn't infer something from
+    // its self parameters, complain about the struct.
+    if (declIfDirect && isa<FnOp>(declIfDirect->getIfOperation())) {
+      if (auto structOp = dyn_cast<StructDeclOp>(
+              cast<FnOp>(declIfDirect->getIfOperation())->getParentOp())) {
+        auto structSig = structOp.getSignature();
+        if (paramIdx < structSig.getNumParams()) {
+          diag << " of parent struct '" << structOp.getDeclName().getValue()
+               << "'";
+          inferenceDiags.addExplanation(diag);
+          diag.attachNote(structOp.getLoc()) << " struct declared here";
+          return;
+        }
+      }
+    }
+    inferenceDiags.addExplanation(diag);
+  };
+
+  auto emitTypeMismatch = [&](size_t index, ASTExprAnd<AnyValue> binding,
+                              ASTType expectedType) {
+    PValue paramVal = binding.ir.getIfPValue();
+    DeclResolver::DeclScopeChanger x(&declScope);
+
+    MojoInflightDiag &diag = getDiag({});
+    if (declIfDirect) // Why only structs? Seems arbitrary, push higher?
+      diag << "'" << *declIfDirect->getUserNameIfOperation() << "' ";
+    diag << "parameter "
+         << ParamDeclRefAttr::get(paramListAttr.getName(index),
+                                  expectedParamTypes[index])
+         << " has " << expectedType << " type, but value has type "
+         << paramVal.getType() << binding.expr->getRange();
+  };
+
   for (auto [idx, sigType, pog] : llvm::enumerate(expectedParamTypes, pogs)) {
     // This is the refined type expected by the signature.
     Type requestedType = evaluator.getReboundType(sigType);
@@ -555,8 +617,7 @@ ParamBindings::verifyBindingsImpl(
             continue;
           }
           // We tried but couldn't infer an unbound parameter, we must error.
-          if (diagEmitter)
-            diagEmitter->emitInferenceFailure(idx);
+          emitInferenceFailure(idx);
           return {{}, fitness};
         }
 
@@ -591,8 +652,7 @@ ParamBindings::verifyBindingsImpl(
           continue;
         }
         // Otherwise, emit an inference failure.
-        if (diagEmitter)
-          diagEmitter->emitInferenceFailure(idx);
+        emitInferenceFailure(idx);
         return {{}, fitness};
       }
 
@@ -601,8 +661,7 @@ ParamBindings::verifyBindingsImpl(
       PValue pValue =
           emitSingleParameterValue(binding, expectedType, emitter, evaluator);
       if (!pValue) {
-        if (diagEmitter)
-          diagEmitter->emitTypeMismatch(idx, binding, expectedType);
+        emitTypeMismatch(idx, binding, expectedType);
         return {{}, fitness};
       }
       if (failed(setParamValueAndVerify(pValue, requestedType)))
@@ -628,8 +687,7 @@ ParamBindings::verifyBindingsImpl(
         PValue pValue = emitSingleParameterValue(*binding, expectedType,
                                                  emitter, evaluator);
         if (!pValue) {
-          if (diagEmitter)
-            diagEmitter->emitTypeMismatch(idx, *binding, expectedType);
+          emitTypeMismatch(idx, *binding, expectedType);
           return {{}, fitness};
         }
         if (failed(setParamValueAndVerify(pValue, requestedType)))
@@ -665,8 +723,7 @@ ParamBindings::verifyBindingsImpl(
       }
 
       // Emit an inference failure.
-      if (diagEmitter)
-        diagEmitter->emitInferenceFailure(idx);
+      emitInferenceFailure(idx);
       return {{}, fitness};
     }
 
@@ -683,8 +740,7 @@ ParamBindings::verifyBindingsImpl(
         continue;
       }
       // We tried but couldn't infer an unbound parameter, we must error.
-      if (diagEmitter)
-        diagEmitter->emitInferenceFailure(idx);
+      emitInferenceFailure(idx);
       return {{}, fitness};
     }
 
@@ -700,10 +756,12 @@ ParamBindings::verifyBindingsImpl(
     // Disallow implicit parameters to be explicitly specified. If we see one,
     // complain about too many parameters.
     if (passingKind == PassingKind::Implicit) {
-      if (diagEmitter) {
-        diagEmitter->emitParamCount(operands.getNumPositional(),
-                                    passingKind == PassingKind::PosOnly);
-      }
+      auto &diag = getDiag({});
+      diag << "callee";
+      emitWrongArgOrParamCount(diag, countNumPosOnly(paramListAttr),
+                               countNumPositional(paramListAttr),
+                               operands.getNumPositional(),
+                               "positional parameter");
       return {{}, fitness};
     }
 
@@ -714,17 +772,19 @@ ParamBindings::verifyBindingsImpl(
       // If the parameter list expected a keyword only parameter, we have too
       // many positional parameters.
       if (passingKind == PassingKind::KwOnly) {
-        if (diagEmitter)
-          diagEmitter->emitParamCount(operands.getNumPositional(),
-                                      /*posOnly=*/true);
+        auto &diag = getDiag({});
+        diag << "callee";
+        emitWrongArgOrParamCount(diag, countNumPosOnly(paramListAttr),
+                                 countNumPositional(paramListAttr),
+                                 operands.getNumPositional(),
+                                 "positional parameter");
         return {};
       }
 
       PValue pValue =
           emitSingleParameterValue(binding, expectedType, emitter, evaluator);
       if (!pValue)
-        if (diagEmitter)
-          diagEmitter->emitTypeMismatch(index, binding, expectedType);
+        emitTypeMismatch(index, binding, expectedType);
       return pValue;
     };
 
@@ -774,8 +834,9 @@ ParamBindings::verifyBindingsImpl(
       // Passing `_` to a variadic is not allowed. Users should pass `*_` to
       // unbind a variadic parameter.
       if (isa<UnboundAttr>(elements.back())) {
-        if (diagEmitter)
-          diagEmitter->emitUnboundInVariadic(binding.expr);
+        auto &diag = getDiag(binding.expr->getLoc());
+        diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
+                "parameter";
         return {{}, fitness};
       }
     } while (posBindingIdx != numBindings);
@@ -788,16 +849,30 @@ ParamBindings::verifyBindingsImpl(
 
   // Complain if we collected any missing keyword-only parameters.
   if (!kwDiagNames.empty()) {
-    if (diagEmitter)
-      diagEmitter->emitMissing(kwDiagNames, "keyword-only");
+    emitMissing(getDiag({}), kwDiagNames, "keyword-only parameter");
     return {{}, fitness};
   }
 
   // Check and complain if we have bindings that didn't get used.
   if (posBindingIdx != numBindings) {
-    if (diagEmitter)
-      diagEmitter->emitParamCount(operands.getNumPositional(),
-                                  /*posOnly=*/false);
+    // Hide the implicit trait parameter from the diagnostic.
+    size_t hidden = 0;
+    if (declIfDirect) {
+      if (auto fn = dyn_cast<FnOp>(declIfDirect->getIfOperation()))
+        hidden = isa_and_nonnull<TraitDeclOp>(fn->getParentOp());
+    }
+    size_t numExpected = expectedParamTypes.size() - hidden -
+                         countNumImplicitKinds(paramListAttr) -
+                         countNumInferredKinds(paramListAttr);
+    auto &diag = getDiag({});
+    if (declIfDirect)
+      diag << "'" << *declIfDirect->getUserNameIfOperation() << "'";
+    else
+      diag << "parametric value";
+    emitWrongArgOrParamCount(diag, /*minRequired=*/numExpected,
+                             /*maxAllowed=*/numExpected,
+                             operands.getNumPositional() - hidden, "parameter");
+
     return {{}, fitness};
   }
 
@@ -807,19 +882,22 @@ ParamBindings::verifyBindingsImpl(
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(
-    LITGeneratorType sig, const DiagEmitter &diagEmitter,
-    ParameterInferenceHookTy parameterInferenceHook) const {
+    LITGeneratorType sig,
+    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
+    ParameterInferenceHookTy parameterInferenceHook,
+    ParameterInferenceDiagnostics &inferenceDiags, ASTDecl *declIfKnown) const {
   return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
                             sig.getMetadata(), parameterInferenceHook,
-                            &diagEmitter, /*partial=*/false);
+                            inferenceDiags, getDiag,
+                            /*partial=*/false, declIfKnown);
 }
 
 ParameterExprArrayAttr
 ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                                  PogListAttr paramList, bool partial) const {
+  // The inference diagnostics will be unused.
+  ParameterInferenceDiagnostics inferenceDiags;
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
-    // The inference diagnostics will be unused.
-    ParameterInferenceDiagnostics inferenceDiags;
     ParameterInferenceState inference(declScope, getParameters(), paramTypes,
                                       paramList, bindingsSoFar, inferenceDiags,
                                       /*allowImplicitConversions=*/true);
@@ -827,9 +905,16 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
     inference.inferFromParamList(/*hasArguments*/ partial);
     return PValue(inference.getInferredValue(bindingsSoFar.size()));
   };
-  auto [bindings, _] = verifyBindingsImpl(parameters, paramTypes, paramList,
-                                          parameterInferenceHook,
-                                          /*diagEmitter=*/nullptr, partial);
+  std::optional<MojoInflightDiag> diag;
+  auto [bindings, _] = verifyBindingsImpl(
+      parameters, paramTypes, paramList, parameterInferenceHook, inferenceDiags,
+      [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
+        // Ignore any errors.
+        diag = shared.emitError(loc ? *loc : getExprLoc());
+        diag->abandon();
+        return *diag;
+      },
+      partial, /*declIfDirect=*/nullptr);
   return bindings;
 }
 
@@ -838,6 +923,13 @@ ParamBindings::verifyStructBindings(ASTDecl &structDecl, TypeSignatureType sig,
                                     bool partial) const {
   auto [bindingValuesAttr, fitness, diag] = verifyBindingsWithDiag(
       sig.getParamTypes(), sig.getParamListAttrs(), &structDecl, partial);
+
+  if (diag) {
+    diag->attachNote(structDecl.getLoc())
+        << "'" << *structDecl.getUserNameIfOperation() << "' declared here";
+    return {};
+  }
+
   // Emit diagnostics for unprovable constraints if no other diagnostics were
   // emitted.
   if (!fitness.unprovableConstraints.empty() && !diag) {
@@ -853,6 +945,13 @@ ParamBindings::verifyBindings(LITGeneratorType sig,
   auto [newBindings, fitness, diag] = verifyBindingsWithDiag(
       sig.getInputParamTypes(), sig.getMetadata(), declIfKnown,
       /*partial=*/true);
+
+  if (declIfKnown && diag) {
+    assert(isa<FnOp>(declIfKnown->getIfOperation()));
+    diag->attachNote(declIfKnown->getLoc()) << "function declared here";
+    return {};
+  }
+
   // Emit diagnostics for unprovable constraints if no other diagnostics were
   // emitted.
   if (!fitness.unprovableConstraints.empty() && !diag) {
@@ -868,124 +967,7 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                                       PogListAttr paramListAttr,
                                       ASTDecl *declIfKnown,
                                       bool partial) const {
-  std::string baseName;
-  std::optional<SMLoc> opLoc;
-  if (declIfKnown) {
-    baseName = "'" + declIfKnown->getUserNameIfOperation()->str() + "'";
-    opLoc = declIfKnown->getLoc();
-  } else {
-    baseName = "parametric value";
-  }
-
-  size_t maxAllowed = expectedParamTypes.size() -
-                      countNumImplicitKinds(paramListAttr) -
-                      countNumInferredKinds(paramListAttr);
   ParameterInferenceDiagnostics inferenceDiags;
-  std::optional<MojoInflightDiag> diag;
-  DiagEmitter diagEmitter{
-      /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
-        diag = shared.emitError(getExprLoc(), baseName);
-        if (posOnly) {
-          emitWrongArgOrParamCount(*diag, countNumPosOnly(paramListAttr),
-                                   countNumPositional(paramListAttr), numActual,
-                                   "positional parameter");
-        } else {
-          size_t minRequired = expectedParamTypes.size() -
-                               paramListAttr.getDefaultPos().size() -
-                               paramListAttr.getDefaultKwOnly().size();
-          emitWrongArgOrParamCount(*diag, minRequired, maxAllowed, numActual,
-                                   "parameter");
-        }
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitTypeMismatch=*/
-      [&](size_t index, ASTExprAnd<AnyValue> binding, ASTType expectedType) {
-        PValue paramVal = binding.ir.getIfPValue();
-        DeclResolver::DeclScopeChanger x(&declScope);
-        diag = shared.emitError(binding.expr->getLoc(), baseName)
-               << " parameter "
-               << ParamDeclRefAttr::get(paramListAttr.getName(index),
-                                        expectedParamTypes[index])
-               << " has " << expectedType << " type, but value has type "
-               << paramVal.getType() << binding.expr->getRange();
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitUnknownKeywords=*/
-      [&](ArrayRef<StringAttr> unknownKeywords) {
-        diag = shared.emitError(getExprLoc());
-        emitUnknownKeywords(*diag, unknownKeywords, "parameter");
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitRedundantKeywords=*/
-      [&](ArrayRef<StringAttr> names) {
-        diag = shared.emitError(getExprLoc());
-        emitByPosAndKw(*diag, names, "parameter");
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitPosOnlyPassedByKw=*/
-      [&](ArrayRef<StringAttr> names) {
-        diag = shared.emitError(getExprLoc());
-        emitPosOnlyPassedByKw(*diag, names, "parameter");
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitOutOfOrderInferredKw=*/
-      [&](ArrayRef<StringAttr> names) {
-        diag = shared.emitError(getExprLoc());
-        emitOutOfOrderInferredKw(*diag, names);
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitInferenceFailure=*/
-      [&](size_t paramIdx) {
-        assert(!partial && "parameter deduction failure in a context that "
-                           "doesn't allow deduction");
-        // The parameter name is scoped to 'declScope'.
-        DeclResolver::DeclScopeChanger x(&declScope);
-        if (paramListAttr.getPassingKind(paramIdx) != PassingKind::Inferred) {
-          diag = shared.emitError(getExprLoc(), baseName)
-                 << " missing required parameter "
-                 << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
-                                          expectedParamTypes[paramIdx]);
-        } else {
-          diag = shared.emitError(getExprLoc())
-                 << "failed to infer parameter "
-                 << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
-                                          expectedParamTypes[paramIdx]);
-          inferenceDiags.addExplanation(*diag);
-        }
-      },
-      /*emitUnboundInVariadic=*/
-      [&](const ExprNode *expr) {
-        diag = shared.emitError(expr->getLoc());
-        *diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
-                 "parameter";
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitMissing=*/
-      [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
-        diag = shared.emitError(getExprLoc());
-        emitMissing(*diag, names, kindStr + " parameter");
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitConstraintViolations=*/
-      [&](ArrayRef<std::pair<size_t, ConstraintAttr>> constraints) {
-        diag = shared.emitError(getExprLoc());
-        *diag << "violated constraint" << plural(constraints.size());
-        IndexToDeclRefRemapper remapper(paramListAttr);
-        for (auto [_, constraint] : constraints) {
-          diag->attachNote(constraint.getLoc())
-              << "constraint declared here evaluated to False, expected "
-              << remapper.replace(constraint.getProposition());
-        }
-      },
-  };
 
   SyntheticNode errorLoc(getExprLoc());
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
@@ -1007,9 +989,15 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
         errorLoc, InferenceFailure::NotFoundFailure{bindingsSoFar.size()});
     return PValue();
   };
-  auto [bindings, fitness] =
-      verifyBindingsImpl(parameters, expectedParamTypes, paramListAttr,
-                         parameterInferenceHook, &diagEmitter, partial);
+
+  std::optional<MojoInflightDiag> diag;
+  auto getDiags = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
+    diag = shared.emitError(loc ? *loc : getExprLoc());
+    return *diag;
+  };
+  auto [bindings, fitness] = verifyBindingsImpl(
+      parameters, expectedParamTypes, paramListAttr, parameterInferenceHook,
+      inferenceDiags, getDiags, partial, declIfKnown);
   return {bindings, fitness, std::move(diag)};
 }
 

@@ -1044,15 +1044,20 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       evaluator.setDeclBinding(newDecl, defaultVal);
       // Only report direct violations. Unprovable constraints are allowed
       // since they may depend on other parameters.
-      if (LIT::checkConstraints(
-              declScope, paramConstraints,
-              [&](ArrayRef<std::pair<size_t, ConstraintAttr>> constraints) {
-                constraintEmitter.emitError(
-                    arg.loc, "default value violated constraint");
-              },
-              /*unprovableConstraints=*/nullptr,
-              &evaluator) == ConstraintResult::Violated) {
+      std::optional<MojoInflightDiag> diag;
+      auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
+        diag = constraintEmitter.emitError(loc ? *loc : arg.loc)
+               << "default value ";
+        return *diag;
+      };
+
+      (void)LIT::checkConstraints(
+          declScope, /*no index remapping*/ PogListAttr(), paramConstraints,
+          /*origConstraints=*/{}, getDiag,
+          /*unprovableConstraints=*/nullptr, &evaluator);
+      if (diag) {
         hasErrors = true;
+        (void)std::move(*diag);
       }
     }
   }

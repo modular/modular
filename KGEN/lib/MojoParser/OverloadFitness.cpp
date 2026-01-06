@@ -773,111 +773,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // Check that the signature can be rebound with this set of bindings. We use
   // diagnostic handlers to capture any issues.
-  std::optional<MojoInflightDiag> diag;
-  auto getDiag = [&]() -> MojoInflightDiag & {
-    if (!diag)
-      diag = shared.emitError(callLoc);
-    return *diag;
-  };
   ParameterInferenceDiagnostics inferenceDiags;
-  PogListAttr paramListAttr = signature.getMetadata();
-  ParamBindings::DiagEmitter bindingDiag{
-      /*emitParamCount=*/
-      [&](size_t numActual, bool posOnly) {
-        if (posOnly) {
-          diag = emitDiagFor.wrongPosOnlyCount(
-              countNumPosOnly(paramListAttr), countNumPositional(paramListAttr),
-              numActual, "parameter");
-        } else {
-          // Hide the implicit trait parameter from the diagnostic.
-          size_t hidden = 0;
-          if (funcIfDirect &&
-              isa_and_nonnull<TraitDeclOp>(
-                  cast<FnOp>(funcIfDirect->getIfOperation())->getParentOp()))
-            hidden = 1;
-          size_t numExpected = signature.getInputParamTypes().size() - hidden -
-                               countNumImplicitKinds(paramListAttr) -
-                               countNumInferredKinds(paramListAttr);
-          diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);
-        }
-      },
-      /*emitTypeMismatch=*/
-      [&](size_t paramIdx, ASTExprAnd<AnyValue> binding, ASTType expectedType) {
-        DeclResolver::DeclScopeChanger x(funcIfDirect);
-        getDiag() << "callee parameter "
-                  << ParamDeclRefAttr::get(
-                         paramListAttr.getName(paramIdx),
-                         signature.getInputParamTypes()[paramIdx])
-                  << " has " << ASTType(expectedType)
-                  << " type, but value has type "
-                  << binding.ir.getIfPValue().getType()
-                  << binding.expr->getRange();
-      },
-      /*emitUnknownKeywords=*/
-      [&](ArrayRef<StringAttr> unknownKeywords) {
-        emitUnknownKeywords(getDiag(), unknownKeywords, "parameter");
-      },
-      /*emitRedundantKeywords=*/
-      [&](ArrayRef<StringAttr> names) {
-        emitByPosAndKw(getDiag(), names, "parameter");
-      },
-      /*emitPosOnlyPassedByKw=*/
-      [&](ArrayRef<StringAttr> names) {
-        emitPosOnlyPassedByKw(getDiag(), names, "parameter");
-      },
-      /*emitOutOfOrderInferredKw=*/
-      [&](ArrayRef<StringAttr> names) {
-        emitOutOfOrderInferredKw(getDiag(), names);
-      },
-      /*emitInferenceFailure=*/
-      [&](size_t paramIdx) {
-        MojoInflightDiag &d = getDiag();
-        {
-          DeclResolver::DeclScopeChanger x(funcIfDirect);
-          d << "failed to infer parameter "
-            << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
-                                     signature.getInputParamTypes()[paramIdx]);
-        };
-
-        // If this is a method on a struct and we couldn't infer something from
-        // its self parameters, complain about the struct.
-        if (funcIfDirect) {
-          if (auto structOp = dyn_cast<StructDeclOp>(
-                  cast<FnOp>(funcIfDirect->getIfOperation())->getParentOp())) {
-            auto structSig = structOp.getSignature();
-            if (paramIdx < structSig.getNumParams()) {
-              d << " of parent struct '" << structOp.getDeclName().getValue()
-                << "'";
-              inferenceDiags.addExplanation(d);
-              d.attachNote(structOp.getLoc()) << " struct declared here";
-              return;
-            }
-          }
-        }
-        inferenceDiags.addExplanation(d);
-      },
-      /*emitUnboundInVariadic=*/
-      [&](const ExprNode *expr) {
-        getDiag() << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
-                     "parameter"
-                  << expr->getRange();
-      },
-      /*emitMissing=*/
-      [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
-        emitMissing(getDiag(), names, kindStr + " parameter");
-      },
-      /*emitConstraintViolations=*/
-      [&](ArrayRef<std::pair<size_t, ConstraintAttr>> constraints) {
-        MojoInflightDiag &d = getDiag();
-        d << "violated constraint" << plural(constraints.size());
-        IndexToDeclRefRemapper remapper(paramListAttr);
-        for (auto [_, constraint] : constraints) {
-          d.attachNote(constraint.getLoc())
-              << "constraint declared here evaluated to False, expected "
-              << remapper.replace(constraint.getProposition());
-        }
-      },
-  };
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     ParameterInferenceState inference(
@@ -948,8 +844,15 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         InferenceFailure::NotFoundFailure{bindingsSoFar.size()});
     return PValue();
   };
+
+  std::optional<MojoInflightDiag> diag;
+  auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
+    diag = shared.emitError(loc ? *loc : callLoc);
+    return *diag;
+  };
+
   auto [newBindings, bindingFitness] = callable.paramBindings.verifyBindings(
-      signature, bindingDiag, parameterInferenceHook);
+      signature, getDiag, parameterInferenceHook, inferenceDiags, funcIfDirect);
 
   // If there is an error, we just forward the diagnostics.
   if (diag)
@@ -1207,28 +1110,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // Check that all fn constraints are satisfied.
   SmallVector<ConstraintAttr> fnUnprovableConstraints;
-  // Reset diag for reuse in constraint checking.
-  diag.reset();
-  auto emitFnConstraintViolations =
-      [&](ArrayRef<std::pair<size_t, ConstraintAttr>> constraints) {
-        MojoInflightDiag &d = getDiag();
-        d << "violated constraint" << plural(constraints.size());
-        // Use constraints from the original signature since the ones in
-        // `signature` have already been substituted with param bindings and
-        // will have already been folded into `False`.
-        IndexToDeclRefRemapper remapper(originalSignature.getMetadata());
-        auto originalFnConstraints =
-            originalSignature.getFnMetadata().getConstraints();
-        for (auto [idx, _] : constraints) {
-          auto originalConstraint = originalFnConstraints[idx];
-          d.attachNote(originalConstraint.getLoc())
-              << "constraint declared here evaluated to False, expected "
-              << remapper.replace(originalConstraint.getProposition());
-        }
-      };
   checkConstraints(callable.paramBindings.declScope,
+                   originalSignature.getMetadata(),
                    signature.getFnMetadata().getConstraints(),
-                   emitFnConstraintViolations, &fnUnprovableConstraints,
+                   originalSignature.getFnMetadata().getConstraints(), getDiag,
+                   &fnUnprovableConstraints,
                    /*evaluator=*/nullptr);
   if (diag)
     return std::move(*diag);
