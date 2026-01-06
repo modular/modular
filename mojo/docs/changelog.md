@@ -254,6 +254,23 @@ what we publish.
 
 ### Library changes
 
+- The `inlined_assembly` function is now publicly exported from the `sys` module,
+  allowing users to embed raw assembly instructions directly into Mojo code.
+  This provides fine-grained control over hardware operations using LLVM-style
+  inline assembly syntax. Example:
+
+  ```mojo
+  from sys import inlined_assembly
+
+  # Convert bfloat16 to float32 on NVIDIA GPU using PTX assembly.
+  var result = inlined_assembly[
+      "cvt.f32.bf16 $0, $1;",
+      Float32,
+      constraints="=f,h",
+      has_side_effect=False,
+  ](my_bf16_as_int16)
+  ```
+
 - We have removed `Identifiable` from enum-like types
   (such as `DType` and `AddressSpace`). This change is
   related to the idea that `Identifiable` is for comparing memory addresses.
