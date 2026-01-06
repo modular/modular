@@ -374,8 +374,8 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(
     const CallOperands &origOperands, ArrayRef<Type> expectedParamTypes,
-    PogListAttr paramListAttr, ParameterInferenceHookTy parameterInferenceHook,
-    ParameterInferenceDiagnostics &inferenceDiags,
+    PogListAttr paramListAttr, ParamInfHookTy parameterInferenceHook,
+    ParamInfDiags &inferenceDiags,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     bool partial, ASTDecl *declIfDirect) const {
   assert(parameterInferenceHook && "expected a parameter inference hook");
@@ -884,8 +884,8 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(
     LITGeneratorType sig,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-    ParameterInferenceHookTy parameterInferenceHook,
-    ParameterInferenceDiagnostics &inferenceDiags, ASTDecl *declIfKnown) const {
+    ParamInfHookTy parameterInferenceHook, ParamInfDiags &inferenceDiags,
+    ASTDecl *declIfKnown) const {
   return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
                             sig.getMetadata(), parameterInferenceHook,
                             inferenceDiags, getDiag,
@@ -896,11 +896,11 @@ ParameterExprArrayAttr
 ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                                  PogListAttr paramList, bool partial) const {
   // The inference diagnostics will be unused.
-  ParameterInferenceDiagnostics inferenceDiags;
+  ParamInfDiags inferenceDiags;
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
-    ParameterInferenceState inference(declScope, getParameters(), paramTypes,
-                                      paramList, bindingsSoFar, inferenceDiags,
-                                      /*allowImplicitConversions=*/true);
+    ParamInfState inference(declScope, getParameters(), paramTypes, paramList,
+                            bindingsSoFar, inferenceDiags,
+                            /*allowImplicitConversions=*/true);
 
     inference.inferFromParamList(/*hasArguments*/ partial);
     return PValue(inference.getInferredValue(bindingsSoFar.size()));
@@ -967,14 +967,13 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                                       PogListAttr paramListAttr,
                                       ASTDecl *declIfKnown,
                                       bool partial) const {
-  ParameterInferenceDiagnostics inferenceDiags;
+  ParamInfDiags inferenceDiags;
 
   SyntheticNode errorLoc(getExprLoc());
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
-    ParameterInferenceState inference(declScope, getParameters(),
-                                      expectedParamTypes, paramListAttr,
-                                      bindingsSoFar, inferenceDiags,
-                                      /*allowImplicitConversions=*/true);
+    ParamInfState inference(declScope, getParameters(), expectedParamTypes,
+                            paramListAttr, bindingsSoFar, inferenceDiags,
+                            /*allowImplicitConversions=*/true);
 
     // Infer information from the current parameter list.
     inference.inferFromParamList(partial);

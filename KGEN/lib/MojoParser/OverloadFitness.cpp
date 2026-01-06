@@ -773,7 +773,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // Check that the signature can be rebound with this set of bindings. We use
   // diagnostic handlers to capture any issues.
-  ParameterInferenceDiagnostics inferenceDiags;
+  ParamInfDiags inferenceDiags;
 
   // Determine if this is an initializer that returns Self, which can be used
   // for inferring parameters on Self.
@@ -799,7 +799,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       break;
   }
 
-  ParameterInferenceState inference(
+  ParamInfState inference(
       callable.paramBindings.declScope, callable.paramBindings.getParameters(),
       signature.getInputParamTypes(), signature.getParamListAttrs(),
       preCheckedBinding, inferenceDiags, allowImplicitConversions);
