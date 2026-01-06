@@ -175,3 +175,14 @@ def main():
             num_pipeline_stages=12,
             k_group_size=4,
         ](ctx, dynamic(256), static[1536](), static[4096]())
+
+        test_matmul_sm90[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),  # cluster_shape
+            Index(64, 32, 64),
+            Index(64, 32, 16),
+            num_consumer=1,
+            num_pipeline_stages=17,
+        ](ctx, dynamic(2), static[4096](), static[1536]())
