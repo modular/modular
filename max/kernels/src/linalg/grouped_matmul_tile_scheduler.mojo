@@ -172,9 +172,9 @@ struct TileScheduler[
     @always_inline
     fn fetch_next_work(mut self) -> WorkInfo:
         self.current_iter += 1
-        var next_block_idx = (
-            UInt32(self.current_iter) * grid_dim.x + block_idx.x
-        )
+        var next_block_idx = UInt32(self.current_iter) * UInt32(
+            grid_dim.x
+        ) + UInt32(block_idx.x)
         var start_idx = rebind[Scalar[DType.uint32]](
             self.group_offsets[Int(self.current_group_idx)]
         )

@@ -190,7 +190,7 @@ fn naive_grouped_matmul_kernel[
     if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](
-            Index(a_start_row + m, n), accum.cast[c_type]()
+            Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
         )
     else:
         c_by_expert = c.data + a_start_row * N
