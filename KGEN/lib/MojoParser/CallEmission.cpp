@@ -13,7 +13,7 @@
 #include "IREmitter.h"
 #include "MojoUtils.h"
 #include "OverloadFitness.h"
-#include "ParameterInference.h"
+#include "ParamInf.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"

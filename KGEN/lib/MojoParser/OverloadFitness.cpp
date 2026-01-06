@@ -15,7 +15,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
-#include "ParameterInference.h"
+#include "ParamInf.h"
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"

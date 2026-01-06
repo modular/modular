@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ParameterInference.h"
+#include "ParamInf.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "MojoUtils.h"
