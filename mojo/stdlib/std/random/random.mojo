@@ -222,7 +222,7 @@ fn randn[
     return
 
 
-fn shuffle[T: Copyable & ImplicitlyDestructible, //](mut list: List[T]):
+fn shuffle[T: Copyable, //](mut list: List[T]):
     """Shuffles the elements of the list randomly.
 
     Performs an in-place Fisher-Yates shuffle on the provided list.

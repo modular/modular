@@ -31,7 +31,7 @@ comptime insertion_sort_threshold = 32
 
 @always_inline
 fn _insertion_sort[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -57,7 +57,7 @@ fn _insertion_sort[
 # put everything thats "<" to the left of pivot
 @always_inline
 fn _quicksort_partition_right[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -86,7 +86,7 @@ fn _quicksort_partition_right[
 # put everything thats "<=" to the left of pivot
 @always_inline
 fn _quicksort_partition_left[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -112,7 +112,7 @@ fn _quicksort_partition_left[
 
 
 fn _heap_sort_fix_down[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -135,7 +135,7 @@ fn _heap_sort_fix_down[
 
 @always_inline
 fn _heap_sort[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -164,7 +164,7 @@ fn _estimate_initial_height(size: Int) -> Int:
 
 @always_inline
 fn _delegate_small_sort[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -195,7 +195,7 @@ fn _delegate_small_sort[
 
 @always_inline
 fn _quicksort[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -260,7 +260,7 @@ fn _quicksort[
 
 
 fn _merge[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     span_origin: MutOrigin,
     result_origin: MutOrigin,
     //,
@@ -321,7 +321,7 @@ fn _merge[
 
 
 fn _stable_sort_impl[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     span_life: MutOrigin,
     tmp_life: MutOrigin,
     //,
@@ -357,7 +357,7 @@ fn _stable_sort_impl[
 
 
 fn _stable_sort[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -375,7 +375,7 @@ fn _stable_sort[
 
 @always_inline
 fn _partition[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -407,7 +407,7 @@ fn _partition[
 
 
 fn _partition[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -425,7 +425,7 @@ fn _partition[
 
 
 fn partition[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -454,7 +454,7 @@ fn partition[
 
 # Junction from public to private API
 fn _sort[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -484,7 +484,7 @@ fn _sort[
 # Eventually we want a sort that takes a Span and one that takes a List with
 # optional cmp_fn.
 fn sort[
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: MutOrigin,
     //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
@@ -613,7 +613,7 @@ fn sort[
 fn _sort2[
     origin: MutOrigin,
     //,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], offset0: Int, offset1: Int,):
     if not cmp_fn(span.unsafe_get(offset0), span.unsafe_get(offset1)):
@@ -624,7 +624,7 @@ fn _sort2[
 fn _sort3[
     origin: MutOrigin,
     //,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], offset0: Int, offset1: Int, offset2: Int,):
     _sort2[T, cmp_fn](span, offset0, offset1)
@@ -636,7 +636,7 @@ fn _sort3[
 fn _sort_partial_3[
     origin: MutOrigin,
     //,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], offset0: Int, offset1: Int, offset2: Int):
     """Sorts [a, b, c] assuming [b, c] is already sorted."""
@@ -653,7 +653,7 @@ fn _small_sort[
     origin: MutOrigin,
     //,
     n: Int,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     @parameter
