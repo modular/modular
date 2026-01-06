@@ -317,9 +317,9 @@ fn get_conv2d_shape[
     data_layout: Image2DLayout,
     filter_layout: Image2DLayout,
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout, **_],
-    input: LayoutTensor[dtype, input_layout, **_],
-    filter: LayoutTensor[dtype, filter_layout_param, **_],
+    output: LayoutTensor[mut=True, dtype, output_layout, ...],
+    input: LayoutTensor[dtype, input_layout, ...],
+    filter: LayoutTensor[dtype, filter_layout_param, ...],
     pad_h: IndexList[2],
     pad_w: IndexList[2],
     stride: IndexList[2],

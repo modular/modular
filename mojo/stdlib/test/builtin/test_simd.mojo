@@ -1552,7 +1552,7 @@ def test_reduce():
             assert_equal(X2(6, -3).reduce_max(), 6)
 
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             # reduce_and
             var x8b = SIMD[DType.bool, 8](
                 False, False, True, True, False, True, False, True
@@ -2042,7 +2042,7 @@ def test_comparison():
             assert_true(mixed_ge[3])
 
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var all_true = SIMD[DType.bool, 4](fill=True)
             var all_false = SIMD[DType.bool, 4](fill=False)
             var mixed = SIMD[DType.bool, 4](True, True, False, False)

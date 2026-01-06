@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp, exp2, log
+from math import cosh, exp, exp2, log, sinh
 from sys import simd_width_of
 
 from algorithm.functional import elementwise
@@ -55,8 +55,8 @@ def run_elementwise[
         for i in range(length):
             var expected_value = math_fn(in_host[i])
 
-            comptime atol = 1e-05 if dtype is DType.float32 else 1e-4
-            comptime rtol = 2e-05 if dtype is DType.float32 else 2e-2
+            comptime atol = 1e-05 if dtype == DType.float32 else 1e-4
+            comptime rtol = 2e-05 if dtype == DType.float32 else 2e-2
             assert_almost_equal(
                 out_host[i],
                 expected_value,
@@ -84,6 +84,22 @@ def _test_exp2[dtype: DType](ctx: DeviceContext):
     run_elementwise[dtype, exp2](ctx, input)
 
 
+def _test_cosh[dtype: DType](ctx: DeviceContext):
+    var input = ctx.enqueue_create_buffer[dtype](length)
+    with input.map_to_host() as in_host:
+        for i in range(length):
+            in_host[i] = (Scalar[dtype](i) / length * 10) - 5
+    run_elementwise[dtype, cosh](ctx, input)
+
+
+def _test_sinh[dtype: DType](ctx: DeviceContext):
+    var input = ctx.enqueue_create_buffer[dtype](length)
+    with input.map_to_host() as in_host:
+        for i in range(length):
+            in_host[i] = (Scalar[dtype](i) / length * 10) - 5
+    run_elementwise[dtype, sinh](ctx, input)
+
+
 def test_math_accuracy():
     with DeviceContext() as ctx:
         _test_exp[DType.float32](ctx)
@@ -92,6 +108,12 @@ def test_math_accuracy():
         _test_exp2[DType.float32](ctx)
         _test_exp2[DType.float16](ctx)
         _test_exp2[DType.bfloat16](ctx)
+        _test_cosh[DType.float32](ctx)
+        _test_cosh[DType.float16](ctx)
+        _test_cosh[DType.bfloat16](ctx)
+        _test_sinh[DType.float32](ctx)
+        _test_sinh[DType.float16](ctx)
+        _test_sinh[DType.bfloat16](ctx)
 
 
 def main():

@@ -23,8 +23,8 @@ fn cumsum[
     exclusive: Bool,
     reverse: Bool,
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
     axis: Int,
 ):
     """
@@ -48,7 +48,7 @@ fn cumsum[
         input.rank == output.rank
     ), "input and output should have the same rank."
 
-    comptime accum_type = DType.float64 if dtype is DType.float32 else get_accum_type[
+    comptime accum_type = DType.float64 if dtype == DType.float32 else get_accum_type[
         dtype
     ]()
     debug_assert(
@@ -70,13 +70,13 @@ fn cumsum[
         else:
             depth = shape[i]
 
-    var output_data = LayoutTensor[output.dtype, Layout.row_major[1](), **_](
+    var output_data = LayoutTensor[output.dtype, Layout.row_major[1](), ...](
         output.ptr,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](output.size())
         ),
     )
-    var input_data = LayoutTensor[input.dtype, Layout.row_major[1](), **_](
+    var input_data = LayoutTensor[input.dtype, Layout.row_major[1](), ...](
         input.ptr,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](input.size())

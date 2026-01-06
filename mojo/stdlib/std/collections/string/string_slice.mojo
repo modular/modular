@@ -564,7 +564,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self = StaticString(lit.value)
 
     @always_inline("builtin")
-    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, Self.origin, **_]):
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, Self.origin, ...]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Args:
@@ -593,7 +593,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             mut = Self.mut,
             Byte,
             origin = Self.origin,
-            address_space = AddressSpace.GENERIC, **_,
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
     ):
         """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to
@@ -616,7 +617,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         self = Self(unsafe_from_utf8=byte_slice)
 
-    fn __init__(out self, *, from_utf8: Span[Byte, Self.origin, **_]) raises:
+    fn __init__(out self, *, from_utf8: Span[Byte, Self.origin, ...]) raises:
         """Construct a new `StringSlice` from a buffer containing UTF-8 encoded
         data.
 
@@ -639,7 +640,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             mut = Self.mut,
             c_char,
             origin = Self.origin,
-            address_space = AddressSpace.GENERIC, **_,
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
     ):
         """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing
@@ -664,7 +666,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             mut = Self.mut,
             Byte,
             origin = Self.origin,
-            address_space = AddressSpace.GENERIC, **_,
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
         length: Int,
     ):
@@ -709,6 +712,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             value: The string value.
         """
         self = value.as_string_slice_mut()
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: StaticString,
+        ref [
+            Origin(__mlir_attr.`#lit.comptime.origin : !lit.origin<0>`)
+        ]value: String,
+    ):
+        """Construct an immutable StringSlice at comptime.
+        FIXME: This is a hack.
+
+        Args:
+            value: The string value.
+        """
+        self = rebind[StaticString](value.as_string_slice())
 
     # ===------------------------------------------------------------------===#
     # Trait implementations
@@ -1202,6 +1221,25 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             .unsafe_origin_cast[result.origin](),
             length = len(self),
         }
+
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_type: type_of(String),
+    ](self, out result: String):
+        """Returns a string slice merge with a String.
+
+        Parameters:
+            other_type: The type of the origin to merge with.
+
+        Returns:
+            A String this is merged with.
+        """
+        # Note, this is used to disambiguate some cases because String converts
+        # to StringSlice and StringSlice converts to string.  Ideally this would
+        # return a StringSlice, but the __merge_with__ protocol is type
+        # directed, not value directed.  Types don't carry the origins of a
+        # value.
+        return String(self)
 
     # ===------------------------------------------------------------------===#
     # Methods
@@ -2421,7 +2459,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     fn join[
         T: Copyable & Writable,
         //,
-    ](self, elems: Span[T, *_]) -> String:
+    ](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
@@ -2526,7 +2564,8 @@ fn get_static_string[
 fn _to_string_list[
     O: Origin,
     //,
-    T: Copyable,  # TODO(MOCO-1446): Make `T` parameter inferred
+    # TODO(MOCO-1446): Make `T` parameter inferred
+    T: Copyable,
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
@@ -2616,7 +2655,7 @@ fn _unsafe_strlen(
 fn _memchr[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], **_], char: Scalar[dtype]
+    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
 ) -> source.UnsafePointerType:
     if is_compile_time() or len(source) < simd_width_of[Scalar[dtype]]():
         var ptr = source.unsafe_ptr()
@@ -2633,7 +2672,7 @@ fn _memchr[
 fn _memchr_impl[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], **_],
+    source: Span[mut=False, Scalar[dtype], ...],
     char: Scalar[dtype],
     out output: source.UnsafePointerType,
 ):
@@ -2662,10 +2701,11 @@ fn _memchr_impl[
 fn _memmem[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], **_],
+    haystack_span: Span[mut=False, Scalar[dtype], ...],
     needle_span: Span[
         mut=False,
-        Scalar[dtype], **_,
+        Scalar[dtype],
+        ...,
     ],
 ) -> haystack_span.UnsafePointerType:
     if is_compile_time() or len(haystack_span) < simd_width_of[Scalar[dtype]]():
@@ -2690,10 +2730,11 @@ fn _memmem[
 fn _memmem_impl[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], **_],
+    haystack_span: Span[mut=False, Scalar[dtype], ...],
     needle_span: Span[
         mut=False,
-        Scalar[dtype], **_,
+        Scalar[dtype],
+        ...,
     ],
     out output: haystack_span.UnsafePointerType,
 ):

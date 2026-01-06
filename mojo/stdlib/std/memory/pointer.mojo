@@ -27,7 +27,6 @@ from memory import Pointer
 @register_passable("trivial")
 struct AddressSpace(
     Equatable,
-    Identifiable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
@@ -90,7 +89,7 @@ struct AddressSpace(
         """
         return self._value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __eq__(self, other: Self) -> Bool:
         """Checks if the two address spaces are equal.
 
@@ -100,31 +99,7 @@ struct AddressSpace(
         Returns:
           True if the two address spaces are equal and False otherwise.
         """
-        return self is other
-
-    @always_inline("nodebug")
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are not equal and False otherwise.
-        """
-        return self.value() == other.value()
-
-    @always_inline("nodebug")
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are not equal and False otherwise.
-        """
-        return self.value() != other.value()
+        return self._value == other._value
 
     @always_inline("nodebug")
     fn __str__(self) -> String:
@@ -142,17 +117,17 @@ struct AddressSpace(
         Args:
             writer: The object to write to.
         """
-        if self is AddressSpace.GENERIC:
+        if self == AddressSpace.GENERIC:
             writer.write("AddressSpace.GENERIC")
-        elif self is AddressSpace.GLOBAL:
+        elif self == AddressSpace.GLOBAL:
             writer.write("AddressSpace.GLOBAL")
-        elif self is AddressSpace.SHARED:
+        elif self == AddressSpace.SHARED:
             writer.write("AddressSpace.SHARED")
-        elif self is AddressSpace.CONSTANT:
+        elif self == AddressSpace.CONSTANT:
             writer.write("AddressSpace.CONSTANT")
-        elif self is AddressSpace.LOCAL:
+        elif self == AddressSpace.LOCAL:
             writer.write("AddressSpace.LOCAL")
-        elif self is AddressSpace.SHARED_CLUSTER:
+        elif self == AddressSpace.SHARED_CLUSTER:
             writer.write("AddressSpace.SHARED_CLUSTER")
         else:
             writer.write("AddressSpace(", self.value(), ")")

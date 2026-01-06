@@ -16,9 +16,13 @@ from math import ceildiv
 from math.constants import log2e
 from memory import (
     bitcast,
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
 )
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from sys import size_of
 
 import gpu.warp as warp
@@ -1591,7 +1595,7 @@ fn output_reg_to_smem[
         Layout.row_major(BM, padded_depth),
         address_space = AddressSpace.SHARED,
     ](q_smem)
-    comptime use_stmatrix = accum_type is DType.float32 and padded_depth % 16 == 0 and size_of[
+    comptime use_stmatrix = accum_type == DType.float32 and padded_depth % 16 == 0 and size_of[
         output_type
     ]() == 2 and o_frag_size % 8 == 0
 

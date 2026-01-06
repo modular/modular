@@ -174,7 +174,7 @@ struct _WriteBufferHeap(Writable, Writer):
 
     fn write_list[
         T: Copyable & Writable, //
-    ](mut self, values: List[T, *_], *, sep: StaticString = StaticString()):
+    ](mut self, values: List[T, ...], *, sep: StaticString = StaticString()):
         var length = len(values)
         if length == 0:
             return
@@ -191,8 +191,7 @@ struct _WriteBufferHeap(Writable, Writer):
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
-            # TODO(MSTDL-2072): This should be an abort, but it breaks ptxas.
-            return
+            abort()
         memcpy(
             dest=self._data + self._pos, src=bytes.unsafe_ptr(), count=len_bytes
         )
@@ -207,9 +206,7 @@ struct _WriteBufferHeap(Writable, Writer):
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
-            # TODO(MSTDL-2072): This should be an abort, but it breaks ptxas.
-            self._data[self._pos - 1] = 0
-            return
+            abort()
         self._data[self._pos] = 0
         self._pos += 1
 
@@ -241,7 +238,7 @@ struct _WriteBufferStack[
 
     fn write_list[
         T: Copyable & Writable, //
-    ](mut self, values: List[T, *_], *, sep: String = String()):
+    ](mut self, values: List[T, ...], *, sep: String = String()):
         var length = len(values)
         if length == 0:
             return
@@ -287,7 +284,7 @@ struct _TotalWritableBytes(Writer):
         origin: ImmutOrigin = StaticConstantOrigin,
     ](
         out self,
-        values: Span[T, *_],
+        values: Span[T, ...],
         sep: StringSlice[origin] = StringSlice[origin](),
     ):
         self.size = 0

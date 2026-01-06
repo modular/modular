@@ -58,7 +58,7 @@ def _peek_seed():  # noqa: ANN202
         raise RuntimeError("No seed set! Set with `ops.random.set_seed`.")  # noqa: B904
 
 
-def set_seed(seed: TensorValue | int = 0) -> None:
+def set_seed(seed: TensorValueLike | int = 0) -> None:
     """Sets the seed for random numbers generated in the graph.
 
     This must be set at least once for each graph using random number utilities.

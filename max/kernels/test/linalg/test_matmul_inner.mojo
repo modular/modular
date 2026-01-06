@@ -31,7 +31,9 @@ from linalg.utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 from utils import IndexList
@@ -48,7 +50,7 @@ fn _matmul_inner_loop[
     simd_size: Int,
     saturated_vnni: Bool,
 ](
-    c: LayoutTensor[mut=True, **_],
+    c: LayoutTensor[mut=True, ...],
     a: LayoutTensor,
     b_packed: LayoutTensor,
     global_offset: GemmShape,
@@ -114,7 +116,7 @@ fn _matmul_inner_loop[
 fn matmul_inner_loop[
     config: KernelConfig,
 ](
-    c: LayoutTensor[mut=True, **_],
+    c: LayoutTensor[mut=True, ...],
     a: LayoutTensor,
     b_packed: LayoutTensor,
     m: Int,

@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 from math import ceildiv, exp2, recip
 from math.constants import log2e
@@ -1732,16 +1734,16 @@ fn mla_sm100_prefill[
     _is_cache_length_accurate: Bool,
 ](
     output: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, **_
+        output_type, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[q_type, _, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[q_type, _, address_space = AddressSpace.GENERIC, ...],
     k: KVType,
     v: KVType,
     k_rope: KRopeType,
     mask_functor: MaskType,
     score_mod_functor: ScoreModType,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,

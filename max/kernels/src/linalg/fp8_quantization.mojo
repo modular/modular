@@ -27,7 +27,9 @@ from gpu.host.info import B200, H100
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
 from algorithm import elementwise
@@ -54,8 +56,8 @@ fn quantize_static_scaled_fp8[
     in_dtype: DType,
     scale_is_inverted: Bool = True,
 ](
-    out_buffer: NDBuffer[mut=True, out_dtype, 2, *_],
-    in_buffer: NDBuffer[in_dtype, 2, *_],
+    out_buffer: NDBuffer[mut=True, out_dtype, 2, _, _, _],
+    in_buffer: NDBuffer[in_dtype, 2, _, _, _],
     scale: Float32,
     context: DeviceContext,
 ) raises:
@@ -390,7 +392,7 @@ fn matmul_dynamic_scaled_fp8[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
+    c: NDBuffer[mut=True, c_type, 2, _, _, _],
     a: NDBuffer[a_type, 2, _, _],
     b: NDBuffer[b_type, 2, _, _],
     a_scales: NDBuffer[a_scales_type, 2, _, _],
@@ -458,7 +460,7 @@ fn matmul_dynamic_scaled_fp8[
         )
 
         @parameter
-        if ctx.default_device_info is B200:
+        if ctx.default_device_info == B200:
 
             @parameter
             @always_inline
@@ -581,14 +583,14 @@ fn naive_blockwise_scaled_fp8_matmul[
     accum_type: DType = get_accum_type[c_type](),
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, ...],
     a_scales: LayoutTensor[
-        a_scales_type, address_space = AddressSpace.GENERIC, **_
+        a_scales_type, address_space = AddressSpace.GENERIC, ...
     ],
     b_scales: LayoutTensor[
-        b_scales_type, address_space = AddressSpace.GENERIC, **_
+        b_scales_type, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1130,8 +1132,8 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 @always_inline
 fn convert_e4m3fn_to_e4m3fnuz(
-    input_buffer: LayoutTensor[DType.float8_e4m3fn, **_],
-    output_buffer: LayoutTensor[mut=True, DType.float8_e4m3fnuz, **_],
+    input_buffer: LayoutTensor[DType.float8_e4m3fn, ...],
+    output_buffer: LayoutTensor[mut=True, DType.float8_e4m3fnuz, ...],
     context: DeviceContext,
 ) raises:
     """Convert E4M3FN weights to E4M3FNUZ format for AMD GPU compatibility.
@@ -1197,14 +1199,14 @@ fn blockwise_scaled_fp8_with_epilogue[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[c_type, _, _, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[a_type, _, _, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[b_type, _, _, address_space = AddressSpace.GENERIC, ...],
     a_scales: LayoutTensor[
-        a_scales_type, address_space = AddressSpace.GENERIC, **_
+        a_scales_type, _, _, address_space = AddressSpace.GENERIC, ...
     ],
     b_scales: LayoutTensor[
-        b_scales_type, address_space = AddressSpace.GENERIC, **_
+        b_scales_type, _, _, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1217,7 +1219,7 @@ fn blockwise_scaled_fp8_with_epilogue[
     # 1D/2D (1x128)x(128x128) blockwise scaling
     @parameter
     if (
-        ctx.default_device_info is B200
+        ctx.default_device_info == B200
         and transpose_b
         and c_type == DType.bfloat16
         and scales_granularity_mnk[0] == 1

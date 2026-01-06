@@ -34,10 +34,10 @@ fn matrix_band_part[
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[rank],
-    num_lower: LayoutTensor[mut=False, int_type, *_, **_],
-    num_upper: LayoutTensor[mut=False, int_type, *_, **_],
-    exclude: LayoutTensor[mut=False, cond_type, *_, **_],
-    output: LayoutTensor[mut=True, dtype, *_, **_],
+    num_lower: LayoutTensor[mut=False, int_type, ...],
+    num_upper: LayoutTensor[mut=False, int_type, ...],
+    exclude: LayoutTensor[mut=False, cond_type, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
     __comptime_assert (
@@ -86,7 +86,7 @@ fn _matrix_band_part_impl[
     input_shape: IndexList[rank],
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
-    output: LayoutTensor[mut=True, dtype, *_, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
     __comptime_assert rank >= 2, "Matrix band only supports rank >=2"

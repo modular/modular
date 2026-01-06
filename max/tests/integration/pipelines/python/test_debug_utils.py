@@ -26,16 +26,18 @@ from pytest_mock import MockerFixture
 def test_load_torch_intermediates(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    def fake_debug_model(*args: Any, output_path: Path, **kwargs: Any) -> None:
+    def fake_run_debug_model(
+        *args: Any, output_path: Path, **kwargs: Any
+    ) -> None:
         output_path.mkdir(parents=True, exist_ok=True)
         torch.save(torch.ones(2, 2), output_path / "layer0.out.pt")
         torch.save(torch.zeros(1), output_path / "layer1.out.pt")
 
     mocker.patch.object(
         dbg,
-        "debug_model",
+        "run_debug_model",
         autospec=True,
-        side_effect=fake_debug_model,
+        side_effect=fake_run_debug_model,
     )
 
     tensors = dbg.load_intermediate_tensors(
@@ -51,7 +53,9 @@ def test_load_torch_intermediates(
 
 
 def test_load_max_intermediates(tmp_path: Path, mocker: MockerFixture) -> None:
-    def fake_debug_model(*args: Any, output_path: Path, **kwargs: Any) -> None:
+    def fake_run_debug_model(
+        *args: Any, output_path: Path, **kwargs: Any
+    ) -> None:
         output_path.mkdir(parents=True, exist_ok=True)
         (output_path / "node0-output.max").write_bytes(b"dummy")
         (output_path / "node1-output.max").write_bytes(b"dummy")
@@ -61,9 +65,9 @@ def test_load_max_intermediates(tmp_path: Path, mocker: MockerFixture) -> None:
 
     mocker.patch.object(
         dbg,
-        "debug_model",
+        "run_debug_model",
         autospec=True,
-        side_effect=fake_debug_model,
+        side_effect=fake_run_debug_model,
     )
     mocker.patch.object(
         dbg, "load_max_tensor", autospec=True, side_effect=fake_load_max_tensor
@@ -87,7 +91,9 @@ def test_get_torch_testdata_with_module(
 ) -> None:
     """Test get_torch_testdata retrieves input and output tensors for a module."""
 
-    def fake_debug_model(*args: Any, output_path: Path, **kwargs: Any) -> None:
+    def fake_run_debug_model(
+        *args: Any, output_path: Path, **kwargs: Any
+    ) -> None:
         output_path.mkdir(parents=True, exist_ok=True)
         # Create tensors following TorchPrintHook naming pattern
         # For module "encoder.layer.0", the full name is "model.encoder.layer.0"
@@ -100,9 +106,9 @@ def test_get_torch_testdata_with_module(
 
     mocker.patch.object(
         dbg,
-        "debug_model",
+        "run_debug_model",
         autospec=True,
-        side_effect=fake_debug_model,
+        side_effect=fake_run_debug_model,
     )
 
     input_t, output_t = dbg.get_torch_testdata(
@@ -124,7 +130,9 @@ def test_get_torch_testdata_top_level_model(
 ) -> None:
     """Test get_torch_testdata with empty module_name for top-level model."""
 
-    def fake_debug_model(*args: Any, output_path: Path, **kwargs: Any) -> None:
+    def fake_run_debug_model(
+        *args: Any, output_path: Path, **kwargs: Any
+    ) -> None:
         output_path.mkdir(parents=True, exist_ok=True)
         # For top-level model, name is just "model"
         input_tensor = torch.ones(1, 3)
@@ -134,9 +142,9 @@ def test_get_torch_testdata_top_level_model(
 
     mocker.patch.object(
         dbg,
-        "debug_model",
+        "run_debug_model",
         autospec=True,
-        side_effect=fake_debug_model,
+        side_effect=fake_run_debug_model,
     )
 
     input_t, output_t = dbg.get_torch_testdata(
@@ -154,7 +162,9 @@ def test_get_torch_testdata_alternative_naming(
 ) -> None:
     """Test get_torch_testdata with alternative tensor naming patterns."""
 
-    def fake_debug_model(*args: Any, output_path: Path, **kwargs: Any) -> None:
+    def fake_run_debug_model(
+        *args: Any, output_path: Path, **kwargs: Any
+    ) -> None:
         output_path.mkdir(parents=True, exist_ok=True)
         # Use alternative naming: .args.0 for input, no suffix for output
         input_tensor = torch.randn(3, 3, 3)
@@ -164,9 +174,9 @@ def test_get_torch_testdata_alternative_naming(
 
     mocker.patch.object(
         dbg,
-        "debug_model",
+        "run_debug_model",
         autospec=True,
-        side_effect=fake_debug_model,
+        side_effect=fake_run_debug_model,
     )
 
     input_t, output_t = dbg.get_torch_testdata(
@@ -184,7 +194,9 @@ def test_get_torch_testdata_missing_output(
 ) -> None:
     """Test get_torch_testdata raises KeyError when output tensor is missing."""
 
-    def fake_debug_model(*args: Any, output_path: Path, **kwargs: Any) -> None:
+    def fake_run_debug_model(
+        *args: Any, output_path: Path, **kwargs: Any
+    ) -> None:
         output_path.mkdir(parents=True, exist_ok=True)
         # Only create input tensor, no output
         input_tensor = torch.randn(2, 2)
@@ -192,9 +204,9 @@ def test_get_torch_testdata_missing_output(
 
     mocker.patch.object(
         dbg,
-        "debug_model",
+        "run_debug_model",
         autospec=True,
-        side_effect=fake_debug_model,
+        side_effect=fake_run_debug_model,
     )
 
     with pytest.raises(KeyError, match=r"Output tensor for module.*not found"):
@@ -210,7 +222,9 @@ def test_get_torch_testdata_missing_input(
 ) -> None:
     """Test get_torch_testdata raises KeyError when input tensor is missing."""
 
-    def fake_debug_model(*args: Any, output_path: Path, **kwargs: Any) -> None:
+    def fake_run_debug_model(
+        *args: Any, output_path: Path, **kwargs: Any
+    ) -> None:
         output_path.mkdir(parents=True, exist_ok=True)
         # Only create output tensor, no input
         output_tensor = torch.randn(2, 2)
@@ -218,9 +232,9 @@ def test_get_torch_testdata_missing_input(
 
     mocker.patch.object(
         dbg,
-        "debug_model",
+        "run_debug_model",
         autospec=True,
-        side_effect=fake_debug_model,
+        side_effect=fake_run_debug_model,
     )
 
     with pytest.raises(KeyError, match=r"Input tensor for module.*not found"):

@@ -17,11 +17,13 @@ This module provides modular components for the output pipeline:
 
 1. **TMAStoreWriter**: TMA async store from shared memory to global memory
 2. **StMatrixWriter**: Register to shared memory via st.matrix instructions
-3. **TMEMReader**: Load accumulator data from tensor memory to registers
-4. **EpilogueApplier**: Apply element-wise operations on fragments
+3. **EpilogueApplier**: Apply element-wise operations on fragments
+4. **load_tmem_fragments**: Load accumulator data from TMEM (uses TmemAddress)
 
 The SM100 epilogue pipeline flows as:
     TMEM (accumulators) → Registers → SMEM → GMEM (via TMA)
+
+TMEM operations use TmemAddress from tmem.mojo for load/store abstraction.
 
 Usage:
     # TMA store from shared memory to global memory
@@ -35,7 +37,7 @@ from gpu import WARP_SIZE, lane_id
 from gpu import warp_id as get_warp_id
 from gpu.memory import fence_async_view_proxy
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.sync import named_barrier
+from .barriers import WarpGroupBarrier
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE, RuntimeTuple
 from layout.int_tuple import IntTuple
 from layout.layout import blocked_product, zipped_divide, upcast
@@ -111,7 +113,7 @@ fn tma_store_with_pipeline[
     is_last_stage: Bool,
 ](
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    src: SMemTileType[c_type, _, alignment=128, **_],
+    src: SMemTileType[c_type, _, alignment=128, ...],
     coords: Tuple[UInt, UInt],
 ):
     """Perform TMA store with pipelined commit and wait.
@@ -346,64 +348,6 @@ struct AccumTile[dtype: DType, size: Int]:
         """Create an accumulator tile from upper and lower fragments."""
         self.upper = upper
         self.lower = lower
-
-
-# =============================================================================
-# TMEMReader - Load accumulator data from tensor memory
-# =============================================================================
-
-
-@register_passable("trivial")
-struct TMEMReader[
-    accum_type: DType,
-    data_paths: Int = 16,
-    bits: Int = 256,
-    repeat: Int = 4,
-]:
-    """Load accumulator fragments from tensor memory (TMEM).
-
-    SM100 Blackwell GPUs have dedicated tensor memory for MMA accumulators.
-    This struct encapsulates the tcgen05_ld operations.
-
-    Template Parameters:
-        accum_type: Accumulator data type.
-        data_paths: Number of datapaths (always 16 for SM100).
-        bits: Bits per load (always 256 for SM100).
-        repeat: Number of repetitions for wider loads.
-    """
-
-    # Fragment size = (data_paths * bits/32) / WARP_SIZE * repeat
-    # = (16 * 8) / 32 * 4 = 16
-    comptime frag_size = (
-        Self.data_paths * (Self.bits // 32)
-    ) // 32 * Self.repeat
-
-    # Lower fragment offset in TMEM address encoding (16 rows << 16)
-    comptime lower_offset: UInt32 = 16 << 16
-
-    var base_addr: UInt32
-
-    @always_inline
-    fn __init__(out self, base_addr: UInt32):
-        """Initialize TMEM reader.
-
-        Args:
-            base_addr: Base tensor memory address for the accumulator.
-        """
-        self.base_addr = base_addr
-
-    @always_inline
-    fn stage_addr(self, stage: Int, stageN: Int) -> UInt32:
-        """Compute TMEM address for a given stage.
-
-        Args:
-            stage: Stage index.
-            stageN: Stage width in elements.
-
-        Returns:
-            TMEM address for the stage.
-        """
-        return self.base_addr + UInt32(stage * stageN)
 
 
 # =============================================================================
@@ -777,36 +721,25 @@ fn load_tmem_fragments[
     Returns:
         Tuple of (upper_casted, lower_casted) SIMD fragments.
     """
-    from gpu.tcgen05 import tcgen05_ld, tcgen05_load_wait
+    from .tmem import TmemAddress
 
     comptime width = frag_size * repeat
+    var tmem = TmemAddress(tmem_addr)
 
-    # Load upper fragment
-    var upper_frag = tcgen05_ld[
-        datapaths=data_paths,
-        bits=bits,
-        repeat=repeat,
-        dtype=accum_type,
-        pack=False,
-        width=width,
-    ](tmem_addr)
+    # Load fragments using TmemAddress abstraction
+    var upper_frag = tmem.load_upper[
+        accum_type, width, data_paths, bits, repeat
+    ]()
 
-    # Load lower fragment if required
     var lower_frag = SIMD[accum_type, width]()
 
     @parameter
     if is_lower_required:
-        lower_frag = tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=repeat,
-            dtype=accum_type,
-            pack=False,
-            width=width,
-        ](tmem_addr + (16 << 16))
+        lower_frag = tmem.load_lower[
+            accum_type, width, data_paths, bits, repeat
+        ]()
 
-    # Wait for TMEM loads
-    tcgen05_load_wait()
+    TmemAddress.wait_load()
 
     # Cast and return
     var upper_casted = upper_frag.cast[epilogue_type]()
@@ -1610,40 +1543,29 @@ struct TMEMToSMemWriter[
             stage: Current stage index.
             c_smem_tile: Base shared memory tile (will be reshaped internally).
         """
-        from gpu.tcgen05 import tcgen05_ld, tcgen05_load_wait
+        from .tmem import TmemAddress
 
         comptime frag_size = Self.Config.fragment_size
         comptime is_lower_required = Self.Config.is_lower_frag_required
+        comptime width = frag_size * repeat
 
-        # Compute stage TMEM address
-        var stage_tmem_addr = tmem_addr + UInt32(stage * Self.stageN)
+        # Compute stage TMEM address using TmemAddress abstraction
+        var tmem = TmemAddress(tmem_addr + UInt32(stage * Self.stageN))
 
-        # Load upper fragment from TMEM
-        var upper_frag = tcgen05_ld[
-            datapaths = Self.data_paths,
-            bits=bits,
-            repeat=repeat,
-            dtype = Self.accum_type,
-            pack=False,
-            width = frag_size * repeat,
-        ](stage_tmem_addr)
+        # Load fragments
+        var upper_frag = tmem.load_upper[
+            Self.accum_type, width, Self.data_paths, bits, repeat
+        ]()
 
-        # Load lower fragment if required
-        var lower_frag = SIMD[Self.accum_type, frag_size * repeat]()
+        var lower_frag = SIMD[Self.accum_type, width]()
 
         @parameter
         if is_lower_required:
-            lower_frag = tcgen05_ld[
-                datapaths = Self.data_paths,
-                bits=bits,
-                repeat=repeat,
-                dtype = Self.accum_type,
-                pack=False,
-                width = frag_size * repeat,
-            ](stage_tmem_addr + (16 << 16))
+            lower_frag = tmem.load_lower[
+                Self.accum_type, width, Self.data_paths, bits, repeat
+            ]()
 
-        # Wait for TMEM loads to complete
-        tcgen05_load_wait()
+        TmemAddress.wait_load()
 
         # Cast and write fragments
         self.write_fragments[repeat](
@@ -1869,6 +1791,7 @@ struct SMemEpilogueWriter[
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
     comptime data_paths = 16
     comptime barrier_threads = Self.num_output_warps * WARP_SIZE
+    comptime OutputSyncBarrier = WarpGroupBarrier[Self.barrier_threads]
     comptime Tile = AccumTile[Self.epilogue_dtype, Self.rep_frag_size]
     comptime CTileArray = SMemTileArrayType[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
@@ -1970,7 +1893,7 @@ struct SMemEpilogueWriter[
                 lower_frag, c_smem_warp_tile_lower, warp_offset
             )
 
-            named_barrier[Self.barrier_threads]()
+            Self.OutputSyncBarrier.sync()
 
             shared_memory_epilogue_transpose[
                 UInt(Self.stage),
@@ -2016,7 +1939,7 @@ struct SMemEpilogueWriter[
                 Self.swizzle, Int(Self.stageN), Self.transpose_c
             ](upper_frag, c_smem_warp_tile_upper, warp_offset)
 
-            named_barrier[Self.barrier_threads]()
+            Self.OutputSyncBarrier.sync()
 
             shared_memory_epilogue_transpose[
                 UInt(Self.stage),
@@ -2072,7 +1995,7 @@ struct SMemEpilogueWriter[
                 lower_frag, c_smem_warp_tile_lower
             )
 
-        named_barrier[Self.barrier_threads]()
+        Self.OutputSyncBarrier.sync()
 
         shared_memory_epilogue[
             UInt(Self.MMA_M),
@@ -2315,7 +2238,7 @@ fn shared_memory_epilogue_transpose[
                         )
                         ptr.store[width=simd_size, alignment=alignment](reg_val)
 
-    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+    WarpGroupBarrier[Int(num_output_warps) * WARP_SIZE].sync()
 
 
 @always_inline
@@ -2338,8 +2261,8 @@ fn shared_memory_epilogue[
     N: UInt32,
     c_col: UInt,
     c_row: UInt,
-    c_smem_warp_tile_upper: SMemTileType[c_type, c_smem_upper_layout, *_, **_],
-    c_smem_warp_tile_lower: SMemTileType[c_type, c_smem_lower_layout, *_, **_],
+    c_smem_warp_tile_upper: SMemTileType[c_type, c_smem_upper_layout, ...],
+    c_smem_warp_tile_lower: SMemTileType[c_type, c_smem_lower_layout, ...],
 ):
     """Apply element-wise epilogue to non-transposed shared memory tile.
 
@@ -2525,4 +2448,4 @@ fn shared_memory_epilogue[
         shared_memory_row_upper_half += UInt(distribute_rows)
         shared_memory_row_lower_half += UInt(distribute_rows)
 
-    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+    WarpGroupBarrier[Int(num_output_warps) * WARP_SIZE].sync()

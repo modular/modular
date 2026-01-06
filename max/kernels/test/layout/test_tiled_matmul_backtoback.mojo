@@ -22,7 +22,9 @@ from layout import Layout, RuntimeLayout
 from layout.int_tuple import IntTuple, size
 from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_false
 
 from utils import StaticTuple
@@ -322,7 +324,7 @@ fn alloc_tensor[
 
 fn alloc_tensor[
     elt: DType, layout: Layout
-](rtlayout: RuntimeLayout[layout, **_]) -> LayoutTensor[
+](rtlayout: RuntimeLayout[layout, ...]) -> LayoutTensor[
     elt, layout, MutAnyOrigin
 ]:
     return LayoutTensor[elt, layout, MutAnyOrigin](
@@ -913,7 +915,9 @@ fn bench_b2b[
 
     var flops = 2e-9 * (M * K * L + M * L * N)
     if do_benchmark:
-        var secs_tile = benchmark.run[test_tile_fn](max_runtime_secs=1.0).mean()
+        var secs_tile = benchmark.run[func3=test_tile_fn](
+            max_runtime_secs=1.0
+        ).mean()
         print("GFLOPS Tile: ", flops / secs_tile)
     else:
         test_tile_fn()
@@ -928,7 +932,7 @@ fn bench_b2b[
         )
 
     if do_benchmark:
-        var secs_tile_b2b = benchmark.run[test_tile_b2b_fn](
+        var secs_tile_b2b = benchmark.run[func3=test_tile_b2b_fn](
             max_runtime_secs=1.0
         ).mean()
         print("GFLOPS B2B:  ", flops / secs_tile_b2b)

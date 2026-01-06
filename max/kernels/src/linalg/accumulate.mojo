@@ -21,7 +21,9 @@ from sys.intrinsics import PrefetchOptions
 from algorithm.functional import tile
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import IndexList
 
 
@@ -420,7 +422,7 @@ struct _Accumulator[
         partial_load: Bool = False,
     ](
         mut self,
-        input: UnsafePointer[Scalar[dt], **_],
+        input: UnsafePointer[Scalar[dt], ...],
         input_stride: Int,
         partial_load_size: OptionalReg[Int] = None,
     ):
@@ -459,7 +461,7 @@ struct _Accumulator[
         partial_store: Bool = False,
     ](
         mut self,
-        output: UnsafePointer[Scalar[dt], **_],
+        output: UnsafePointer[Scalar[dt], ...],
         output_stride: Int,
         partial_store_size: OptionalReg[Int] = None,
     ):
@@ -506,9 +508,9 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], **_],
+        a: UnsafePointer[Scalar[a_type], ...],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], **_],
+        b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -565,10 +567,10 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], **_],
+        a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: NDBuffer[DType.int32, 1, _, Self.num_rows],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], **_],
+        b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -645,12 +647,12 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], **_],
+        a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
             DType.int32, Layout.row_major(Self.num_rows)
         ],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], **_],
+        b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -761,9 +763,9 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], **_],
+        a: UnsafePointer[Scalar[a_type], ...],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], **_],
+        b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -826,10 +828,10 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], **_],
+        a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: NDBuffer[DType.int32, 1, _, Self.num_rows],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], **_],
+        b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -891,12 +893,12 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], **_],
+        a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
             DType.int32, Layout.row_major(Self.num_rows)
         ],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], **_],
+        b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -997,9 +999,9 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], **_],
+        a: UnsafePointer[Scalar[a_type], ...],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], **_],
+        b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -1057,10 +1059,10 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], **_],
+        a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: NDBuffer[DType.int32, 1, _, Self.num_rows],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], **_],
+        b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -1119,12 +1121,12 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], **_],
+        a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
             DType.int32, Layout.row_major(Self.num_rows)
         ],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], **_],
+        b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -1178,7 +1180,7 @@ struct _Accumulator[
 fn _simd_load_maybe_partial[
     dt: DType, //, simd_width: Int, partial_load: Bool
 ](
-    ptr: UnsafePointer[Scalar[dt], **_],
+    ptr: UnsafePointer[Scalar[dt], ...],
     offset: Int,
     partial_load_size: OptionalReg[Int] = None,
 ) -> SIMD[dt, simd_width]:
@@ -1205,7 +1207,7 @@ fn _simd_load_maybe_partial[
 fn _simd_store_maybe_partial[
     dt: DType, //, simd_width: Int, partial_store: Bool
 ](
-    ptr: UnsafePointer[Scalar[dt], mut=True, **_],
+    ptr: UnsafePointer[Scalar[dt], ...],
     offset: Int,
     vec: SIMD[dt, simd_width],
     partial_store_size: OptionalReg[Int] = None,

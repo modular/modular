@@ -14,7 +14,9 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     CompilationTarget,
     align_of,
@@ -130,11 +132,11 @@ fn flash_attention[
     naive_kernel: Bool = False,
     sink: Bool = False,
 ](
-    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, **_],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
-    v: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
-    mask: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    mask: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
     scale: Float32,
     context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: OptionalReg[Int] = None,
@@ -217,7 +219,7 @@ fn get_mha_decoding_num_partitions[
 
 fn flash_attention_hw_supported[qkv_type: DType]() -> Bool:
     return has_nvidia_gpu_accelerator() or (
-        has_amd_gpu_accelerator() and qkv_type is DType.bfloat16
+        has_amd_gpu_accelerator() and qkv_type == DType.bfloat16
     )
 
 
@@ -227,10 +229,10 @@ fn depth_supported_by_gpu[
     config: MHAConfig,
     info: GPUInfo,
 ]() -> Bool:
-    comptime is_sm90or100 = (info is H100) or (info is B200)
+    comptime is_sm90or100 = (info == H100) or (info == B200)
     comptime head_depth_supported = depth == 128 or (
         depth == 64
-        and (is_sm90or100 or info is A100 or has_amd_gpu_accelerator())
+        and (is_sm90or100 or info == A100 or has_amd_gpu_accelerator())
     ) or (
         depth == 256
         and (
@@ -264,14 +266,14 @@ fn flash_attention[
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
-    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, **_],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -320,7 +322,7 @@ fn flash_attention[
         q.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     __comptime_assert (
-        q.dtype is DType.float32 or q.dtype.is_half_float()
+        q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     # TODO docstring
@@ -405,7 +407,7 @@ fn flash_attention[
 
 
 @always_inline
-fn q_num_matrix_view_rows[dtype: DType, //](q: LayoutTensor[dtype, **_]) -> Int:
+fn q_num_matrix_view_rows[dtype: DType, //](q: LayoutTensor[dtype, ...]) -> Int:
     # for tma if decoding, we view q as a rows x depth matrix
     # otherwise, we view q as a rows x (depth*num_heads) matrix
     var num_rows: Int = q.dim[0]()
@@ -446,8 +448,8 @@ fn flash_attention_dispatch[
     _padded_ndbuffer: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
+    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
@@ -492,7 +494,7 @@ fn flash_attention_dispatch[
         batch_size = q.dim[0]()
 
     comptime q_half_float = dtype in (DType.float16, DType.bfloat16)
-    comptime q_half_float_or_fp32 = dtype is DType.float32 or q_half_float
+    comptime q_half_float_or_fp32 = dtype == DType.float32 or q_half_float
 
     var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
     var output_device = DeviceBuffer[output.dtype](
@@ -501,8 +503,8 @@ fn flash_attention_dispatch[
 
     @parameter
     if _is_flash_attention_applicable:
-        comptime is_sm90 = ctx.default_device_info is H100
-        comptime is_sm100 = ctx.default_device_info is B200
+        comptime is_sm90 = ctx.default_device_info == H100
+        comptime is_sm100 = ctx.default_device_info == B200
         if not is_token_generation:
             # TODO note that we have to handle mask tensor alignment here.
             # Choose matmul parameters based on dtype.
@@ -660,7 +662,7 @@ fn flash_attention_dispatch[
             comptime BM = 16
             comptime BN = depth
             comptime BK = 32 if has_amd_gpu_accelerator() else (
-                16 if q.dtype is DType.float32 else 32
+                16 if q.dtype == DType.float32 else 32
             )
             comptime WM = BM
             comptime WN = 32
@@ -1111,10 +1113,10 @@ fn flash_attention[
     naive_kernel: Bool = False,
     sink: Bool = False,
 ](
-    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, **_],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
-    v: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     scale: Float32,
@@ -1215,15 +1217,15 @@ fn flash_attention_ragged[
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
-    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, **_],
-    q: LayoutTensor[type, q_layout, address_space = AddressSpace.GENERIC, **_],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
-    v: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[type, q_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
     max_prompt_len: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
@@ -1242,7 +1244,7 @@ fn flash_attention_ragged[
     ), "Q, K, V, output should have same type."
 
     __comptime_assert (
-        q.dtype is DType.float32 or q.dtype.is_half_float()
+        q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     # Runtime dimensions.
@@ -4609,15 +4611,15 @@ fn mha_gpu_naive[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
-    q: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
     output: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, **_
+        output_type, address_space = AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -4974,12 +4976,12 @@ fn mha_gpu_naive[
     //,
     sink: Bool = False,
 ](
-    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, **_],
-    k: LayoutTensor[k_type, address_space = AddressSpace.GENERIC, **_],
-    v: LayoutTensor[v_type, address_space = AddressSpace.GENERIC, **_],
-    mask: LayoutTensor[mask_type, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[k_type, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[v_type, address_space = AddressSpace.GENERIC, ...],
+    mask: LayoutTensor[mask_type, address_space = AddressSpace.GENERIC, ...],
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, **_
+        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -5055,15 +5057,15 @@ fn mha_gpu_naive[
     ragged: Bool = False,
     sink: Bool = False,
 ](
-    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, ...],
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, **_
+        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -5111,12 +5113,12 @@ fn _naive_attention_with_transpose[
     transpose_k: Bool = False,
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     scale: Float32,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
@@ -5262,12 +5264,12 @@ fn _naive_attention[
     transpose_k: Bool = False,
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     scale: Float32,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.

@@ -17,7 +17,8 @@ These APIs are imported automatically, just like builtins.
 
 
 from builtin.constrained import _constrained_conforms_to
-from compile.reflection import get_type_name
+from builtin.rebind import downcast
+from reflection import get_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
@@ -335,7 +336,7 @@ struct List[T: Copyable](
             fill: The element to fill each element of the list.
         """
         self = Self()
-        self.resize(length, fill)
+        self._unchecked_grow(length, fill)
 
     @always_inline
     fn __init__(out self, var *values: Self.T, __list_literal__: ()):
@@ -423,10 +424,18 @@ struct List[T: Copyable](
     fn __del__(deinit self):
         """Destroy all elements in the list and free its memory."""
 
+        _constrained_conforms_to[
+            conforms_to(Self.T, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
+
         @parameter
-        if not Self.T.__del__is_trivial:
+        if not TDestructible.__del__is_trivial:
             for i in range(len(self)):
-                (self._data + i).destroy_pointee()
+                (self._data + i).bitcast[TDestructible]().destroy_pointee()
         self._annotate_delete()
         self._data.free()
 
@@ -477,7 +486,7 @@ struct List[T: Copyable](
     @always_inline
     fn __ne__[
         U: Equatable & Copyable, //
-    ](self: List[U, *_], other: List[U, *_]) -> Bool:
+    ](self: List[U, ...], other: List[U, ...]) -> Bool:
         """Checks if two lists are not equal.
 
         Parameters:
@@ -502,7 +511,7 @@ struct List[T: Copyable](
 
     fn __contains__[
         U: Equatable & Copyable, //
-    ](self: List[U, *_], value: U) -> Bool:
+    ](self: List[U, ...], value: U) -> Bool:
         """Verify if a given value is present in the list.
 
         Parameters:
@@ -527,8 +536,13 @@ struct List[T: Copyable](
                 return True
         return False
 
-    fn __mul__(self, x: Int) -> Self:
+    fn __mul__[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](self: List[_T], x: Int) -> List[_T]:
         """Multiplies the list by x and returns a new list.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Args:
             x: The multiplier number.
@@ -538,12 +552,14 @@ struct List[T: Copyable](
         """
         # avoid the copy since it would be cleared immediately anyways
         if x == 0:
-            return Self()
+            return List[_T]()
         var result = self.copy()
         result *= x
         return result^
 
-    fn __imul__(mut self, x: Int):
+    fn __imul__[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](mut self: List[_T], x: Int):
         """Appends the original elements of this list x-1 times or clears it if
         x is <= 0.
 
@@ -551,6 +567,9 @@ struct List[T: Copyable](
         var a = [1, 2]
         a *= 2 # a = [1, 2, 1, 2]
         ```
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Args:
             x: The multiplier number.
@@ -712,6 +731,14 @@ struct List[T: Copyable](
         Notes:
             If there is no capacity left, resizes to twice the current capacity.
             Except for 0 capacity where it sets 1.
+
+        Examples:
+
+        ```mojo
+        list = [1, 2, 3, 4, 5]
+        list.append(6)
+        print(list) # [1, 2, 3, 4, 5, 6]
+        ```
         """
         if self._len >= self.capacity:
             self._realloc(self.capacity * 2 | Int(self.capacity == 0))
@@ -726,6 +753,14 @@ struct List[T: Copyable](
         Args:
             i: The index for the value.
             value: The value to insert.
+
+        Examples:
+
+        ```mojo
+        list = ["one", "three"]
+        list.insert(1, "two")
+        print(list) # ['one', 'two', 'three']
+        ```
         """
         debug_assert(i <= len(self), "insert index out of range")
 
@@ -748,12 +783,22 @@ struct List[T: Copyable](
             earlier_idx -= 1
             later_idx -= 1
 
-    fn extend(mut self, var other: List[Self.T, *_]):
+    fn extend(mut self, var other: List[Self.T, ...]):
         """Extends this list by consuming the elements of `other`.
 
         Args:
             other: List whose elements will be added in order at the end of this
                 list.
+
+        Examples:
+
+        ```mojo
+        list = ["one", "two", "three"]
+        more = ["four", "five"]
+        list.extend(more^) # more's values are consumed
+        # print(more)      # Error: use of initialized value
+        print(list)        # ['one', 'two', 'three', 'four', 'five']
+        ```
         """
 
         var other_len = len(other)
@@ -786,6 +831,15 @@ struct List[T: Copyable](
 
         Args:
             elements: The elements to copy into this list.
+
+        Examples:
+
+        ```mojo
+        numbers = [1, 2, 3]
+        more = [4, 5, 6]
+        numbers.extend(Span(more))
+        print(numbers.__str__())   # [1, 2, 3, 4, 5, 6]
+        ```
         """
         var elements_len = len(elements)
         var new_num_elts = self._len + elements_len
@@ -811,7 +865,7 @@ struct List[T: Copyable](
 
     fn extend[
         dtype: DType, //
-    ](mut self: List[Scalar[dtype], *_, **_], value: SIMD[dtype, _]):
+    ](mut self: List[Scalar[dtype], ...], value: SIMD[dtype, _]):
         """Extends this list with the elements of a vector.
 
         Parameters:
@@ -822,6 +876,16 @@ struct List[T: Copyable](
 
         Notes:
             If there is no capacity left, resizes to `len(self) + value.size`.
+
+        Examples:
+
+        ```mojo
+        numbers: List[Int64] = [1, 2]
+        more = SIMD[DType.int64, 2](3, 4)
+        numbers.extend(more)
+        print(numbers) # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
+                       #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
+        ```
         """
         self.reserve(self._len + value.size)
         self._annotate_increase(value.size)
@@ -831,7 +895,7 @@ struct List[T: Copyable](
     fn extend[
         dtype: DType, //
     ](
-        mut self: List[Scalar[dtype], *_, **_],
+        mut self: List[Scalar[dtype], ...],
         value: SIMD[dtype, _],
         *,
         count: Int,
@@ -848,6 +912,16 @@ struct List[T: Copyable](
 
         Notes:
             If there is no capacity left, resizes to `len(self) + count`.
+
+        Examples:
+
+        ```mojo
+        numbers: List[Int64] = [1, 2]
+        more = SIMD[DType.int64, 4](3, 4, 5, 6)
+        numbers.extend(more, count=2)
+        print(numbers) # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
+                       #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
+        ```
         """
         debug_assert(count <= value.size, "count must be <= value.size")
         self.reserve(self._len + count)
@@ -864,6 +938,17 @@ struct List[T: Copyable](
 
         Returns:
             The popped value.
+
+        Examples:
+
+        ```mojo
+        numbers = ["1", "2", "3", "4", "5"]
+        value = numbers.pop(); print(value)   # 5
+        print("length", len(numbers))         # length 4
+        value = numbers.pop(2); print(value)  # 3
+        print(numbers)                        # ['1', '2', '4']
+        value = numbers.pop(-2); print(value) # 2, negative index
+        ```
         """
         debug_assert(-self._len <= i < self._len, "pop index out of range")
 
@@ -892,28 +977,50 @@ struct List[T: Copyable](
             return
         self._realloc(new_capacity)
 
-    fn resize(mut self, new_size: Int, value: Self.T):
+    fn resize[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](mut self: List[_T], new_size: Int, value: _T):
         """Resizes the list to the given new size.
 
         Args:
             new_size: The new size.
             value: The value to use to populate new elements.
 
+        Parameters:
+            _T: List element type that supports implicit destruction.
+
         Notes:
             If the new size is smaller than the current one, elements at the end
             are discarded. If the new size is larger than the current one, the
             list is appended with new values elements up to the requested size.
+
+        Examples:
+
+        ```mojo
+        list = ["z", "y", "x", "w"]
+        list.resize(3, "v")
+        print(list)                  # ['z', 'y', 'x']
+        list.resize(6, "v")
+        print(list)                  # ['z', 'y', 'x', 'v', 'v', 'v']
+        ```
         """
         if new_size <= self._len:
             self.shrink(new_size)
         else:
-            self.reserve(new_size)
-            self._annotate_increase(new_size - self._len)
-            for i in range(self._len, new_size):
-                (self._data + i).init_pointee_copy(value)
-            self._len = new_size
+            self._unchecked_grow(new_size, value)
 
-    fn resize(mut self, *, unsafe_uninit_length: Int):
+    fn _unchecked_grow(mut self, new_size: Int, value: Self.T):
+        debug_assert(new_size >= self._len)
+
+        self.reserve(new_size)
+        self._annotate_increase(new_size - self._len)
+        for i in range(self._len, new_size):
+            (self._data + i).init_pointee_copy(value)
+        self._len = new_size
+
+    fn resize[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](mut self: List[_T], *, unsafe_uninit_length: Int):
         """Resizes the list to the given new size leaving any new elements
         uninitialized.
 
@@ -921,8 +1028,21 @@ struct List[T: Copyable](
         are discarded. If the new size is larger than the current one, the
         list is extended and the new elements are left uninitialized.
 
+        Parameters:
+            _T: List element type that supports implicit destruction.
+
         Args:
             unsafe_uninit_length: The new size.
+
+        Examples:
+
+        ```mojo
+        list = [1, 2, 3]
+        list.resize(unsafe_uninit_length=5) # Indices 3 and 4 are uninitialized memory
+        print(len(list))                    # 5
+        list[3] = 10; list[4] = 20
+        print(list)                         # [1, 2, 3, 10, 20]
+        ```
         """
         if unsafe_uninit_length <= self._len:
             self.shrink(unsafe_uninit_length)
@@ -931,8 +1051,13 @@ struct List[T: Copyable](
             self._annotate_increase(unsafe_uninit_length - self._len)
             self._len = unsafe_uninit_length
 
-    fn shrink(mut self, new_size: Int):
+    fn shrink[
+        _T: Copyable & ImplicitlyDestructible, //
+    ](mut self: List[_T], new_size: Int):
         """Resizes to the given new size which must be <= the current size.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Args:
             new_size: The new size.
@@ -940,6 +1065,14 @@ struct List[T: Copyable](
         Notes:
             With no new value provided, the new size must be smaller than or
             equal to the current one. Elements at the end are discarded.
+
+        Examples:
+
+        ```mojo
+        numbers = [1, 2, 3, 4, 5, 6]
+        numbers.shrink(2); print(numbers) # [1, 2]
+        # numbers.shrink(8)               # Error: new size is bigger than current
+        ```
         """
         if len(self) < new_size:
             abort(
@@ -950,7 +1083,7 @@ struct List[T: Copyable](
             )
 
         @parameter
-        if not Self.T.__del__is_trivial:
+        if not _T.__del__is_trivial:
             for i in range(new_size, len(self)):
                 (self._data + i).destroy_pointee()
         var old_size: Int = self._len
@@ -959,7 +1092,16 @@ struct List[T: Copyable](
         self.reserve(new_size)
 
     fn reverse(mut self):
-        """Reverses the elements of the list."""
+        """Reverses the elements of the list.
+
+        Examples:
+
+        ```mojo
+        list = ["o", "l", "l", "e", "H"]
+        list.reverse()
+        print("".join(list)) # Hello
+        ```
+        """
 
         var earlier_idx = 0
         var later_idx = len(self) - 1
@@ -982,7 +1124,7 @@ struct List[T: Copyable](
     fn index[
         C: Equatable & Copyable, //
     ](
-        ref self: List[C, *_],
+        ref self: List[C, ...],
         value: C,
         start: Int = 0,
         stop: Optional[Int] = None,
@@ -1036,8 +1178,21 @@ struct List[T: Copyable](
                 return i
         raise "ValueError: Given element is not in list"
 
-    fn clear(mut self):
-        """Clears the elements in the list."""
+    fn clear[_T: Copyable & ImplicitlyDestructible, //](mut self: List[_T]):
+        """Clears the elements in the list.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
+
+        Examples:
+
+        ```mojo
+        list = ["o", "l", "l", "e", "H"]
+        print(len(list))  # 5
+        list.clear()
+        print(len(list))  # 0
+        ```
+        """
         for i in range(self._len):
             (self._data + i).destroy_pointee()
         var old_size: Int = self._len
@@ -1049,6 +1204,18 @@ struct List[T: Copyable](
 
         Returns:
             The underlying data.
+
+        Examples:
+
+        ```mojo
+        from sys.info import size_of
+        list: List[Int64] = [1, 2, 3, 4]
+        ptr = list.steal_data() # list is no longer available
+        for idx in range(4):
+            print(ptr[idx], end=" ")
+        print() # Output: 1 2 3 4
+        # Free the pointer data
+        ```
         """
         self._annotate_delete()
         var ptr = self._data
@@ -1145,8 +1312,13 @@ struct List[T: Copyable](
         return (self._data + idx)[]
 
     @always_inline
-    fn unsafe_set(mut self, idx: Int, var value: Self.T):
+    fn unsafe_set[
+        _T: Copyable & ImplicitlyDestructible
+    ](mut self: List[_T], idx: Int, var value: _T):
         """Write a value to a given location without checking index bounds.
+
+        Parameters:
+            _T: List element type that supports implicit destruction.
 
         Args:
             idx: The index of the element to set.
@@ -1174,7 +1346,7 @@ struct List[T: Copyable](
 
     fn count[
         _T: Equatable & Copyable, //
-    ](self: List[_T, *_], value: _T) -> Int:
+    ](self: List[_T, ...], value: _T) -> Int:
         """Counts the number of occurrences of a value in the list.
 
         Parameters:
@@ -1186,6 +1358,13 @@ struct List[T: Copyable](
 
         Returns:
             The number of occurrences of the value in the list.
+
+        Examples:
+
+        ```mojo
+        list = ["a", "b", "c", "b", "b", "a", "c"]
+        print(list.count("b")) # 3
+        ```
         """
         var count = 0
         for elem in self:

@@ -34,7 +34,6 @@ from memory import bitcast
 @register_passable("trivial")
 struct Consistency(
     Equatable,
-    Identifiable,
     ImplicitlyCopyable,
     Representable,
     Stringable,
@@ -83,7 +82,7 @@ struct Consistency(
         """
         self._value = value
 
-    @always_inline
+    @always_inline("builtin")
     fn __eq__(self, other: Self) -> Bool:
         """Compares two Consistency objects for equality.
 
@@ -106,18 +105,6 @@ struct Consistency(
             True if the objects are not equal, False otherwise.
         """
         return self._value != other._value
-
-    @always_inline
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if the Consistency object is the same as another.
-
-        Args:
-            other: The other Consistency object to compare with.
-
-        Returns:
-            True if the objects are the same, False otherwise.
-        """
-        return self == other
 
     fn __repr__(self) -> String:
         """Returns a string representation of a `Consistency`.
@@ -144,19 +131,19 @@ struct Consistency(
             A string slice representation of this consistency.
         """
 
-        if self is Self.NOT_ATOMIC:
+        if self == Self.NOT_ATOMIC:
             return "Consistency.NOT_ATOMIC"
-        if self is Self.UNORDERED:
+        if self == Self.UNORDERED:
             return "Consistency.UNORDERED"
-        if self is Self.MONOTONIC:
+        if self == Self.MONOTONIC:
             return "Consistency.MONOTONIC"
-        if self is Self.ACQUIRE:
+        if self == Self.ACQUIRE:
             return "Consistency.ACQUIRE"
-        if self is Self.RELEASE:
+        if self == Self.RELEASE:
             return "Consistency.RELEASE"
-        if self is Self.ACQUIRE_RELEASE:
+        if self == Self.ACQUIRE_RELEASE:
             return "Consistency.ACQUIRE_RELEASE"
-        if self is Self.SEQUENTIAL:
+        if self == Self.SEQUENTIAL:
             return "Consistency.SEQUENTIAL"
 
         return "Consistency.UNKNOWN"
@@ -168,19 +155,19 @@ struct Consistency(
         Returns:
             The MLIR attribute representation of the Consistency object.
         """
-        if self is Self.NOT_ATOMIC:
+        if self == Self.NOT_ATOMIC:
             return __mlir_attr.`#pop<atomic_ordering not_atomic>`
-        if self is Self.UNORDERED:
+        if self == Self.UNORDERED:
             return __mlir_attr.`#pop<atomic_ordering unordered>`
-        if self is Self.MONOTONIC:
+        if self == Self.MONOTONIC:
             return __mlir_attr.`#pop<atomic_ordering monotonic>`
-        if self is Self.ACQUIRE:
+        if self == Self.ACQUIRE:
             return __mlir_attr.`#pop<atomic_ordering acquire>`
-        if self is Self.RELEASE:
+        if self == Self.RELEASE:
             return __mlir_attr.`#pop<atomic_ordering release>`
-        if self is Self.ACQUIRE_RELEASE:
+        if self == Self.ACQUIRE_RELEASE:
             return __mlir_attr.`#pop<atomic_ordering acq_rel>`
-        if self is Self.SEQUENTIAL:
+        if self == Self.SEQUENTIAL:
             return __mlir_attr.`#pop<atomic_ordering seq_cst>`
 
         abort()
@@ -253,7 +240,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn load[
         *,
         ordering: Consistency = Consistency.SEQUENTIAL,
-    ](ptr: UnsafePointer[mut=False, Scalar[Self.dtype], **_]) -> Scalar[
+    ](ptr: UnsafePointer[mut=False, Scalar[Self.dtype], ...]) -> Scalar[
         Self.dtype
     ]:
         """Loads the current value from the atomic.
@@ -295,7 +282,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
     ) -> Scalar[Self.dtype]:
         """Performs atomic in-place add.
@@ -338,7 +325,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn _xchg[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
     ) -> Scalar[Self.dtype]:
         """Performs an atomic exchange.
@@ -377,7 +364,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn store[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
     ):
         """Performs atomic store.
@@ -503,7 +490,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         mut expected: Scalar[Self.dtype],
         desired: Scalar[Self.dtype],
     ) -> Bool:
@@ -597,7 +584,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn max[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
     ):
         """Performs atomic in-place max on the pointer.
@@ -653,7 +640,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn min[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
     ):
         """Performs atomic in-place min on the pointer.
@@ -721,8 +708,8 @@ fn _compare_exchange_integral_impl[
     failure_ordering: Consistency,
     success_ordering: Consistency,
 ](
-    atomic_ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
-    expected_ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    atomic_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    expected_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     desired: Scalar[dtype],
 ) -> Bool:
     __comptime_assert dtype.is_integral(), "the input type must be integral"
@@ -757,7 +744,7 @@ fn _compare_exchange_integral_impl[
 @always_inline
 fn _max_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Consistency
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], rhs: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op max>`,
@@ -770,7 +757,7 @@ fn _max_impl_base[
 @always_inline
 fn _min_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Consistency
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], rhs: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op min>`,
@@ -787,7 +774,7 @@ fn _max_impl[
     *,
     scope: StaticString,
     ordering: Consistency,
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], rhs: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()
@@ -814,7 +801,7 @@ fn _min_impl[
     *,
     scope: StaticString,
     ordering: Consistency,
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], rhs: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()

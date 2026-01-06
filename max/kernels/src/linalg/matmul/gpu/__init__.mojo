@@ -36,11 +36,9 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from logger import Logger
-from memory import (
-    LegacyUnsafePointer as UnsafePointer,
-    bitcast,
-    stack_allocation,
-)
+from memory import LegacyUnsafePointer, bitcast, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import Index, IndexList
 from utils.numerics import get_accum_type
@@ -413,13 +411,13 @@ fn _matmul_gpu[
     comptime amd_float8_dtypes = (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
-    ) if ctx.default_device_info is MI355X else (
+    ) if ctx.default_device_info == MI355X else (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     )
 
     comptime matmul_supported_format_amd = (
-        (a_type is DType.bfloat16 or a_type in amd_float8_dtypes)
+        (a_type == DType.bfloat16 or a_type in amd_float8_dtypes)
         and b_type == a_type
         and c_type in (DType.float32, DType.bfloat16)
     )
@@ -455,9 +453,9 @@ fn _matmul_gpu[
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
     var h100_matmul_cond = (
-        materialize[ctx.default_device_info is H100]()
+        materialize[ctx.default_device_info == H100]()
         and n % 8 == 0
-        and a_type is DType.bfloat16
+        and a_type == DType.bfloat16
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     var multi_gemm_cond = (
@@ -512,7 +510,7 @@ fn _matmul_gpu[
         ](c, a, b, ctx)
 
     @parameter
-    if ctx.default_device_info is H100:
+    if ctx.default_device_info == H100:
         var status = matmul_dispatch_sm90[
             c_type,
             a_type,
@@ -674,7 +672,7 @@ fn _matmul_gpu[
                 if (
                     a_type == b_type
                     and a_type.is_half_float()
-                    and ctx.default_device_info is A100
+                    and ctx.default_device_info == A100
                     and transpose_b
                 ):
                     comptime Ms: List[Int32] = [

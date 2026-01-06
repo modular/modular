@@ -29,7 +29,7 @@ such as shared memory allocation, cache behavior, and cluster configuration.
 
 @fieldwise_init
 @register_passable("trivial")
-struct Attribute(Identifiable, Writable):
+struct Attribute(Equatable, Writable):
     """Represents GPU kernel function attributes.
 
     This struct defines constants for various function attributes that can be queried
@@ -145,18 +145,6 @@ struct Attribute(Identifiable, Writable):
         """
         return not (self == other)
 
-    @always_inline("nodebug")
-    fn __is__(self, other: Self) -> Bool:
-        """Identity comparison operator for Attribute instances.
-
-        Args:
-            other: The Attribute to compare with.
-
-        Returns:
-            True if both attributes are identical (have the same code), False otherwise.
-        """
-        return self == other
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `Attribute` to the provided writer.
 
@@ -166,27 +154,27 @@ struct Attribute(Identifiable, Writable):
         Args:
             writer: A Writer object that will receive the string representation.
         """
-        if self is Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES:
+        if self == Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES:
             return writer.write("MAX_DYNAMIC_SHARED_SIZE_BYTES")
-        if self is Attribute.PREFERRED_SHARED_MEMORY_CARVEOUT:
+        if self == Attribute.PREFERRED_SHARED_MEMORY_CARVEOUT:
             return writer.write("PREFERRED_SHARED_MEMORY_CARVEOUT")
-        if self is Attribute.CACHE_MODE_CA:
+        if self == Attribute.CACHE_MODE_CA:
             return writer.write("CACHE_MODE_CA")
-        if self is Attribute.PTX_VERSION:
+        if self == Attribute.PTX_VERSION:
             return writer.write("PTX_VERSION")
-        if self is Attribute.BINARY_VERSION:
+        if self == Attribute.BINARY_VERSION:
             return writer.write("BINARY_VERSION")
-        if self is Attribute.NON_PORTABLE_CLUSTER_SIZE_ALLOWED:
+        if self == Attribute.NON_PORTABLE_CLUSTER_SIZE_ALLOWED:
             return writer.write("NON_PORTABLE_CLUSTER_SIZE_ALLOWED")
-        if self is Attribute.CLUSTER_SCHEDULING_POLICY_PREFERENCE:
+        if self == Attribute.CLUSTER_SCHEDULING_POLICY_PREFERENCE:
             return writer.write("CLUSTER_SCHEDULING_POLICY_PREFERENCE")
-        if self is Attribute.CLUSTER_SIZE_MUST_BE_SET:
+        if self == Attribute.CLUSTER_SIZE_MUST_BE_SET:
             return writer.write("CLUSTER_SIZE_MUST_BE_SET")
-        if self is Attribute.REQUIRED_CLUSTER_WIDTH:
+        if self == Attribute.REQUIRED_CLUSTER_WIDTH:
             return writer.write("REQUIRED_CLUSTER_WIDTH")
-        if self is Attribute.REQUIRED_CLUSTER_HEIGHT:
+        if self == Attribute.REQUIRED_CLUSTER_HEIGHT:
             return writer.write("REQUIRED_CLUSTER_HEIGHT")
-        if self is Attribute.REQUIRED_CLUSTER_DEPTH:
+        if self == Attribute.REQUIRED_CLUSTER_DEPTH:
             return writer.write("REQUIRED_CLUSTER_DEPTH")
 
 

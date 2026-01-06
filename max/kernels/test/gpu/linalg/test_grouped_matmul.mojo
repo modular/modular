@@ -21,7 +21,9 @@ from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -632,7 +634,7 @@ def main():
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         @parameter
-        if ctx.default_device_info is B200:
+        if ctx.default_device_info == B200:
             test[
                 DType.bfloat16,
                 DType.bfloat16,

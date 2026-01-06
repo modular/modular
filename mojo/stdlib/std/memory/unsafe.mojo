@@ -133,15 +133,15 @@ fn _uint(n: Int) -> DType:
 fn _llvm_bitwidth(dtype: DType) -> Int:
     # fmt: off
     return (
-        1 if dtype is DType._uint1 else
-        2 if dtype is DType._uint2 else
-        4 if dtype is DType._uint4 else
-        8 if dtype is DType.uint8 else
-        16 if dtype is DType.uint16 else
-        32 if dtype is DType.uint32 else
-        64 if dtype is DType.uint64 else
-        128 if dtype is DType.uint128 else
-        256 if dtype is DType.uint256 else
+        1 if dtype == DType._uint1 else
+        2 if dtype == DType._uint2 else
+        4 if dtype == DType._uint4 else
+        8 if dtype == DType.uint8 else
+        16 if dtype == DType.uint16 else
+        32 if dtype == DType.uint32 else
+        64 if dtype == DType.uint64 else
+        128 if dtype == DType.uint128 else
+        256 if dtype == DType.uint256 else
         -1
     )
     # fmt: on

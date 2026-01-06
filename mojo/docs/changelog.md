@@ -180,7 +180,24 @@ what we publish.
       var f2 : fn (x: SomeType) -> Float64 = fn_returns_ref
   ```
 
+- Mojo now supports the `...` expression.  It is a logically empty value of
+  `EllipsisType`.  It can be used in overloaded functions (e.g. getitem calls),
+  e.g.:
+
+  ```mojo
+  struct YourType:
+    fn __getitem__(self, idx: Int) -> Int:
+      # ... behavior when passed x[i]
+    fn __getitem__(self, idx: EllipsisType) -> Int:
+      # ... behavior when passed x[...]
+  ```
+
 ### Language changes
+
+- The `*_` and `**_` syntax for explicitly unpacked parameters has been replaced
+  with a simplified `...` syntax.  Instead of `T[4, 5, *_, **_]` you can now use
+  `T[4, 5, ...]`.  The `...` delays binding of both keyword and non-keyword
+  parameters.
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
 
@@ -198,10 +215,11 @@ what we publish.
 - The Mojo language basic trait hierarchy has changed to expand first-class
   support for linear types (aka. non-implicitly-destructible types).
 
-  The `AnyType` and `Movable` traits no longer requires that a type provide a
-  `__del__()` method that may be called by the compiler implicitly whenever an
-  owned value is unused. Instead, the `ImplicitlyDestructible` trait should be
-  used in generic code to require that a type is implicitly destructible.
+  The `AnyType`, `Movable`, and `Copyable` traits no longer require that a type
+  provide a `__del__()` method that may be called by the compiler implicitly
+  whenever an owned value is unused. Instead, the `ImplicitlyDestructible` trait
+  should be used in generic code to require that a type is implicitly
+  destructible.
 
   Linear types enable Mojo programs to encode powerful invariants in the type
   system, by modeling a type in such a way that a user is required to take an
@@ -228,7 +246,17 @@ what we publish.
   conversion from any origin to an immutable origin (`ImmutOrigin(x)`) and an
   explicit unsafe conversion (`SomeOrigin(unsafe_cast=x)`).
 
+- Mojo no longer supports overloading functions on parameters alone: it will not
+  try to disambiguate between `fn foo[a: Int8]():` and `fn foo[a: Int32]():` for
+  example.  Mojo never fully implemented the previous support in a reliable way,
+  and removing this simplifies the language.  It still supports overloading on
+  function arguments of course.
+
 ### Library changes
+
+- We have removed `Identifiable` from enum-like types
+  (such as `DType` and `AddressSpace`). This change is
+  related to the idea that `Identifiable` is for comparing memory addresses.
 
 - The `Iterator` trait and and for-each loop have removed the `__has_next__`
   method and now using a `__next__` method that `raises StopIteration`. This
@@ -237,35 +265,103 @@ what we publish.
 
 - `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
 
-- The `compile.reflection` module now supports compile-time struct field
-  introspection:
+- The `reflection` module has been moved from `compile.reflection` to a top-level
+  `reflection` module. Update imports from `from compile.reflection import ...`
+  to `from reflection import ...`.
 
-  - `get_struct_field_types[T]()` returns a variadic of all field types
-  - `get_struct_field_names[T]()` returns an `InlineArray[StaticString, N]` of
+- The `reflection` module now supports compile-time struct field introspection:
+
+  - `struct_field_count[T]()` returns the number of fields
+  - `struct_field_names[T]()` returns an `InlineArray[StaticString, N]` of
     all field names
-  - `get_struct_field_count[T]()` returns the number of fields
+  - `struct_field_types[T]()` returns a variadic of all field types
   - `struct_field_index_by_name[T, name]()` returns the index of a field by name
   - `struct_field_type_by_name[T, name]()` returns the type of a field,
     wrapped in a `ReflectedType` struct
 
-  Example:
+  These APIs work with both concrete types and generic type parameters,
+  enabling generic serialization, comparison, and other reflection-based
+  utilities.
+
+  Example iterating over fields (works with generics):
 
   ```mojo
-  struct Point:
-      var x: Int
-      var y: Float64
-
-  fn example():
-      # Iterate over all fields
+  fn print_fields[T: AnyType]():
+      comptime names = struct_field_names[T]()
+      comptime types = struct_field_types[T]()
       @parameter
-      for i in range(get_struct_field_count[Point]()):
-          comptime field_type = get_struct_field_types[Point]()[i]
-          comptime field_name = get_struct_field_names[Point]()[i]
+      for i in range(struct_field_count[T]()):
+          print(names[i], get_type_name[types[i]]())
 
-      # Lookup by name
-      comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
-      comptime field_type = struct_field_type_by_name[Point, "y"]()
-      var value: field_type.T = 3.14  # field_type.T is Float64
+  fn main():
+      print_fields[Point]()  # Works with any struct!
+  ```
+
+  Example looking up a field by name:
+
+  ```mojo
+  comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
+  comptime field_type = struct_field_type_by_name[Point, "y"]()
+  var value: field_type.T = 3.14  # field_type.T is Float64
+  ```
+
+- Two new magic functions have been added for index-based struct field access:
+
+  - `__struct_field_type_at_index(T, idx)` returns the type of the field at the
+    given index.
+  - `__struct_field_ref(idx, ref s)` returns a reference to the field at the
+    given index.
+
+  Unlike `kgen.struct.extract` which copies the field value, `__struct_field_ref`
+  returns a reference, enabling reflection-based utilities to work with
+  non-copyable types:
+
+  ```mojo
+  struct Container:
+      var id: Int
+      var resource: NonCopyableResource  # Cannot be copied!
+
+  fn inspect(ref c: Container):
+      # Get references to fields without copying
+      ref id_ref = __struct_field_ref(0, c)
+      ref resource_ref = __struct_field_ref(1, c)
+
+      print("id:", id_ref)
+      print("resource:", resource_ref.data)
+
+      # Mutation through reference also works
+      __struct_field_ref(0, c) = 42
+  ```
+
+  The index can be either a literal integer or a parametric index (such as a
+  loop variable in a `@parameter for` loop), enabling generic field iteration:
+
+  ```mojo
+  fn print_all_fields[T: AnyType](ref s: T):
+      comptime names = struct_field_names[T]()
+      @parameter
+      for i in range(struct_field_count[T]()):
+          print(names[i], "=", __struct_field_ref(i, s))
+
+  fn main():
+      var c = Container(42, NonCopyableResource(100))
+      print_all_fields(c)  # Works with any struct!
+  ```
+
+  This enables implementing generic Debug traits and serialization utilities
+  that work with any struct, regardless of whether its fields are copyable.
+
+- The `conforms_to` builtin now accepts types from the reflection APIs like
+  `struct_field_types[T]()`. This enables checking trait conformance on
+  dynamically obtained field types:
+
+  ```mojo
+  @parameter
+  for i in range(struct_field_count[MyStruct]()):
+      comptime field_type = struct_field_types[MyStruct]()[i]
+      @parameter
+      if conforms_to(field_type, Copyable):
+          print("Field", i, "is Copyable")
   ```
 
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
@@ -391,15 +487,18 @@ what we publish.
   generic code that supports object instances that cannot be implicitly
   destroyed.
 
-  - `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear types
+  - `Span`, `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear
+    types.
     - Added `UnsafePointer.destroy_pointee_with()`, for destroying linear types
       in-place using a destructor function pointer.
-  - `Optional`, `Variant` and `VariadicPack` can now contain linear types
+  - `List`, `InlineArray`, `Optional`, `Variant`, `VariadicListMem`, and
+    `VariadicPack` can now contain linear types.
     - `Variant.take` now takes `deinit self` instead of `mut self`.
     - Added `Variant.destroy_with` for destroying a linear type in-place with an
       explicit destructor function.
-  - `Iterator.Element` no longer requires `ImplicitlyDestructible`
-  - `UnsafeMaybeUninitialized` can now contain linear types
+    - The `*args` language syntax for arguments now supports linear types.
+  - `Iterator.Element` no longer requires `ImplicitlyDestructible`.
+  - `UnsafeMaybeUninitialized` can now contain linear types.
 
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
   and `trait_downcast()` to perform "late" element type conformance checking,
@@ -451,6 +550,16 @@ what we publish.
 
 - The `iter.peekable` function has been added. This allows users to peek at
   the next element of an iterator without advancing it.
+
+- The "LegacyUnsafePointer" type has been changed to take its mutability as a
+  first inferred parameter without a default, rather than a later explicit
+  parameter with a default value of true. We recommend moving off of this type
+  as soon as possible, but to roughly emulate the prior behavior, try out:
+
+  ```mojo
+  from memory import LegacyUnsafePointer
+  comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+  ```
 
 ### Tooling changes
 
@@ -510,7 +619,7 @@ or removed in future releases.
 - Added support for `DType` expressions in `where` clauses:
 
   ```mojo
-  fn foo[dt: DType]() -> Int where dt is DType.int32:
+  fn foo[dt: DType]() -> Int where dt == DType.int32:
       return 42
   ```
 
@@ -540,6 +649,9 @@ or removed in future releases.
 
 ### 🛠️ Fixed
 
+- [Issue #5732](https://github.com/modular/modular/issues/5732): Compiler
+  crash when using `get_type_name` with types containing constructor calls in
+  their parameters (like `A[B(True)]`) when extracted via `struct_field_types`.
 - [Issue #1850](https://github.com/modular/modular/issues/1850): Mojo assumes
   string literal at start of a function is a doc comment
 - [Issue #4501](https://github.com/modular/modular/issues/4501): Incorrect
@@ -556,3 +668,8 @@ or removed in future releases.
   crashes on alias of parametrized function with origin.
 - [Issue #5618](https://github.com/modular/modular/issues/5618): Compiler crash
   when should be implicit conversion error.
+- [Issue #5723](https://github.com/modular/modular/issues/5723): Compiler crash
+  when using `get_type_name` with nested parametric types from `struct_field_types`.
+- [Issue #5731](https://github.com/modular/modular/issues/5731): Compiler crash
+  when using reflection functions on builtin types like `Int`, `NoneType`, or
+  `Origin` passed through generic type parameters.

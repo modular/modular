@@ -23,7 +23,7 @@ from os import abort
 from sys import bit_width_of
 from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
 
-from compile.reflection import get_type_name
+from reflection import get_type_name
 
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
@@ -238,7 +238,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
 
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():

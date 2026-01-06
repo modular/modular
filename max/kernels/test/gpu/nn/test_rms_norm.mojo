@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import sqrt
 from random import rand
 
@@ -25,7 +27,7 @@ from utils.index import Index, IndexList
 
 fn compute_rms[
     dtype: DType
-](data: LayoutTensor[dtype, **_], size: Int, eps: Scalar[dtype]) -> Scalar[
+](data: LayoutTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
     dtype
 ]:
     __comptime_assert data.rank == 1, "data.rank must be 1"

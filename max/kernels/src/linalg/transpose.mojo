@@ -28,7 +28,9 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from memory import LegacyUnsafePointer as UnsafePointer, memcpy
+from memory import LegacyUnsafePointer, memcpy
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.asyncrt import parallelism_level
 
 from utils.index import IndexList, StaticTuple
@@ -73,7 +75,7 @@ fn _transpose_inplace_4x4[
 
 fn _transpose_inplace_4x4[
     dtype: DType,
-](bufloat0: LayoutTensor[mut=True, dtype, **_]):
+](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
     comptime cols = Int(bufloat0.layout.shape[1])
 
@@ -222,7 +224,7 @@ fn _transpose_inplace_8x8[
 
 fn _transpose_inplace_8x8[
     dtype: DType,
-](bufloat0: LayoutTensor[mut=True, dtype, **_]):
+](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
     comptime cols = Int(bufloat0.layout.shape[1])
     __comptime_assert rows == 8
@@ -537,7 +539,7 @@ fn _transpose_inplace_16x16[
 
 fn _transpose_inplace_16x16[
     dtype: DType,
-](bufloat0: LayoutTensor[mut=True, dtype, **_]):
+](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
     comptime cols = Int(bufloat0.layout.shape[1])
     __comptime_assert rows == 16
@@ -806,7 +808,7 @@ fn _transpose_inplace_naive[
 
 fn _transpose_inplace_naive[
     dtype: DType,
-](buf: LayoutTensor[mut=True, dtype, **_]):
+](buf: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(buf.layout.shape[0])
     comptime cols = Int(buf.layout.shape[1])
 
@@ -840,7 +842,7 @@ fn transpose_inplace[
     rows: Int,
     cols: Int,
     dtype: DType,
-](buf: LayoutTensor[mut=True, dtype, **_]):
+](buf: LayoutTensor[mut=True, dtype, ...]):
     # Reject sizes covered by specialized implementations
     __comptime_assert buf.rank == 2
     __comptime_assert rows == cols
@@ -924,8 +926,8 @@ fn _fill_strides[
     input_layout: Layout,
     dtype: DType,
 ](
-    buf: LayoutTensor[dtype, input_layout, **_],
-    strides: LayoutTensor[mut=True, DType.int, Layout.row_major(buf.rank), **_],
+    buf: LayoutTensor[dtype, input_layout, ...],
+    strides: LayoutTensor[mut=True, DType.int, Layout.row_major(buf.rank), ...],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -1347,7 +1349,7 @@ fn transpose_4d_swap_middle[
     rank: Int, dtype: DType, //
 ](
     output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, *_],
+    input: NDBuffer[dtype, rank, _, _, _],
     perms: UnsafePointer[Scalar[DType.int]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
