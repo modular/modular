@@ -31,12 +31,12 @@ fn apply_penalties_to_logits[
     //,
     target: StaticString,
 ](
-    logits: LayoutTensor[mut=True, logit_type, **_],
-    compressed_frequency_data: LayoutTensor[DType.int32, **_],
-    frequency_offsets: LayoutTensor[DType.uint32, **_],
-    frequency_penalty: LayoutTensor[penalty_type, **_],
-    presence_penalty: LayoutTensor[penalty_type, **_],
-    repetition_penalty: LayoutTensor[penalty_type, **_],
+    logits: LayoutTensor[mut=True, logit_type, ...],
+    compressed_frequency_data: LayoutTensor[DType.int32, ...],
+    frequency_offsets: LayoutTensor[DType.uint32, ...],
+    frequency_penalty: LayoutTensor[penalty_type, ...],
+    presence_penalty: LayoutTensor[penalty_type, ...],
+    repetition_penalty: LayoutTensor[penalty_type, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -178,9 +178,9 @@ fn update_frequency_data[
     //,
     target: StaticString,
 ](
-    compressed_frequency_data: LayoutTensor[mut=True, DType.int32, **_],
-    frequency_offsets: LayoutTensor[DType.uint32, **_],
-    new_tokens: LayoutTensor[token_type, **_],
+    compressed_frequency_data: LayoutTensor[mut=True, DType.int32, ...],
+    frequency_offsets: LayoutTensor[DType.uint32, ...],
+    new_tokens: LayoutTensor[token_type, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """

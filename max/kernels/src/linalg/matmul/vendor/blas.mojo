@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -163,13 +163,13 @@ fn _resolve_backend[
     if backend is not Backend.AUTOMATIC:
         return backend
     # TODO: Remove this once we have a proper hipBLASLt backend for float32.
-    elif dtype is DType.float32 and has_amd_gpu_accelerator():
+    elif dtype == DType.float32 and has_amd_gpu_accelerator():
         return Backend.ROCBLAS
     elif has_amd_gpu_accelerator():
         return Backend.HIPBLASLT
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
-    elif dtype.is_float8() or dtype is DType.uint8:
+    elif dtype.is_float8() or dtype == DType.uint8:
         return Backend.CUBLASLT
     return Backend.CUBLAS
 
@@ -405,9 +405,9 @@ fn matmul[
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
-    c_tensor: LayoutTensor[c_type, c_layout, *_],
-    a_tensor: LayoutTensor[a_type, a_layout, *_],
-    b_tensor: LayoutTensor[b_type, b_layout, *_],
+    c_tensor: LayoutTensor[c_type, c_layout, _],
+    a_tensor: LayoutTensor[a_type, a_layout, _],
+    b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
         LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
@@ -454,9 +454,9 @@ fn matmul[
 ](
     ctx: DeviceContext,
     handle: Handle,
-    c_tensor: LayoutTensor[c_type, c_layout, *_],
-    a_tensor: LayoutTensor[a_type, a_layout, *_],
-    b_tensor: LayoutTensor[b_type, b_layout, *_],
+    c_tensor: LayoutTensor[c_type, c_layout, _],
+    a_tensor: LayoutTensor[a_type, a_layout, _],
+    b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
         LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
@@ -588,9 +588,9 @@ fn _cublas_matmul[
 ](
     ctx: DeviceContext,
     handle: UnsafePointer[cublasContext],
-    c: LayoutTensor[c_type, c_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    c: LayoutTensor[c_type, c_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -599,7 +599,7 @@ fn _cublas_matmul[
     beta: Float32 = 0.0,
 ) raises:
     __comptime_assert a_type == b_type and (
-        a_type is DType.float32 or a_type.is_half_float()
+        a_type == DType.float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
         " it if more types are needed."
@@ -616,9 +616,9 @@ fn _cublas_matmul[
     var compute_type: ComputeType
 
     @parameter
-    if a_type is DType.float16:
+    if a_type == DType.float16:
         compute_type = ComputeType.COMPUTE_32F
-    elif a_type is DType.bfloat16:
+    elif a_type == DType.bfloat16:
         compute_type = ComputeType.COMPUTE_32F
     else:
         compute_type = (
@@ -743,9 +743,9 @@ fn _rocblas_matmul[
 ](
     ctx: DeviceContext,
     handle: _rocblas.Handle,
-    c: LayoutTensor[c_type, c_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    c: LayoutTensor[c_type, c_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -754,7 +754,7 @@ fn _rocblas_matmul[
     beta: Float32 = 0.0,
 ) raises:
     __comptime_assert a_type == b_type and (
-        a_type is DType.float32 or a_type.is_half_float()
+        a_type == DType.float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
         " it if more types are needed."
@@ -861,9 +861,9 @@ fn _cublasLt_matmul[
 ](
     ctx: DeviceContext,
     handle: UnsafePointer[Context],
-    d: LayoutTensor[d_type, d_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    d: LayoutTensor[d_type, d_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
         LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
@@ -988,10 +988,10 @@ fn _cublasLt_matmul[
                 a_type == b_type
                 and (
                     (
-                        a_type is DType.float8_e4m3fn
-                        and scales_type is MXFP8_SF_DTYPE
+                        a_type == DType.float8_e4m3fn
+                        and scales_type == MXFP8_SF_DTYPE
                     )
-                    or (a_type is DType.uint8 and scales_type is NVFP4_SF_DTYPE)
+                    or (a_type == DType.uint8 and scales_type == NVFP4_SF_DTYPE)
                 )
             ):
                 raise Error(
@@ -1003,12 +1003,12 @@ fn _cublasLt_matmul[
             # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
             # We need to double the K dimension as we are allocating for uint8 input data type.
             # Remove this when GENAI-337 is fixed.
-            if a_type is DType.uint8 and scales_type is NVFP4_SF_DTYPE:
+            if a_type == DType.uint8 and scales_type == NVFP4_SF_DTYPE:
                 K = K * 2
 
             if not (
-                (a_type is DType.uint8 and K % 32 == 0)
-                or (a_type is DType.float8_e4m3fn and K % 16 == 0)
+                (a_type == DType.uint8 and K % 32 == 0)
+                or (a_type == DType.float8_e4m3fn and K % 16 == 0)
             ):
                 raise Error(
                     "Due to TMA 16B alignment requirement, K must be divisible"
@@ -1288,9 +1288,9 @@ fn _hipblasLt_matmul[
 ](
     ctx: DeviceContext,
     handle: hipblasLtHandle_t,
-    d: LayoutTensor[d_type, d_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    d: LayoutTensor[d_type, d_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     *,
     c_row_major: Bool = True,
     transpose_a: Bool = False,
@@ -1317,7 +1317,7 @@ fn _hipblasLt_matmul[
         buf_type: DType,
         buf_layout: Layout,
     ](
-        buf: LayoutTensor[buf_type, buf_layout, *_]
+        buf: LayoutTensor[buf_type, buf_layout, _]
     ) raises -> hipblasLtMatrixLayout_t:
         var _desc = hipblasLtMatrixLayout_t()
         _check_hipblas_error(

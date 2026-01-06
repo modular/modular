@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of
 from collections import OptionalReg
 from gpu import WARP_SIZE
@@ -346,7 +346,6 @@ struct AmdTileOperator[
         Self.OutType,
         Self._out_layout,
         MutAnyOrigin,
-        *_,
         alignment = Self._type_alignment,
         address_space = AddressSpace.LOCAL,
     ]

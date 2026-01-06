@@ -89,6 +89,7 @@ modular_cc_binary(
 modular_py_binary(
     name = "sphinx",
     srcs = ["sphinx.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         # Each invocation has different deps depending on what you are doing.
         # TODO: Handle this at each call site instead of here.

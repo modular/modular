@@ -228,7 +228,7 @@ fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
 # ===----------------------------------------------------------------------=== #
 
 
-@no_inline
+@always_inline
 fn abort() -> Never:
     """Terminates execution, using a target dependent trap instruction if
     available.
@@ -241,7 +241,7 @@ fn abort() -> Never:
         pass
 
 
-@no_inline
+@always_inline
 fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
     """Calls a target dependent trap instruction if available.
 

@@ -8,6 +8,7 @@ modular_py_library(
     data = glob(["**/*.mojo"]) + [
         "@mojo//:std",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("numpy"),
         "@mojo//:python",

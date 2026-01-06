@@ -1472,9 +1472,7 @@ def flare_mla_prefill_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     qk_rope_dim: int = 64,
-    prev_output: TensorValue | None = None,
-    prev_softmax_info: TensorValue | None = None,
-) -> tuple[TensorValue, TensorValue]:
+) -> TensorValue:
     """Performs MLA prefill. In the MLA prefill, we need to decompress
     the KV tensors, as we store the latent representations in the KV cache.
     We will decompress the KV tensors into a fixed size buffer to avoid
@@ -1499,13 +1497,9 @@ def flare_mla_prefill_ragged(
         mask_variant: Mask variant
         scale: Scale
         qk_rope_dim: QK rope dimension
-        prev_output: Optional. Previous output tensor
-        prev_softmax_info: Optional. Previous softmax info tensor
 
     Returns:
-        A tuple of two tensors:
-            - The first tensor is the output tensor for this iteration
-            - The second tensor is the softmax info tensor for this iteration
+        The output tensor for this iteration
     """
     input_rank_expected = 3
     if input.rank != input_rank_expected:
@@ -1538,8 +1532,7 @@ def flare_mla_prefill_ragged(
         "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
 
-    is_init_str = ".init" if prev_output is None else ""
-    op_name = f"mo.mla.prefill{is_init_str}.ragged.paged"
+    op_name = "mo.mla.prefill.ragged.paged"
 
     input_values: MutableSequence[Value[Any]] = [
         input,
@@ -1552,10 +1545,6 @@ def flare_mla_prefill_ragged(
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-    if prev_output is not None:
-        input_values.append(prev_output)
-    if prev_softmax_info is not None:
-        input_values.append(prev_softmax_info)
 
     results = ops.inplace_custom(
         op_name,
@@ -1570,21 +1559,12 @@ def flare_mla_prefill_ragged(
                     input.shape[2] - qk_rope_dim,
                 ],
                 device=input.device,
-            ),
-            TensorType(
-                dtype=DType.float32,
-                shape=[
-                    input.shape[0],
-                    input.shape[1],
-                    2,
-                ],
-                device=input.device,
-            ),
+            )
         ],
         parameters=parameters,
     )
 
-    return results[0].tensor, results[1].tensor
+    return results[0].tensor
 
 
 def flare_mla_prefill_plan(

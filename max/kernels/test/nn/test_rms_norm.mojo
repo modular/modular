@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import sqrt
 from sys.info import CompilationTarget
 
@@ -34,7 +34,7 @@ from utils.index import Index, IndexList
 
 fn compute_rms[
     dtype: DType
-](data: LayoutTensor[dtype, **_], size: Int, eps: Scalar[dtype]) -> Scalar[
+](data: LayoutTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
     DType.float32
 ]:
     __comptime_assert data.rank == 1, "data.rank must be 1"

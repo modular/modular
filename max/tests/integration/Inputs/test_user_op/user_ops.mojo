@@ -27,8 +27,8 @@ from utils.index import IndexList
 struct ReduceBuffers:
     @staticmethod
     fn execute(
-        output: OutputTensor[dtype = DType.float32, rank=1, *_],
-        inputs: MutableInputVariadicTensors[dtype = DType.float32, rank=1, *_],
+        output: OutputTensor[dtype = DType.float32, rank=1, ...],
+        inputs: MutableInputVariadicTensors[dtype = DType.float32, rank=1, ...],
     ) -> None:
         print("Success!")
 

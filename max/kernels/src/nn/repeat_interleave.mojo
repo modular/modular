@@ -56,10 +56,10 @@ fn repeat_interleave[
     dtype: DType,
     type_repeats: DType,
 ](
-    input: LayoutTensor[dtype, *_, **_],
-    repeats: LayoutTensor[type_repeats, *_, **_],
+    input: LayoutTensor[dtype, ...],
+    repeats: LayoutTensor[type_repeats, ...],
     axis: Int,
-    output: LayoutTensor[mut=True, dtype, *_, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
 ) raises:
     """
     Fill `output` by repeating values from `input` along `axis` based on the
@@ -93,12 +93,12 @@ fn repeat_interleave[
     debug_assert(collapsed_output_shape[0] == collapsed_input_shape[0])
     debug_assert(collapsed_output_shape[2] == collapsed_input_shape[2])
 
-    var collapsed_input = LayoutTensor[dtype, Layout.row_major[3](), _, **_](
+    var collapsed_input = LayoutTensor[dtype, Layout.row_major[3](), _, ...](
         input.ptr,
         RuntimeLayout[Layout.row_major[3]()].row_major(collapsed_input_shape),
     )
 
-    var collapsed_output = LayoutTensor[dtype, Layout.row_major[3](), _, **_](
+    var collapsed_output = LayoutTensor[dtype, Layout.row_major[3](), _, ...](
         output.ptr,
         RuntimeLayout[Layout.row_major[3]()].row_major(collapsed_output_shape),
     )
@@ -154,8 +154,8 @@ fn repeat_interleave[
 fn repeat_interleave_shape[
     type_repeats: DType,
 ](
-    input: LayoutTensor[*_, **_],
-    repeats: LayoutTensor[type_repeats, _, _, **_],
+    input: LayoutTensor[...],
+    repeats: LayoutTensor[type_repeats, _, _, ...],
     axis: Int,
 ) raises -> IndexList[input.rank]:
     __comptime_assert type_repeats.is_integral()

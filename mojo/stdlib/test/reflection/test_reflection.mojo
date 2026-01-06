@@ -179,6 +179,73 @@ def test_get_type_name_unprintable():
     assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
 
 
+# Generic struct for testing types with constructor calls in parameters
+struct WrapperWithValue[T: AnyType, //, value: T]:
+    pass
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct SimpleParam:
+    var b: Bool
+
+
+@fieldwise_init
+struct MemoryOnlyParam:
+    var b: Bool
+
+
+# Struct with field that has a constructor call in type parameter
+struct StructWithCtorParam:
+    var field: WrapperWithValue[SimpleParam(True)]
+
+
+# Struct with memory-only type constructor in parameter
+struct StructWithMemoryOnlyCtorParam:
+    var field: WrapperWithValue[MemoryOnlyParam(True)]
+
+
+def test_get_type_name_ctor_param_from_field_types():
+    """Ensure get_type_name doesn't crash with constructor calls in type params.
+
+    Issue #5732: using get_type_name on types with constructor calls (like
+    A[B(True)]) extracted via struct_field_types would crash the compiler.
+    """
+    comptime types = struct_field_types[StructWithCtorParam]()
+    var name = get_type_name[types[0]]()
+    # Register-passable type: type is <unprintable> but Bool value can be evaluated
+    assert_equal(name, "test_reflection.WrapperWithValue[<unprintable>, True]")
+
+
+def test_get_type_name_memory_only_ctor_param_from_field_types():
+    """Ensure memory-only types with constructor calls don't crash.
+
+    Memory-only types use `apply_result_slot` instead of `apply`, which was also
+    affected by issue #5732. Both the type and value print as "<unprintable>"
+    since memory-only constructors can't be fully evaluated in this context.
+    """
+    comptime types = struct_field_types[StructWithMemoryOnlyCtorParam]()
+    var name = get_type_name[types[0]]()
+    # Memory-only type: both type and value are <unprintable>
+    assert_equal(
+        name, "test_reflection.WrapperWithValue[<unprintable>, <unprintable>]"
+    )
+
+
+def test_get_type_name_ctor_param_direct():
+    """Test that direct usage of types with constructor calls works.
+
+    This demonstrates that the issue is specifically with types extracted via
+    struct_field_types, not with constructor call parameters in general.
+    """
+    # Direct usage works fine - the constructor is evaluated
+    var name = get_type_name[WrapperWithValue[SimpleParam(True)]]()
+    assert_equal(
+        name,
+        "test_reflection.WrapperWithValue[test_reflection.SimpleParam, True]",
+    )
+
+
 # ===----------------------------------------------------------------------=== #
 # Nested Parametric Type Tests (Issue #5723)
 # ===----------------------------------------------------------------------=== #
@@ -351,6 +418,70 @@ def test_get_type_name_alias():
     name = get_type_name[R]()
     assert_equal(
         name, "test_reflection.Bar[?, 1.29999995 : SIMD[DType.float32, 1]]"
+    )
+
+
+fn _count_fields_generic[T: AnyType]() -> Int:
+    """Helper function to test struct_field_count through generic parameter."""
+    return struct_field_count[T]()
+
+
+fn _get_field_names_generic[T: AnyType]() -> StaticString:
+    """Helper function to test struct_field_names through generic parameter."""
+    return struct_field_names[T]()[0]
+
+
+fn _get_type_name_generic[T: AnyType]() -> StaticString:
+    """Helper function to test get_type_name through generic parameter."""
+    return get_type_name[T]()
+
+
+def test_reflection_on_int():
+    """Test that reflection functions work on Int (issue #5731).
+
+    Int is a struct with one field (_mlir_value). Previously passing Int
+    through a generic parameter to reflection functions would crash the
+    compiler.
+    """
+    assert_equal(struct_field_count[Int](), 1)
+    assert_equal(_count_fields_generic[Int](), 1)
+
+    assert_equal(struct_field_names[Int]()[0], "_mlir_value")
+    assert_equal(_get_field_names_generic[Int](), "_mlir_value")
+
+    # get_type_name through generic (direct is tested elsewhere)
+    assert_equal(_get_type_name_generic[Int](), "Int")
+
+
+def test_reflection_on_origin():
+    """Test that reflection functions work on Origin (issue #5731).
+
+    Origin is a struct with one field (_mlir_origin). Previously this would
+    crash the compiler when passed through generic parameters.
+    """
+    assert_equal(_count_fields_generic[Origin[mut=True]](), 1)
+    assert_equal(_count_fields_generic[Origin[mut=False]](), 1)
+
+    assert_equal(_get_field_names_generic[Origin[mut=True]](), "_mlir_origin")
+
+    assert_equal(
+        _get_type_name_generic[Origin[mut=True]](),
+        "std.builtin.type_aliases.Origin[True]",
+    )
+
+
+def test_reflection_on_nonetype():
+    """Test that reflection functions work on NoneType (issue #5731).
+
+    NoneType is a struct with one field (_value). Previously this would crash
+    the compiler when passed through generic parameters.
+    """
+    assert_equal(_count_fields_generic[NoneType](), 1)
+
+    assert_equal(_get_field_names_generic[NoneType](), "_value")
+
+    assert_equal(
+        _get_type_name_generic[NoneType](), "std.builtin.none.NoneType"
     )
 
 

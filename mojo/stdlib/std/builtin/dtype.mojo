@@ -31,7 +31,6 @@ comptime _mIsFloat = __mlir_attr.`#pop.simd<64> : !pop.scalar<ui8>`
 struct DType(
     Equatable,
     Hashable,
-    Identifiable,
     ImplicitlyCopyable,
     KeyElement,
     Representable,
@@ -406,66 +405,66 @@ struct DType(
             writer: The object to write to.
         """
 
-        if self is DType.bool:
+        if self == DType.bool:
             return writer.write("bool")
-        elif self is DType.int:
+        elif self == DType.int:
             return writer.write("int")
-        elif self is DType.uint:
+        elif self == DType.uint:
             return writer.write("uint")
 
-        elif self is DType.uint8:
+        elif self == DType.uint8:
             return writer.write("uint8")
-        elif self is DType.int8:
+        elif self == DType.int8:
             return writer.write("int8")
-        elif self is DType.uint16:
+        elif self == DType.uint16:
             return writer.write("uint16")
-        elif self is DType.int16:
+        elif self == DType.int16:
             return writer.write("int16")
-        elif self is DType.uint32:
+        elif self == DType.uint32:
             return writer.write("uint32")
-        elif self is DType.int32:
+        elif self == DType.int32:
             return writer.write("int32")
-        elif self is DType.uint64:
+        elif self == DType.uint64:
             return writer.write("uint64")
-        elif self is DType.int64:
+        elif self == DType.int64:
             return writer.write("int64")
-        elif self is DType.uint128:
+        elif self == DType.uint128:
             return writer.write("uint128")
-        elif self is DType.int128:
+        elif self == DType.int128:
             return writer.write("int128")
-        elif self is DType.uint256:
+        elif self == DType.uint256:
             return writer.write("uint256")
-        elif self is DType.int256:
+        elif self == DType.int256:
             return writer.write("int256")
 
-        elif self is DType.float4_e2m1fn:
+        elif self == DType.float4_e2m1fn:
             return writer.write("float4_e2m1fn")
 
-        elif self is DType.float8_e3m4:
+        elif self == DType.float8_e3m4:
             return writer.write("float8_e3m4")
-        elif self is DType.float8_e4m3fn:
+        elif self == DType.float8_e4m3fn:
             return writer.write("float8_e4m3fn")
-        elif self is DType.float8_e4m3fnuz:
+        elif self == DType.float8_e4m3fnuz:
             return writer.write("float8_e4m3fnuz")
-        elif self is DType.float8_e8m0fnu:
+        elif self == DType.float8_e8m0fnu:
             return writer.write("float8_e8m0fnu")
-        elif self is DType.float8_e5m2:
+        elif self == DType.float8_e5m2:
             return writer.write("float8_e5m2")
-        elif self is DType.float8_e5m2fnuz:
+        elif self == DType.float8_e5m2fnuz:
             return writer.write("float8_e5m2fnuz")
 
-        elif self is DType.bfloat16:
+        elif self == DType.bfloat16:
             return writer.write("bfloat16")
-        elif self is DType.float16:
+        elif self == DType.float16:
             return writer.write("float16")
 
-        elif self is DType.float32:
+        elif self == DType.float32:
             return writer.write("float32")
 
-        elif self is DType.float64:
+        elif self == DType.float64:
             return writer.write("float64")
 
-        elif self is DType.invalid:
+        elif self == DType.invalid:
             return writer.write("invalid")
 
         return writer.write("<<unknown>>")
@@ -523,30 +522,6 @@ struct DType(
         )
 
     @always_inline("builtin")
-    fn __is__(self, rhs: DType) -> Bool:
-        """Compares one DType to another for equality.
-
-        Args:
-            rhs: The DType to compare against.
-
-        Returns:
-            True if the DTypes are the same and False otherwise.
-        """
-        return self == rhs
-
-    @always_inline("builtin")
-    fn __isnot__(self, rhs: DType) -> Bool:
-        """Compares one DType to another for inequality.
-
-        Args:
-            rhs: The DType to compare against.
-
-        Returns:
-            True if the DTypes are the different and False otherwise.
-        """
-        return not (self == rhs)
-
-    @always_inline("builtin")
     fn __eq__(self, rhs: DType) -> Bool:
         """Compares one DType to another for equality.
 
@@ -597,7 +572,7 @@ struct DType(
             Returns True if the input type parameter is unsigned.
         """
         return (
-            self is DType.uint
+            self == DType.uint
             or self._is_non_index_integral()
             and not self._match(_mIsSigned)
         )
@@ -630,8 +605,8 @@ struct DType(
             Returns True if the input type parameter is an integer.
         """
         return (
-            self is DType.int
-            or self is DType.uint
+            self == DType.int
+            or self == DType.uint
             or self._is_non_index_integral()
         )
 
@@ -655,12 +630,12 @@ struct DType(
         """
 
         return (
-            self is DType.float8_e8m0fnu
-            or self is DType.float8_e3m4
-            or self is DType.float8_e4m3fn
-            or self is DType.float8_e4m3fnuz
-            or self is DType.float8_e5m2
-            or self is DType.float8_e5m2fnuz
+            self == DType.float8_e8m0fnu
+            or self == DType.float8_e3m4
+            or self == DType.float8_e4m3fn
+            or self == DType.float8_e4m3fnuz
+            or self == DType.float8_e5m2
+            or self == DType.float8_e5m2fnuz
         )
 
     @always_inline("builtin")
@@ -672,7 +647,7 @@ struct DType(
             True if the dtype is a half-precision float, false otherwise..
         """
 
-        return self is DType.bfloat16 or self is DType.float16
+        return self == DType.bfloat16 or self == DType.float16
 
     @always_inline("builtin")
     fn is_numeric(self) -> Bool:
@@ -685,10 +660,7 @@ struct DType(
         """
         return self.is_integral() or (
             self.is_floating_point()
-            and (
-                self is not DType.float4_e2m1fn
-                and self is not DType.float8_e8m0fnu
-            )
+            and (self != DType.float4_e2m1fn and self != DType.float8_e8m0fnu)
         )
 
     # ===-------------------------------------------------------------------===#
@@ -729,7 +701,7 @@ struct DType(
         ), "dtype must be floating point"
 
         @parameter
-        if dtype is DType.float4_e2m1fn:
+        if dtype == DType.float4_e2m1fn:
             return 2
         elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 8
@@ -737,7 +709,7 @@ struct DType(
             return 16
         elif dtype in (DType.bfloat16, DType.float32):
             return 128
-        elif dtype is DType.float64:
+        elif dtype == DType.float64:
             return 1024
         else:
             constrained[False, "unsupported float type"]()
@@ -759,7 +731,7 @@ struct DType(
         ), "dtype must be floating point"
 
         @parameter
-        if dtype is DType.float4_e2m1fn:
+        if dtype == DType.float4_e2m1fn:
             return 2
         elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 4
@@ -767,7 +739,7 @@ struct DType(
             return 5
         elif dtype in (DType.float32, DType.bfloat16):
             return 8
-        elif dtype is DType.float64:
+        elif dtype == DType.float64:
             return 11
         else:
             constrained[False, "unsupported float type"]()
@@ -803,62 +775,62 @@ struct DType(
             The MLIR type of the current DType.
         """
 
-        if self is DType.bool:
+        if self == DType.bool:
             return __mlir_attr.i1
 
-        if self is DType.int:
+        if self == DType.int:
             return __mlir_attr.index
 
-        if self is DType.uint8:
+        if self == DType.uint8:
             return __mlir_attr.ui8
-        if self is DType.int8:
+        if self == DType.int8:
             return __mlir_attr.si8
-        if self is DType.uint16:
+        if self == DType.uint16:
             return __mlir_attr.ui16
-        if self is DType.int16:
+        if self == DType.int16:
             return __mlir_attr.si16
-        if self is DType.uint32:
+        if self == DType.uint32:
             return __mlir_attr.ui32
-        if self is DType.int32:
+        if self == DType.int32:
             return __mlir_attr.si32
-        if self is DType.uint64:
+        if self == DType.uint64:
             return __mlir_attr.ui64
-        if self is DType.int64:
+        if self == DType.int64:
             return __mlir_attr.si64
-        if self is DType.uint128:
+        if self == DType.uint128:
             return __mlir_attr.ui128
-        if self is DType.int128:
+        if self == DType.int128:
             return __mlir_attr.si128
-        if self is DType.uint256:
+        if self == DType.uint256:
             return __mlir_attr.ui256
-        if self is DType.int256:
+        if self == DType.int256:
             return __mlir_attr.si256
 
-        if self is DType.float4_e2m1fn:
+        if self == DType.float4_e2m1fn:
             return __mlir_attr.f4E2M1FN
 
-        if self is DType.float8_e8m0fnu:
+        if self == DType.float8_e8m0fnu:
             return __mlir_attr.f8E8M0FNU
-        if self is DType.float8_e3m4:
+        if self == DType.float8_e3m4:
             return __mlir_attr.f8E3M4
-        if self is DType.float8_e4m3fn:
+        if self == DType.float8_e4m3fn:
             return __mlir_attr.f8E4M3
-        if self is DType.float8_e4m3fnuz:
+        if self == DType.float8_e4m3fnuz:
             return __mlir_attr.f8E4M3FNUZ
-        if self is DType.float8_e5m2:
+        if self == DType.float8_e5m2:
             return __mlir_attr.f8E5M2
-        if self is DType.float8_e5m2fnuz:
+        if self == DType.float8_e5m2fnuz:
             return __mlir_attr.f8E5M2FNUZ
 
-        if self is DType.bfloat16:
+        if self == DType.bfloat16:
             return __mlir_attr.bf16
-        if self is DType.float16:
+        if self == DType.float16:
             return __mlir_attr.f16
 
-        if self is DType.float32:
+        if self == DType.float32:
             return __mlir_attr.f32
 
-        if self is DType.float64:
+        if self == DType.float64:
             return __mlir_attr.f64
 
         abort("invalid dtype")
@@ -952,7 +924,7 @@ struct DType(
         Returns:
             The result.
         """
-        return Self.get_dtype[T]() is not DType.invalid
+        return Self.get_dtype[T]() != DType.invalid
 
 
 # ===-------------------------------------------------------------------===#
@@ -972,9 +944,9 @@ fn _integral_type_of[dtype: DType]() -> DType:
         return DType.int8
     elif dtype.is_half_float():
         return DType.int16
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return DType.int32
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return DType.int64
 
     return dtype.invalid
@@ -1000,9 +972,9 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
         return DType.uint8
     elif dtype.is_half_float():
         return DType.uint16
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return DType.uint32
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return DType.uint64
 
     return dtype.invalid
@@ -1025,7 +997,7 @@ fn _scientific_notation_digits[
         return "2"
     elif dtype.is_half_float():
         return "4"
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return "8"
     else:
         return "16"
@@ -1113,21 +1085,21 @@ fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
     if dtype in (DType.bool, DType.int, DType.uint):
         return _index_printf_format()
 
-    elif dtype is DType.uint8:
+    elif dtype == DType.uint8:
         return "%hhu"
-    elif dtype is DType.int8:
+    elif dtype == DType.int8:
         return "%hhi"
-    elif dtype is DType.uint16:
+    elif dtype == DType.uint16:
         return "%hu"
-    elif dtype is DType.int16:
+    elif dtype == DType.int16:
         return "%hi"
-    elif dtype is DType.uint32:
+    elif dtype == DType.uint32:
         return "%u"
-    elif dtype is DType.int32:
+    elif dtype == DType.int32:
         return "%i"
-    elif dtype is DType.int64:
+    elif dtype == DType.int64:
         return "%ld"
-    elif dtype is DType.uint64:
+    elif dtype == DType.uint64:
         return "%lu"
 
     elif dtype.is_floating_point():

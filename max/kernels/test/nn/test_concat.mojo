@@ -23,7 +23,7 @@ fn _tuple_to_list[
     //,
     dtype: DType,
 ](
-    elems: StaticTuple[LayoutTensor[dtype, elems_layout, MutAnyOrigin], *_]
+    elems: StaticTuple[LayoutTensor[dtype, elems_layout, MutAnyOrigin], ...]
 ) -> List[LayoutTensor[dtype, elems_layout, MutAnyOrigin]]:
     var output = List[LayoutTensor[dtype, elems_layout, MutAnyOrigin]](
         capacity=len(elems)

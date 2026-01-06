@@ -35,7 +35,7 @@ from gpu.sync import (
 )
 from memory import LegacyUnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList

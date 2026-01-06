@@ -23,7 +23,7 @@ from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils.index import Index, IndexList
 

@@ -51,6 +51,7 @@ for dir in "$@"; do
 done
 echo "}"
 """,
+        use_default_shell_env = True,
     )
 
     return [DefaultInfo(files = depset([module_map_file]))]

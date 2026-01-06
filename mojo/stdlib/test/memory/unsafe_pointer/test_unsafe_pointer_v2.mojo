@@ -34,34 +34,34 @@ from testing import (
 # ---------------------------------------------------------------------------- #
 
 
-def _mutable_pointer(p: MutUnsafePointer[Int, **_]):
+def _mutable_pointer(p: MutUnsafePointer[Int, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _immutable_pointer(p: ImmutUnsafePointer[Int, **_]):
+def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, **_]):
+def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, **_]):
+def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _parameterized_pointer(p: UnsafePointer[Int, **_]):
+def _parameterized_pointer(p: UnsafePointer[Int, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
 def _named_origin[
     mut: Bool, //, origin: Origin[mut=mut]
-](p: UnsafePointer[Int, origin, **_]):
+](p: UnsafePointer[Int, origin, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 

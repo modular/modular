@@ -54,7 +54,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _load_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[Self.dtype], **_],
+        c_ptr: UnsafePointer[Scalar[Self.dtype], ...],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -101,7 +101,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _store_c_tile(
         mut self,
-        c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], **_],
+        c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -232,7 +232,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         simd_size: Int,
     ](
         self,
-        c: LayoutTensor[mut=True, **_],
+        c: LayoutTensor[mut=True, ...],
         a: LayoutTensor,
         b_packed: LayoutTensor,
         global_offset: GemmShape,

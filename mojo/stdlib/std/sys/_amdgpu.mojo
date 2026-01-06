@@ -54,7 +54,7 @@ struct amd_signal_t(Copyable):
 
 
 @always_inline
-fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, **_]):
+fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
     var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
         UnsafePointer[
             UInt64, MutOrigin.external, address_space = AddressSpace.GLOBAL
@@ -655,7 +655,7 @@ struct Buffer(ImplicitlyCopyable):
             self._handle[].payloads.offset(ptr & self._handle[].index_mask)
         )
 
-    fn pop(mut self, top: UnsafePointer[mut=True, UInt64, **_]) -> UInt64:
+    fn pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
         var f = Atomic.fetch_add(top, 0)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
@@ -694,7 +694,7 @@ struct Buffer(ImplicitlyCopyable):
             | ptr_lo_32.cast[DType.uint64]()
         )
 
-    fn push(mut self, top: UnsafePointer[mut=True, UInt64, **_], ptr: UInt64):
+    fn push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
         var f = Atomic.fetch_add(top, 0)
         var p = self.get_header(ptr)
         while True:

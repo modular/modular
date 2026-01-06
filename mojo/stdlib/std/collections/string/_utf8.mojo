@@ -123,7 +123,7 @@ fn validate_chunk[
     return must23_as_80 ^ sc
 
 
-fn _is_valid_utf8_runtime(span: Span[mut=False, Byte, **_]) -> Bool:
+fn _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
     """Fast utf-8 validation using SIMD instructions.
 
     References for this algorithm:
@@ -166,7 +166,7 @@ fn _is_valid_utf8_runtime(span: Span[mut=False, Byte, **_]) -> Bool:
     return all(has_error.eq(0))
 
 
-fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
+fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
     var ptr = span.unsafe_ptr()
     var length = UInt(len(span))
     var offset = UInt(0)
@@ -206,7 +206,7 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
 
 
 @always_inline("nodebug")
-fn _is_valid_utf8(span: Span[mut=False, Byte, **_]) -> Bool:
+fn _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
     Args:
@@ -296,7 +296,7 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
 fn _is_newline_char_utf8[
     include_r_n: Bool = False
 ](
-    p: UnsafePointer[mut=False, Byte, **_],
+    p: UnsafePointer[mut=False, Byte, ...],
     eol_start: UInt,
     b0: Byte,
     char_len: UInt,

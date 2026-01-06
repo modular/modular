@@ -36,7 +36,7 @@ fn split[
     outputs_origin: MutOrigin,
     outputs_layout: Layout,
 ](
-    input: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
     axis: Int,
     outputs: StaticTuple[
         LayoutTensor[dtype, outputs_layout, outputs_origin], num_outputs

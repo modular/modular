@@ -180,7 +180,24 @@ what we publish.
       var f2 : fn (x: SomeType) -> Float64 = fn_returns_ref
   ```
 
+- Mojo now supports the `...` expression.  It is a logically empty value of
+  `EllipsisType`.  It can be used in overloaded functions (e.g. getitem calls),
+  e.g.:
+
+  ```mojo
+  struct YourType:
+    fn __getitem__(self, idx: Int) -> Int:
+      # ... behavior when passed x[i]
+    fn __getitem__(self, idx: EllipsisType) -> Int:
+      # ... behavior when passed x[...]
+  ```
+
 ### Language changes
+
+- The `*_` and `**_` syntax for explicitly unpacked parameters has been replaced
+  with a simplified `...` syntax.  Instead of `T[4, 5, *_, **_]` you can now use
+  `T[4, 5, ...]`.  The `...` delays binding of both keyword and non-keyword
+  parameters.
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
 
@@ -229,7 +246,17 @@ what we publish.
   conversion from any origin to an immutable origin (`ImmutOrigin(x)`) and an
   explicit unsafe conversion (`SomeOrigin(unsafe_cast=x)`).
 
+- Mojo no longer supports overloading functions on parameters alone: it will not
+  try to disambiguate between `fn foo[a: Int8]():` and `fn foo[a: Int32]():` for
+  example.  Mojo never fully implemented the previous support in a reliable way,
+  and removing this simplifies the language.  It still supports overloading on
+  function arguments of course.
+
 ### Library changes
+
+- We have removed `Identifiable` from enum-like types
+  (such as `DType` and `AddressSpace`). This change is
+  related to the idea that `Identifiable` is for comparing memory addresses.
 
 - The `Iterator` trait and and for-each loop have removed the `__has_next__`
   method and now using a `__next__` method that `raises StopIteration`. This
@@ -460,17 +487,18 @@ what we publish.
   generic code that supports object instances that cannot be implicitly
   destroyed.
 
-  - `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear types
+  - `Span`, `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear
+    types.
     - Added `UnsafePointer.destroy_pointee_with()`, for destroying linear types
       in-place using a destructor function pointer.
-  - `Optional`, `Variant`, `VariadicListMem`, and `VariadicPack` can now contain
-    linear types
+  - `List`, `InlineArray`, `Optional`, `Variant`, `VariadicListMem`, and
+    `VariadicPack` can now contain linear types.
     - `Variant.take` now takes `deinit self` instead of `mut self`.
     - Added `Variant.destroy_with` for destroying a linear type in-place with an
       explicit destructor function.
     - The `*args` language syntax for arguments now supports linear types.
-  - `Iterator.Element` no longer requires `ImplicitlyDestructible`
-  - `UnsafeMaybeUninitialized` can now contain linear types
+  - `Iterator.Element` no longer requires `ImplicitlyDestructible`.
+  - `UnsafeMaybeUninitialized` can now contain linear types.
 
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
   and `trait_downcast()` to perform "late" element type conformance checking,
@@ -592,7 +620,7 @@ or removed in future releases.
 - Added support for `DType` expressions in `where` clauses:
 
   ```mojo
-  fn foo[dt: DType]() -> Int where dt is DType.int32:
+  fn foo[dt: DType]() -> Int where dt == DType.int32:
       return 42
   ```
 
@@ -622,6 +650,9 @@ or removed in future releases.
 
 ### 🛠️ Fixed
 
+- [Issue #5732](https://github.com/modular/modular/issues/5732): Compiler
+  crash when using `get_type_name` with types containing constructor calls in
+  their parameters (like `A[B(True)]`) when extracted via `struct_field_types`.
 - [Issue #1850](https://github.com/modular/modular/issues/1850): Mojo assumes
   string literal at start of a function is a doc comment
 - [Issue #4501](https://github.com/modular/modular/issues/4501): Incorrect
@@ -640,3 +671,6 @@ or removed in future releases.
   when should be implicit conversion error.
 - [Issue #5723](https://github.com/modular/modular/issues/5723): Compiler crash
   when using `get_type_name` with nested parametric types from `struct_field_types`.
+- [Issue #5731](https://github.com/modular/modular/issues/5731): Compiler crash
+  when using reflection functions on builtin types like `Int`, `NoneType`, or
+  `Origin` passed through generic type parameters.

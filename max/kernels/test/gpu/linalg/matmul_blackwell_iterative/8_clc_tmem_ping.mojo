@@ -15,7 +15,7 @@ from hashlib import default_comp_time_hasher
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer, bitcast
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -318,9 +318,7 @@ fn stsm_helper[
     swizzle: Swizzle
 ](
     vec: SIMD,
-    dst: LayoutTensor[
-        mut=True, _, _, address_space = AddressSpace.SHARED, *_, **_
-    ],
+    dst: LayoutTensor[mut=True, _, _, address_space = AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
@@ -1321,7 +1319,7 @@ def test_blackwell_kernel_8[
 
 
 fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], ...]
 ) -> Tuple[Int, Int, Int]:
     try:
         return dic_bro[index]

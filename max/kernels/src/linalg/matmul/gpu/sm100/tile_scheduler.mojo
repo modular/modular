@@ -14,7 +14,7 @@
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import _RegisterPackType, size_of
 from sys._assembly import inlined_assembly
 

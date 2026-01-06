@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -8,8 +8,7 @@ modular_py_binary(
     imports = ["."],
     deps = [
         "//max/python/max/entrypoints",
-        "//max/python/max/entrypoints:pipelines",
-        requirement("tqdm"),
+        "//max/python/max/pipelines",
     ],
 )
 

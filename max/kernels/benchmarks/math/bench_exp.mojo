@@ -31,7 +31,7 @@ from builtin.range import _StridedRange
 from compile import compile_info
 from memory import LegacyUnsafePointer, bitcast
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn apply[

@@ -3,6 +3,7 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load("//bazel/internal:config.bzl", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "runtime_sanitizer_env")  # buildifier: disable=bzl-visibility
+load("//bazel/pip/pydeps:pydeps_test.bzl", "pydeps_test")
 load(":modular_py_library.bzl", "modular_py_library")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
@@ -16,6 +17,8 @@ def modular_py_binary(
         env = {},
         data = [],
         deps = [],
+        ignore_extra_deps = [],
+        ignore_unresolved_imports = [],
         mojo_deps = [],
         toolchains = [],
         imports = [],
@@ -34,6 +37,8 @@ def modular_py_binary(
         deps: Python deps of the target
         mojo_deps: mojo_library targets the test depends on at runtime
         toolchains: See upstream py_binary docs
+        ignore_extra_deps: Forwarded to pydeps_test
+        ignore_unresolved_imports: Forwarded to pydeps_test
         imports: See upstream py_binary docs
         tags: See upstream py_binary docs
         args: See upstream py_binary docs
@@ -101,7 +106,8 @@ def modular_py_binary(
                 "@//bazel/internal:bazel_sitecustomize",
             ],
             testonly = True,
-            tags = [ALLOW_UNUSED_TAG],
+            # Pydeps test is added below
+            tags = [ALLOW_UNUSED_TAG, "no-pydeps"],
             srcs = srcs,
             visibility = ["//visibility:private"],
             imports = imports,
@@ -127,3 +133,15 @@ def modular_py_binary(
         toolchains = extra_toolchains + toolchains,
         **kwargs
     )
+
+    if "no-pydeps" not in tags:
+        pydeps_test(
+            name = name + ".pydeps_test",
+            srcs = srcs,
+            data = extra_data + data,
+            ignore_extra_deps = ignore_extra_deps,
+            ignore_unresolved_imports = ignore_unresolved_imports,
+            imports = imports,
+            deps = deps,
+            tags = ["pydeps"],
+        )

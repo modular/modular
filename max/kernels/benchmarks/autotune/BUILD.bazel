@@ -39,6 +39,7 @@ modular_py_binary(
         "//max:shmem",
         "@mojo//:std",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("click"),
         requirement("numpy"),
@@ -73,6 +74,7 @@ modular_py_binary(
         "//max:register",
         "@mojo//:std",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":kbench",
         requirement("rich"),
@@ -96,6 +98,7 @@ modular_py_binary(
         "//max:register",
         "@mojo//:std",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":kbench",
         ":kprofile",
@@ -146,6 +149,7 @@ modular_py_test(
         "@mojo//:std",
     ],
     tags = [
+        "no-pydeps",  # TODO: Fix and re-enable
         "resources:cpu:10",  # 10 CPU cores, rough estimate
     ],
     target_compatible_with = select({

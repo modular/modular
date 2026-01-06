@@ -47,6 +47,9 @@ comptime Never = __mlir_type.`!kgen.never`
 """A type that can never have an instance constructed, used as a function result
 by functions that never return."""
 
+comptime EllipsisType = __mlir_type.`!lit.ellipsis`
+"""The type of the `...` literal."""
+
 
 @register_passable("trivial")
 struct Origin[*, mut: Bool]:

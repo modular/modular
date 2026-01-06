@@ -1188,7 +1188,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         @parameter
-        if dtype is DType.bool or dtype.is_integral():
+        if dtype == DType.bool or dtype.is_integral():
             return self.lhs.mask(coord, score_vec) & self.rhs.mask(
                 coord, score_vec
             )
@@ -1292,7 +1292,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         @parameter
-        if dtype is DType.bool or dtype.is_integral():
+        if dtype == DType.bool or dtype.is_integral():
             return self.lhs.mask(coord, score_vec) | self.rhs.mask(
                 coord, score_vec
             )

@@ -22,7 +22,7 @@ from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -360,7 +360,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 
 
 fn get_shapes_dict(
-    index: Int, shapes_dict: Dict[Int, Tuple[Int, Int], *_, **_]
+    index: Int, shapes_dict: Dict[Int, Tuple[Int, Int], ...]
 ) -> Tuple[Int, Int]:
     try:
         return shapes_dict[index]
