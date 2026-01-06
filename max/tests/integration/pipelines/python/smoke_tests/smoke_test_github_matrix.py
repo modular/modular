@@ -84,6 +84,12 @@ MODELS = {
         "max@MI355",  # 26.1
     ],
     "qwen/qwen3-8b": ["multi"],
+    "qwen/qwen3-vl-30b-a3b-instruct": [
+        "max",  # 26.1
+        "max-ci@H100",
+        "max-ci@2xH100",
+        "sglang@B200",
+    ],
     "redhatai/gemma-3-27b-it-fp8-dynamic": [],
     "tbmod/gemma-3-4b-it": [
         "multi",
