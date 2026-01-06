@@ -342,6 +342,25 @@ fn unprovable_constraints[x: Int, y: Int]()
   where unfoldable_predicate(y):
     pass
 
+comptime IntVariadic = __mlir_type[`!kgen.variadic<`, Int, `>`]
+comptime IntSumReducerFn[Prev: Int, *From: Int, Idx: __mlir_type.index]: Int = Prev + From[Idx]
+
+comptime IntSumReducer[Variadic: IntVariadic] = __mlir_attr[
+  `#kgen.variadic.reduce<`,
+  Int(0),  # base
+  `,`,
+  Variadic,
+  `,`,
+  IntSumReducerFn,
+  `> : `,
+  Int,
+]
+
+# expected-note @below {{function declared here}}
+# expected-note @below {{constraint declared here evaluated to False}}
+fn failing_constraint_with_depth[*vals: Int]() where IntSumReducer[vals] == 9:
+  pass
+
 fn test_constraints():
   # expected-error @+1 {{violated constraint}}
   simple_constraints[0, 0]()
@@ -355,6 +374,9 @@ fn test_constraints():
   # expected-error @below {{invalid call to 'unprovable_constraints': lacking evidence to prove correctness}}
   # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
   unprovable_constraints[2, 0]()
+
+  # expected-error @below {{invalid call to 'failing_constraint_with_depth': violated constraint}}
+  failing_constraint_with_depth[1,2,3]()
 
 # expected-note @below {{constraint declared here evaluated to False, expected '(xor (lt x._mlir_value, 2), True)'}}
 # expected-note @below {{function declared here}}
