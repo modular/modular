@@ -670,3 +670,6 @@ or removed in future releases.
   when should be implicit conversion error.
 - [Issue #5723](https://github.com/modular/modular/issues/5723): Compiler crash
   when using `get_type_name` with nested parametric types from `struct_field_types`.
+- [Issue #5731](https://github.com/modular/modular/issues/5731): Compiler crash
+  when using reflection functions on builtin types like `Int`, `NoneType`, or
+  `Origin` passed through generic type parameters.

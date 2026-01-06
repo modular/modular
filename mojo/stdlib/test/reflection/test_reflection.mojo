@@ -421,6 +421,70 @@ def test_get_type_name_alias():
     )
 
 
+fn _count_fields_generic[T: AnyType]() -> Int:
+    """Helper function to test struct_field_count through generic parameter."""
+    return struct_field_count[T]()
+
+
+fn _get_field_names_generic[T: AnyType]() -> StaticString:
+    """Helper function to test struct_field_names through generic parameter."""
+    return struct_field_names[T]()[0]
+
+
+fn _get_type_name_generic[T: AnyType]() -> StaticString:
+    """Helper function to test get_type_name through generic parameter."""
+    return get_type_name[T]()
+
+
+def test_reflection_on_int():
+    """Test that reflection functions work on Int (issue #5731).
+
+    Int is a struct with one field (_mlir_value). Previously passing Int
+    through a generic parameter to reflection functions would crash the
+    compiler.
+    """
+    assert_equal(struct_field_count[Int](), 1)
+    assert_equal(_count_fields_generic[Int](), 1)
+
+    assert_equal(struct_field_names[Int]()[0], "_mlir_value")
+    assert_equal(_get_field_names_generic[Int](), "_mlir_value")
+
+    # get_type_name through generic (direct is tested elsewhere)
+    assert_equal(_get_type_name_generic[Int](), "Int")
+
+
+def test_reflection_on_origin():
+    """Test that reflection functions work on Origin (issue #5731).
+
+    Origin is a struct with one field (_mlir_origin). Previously this would
+    crash the compiler when passed through generic parameters.
+    """
+    assert_equal(_count_fields_generic[Origin[mut=True]](), 1)
+    assert_equal(_count_fields_generic[Origin[mut=False]](), 1)
+
+    assert_equal(_get_field_names_generic[Origin[mut=True]](), "_mlir_origin")
+
+    assert_equal(
+        _get_type_name_generic[Origin[mut=True]](),
+        "std.builtin.type_aliases.Origin[True]",
+    )
+
+
+def test_reflection_on_nonetype():
+    """Test that reflection functions work on NoneType (issue #5731).
+
+    NoneType is a struct with one field (_value). Previously this would crash
+    the compiler when passed through generic parameters.
+    """
+    assert_equal(_count_fields_generic[NoneType](), 1)
+
+    assert_equal(_get_field_names_generic[NoneType](), "_value")
+
+    assert_equal(
+        _get_type_name_generic[NoneType](), "std.builtin.none.NoneType"
+    )
+
+
 # ===----------------------------------------------------------------------=== #
 # Struct Field Reflection Tests
 # ===----------------------------------------------------------------------=== #
