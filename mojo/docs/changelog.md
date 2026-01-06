@@ -561,6 +561,10 @@ what we publish.
   comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
   ```
 
+- the `os.process` submodule has been added with utilities to spawn and
+  wait on processes. These use `posix_spawn` and do not go through the
+  system shell.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain

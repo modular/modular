@@ -4,6 +4,7 @@ package(default_visibility = ["//visibility:private"])
 
 _FILECHECK_TESTS = [
     "test_trap.mojo",
+    "test_process.mojo",
 ]
 
 _LIT_TESTS = [
