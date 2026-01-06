@@ -144,15 +144,16 @@ struct List[T: Copyable](
       union type, meaning it can store any number of different types that can
       vary at runtime.
 
-    - **Value semantics:** A `List` is value semantic by default, so
-      assignment creates a deep copy of all elements:
+    - **Value semantics:** A `List` is value semantic by default and can't be
+      assigned directly to another variable. Instead, use the `copy()` method
+      to create a deep copy of all elements:
 
       ```mojo
       var list1 = [1, 2, 3]
-      var list2 = list1        # Deep copy
+      var list2 = list1.copy()  # Deep copy
       list2.append(4)
-      print(list1.__str__())   # => [1, 2, 3]
-      print(list2.__str__())   # => [1, 2, 3, 4]
+      print(list1.__str__())    # => [1, 2, 3]
+      print(list2.__str__())    # => [1, 2, 3, 4]
       ```
 
       This is different from Python, where assignment creates a reference to
@@ -962,6 +963,57 @@ struct List[T: Copyable](
         self._len -= 1
         self._annotate_shrink(self._len + 1)
         return ret_val^
+
+    fn pop(mut self, slice: Slice) -> Self:
+        """Pops a slice of items from the list.
+
+        Args:
+            slice: The slice of items to pop.
+
+        Returns:
+            A list of popped items.
+        """
+        var start, end, step = slice.indices(self._len)
+        var slice_range = range(start, end, step)
+        var slice_len = len(slice_range)
+
+        if not slice_len:
+            return Self()
+
+        var res = Self(capacity=slice_len)
+        for pop_idx in slice_range:
+            res.append((self._data + pop_idx).take_pointee())
+
+        var remaining_items_idx: Int
+        if step == 1:
+            remaining_items_idx = end
+        elif step == -1:
+            remaining_items_idx = start + 1
+        else:
+            var n_popped = 0
+            var previous_popped_idx = min(end, start - 1)
+
+            for pop_idx in slice_range if step > 1 else reversed(slice_range):
+                # Backfill the list to patch the hole from the previously popped element
+                for move_idx in range(previous_popped_idx + 1, pop_idx):
+                    (self._data + move_idx - n_popped).init_pointee_move_from(
+                        self._data + move_idx
+                    )
+
+                n_popped += 1
+                previous_popped_idx = pop_idx
+
+            remaining_items_idx = previous_popped_idx + 1
+
+        # Move remaining items between last popped and end of the list
+        for move_idx in range(remaining_items_idx, self._len):
+            (self._data + move_idx - slice_len).init_pointee_move_from(
+                self._data + move_idx
+            )
+
+        self._len -= slice_len
+        self._annotate_shrink(self._len + slice_len)
+        return res^
 
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
