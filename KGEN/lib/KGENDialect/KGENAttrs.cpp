@@ -3692,6 +3692,20 @@ bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
 }
 
 ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
+  // Apply and ApplyResultSlot operations may not fold if the function doesn't
+  // have an inlinedFormAttr (e.g., when running with -O0). These can be safely
+  // printed as <unprintable> by printParamValue instead of causing an error.
+  // See https://github.com/modular/modular/issues/5732.
+  //
+  // TODO(MOCO-3037): A future improvement could evaluate these expressions
+  // on-demand here (similar to what ApplyInliner does) so that get_type_name
+  // can print constructor call parameters extracted via struct_field_types,
+  // rather than falling back to <unprintable>. This would require invoking the
+  // inlining logic for individual expressions rather than as a whole-module
+  // pass.
+  if (getOpcode() == POC::Apply || getOpcode() == POC::ApplyResultSlot)
+    return success();
+
   // If this operator didn't fold, then it's a problem.
   // TODO: we could diagnose WHY it isn't folding more nicely now.
   return Error("could not simplify operator " + getParamAsString(*this));

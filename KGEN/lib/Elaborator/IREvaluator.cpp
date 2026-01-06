@@ -237,9 +237,22 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
 
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
+  // The callee may not be a SymbolConstantAttr if it contains unevaluated
+  // parameter expressions (e.g., from constructor calls in type parameters
+  // accessed via struct_field_types).
+  // See https://github.com/modular/modular/issues/5732.
+  auto callee = dyn_cast<SymbolConstantAttr>(op.getOperands().front());
+  if (!callee) {
+    emitError({*errorLoc,
+               "callee could not be resolved to a concrete symbol; "
+               "this can occur when using reflection on types with unevaluated "
+               "constructor calls in their parameters"});
+    return failure();
+  }
+
   // Attempt to concretize the function first.
-  ErrorTreeOr<FuncOp> funcOr = elaborator->getConcreteFunction(
-      parent, *errorLoc, cast<SymbolConstantAttr>(op.getOperands().front()));
+  ErrorTreeOr<FuncOp> funcOr =
+      elaborator->getConcreteFunction(parent, *errorLoc, callee);
   if (funcOr.isError()) {
     emitError(funcOr.takeError());
     return failure();
@@ -322,7 +335,16 @@ IREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
     return failure();
   }
 
-  SymbolRefAttr instanceRef = cast<TypeInstanceRefAttr>(resolved).getSymbol();
+  // The resolved type may not be a TypeInstanceRefAttr if it contains
+  // unevaluated parameter expressions (e.g., apply/apply_result_slot from
+  // constructor calls in type parameters accessed via struct_field_types).
+  // See https://github.com/modular/modular/issues/5732.
+  auto instanceRefAttr = dyn_cast<TypeInstanceRefAttr>(resolved);
+  if (!instanceRefAttr) {
+    // Return failure to allow graceful handling (e.g., printing <unprintable>)
+    return failure();
+  }
+  SymbolRefAttr instanceRef = instanceRefAttr.getSymbol();
   ParamNode *genNode = elaborator->lookupImplNode(instanceRef)->parent;
   // Always look up witness tables from the StructGeneratorOp, since the
   // StructInstanceOp is undergoing elaboration, and we should not block on
@@ -374,7 +396,15 @@ IREvaluator::resolveStructInstanceType(TypedAttr typeRef, StringRef funcName) {
       return failure();
     }
   }
-  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
+  // The type may still not be a TypeInstanceRefAttr after extraction from
+  // TypeParamAttr if it contains unevaluated parameter expressions.
+  // See https://github.com/modular/modular/issues/5732.
+  auto instanceRef = dyn_cast<TypeInstanceRefAttr>(typeRef);
+  if (!instanceRef) {
+    emitError(
+        {*errorLoc, Twine(funcName) + " requires a concrete struct type"});
+    return failure();
+  }
 
   // Look up the impl node and get the StructGeneratorOp
   SymbolRefAttr instanceSymbol = instanceRef.getSymbol();

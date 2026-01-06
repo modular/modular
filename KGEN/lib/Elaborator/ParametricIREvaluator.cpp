@@ -79,7 +79,18 @@ ErrorTreeOr<TypedAttr> ParametricIREvaluator::interpretGeneratorWithResultSlot(
 
   ParametricIREvaluator nestedEvaluator(*this);
   nestedEvaluator.setErrorLoc(loc);
-  auto callee = cast<SymbolConstantAttr>(calleeAttr);
+
+  // The callee may not be a SymbolConstantAttr if it contains unevaluated
+  // parameter expressions (e.g., from constructor calls in type parameters
+  // accessed via struct_field_types).
+  // See https://github.com/modular/modular/issues/5732.
+  auto callee = dyn_cast<SymbolConstantAttr>(calleeAttr);
+  if (!callee) {
+    return ErrorTree(loc, "callee could not be resolved to a concrete symbol; "
+                          "this can occur when using reflection on types with "
+                          "unevaluated constructor calls in their parameters");
+  }
+
   ErrorOr<std::pair<Region *, Operation *>> bodyOr =
       nestedEvaluator.lookupParametricFunctionBody(callee.getSymbol());
 
