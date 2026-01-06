@@ -7,6 +7,7 @@ mojo_test(
     name = "test_multimem_allreduce.mojo.test",
     size = "large",
     srcs = [
+        "comm_test_utils.mojo",
         "test_allreduce.mojo",
         "test_multimem_allreduce.mojo",
     ],
@@ -46,7 +47,10 @@ HIGH_GPU_MEMORY_TESTS = [
     mojo_test(
         name = src + ".test",
         size = "large",
-        srcs = [src],
+        srcs = [
+            src,
+            "comm_test_utils.mojo",
+        ],
         env = {
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
@@ -54,6 +58,7 @@ HIGH_GPU_MEMORY_TESTS = [
         exec_properties = {
             "test.resources:gpu-memory": "20" if src in HIGH_GPU_MEMORY_TESTS else "4",
         },
+        main = src,
         tags = ["gpu"],
         target_compatible_with = [
             "//:has_gpu",
@@ -72,6 +77,7 @@ HIGH_GPU_MEMORY_TESTS = [
     for src in glob(
         ["**/*.mojo"],
         exclude = [
+            "comm_test_utils.mojo",  # Imported source, not a test
             "test_multimem_allreduce.mojo",
         ],
     )

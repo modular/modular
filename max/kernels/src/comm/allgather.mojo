@@ -41,7 +41,6 @@ from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from utils import StaticTuple
 
-# Import P2P detection and synchronization from allreduce
 from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
 
 

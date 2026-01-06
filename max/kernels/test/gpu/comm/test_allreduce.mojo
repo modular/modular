@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from math import floor
 from sys import size_of, has_amd_gpu_accelerator
 from itertools import product
 
@@ -25,6 +24,7 @@ from comm.allreduce import (
     elementwise_epilogue_type,
 )
 import comm.vendor.ccl as vendor_ccl
+from comm_test_utils import human_readable_size
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
 from memory import LegacyUnsafePointer
 
@@ -49,32 +49,6 @@ comptime test_dtypes = (DType.bfloat16, DType.float32)
 comptime test_gpu_counts = (2, 4, 8)
 
 
-fn _pretty_print_float(val: Float64) -> String:
-    """This converts the float value to a string, but omits the fractional part
-    if not needed (e.g. prints 2 instead of 2.0).
-    """
-    if Float64(floor(val)) == val:
-        return String(Int(val))
-    return String(val)
-
-
-fn _human_memory(size: Int) -> String:
-    comptime KB = 1024
-    comptime MB = KB * KB
-    comptime GB = MB * KB
-
-    if size >= GB:
-        return _pretty_print_float(Float64(size) / GB) + "GB"
-
-    if size >= MB:
-        return _pretty_print_float(Float64(size) / MB) + "MB"
-
-    if size >= KB:
-        return _pretty_print_float(Float64(size) / KB) + "KB"
-
-    return String(size) + "B"
-
-
 fn allreduce_test[
     dtype: DType,
     rank: Int,
@@ -89,8 +63,9 @@ fn allreduce_test[
     if use_multimem and length == 0:
         return
 
-    comptime num_warmups = 5
-    comptime num_iters = 100
+    # TODO(KERN-2294): Remove bench code from tests
+    comptime num_warmups = 1
+    comptime num_iters = 1
     comptime num_buffers = 1 if use_multimem else ngpus
 
     __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
@@ -367,7 +342,7 @@ fn _get_test_str[
         quickreduce_tag,
         epilogue_tag,
         "-",
-        _human_memory(size_of[dtype]() * length),
+        human_readable_size(size_of[dtype]() * length),
     )
 
 
@@ -478,7 +453,7 @@ fn run_allreduce_sweep[
     ):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() < num_gpus:
-            break
+            continue
 
         # Create GPU context.
         var ctx = List[DeviceContext]()
