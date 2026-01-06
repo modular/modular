@@ -365,6 +365,7 @@ fn test_param_constraints():
   # expected-error @below {{invalid call to 'unprovable_param_constraints': violated constraint}}
   unprovable_param_constraints[0]()
 
+# expected-note @below {{'ConstraintStruct' declared here}}
 # expected-note @below {{cannot prove constraint}}
 struct ConstraintStruct[
   # expected-note @below {{constraint declared here needs evidence for}}
@@ -382,6 +383,7 @@ fn violate_constraint_struct[cs: ConstraintStruct[0]]():
     pass
 
 # expected-error @below {{default value violated constraint}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(xor (lt x._mlir_value, 4), True)'}}
 fn violated_default_constraint[x: Int where x > 3 = 1]():
     pass
 

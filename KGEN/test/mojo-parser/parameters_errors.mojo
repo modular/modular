@@ -31,7 +31,7 @@ fn GoodUseOfThing(a: Thing[4, 5]):
     pass
 
 
-# expected-error @below {{Thing' expects 0 parameters, but 1 was specified}}
+# expected-error @below {{'Thing' expects 0 parameters, but 1 was specified}}
 fn MultipleThingMetaparams(a: Thing[1, 2][1]):
     pass
 
@@ -50,7 +50,6 @@ struct Parameterized[p1: Int]:
     fn __init__(out self):
         pass
 
-    # expected-note @+2 {{'method' declared here}}
     # expected-note @+1 {{function declared here}}
     fn method[B: Int](self, other: Parameterized[Self.p1 + B]):
         pass
@@ -66,7 +65,7 @@ fn testTestParamStruct(a: Parameterized[4]):
     # expected-error @below {{'method' expects 2 parameters, but 3 were specified}}
     a.method[2, 7]
 
-    # expected-error @below {{'Thing' missing required parameter 'b'}}
+    # expected-error @below {{'Thing' failed to infer parameter 'b'}}
     var partial_var_type: Thing[1]
 
 
@@ -139,7 +138,7 @@ def generic_fn[a: FloatLiteral, b: Int](c: Int):
 
 
 def call_generic[dt: FloatLiteral]():
-    # expected-error @+1 {{invalid call to 'generic_fn': callee expects 2 parameters, but 3 were specified}}
+    # expected-error @+1 {{invalid call to 'generic_fn': 'generic_fn' expects 2 parameters, but 3 were specified}}
     generic_fn[dt, 1, 42](57)
 
 
@@ -267,12 +266,12 @@ struct DefaultParams2[a: Int, b: Int = 7]:  # expected-note {{declared here}}
 
 
 fn test_default_param_struct():
-    # expected-error @+1 {{expects at most 2 parameters, but 3 were specified}}
+    # expected-error @+1 {{expects 2 parameters, but 3 were specified}}
     comptime S = DefaultParams2[1, 3, 4]
 
 
 fn missing_bound_param():
-    # expected-error @below {{missing required parameter 'a'}}
+    # expected-error @below {{failed to infer parameter 'a'}}
     var value: DefaultParams2[]
 
 
@@ -443,7 +442,7 @@ fn autoparams_mem(x: MemParamType):
 fn autoparams_variadic(*x: MemParamType):
     pass
 
-
+# expected-note @below {{'InferredParam' declared here}}
 struct InferredParam[p: Int, //, T: AnyTrivialRegType, use: ParamType[p]]:
     pass
 
@@ -456,7 +455,7 @@ struct MultiInferred[p: Int, q: Int, //, uP: ParamType[p], uQ: ParamType[q]]:
 struct BindStructField:
     # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
     var value: InferredParam[Int]
-    # expected-error @below {{'InferredParam' missing required parameter 'T'}}
+    # expected-error @below {{'InferredParam' failed to infer parameter 'T'}}
     var infer_keyword: InferredParam[p=1]
     # expected-error @below {{inferred parameter passed out of order: 'p'}}
     var multi_infer_ooo: MultiInferred[q=1, p=2]
@@ -467,11 +466,11 @@ struct BindStructField:
 fn invalid_params[f: fn (ParamType) -> None]():
     # expected-error @below {{failed to infer parameter 'a', it isn't used in any argument}}
     autoparams[](ParamType[1]())
-    # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
+    # expected-error @below {{callee expects at most 1 positional parameter, but 2 were specified}}
     autoparams[1, 2](ParamType[2]())
-    # expected-error @below {{failed to infer parameter 'x.p', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
     autoparams[1](1)
-    # expected-error @below {{failed to infer parameter 'x.p', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
     autoparams_mem(1)
     # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
     autoparams_variadic(1)

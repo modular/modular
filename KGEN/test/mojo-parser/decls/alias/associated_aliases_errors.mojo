@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics %s -o /dev/null
 
 # expected-error @below {{only traits may contain a comptime member without an initializer}}
 comptime K: Int
