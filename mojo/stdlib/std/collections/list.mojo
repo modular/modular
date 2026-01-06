@@ -149,7 +149,7 @@ struct List[T: Copyable](
 
       ```mojo
       var list1 = [1, 2, 3]
-      var list2 = list1        # Deep copy
+      var list2 = list1.copy()        # Deep copy
       list2.append(4)
       print(list1.__str__())   # => [1, 2, 3]
       print(list2.__str__())   # => [1, 2, 3, 4]
