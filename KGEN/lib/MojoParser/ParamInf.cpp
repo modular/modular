@@ -81,7 +81,7 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
 // ParameterInferenceDiagnostics
 //===----------------------------------------------------------------------===//
 
-void ParameterInferenceDiagnostics::addExplanation(MojoInflightDiag &diag) {
+void ParamInfDiags::addExplanation(MojoInflightDiag &diag) {
   // Pick the first diagnostic for the earliest parameter after numActual.
   const FailedInference *best = nullptr;
   for (const FailedInference &failure : diags) {
@@ -101,11 +101,13 @@ void ParameterInferenceDiagnostics::addExplanation(MojoInflightDiag &diag) {
 // ParameterInferenceState
 //===----------------------------------------------------------------------===//
 
-ParameterInferenceState::ParameterInferenceState(
-    ASTDecl &declScope, const CallOperands &givenBindings,
-    ArrayRef<Type> declaredParamTypes, PogListAttr declaredParamPogs,
-    ArrayRef<TypedAttr> bindingsSoFar, ParameterInferenceDiagnostics &diags,
-    bool allowImplicitConversions)
+ParamInfState::ParamInfState(ASTDecl &declScope,
+                             const CallOperands &givenBindings,
+                             ArrayRef<Type> declaredParamTypes,
+                             PogListAttr declaredParamPogs,
+                             ArrayRef<TypedAttr> bindingsSoFar,
+                             ParamInfDiags &diags,
+                             bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
       evaluator(declScope.getShared()), givenBindings(givenBindings),
       declaredParamTypes(declaredParamTypes),
@@ -124,7 +126,7 @@ ParameterInferenceState::ParameterInferenceState(
     evaluator.appendIndexBinding(TypedAttr());
 }
 
-void ParameterInferenceState::dump() const {
+void ParamInfState::dump() const {
   llvm::errs() << "ParameterInferenceState:\n";
   for (auto [idx, value] : llvm::enumerate(evaluator.getIndexBindings())) {
     llvm::errs() << "  *(0," << idx << ") = " << value << "\n";
@@ -163,7 +165,7 @@ namespace {
 /// allows the Int addition to fold.
 class ParamMatcher {
 public:
-  ParamMatcher(const ExprNode *expr, ParameterInferenceState &state)
+  ParamMatcher(const ExprNode *expr, ParamInfState &state)
       : expr(expr), state(state), shared(state.shared) {}
   ~ParamMatcher() {}
 
@@ -207,7 +209,7 @@ private:
 
   /// This is the expression we're inferring within.
   const ExprNode *const expr;
-  ParameterInferenceState &state;
+  ParamInfState &state;
   SharedState &shared;
 };
 } // end anonymous namespace
@@ -1044,8 +1046,8 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
 /// custom logic is required because often (eg in this case) the "actual" type
 /// will have UnboundAttr parameters, instead of fully bound ones like a normal
 /// argument.
-LogicalResult ParameterInferenceState::inferSelfFromInitResult(
-    FnTypeGeneratorType signature) {
+LogicalResult
+ParamInfState::inferSelfFromInitResult(FnTypeGeneratorType signature) {
   ASTType returnedType;
 
   // When a parameter gets bound, we re-evaluate the result type to see the
@@ -1134,10 +1136,9 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
 /// Infer parameters from an operand being passed into this function. This is
 /// only called on the top level function operands being matched up, not
 /// anything in recursive functiontype positions.
-LogicalResult
-ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
-                                         ASTType origExpectedType,
-                                         ArgConvention expectedConvention) {
+LogicalResult ParamInfState::inferOneOperand(ASTExprAnd<AnyValue> operand,
+                                             ASTType origExpectedType,
+                                             ArgConvention expectedConvention) {
   // Whenever a parameter is bound, we need to re-evaluate the expected type and
   // try again.
 RetryLabel:
@@ -1493,8 +1494,8 @@ RetryLabel:
   return failure();
 }
 
-void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
-                                            Type expectedType) {
+void ParamInfState::inferOneParam(ASTExprAnd<AnyValue> binding,
+                                  Type expectedType) {
   (void)inferOneOperand(binding, expectedType, ArgConvention::ReadReg);
 }
 
@@ -1506,8 +1507,7 @@ void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
 /// be installed into evaluator.
 ///
 /// TODO: remove `installParam` and make it always true.
-void ParameterInferenceState::inferFromParamList(bool hasArguments,
-                                                 bool installParam) {
+void ParamInfState::inferFromParamList(bool hasArguments, bool installParam) {
   if (declaredParamTypes.empty())
     return;
 
@@ -1654,10 +1654,11 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments,
   }
 }
 
-LogicalResult ParameterInferenceState::inferForCall(
-    FnTypeGeneratorType signature, const CallOperands &operands,
-    const OperandValueList &variadicKwOperands, bool returnsSelf,
-    bool hasCTADParams) {
+LogicalResult
+ParamInfState::inferForCall(FnTypeGeneratorType signature,
+                            const CallOperands &operands,
+                            const OperandValueList &variadicKwOperands,
+                            bool returnsSelf, bool hasCTADParams) {
 
   // First try to infer parameters from the already provided bindings.
   inferFromParamList(/*hasArguments*/ true, /*installParam*/ true);
@@ -1881,9 +1882,8 @@ LogicalResult ParameterInferenceState::inferForCall(
 
 /// Given an incomplete parameter binding set, try to infer parameters on Self
 /// of a method from the first argument.
-LogicalResult
-ParameterInferenceState::inferCTADParams(FnTypeGeneratorType signature,
-                                         const CallOperands &operands) {
+LogicalResult ParamInfState::inferCTADParams(FnTypeGeneratorType signature,
+                                             const CallOperands &operands) {
   // Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:
   //       fn foo[B: Movable](self: X[B]): ...

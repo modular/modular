@@ -26,7 +26,7 @@ class PogListAttr;
 class PValue;
 class StructDeclOp;
 class TypeSignatureType;
-class ParameterInferenceDiagnostics;
+class ParamInfDiags;
 
 //===----------------------------------------------------------------------===//
 // ParamBindings
@@ -97,7 +97,7 @@ public:
   /// hook will be provided the index of the parameter to be inferred, along
   /// with a list of existing bindings, and a parameter evaluator to be used to
   /// infer types.
-  using ParameterInferenceHookTy = function_ref<PValue(ArrayRef<TypedAttr>)>;
+  using ParamInfHookTy = function_ref<PValue(ArrayRef<TypedAttr>)>;
 
   /// Describe how closely the given parameter bindings match the specified
   /// parameters and call operands.
@@ -112,8 +112,7 @@ public:
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       LITGeneratorType sig,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-      ParameterInferenceHookTy parameterInferenceHook,
-      ParameterInferenceDiagnostics &inferenceDiags,
+      ParamInfHookTy parameterInferenceHook, ParamInfDiags &inferenceDiags,
       ASTDecl *declIfKnown) const;
 
   /// Attempt to bind the current set of parameters to the provided parameter
@@ -163,9 +162,8 @@ private:
   /// in the evaluator used by the implementation.
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindingsImpl(
       const CallOperands &operands, ArrayRef<Type> expectedParamTypes,
-      PogListAttr paramListAttr,
-      ParameterInferenceHookTy parameterInferenceHook,
-      ParameterInferenceDiagnostics &inferenceDiags,
+      PogListAttr paramListAttr, ParamInfHookTy parameterInferenceHook,
+      ParamInfDiags &inferenceDiags,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
       bool partial, ASTDecl *declIfDirect) const;
 

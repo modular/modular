@@ -48,10 +48,10 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ParameterInferenceDiagnostics
+// ParamInfDiags
 //===----------------------------------------------------------------------===//
 
-class ParameterInferenceDiagnostics {
+class ParamInfDiags {
 public:
   /// Indicate that parameter inference failed to infer the parameter at
   /// `paramIdx` from the argument at `argPos`.
@@ -77,23 +77,22 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ParameterInferenceState
+// ParamInfState
 //===----------------------------------------------------------------------===//
 
 /// This class provides the implementation details that help to infer
 /// information about the specified parameter.
-class ParameterInferenceState {
+class ParamInfState {
 public:
   /// This is the declaration that we do name lookup against.
   ASTDecl &declScope;
   SharedState &shared;
 
-  ParameterInferenceState(ASTDecl &declScope, const CallOperands &givenBindings,
-                          ArrayRef<Type> declaredParamTypes,
-                          PogListAttr declaredParamPogs,
-                          ArrayRef<TypedAttr> bindingsSoFar,
-                          ParameterInferenceDiagnostics &diags,
-                          bool allowImplicitConversions);
+  ParamInfState(ASTDecl &declScope, const CallOperands &givenBindings,
+                ArrayRef<Type> declaredParamTypes,
+                PogListAttr declaredParamPogs,
+                ArrayRef<TypedAttr> bindingsSoFar, ParamInfDiags &diags,
+                bool allowImplicitConversions);
 
   /// Given an incomplete parameter binding set for a parameter list, try to
   /// infer the value of the next parameter. We only do this if there are any
@@ -161,7 +160,7 @@ private:
   PogListAttr declaredParamPogs;
 
   /// The current set of parameter inference diagnostics.
-  ParameterInferenceDiagnostics &diags;
+  ParamInfDiags &diags;
 
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
