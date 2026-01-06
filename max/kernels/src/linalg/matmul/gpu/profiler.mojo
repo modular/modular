@@ -130,7 +130,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
         var start_idx = Self._get_workspace_offset[warp_role](sm_idx, entry_idx)
 
-        if thread_idx.x % total_threads == 0:
+        if UInt32(thread_idx.x) % total_threads == 0:
             workspace[start_idx] = timeline[0]
             workspace[start_idx + 1] = timeline[1]
             workspace[start_idx + 2] = UInt64(sm_idx)
@@ -222,7 +222,7 @@ struct BlackwellProfileWarp[
         if Self.enable_profiling:
             self.timeline[1] = global_perf_counter_ns()
             Self.WorkspaceManager.write_to_workspace[Self.warp_role](
-                sm_id(),
+                UInt32(sm_id()),
                 self.entry_idx,
                 self.workspace,
                 self.timeline,
