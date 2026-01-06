@@ -448,11 +448,12 @@ class FakeModel:
         self.total_num_pages = kv_manager.total_num_pages
         # block_projections maps from bid -> offset -> prefix tokens
         self.block_projections: dict[int, dict[int, np.ndarray]] = defaultdict(
-            lambda: defaultdict(lambda: np.array([]))
+            dict
         )
-        self.request_ids_and_all_tokens: dict[RequestID, np.ndarray] = (
-            defaultdict(lambda: np.array([]))
-        )
+        # request_ids_and_all_tokens accumulates tokens for each request
+        # Empty arrays are used as initial state for concatenation
+        self.request_ids_and_all_tokens: dict[RequestID, np.ndarray] = {}
+        self._empty_token_array = np.array([], dtype=np.int64)
 
     def run(
         self,
@@ -479,7 +480,9 @@ class FakeModel:
         for request_id in request_ids_and_prompts:
             self.request_ids_and_all_tokens[request_id] = np.concatenate(
                 [
-                    self.request_ids_and_all_tokens[request_id],
+                    self.request_ids_and_all_tokens.get(
+                        request_id, self._empty_token_array
+                    ),
                     request_ids_and_prompts[request_id],
                     request_ids_and_new_tokens[request_id][:-1],
                 ]
@@ -650,14 +653,30 @@ def run_forward(
     run_fetch: bool = True,
     run_step: bool = True,
 ) -> None:
+    """Process a forward pass with the given prompt and next token.
+
+    If the context has unprocessed tokens, they are included in the prompt
+    passed to the model to ensure proper KV projection tracking.
+    """
     orig_start_idx = ctx.processed_length
+    num_unprocessed = len(ctx.all_tokens) - ctx.processed_length
+
     for tok in prompt:
         ctx.update(tok)
     ctx.rewind_processing(ctx.processed_length - orig_start_idx)
     if orig_start_idx == 0:
-        ctx._prompt_len = len(prompt)
+        ctx._prompt_len = len(prompt) + num_unprocessed
+
+    # Include any unprocessed tokens from context in the prompt for the model
+    if num_unprocessed > 0:
+        all_tokens_array = np.array(ctx.all_tokens)
+        unprocessed_tokens = all_tokens_array[:num_unprocessed]
+        full_prompt = np.concatenate([unprocessed_tokens, prompt])
+    else:
+        full_prompt = prompt
+
     batch = [ctx]
-    request_ids_and_prompts = {ctx.request_id: prompt}
+    request_ids_and_prompts = {ctx.request_id: full_prompt}
     orig_request_ids_and_prompts = request_ids_and_prompts.copy()
     new_toks = {ctx.request_id: np.array([next_tok])}
     if run_fetch:
@@ -677,18 +696,28 @@ def run_forward(
 
 @pytest.mark.asyncio
 async def test_prefix_caching_chunked_prefill() -> None:
+    """Test chunked prefill where prompts are processed in multiple forward passes.
+
+    This test verifies that prefix caching works correctly when:
+    1. Two sequences share a common prefix
+    2. The prompts are processed in chunks rather than all at once
+    3. Sequences diverge at different points
+    """
     kv_manager = create_paged_manager(num_blocks=128, page_size=3)
     model = FakeModel(kv_manager)
 
-    ctx_1 = create_text_context(np.array([]))
-    ctx_2 = create_text_context(np.array([]))
+    # Create contexts with initial token to avoid empty arrays
+    # The run_forward function will handle including this in the first chunk
+    ctx_1 = create_text_context(np.array([10]))
+    ctx_2 = create_text_context(np.array([10]))
     kv_manager.claim(ctx_1.request_id)
     kv_manager.claim(ctx_2.request_id)
 
-    prompt_1_part_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
+    # Process tokens in chunks - run_forward will include the initial [10]
+    prompt_1_part_1 = np.array([11, 12, 13, 14, 15, 16, 17])
     prompt_1_part_2 = np.array([18, 19, 20, 21, 22])
 
-    prompt_2_part_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
+    prompt_2_part_1 = np.array([11, 12, 13, 14, 15, 16, 17])
     prompt_2_part_2 = np.array([16, 17, 18, 998, 999])
 
     run_forward(model, kv_manager, ctx_1, prompt_1_part_1, prompt_1_part_2[0])
