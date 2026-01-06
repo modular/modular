@@ -277,7 +277,6 @@ class TokenBuffer:
             ValueError: If the array is not 1-dimensional, not int64 dtype, or empty.
         """
         # Validate and set initial array
-        print(f"ndim: {array.ndim}")
         if array.ndim != 1:
             raise ValueError(
                 f"array must be one-dimensional: got shape {array.shape}"
@@ -480,10 +479,17 @@ class TokenBuffer:
             n: Number of tokens to drop from the active window.
 
         Raises:
-            ValueError: If n exceeds the number of available tokens to process.
+            ValueError: If n exceeds the number of available tokens to process,
+                or if skipping n tokens would leave 0 active tokens.
         """
         if n < 0:
             raise ValueError(f"n must be non-negative: got {n}")
+
+        if n >= self.active_length:
+            raise ValueError(
+                f"Cannot skip {n} tokens: would leave {self.active_length - n} active tokens. "
+                f"Must have at least 1 active token (current active_length={self.active_length})"
+            )
 
         self._processing_range.bump_start(n)
 
@@ -584,6 +590,15 @@ class TokenBuffer:
     # ============================================================================
 
     @property
+    def has_outstanding_generated_tokens(self) -> bool:
+        """
+        Indicates whether there are generated tokens that have not yet been consumed.
+
+        Returns:
+            bool: True if there are outstanding generated tokens to be streamed or processed; False otherwise.
+        """
+        return len(self._completion_range) > 0
+
     def consume_recently_generated_tokens(self) -> TokenSlice:
         """Return newly generated tokens since the last consumption.
 

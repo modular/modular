@@ -58,7 +58,7 @@ def test_token_buffer__generated_and_completion_tracking() -> None:
     assert token_buffer.processed_length == 0
 
     with pytest.raises(ValueError):
-        _ = token_buffer.consume_recently_generated_tokens
+        _ = token_buffer.consume_recently_generated_tokens()
 
     token_buffer.advance_with_token(13)
     token_buffer.advance_with_token(14)
@@ -75,18 +75,18 @@ def test_token_buffer__generated_and_completion_tracking() -> None:
     )
     assert token_buffer[-1] == 14
 
-    completed = token_buffer.consume_recently_generated_tokens
+    completed = token_buffer.consume_recently_generated_tokens()
     np.testing.assert_array_equal(completed, np.array([13, 14], dtype=np.int64))
 
     assert token_buffer.processed_length == 4
 
     with pytest.raises(ValueError):
-        _ = token_buffer.consume_recently_generated_tokens
+        _ = token_buffer.consume_recently_generated_tokens()
 
     token_buffer.advance_with_token(15)
     assert token_buffer.processed_length == 5
     np.testing.assert_array_equal(
-        token_buffer.consume_recently_generated_tokens,
+        token_buffer.consume_recently_generated_tokens(),
         np.array([15], dtype=np.int64),
     )
 
@@ -228,7 +228,7 @@ def test_token_buffer__reset_as_new_prompt() -> None:
     assert token_buffer.processed_length == 0
 
     with pytest.raises(ValueError):
-        _ = token_buffer.consume_recently_generated_tokens
+        _ = token_buffer.consume_recently_generated_tokens()
 
 
 def test_token_buffer__getitem_access() -> None:

@@ -27,6 +27,7 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    TokenBuffer,
 )
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -183,7 +184,7 @@ def test_tokenizer__with_prompt_as_list_of_int(
         prompt=[0, 1, 2, 3, 4, 5],
     )
     context = asyncio.run(tokenizer.new_context(request))
-    assert np.array_equal(context.tokens, np.array([0, 1, 2, 3, 4, 5]))
+    assert np.array_equal(context.tokens.all, np.array([0, 1, 2, 3, 4, 5]))
 
 
 def test_tokenizer__with_context_validation(
@@ -247,7 +248,7 @@ async def test_tokenizer__encode_and_decode(
     encoded = await tokenizer.encode(test_string, add_special_tokens=False)
     context = TextContext(
         max_length=10,
-        tokens=np.array(encoded),
+        tokens=TokenBuffer(np.array(encoded, dtype=np.int64)),
     )
     assert context.current_length == len(encoded)
     decoded = await tokenizer.decode(encoded)

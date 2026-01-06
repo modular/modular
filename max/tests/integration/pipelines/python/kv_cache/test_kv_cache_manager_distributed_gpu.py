@@ -75,12 +75,13 @@ def test_claim() -> None:
     max_batch_size = 10
     batch = []
     for i in range(max_batch_size * data_parallel_degree):
-        context = create_text_context(np.empty(i))
+        # TokenBuffer requires at least one token, so start from 1
+        context = create_text_context(np.empty(max(i, 1)))
         replica_idx = kv_manager.get_or_recommend_replica(context)
         kv_manager.claim(context.request_id, replica_idx=replica_idx)
         batch.append((replica_idx, context))
 
-    new_context = create_text_context(np.empty(i))
+    new_context = create_text_context(np.empty(max(i, 1)))
 
     # Release a slot.
     replica_idx, context = batch[0]
