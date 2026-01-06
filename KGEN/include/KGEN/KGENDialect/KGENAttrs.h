@@ -152,6 +152,12 @@ TypedAttr emitMLIROperationCall(
     StringRef opName,
     ArrayRef<std::pair<StringAttr (*)(mlir::OperationName), Attribute>> attrs,
     ArrayRef<TypedAttr> operands, Type resultType);
+
+/// Unwrap a type reference to get to the underlying TypeGeneratorRefAttr or
+/// TypeInstanceRefAttr. Types passed through generic parameters are wrapped in
+/// TypeParamAttr, and this helper handles that unwrapping.
+/// Returns a null TypedAttr if the type reference cannot be resolved.
+TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef);
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_H

@@ -64,10 +64,11 @@ void KGENDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-// File-local utils
+// Type Reference Resolution
 //===----------------------------------------------------------------------===//
 
-static TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef) {
+namespace M::KGEN {
+TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef) {
   typeRef = SugarAttr::strip(typeRef);
   if (isa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
     return typeRef;
@@ -85,6 +86,7 @@ static TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef) {
     return typeRef;
   return {};
 }
+} // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
 // EmitAsAttr
