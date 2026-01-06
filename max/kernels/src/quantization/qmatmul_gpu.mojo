@@ -25,8 +25,7 @@ from gpu import (
     barrier,
     block_idx,
     grid_dim,
-    lane_id as get_lane_id,
-    warp_id as get_warp_id,
+    lane_id,
     thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
@@ -145,11 +144,11 @@ fn multistage_mma_q[
     comptime repack_tile = Index(64, 16)
 
     var tid: UInt32 = thread_idx.x % UInt(num_threads)
-    var warp_id = get_warp_id()
-    var lane_id = get_lane_id()
+    var warp_id = tid // WARP_SIZE
+    var lane_id = tid % WARP_SIZE
 
-    comptime num_warps_m = UInt(BM // WM)
-    comptime num_warps_n = UInt(BN // WN)
+    comptime num_warps_m = BM // WM
+    comptime num_warps_n = BN // WN
     var warp_x = warp_id % num_warps_n
     var warp_y = warp_id // num_warps_n
 
@@ -539,7 +538,7 @@ fn multistage_qgemm_kernel[
     comptime num_threads_per_warp_k_part = num_threads // num_warp_k_partitions
 
     var tid = thread_idx.x
-    var ln_id = get_lane_id()
+    var ln_id = lane_id()
     var warp_k_part_id = (
         tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
     )
