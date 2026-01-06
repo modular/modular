@@ -27,12 +27,12 @@ from layout.tma_async import PipelineState, SharedMemBarrier
 
 from utils.fast_div import FastDiv
 
-from ....structuring import SMemPtr, SMemArrayType
+from linalg.structuring import SMemPtr, SMemArrayType
 from .pipeline import ProducerConsumerPipeline
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
-from ..tile_scheduler import RasterOrder
+from linalg.matmul.gpu.tile_scheduler import RasterOrder
 
 
 @fieldwise_init

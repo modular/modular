@@ -19,7 +19,7 @@ from buffer.dimlist import DimList
 from linalg.matmul import matmul
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from microbenchmark import Benchmarkable
 
 from utils.index import Index

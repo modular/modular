@@ -47,8 +47,8 @@ from algorithm import vectorize
 fn _memcmp_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[mut=False, Scalar[dtype], **_],
-    s2: UnsafePointer[mut=False, Scalar[dtype], **_],
+    s1: UnsafePointer[mut=False, Scalar[dtype], ...],
+    s2: UnsafePointer[mut=False, Scalar[dtype], ...],
     count: Int,
 ) -> Int:
     for i in range(count):
@@ -63,8 +63,8 @@ fn _memcmp_impl_unconstrained[
 fn _memcmp_opt_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[mut=False, Scalar[dtype], **_],
-    s2: UnsafePointer[mut=False, Scalar[dtype], **_],
+    s1: UnsafePointer[mut=False, Scalar[dtype], ...],
+    s2: UnsafePointer[mut=False, Scalar[dtype], ...],
     count: Int,
 ) -> Int:
     comptime simd_width = simd_width_of[dtype]()
@@ -109,8 +109,8 @@ fn _memcmp_opt_impl_unconstrained[
 fn _memcmp_impl[
     dtype: DType
 ](
-    s1: UnsafePointer[mut=False, Scalar[dtype], **_],
-    s2: UnsafePointer[mut=False, Scalar[dtype], **_],
+    s1: UnsafePointer[mut=False, Scalar[dtype], ...],
+    s2: UnsafePointer[mut=False, Scalar[dtype], ...],
     count: Int,
 ) -> Int where dtype.is_integral():
     if is_compile_time():
@@ -163,8 +163,8 @@ fn memcmp[
 
 @always_inline
 fn _memcpy_impl(
-    dest_data: UnsafePointer[mut=True, Byte, **_],
-    src_data: UnsafePointer[mut=False, Byte, **_],
+    dest_data: UnsafePointer[mut=True, Byte, ...],
+    src_data: UnsafePointer[mut=False, Byte, ...],
     n: Int,
 ):
     """Copies a memory area.
@@ -294,7 +294,7 @@ fn memcpy[
 
 @always_inline("nodebug")
 fn _memset_impl(
-    ptr: UnsafePointer[mut=True, Byte, **_], value: Byte, count: Int
+    ptr: UnsafePointer[mut=True, Byte, ...], value: Byte, count: Int
 ):
     fn fill[width: Int](offset: Int) unified {mut}:
         ptr.store(offset, SIMD[DType.uint8, width](value))
@@ -304,7 +304,7 @@ fn _memset_impl(
 
 
 @always_inline
-fn memset(ptr: UnsafePointer[mut=True, _, **_], value: Byte, count: Int):
+fn memset(ptr: UnsafePointer[mut=True, _, ...], value: Byte, count: Int):
     """Fills memory with the given value.
 
     Args:
@@ -321,7 +321,7 @@ fn memset(ptr: UnsafePointer[mut=True, _, **_], value: Byte, count: Int):
 
 
 @always_inline
-fn memset_zero(ptr: UnsafePointer[mut=True, _, **_], count: Int):
+fn memset_zero(ptr: UnsafePointer[mut=True, _, ...], count: Int):
     """Fills memory with zeros.
 
     Args:
@@ -334,7 +334,7 @@ fn memset_zero(ptr: UnsafePointer[mut=True, _, **_], count: Int):
 @always_inline
 fn memset_zero[
     dtype: DType, //, *, count: Int
-](ptr: UnsafePointer[mut=True, Scalar[dtype], **_]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]):
     """Fills memory with zeros.
 
     Parameters:
@@ -520,7 +520,7 @@ fn _malloc[
 
 
 @always_inline
-fn _free(ptr: UnsafePointer[mut=True, **_]):
+fn _free(ptr: UnsafePointer[mut=True, ...]):
     @parameter
     if is_gpu():
         libc.free(ptr.bitcast[NoneType]())

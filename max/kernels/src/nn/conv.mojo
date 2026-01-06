@@ -15,7 +15,7 @@ from collections import OptionalReg, Dict
 from math import align_down, ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -2740,7 +2740,7 @@ fn _get_group_filter_base(
 @always_inline
 fn pack_filter(
     filter: LayoutTensor,
-    packed_filter: LayoutTensor[mut=True, *_, **_],
+    packed_filter: LayoutTensor[mut=True, ...],
     num_groups: Int,
 ):
     """This packs the filter form RSCF to FRSCf.
@@ -2771,7 +2771,7 @@ fn pack_filter[
     micro_kernel_f_size: Int,  # 64
 ](
     filter: LayoutTensor,
-    packed_filter: LayoutTensor[mut=True, *_, **_],
+    packed_filter: LayoutTensor[mut=True, ...],
     num_groups: Int,
 ):
     """This packs the filter form RSCF to FRSCf.
@@ -2895,19 +2895,19 @@ fn conv_shape[
     single_thread_blocking_override: Bool,
 ](
     input_buf: LayoutTensor[
-        input_type, address_space = AddressSpace.GENERIC, **_
+        input_type, address_space = AddressSpace.GENERIC, ...
     ],
     filter_buf: LayoutTensor[
-        filter_type, address_space = AddressSpace.GENERIC, **_
+        filter_type, address_space = AddressSpace.GENERIC, ...
     ],
     strides_buf: LayoutTensor[
-        strides_type, address_space = AddressSpace.GENERIC, **_
+        strides_type, address_space = AddressSpace.GENERIC, ...
     ],
     dilations_buf: LayoutTensor[
-        dilations_type, address_space = AddressSpace.GENERIC, **_
+        dilations_type, address_space = AddressSpace.GENERIC, ...
     ],
     paddings_buf: LayoutTensor[
-        paddings_type, address_space = AddressSpace.GENERIC, **_
+        paddings_type, address_space = AddressSpace.GENERIC, ...
     ],
     num_groups_scalar: Scalar,
 ) raises -> IndexList[input_buf.rank]:
@@ -3312,9 +3312,9 @@ fn _conv_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, **_],
-    filter: LayoutTensor[filter_type, **_],
-    output: LayoutTensor[output_type, **_],
+    input: LayoutTensor[input_type, ...],
+    filter: LayoutTensor[filter_type, ...],
+    output: LayoutTensor[output_type, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -3435,9 +3435,9 @@ fn conv_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, **_],
-    filter: LayoutTensor[filter_type, **_],
-    output: LayoutTensor[output_type, **_],
+    input: LayoutTensor[input_type, ...],
+    filter: LayoutTensor[filter_type, ...],
+    output: LayoutTensor[output_type, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],

@@ -37,7 +37,7 @@ from compile import get_type_name
 struct _SpanIter[
     mut: Bool,
     //,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -87,12 +87,7 @@ struct _SpanIter[
 
 
 @register_passable("trivial")
-struct Span[
-    mut: Bool,
-    //,
-    T: Copyable & ImplicitlyDestructible,
-    origin: Origin[mut=mut],
-](
+struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     Boolable,
     Defaultable,
     DevicePassable,
@@ -200,7 +195,7 @@ struct Span[
 
     @always_inline
     @implicit
-    fn __init__(out self, ref [Self.origin]list: List[Self.T, *_]):
+    fn __init__(out self, ref [Self.origin]list: List[Self.T, ...]):
         """Construct a `Span` from a `List`.
 
         Args:
@@ -340,7 +335,7 @@ struct Span[
         return False
 
     @no_inline
-    fn __str__[U: Representable & Copyable, //](self: Span[U, *_]) -> String:
+    fn __str__[U: Representable & Copyable, //](self: Span[U, ...]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -373,7 +368,7 @@ struct Span[
     @no_inline
     fn write_to[
         U: Representable & Copyable, //
-    ](self: Span[U, *_], mut writer: Some[Writer]):
+    ](self: Span[U, ...], mut writer: Some[Writer]):
         """Write `my_span.__str__()` to a `Writer`.
 
         Parameters:
@@ -391,7 +386,7 @@ struct Span[
         writer.write("]")
 
     @no_inline
-    fn __repr__[U: Representable & Copyable, //](self: Span[U, *_]) -> String:
+    fn __repr__[U: Representable & Copyable, //](self: Span[U, ...]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -476,12 +471,13 @@ struct Span[
 
     @always_inline
     fn copy_from[
-        _origin: MutOrigin, //
-    ](self: Span[Self.T, _origin], other: Span[Self.T, _],):
+        _T: Copyable & ImplicitlyDestructible, _origin: MutOrigin, //
+    ](self: Span[_T, _origin], other: Span[_T, _]):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
 
         Parameters:
+            _T: List element type that supports implicit destruction.
             _origin: The inferred mutable origin of the data within the Span.
 
         Args:
@@ -554,11 +550,14 @@ struct Span[
         """
         return not self == rhs
 
-    fn fill[_origin: MutOrigin, //](self: Span[Self.T, _origin], value: Self.T):
+    fn fill[
+        _T: Copyable & ImplicitlyDestructible, _origin: MutOrigin, //
+    ](self: Span[_T, _origin], value: _T):
         """
         Fill the memory that a span references with a given value.
 
         Parameters:
+            _T: List element type that supports implicit destruction.
             _origin: The inferred mutable origin of the data within the Span.
 
         Args:
@@ -808,7 +807,7 @@ struct Span[
     fn _binary_search_index[
         dtype: DType,
         //,
-    ](self: Span[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
+    ](self: Span[Scalar[dtype], ...], needle: Scalar[dtype]) -> Optional[UInt]:
         """Finds the index of `needle` with binary search.
         Args:
             needle: The value to binary search for.

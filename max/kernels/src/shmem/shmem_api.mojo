@@ -22,7 +22,7 @@ The headings below corrosspond to section 9: OpenSHMEM Library API.
 from collections.optional import OptionalReg
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import getenv, setenv
 from sys import (
     CompilationTarget,

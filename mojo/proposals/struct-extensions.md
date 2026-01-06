@@ -145,15 +145,15 @@ extension Spaceship:
 For example, these `fn __init__(out self, obj: PythonObject) raises: ...` (to
 conform to `ConvertibleFromPython`) methods exist:
 
-- in the`Bool` struct in `open-source/max/mojo/stdlib/std/builtin/bool.mojo`
-- in the`Int` struct in `open-source/max/mojo/stdlib/std/builtin/int.mojo`
-- in the`String` struct in `open-source/max/mojo/stdlib/std/collections/String.mojo`
-- in the `SIMD` struct in `open-source/max/mojo/stdlib/std/builtin/simd.mojo`
+- in the`Bool` struct in `oss/modular/mojo/stdlib/std/builtin/bool.mojo`
+- in the`Int` struct in `oss/modular/mojo/stdlib/std/builtin/int.mojo`
+- in the`String` struct in `oss/modular/mojo/stdlib/std/collections/String.mojo`
+- in the `SIMD` struct in `oss/modular/mojo/stdlib/std/builtin/simd.mojo`
 
 And also the `to_python_object` methods (from `PythonConvertible` trait):
 
-- in the `StringSlice` struct in `open-source/max/mojo/stdlib/std/builtin/string_literal.mojo`
-- in the `StringLiteral` struct in `open-source/max/mojo/stdlib/std/builtin/string_literal.mojo`
+- in the `StringSlice` struct in `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
+- in the `StringLiteral` struct in `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
 - in the`Bool`, `Int`, `String`, `SIMD` structs from above.
 
 We want to move those out into a separate [file? package?] that can be imported

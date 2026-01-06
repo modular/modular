@@ -19,7 +19,7 @@ from gpu.memory import external_memory
 from gpu.sync import barrier
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_equal
 
 

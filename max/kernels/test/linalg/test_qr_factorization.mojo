@@ -19,7 +19,7 @@ from layout.layout_tensor import UNKNOWN_VALUE, Layout, LayoutTensor
 from linalg.qr_factorization import form_q, qr_factorization
 from memory import LegacyUnsafePointer, memcpy
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 
@@ -28,9 +28,9 @@ fn trmm[
     dtype: DType,
     element_layout: Layout,
 ](
-    A: LayoutTensor[dtype, element_layout=element_layout, **_],
-    B: LayoutTensor[dtype, element_layout=element_layout, **_],
-    C: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
+    A: LayoutTensor[dtype, element_layout=element_layout, ...],
+    B: LayoutTensor[dtype, element_layout=element_layout, ...],
+    C: LayoutTensor[mut=True, dtype, element_layout=element_layout, ...],
 ):
     m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     k, n = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
@@ -51,9 +51,9 @@ fn a_mul_bt[
     dtype: DType,
     element_layout: Layout,
 ](
-    A: LayoutTensor[dtype, element_layout=element_layout, **_],
-    B: LayoutTensor[dtype, element_layout=element_layout, **_],
-    C: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
+    A: LayoutTensor[dtype, element_layout=element_layout, ...],
+    B: LayoutTensor[dtype, element_layout=element_layout, ...],
+    C: LayoutTensor[mut=True, dtype, element_layout=element_layout, ...],
 ):
     m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     n, k = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
@@ -73,7 +73,7 @@ def all_almost_id[
     dtype: DType,
     element_layout: Layout,
 ](
-    A: LayoutTensor[dtype, element_layout=element_layout, **_],
+    A: LayoutTensor[dtype, element_layout=element_layout, ...],
     atol: Float64,
     rtol: Float64,
 ):

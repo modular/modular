@@ -111,6 +111,7 @@ command(
 modular_py_binary(
     name = "mblack-wrapper",
     srcs = ["mblack-wrapper.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = ["@mblack"],
 )
 

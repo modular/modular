@@ -39,7 +39,7 @@ fn _lowercase_mapping_index(rune: Codepoint) -> Int:
 
 
 @always_inline
-fn _to_index[lookup: List[UInt32, **_]](rune: Codepoint) -> Int:
+fn _to_index[lookup: List[UInt32, ...]](rune: Codepoint) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
 

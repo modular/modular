@@ -21,8 +21,8 @@ fn argmaxmin_gpu[
     dtype: DType, output_type: DType, largest: Bool
 ](
     ctx: DeviceContext,
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, output_type, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, output_type, ...],
 ) raises:
     """
     Wraps the Top-K GPU kernel with K=1 to perform argmax on the inner-most
@@ -68,8 +68,8 @@ fn argmax_gpu[
     dtype: DType, output_type: DType
 ](
     ctx: DeviceContext,
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, output_type, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, output_type, ...],
 ) raises:
     argmaxmin_gpu[largest=True](ctx, input, output)
 
@@ -78,7 +78,7 @@ fn argmin_gpu[
     dtype: DType, output_type: DType
 ](
     ctx: DeviceContext,
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, output_type, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, output_type, ...],
 ) raises:
     argmaxmin_gpu[largest=False](ctx, input, output)

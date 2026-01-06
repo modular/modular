@@ -17,7 +17,7 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from internal_utils import assert_almost_equal, fill, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static

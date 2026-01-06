@@ -55,8 +55,8 @@ def run_elementwise[
         for i in range(length):
             var expected_value = math_fn(in_host[i])
 
-            comptime atol = 1e-05 if dtype is DType.float32 else 1e-4
-            comptime rtol = 2e-05 if dtype is DType.float32 else 2e-2
+            comptime atol = 1e-05 if dtype == DType.float32 else 1e-4
+            comptime rtol = 2e-05 if dtype == DType.float32 else 2e-2
             assert_almost_equal(
                 out_host[i],
                 expected_value,

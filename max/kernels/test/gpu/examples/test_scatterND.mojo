@@ -98,10 +98,10 @@ fn scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: NDBuffer[dtype, data_rank, *_],
-    indices: NDBuffer[indices_type, indices_rank, *_],
-    updates: NDBuffer[dtype, updates_rank, *_],
-    output: NDBuffer[dtype, data_rank, *_],
+    data: NDBuffer[dtype, data_rank, _, _, _],
+    indices: NDBuffer[indices_type, indices_rank, _, _, _],
+    updates: NDBuffer[dtype, updates_rank, _, _, _],
+    output: NDBuffer[dtype, data_rank, _, _, _],
     ctx: DeviceContext,
 ) raises:
     """
@@ -258,7 +258,7 @@ fn scatter_nd[
 fn linear_fill[
     dtype: DType
 ](
-    buf: NDBuffer[dtype, _, MutAnyOrigin, *_],
+    buf: NDBuffer[dtype, _, MutAnyOrigin, ...],
     elems: VariadicList[Scalar[dtype]],
 ):
     debug_assert(

@@ -9,6 +9,7 @@ modular_py_binary(
         "mlp.py",
     ],
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max/entrypoints:pipelines",

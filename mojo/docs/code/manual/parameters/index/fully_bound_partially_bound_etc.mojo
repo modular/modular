@@ -65,7 +65,7 @@ struct KeyWordStruct[pos_or_kw: Int, *, kw_only: Int = 10]:
 
 
 # Unbind both pos_or_kw and kw_only parameters
-fn use_kw_struct(k: KeyWordStruct[**_]):
+fn use_kw_struct(k: KeyWordStruct[...]):
     pass
 
 

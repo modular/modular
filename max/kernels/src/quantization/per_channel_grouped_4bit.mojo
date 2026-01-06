@@ -16,7 +16,7 @@ from sys.info import size_of
 from layout import Layout, LayoutTensor
 from memory import LegacyUnsafePointer, bitcast, memcpy
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import IndexList, StaticTuple, product
 
 
@@ -268,10 +268,10 @@ struct Q4sym[
     @staticmethod
     fn quantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, **_
+            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            DType.uint8, address_space = AddressSpace.GENERIC, **_
+            DType.uint8, address_space = AddressSpace.GENERIC, ...
         ],
         input_shape: IndexList[input_tensor.rank],
     ):
@@ -342,10 +342,10 @@ struct Q4sym[
     @staticmethod
     fn dequantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
-            DType.uint8, address_space = AddressSpace.GENERIC, **_
+            DType.uint8, address_space = AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, **_
+            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
         ],
         output_shape: IndexList[output_tensor.rank],
     ):
@@ -430,7 +430,7 @@ struct block_Q4_K:
 
 fn scale_min_k4(
     src_ptr: UnsafePointer[
-        block_Q4_K, address_space = AddressSpace.GENERIC, **_
+        block_Q4_K, address_space = AddressSpace.GENERIC, ...
     ],
     g: Int,
 ) -> Tuple[Float32, Float32]:
@@ -452,10 +452,10 @@ fn scale_min_k4(
 
 fn q4_k_dequantize_impl(
     input_tensor: LayoutTensor[
-        DType.uint8, address_space = AddressSpace.GENERIC, **_
+        DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
     output_tensor: LayoutTensor[
-        mut=True, DType.float32, address_space = AddressSpace.GENERIC, **_
+        mut=True, DType.float32, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     comptime group_nelems = block_Q4_K.group_size
@@ -538,8 +538,8 @@ struct block_Q6_K:
 
 
 fn q6_k_dequantize_impl(
-    input_tensor: LayoutTensor[DType.uint8, **_],
-    output_tensor: LayoutTensor[mut=True, DType.float32, **_],
+    input_tensor: LayoutTensor[DType.uint8, ...],
+    output_tensor: LayoutTensor[mut=True, DType.float32, ...],
     output_shape: IndexList[output_tensor.rank],
 ):
     comptime group_nelems = block_Q6_K.group_size

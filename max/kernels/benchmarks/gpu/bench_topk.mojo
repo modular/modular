@@ -24,7 +24,7 @@ from gpu.host import DeviceContext
 from internal_utils import arg_parse
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
@@ -280,7 +280,7 @@ fn bench_topk_batched[
             )
 
             @parameter
-            if dtype is DType.float32:
+            if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -519,7 +519,7 @@ fn bench_topk_multi_rank[
             )
 
             @parameter
-            if dtype is DType.float32:
+            if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),

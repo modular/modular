@@ -13,7 +13,7 @@
 from collections.string.string_slice import get_static_string
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
@@ -265,29 +265,29 @@ fn _dtype_to_rocshmem_type[
     """
 
     @parameter
-    if dtype is DType.float16:
+    if dtype == DType.float16:
         return get_static_string[prefix, "half", suffix]()
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return get_static_string[prefix, "float", suffix]()
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return get_static_string[prefix, "double", suffix]()
-    elif dtype is DType.int8:
+    elif dtype == DType.int8:
         return get_static_string[prefix, "schar", suffix]()
-    elif dtype is DType.uint8:
+    elif dtype == DType.uint8:
         return get_static_string[prefix, "char", suffix]()
-    elif dtype is DType.int16:
+    elif dtype == DType.int16:
         return get_static_string[prefix, "short", suffix]()
-    elif dtype is DType.uint16:
+    elif dtype == DType.uint16:
         return get_static_string[prefix, "ushort", suffix]()
-    elif dtype is DType.int32:
+    elif dtype == DType.int32:
         return get_static_string[prefix, "int", suffix]()
-    elif dtype is DType.uint32:
+    elif dtype == DType.uint32:
         return get_static_string[prefix, "uint", suffix]()
-    elif dtype is DType.int64:
+    elif dtype == DType.int64:
         return get_static_string[prefix, "long", suffix]()
-    elif dtype is DType.uint64:
+    elif dtype == DType.uint64:
         return get_static_string[prefix, "ulong", suffix]()
-    elif dtype is DType.int:
+    elif dtype == DType.int:
         return get_static_string[prefix, "longlong", suffix]()
     else:
         return CompilationTarget.unsupported_target_error[
