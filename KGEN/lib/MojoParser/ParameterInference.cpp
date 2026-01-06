@@ -1358,6 +1358,10 @@ RetryLabel:
   case ParamMatcher::Match:
     return success();
   case ParamMatcher::Error:
+    // FIXME: We should instead make sure that `OverloadSet::canConstructType`
+    // returns `false` when constructing one meta type from other meta type.
+    if (isa<StructMetaType>(argType) && isa<StructMetaType>(argType))
+      return failure();
     matcher.resetError();
     break;
   }
@@ -1460,6 +1464,9 @@ RetryLabel:
     // haven't bound or that is defaulting.  We aren't currently inferring the
     // entire set of parameters all at once, so we just treat that as "not a
     // failure" and assume it will work out.
+    //
+    // FIXME: this should be a failure after we fully migrate to the linear
+    // algorithm.
     return success();
   }
 
@@ -1493,30 +1500,83 @@ void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
 
 /// Given an incomplete parameter binding set for a parameter list, try to
 /// infer the value of the next parameter. We only do this if there are any
-/// inferred parameters present.
-void ParameterInferenceState::inferFromParamList(bool hasArguments) {
+/// inferred parameters present.  The 'hasArguments' field specifies whether
+/// there are arguments that can be used to infer parameters from (which are
+/// not handled by this call). When `installParam` is set, the parameter will
+/// be installed into evaluator.
+///
+/// TODO: remove `installParam` and make it always true.
+void ParameterInferenceState::inferFromParamList(bool hasArguments,
+                                                 bool installParam) {
+  if (declaredParamTypes.empty())
+    return;
+
   // If the parameter list has any inferred parameters, then we have to infer
   // against the provided binding list, since we might infer parameters from
   // other parameters. Otherwise, just exit early.
-  if (declaredParamTypes.empty() ||
-      (!declaredParamPogs.hasInferredParams() &&
-       !declaredParamPogs.isPosVarArg(declaredParamTypes.size() - 1)))
+  if (!installParam && !declaredParamPogs.hasInferredParams() &&
+      !declaredParamPogs.isPosVarArg(declaredParamTypes.size() - 1))
     return;
+
+  // // TODO: re-enable below and make it a failure.
+  // if (givenBindings.size() > declaredParamTypes.size())
+  //   return;
 
   // Partially specialize the pogs so any default values are specialized to
   // include any already-inferred values.
-  SmallVector<Type> types;
-  for (auto type : declaredParamTypes)
-    types.push_back(evaluator.getReboundType(type));
   declaredParamPogs =
       cast<PogListAttr>(evaluator.getReboundAttribute(declaredParamPogs));
+
+  auto inferAndEmitOneParam = [&](ASTExprAnd<AnyValue> binding,
+                                  ASTType expectedType) -> TypedAttr {
+    if (failed(inferOneOperand(binding, expectedType, ArgConvention::ReadReg)))
+      return {};
+
+    // No need to install the parameter, just return
+    if (!installParam)
+      return {};
+
+    IREmitter emitter(declScope, EC_TypeParamValue);
+    PValue bindingVal = binding.ir.getIfPValue();
+    assert(bindingVal && "Parameters are always PValue's");
+
+    // Parameters can only be unpacked into a variadic.
+    // FIXME: This results in a poor error message.
+    if (isa<UnpackedAttr>(bindingVal.get()))
+      return {};
+
+    // Check the type matches what is expected, and perform an implicit
+    // conversion if needed.
+    expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
+
+    // We don't typecheck the '_' magic parameter, we propagate it.
+    if (isa<UnboundAttr>(bindingVal.get()))
+      return {};
+
+    // If the parameter already has the right type, then we're good.
+    if (expectedType.isEqualCanon(bindingVal.getType()))
+      // Align sugar if necessary.
+      return ParamOperatorAttr::getRebind(bindingVal, expectedType);
+
+    // If the parameter can be implicitly converted, do so.
+    if (IREmitter::canImplicitlyConvertToType(
+            {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
+      ValueDest tmpDest(EC_CallParamValue);
+      CValue converted = emitter.emitImplicitConversionToType(
+          {bindingVal, binding.expr}, expectedType, tmpDest);
+      return converted.getIfPValue().get();
+    }
+
+    // Otherwise, we have an error.
+    return {};
+  };
 
   size_t posIdx = 0, numParams = givenBindings.size();
   DefaultValueHandler defaultHandler(declaredParamPogs);
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
-    Type expectedType = types[idx];
+    Type expectedType = evaluator.getReboundType(declaredParamTypes[idx]);
 
     // Skip over any provided keyword parameters when matching things up, we
     // handle them separately below.
@@ -1525,10 +1585,13 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments) {
 
     // If we have a varargs parameters, then it will eat the rest of the
     // parameters, but we have to check each of them.
+    // If we have a varargs parameters, then it will eat the rest of the
+    // parameters, but we have to check each of them.
     if (declaredParamPogs.isPosVarArg(idx)) {
       auto expectedVariadic = sugarCast<VariadicType>(expectedType);
       Type varArgsEltType = expectedVariadic.getElementType();
       while (posIdx != numParams) {
+        // FIXME: pack and install variadics parameter correctly.
         if (!givenBindings[posIdx].keyword)
           inferOneParam(givenBindings[posIdx], varArgsEltType);
         ++posIdx;
@@ -1540,7 +1603,11 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments) {
     // it.
     if (posIdx < numParams && (pog.getPassingKind() == PassingKind::PosOrKw ||
                                pog.getPassingKind() == PassingKind::PosOnly)) {
-      inferOneParam(givenBindings[posIdx], expectedType);
+      TypedAttr paramVal =
+          inferAndEmitOneParam(givenBindings[posIdx], expectedType);
+      if (paramVal && !evaluator.getIndexBindings()[idx])
+        evaluator.overwriteIndexBinding(idx, paramVal);
+
       ++posIdx;
       continue;
     }
@@ -1551,13 +1618,19 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments) {
          pog.getPassingKind() != PassingKind::Implicit)) {
       if (const OperandValue *param =
               givenBindings.findKwArg(declaredParamPogs.getName(idx))) {
-        inferOneParam(*param, expectedType);
+
+        TypedAttr paramVal = inferAndEmitOneParam(*param, expectedType);
+        if (paramVal && !evaluator.getIndexBindings()[idx])
+          evaluator.overwriteIndexBinding(idx, paramVal);
+
         continue;
       }
     }
 
     // If not, and this parameter has a default value, then just skip it. We
     // can't infer from default values.
+    //
+    // TODO: handle default parameters as a part of parameter inference too.
     if (defaultHandler.getDefault(idx))
       continue;
 
@@ -1573,7 +1646,7 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments) {
           !evaluator.getIndexBindings()[i]) {
         // FIXME: variadic element type may be dependent on an earlier inferred
         // parameter, we should get the rebound type.
-        auto type = types[i];
+        auto type = evaluator.getReboundType(declaredParamTypes[i]);
         auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
         evaluator.overwriteIndexBinding(i, empty);
       }
@@ -1583,9 +1656,11 @@ void ParameterInferenceState::inferFromParamList(bool hasArguments) {
 
 LogicalResult ParameterInferenceState::inferForCall(
     FnTypeGeneratorType signature, const CallOperands &operands,
-    const OperandValueList &variadicKwOperands, bool returnsSelf) {
+    const OperandValueList &variadicKwOperands, bool returnsSelf,
+    bool hasCTADParams) {
+
   // First try to infer parameters from the already provided bindings.
-  inferFromParamList(/*hasArguments*/ true);
+  inferFromParamList(/*hasArguments*/ true, /*installParam*/ true);
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
@@ -1646,7 +1721,10 @@ LogicalResult ParameterInferenceState::inferForCall(
     // their RValue types as bindings.
     if (ASTType variadicPackType =
             signature.getIfVariadicPack(expectedArgIdx)) {
+      size_t origPosOperandIdx = posOperandIdx;
     RetryLabel:
+      // Reset the index before retry.
+      posOperandIdx = origPosOperandIdx;
       variadicPackType = evaluator.getReboundType(variadicPackType);
       RefPackType packType = variadicPackType.getVariadicPackInfo(shared);
 
@@ -1777,6 +1855,26 @@ LogicalResult ParameterInferenceState::inferForCall(
       break;
     }
   }
+
+  // Check to see if this is a CTAD parameter - a parameter on the struct
+  // that encloses the method.  Consider "conditional conformance" cases like:
+  //     struct X[A: AnyType]:
+  //       fn foo[B: Movable](self: X[B]): ...
+  // When resolving a function call like `someX.foo()`, we install the
+  // bindings for 'A' from the typeof(someX) when resolving the
+  // AttributeRefExpr and then infer 'B' from someX again.
+  //
+  // However, when we have something like `X.foo(someX)` we cannot install the
+  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
+  // bound by parameter inference to 'B'.  Notice this and infer the parameter
+  // directly from A.  This is also important for operator resolution, which
+  // works effectively the same way.
+  //
+  // TODO: Provide a first class representation for conditional conformance
+  // that doesn't have us shadowing parameters like this!
+  if (hasCTADParams)
+    return inferCTADParams(signature, operands);
+
   // We succeed iff we inferred a value for this parameter.
   return success();
 }

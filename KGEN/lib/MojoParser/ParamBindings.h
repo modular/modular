@@ -148,6 +148,10 @@ public:
                          PogListAttr paramListAttr, ASTDecl *declIfKnown,
                          bool partial) const;
 
+  ArrayRef<OperandValue> getPreCheckedParams() const {
+    return ArrayRef(parameters.values).take_front(numPreTypeChecked);
+  }
+
   /// Method for debugging.
   LLVM_DUMP_METHOD void dump() const;
 

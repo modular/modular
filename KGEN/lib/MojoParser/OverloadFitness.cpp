@@ -775,67 +775,46 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // diagnostic handlers to capture any issues.
   ParameterInferenceDiagnostics inferenceDiags;
 
+  // Determine if this is an initializer that returns Self, which can be used
+  // for inferring parameters on Self.
+  bool returnsSelf = false;
+  bool hasCTADParams = false;
+  if (funcIfDirect) {
+    auto fn = cast<FnOp>(funcIfDirect->getIfOperation());
+    returnsSelf = fn.getSpecialFunctionInfo().hasSelfResult();
+    hasCTADParams = !fn.getIsStatic() && isa<StructDeclOp>(fn->getParentOp());
+  }
+
+  // FIXME: move this and defaulted value parameter into parameter inferences!
+  SmallVector<TypedAttr> preCheckedBinding;
+  for (auto &preCheckedOperand : callable.paramBindings.getPreCheckedParams()) {
+    if (sugarIsa<UnboundAttr>(preCheckedOperand.ir.getIfPValue().get()))
+      preCheckedBinding.push_back(nullptr);
+    else
+      preCheckedBinding.push_back(preCheckedOperand.ir.getIfPValue().get());
+
+    // FIXME: this should always be a invalid candidate, we should just return
+    // failure.
+    if (preCheckedBinding.size() == signature.getInputParamTypes().size())
+      break;
+  }
+
+  ParameterInferenceState inference(
+      callable.paramBindings.declScope, callable.paramBindings.getParameters(),
+      signature.getInputParamTypes(), signature.getParamListAttrs(),
+      preCheckedBinding, inferenceDiags, allowImplicitConversions);
+
+  bool inferFailed = failed(inference.inferForCall(
+      signature, operands, variadicKwOperands, returnsSelf, hasCTADParams));
+
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
-    ParameterInferenceState inference(
-        callable.paramBindings.declScope,
-        callable.paramBindings.getParameters(), signature.getInputParamTypes(),
-        signature.getParamListAttrs(), bindingsSoFar, inferenceDiags,
-        allowImplicitConversions);
-
-    // Determine if this is an initializer that returns Self, which can be used
-    // for inferring parameters on Self.
-    bool returnsSelf = false;
-    if (funcIfDirect)
-      returnsSelf = cast<FnOp>(funcIfDirect->getIfOperation())
-                        .getSpecialFunctionInfo()
-                        .hasSelfResult();
-
-    // Infer information from this signature holistically. Inference is only
-    // considered a failure if any internal conflicts were reached, such as when
-    // two arguments have differing requirements for a parameter (these
-    // conflicts are indicated by additional failures added to inferenceDiags).
-    // `infer` returning failure due to failing to infer later parameters should
-    // not be considered an immediate failure. As long as earlier parameters
-    // were inferred successfully, we should still return a valid PValue so
-    // inference continues down the parameter list. This ensures an error is
-    // reported only when we reach the actual parameter that caused the
-    // inference failure, instead of being reported too early and misleading the
-    // user.
-    size_t existingFailures = inferenceDiags.getNumFailures();
-    if (failed(inference.inferForCall(signature, operands, variadicKwOperands,
-                                      returnsSelf)) &&
-        inferenceDiags.getNumFailures() > existingFailures)
+    if (inferFailed)
       return PValue();
 
-    // See if we inferred information about the next value.
-    if (auto result = inference.getInferredValue(bindingsSoFar.size()))
-      return PValue(result);
+    TypedAttr inferred = inference.getInferredValue(bindingsSoFar.size());
 
-    // Check to see if this is a CTAD parameter - a parameter on the struct
-    // that encloses the method.  Consider "conditional conformance" cases like:
-    //     struct X[A: AnyType]:
-    //       fn foo[B: Movable](self: X[B]): ...
-    // When resolving a function call like `someX.foo()`, we install the
-    // bindings for 'A' from the typeof(someX) when resolving the
-    // AttributeRefExpr and then infer 'B' from someX again.
-    //
-    // However, when we have something like `X.foo(someX)` we cannot install the
-    // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
-    // bound by parameter inference to 'B'.  Notice this and infer the parameter
-    // directly from A.  This is also important for operator resolution, which
-    // works effectively the same way.
-    //
-    // TODO: Provide a first class representation for conditional conformance
-    // that doesn't have us shadowing parameters like this!
-    if (funcIfDirect) {
-      auto func = cast<FnOp>(funcIfDirect->getIfOperation());
-      if (!func.getIsStatic() && isa<StructDeclOp>(func->getParentOp())) {
-        if (failed(inference.inferCTADParams(signature, operands)))
-          return PValue();
-        if (auto result = inference.getInferredValue(bindingsSoFar.size()))
-          return PValue(result);
-      }
-    }
+    if (inferred)
+      return PValue(inferred);
 
     // If we succeeded inference but didn't get a value for this parameter, then
     // the parameter must not be present: complain.
