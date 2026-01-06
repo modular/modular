@@ -12,19 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from conftest import MiB, alloc_pinned
-from max.driver import Accelerator
+import pytest
+from conftest import MemType, MiB
 
 
-def test_limit(memory_manager_config: None) -> None:
-    # The cache has 100MiB so we try to alloc/free 100MiB a bunch of times.
-    for _ in range(321):
-        t = alloc_pinned(100 * MiB)
-        # This `del t` is needed.
-        # Otherwise the Garbage Collector may delay the free until after the sync.
-        # For example, `_ = alloc_pinned(100 * MiB)` alone would fail.
-        del t
+@pytest.mark.parametrize("mem_type", [MemType.PINNED, MemType.DEVICE])
+def test_oom(memory_manager_config: None, mem_type: MemType) -> None:
+    if mem_type == MemType.PINNED:
+        pytest.skip("PINNED memory is not supported in the memory manager")
 
-        # Synchronizing is necessary to ensure that allocated memory is returned
-        # to the buffer cache.
-        Accelerator().synchronize()
+    # We expect a OOM because we cannot allocate 101MiB when the limit is 100MiB.
+    with pytest.raises(
+        ValueError,
+        match=r"\[Use only memory manager mode\]: No room left in memory manager: .* on .* \(size: 101MB ; free: 0B ; cache_size: 0B ; max_cache_size: 100MB\)",
+    ):
+        _ = mem_type.alloc(101 * MiB)

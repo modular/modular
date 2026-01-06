@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from enum import Enum
+
 import pytest
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
@@ -30,13 +32,28 @@ GiB = 1024 * 1024 * 1024
 @pytest.fixture
 def memory_manager_config(monkeypatch: pytest.MonkeyPatch) -> None:
     # Max cache size is 100MiB
-    monkeypatch.setenv(
-        "MODULAR_DEVICE_CONTEXT_HOST_MEMORY_MANAGER_SIZE", f"{100 * MiB}"
-    )
+    max_cache_size = 100 * MiB
     # 2% of 100MiB is 2MiB per chunk
+    chunk_percent = 2
+
+    # Set config for device memory manager
     monkeypatch.setenv(
-        "MODULAR_DEVICE_CONTEXT_HOST_MEMORY_MANAGER_CHUNK_PERCENT", "2"
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE", f"{max_cache_size}"
     )
+    monkeypatch.setenv(
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT",
+        f"{chunk_percent}",
+    )
+
+    # Set config for host memory manager
+    monkeypatch.setenv(
+        "MODULAR_DEVICE_CONTEXT_HOST_MEMORY_MANAGER_SIZE", f"{max_cache_size}"
+    )
+    monkeypatch.setenv(
+        "MODULAR_DEVICE_CONTEXT_HOST_MEMORY_MANAGER_CHUNK_PERCENT",
+        f"{chunk_percent}",
+    )
+
     # This toggles asserts in the buffer cache
     monkeypatch.setenv(
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK", "True"
@@ -45,13 +62,22 @@ def memory_manager_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG", "False")
 
 
-def alloc_pinned(size: int) -> Tensor:
-    print(f"Allocating pinned buffer of size {to_human_readable_bytes(size)}")
-    return Tensor(
-        shape=(size,), dtype=DType.int8, device=Accelerator(), pinned=True
-    )
-
-
 def align_down(size: int, alignment: int = 256 * KiB) -> int:
     multiples = size // alignment
     return multiples * alignment
+
+
+class MemType(str, Enum):
+    PINNED = "pinned"
+    DEVICE = "device"
+
+    def alloc(self, size: int) -> Tensor:
+        print(
+            f"Allocating {self.value} buffer of size {to_human_readable_bytes(size)}"
+        )
+        return Tensor(
+            shape=(size,),
+            dtype=DType.int8,
+            device=Accelerator(),
+            pinned=self == MemType.PINNED,
+        )

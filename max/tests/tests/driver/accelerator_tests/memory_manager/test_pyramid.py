@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
-from conftest import MiB, align_down, alloc_pinned
+import pytest
+from conftest import MemType, MiB, align_down
 from max.driver import Accelerator
 from max.support import to_human_readable_bytes
 
 
-def test_pyramid(memory_manager_config: None) -> None:
+@pytest.mark.parametrize("mem_type", [MemType.PINNED, MemType.DEVICE])
+def test_pyramid(memory_manager_config: None, mem_type: MemType) -> None:
     print("====== test_pyramid")
 
     # Allocate 1x90MiB, 2x45MiB, 3x30MiB, ..., 30x3MiB in a pyramid pattern.
@@ -31,18 +32,21 @@ def test_pyramid(memory_manager_config: None) -> None:
         print(
             f"====== Allocating {num_buffers} buffers of size {size_per_buffer_str}"
         )
-        bufs = [alloc_pinned(size_per_buffer) for _ in range(num_buffers)]
+        bufs = [mem_type.alloc(size_per_buffer) for _ in range(num_buffers)]
 
         print("====== Freeing buffers")
         # Clear the list of buffers to decr ref_cnt of DeviceBuffers.
-        # As now ref_cnt==0, this calls enqueueEventHandler() for async free.
+        # As now ref_cnt==0, this calls {cu,hip}MemFreeAsync for device buffers
+        # or enqueueEventHandler() for pinned buffers.
         bufs.clear()
 
         # This explicit sync is necessary to ensure that the buffers are returned
-        # to the memory manager.
+        # to the memory manager for pinned memory.
         # Interally, this calls checkPendingWork() which polls for ready events
         # and runs the above handlers we enqueued earlier. These handlers free
         # the buffers.
+
+        # TODO: figure out why this sync is needed for device memory.
         Accelerator().synchronize()
 
         print("====== Done")

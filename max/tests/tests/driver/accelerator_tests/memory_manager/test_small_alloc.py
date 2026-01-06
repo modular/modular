@@ -13,13 +13,19 @@
 
 
 import pytest
-from conftest import MiB, alloc_pinned
+from conftest import MemType, MiB
+from max.driver import Accelerator
 
 
-def test_oom(memory_manager_config: None) -> None:
-    # We expect a OOM because we cannot allocate 101MiB when the limit is 100MiB.
-    with pytest.raises(
-        ValueError,
-        match=r"\[Use only memory manager mode\]: No room left in memory manager: .*\[0 - host\] on .* \(size: 101MB ; free: 0B ; cache_size: 0B ; max_cache_size: 100MB\)",
-    ):
-        _ = alloc_pinned(101 * MiB)
+@pytest.mark.parametrize("mem_type", [MemType.PINNED, MemType.DEVICE])
+def test_small_alloc(memory_manager_config: None, mem_type: MemType) -> None:
+    # The memory manager has 100MiB so we try to alloc / free 100 buffers of
+    # 1MiB each.
+    for _ in range(7):
+        bufs = [mem_type.alloc(1 * MiB) for _ in range(100)]
+        del bufs
+
+        # Synchronizing is necessary to ensure that allocated memory is returned
+        # to the memory manager for pinned memory.
+        if mem_type == MemType.PINNED:
+            Accelerator().synchronize()

@@ -13,17 +13,18 @@
 
 
 import pytest
-from conftest import MiB, alloc_pinned
+from conftest import MemType, MiB
 
 
 @pytest.mark.skip(
     reason="GEX-2980: Host memory manager is not working as expected"
 )
-def test_enumerate(memory_manager_config: None) -> None:
+@pytest.mark.parametrize("mem_type", [MemType.PINNED, MemType.DEVICE])
+def test_enumerate(memory_manager_config: None, mem_type: MemType) -> None:
     # allocate 1MiB, 2MiB, 3MiB, 4MiB, 5MiB in increasing order
     # the sum of the sizes is far less than 100MiB
     for i in range(1, 6):
         size = i * MiB
         # Fails due to:
         #   ValueError: [Use only memory manager mode]: No room left in memory manager: cuda[0 - host] on 0x421a2c00 (size: 3MB ; free: 1MB ; cache_size: 4MB ; max_cache_size: 100MB)
-        _ = alloc_pinned(size)
+        _ = mem_type.alloc(size)
