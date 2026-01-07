@@ -205,13 +205,13 @@ struct MixedLayoutTensor[
         ]
 
     @always_inline("nodebug")
-    fn __getitem__(
-        self, tuple: Tuple
-    ) -> Scalar[Self.dtype] where Variadic.size(
-        tuple.element_types
-    ) == Variadic.size(Self.shape_types) where _AllEqual[
-        Int, *tuple.element_types
-    ]:
+    fn __getitem__[
+        *IndexTypes: Indexer & Copyable
+    ](self, tuple: Tuple[*IndexTypes]) -> Scalar[
+        Self.dtype
+    ] where Variadic.size(tuple.element_types) == Variadic.size(
+        Self.shape_types
+    ):
         var linear_tuple: MixedTuple[
             *_Splatted[RuntimeInt[Self.linear_idx_type], Self.rank]
         ]
@@ -223,7 +223,7 @@ struct MixedLayoutTensor[
         for i in range(Variadic.size(tuple.element_types)):
             UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
                 rebind[type_of(linear_tuple).element_types[i]](
-                    RuntimeInt[Self.linear_idx_type](rebind[Int](tuple[i]))
+                    RuntimeInt[Self.linear_idx_type](index(tuple[i]))
                 )
             )
         return self.ptr[

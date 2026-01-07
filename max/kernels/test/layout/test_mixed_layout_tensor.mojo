@@ -372,3 +372,10 @@ fn test_vectorize_1d() raises:
     assert_equal(vectorized[(Idx(1),)], 4)
     assert_equal(vectorized[(Idx(2),)], 8)
     assert_equal(vectorized[(Idx(3),)], 12)
+
+
+def test_indexing():
+    var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
+    var tensor = MixedLayoutTensor(stack, row_major[2, 2]())
+    assert_equal(tensor[(Int32(0), Int64(0))], 1)
+    assert_equal(tensor[(Int(1), Int64(0))], 3)
