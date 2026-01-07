@@ -19,6 +19,9 @@ llvm::ModulePassManager
 buildLLVMOptimizationPipeline(llvm::PassBuilder &passBuilder,
                               const CompilationOptions &options);
 
+/// Add LLVMIRDowngradePass to the pass manager.
+void addLLVMIRDowngradePass(llvm::ModulePassManager &mpm);
+
 } // namespace M::KGEN
 
 #endif // KGEN_COMPILER_LLVMPASSESPIPELINE_H

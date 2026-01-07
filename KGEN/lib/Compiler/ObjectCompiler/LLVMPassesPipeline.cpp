@@ -9,6 +9,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLVMAccessorHelper.h"
 #include "MCLinker.h"
+#include "LLVM/Transforms/LLVMIRDowngradePass.h"
 #include "LLVM/Transforms/MetalAIRPass.h"
 #include "LLVM/Transforms/MetalRewriteDebugInfo.h"
 #include "LLVM/Transforms/PointerRewriter.h"
@@ -612,6 +613,10 @@ M::KGEN::buildLLVMOptimizationPipeline(PassBuilder &passBuilder,
     return buildO0Pipeline(passBuilder, options);
   // All non-zero optimization levels are currently equivalent.
   return buildO3Pipeline(passBuilder, options);
+}
+
+void M::KGEN::addLLVMIRDowngradePass(llvm::ModulePassManager &mpm) {
+  mpm.addPass(LLVMIRDowngradePass());
 }
 
 bool M::KGEN::addPassesToEmitFile(CompilationOptions &options,
