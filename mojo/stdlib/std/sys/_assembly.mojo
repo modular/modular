@@ -72,11 +72,11 @@ fn inlined_assembly[
         result_type: The return type of the assembly operation. Use `NoneType`
             for assembly that produces no result.
         types: The types of the input arguments.
-        constraints: LLVM-style constraint string specifying register allocation.
-            The output constraint comes first (prefixed with `=`), followed by
-            input constraints separated by commas. Common constraints include:
-            `r` (general register), `f` (float register), `l` (64-bit register),
-            `h` (16-bit register), `n` (immediate integer).
+        constraints: LLVM-style constraint string specifying register allocation
+            and operand placement. The output constraint comes first (prefixed
+            with `=`), followed by input constraints separated by commas.
+            Available constraints are target-specific; refer to LLVM's inline
+            assembly documentation and your target's backend for valid options.
         has_side_effect: If `True` (default), the assembly is treated as having
             side effects and won't be optimized away or reordered. Set to
             `False` for pure computations to enable compiler optimizations.
