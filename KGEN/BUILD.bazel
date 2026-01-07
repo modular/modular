@@ -22,6 +22,7 @@ package_group(
         "//bazel/...",
         "//docs/...",
         "//max/python/max/_core/internal/...",
+        "//max/tests/internal/API/c/...",  # Only when testing internally
         "//oss/modular/max/python/max/_core/internal/...",  # Only when testing internally
         "//utils/...",
     ],
