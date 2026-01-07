@@ -259,11 +259,23 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "BazelRunfiles",
+    srcs = ["lib/BazelRunfiles.cpp"],
+    hdrs = ["include/Support/BazelRunfiles.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@rules_cc//cc/runfiles",
+    ],
+)
+
+modular_cc_library(
     name = "Configuration",
     srcs = ["lib/Configuration.cpp"],
     hdrs = ["include/Support/Configuration.h"],
     deps = [
         ":Base",
+        ":BazelRunfiles",
         ":Filesystem",
         "@llvm-project//llvm:Support",
     ],

@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Configuration.h"
+#include "Support/BazelRunfiles.h"
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
@@ -199,8 +200,11 @@ std::optional<StringRef> Config::maybeGetValue(StringRef key) {
   auto envOr = llvm::sys::Process::GetEnv("MODULAR_" + upper);
   // If we have this env variable, save it in the map. We don't care if it
   // overrides something.
-  if (envOr)
+  if (envOr) {
     kv[key.lower()] = *envOr;
+  } else if (auto runfilesPath = findConfigWithRunfiles(key)) {
+    kv[key.lower()] = *runfilesPath;
+  }
 
   if (auto iter = kv.find(key.lower()); iter != kv.end())
     return iter->second;
