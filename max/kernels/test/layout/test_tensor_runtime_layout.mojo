@@ -20,7 +20,7 @@ from layout.layout_tensor import LayoutTensorIter
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import IndexList
 
 

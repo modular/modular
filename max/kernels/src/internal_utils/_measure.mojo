@@ -20,7 +20,7 @@ from algorithm.functional import unswitch
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import IndexList
 
 # ===----------------------------------------------------------------------=== #

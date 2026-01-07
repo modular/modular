@@ -136,7 +136,7 @@ fn parallelism_level() -> Int:
 
 
 fn create_task(
-    var handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
+    var handle: Coroutine[...], out task: Task[handle.type, handle.origins]
 ):
     """Run the coroutine as a task on the AsyncRT Runtime.
 
@@ -158,7 +158,7 @@ fn create_task(
 
 
 @always_inline
-fn _run(var handle: Coroutine[*_], out result: handle.type):
+fn _run(var handle: Coroutine[...], out result: handle.type):
     """Executes a coroutine and waits for its completion.
     This function runs the given coroutine on the async runtime and blocks until
     it completes. The result of the coroutine is stored in the output parameter.

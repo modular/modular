@@ -23,7 +23,7 @@ from layout import *
 from layout.layout_tensor import LayoutTensor
 from memory import LegacyUnsafePointer, memset_zero
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from python import Python
 
 comptime M = 512  # rows of A and C

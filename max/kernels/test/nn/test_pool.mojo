@@ -25,7 +25,7 @@ fn pool[
     count_boundary: Bool = False
 ](
     pool_method: PoolMethod,
-    output_tensor: LayoutTensor[mut=True, DType.float32, **_],
+    output_tensor: LayoutTensor[mut=True, DType.float32, ...],
 ) raises:
     comptime in_layout = Layout.row_major(2, 5, 7, 2)
 
@@ -173,7 +173,7 @@ fn test_avg_pool_2d() raises:
 
 fn test_avg_pool_2d_with_padding[
     count_boundary: Bool = False
-](output_tensor: LayoutTensor[mut=True, DType.float32, **_]) raises:
+](output_tensor: LayoutTensor[mut=True, DType.float32, ...]) raises:
     comptime in_layout = Layout.row_major(1, 7, 7, 1)
 
     var in_heap = List[Float32](unsafe_uninit_length=in_layout.size())
@@ -357,7 +357,7 @@ fn pool_ceil_test[
     count_boundary: Bool = False, ceil_mode: Bool = True
 ](
     pool_method: PoolMethod,
-    output_tensor: LayoutTensor[mut=True, DType.float32, **_],
+    output_tensor: LayoutTensor[mut=True, DType.float32, ...],
 ) raises:
     comptime in_layout = Layout.row_major(1, 4, 4, 1)
 

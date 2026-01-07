@@ -5,6 +5,7 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "config",
     srcs = ["config.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("pydantic"),
         requirement("pydantic-settings"),
@@ -17,6 +18,7 @@ modular_py_library(
 modular_py_library(
     name = "process_control",
     srcs = ["process_control.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("taskgroup"),  # only for python < 3.11
     ],
@@ -38,6 +40,7 @@ modular_py_library(
             "exceptions.py",
         ],
     ),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":config",
         ":debug",

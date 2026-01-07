@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import enum
 import functools
@@ -21,7 +22,7 @@ import os
 import sys
 import time
 import traceback
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TextIO
@@ -66,6 +67,7 @@ class VerificationStatus(str, enum.Enum):
     INVALID = "invalid"
     ERROR = "error"
     FLAKE = "flake"
+    INFRA = "infra"
 
     @property
     def emoji(self) -> str:
@@ -77,6 +79,7 @@ _VERDICT_EMOJI = {
     VerificationStatus.INVALID: "🟡",
     VerificationStatus.ERROR: "❌",
     VerificationStatus.FLAKE: "❄️",
+    VerificationStatus.INFRA: "🧯",
 }
 
 
@@ -347,6 +350,27 @@ class PregeneratedTorchGoldens:
     """Name of the json file containing the golden logits."""
 
 
+class InfraError(Exception):
+    """Raised when an error with the runner environment has been encountered."""
+
+
+@contextlib.contextmanager
+def detect_infra_errors() -> Generator[None, None, None]:
+    try:
+        yield
+    except ValueError as exc:
+        exc_str = str(exc)
+        if (
+            'failed to create device: No supported "gpu" device available.'
+            in exc_str
+            and "CUDA call failed: CUDA_ERROR_UNKNOWN" in exc_str
+        ):
+            raise InfraError(
+                "GPU device seems to have fallen off from runner"
+            ) from exc
+        raise
+
+
 def generate_llm_logits_with_optional_retry(
     *,
     framework: str,
@@ -533,14 +557,18 @@ class PipelineDef:
         print_suggested_tolerances: bool,
     ) -> VerificationVerdict:
         try:
-            return self.run(
-                device_type,
-                devices,
-                find_tolerances,
-                print_suggested_tolerances,
-            )
+            with detect_infra_errors():
+                return self.run(
+                    device_type,
+                    devices,
+                    find_tolerances,
+                    print_suggested_tolerances,
+                )
         except Flake:
             return VerificationVerdict(status=VerificationStatus.FLAKE)
+        except InfraError:
+            traceback.print_exc()
+            return VerificationVerdict(status=VerificationStatus.INFRA)
         except Exception:
             traceback.print_exc()
             return VerificationVerdict(status=VerificationStatus.ERROR)

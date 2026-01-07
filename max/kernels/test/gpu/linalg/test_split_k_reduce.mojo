@@ -21,7 +21,7 @@ from layout.layout import UNKNOWN_VALUE
 from linalg.matmul.gpu import split_k_reduce
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -168,7 +168,7 @@ def test_split_k_reduce_rank3[
 
     ctx.enqueue_copy(c_host, c_device)
 
-    comptime rtol = 1e-4 if c_type is DType.float32 else 1e-2
+    comptime rtol = 1e-4 if c_type == DType.float32 else 1e-2
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i], rtol=rtol):
             print(

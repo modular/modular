@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort
 from sys import size_of
 
@@ -112,7 +112,7 @@ fn mojo_block_hasher(
 ) raises -> PythonObject:
     # Parse np array tokens input
     var py_array_object_ptr = LegacyUnsafePointer[
-        PyArrayObject[DType.int64], **_
+        PyArrayObject[DType.int64], ...
     ](unchecked_downcast_value=py_array_object)
 
     # Parse other arguments

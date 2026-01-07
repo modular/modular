@@ -646,14 +646,14 @@ This version is still a work in progress.
     - With prelude:
 
       ```mojo
-      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:119:4: error: function instantiation failed
+      oss/modular/mojo/stdlib/std/builtin/_startup.mojo:119:4: error: function instantiation failed
       fn __mojo_main_prototype(
         ^
-      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
-      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:42:4: note: function instantiation failed
+      oss/modular/mojo/stdlib/std/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
+      oss/modular/mojo/stdlib/std/builtin/_startup.mojo:42:4: note: function instantiation failed
       fn __wrap_and_execute_main[
         ^
-      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:68:14: note: call expansion failed
+      oss/modular/mojo/stdlib/std/builtin/_startup.mojo:68:14: note: call expansion failed
           main_func()
                   ^
       test.mojo:43:4: note: function instantiation failed

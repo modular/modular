@@ -335,7 +335,7 @@ def test_ndbuffer_tile():
         buf_stack.unsafe_ptr()
     )
 
-    fn linspace(buffer: NDBuffer[mut=True, *_]):
+    fn linspace(buffer: NDBuffer[mut=True, ...]):
         for i in range(buffer.dim[0]()):
             for j in range(buffer.dim[1]()):
                 buffer[i, j] = i * buffer.dim[1]() + j

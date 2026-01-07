@@ -28,7 +28,7 @@ from linalg.matmul.gpu import (
 from linalg.utils_gpu import MatmulConfig
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 from utils import Index, IndexList
@@ -393,7 +393,7 @@ def main():
         test_bf16(ctx)
 
         @parameter
-        if ctx.default_device_info is MI355X:
+        if ctx.default_device_info == MI355X:
             test_float8[DType.float8_e4m3fn](ctx)
             test_float8[DType.float8_e5m2](ctx)
         else:

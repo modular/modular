@@ -12,15 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Transformation passes over a MAX Graph."""
 
-import collections
-from typing import TypeVar, overload
-
 from max import _core as mlir
-from max._core.dialects import builtin, kgen, mo, mosh
-from max.driver import CPU
-from max.dtype import DType
-from max.graph import Graph, Shape, TensorType, Type, Value
-from max.graph.dim import AlgebraicDim, Dim, StaticDim
+from max._core.dialects import builtin, kgen, mo
+from max.graph import Graph, Type, Value
 from max.graph.graph import _location
 
 
@@ -127,68 +121,3 @@ def remove_unused_arguments(graph: Graph) -> None:
             block.erase_argument(i)
 
     _fixup_graph(graph)
-
-
-T = TypeVar("T")
-
-
-def remove_static_shape_info(graph: Graph) -> dict[int, Dim]:
-    graph_op = mlir.Operation._from_cmlir(graph._mlir_op)
-    assert isinstance(graph_op, mo.GraphOp)
-    block = graph_op.regions[0].front
-
-    parameters: collections.defaultdict[int, Dim] = collections.defaultdict(
-        lambda: Dim(f"D{len(parameters)}")
-    )
-
-    @overload
-    def symbolic(v: builtin.IntegerAttr) -> kgen.ParamDeclRefAttr: ...
-    @overload
-    def symbolic(v: T) -> T: ...
-
-    def symbolic(v):
-        if isinstance(v, builtin.IntegerAttr):
-            return symbolic(Dim.from_mlir(v)).to_mlir()
-        if isinstance(v, kgen.ParamOperatorAttr):
-            operands = [symbolic(o) for o in v.operands]
-            assert v.type
-            return kgen.ParamOperatorAttr(v.opcode, operands, v.type)
-        if isinstance(v, StaticDim):
-            return parameters[int(v)]
-        if isinstance(v, AlgebraicDim):
-            return AlgebraicDim(symbolic(v.attr))
-        if isinstance(v, Shape):
-            return Shape(symbolic(dim) for dim in v)
-        if isinstance(v, Type):
-            v_mlir = v.to_mlir()
-            assert isinstance(v_mlir, mlir.Type)
-            return Type.from_mlir(symbolic(v_mlir))
-        if isinstance(v, (mo.TensorType, mo.BufferType)):
-            return type(v)(
-                symbolic(v.shape_attr), v.dtype, v.device_ref, v.metadata
-            )
-        if isinstance(v, mosh.ShapeAttr):
-            return mosh.ShapeAttr([symbolic(d) for d in v.values], v.type)
-        return v
-
-    with graph:
-        for arg in block.arguments:
-            arg.type = symbolic(arg.type)
-
-        for op in block:
-            if isinstance(op, (mosh.ParamToValueOp, kgen.ParamDeclareOp)):
-                op.value = symbolic(op.value)
-                continue
-
-            # ShapeOfOp verifies its result is a static shape
-            # corresponding to a static rank input.
-            if isinstance(op, (mo.ShapeOfOp, mo.ConstantOp)):
-                continue
-
-            # Only update op results, not operands. Operands will be
-            # defined as results of other ops.
-            for result in op.results:
-                result.type = symbolic(result.type)
-
-    add_input(graph, TensorType(DType.bool, [0, *parameters.values()], CPU()))
-    return parameters

@@ -26,14 +26,18 @@ These operations can be used in both graph construction and eager execution.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import functools
-from collections.abc import Callable
-from typing import TypeVar
+from collections.abc import Callable, Coroutine, Generator, Iterable
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, TypeAlias, TypeVar, overload
 
 from typing_extensions import ParamSpec
 
 from .. import driver
 from ..graph import BufferValue, Graph, TensorValue, ops
+from . import realization_context as rc
 from . import tensor
 
 Args = ParamSpec("Args")
@@ -41,38 +45,195 @@ Result = TypeVar("Result")
 Op = Callable[Args, Result]
 
 
+def _in_running_loop() -> bool:
+    """Checks whether the caller is inside a running asyncio event loop.
+
+    Returns:
+        bool: True if currently inside a running event loop, False otherwise.
+    """
+    # - asyncio.get_event_loop().is_running() works in most scenarios
+    # - asyncio.get_event_loop() raises in some environments
+    # - use asyncio.get_running_loop() and check if it fails instead
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _run(coro: Coroutine[Any, Any, Result]) -> Result:
+    """Runs a coroutine synchronously, handling nested event loops.
+
+    If not inside an event loop, uses ``asyncio.run()``. If already inside
+    an event loop (e.g., in Jupyter), runs the coroutine in a separate
+    thread to avoid blocking.
+
+    Args:
+        coro: The coroutine to execute.
+
+    Returns:
+        The result of the coroutine.
+    """
+    # If there's no running loop, just use asyncio.run
+    if not _in_running_loop():
+        return asyncio.run(coro)
+
+    # Run self.realize in another thread
+    loop = asyncio.new_event_loop()
+    with ThreadPoolExecutor() as pool:
+        fut = pool.submit(loop.run_until_complete, coro)
+    return fut.result()
+
+
+_ConvertableToTensor: TypeAlias = (
+    driver.Tensor | tensor.Tensor | TensorValue | BufferValue
+)
+
+
+def _to_tensor(value: _ConvertableToTensor) -> tensor.Tensor:
+    """Converts a tensor-like value to a Tensor.
+
+    Args:
+        value: A driver.Tensor, Tensor, TensorValue, or BufferValue.
+
+    Returns:
+        tensor.Tensor: The converted Tensor object.
+    """
+    if isinstance(value, tensor.Tensor):
+        return value
+    elif isinstance(value, driver.Tensor):
+        return tensor.Tensor(storage=value)
+    return tensor.Tensor.from_graph_value(value)
+
+
+@overload
+def _to_tensors(value: _ConvertableToTensor, /) -> tensor.Tensor: ...
+
+
+@overload
+def _to_tensors(value: None, /) -> None: ...
+
+
+@overload
+def _to_tensors(
+    values: Iterable[_ConvertableToTensor],
+) -> list[tensor.Tensor]: ...
+
+
+def _to_tensors(values):
+    """Converts one or more tensor-like values to Tensors.
+
+    Handles single values, None, or iterables of tensor-like values.
+
+    Args:
+        values: None, a single tensor-like value, or an iterable of them.
+
+    Returns:
+        None if input is None, a single Tensor if input is a single value,
+        or a list of Tensors if input is an iterable.
+    """
+    if values is None:
+        return None
+    if isinstance(values, _ConvertableToTensor):
+        return _to_tensor(values)
+    return [_to_tensor(value) for value in values]
+
+
+def _return_tensors(op: Op) -> Op:
+    """Decorator that converts operation results to Tensors.
+
+    Wraps an operation so its return values are converted from graph values
+    (TensorValue/BufferValue) or driver tensors to Tensor objects.
+
+    Args:
+        op: The operation to wrap.
+
+    Returns:
+        The wrapped operation that returns Tensor objects.
+    """
+
+    @functools.wraps(op)
+    def wrapped(*args, **kwargs):  # noqa: ANN202
+        results = op(*args, **kwargs)
+        return _to_tensors(results)
+
+    return wrapped
+
+
+def in_graph_context() -> bool:
+    """Checks whether the caller is inside a Graph context.
+
+    Returns:
+        bool: True if inside a ``with Graph(...):`` block, False otherwise.
+    """
+    try:
+        _ = Graph.current
+    except LookupError:
+        return False
+    else:
+        return True
+
+
 def functional(op: Op) -> Op:
     """Decorator that converts a graph operation to support multiple tensor
     types."""
 
-    def to_tensor(
-        result: driver.Tensor | tensor.Tensor | TensorValue | BufferValue,
-    ) -> tensor.Tensor:
-        if isinstance(result, tensor.Tensor):
-            return result
-        if isinstance(result, driver.Tensor):
-            return tensor.Tensor(storage=result)
-        return tensor.Tensor.from_graph_value(result)
+    op = _return_tensors(op)
 
     @functools.wraps(op)
     def wrapped(*args, **kwargs):  # noqa: ANN202
-        try:
-            graph = Graph.current
-        except LookupError:
-            # No graph, use Tensor compute graph.
-            graph = tensor.GRAPH.graph
-
-        with graph:
-            results = op(*args, **kwargs)
-        if results is None:
-            return
-        elif isinstance(
-            results, driver.Tensor | tensor.Tensor | TensorValue | BufferValue
-        ):
-            return to_tensor(results)
-        return [to_tensor(result) for result in results]
+        with contextlib.ExitStack() as stack:
+            if tensor.current_realization_context(None) is None:
+                ctx = (
+                    rc.GraphRealizationContext(Graph.current)
+                    if in_graph_context()
+                    else rc.EagerRealizationContext()
+                )
+                stack.enter_context(ctx)
+                stack.enter_context(tensor.realization_context(ctx))
+            return op(*args, **kwargs)
 
     return wrapped
+
+
+@contextlib.contextmanager
+def lazy() -> Generator[None]:
+    """Context manager for lazy tensor evaluation.
+
+    Within this context, tensor operations are recorded but not executed.
+    Tensors remain unrealized until explicitly awaited via ``await tensor.realize``
+    or until their values are needed (e.g., by calling ``.item()``).
+
+    This is particularly useful for creating tensors which may not ever
+    be used. Lazy tensors that aren't used will never allocate memory or perform
+    operations.
+
+    Yields:
+        None
+
+    .. code-block:: python
+
+        from max.experimental import functional as F
+        from max.experimental.tensor import Tensor
+        from max.nn.module_v3 import Linear
+
+        with F.lazy():
+            model = Linear(2, 3)
+
+        print(model)  # Lazy weights not initialized
+        # Executing the model would be fine! The weights would be created
+        # on first use.
+        # output = model(Tensor.ones([5, 2]))
+
+        # Load pretrained weights, never creating the original random weights
+        weights =  {
+            "weight": Tensor.zeros([3, 2]),
+            "bias": Tensor.zeros([3]),
+        }
+        model.load_state_dict(weights)
+    """
+    with rc.LazyRealizationContext() as ctx, tensor.realization_context(ctx):
+        yield
 
 
 #: Computes the absolute value element-wise.

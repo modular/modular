@@ -370,14 +370,14 @@ fn naive_block_scaled_nvfp4_matmul[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     BLOCK_DIM: Int = 16,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, ...],
     a_scales: LayoutTensor[
-        a_scales_type, address_space = AddressSpace.GENERIC, **_
+        a_scales_type, address_space = AddressSpace.GENERIC, ...
     ],
     b_scales: LayoutTensor[
-        b_scales_type, address_space = AddressSpace.GENERIC, **_
+        b_scales_type, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:

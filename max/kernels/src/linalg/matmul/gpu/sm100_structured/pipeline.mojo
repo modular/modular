@@ -15,14 +15,10 @@
 from sys import size_of
 
 from layout.tma_async import SharedMemBarrier
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+from linalg.structuring import SMemPtr
 
-
-comptime MbarPtr = UnsafePointer[
-    SharedMemBarrier, address_space = AddressSpace.SHARED
-]
+comptime MbarPtr = SMemPtr[SharedMemBarrier]
 
 
 @register_passable("trivial")
@@ -81,71 +77,36 @@ struct ProducerConsumerPipeline[num_stages: Int]:
 
     @always_inline
     fn producer_mbar(self, stage: UInt32) -> MbarPtr:
-        """Get the producer barrier for a specific stage.
-
-        Args:
-            stage: The pipeline stage.
-
-        Returns:
-            The shared memory barrier that the producer signals.
-        """
+        """Get producer barrier (full) for stage."""
         return self.full + stage
 
     @always_inline
     fn consumer_mbar(self, stage: UInt32) -> MbarPtr:
-        """Get the consumer barrier for a specific stage.
-
-        Args:
-            stage: The pipeline stage.
-
-        Returns:
-            The shared memory barrier that the consumer signals.
-        """
+        """Get consumer barrier (empty) for stage."""
         return self.empty + stage
 
     @always_inline
     fn producer_stage(self) -> UInt32:
-        """Get the current producer stage index.
-
-        Returns:
-            The current stage index for the producer (0 to num_stages-1).
-        """
+        """Get current producer stage index."""
         return self._producer_stage
 
     @always_inline
     fn consumer_stage(self) -> UInt32:
-        """Get the current consumer stage index.
-
-        Returns:
-            The current stage index for the consumer (0 to num_stages-1).
-        """
+        """Get current consumer stage index."""
         return self._consumer_stage
 
     @always_inline
     fn consumer_step(mut self):
-        """Advance the consumer to the next pipeline stage.
-
-        Increments the consumer stage and wraps to 0 when reaching num_stages,
-        toggling the phase bit on wrap-around.
-        Only switch phase at end of pipeline because we assume all barriers
-        are at the same consumer/producer phase before checked. Once checked,
-        the execution moves to next barrier.
-        """
+        """Advance consumer stage, toggling phase on wrap-around."""
         self._consumer_stage += 1
-
         if self._consumer_stage == Self.num_stages:
             self._consumer_stage = 0
             self._consumer_phase ^= 1
 
     @always_inline
     fn producer_step(mut self):
-        """Advance the producer to the next pipeline stage.
-
-        Increments the producer stage and wraps to 0 when reaching num_stages,
-        toggling the phase bit on wrap-around.
-        """
+        """Advance producer stage, toggling phase on wrap-around."""
         self._producer_stage += 1
-
         if self._producer_stage == Self.num_stages:
             self._producer_stage = 0
             self._producer_phase ^= 1
@@ -153,55 +114,30 @@ struct ProducerConsumerPipeline[num_stages: Int]:
     @staticmethod
     @always_inline
     fn smem_bytes() -> UInt32:
-        """Calculate the shared memory bytes required for pipeline barriers.
-
-        Returns:
-            The total number of bytes needed for all pipeline barriers
-            (2 * num_stages barriers).
-        """
+        """Shared memory bytes for all barriers (2 * num_stages)."""
         return 2 * Self.num_stages * size_of[SharedMemBarrier]()
 
     @always_inline
     fn init_mbars(
         self, producer_arrive_count: Int32, consumer_arrive_count: Int32
     ):
-        """
-        Initialize the smem barriers for the producer and consumer.
-
-        Args:
-            producer_arrive_count: The number of threads that will arrive at the barrier marking data as produced.
-            consumer_arrive_count: The number of threads that will arrive at the barrier marking data as consumed.
-
-        This function must be called by a single thread and must be called before any the pipeline object is used.
-        """
+        """Initialize barriers. Must be called by single thread before use."""
 
         @parameter
         for i in range(Self.num_stages):
             self.full[i].init(producer_arrive_count)
             self.empty[i].init(consumer_arrive_count)
 
-    # =========================================================================
-    # Convenience methods for CLC throttling
-    # =========================================================================
-
     @always_inline
     fn producer_signal_and_step(mut self):
-        """Wait for consumer, signal production complete, and advance stage.
-
-        Combines: wait_consumer() + arrive on producer_mbar + producer_step()
-        Used for CLC throttling in the Load warp.
-        """
+        """Wait, signal, and advance for CLC throttling (Load warp)."""
         self.wait_consumer()
         _ = self.full[self._producer_stage].arrive()
         self.producer_step()
 
     @always_inline
     fn consumer_signal_and_step(mut self):
-        """Wait for producer, signal consumption complete, and advance stage.
-
-        Combines: wait_producer() + arrive on consumer_mbar + consumer_step()
-        Used for CLC throttling in the Scheduler warp.
-        """
+        """Wait, signal, and advance for CLC throttling (Scheduler warp)."""
         self.wait_producer()
         _ = self.empty[self._consumer_stage].arrive()
         self.consumer_step()

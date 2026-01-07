@@ -22,7 +22,7 @@ from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_false
 
 from utils.index import IndexList

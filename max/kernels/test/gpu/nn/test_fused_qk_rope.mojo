@@ -20,7 +20,7 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import LegacyUnsafePointer, memcpy
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -36,7 +36,7 @@ from utils import Index, IndexList
 def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     __comptime_assert (
-        dtype is DType.float32
+        dtype == DType.float32
     ), "goldens only for float32, currently"
 
     # Set up test hyperparameters.

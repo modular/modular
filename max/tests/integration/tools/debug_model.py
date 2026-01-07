@@ -14,48 +14,21 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 
 # Standard library
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any, cast
 
 # 3rd-party
 import click
 import torch
-from create_pipelines import PIPELINE_ORACLES, GenericOracle
-from max import driver
-from max.engine import InferenceSession
-from max.engine.api import PrintStyle
 from max.entrypoints.cli import DevicesOptionType
-from max.entrypoints.cli.entrypoint import configure_cli_logging
-from max.nn.hooks import PrintHook
-from max.nn.layer import Module
+from max.tests.integration.tools.debugging_utils import run_debug_model
 from max.tests.integration.tools.hf_config_overrides import (
-    apply_hf_config_override,
-    apply_non_strict_load,
     create_layer_overrides,
-    set_config_overrides,
 )
-from run_models import (
-    Flake,
-    _detect_hf_flakes,
-    get_max_default_encoding,
-    get_torch_device,
-    maybe_log_hf_downloads,
-    run_max_model,
-    run_torch_model,
-)
-
-# Tests
-from test_common import (
-    torch_print_hook,
-)
-from test_common.github_utils import github_log_group
-from test_common.test_data import MockTextGenerationRequest
+from run_models import Flake
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -63,75 +36,6 @@ from test_common.test_data import MockTextGenerationRequest
 # to retry".  debug_model will emit this if it detects a failure is
 # likely caused by a network flake and could be resolved by a retry.
 EX_TEMPFAIL = 75
-
-
-@contextmanager
-def apply_max_hooks(output_directory: Path | None) -> Iterator[PrintHook]:
-    """Create and manage MAX print hooks."""
-    hook = PrintHook()
-    orig_infer_init: Any = None
-
-    if output_directory is not None:
-        orig_infer_init = InferenceSession.__init__
-
-        def _patched_inference_init(
-            session_self: InferenceSession, *args: Any, **kwargs: Any
-        ) -> None:
-            orig_infer_init(session_self, *args, **kwargs)
-            session_self.set_debug_print_options(
-                style=PrintStyle.BINARY_MAX_CHECKPOINT,
-                output_directory=output_directory,
-            )
-
-        InferenceSession.__init__ = _patched_inference_init  # type: ignore[method-assign,assignment]
-
-    try:
-        yield hook
-    finally:
-        hook.remove()
-        if orig_infer_init is not None:
-            InferenceSession.__init__ = orig_infer_init  # type: ignore[method-assign]
-
-
-@contextmanager
-def apply_name_layers_after_state_load(hook: PrintHook) -> Iterator[None]:
-    """Wrap Module.load_state_dict to name layers after loading."""
-    orig_load = Module.load_state_dict
-
-    def _name_layers_after_load(
-        module_self: Any, *args: Any, **kwargs: Any
-    ) -> Any:
-        result = orig_load(module_self, *args, **kwargs)
-        hook.name_layers(module_self)
-        return result
-
-    cast(Any, Module).load_state_dict = _name_layers_after_load
-    try:
-        yield
-    finally:
-        cast(Any, Module).load_state_dict = orig_load
-
-
-@contextmanager
-def debug_context(
-    *,
-    output_directory: Path | None,
-    hf_config_overrides: dict[str, Any] | None,
-) -> Iterator[None]:
-    """Context manager to manage model execution when debugging.
-
-    This context manages:
-    1. HuggingFace config overrides to modify the model configuration
-    2. Places print hooks for both MAX and Torch models to inspect intermediate tensors
-    3. Names layers after state dict loading
-    """
-    with ExitStack() as stack:
-        if hf_config_overrides is not None:
-            stack.enter_context(apply_hf_config_override(hf_config_overrides))
-            stack.enter_context(apply_non_strict_load())
-        hook = stack.enter_context(apply_max_hooks(output_directory))
-        stack.enter_context(apply_name_layers_after_state_load(hook))
-        yield
 
 
 @click.command()
@@ -267,7 +171,7 @@ def main(
     final_overrides = {**layer_overrides, **parsed_overrides} or None
 
     try:
-        debug_model(
+        run_debug_model(
             device_specs=DevicesOptionType.device_specs(device_type),
             framework_name=framework_name,
             pipeline_name=pipeline_name,
@@ -282,138 +186,6 @@ def main(
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)
-
-
-@_detect_hf_flakes
-def debug_model(
-    device_specs: list[driver.DeviceSpec],
-    framework_name: str,
-    pipeline_name: str,
-    output_path: Path,
-    encoding_name: str | None = None,
-    max_batch_size: int | None = None,
-    log_hf_downloads: bool = False,
-    num_steps: int = 1,
-    prompt: str | None = None,
-    images: tuple[str, ...] | None = None,
-    hf_config_overrides: dict[str, Any] | None = None,
-) -> None:
-    """Run a model with print hooks enabled and write intermediate tensors.
-
-    Intermediate tensors are written to the output directory if specified.
-    Config overrides can be applied to both MAX and Torch models via hf_config_overrides.
-    """
-    if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(workspace_dir)
-    configure_cli_logging(level="INFO")
-
-    if pipeline_name in PIPELINE_ORACLES:
-        pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
-    else:
-        pipeline_oracle = GenericOracle(
-            model_path=pipeline_name,
-        )
-
-    # Build input based on user-provided prompt and/or images
-    if prompt is None and not images:
-        inputs = pipeline_oracle.inputs[:1]
-    elif images and len(images) > 0:
-        inputs = [
-            MockTextGenerationRequest.with_images(
-                prompt=prompt
-                if prompt is not None
-                else pipeline_oracle.inputs[0].prompt,
-                images=list(images),
-            )
-        ]
-    else:
-        inputs = [
-            MockTextGenerationRequest.text_only(
-                prompt
-                if prompt is not None
-                else pipeline_oracle.inputs[0].prompt
-            )
-        ]
-
-    evaluation_batch_size: int | list[int]
-    if max_batch_size is None:
-        if pipeline_oracle.default_batch_size is None:
-            evaluation_batch_size = 1
-        else:
-            evaluation_batch_size = pipeline_oracle.default_batch_size
-    else:
-        evaluation_batch_size = max_batch_size
-
-    title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name or 'Default Encoding'}"
-    with (
-        debug_context(
-            output_directory=output_path,
-            hf_config_overrides=hf_config_overrides,
-        ),
-        github_log_group(title),
-    ):
-        if framework_name == "max":
-            if encoding_name is None:
-                max_encoding_name = get_max_default_encoding(
-                    pipeline_oracle, pipeline_name, device_specs
-                )
-            else:
-                max_encoding_name = encoding_name
-
-            with maybe_log_hf_downloads(log_hf_downloads):
-                max_pipeline_and_tokenizer = (
-                    pipeline_oracle.create_max_pipeline(
-                        encoding=max_encoding_name,
-                        device_specs=device_specs,
-                    )
-                )
-
-            print(f"Running {pipeline_name} model on MAX")
-            run_max_model(
-                task=pipeline_oracle.task,
-                max_pipeline_and_tokenizer=max_pipeline_and_tokenizer,
-                inputs=inputs,
-                num_steps=num_steps,
-                evaluation_batch_size=evaluation_batch_size,
-                reference=None,
-            )
-        elif framework_name == "torch":
-            torch_device = get_torch_device(device_specs)
-            # For multi-gpu, use auto to handle mapping automatically.
-            device: Any = "auto" if len(device_specs) > 1 else torch_device
-
-            with maybe_log_hf_downloads(log_hf_downloads):
-                torch_pipeline_and_tokenizer = (
-                    pipeline_oracle.create_torch_pipeline(
-                        encoding=encoding_name,
-                        device=device,
-                    )
-                )
-
-            # Apply HuggingFace config overrides directly to the model config
-            if hf_config_overrides:
-                set_config_overrides(
-                    torch_pipeline_and_tokenizer.model.config,
-                    hf_config_overrides,
-                    "config",
-                )
-
-            export_path = str(output_path) if output_path is not None else None
-            hook = torch_print_hook.TorchPrintHook(export_path=export_path)
-            hook.name_layers(torch_pipeline_and_tokenizer.model)
-
-            print(f"Running {pipeline_name} model on Torch")
-            run_torch_model(
-                pipeline_oracle=pipeline_oracle,
-                torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
-                device=torch_device,
-                inputs=inputs,
-                num_steps=num_steps,
-            )
-        else:
-            raise NotImplementedError(
-                f"Framework {framework_name!r} not implemented"
-            )
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@
 from math import iota
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import random_float64
 
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
@@ -31,9 +31,9 @@ fn top_p_sampling[
     //,
     _test_sort: Bool = False,
 ](
-    top_ps: LayoutTensor[dtype, **_],
-    input_logits: LayoutTensor[mut=True, dtype, **_],
-    out_token_ids: LayoutTensor[mut=True, out_idx_type, **_],
+    top_ps: LayoutTensor[dtype, ...],
+    input_logits: LayoutTensor[mut=True, dtype, ...],
+    out_token_ids: LayoutTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
 ) raises:
     """
@@ -57,9 +57,9 @@ fn min_p_sampling[
     //,
     _test_sort: Bool = False,
 ](
-    min_ps: LayoutTensor[dtype, **_],
-    input_logits: LayoutTensor[mut=True, dtype, **_],
-    out_token_ids: LayoutTensor[mut=True, out_idx_type, **_],
+    min_ps: LayoutTensor[dtype, ...],
+    input_logits: LayoutTensor[mut=True, dtype, ...],
+    out_token_ids: LayoutTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
 ) raises:
     """
@@ -82,13 +82,14 @@ fn _topp_minp_sampling[
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
-    p_thresholds: LayoutTensor[dtype, **_],
-    input_logits: LayoutTensor[mut=True, dtype, **_],
+    p_thresholds: LayoutTensor[dtype, ...],
+    input_logits: LayoutTensor[mut=True, dtype, ...],
     out_token_ids: LayoutTensor[
         mut=True,
         out_idx_type,
         out_token_layout,
-        element_layout=out_token_element_layout, **_,
+        element_layout=out_token_element_layout,
+        ...,
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -244,8 +245,8 @@ fn _topp_minp_sampling[
 fn sort_buf_descending[
     dtype: DType, out_idx_type: DType
 ](
-    mut buf_keys: LayoutTensor[mut=True, dtype, **_],
-    mut buf_ids: LayoutTensor[mut=True, out_idx_type, **_],
+    mut buf_keys: LayoutTensor[mut=True, dtype, ...],
+    mut buf_ids: LayoutTensor[mut=True, out_idx_type, ...],
     vocab_size: Int,
 ):
     """Sort each batch separately in descending order using parallel merge sort.
@@ -263,8 +264,8 @@ fn merge_sort_recursive[
     dtype: DType,
     out_idx_type: DType,
 ](
-    mut buf_keys: LayoutTensor[mut=True, dtype, **_],
-    mut buf_ids: LayoutTensor[mut=True, out_idx_type, **_],
+    mut buf_keys: LayoutTensor[mut=True, dtype, ...],
+    mut buf_ids: LayoutTensor[mut=True, out_idx_type, ...],
     start: Int,
     end: Int,
 ):
@@ -280,8 +281,8 @@ fn merge_sort_recursive[
 fn merge[
     dtype: DType, out_idx_type: DType
 ](
-    mut buf_keys: LayoutTensor[mut=True, dtype, **_],
-    mut buf_ids: LayoutTensor[mut=True, out_idx_type, **_],
+    mut buf_keys: LayoutTensor[mut=True, dtype, ...],
+    mut buf_ids: LayoutTensor[mut=True, out_idx_type, ...],
     start: Int,
     mid: Int,
     end: Int,

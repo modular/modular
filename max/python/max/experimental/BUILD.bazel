@@ -9,8 +9,11 @@ modular_py_library(
         "_passes.py",
         "functional.py",
         "random.py",
+        "realization_context.py",
+        "support.py",
         "tensor.py",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

@@ -16,7 +16,7 @@
 from buffer.dimlist import DimList, _make_tuple
 from memory import LegacyUnsafePointer, memset_zero
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils.index import IndexList
 

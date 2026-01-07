@@ -23,7 +23,7 @@ from gpu.host import DeviceContext
 from gpu.intrinsics import lop
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from memory.unsafe import bitcast
 from testing import assert_equal
 
