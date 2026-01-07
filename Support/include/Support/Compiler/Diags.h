@@ -106,7 +106,8 @@ class Diags {
 public:
   Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics,
         int maxNotesPerDiagnostic, StringRef stripFilenamePrefix,
-        bool disableWarnings, void *extraContext = nullptr,
+        bool disableWarnings, bool warningsAsErrors,
+        void *extraContext = nullptr,
         AutoFixItHandler *autoFixItHandler = nullptr);
   ~Diags();
 
@@ -207,6 +208,7 @@ private:
   int maxNotesPerDiagnostic;
 
   bool disableWarnings;
+  bool warningsAsErrors = false;
 };
 
 /// This class represents a diagnostic that is built up by the parser and
@@ -383,7 +385,8 @@ void addToDiagnostic(InflightDiag &&otherDiag, InflightDiag &diag);
 // emission mechanisms.
 class ConditionallyDisableMLIRWarnings {
 public:
-  ConditionallyDisableMLIRWarnings(MLIRContext *ctx, bool disableWarnings);
+  ConditionallyDisableMLIRWarnings(MLIRContext *ctx, bool disableWarnings,
+                                   bool warningsAsErrors);
 
 private:
   mlir::ScopedDiagnosticHandler handler;

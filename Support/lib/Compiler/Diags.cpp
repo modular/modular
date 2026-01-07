@@ -250,14 +250,15 @@ static void prefixStrippingDiagHandler(const llvm::SMDiagnostic &diagnostic,
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
              bool useMLIRDiagnostics, int maxNotesPerDiagnostic,
              StringRef stripFilenamePrefix, bool disableWarnings,
-             void *extraContext, AutoFixItHandler *autoFixItHandler)
+             bool warningsAsErrors, void *extraContext,
+             AutoFixItHandler *autoFixItHandler)
     : sourceMgr(sourceMgr), context(context), extraContext(extraContext),
       sourceMgrMapper(std::make_unique<SourceMgrLocationMapper>(
           context, stripFilenamePrefix)),
       useMLIRDiagnostics(useMLIRDiagnostics),
       autoFixItHandler(autoFixItHandler),
       maxNotesPerDiagnostic(maxNotesPerDiagnostic),
-      disableWarnings(disableWarnings) {
+      disableWarnings(disableWarnings), warningsAsErrors(warningsAsErrors) {
   // Install a prefix-stripping diag handler if necessary.
   if (!stripFilenamePrefix.empty()) {
     prevDiagHandler = sourceMgr.getDiagHandler();
@@ -422,6 +423,14 @@ InflightDiag::~InflightDiag() {
   if (!diags)
     return;
 
+  // Promote warning to error if -Werror is set.
+  // This must happen BEFORE the disableWarnings check so that promoted
+  // errors are not suppressed.
+  if (diags->warningsAsErrors && isWarning)
+    isWarning = false;
+
+  // Note: At this point, if -Werror was set, isWarning is now false,
+  // so this check won't suppress the promoted error.
   if (diags->disableWarnings && isWarning)
     return;
 
@@ -626,13 +635,18 @@ void M::addToDiagnostic(InflightDiag &&otherDiag, InflightDiag &diag) {
 }
 
 M::ConditionallyDisableMLIRWarnings::ConditionallyDisableMLIRWarnings(
-    MLIRContext *ctx, bool disableWarnings)
+    MLIRContext *ctx, bool disableWarnings, bool warningsAsErrors)
     : handler(ctx, [=](mlir::Diagnostic &diag) {
-        if (diag.getSeverity() == mlir::DiagnosticSeverity::Warning &&
-            disableWarnings) {
-          // swallow the warning
-          return mlir::success();
-        } else {
-          return mlir::failure();
+        if (diag.getSeverity() == mlir::DiagnosticSeverity::Warning) {
+          // Promote warning to error if -Werror is set
+          if (warningsAsErrors) {
+            mlir::emitError(diag.getLocation()) << diag.str();
+            return mlir::success(); // Suppress original warning
+          }
+
+          // Suppress warnings if --disable-warnings is set
+          if (disableWarnings)
+            return mlir::success();
         }
+        return mlir::failure(); // Pass through
       }) {}

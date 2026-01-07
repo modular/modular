@@ -46,6 +46,7 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier helpHidden;
   llvm::opt::OptSpecifier diagnosticFormat;
   llvm::opt::OptSpecifier disableWarnings;
+  llvm::opt::OptSpecifier warningsAsErrors;
   llvm::opt::OptSpecifier unknown;
   llvm::opt::OptSpecifier input;
 

@@ -434,7 +434,8 @@ static int package(const State &subcommandState) {
   }
 
   if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format, options::OPT_disable_warnings))
+          args, options::OPT_diagnostic_format, options::OPT_disable_warnings,
+          options::OPT_werror))
     return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
@@ -483,7 +484,8 @@ static int package(const State &subcommandState) {
   }
 
   ConditionallyDisableMLIRWarnings dwHandler(
-      &packageArgs.ctx, packageArgs.compileOptions.disableWarnings);
+      &packageArgs.ctx, packageArgs.compileOptions.disableWarnings,
+      packageArgs.compileOptions.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
       state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
