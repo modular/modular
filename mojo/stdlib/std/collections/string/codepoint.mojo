@@ -220,12 +220,9 @@ struct Codepoint(
         # 2: 110aaaaa 10bbbbbb                   -> 00000000 00000000 00000aaa aabbbbbb     a << 6  | b
         # 3: 1110aaaa 10bbbbbb 10cccccc          -> 00000000 00000000 aaaabbbb bbcccccc     a << 12 | b << 6  | c
         # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
+        debug_assert(len(s) > 0, "input Span must be non-empty")
+
         var ptr = s.unsafe_ptr()
-        var end = ptr + len(s)
-
-        if ptr == end:
-            return Codepoint(0), 0
-
         var b1 = ptr[]
         if (b1 >> 7) == 0:  # This is 1 byte ASCII char
             return Codepoint(b1), 1
