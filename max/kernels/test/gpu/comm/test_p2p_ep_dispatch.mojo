@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
+
 from io.io import _printf
 from random import randint, randn, seed
 from sys import (
@@ -328,6 +330,9 @@ fn test_dispatch[
             recv_count_bufs_inputs[slot_idx][dev_idx],
             get_atomic_counters_ptr(dev_idx, slot_idx),
             Int32(dev_idx),
+            OptionalReg[
+                LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
+            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )

@@ -173,6 +173,11 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 dispatch_fp8_config=None,
             )
 
+            if config.n_shared_experts == 1:
+                # Only enable shared expert fusion if the shared expert is of
+                # the same shape as routed experts.
+                ep_kwargs["fused_shared_expert"] = True
+
             if float8_config is not None:
                 ep_kwargs["dispatch_fp8_config"] = float8_config.input_scale
 

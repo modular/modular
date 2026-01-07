@@ -377,20 +377,44 @@ class MoE(Module, Shardable):
         gate_list = [expert.gate_proj.weight for expert in self.experts]
         up_list = [expert.up_proj.weight for expert in self.experts]
 
+        if (
+            self._ep_batch_manager
+            and self.ep_batch_manager.config.fused_shared_expert
+        ):
+            assert self.has_shared_experts, (
+                "Shared experts must present if fused shared expert is enabled"
+            )
+            gate_list = [
+                self.shared_experts.gate_proj.weight,
+            ] + gate_list
+            up_list = [
+                self.shared_experts.up_proj.weight,
+            ] + up_list
+
         gate_up_list: list[TensorValue] = []
         for tensors in zip(gate_list, up_list, strict=True):
             gate_up_list.extend(tensors)
 
         return ops.stack(gate_up_list, axis=0).reshape(
-            [self.num_local_experts, -1, self.hidden_dim]
+            [len(gate_list), -1, self.hidden_dim]
         )
 
     @property
     def down_proj(self) -> TensorValue:
-        down_proj = ops.stack(
-            [expert.down_proj.weight for expert in self.experts], axis=0
-        )
-        return down_proj
+        down_list = [expert.down_proj.weight for expert in self.experts]
+
+        if (
+            self._ep_batch_manager
+            and self.ep_batch_manager.config.fused_shared_expert
+        ):
+            assert self.has_shared_experts, (
+                "Shared experts must present if fused shared expert is enabled"
+            )
+            down_list = [
+                self.shared_experts.down_proj.weight,
+            ] + down_list
+
+        return ops.stack(down_list, axis=0)
 
     def _ep_call(
         self,
@@ -417,17 +441,17 @@ class MoE(Module, Shardable):
         )
 
         self.ep_batch_manager.ep_combine(down_projs, device_id)
-        combined_down_projs = self.ep_batch_manager.ep_combine_cb(device_id)
-
-        routed_expert_out = (
-            ops.unsqueeze(router_weight, axis=1) @ combined_down_projs
+        routed_expert_out = self.ep_batch_manager.ep_combine_cb(
+            router_weight, device_id
         )
-        routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(x.dtype)
 
-        if self.has_shared_experts:
+        if (
+            self.has_shared_experts
+            and not self.ep_batch_manager.config.fused_shared_expert
+        ):
             routed_expert_out += self.shared_experts(x)
 
-        return routed_expert_out
+        return routed_expert_out.cast(x.dtype)
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """

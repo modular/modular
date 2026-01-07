@@ -21,6 +21,8 @@
 # Alternatively, run with:
 # br --run_under="mpirun -n $NUM_GPUS --allow-run-as-root --bind-to none" //max/kernels/benchmarks:gpu/bench_ep_dispatch
 
+from collections import OptionalReg
+
 from random import randint, randn, seed
 from sys import align_of, env_get_int, env_get_dtype, simd_width_of, size_of
 
@@ -302,6 +304,11 @@ fn bench_dispatch[
                 recv_count,
                 atomic_counter.unsafe_ptr(),
                 Int32(my_rank),
+                OptionalReg[
+                    LayoutTensor[
+                        DType.bfloat16, Layout.row_major[2](), ImmutAnyOrigin
+                    ]
+                ](),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
