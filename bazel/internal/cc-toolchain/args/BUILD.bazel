@@ -207,7 +207,29 @@ cc_args(
     actions = ["@rules_cc//cc/toolchains/actions:link_executable_actions"],
     args = [
         "-Wl,-pie",
-    ],
+    ] + select({
+        "@platforms//os:macos": [
+            "-Wl,-rpath,@loader_path/../lib",
+        ],
+        "@platforms//os:linux": [
+            "-Wl,-rpath,$ORIGIN/../lib",
+        ],
+    }),
+)
+
+cc_args(
+    name = "link_shared_library_args",
+    actions = ["@rules_cc//cc/toolchains/actions:dynamic_library_link_actions"],
+    args = select({
+        "@platforms//os:macos": [
+            "-Wl,-rpath,@loader_path",
+            "-Wl,-rpath,@loader_path/../lib",
+        ],
+        "@platforms//os:linux": [
+            "-Wl,-rpath,$ORIGIN",
+            "-Wl,-rpath,$ORIGIN/../lib",
+        ],
+    }),
 )
 
 cc_args(

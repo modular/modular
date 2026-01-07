@@ -57,6 +57,7 @@ cc_sysroot(
             "//bazel/internal/cc-toolchain/args:cpp_compile_args",
             "//bazel/internal/cc-toolchain/args:link_args",
             "//bazel/internal/cc-toolchain/args:link_executable_args",
+            "//bazel/internal/cc-toolchain/args:link_shared_library_args",
             "//bazel/internal/cc-toolchain/args/modular:first_party",
             "//bazel/internal/cc-toolchain/args/modular:third_party",
             "//bazel/internal/cc-toolchain/args:compile_warnings",
