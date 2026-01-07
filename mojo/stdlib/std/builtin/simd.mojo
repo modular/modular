@@ -2573,7 +2573,7 @@ struct SIMD[dtype: DType, size: Int](
     # TODO: move to the utils directory - see https://github.com/modular/modular/issues/3477
     @always_inline
     fn _dynamic_shuffle[
-        mask_size: Int, //
+        mask_size: Int
     ](self, mask: SIMD[DType.uint8, mask_size]) -> SIMD[Self.dtype, mask_size]:
         """Shuffles (also called blend) the values of the current vector.
 

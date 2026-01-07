@@ -125,7 +125,7 @@ fn copy_local_to_dram2[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_idx),
+                src.ptr + src_idx,
                 src.runtime_element_layout,
             )
 
@@ -436,7 +436,7 @@ fn _load_tr16_b64_row(
         thread_layout
     ](lane_in_row)
     var offset = dist_result[2]
-    var ptr = tile.ptr.offset(offset)
+    var ptr = tile.ptr + offset
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type = __mlir_type.`!llvm.ptr<3>`
@@ -686,7 +686,7 @@ fn load_b_[
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type = __mlir_type.`!llvm.ptr<3>`
-    ](src.ptr.offset(offset))
+    ](src.ptr + offset)
 
     var llvm_res = __mlir_op.`llvm.load`[
         _type = __mlir_type.`vector<8 x bf16>`,

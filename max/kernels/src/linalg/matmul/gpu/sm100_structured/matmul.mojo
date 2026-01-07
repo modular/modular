@@ -52,9 +52,6 @@ from .matmul_kernels import (
     B200MatmulSmem,
     BlackwellMatmulSM100Kernel,
     BlackwellMatmulSM100FallbackKernel,
-    WarpRole,
-    consumer_main_loop,
-    stsm_helper,
 )
 
 

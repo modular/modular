@@ -161,8 +161,8 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        var span = message.as_span()
-        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
+        var slice = message.as_string_slice()
+        _debug_assert_msg(slice.unsafe_ptr(), len(slice), __call_location())
 
 
 @always_inline
@@ -270,8 +270,8 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        var span = message.as_span()
-        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
+        var slice = message.as_string_slice()
+        _debug_assert_msg(slice.unsafe_ptr(), len(slice), __call_location())
 
     elif _use_compiler_assume:
         assume(cond)

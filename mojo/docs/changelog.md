@@ -254,6 +254,33 @@ what we publish.
 
 ### Library changes
 
+- `PythonObject` now supports implicit conversion from `None`, allowing more
+  natural Python-like code:
+
+  ```mojo
+  var obj: PythonObject = None  # Now works without explicit PythonObject(None)
+
+  fn returns_none() -> PythonObject:
+      return None  # Implicit conversion
+  ```
+
+- The `inlined_assembly` function is now publicly exported from the `sys` module,
+  allowing users to embed raw assembly instructions directly into Mojo code.
+  This provides fine-grained control over hardware operations using LLVM-style
+  inline assembly syntax. Example:
+
+  ```mojo
+  from sys import inlined_assembly
+
+  # Convert bfloat16 to float32 on NVIDIA GPU using PTX assembly.
+  var result = inlined_assembly[
+      "cvt.f32.bf16 $0, $1;",
+      Float32,
+      constraints="=f,h",
+      has_side_effect=False,
+  ](my_bf16_as_int16)
+  ```
+
 - We have removed `Identifiable` from enum-like types
   (such as `DType` and `AddressSpace`). This change is
   related to the idea that `Identifiable` is for comparing memory addresses.
@@ -508,6 +535,7 @@ what we publish.
   - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
     and `Representable`.
   - `Dict` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `Deque` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Iterator` no longer requires its type to be `Copyable`.
 
   - The following types no longer require their elements to be `Copyable`.
@@ -560,6 +588,28 @@ what we publish.
   from memory import LegacyUnsafePointer
   comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
   ```
+
+- the `os.process` submodule has been added with utilities to spawn and
+  wait on processes. These use `posix_spawn` and do not go through the
+  system shell.
+
+- `Writer` has been reworked to only support UTF-8 data instead of arbitrary
+  `Byte` sequences. The `write_bytes` method has been replaced with
+  `write_string`.
+
+  - In line with these changes, `String`'s `write_bytes` method has also been
+    deprecated, and its initializer `__init__(out self, *, bytes: Span[Byte])`
+    has had its keyword argument renamed to `unsafe_from_utf8`. This bring it
+    more in line with the existing `StringSlice` constructors and explicitly
+    states that construction from arbitrary bytes is inherently unsafe.
+
+- `String` has had its UTF-8 guarantees strengthened. It now has three separate
+  constructors when converting raw bytes (`Span[Byte]`) to a `String`
+  - `String(from_utf8=...)`: Raises an error if the bytes are invalid UTF-8
+  - `String(from_utf8_lossy=...)`: Converts invalid UTF-8 byte sequences
+    into the `(U+FFFD, �)` replacement character and does not raise an error.
+  - `String(unsafe_from_utf8=...)`: Unsafely assumes the input bytes are valid
+    UTF-8 without any checks.
 
 ### Tooling changes
 
@@ -647,7 +697,23 @@ or removed in future releases.
   Please migrate the code to use `enqueue_function_checked` and
   `compile_function_checked`.
 
+- The `UnsafePointer.offset()` method is now deprecated. Use pointer arithmetic
+  instead:
+
+  ```mojo
+  # Before
+  new_ptr = ptr.offset(n)
+
+  # After
+  new_ptr = ptr + n
+  ```
+
 ### 🛠️ Fixed
+
+- `Codepoint.unsafe_decode_utf8_codepoint()` no longer returns `Codepoint(0)`
+  (NUL) when passed an empty span. Instead, a `debug_assert` now enforces the
+  requirement that the input span be non-empty, consistent with the function's
+  existing safety contract.
 
 - [Issue #5732](https://github.com/modular/modular/issues/5732): Compiler
   crash when using `get_type_name` with types containing constructor calls in

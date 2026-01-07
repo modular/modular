@@ -294,7 +294,7 @@ fn _write_int[
     # earlier in the buffer as we write the more-significant digits.
     var offset = CAPACITY - 1
 
-    buf.unsafe_ptr().offset(offset).init_pointee_copy(
+    (buf.unsafe_ptr() + offset).init_pointee_copy(
         0
     )  # Write NUL terminator at the end
 
@@ -315,7 +315,7 @@ fn _write_int[
 
             # Write the char representing the value of the least significant
             # digit.
-            buf.unsafe_ptr().offset(offset).init_pointee_copy(
+            (buf.unsafe_ptr() + offset).init_pointee_copy(
                 digit_chars_array[Int(digit_value)]
             )
 
@@ -355,4 +355,4 @@ fn _write_int[
     # Create a span to only those bytes in `buf` that have been initialized.
     # -1 because NUL terminator
     var bytes = Span(buf)[offset : len(buf) - 1]
-    writer.write_bytes(bytes)
+    writer.write_string(StringSlice(unsafe_from_utf8=bytes))

@@ -27,6 +27,7 @@ from max.interfaces import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenBuffer,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     get_rope_index,
@@ -686,7 +687,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         context = Qwen2_5VLTextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
-            tokens=encoded_prompt,
+            tokens=TokenBuffer(
+                array=encoded_prompt.astype(np.int64, copy=False),
+            ),
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,

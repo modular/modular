@@ -188,6 +188,7 @@ struct PythonObject(
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
     @doc_private
+    @implicit
     fn __init__(out self, none: NoneType._mlir_type):
         """Initialize a none value object from a `None` literal.
 
@@ -261,6 +262,8 @@ struct PythonObject(
             If the string is not valid UTF-8.
         """
         ref cpy = Python().cpython()
+        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # be valid UTF-8.
         var unicode = cpy.PyUnicode_DecodeUTF8(string)
         if not unicode:
             raise cpy.unsafe_get_error()

@@ -201,11 +201,9 @@ fn _memcpy_impl(
             dest_data.bitcast[UInt64]().store[alignment=1](
                 0, src_data.bitcast[UInt64]().load[alignment=1](0)
             )
-            dest_data.offset(n - ui64_size).bitcast[UInt64]().store[
-                alignment=1
-            ](
+            (dest_data + n - ui64_size).bitcast[UInt64]().store[alignment=1](
                 0,
-                src_data.offset(n - ui64_size)
+                (src_data + n - ui64_size)
                 .bitcast[UInt64]()
                 .load[alignment=1](0),
             )
@@ -215,11 +213,9 @@ fn _memcpy_impl(
         dest_data.bitcast[UInt32]().store[alignment=1](
             0, src_data.bitcast[UInt32]().load[alignment=1](0)
         )
-        dest_data.offset(n - ui32_size).bitcast[UInt32]().store[alignment=1](
+        (dest_data + n - ui32_size).bitcast[UInt32]().store[alignment=1](
             0,
-            src_data.offset(n - ui32_size)
-            .bitcast[UInt32]()
-            .load[alignment=1](0),
+            (src_data + n - ui32_size).bitcast[UInt32]().load[alignment=1](0),
         )
         return
 

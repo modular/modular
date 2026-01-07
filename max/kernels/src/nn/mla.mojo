@@ -577,11 +577,11 @@ fn mla_decoding[
     # split-k intermediate buffers
     var qk_max_batch_ptr: type_of(qk_max_ptr) = {}
     if qk_max_ptr:
-        qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
+        qk_max_batch_ptr = qk_max_ptr + qk_max_offset
 
     var exp_sum_batch_ptr: type_of(exp_sum_ptr) = {}
     if exp_sum_ptr:
-        exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
+        exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
 
     var seq_len: Int
     var q_batch_offset: Int
@@ -624,9 +624,9 @@ fn mla_decoding[
             use_score_mod=use_score_mod,
             decoding_warp_split_k=decoding_warp_split_k,
         ](
-            q_ptr.offset(q_batch_offset),
+            q_ptr + q_batch_offset,
             k,
-            output_ptr.offset(output_batch_offset),
+            output_ptr + output_batch_offset,
             exp_sum_batch_ptr,
             qk_max_batch_ptr,
             scale,
@@ -661,8 +661,8 @@ fn mla_decoding[
             output_depth = Int(depth_v),
         ](
             attention_config,
-            output_ptr.offset(output_batch_offset),
-            q_ptr.offset(q_batch_offset),
+            output_ptr + output_batch_offset,
+            q_ptr + q_batch_offset,
             k,
             k,
             mask,
@@ -1838,11 +1838,11 @@ fn mla_prefill[
             cache_depth=cache_depth,
             use_score_mod=use_score_mod,
         ](
-            q_ptr.offset(q_batch_offset),
+            q_ptr + q_batch_offset,
             k,
             v,
             k_rope,
-            output_ptr.offset(o_batch_offset),
+            output_ptr + o_batch_offset,
             scale,
             seq_len,
             max_seq_len,
@@ -1857,8 +1857,8 @@ fn mla_prefill[
         comptime attention_config = MLAAttentionConfig[False, config]()
         var attention = Attention[config, 1, False, False, q_depth=q_depth](
             attention_config,
-            output_ptr.offset(o_batch_offset),
-            q_ptr.offset(q_batch_offset),
+            output_ptr + o_batch_offset,
+            q_ptr + q_batch_offset,
             k,
             v,
             mask,

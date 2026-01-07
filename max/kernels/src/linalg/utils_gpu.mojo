@@ -63,7 +63,7 @@ fn _block_swizzle_by_scale[
 
     This helps when N is very large e.g. 1024 x 32768 x 3072 in Replit 3B.
     """
-    var scale = scale0
+    var scale = Scalar[block_idx.element_type](scale0)
     # basically num_partitions = 2^3 = 8
     var num_partitions = 1 << Int(scale)
     # while griddim_x not divisible by num_partitions, reduce scale till scale is 0

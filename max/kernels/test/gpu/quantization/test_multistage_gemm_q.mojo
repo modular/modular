@@ -24,9 +24,8 @@ from gpu import (
     barrier,
     block_idx,
     grid_dim,
-    lane_id as get_lane_id,
+    lane_id,
     thread_idx,
-    warp_id as get_warp_id,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.intrinsics import lop
@@ -85,7 +84,7 @@ fn repack_Q4_0_for_sm8x[
     comptime BK = 1024
 
     var tid: UInt = thread_idx.x
-    var warp_id = get_warp_id()
+    var warp_id: UInt = tid // WARP_SIZE
     comptime num_warps_x = BN // repack_tile[0]
     var warp_x = UInt(warp_id % UInt(num_warps_x))
     var warp_y = UInt(warp_id // UInt(num_warps_x))
@@ -272,8 +271,8 @@ fn create_ref_b[
     comptime num_k_warps = BLOCK_K // repack_tile[1]
 
     var tid: UInt = thread_idx.x
-    var warp_id: UInt = get_warp_id()
-    var lane_id: UInt = get_lane_id()
+    var warp_id: UInt = tid // WARP_SIZE
+    var lane_id: UInt = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
     var warp_x = UInt(warp_id // UInt(num_k_warps))
     var warp_y = UInt(warp_id % UInt(num_k_warps))

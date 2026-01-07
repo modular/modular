@@ -372,9 +372,7 @@ def test_issue_20421():
     var a = alloc[UInt8](count=16 * 64, alignment=64)
     for i in range(16 * 64):
         a[i] = i & 255
-    var av16 = (
-        a.offset(128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
-    )
+    var av16 = (a + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
     assert_equal(
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),

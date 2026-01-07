@@ -77,9 +77,7 @@ def test_elementwise():
         )
 
         for i2 in range(min(numelems, 64)):
-            assert_equal(
-                out_buffer.unsafe_ptr().offset(i2).load(), 2 * (i2 + 1)
-            )
+            assert_equal((out_buffer.unsafe_ptr() + i2).load(), 2 * (i2 + 1))
 
     run_elementwise[16, 1, False, Index(16)]()
     run_elementwise[16, 1, True, Index(16)]()

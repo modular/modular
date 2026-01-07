@@ -12,17 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from conftest import MiB, alloc_pinned
+import pytest
+from conftest import MemType, MiB
 from max.driver import Accelerator
 
 
-def test_small_alloc(memory_manager_config: None) -> None:
-    # The memory manager has 100MiB so we try to alloc / free 100 buffers of
-    # 1MiB each.
-    for _ in range(7):
-        bufs = [alloc_pinned(1 * MiB) for _ in range(100)]
-        del bufs
+@pytest.mark.parametrize("mem_type", [MemType.PINNED, MemType.DEVICE])
+def test_limit(memory_manager_config: None, mem_type: MemType) -> None:
+    # The cache has 100MiB so we try to alloc/free 100MiB a bunch of times.
+    for _ in range(321):
+        t = mem_type.alloc(100 * MiB)
+        # This `del t` is needed.
+        # Otherwise the Garbage Collector may delay the free until after the sync.
+        del t
 
         # Synchronizing is necessary to ensure that allocated memory is returned
-        # to the memory manager.
-        Accelerator().synchronize()
+        # to the buffer cache for pinned memory.
+        if mem_type == MemType.PINNED:
+            Accelerator().synchronize()

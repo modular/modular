@@ -1383,6 +1383,16 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
+    "deepseek-ai/DeepSeek-R1-TP8-DP1-EP1": GenericOracle(
+        model_path="deepseek-ai/DeepSeek-R1",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": False,
+            "prefill_chunk_size": 512,
+            "data_parallel_degree": 1,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={

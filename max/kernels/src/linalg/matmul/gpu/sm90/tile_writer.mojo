@@ -503,7 +503,7 @@ struct FragmentToSMemWriter[
 
         # Execute st.matrix hardware instruction
         st_matrix[simd_width=packed_width](
-            smem_tile.ptr.offset(swizzled_offset), packed_data
+            smem_tile.ptr + swizzled_offset, packed_data
         )
 
     @always_inline

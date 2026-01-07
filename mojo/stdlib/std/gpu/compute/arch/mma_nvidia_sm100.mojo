@@ -52,6 +52,12 @@ struct UMMAKind(Stringable, Writable):
     comptime KIND_MXF8F6F4 = Self(5)
     """MXF8F6F4 type."""
 
+    comptime KIND_MXF4 = Self(6)
+    """MXF4 type."""
+
+    comptime KIND_MXF4NVF4 = Self(7)
+    """MXF4NVF4 type."""
+
     @always_inline("nodebug")
     fn __int__(self) -> Int:
         """Convert UMMA kind to an integer value.
@@ -111,6 +117,10 @@ struct UMMAKind(Stringable, Writable):
             writer.write("kind::mxf8f6f4")
         elif self == Self.KIND_I8:
             writer.write("kind::i8")
+        elif self == Self.KIND_MXF4:
+            writer.write("kind::mxf4")
+        elif self == Self.KIND_MXF4NVF4:
+            writer.write("kind::mxf4nvf4")
         else:
             writer.write("kind::unknown")
 

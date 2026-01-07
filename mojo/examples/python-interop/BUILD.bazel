@@ -6,6 +6,10 @@ modular_py_binary(
     name = "hello",
     srcs = ["hello.py"],
     data = ["hello_mojo.mojo"],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//:ubsan": ["@platforms//:incompatible"],
@@ -20,6 +24,10 @@ modular_py_binary(
     name = "person",
     srcs = ["person.py"],
     data = ["person_module.mojo"],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//:ubsan": ["@platforms//:incompatible"],
@@ -36,7 +44,10 @@ modular_py_binary(
     data = ["mandelbrot_mojo.mojo"],
     mojo_deps = [
         "//max:layout",
-    ],
+    ] + select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "@mojo//:python",

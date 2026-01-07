@@ -81,6 +81,17 @@ struct FileDescriptor(Writer):
             "expected amount of bytes not written",
         )
 
+    fn write_string(mut self, string: StringSlice):
+        """
+        Write a `StringSlice` to this `FileDescriptor`.
+
+        This method is required by the `Writer` trait.
+
+        Args:
+            string: The `StringSlice` to write to this `FileDescriptor`.
+        """
+        self.write_bytes(string.as_bytes())
+
     @always_inline
     fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
         """Read a number of bytes from the file into a buffer.

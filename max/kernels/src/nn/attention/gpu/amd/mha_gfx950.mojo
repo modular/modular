@@ -432,7 +432,7 @@ struct KVBuffer[
                         tile_layout,
                         MutAnyOrigin,
                         address_space = smem_tile.address_space,
-                    ](smem_tile.ptr.offset(offset))
+                    ](smem_tile.ptr + offset)
                     frags[i, 0] = rebind[frags.element_type](
                         load_b_tr[Self.mma_shape](tile)
                     )

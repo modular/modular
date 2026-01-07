@@ -12,15 +12,10 @@ modular_py_library(
         "dispatcher_v2.py",
         "kvcache_agent.py",
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("grpcio"),  # NOTE: Order matters for PYTHONPATH nonsense
-        "//max/python/max/pipelines/core",
-        "//max/python/max/serve:process_control",
-        "//max/python/max/serve/queue",
-        requirement("pyzmq"),
-        requirement("msgspec"),
         ":kvcache_agent_proto_srcs",
+        "//max/python/max/serve/queue",
     ],
 )
 
@@ -30,11 +25,9 @@ modular_py_library(
         ":kvcache_agent_service_v1_grpc_py",
         ":kvcache_agent_service_v1_py",
     ],
-    tags = [
-        "no-mypy",
-        "no-pydeps",  # TODO: Fix and re-enable
-    ],
+    tags = ["no-mypy"],
     deps = [
+        requirement("grpcio"),
         requirement("protobuf"),
     ],
 )

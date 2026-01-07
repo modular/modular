@@ -235,6 +235,9 @@ def dump_results(
         elif verdict.discrepancy_report.model_modality == Modality.EMBEDDING:
             any_embedding = True
 
+    if node := os.environ.get("NODE_NAME"):
+        to.write(f"\n\nRan on node: {node}")
+
     if any_failed:
         to.write("\n\n## Failed/Crashed Models\n")
         to.write("| Status | Model |\n")
@@ -1192,6 +1195,23 @@ PIPELINES = {
             ),
             cos_dist_threshold=6e-02,
             kl_div_threshold=1.5e-1,
+            timeout=1200,
+        ),
+    ),
+    "deepseek-ai/DeepSeek-R1-TP8-DP1-EP1": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-multi", "8xb200"],  # Requires 8 B200s to run
+        run=_make_pipeline_runner(
+            pipeline="deepseek-ai/DeepSeek-R1-TP8-DP1-EP1",
+            encoding="float8_e4m3fn",
+            # Goldens generated using VLLM.
+            # Script: https://gist.github.com/k-w-w/1dc387dc41f11789e464d4a9267a8d20
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
+                json_file="vllm_deepseek-r1_float8_golden.json",
+            ),
+            cos_dist_threshold=5.1e-01,
+            kl_div_threshold=2.5e00,
             timeout=1200,
         ),
     ),
