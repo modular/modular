@@ -18,7 +18,8 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS
 from comm.reducescatter import reducescatter
-from comm_test_utils import human_readable_size, test_value_for_gpu_element
+from internal_utils import human_readable_size
+from comm_test_utils import test_value_for_gpu_element
 from gpu.host import DeviceBuffer, DeviceContext
 from testing import assert_almost_equal, assert_true
 from utils.numerics import get_accum_type

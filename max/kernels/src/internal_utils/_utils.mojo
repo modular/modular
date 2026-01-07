@@ -14,7 +14,7 @@
 import time
 from collections import OptionalReg
 from io.io import _snprintf
-from math import ceildiv
+from math import ceildiv, floor
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -600,3 +600,37 @@ fn init_vector_launch[
         grid_dim=(num_blocks),
         block_dim=(block_dim),
     )
+
+
+fn _pretty_print_float(val: Float64) -> String:
+    """Converts float to string, omitting fractional part if not needed.
+
+    Examples:
+        _pretty_print_float(2.0) returns "2"
+        _pretty_print_float(2.5) returns "2.5"
+    """
+    if Float64(floor(val)) == val:
+        return String(Int(val))
+    return String(val)
+
+
+fn human_readable_size(size: Int) -> String:
+    """Formats a byte size into human-readable form (KB, MB, GB).
+
+    Args:
+        size: Size in bytes.
+
+    Returns:
+        Human-readable string (e.g., "4KB", "256MB", "2GB").
+    """
+    comptime KB = 1024
+    comptime MB = KB * KB
+    comptime GB = MB * KB
+
+    if size >= GB:
+        return _pretty_print_float(Float64(size) / GB) + "GB"
+    if size >= MB:
+        return _pretty_print_float(Float64(size) / MB) + "MB"
+    if size >= KB:
+        return _pretty_print_float(Float64(size) / KB) + "KB"
+    return String(size) + "B"

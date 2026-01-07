@@ -24,7 +24,7 @@ from comm.allreduce import (
     elementwise_epilogue_type,
 )
 import comm.vendor.ccl as vendor_ccl
-from comm_test_utils import human_readable_size
+from internal_utils import human_readable_size
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
 from testing import assert_almost_equal, assert_true
 from collections.optional import OptionalReg

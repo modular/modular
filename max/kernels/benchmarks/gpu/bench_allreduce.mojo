@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from math import floor, align_up
+from math import align_up
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
 from utils.numerics import get_accum_type
 
@@ -38,54 +38,17 @@ from gpu.host import (
     get_gpu_target,
 )
 from gpu.grid_controls import PDLLevel
-from internal_utils import InitializationType, arg_parse
+from internal_utils import (
+    InitializationType,
+    arg_parse,
+    pytorch_like_tolerances_for,
+    human_readable_size,
+)
 
 from testing import assert_almost_equal, assert_true
 from algorithm import sync_parallelize
 
 from utils.index import IndexList, StaticTuple
-
-
-@always_inline
-fn _pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
-    # Returns (rtol, atol) modeled after PyTorch defaults.
-    @parameter
-    if dtype == DType.float16:
-        return (1e-3, 1e-5)
-    elif dtype == DType.bfloat16:
-        return (1.6e-2, 1e-5)
-    elif dtype == DType.float32:
-        return (1.3e-6, 1e-5)
-    elif dtype == DType.float64:
-        return (1e-7, 1e-7)
-    else:
-        return (0.0, 0.0)
-
-
-fn _pretty_print_float(val: Float64) -> String:
-    """This converts the float value to a string, but omits the fractional part
-    if not needed (e.g. prints 2 instead of 2.0).
-    """
-    if Float64(floor(val)) == val:
-        return String(Int(val))
-    return String(val)
-
-
-fn _human_memory(size: Int) -> String:
-    comptime KB = 1024
-    comptime MB = KB * KB
-    comptime GB = MB * KB
-
-    if size >= GB:
-        return _pretty_print_float(Float64(size) / GB) + "GB"
-
-    if size >= MB:
-        return _pretty_print_float(Float64(size) / MB) + "MB"
-
-    if size >= KB:
-        return _pretty_print_float(Float64(size) / KB) + "KB"
-
-    return String(size) + "B"
 
 
 @always_inline
@@ -378,7 +341,7 @@ fn bench_reduce[
                 accum += Scalar[accum_t](term_dtype)
             var expected_sum = Scalar[dtype](accum)
             try:
-                var rtol, atol = _pytorch_like_tolerances_for[dtype]()
+                var rtol, atol = pytorch_like_tolerances_for[dtype]()
                 assert_almost_equal(
                     host_buffers[i][j], expected_sum, atol=atol, rtol=rtol
                 )
@@ -409,7 +372,7 @@ fn _get_test_str[
         vendorccl_tag,
         cache_tag,
         "-",
-        _human_memory(num_bytes),
+        human_readable_size(num_bytes),
     )
 
 

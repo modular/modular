@@ -12,7 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from ._measure import correlation, cosine, kl_div
-from ._testing import assert_almost_equal, assert_equal, assert_with_measure
+from ._testing import (
+    assert_almost_equal,
+    assert_equal,
+    assert_with_measure,
+    pytorch_like_tolerances_for,
+)
 from ._utils import (
     InitializationType,
     Mode,
@@ -31,6 +36,7 @@ from ._utils import (
     random,
     update_bench_config_args,
     zero,
+    human_readable_size,
 )
 from .amd_configs import TuningConfigAMD, TuningTableAMD
 from .dispatch_utils import Table, TuningConfig
