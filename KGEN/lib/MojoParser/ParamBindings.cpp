@@ -897,12 +897,13 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                                  PogListAttr paramList, bool partial) const {
   // The inference diagnostics will be unused.
   ParamInfDiags inferenceDiags;
-  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
-    ParamInfState inference(declScope, getParameters(), paramTypes, paramList,
-                            bindingsSoFar, inferenceDiags,
-                            /*allowImplicitConversions=*/true);
+  ParamInfState inference(declScope, getParameters(), getNumPreCheckedParams(),
+                          paramTypes, paramList, inferenceDiags,
+                          /*allowImplicitConversions=*/true);
 
-    inference.inferFromParamList(/*hasArguments*/ partial);
+  inference.inferFromParamList(/*hasArguments*/ partial, /*installParam*/ true);
+
+  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     return PValue(inference.getInferredValue(bindingsSoFar.size()));
   };
   std::optional<MojoInflightDiag> diag;
@@ -968,15 +969,13 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                                       ASTDecl *declIfKnown,
                                       bool partial) const {
   ParamInfDiags inferenceDiags;
+  ParamInfState inference(declScope, getParameters(), getNumPreCheckedParams(),
+                          expectedParamTypes, paramListAttr, inferenceDiags,
+                          /*allowImplicitConversions=*/true);
+  // Infer information from the current parameter list.
+  inference.inferFromParamList(partial, true);
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
-    ParamInfState inference(declScope, getParameters(), expectedParamTypes,
-                            paramListAttr, bindingsSoFar, inferenceDiags,
-                            /*allowImplicitConversions=*/true);
-
-    // Infer information from the current parameter list.
-    inference.inferFromParamList(partial);
-
     // See if we inferred information about the next value.
     if (auto result = inference.getInferredValue(bindingsSoFar.size()))
       return PValue(result);

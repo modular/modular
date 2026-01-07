@@ -91,9 +91,8 @@ public:
   SharedState &shared;
 
   ParamInfState(ASTDecl &declScope, const CallOperands &givenBindings,
-                ArrayRef<Type> declaredParamTypes,
-                PogListAttr declaredParamPogs,
-                ArrayRef<TypedAttr> bindingsSoFar, ParamInfDiags &diags,
+                size_t numPreCheckedBindings, ArrayRef<Type> declaredParamTypes,
+                PogListAttr declaredParamPogs, ParamInfDiags &diags,
                 bool allowImplicitConversions);
 
   /// Given an incomplete parameter binding set for a parameter list, try to

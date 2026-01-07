@@ -785,24 +785,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     hasCTADParams = !fn.getIsStatic() && isa<StructDeclOp>(fn->getParentOp());
   }
 
-  // FIXME: move this and defaulted value parameter into parameter inferences!
-  SmallVector<TypedAttr> preCheckedBinding;
-  for (auto &preCheckedOperand : callable.paramBindings.getPreCheckedParams()) {
-    if (sugarIsa<UnboundAttr>(preCheckedOperand.ir.getIfPValue().get()))
-      preCheckedBinding.push_back(nullptr);
-    else
-      preCheckedBinding.push_back(preCheckedOperand.ir.getIfPValue().get());
-
-    // FIXME: this should always be a invalid candidate, we should just return
-    // failure.
-    if (preCheckedBinding.size() == signature.getInputParamTypes().size())
-      break;
-  }
-
   ParamInfState inference(
       callable.paramBindings.declScope, callable.paramBindings.getParameters(),
+      callable.paramBindings.getNumPreCheckedParams(),
       signature.getInputParamTypes(), signature.getParamListAttrs(),
-      preCheckedBinding, inferenceDiags, allowImplicitConversions);
+      inferenceDiags, allowImplicitConversions);
 
   bool inferFailed = failed(inference.inferForCall(
       signature, operands, variadicKwOperands, returnsSelf, hasCTADParams));
