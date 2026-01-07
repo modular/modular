@@ -613,6 +613,12 @@ what we publish.
 
 ### Tooling changes
 
+- The Mojo compiler now supports the `-Werror` flag, which treats all warnings
+  as compilation errors. This is useful for enforcing stricter code quality
+  standards, particularly in CI/CD pipelines. The flag works with the Mojo
+  compiler tools (`mojo run`, `mojo build`, `mojo package`).
+  When used with `--disable-warnings`, warnings are promoted to errors first,
+  so the errors are not suppressed.
 - The Mojo compiler now "diffs" very long types in error messages to explain
   what is going on in a more easy to understand way.
 - Specifying CUDA architectures with `--target-accelerator` now expects a sm
