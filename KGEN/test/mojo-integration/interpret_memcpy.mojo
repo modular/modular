@@ -61,7 +61,7 @@ struct Data(ImplicitlyCopyable, Stringable):
         var size = self._size + rhs._size
         var result = Self(size=size)
         memcpy(result._data, self._data, self._size)
-        memcpy(result._data.offset(self._size), rhs._data, rhs._size)
+        memcpy(result._data + self._size, rhs._data, rhs._size)
         return result
 
     fn __del__(deinit self):
