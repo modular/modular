@@ -901,7 +901,7 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                           paramTypes, paramList, inferenceDiags,
                           /*allowImplicitConversions=*/true);
 
-  inference.inferFromParamList(/*hasArguments*/ partial, /*installParam*/ true);
+  inference.inferFromParamList(/*hasArguments*/ partial);
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     return PValue(inference.getInferredValue(bindingsSoFar.size()));
@@ -973,7 +973,7 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                           expectedParamTypes, paramListAttr, inferenceDiags,
                           /*allowImplicitConversions=*/true);
   // Infer information from the current parameter list.
-  inference.inferFromParamList(partial, true);
+  inference.inferFromParamList(partial);
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     // See if we inferred information about the next value.
